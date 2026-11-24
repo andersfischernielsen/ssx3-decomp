@@ -239,6 +239,20 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003e_4648, ea_file_cd_read, "EAFile_CdRead"),
     (0x003e_48d8, ea_file_cd_get_entry, "EAFile_CdGetEntry"),
     (0x003e_4968, ea_file_cd_find_entry, "EAFile_CdFindEntry"),
+    (0x0031_7f38, ea_file_path_exists, "EAFile_PathExists"),
+    (
+        0x0031_7f60,
+        ea_file_get_path_size_checked,
+        "EAFile_GetPathSizeChecked",
+    ),
+    (0x0031_7f98, ea_file_get_path_size, "EAFile_GetPathSize"),
+    (0x0031_7fc0, ea_file_empty_stub, "EAFile_EmptyStub"),
+    (
+        0x0031_7fc8,
+        ea_file_empty_stub_wrapper,
+        "EAFile_EmptyStub_Wrapper",
+    ),
+    (0x003d_ec80, eafile_write, "EAFile_Write"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -447,6 +461,16 @@ pub(crate) mod callee {
     pub(crate) const EA_FILE_TRANSFER_CHUNKED: Callee = Callee {
         addr: 0x003d_eb50,
         f: ee::s14::EAFile_TransferChunked,
+    };
+
+    pub(crate) const EA_FILE_PARSE_BIG_PATH: Callee = Callee {
+        addr: 0x003d_e4d0,
+        f: ee::s14::EAFile_ParseBigPath,
+    };
+
+    pub(crate) const EA_FILE_EMPTY_STUB: Callee = Callee {
+        addr: 0x0031_7fc0,
+        f: ee::s10::EAFile_EmptyStub,
     };
 
     pub(crate) const ASYNC_FILE_POOL_PUSH: Callee = Callee {
@@ -6827,6 +6851,128 @@ pub fn ea_file_cd_lookup(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// 0x00317f38 EAFile_PathExists
+
+/// `int EAFile_PathExists(const char* path)` (0x317f38): whether the file
+/// system knows `name`: ask `FILESYS_bypassqueuefileinfo` (0x3de4d0,
+/// `EAFile_ParseBigPath`) for it and return whether it answered 1.
+pub fn ea_file_path_exists(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 1;
+        frame.save_ra(c, 0x10);
+        c.g[A2][0] = c.g[SP][0];
+        callee::EA_FILE_PARSE_BIG_PATH.call(c, 0x0031_7f4c)?;
+        let found = c.g[V0][0] ^ 1;
+        frame.restore_ra(c, 0x10);
+        c.g[V0][0] = (found < 1) as u64;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x00317f60 EAFile_GetPathSizeChecked
+
+/// `int EAFile_GetPathSizeChecked(const char* path)` (0x317f60): the size of `name`
+/// as reported by `FILESYS_bypassqueuefileinfo` (0x3de4d0), or 0 when it
+/// does not answer 1. A pre-zeroed out-word keeps the miss path at 0.
+pub fn ea_file_get_path_size_checked(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 1;
+        frame.save_ra(c, 0x10);
+        c.g[A2][0] = c.g[SP][0];
+        let out = c.g[SP][0] as u32;
+        c.sw(out, 0);
+        callee::EA_FILE_PARSE_BIG_PATH.call(c, 0x0031_7f78)?;
+        let missing = c.g[V0][0] ^ 1;
+        c.g[V0][0] = 0;
+        if missing == 0 {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(out).lw(c);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x00317f98 EAFile_GetPathSize
+
+/// `int EAFile_GetPathSize(const char* path)` (0x317f98): the size of `name`
+/// as reported by `FILESYS_bypassqueuefileinfo` (0x3de4d0), with no
+/// answer check: a pre-zeroed out-word is returned as is.
+pub fn ea_file_get_path_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 1;
+        frame.save_ra(c, 0x10);
+        c.g[A2][0] = c.g[SP][0];
+        let out = c.g[SP][0] as u32;
+        c.sw(out, 0);
+        callee::EA_FILE_PARSE_BIG_PATH.call(c, 0x0031_7fb0)?;
+        c.g[V0][0] = Addr(out).lw(c);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x00317fc0 EAFile_EmptyStub
+
+/// `void EAFile_EmptyStub(void)` (0x317fc0): empty EAFile stub; teardown
+/// paths tail-call it.
+pub fn ea_file_empty_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// 0x00317fc8 EAFile_EmptyStub_Wrapper
+
+/// `void EAFile_EmptyStub_Wrapper(void)` (0x317fc8): frame wrapper around the
+/// empty `EAFile_EmptyStub` stub.
+pub fn ea_file_empty_stub_wrapper(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::EA_FILE_EMPTY_STUB.call(c, 0x0031_7fd8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003dec80 EAFile_Write
+
+/// `void EAFile_Write(a, b, data, size, prio)` (0x3dec80): the chunked
+/// file write: hand the caller's registers to the chunked transfer
+/// `EAFile_TransferChunked` (0x3deb50) with the write-chunk callback
+/// (0x3dd720) in `t1`. Returns the transfer's spare word (0 here).
+pub fn eafile_write(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[T1][0] = 0x3e0000;
+        frame.save_ra(c, 0);
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x28e0));
+        callee::EA_FILE_TRANSFER_CHUNKED.call(c, 0x003d_ec94)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9499,14 +9645,6 @@ pub(crate) mod tests {
         });
     }
 
-    // NOTE: no `EAFile_Write` test or OVERRIDES row. Write hard-codes its
-    // chunk callback to the real queue writer (no hook slot), which always
-    // returns nonzero on fixture (it stores then reloads its own masked
-    // result word): TransferChunked's wait loop then spins forever on both
-    // sides (identical behavior, verified bit-equal in a debug run), so no
-    // bounded fixture exists. The port below is a straight-line wrapper
-    // identical in shape to the passing Read port; the replay gates cover it.
-
     driven!(gen_ea_file_close, ee::s14::f_003deca0__generated);
 
     driven!(hand_ea_file_close, ea_file_close);
@@ -11278,6 +11416,172 @@ pub(crate) mod tests {
                 c.bus.write32(0x0051_9c40, 0);
                 c.pc = 0x003e_4000;
             },
+        );
+    }
+
+    use crate::difftest::check_paths;
+
+    /// The `EAFile_*` probe name: unaligned, so the real `strchr`/`strcpy`
+    /// take their byte loops (7 cycles a byte, counted by hand).
+    pub(crate) const BXNAME: u32 = DATA + 0x101;
+
+    /// The `0x519ae4` request-list head the parse only walks when a big
+    /// file is mounted: zeroed, so it never is.
+    pub(crate) const PARSE_LIST_HEAD: u32 = 0x0051_9ae4;
+
+    /// Fixture shared by the three `EAFile_*` probes: pipe-free or piped
+    /// names at `BXNAME`, and the platform open/size answers steered by
+    /// `seed` (`seed % 2`: miss vs hit).
+    pub(crate) fn eafile_probe_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x31_7f38, 0);
+        ea_install_fakes();
+        ea_fixed_costs(c);
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        c.bus.write32(PARSE_LIST_HEAD, 0);
+        if seed % 4 < 2 {
+            put_ascii(c, BXNAME, "abc");
+        } else {
+            put_ascii(c, BXNAME, "|ab");
+        }
+        if seed % 2 == 0 {
+            c.bus.write32(EAF_RET_POPEN, 0);
+        } else {
+            c.bus.write32(EAF_RET_POPEN, 1);
+            c.bus.write32(EAF_RET_PSIZE, 0x1_2345);
+        }
+        c.bus.write32(EAF_RET_PCLOSE, 0);
+        c.g[A0][0] = sx(BXNAME);
+        c.g[RA][0] = SENTINEL as u64;
+    }
+
+    /// `EAFile_PathExists` generated totals over the plain/piped names and
+    /// the miss/hit answers (piped names take the callee's `strncpy` branch).
+    pub(crate) const PATHS_EAFILE_EXISTS: [u64; 3] = [116, 132, 136];
+
+    /// `EAFile_PathExists`: miss vs hit through the real parse.
+    #[test]
+    fn ea_file_path_exists_matches() {
+        check_paths(
+            ee::s10::f_00317f38__generated,
+            ea_file_path_exists,
+            64,
+            &PATHS_EAFILE_EXISTS,
+            &|c, seed| {
+                eafile_probe_setup(c, seed);
+                c.pc = 0x0031_7f38;
+            },
+        );
+    }
+
+    /// `EAFile_GetPathSizeChecked` generated totals over the same shapes.
+    pub(crate) const PATHS_EAFILE_CHECKED: [u64; 3] = [118, 134, 139];
+
+    /// `EAFile_GetPathSizeChecked`: the size on hit, 0 on miss.
+    #[test]
+    fn ea_file_get_path_size_checked_matches() {
+        check_paths(
+            ee::s10::f_00317f60__generated,
+            ea_file_get_path_size_checked,
+            64,
+            &PATHS_EAFILE_CHECKED,
+            &|c, seed| {
+                eafile_probe_setup(c, seed);
+                c.pc = 0x0031_7f60;
+            },
+        );
+    }
+
+    /// `EAFile_GetPathSize` generated totals over the same shapes.
+    pub(crate) const PATHS_EAFILE_SIZE: [u64; 3] = [116, 132, 136];
+
+    /// `EAFile_GetPathSize`: the size on hit, the pre-zeroed word on miss.
+    #[test]
+    fn ea_file_get_path_size_matches() {
+        check_paths(
+            ee::s10::f_00317f98__generated,
+            ea_file_get_path_size,
+            64,
+            &PATHS_EAFILE_SIZE,
+            &|c, seed| {
+                eafile_probe_setup(c, seed);
+                c.pc = 0x0031_7f98;
+            },
+        );
+    }
+
+    /// The empty stub: one path, 2 cycles.
+    #[test]
+    fn ea_file_empty_stub_matches() {
+        check_paths(
+            ee::s10::f_00317fc0__generated,
+            ea_file_empty_stub,
+            64,
+            &[2],
+            &|c, seed| {
+                let _r = machine(c, seed, 0x31_7fc0, 0);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0031_7fc0;
+            },
+        );
+    }
+
+    /// The stub wrapper: 7 cycles of frame plus the 2-cycle stub.
+    #[test]
+    fn ea_file_empty_stub_wrapper_matches() {
+        check_paths(
+            ee::s10::f_00317fc8__generated,
+            ea_file_empty_stub_wrapper,
+            64,
+            &[9],
+            &|c, seed| {
+                let _r = machine(c, seed, 0x31_7fc8, 0);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0031_7fc8;
+            },
+        );
+    }
+
+    /// Chunked-write steering: `seed` bit 0 nulls `a0` (the callback's
+    /// signal-stub path), bit 1 doubles the wait passes, bit 2 overflows
+    /// the 0x8000 chunk clamp.
+    pub(crate) fn eafile_write_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_ec80, 0);
+        ea_install_fakes();
+        ea_install_worker_fakes();
+        ea_fixed_costs(c);
+        ea_fixed_results(c);
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        c.bus.write32(EAF_WORKER, EAF_MAGIC);
+        c.bus.write32(EAF_RET_SETCB, 0);
+        c.bus.write32(EAF_REQ, 0x5150_0001);
+        c.bus.write32(EAF_SEQ_NEXT, 0);
+        for i in 0..8u32 {
+            c.bus.write32(EAF_SEQ + 4 * i, 0);
+        }
+        c.bus
+            .write32(EAF_WAIT_LEFT, if seed % 4 < 2 { 1 } else { 2 });
+        c.g[A0][0] = if seed % 2 == 0 { 0 } else { sx(DATA + 0x304) };
+        c.g[A1][0] = sx(DATA + 0x404);
+        c.g[A2][0] = sx(DATA + 0x508);
+        c.g[A3][0] = if seed % 8 < 4 { 0x100 } else { 0x9000 };
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x003d_ec80;
+    }
+
+    /// `EAFile_Write` generated totals: 102/109 (one wait pass, `a0`
+    /// null/set), 112/119 (two passes), plus 1 each over the chunk clamp.
+    pub(crate) const PATHS_EAFILE_WRITE: [u64; 8] = [102, 109, 112, 119, 103, 110, 113, 120];
+
+    /// The chunked write: the transfer with its callback, wait and
+    /// clamp paths, all through the shared EA fakes.
+    #[test]
+    fn eafile_write_matches() {
+        check_paths(
+            ee::s14::f_003dec80__generated,
+            eafile_write,
+            64,
+            &PATHS_EAFILE_WRITE,
+            &eafile_write_setup,
         );
     }
 }

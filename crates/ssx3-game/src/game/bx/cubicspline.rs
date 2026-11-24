@@ -3,11 +3,15 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
@@ -70,6 +74,91 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_d790, csi_cubic_spline_free, "cCSICubicSpline_Free"),
     (0x0031_ffd8, dlheap_more_core, "DLHeap_MoreCore"),
     (0x0031_e818, dlheap_malloc, "DLHeap_Malloc"),
+    (0x0025_16f0, mem_clear_heap_table, "MEM_ClearHeapTable"),
+    (0x0025_1718, mem_heap_create, "MEM_HeapCreate"),
+    (0x0025_1998, mem_heap_destroy, "MEM_HeapDestroy"),
+    (0x0025_1a08, mem_heap_free_all, "MEM_HeapFreeAll"),
+    (0x0025_1c38, mem_find_block_by_name, "MEM_FindBlockByName"),
+    (0x0025_1d50, mem_heap_add_region, "MEM_HeapAddRegion"),
+    (0x0025_1fc8, mem_print_heap, "MEM_PrintHeap"),
+    (0x0025_1ff0, mem_dump_default_heap, "MEM_DumpDefaultHeap"),
+    (0x0025_2010, mem_dump_heap_info, "MEM_DumpHeapInfo"),
+    (0x0025_22b0, mem_validate_block, "MEM_ValidateBlock"),
+    (0x0025_23d0, mem_heap_free_block, "MEM_HeapFreeBlock"),
+    (
+        0x0025_25f8,
+        mem_get_block_size_locked,
+        "MEM_GetBlockSizeLocked",
+    ),
+    (0x0025_2658, mem_get_block_name, "MEM_GetBlockName"),
+    (0x0025_2718, mem_heap_shrink_block, "MEM_HeapShrinkBlock"),
+    (
+        0x0025_2980,
+        mem_alloc_named_aligned,
+        "MEM_AllocNamedAligned",
+    ),
+    (
+        0x0025_2f60,
+        mem_alloc_named_aligned_hook,
+        "MEM_AllocNamedAlignedHook",
+    ),
+    (
+        0x0025_2f80,
+        mem_heap_alloc_aligned_thunk,
+        "MEM_HeapAllocAligned_Thunk",
+    ),
+    (
+        0x0025_2fc8,
+        mem_heap_alloc_named128,
+        "MEM_HeapAllocNamed128",
+    ),
+    (
+        0x0025_2ff0,
+        mem_alloc_named_unaligned,
+        "MEM_AllocNamedUnaligned",
+    ),
+    (
+        0x0025_3018,
+        mem_heap_alloc_named_unaligned,
+        "MEM_HeapAllocNamedUnaligned",
+    ),
+    (0x0025_3040, mem_alloc_anon_2, "MEM_AllocAnon_2"),
+    (0x0025_3070, mem_heap_alloc_anon_2, "MEM_HeapAllocAnon_2"),
+    (0x0025_30a0, mem_alloc_anon, "MEM_AllocAnon"),
+    (0x0025_30d0, mem_heap_alloc_anon, "MEM_HeapAllocAnon"),
+    (0x0031_99d0, mem_get_heap_info, "MEM_GetHeapInfo"),
+    (0x0031_9bd8, mem_resize_block, "MEM_ResizeBlock"),
+    (0x0031_9d10, mem_frame_begin_stub, "MEM_FrameBeginStub"),
+    (
+        0x0031_9d18,
+        mem_frame_check_stub,
+        "MEM_FrameCheckStub_ReturnZero",
+    ),
+    (
+        0x0031_9d20,
+        mem_init_small_block_pools,
+        "MEM_InitSmallBlockPools",
+    ),
+    (
+        0x0032_0078,
+        mem_heap_memalign_offset,
+        "MEM_HeapMemalignOffset",
+    ),
+    (0x0032_00e8, mem_init_pool8, "MEM_InitPool8"),
+    (0x0032_0120, mem_init_pool16, "MEM_InitPool16"),
+    (0x0032_0158, mem_init_pool32, "MEM_InitPool32"),
+    (0x0032_0190, mem_init_pool64, "MEM_InitPool64"),
+    (0x0032_01d8, mem_init_pool128, "MEM_InitPool128"),
+    (0x0032_0220, mem_init_pool256, "MEM_InitPool256"),
+    (0x0032_0270, mem_init_pool512, "MEM_InitPool512"),
+    (0x0032_02c0, mem_pool8_alloc, "MEM_Pool8Alloc"),
+    (0x0032_0518, mem_report_pool_stat0, "MEM_ReportPoolStat0"),
+    (0x0032_0520, mem_report_pool_stat1, "MEM_ReportPoolStat1"),
+    (0x0032_0528, mem_report_pool_stat2, "MEM_ReportPoolStat2"),
+    (0x0032_0530, mem_report_pool_stat3, "MEM_ReportPoolStat3"),
+    (0x0032_0538, mem_report_pool_stat4, "MEM_ReportPoolStat4"),
+    (0x0032_0540, mem_report_pool_stat5, "MEM_ReportPoolStat5"),
+    (0x0032_0548, mem_report_pool_stat6, "MEM_ReportPoolStat6"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -2687,7 +2776,187 @@ pub fn c_csi_cubic_spline_alloc(c: &mut Cpu) {
 
 pub(crate) mod callee {
 
+    use super::ee;
+    use crate::call::Callee;
     pub(crate) use crate::game::lib::snd::callee::MEM_POOL_ALLOC;
+
+    /// `MEM_InitBlockHeader` (0x2516d0): fill a heap block header.
+    pub(crate) const MEM_INIT_BLOCK_HEADER: Callee = Callee {
+        addr: 0x0025_16d0,
+        f: ee::s06::f_002516d0,
+    };
+
+    /// `MEM_GetBlockTag` (0x252660): block tag lookup (already ported in
+    /// `game::mem::memstd`; called through its override slot like the rest).
+    pub(crate) const MEM_GET_BLOCK_TAG: Callee = Callee {
+        addr: 0x0025_2660,
+        f: ee::s06::f_00252660,
+    };
+
+    /// `MEM_DumpHeapInfo` (0x252010): this module's own heap dumper.
+    pub(crate) const MEM_DUMP_HEAP_INFO: Callee = Callee {
+        addr: 0x0025_2010,
+        f: ee::s06::f_00252010,
+    };
+
+    /// `MEM_PrintHeap` (0x251fc8): this module's own heap printer.
+    pub(crate) const MEM_PRINT_HEAP: Callee = Callee {
+        addr: 0x0025_1fc8,
+        f: ee::s06::f_00251fc8,
+    };
+
+    /// `MEM_Free` (0x2523a8): free a heap allocation.
+    pub(crate) const MEM_FREE: Callee = Callee {
+        addr: 0x0025_23a8,
+        f: ee::s06::f_002523a8,
+    };
+
+    /// `MEM_GetBlockName` (0x252658): this module's own (stub) name lookup.
+    pub(crate) const MEM_GET_BLOCK_NAME: Callee = Callee {
+        addr: 0x0025_2658,
+        f: ee::s06::f_00252658,
+    };
+
+    /// `MEM_ValidateBlock` (0x2522b0): this module's own block checker.
+    pub(crate) const MEM_VALIDATE_BLOCK: Callee = Callee {
+        addr: 0x0025_22b0,
+        f: ee::s06::f_002522b0,
+    };
+
+    /// `MEM_IsValidBlockLink` (0x252248): free-list link tag check.
+    pub(crate) const MEM_IS_VALID_BLOCK_LINK: Callee = Callee {
+        addr: 0x0025_2248,
+        f: ee::s06::f_00252248,
+    };
+
+    /// `MEM_GetHeapBlockOverhead` (0x252960): per-block overhead of a heap.
+    pub(crate) const MEM_GET_HEAP_BLOCK_OVERHEAD: Callee = Callee {
+        addr: 0x0025_2960,
+        f: ee::s06::f_00252960,
+    };
+
+    /// `MEM_AllocNamedAligned` (0x252980): this module's own named allocator.
+    pub(crate) const MEM_ALLOC_NAMED_ALIGNED: Callee = Callee {
+        addr: 0x0025_2980,
+        f: ee::s06::f_00252980,
+    };
+
+    /// `MEM_HeapAllocAligned` (0x252a10): the heap allocator core.
+    pub(crate) const MEM_HEAP_ALLOC_ALIGNED: Callee = Callee {
+        addr: 0x0025_2a10,
+        f: ee::s06::f_00252a10,
+    };
+
+    /// `Math_CeilLog2` (0x320b68): ceil of log2, for alignment selection.
+    pub(crate) const MATH_CEIL_LOG2: Callee = Callee {
+        addr: 0x0032_0b68,
+        f: ee::s10::f_00320b68,
+    };
+
+    /// `operator new` (0x317e30): the sized allocator entry.
+    pub(crate) const OPERATOR_NEW_NAMED: Callee = Callee {
+        addr: 0x0031_7e30,
+        f: ee::s10::f_00317e30,
+    };
+
+    /// `sprintf` (0x417828).
+    pub(crate) const SPRINTF: u32 = 0x0041_7828;
+
+    /// `strcpy` (0x4166f4).
+    pub(crate) const STRCPY: u32 = 0x0041_66f4;
+
+    /// `strcasecmp` (0x41aa88).
+    pub(crate) const STRCASECMP: u32 = 0x0041_aa88;
+
+    /// `EA_MemSet` (0x3e6448).
+    pub(crate) const EA_MEM_SET: u32 = 0x003e_6448;
+
+    /// `EAMutex_Init` (0x3e5698).
+    pub(crate) const EA_MUTEX_INIT: u32 = 0x003e_5698;
+
+    /// `EAMutex_Destroy` (0x3e56e0).
+    pub(crate) const EA_MUTEX_DESTROY: u32 = 0x003e_56e0;
+
+    /// `EAMutex_Lock` (0x3e5700).
+    pub(crate) const EA_MUTEX_LOCK: u32 = 0x003e_5700;
+
+    /// `EAMutex_Unlock` (0x3e5760).
+    pub(crate) const EA_MUTEX_UNLOCK: u32 = 0x003e_5760;
+
+    /// `EA_Crc16` (0x3e62d0).
+    pub(crate) const EA_CRC16: u32 = 0x003e_62d0;
+
+    /// `EA_MemMove` (0x3e6188).
+    pub(crate) const EA_MEM_MOVE: u32 = 0x003e_6188;
+
+    /// `MEM_GetBlockSize` (0x319b98).
+    pub(crate) const MEM_GET_BLOCK_SIZE: u32 = 0x0031_9b98;
+
+    /// `EA_MemAllocNamed` (0x317d70).
+    pub(crate) const EA_MEM_ALLOC_NAMED: Callee = Callee {
+        addr: 0x0031_7d70,
+        f: ee::s10::EA_MemAllocNamed,
+    };
+
+    /// `MEM_FreeInternal` (0x319b48).
+    pub(crate) const MEM_FREE_INTERNAL: Callee = Callee {
+        addr: 0x0031_9b48,
+        f: ee::s10::MEM_FreeInternal,
+    };
+
+    /// `DLHeap_Mallinfo` (0x31fc20).
+    pub(crate) const DL_HEAP_MALLINFO: Callee = Callee {
+        addr: 0x0031_fc20,
+        f: ee::s10::DLHeap_Mallinfo,
+    };
+
+    /// `MEM_InitPool8` (0x3200e8).
+    pub(crate) const MEM_INIT_POOL8: Callee = Callee {
+        addr: 0x0032_00e8,
+        f: ee::s10::MEM_InitPool8,
+    };
+
+    /// `MEM_InitPool16` (0x320120).
+    pub(crate) const MEM_INIT_POOL16: Callee = Callee {
+        addr: 0x0032_0120,
+        f: ee::s10::MEM_InitPool16,
+    };
+
+    /// `MEM_InitPool32` (0x320158).
+    pub(crate) const MEM_INIT_POOL32: Callee = Callee {
+        addr: 0x0032_0158,
+        f: ee::s10::MEM_InitPool32,
+    };
+
+    /// `MEM_InitPool64` (0x320190).
+    pub(crate) const MEM_INIT_POOL64: Callee = Callee {
+        addr: 0x0032_0190,
+        f: ee::s10::MEM_InitPool64,
+    };
+
+    /// `MEM_InitPool128` (0x3201d8).
+    pub(crate) const MEM_INIT_POOL128: Callee = Callee {
+        addr: 0x0032_01d8,
+        f: ee::s10::MEM_InitPool128,
+    };
+
+    /// `MEM_InitPool256` (0x320220).
+    pub(crate) const MEM_INIT_POOL256: Callee = Callee {
+        addr: 0x0032_0220,
+        f: ee::s10::MEM_InitPool256,
+    };
+
+    /// `MEM_InitPool512` (0x320270).
+    pub(crate) const MEM_INIT_POOL512: Callee = Callee {
+        addr: 0x0032_0270,
+        f: ee::s10::MEM_InitPool512,
+    };
+
+    /// `memcpy` (0x41605c).
+    pub(crate) const MEMCPY: Callee = Callee {
+        addr: 0x0041_605c,
+        f: ee::s15::memcpy,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -3470,6 +3739,2513 @@ pub fn dlheap_malloc(c: &mut Cpu) {
         dlheap_malloc_leave(c, frame);
         Ok(())
     })
+}
+
+/// Result cell of the test-only block-size fake below.
+#[cfg(test)]
+pub(crate) const MEM_RET_GET_SIZE: u32 = crate::difftest::DATA + 0x2_0200;
+
+/// `MEM_GetBlockSize` fake for [`mem_get_block_size_locked`] tests: answers
+/// the result cell at a fixed 3-cycle cost while the EA gate is armed, else
+/// falls back to the chained body. (The real size probe needs a live
+/// allocator, which fixtures do not provide.)
+#[cfg(test)]
+pub(crate) fn mem_fake_get_block_size(c: &mut Cpu) {
+    use crate::difftest::fakes;
+    use crate::game::lib::eafile::tests::{EAF_CTRL, EAF_MAGIC};
+    if c.bus.read32(EAF_CTRL) != EAF_MAGIC {
+        return fakes::fall_back(
+            c,
+            fakes::prev_cell(mem_fake_get_block_size),
+            ee::s10::f_00319b98__generated,
+        );
+    }
+    let ra = c.g[RA][0] as u32;
+    let before = c.cycles;
+    fakes::fake(c, 0x0031_9b98, ra);
+    c.cycles = before + 3;
+    c.g[V0][0] = c.bus.read32(MEM_RET_GET_SIZE) as u64;
+}
+
+/// `MEM_DebugPrintf` fake for the heap-dump tests: the dumpers pass real
+/// format strings that the real printer would expand; the fake just
+/// acknowledges the call at a fixed cost while the EA gate is armed.
+#[cfg(test)]
+pub(crate) fn mem_fake_debug_printf(c: &mut Cpu) {
+    use crate::difftest::fakes;
+    use crate::game::lib::eafile::tests::{EAF_CTRL, EAF_MAGIC};
+    if c.bus.read32(EAF_CTRL) != EAF_MAGIC {
+        return fakes::fall_back(
+            c,
+            fakes::prev_cell(mem_fake_debug_printf),
+            ee::s06::f_00251f68__generated,
+        );
+    }
+    let ra = c.g[RA][0] as u32;
+    let before = c.cycles;
+    fakes::fake(c, 0x0025_1f68, ra);
+    c.cycles = before + 3;
+    c.g[V0][0] = 0;
+}
+
+/// Gate word of the block-name fake below.
+#[cfg(test)]
+pub(crate) const MEM_NAME_GATE: u32 = crate::difftest::DATA + 0x2_0380;
+
+#[cfg(test)]
+pub(crate) const MEM_NAME_MAGIC: u32 = 0x4e41_0001;
+
+/// `MEM_GetBlockName` fake for [`mem_find_block_by_name`] tests: answers
+/// the word the fixture left at `block + 0x14` (`a0 + 4`) at a fixed 3-cycle
+/// cost while its gate is armed (the real lookup always answers null).
+#[cfg(test)]
+pub(crate) fn mem_fake_get_block_name(c: &mut Cpu) {
+    use crate::difftest::fakes;
+    if c.bus.read32(MEM_NAME_GATE) != MEM_NAME_MAGIC {
+        return fakes::fall_back(
+            c,
+            fakes::prev_cell(mem_fake_get_block_name),
+            ee::s06::f_00252658__generated,
+        );
+    }
+    let name = c.bus.read32((c.g[A0][0] as u32).wrapping_add(4));
+    let ra = c.g[RA][0] as u32;
+    let before = c.cycles;
+    fakes::fake(c, 0x0025_2658, ra);
+    c.cycles = before + 3;
+    c.g[V0][0] = name as u64;
+}
+
+/// Gate word and log of the register spies below: the gate at `+0`, the
+/// call count at `+4`, then `(v0, s0)` per call from `+0x10`.
+#[cfg(test)]
+pub(crate) const MEM_SPY: u32 = crate::difftest::DATA + 0x2_0300;
+
+#[cfg(test)]
+pub(crate) const MEM_SPY_MAGIC: u32 = 0x5350_0001;
+
+/// Note `v0` and `s0` at a call while the spy gate is armed.
+#[cfg(test)]
+fn mem_spy_note(c: &mut Cpu) {
+    if c.bus.read32(MEM_SPY) == MEM_SPY_MAGIC {
+        let n = c.bus.read32(MEM_SPY + 4);
+        c.bus.write32(MEM_SPY + 4, n + 1);
+        let at = MEM_SPY + 0x10 + (n % 16) * 8;
+        c.bus.write32(at, c.g[V0][0] as u32);
+        c.bus.write32(at + 4, c.g[S0][0] as u32);
+    }
+}
+
+/// `operator_new_named` spy for [`mem_resize_block`] tests: notes the
+/// caller's `v0`/`s0`, then runs the real body.
+#[cfg(test)]
+pub(crate) fn mem_spy_new_named(c: &mut Cpu) {
+    use crate::difftest::fakes;
+    mem_spy_note(c);
+    fakes::fall_back(
+        c,
+        fakes::prev_cell(mem_spy_new_named),
+        ee::s10::f_00317e30__generated,
+    );
+}
+
+/// `EAMutex_Lock` spy for [`mem_resize_block`] tests: notes the caller's
+/// `v0`/`s0`, then runs the real body.
+#[cfg(test)]
+pub(crate) fn mem_spy_mutex_lock(c: &mut Cpu) {
+    use crate::difftest::fakes;
+    mem_spy_note(c);
+    fakes::fall_back(
+        c,
+        fakes::prev_cell(mem_spy_mutex_lock),
+        ee::s14::f_003e5700__generated,
+    );
+}
+
+/// Gate word of the failing-free fake below.
+#[cfg(test)]
+pub(crate) const MEM_FREE_GATE: u32 = crate::difftest::DATA + 0x2_03a0;
+
+#[cfg(test)]
+pub(crate) const MEM_FREE_MAGIC: u32 = 0x4652_0001;
+
+/// `MEM_Free` fake for [`mem_heap_free_all`] tests: a free that reports
+/// failure (`v0 = 0`) at a fixed 3-cycle cost while its gate is armed (the
+/// real free always answers 1).
+#[cfg(test)]
+pub(crate) fn mem_fake_free_fails(c: &mut Cpu) {
+    use crate::difftest::fakes;
+    if c.bus.read32(MEM_FREE_GATE) != MEM_FREE_MAGIC {
+        return fakes::fall_back(
+            c,
+            fakes::prev_cell(mem_fake_free_fails),
+            ee::s06::f_002523a8__generated,
+        );
+    }
+    let ra = c.g[RA][0] as u32;
+    let before = c.cycles;
+    fakes::fake(c, 0x0025_23a8, ra);
+    c.cycles = before + 3;
+    c.g[V0][0] = 0;
+}
+
+/// Hook this module's test fakes (once per process; gated, so test order
+/// does not matter).
+#[cfg(test)]
+pub(crate) fn mem_install_fakes() {
+    use crate::difftest::fakes;
+    use std::ptr::addr_of_mut;
+    fakes::hook(
+        addr_of_mut!(ee::s10::OVERRIDE_00319B98),
+        mem_fake_get_block_size,
+        fakes::prev_cell(mem_fake_get_block_size),
+    );
+    fakes::hook(
+        addr_of_mut!(ee::s06::OVERRIDE_00251F68),
+        mem_fake_debug_printf,
+        fakes::prev_cell(mem_fake_debug_printf),
+    );
+    fakes::hook(
+        addr_of_mut!(ee::s06::OVERRIDE_00252658),
+        mem_fake_get_block_name,
+        fakes::prev_cell(mem_fake_get_block_name),
+    );
+    fakes::hook(
+        addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+        mem_spy_new_named,
+        fakes::prev_cell(mem_spy_new_named),
+    );
+    fakes::hook(
+        addr_of_mut!(ee::s14::OVERRIDE_003E5700),
+        mem_spy_mutex_lock,
+        fakes::prev_cell(mem_spy_mutex_lock),
+    );
+    fakes::hook(
+        addr_of_mut!(ee::s06::OVERRIDE_002523A8),
+        mem_fake_free_fails,
+        fakes::prev_cell(mem_fake_free_fails),
+    );
+}
+
+/// Heap-class table: 64 heap slots at 0x4d2438.
+pub(crate) const MEM_HEAP_TABLE: u32 = 0x004d_2438;
+
+/// Heap-class (`cls = mem + 0x10`) field offsets.
+pub(crate) const MEM_CLS_FIRST: u32 = 0x8;
+
+pub(crate) const MEM_CLS_LAST: u32 = 0xc;
+
+pub(crate) const MEM_CLS_HEAD: u32 = 0x10;
+
+pub(crate) const MEM_CLS_NEXT: u32 = 0x20;
+
+pub(crate) const MEM_CLS_PREV: u32 = 0x24;
+
+/// The shrink/free rounding quantum (the fifth `MEM_HeapCreate` arg).
+pub(crate) const MEM_CLS_QUANTUM: u32 = 0x28;
+
+/// Heap alignment (the sixth `MEM_HeapCreate` arg, read at `+0x2c`): the
+/// add-region rounding.
+pub(crate) const MEM_CLS_ALIGN: u32 = 0x2c;
+
+pub(crate) const MEM_CLS_OVERHEAD: u32 = 0x30;
+
+pub(crate) const MEM_CLS_FLAGS: u32 = 0x34;
+
+pub(crate) const MEM_CLS_LOCKED: u32 = 0x38;
+
+pub(crate) const MEM_CLS_MUTEX: u32 = 0x3c;
+
+/// Heap-block node field offsets (`data = node + 0x10`).
+pub(crate) const MEM_BLK_FLAGS: u32 = 0x2;
+
+pub(crate) const MEM_BLK_SIZE: u32 = 0x4;
+
+pub(crate) const MEM_BLK_NEXT: u32 = 0x8;
+
+pub(crate) const MEM_BLK_PREV: u32 = 0xc;
+
+/// Free-list link offsets within a heap-block node: a free block threads
+/// its free-list neighbours through its data area (`node + 0x10/0x14`),
+/// not through the physical link words (`node + 0x8/0xc`). The coalesce
+/// unlinks read and write these; the physical relinks use `BLK_*`.
+pub(crate) const MEM_FREE_NEXT: u32 = 0x10;
+
+pub(crate) const MEM_FREE_PREV: u32 = 0x14;
+
+/// `void MEM_ClearHeapTable(void)` (0x2516f0): zero the 64-entry heap-class
+/// table so no heap is registered.
+pub fn mem_clear_heap_table(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(MEM_HEAP_TABLE);
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x100;
+        call_ptr(c, callee::EA_MEM_SET, 0x0025_170c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_HeapCreate(int id, const char *name, void *mem, int size, ...)
+/// (0x251718): carve a heap class out of `mem`, register it in the table
+/// slot `id & 63`, and return the usable size. Lays down the header node,
+/// one free block and the end sentinel, links the free block into the
+/// class's free list, and locks the class when asked.
+pub fn mem_heap_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 108;
+        // Registers at the calls below name the argument slots the original
+        // passes: id, name, mem, size, t0, align, hdr, a7 in registers and
+        // the a8 flag plus the lock flag on the stack.
+        let frame = Frame::open(c, 0x1b0);
+        frame.save(c, S1, 0x190);
+        frame.save(c, S5, 0x150);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x104), c.g[T1][0]);
+        frame.save(c, S0, 0x1a0);
+        frame.save(c, S2, 0x180);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S5][0] = c.g[T2][0];
+        frame.save(c, S6, 0x140);
+        frame.save(c, S4, 0x160);
+        frame.save(c, S7, 0x130);
+        frame.save(c, S3, 0x170);
+        frame.save(c, FP, 0x120);
+        frame.save_ra(c, 0x110);
+        c.g[S2][0] = c.g[S1][0] | 0x2000;
+        c.g[S3][0] = sx((c.g[S5][0] as u32).wrapping_add(0x60));
+        if c.g[T3][0] == 0 {
+            c.g[S2][0] = c.g[S1][0];
+        }
+        c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1b0));
+        c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2f));
+        c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+        c.g[V1][0] = c.g[S2][0] | 0x1000;
+        c.g[S6][0] = c.g[A1][0];
+        c.g[A0][0] = sx(0u32.wrapping_sub(c.g[T1][0] as u32));
+        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        if c.g[A2][0] != 0 {
+            c.g[S2][0] = c.g[V1][0];
+        }
+        c.g[S3][0] = c.g[S3][0] & c.g[A0][0];
+        c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(0x30));
+        c.g[A1][0] = 0x4a0000;
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x100), c.g[T0][0]);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2e38));
+        c.g[RA][0] = sx(0x0025_17a8);
+        c.g[A2][0] = c.g[S6][0];
+        call_ptr(c, callee::SPRINTF, 0x0025_17a8)?;
+        c.g[FP][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x50;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A3][0] = c.g[S5][0];
+        c.g[T0][0] = c.g[S2][0] | 0x8000;
+        c.g[T1][0] = 0;
+        c.g[T2][0] = c.g[FP][0];
+        c.g[RA][0] = sx(0x0025_17d0);
+        c.g[S7][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+        callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_17d0)?;
+        c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[FP][0] as u32));
+        c.g[A3][0] = c.g[S5][0];
+        c.g[T0][0] = c.g[S2][0];
+        c.g[T1][0] = c.g[S0][0];
+        c.g[T2][0] = c.g[S4][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x10));
+        c.g[RA][0] = sx(0x0025_17f4);
+        c.g[A0][0] = c.g[FP][0];
+        callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_17f4)?;
+        c.g[A1][0] = 0x4a0000;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2e40));
+        c.g[RA][0] = sx(0x0025_1808);
+        c.g[A2][0] = c.g[S6][0];
+        call_ptr(c, callee::SPRINTF, 0x0025_1808)?;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A3][0] = c.g[S5][0];
+        c.g[T0][0] = c.g[S2][0] | 0x8100;
+        c.g[T1][0] = c.g[FP][0];
+        c.g[T2][0] = 0;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[RA][0] = sx(0x0025_1828);
+        c.g[A2][0] = 0;
+        callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_1828)?;
+        c.g[S1][0] = c.g[S1][0] & 0x3f;
+        c.g[V0][0] = 0x4d0000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2438));
+        c.g[S1][0] = sx((c.g[S1][0] as u32) << 2);
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A2][0] = 0x50;
+        c.g[A0][0] = c.g[S7][0];
+        c.g[A1][0] = 0;
+        c.g[RA][0] = sx(0x0025_1850);
+        c.sw(c.g[S1][0] as u32, c.g[S7][0]);
+        call_ptr(c, callee::EA_MEM_SET, 0x0025_1850)?;
+        c.g[A1][0] = c.g[S6][0];
+        c.g[RA][0] = sx(0x0025_185c);
+        c.g[A0][0] = c.g[S7][0];
+        call_ptr(c, callee::STRCPY, 0x0025_185c)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[S4][0]);
+        c.g[A0][0] = 0x4253;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[S0][0]);
+        c.g[V1][0] = 0x7fff0000;
+        c.g[V1][0] = c.g[V1][0] | 0xffff;
+        c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x20));
+        c.g[A1][0] = c.lw((c.g[S7][0] as u32).wrapping_add(MEM_CLS_FIRST));
+        c.g[T0][0] = c.g[A2][0];
+        c.g[T1][0] = c.g[T0][0];
+        c.g[A3][0] = (c.g[T0][0] < c.g[FP][0]) as u64;
+        c.sh(c.g[A1][0] as u32, c.g[A0][0]);
+        c.g[V0][0] = c.lw((c.g[S7][0] as u32).wrapping_add(MEM_CLS_LAST));
+        c.sh(c.g[V0][0] as u32, c.g[A0][0]);
+        c.sh((c.g[S0][0] as u32).wrapping_add(0x20), c.g[A0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V1][0]);
+        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x100));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x104));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x40), c.g[S5][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x3c), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x44), c.g[S2][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[A2][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[A2][0]);
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_sub(0x8));
+        let t = c.g[A3][0] == 0;
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[FP][0] as u32));
+        if t {
+            // The free block sits at or below the head: walk the next chain
+            // up to it. (With a header size of 0 or more the free block is
+            // always above the head; only a header size that wraps the
+            // block below `mem` comes here.)
+            c.cycles += 1;
+            c.g[T0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
+            'forward: loop {
+                c.cycles += 7;
+                c.g[V0][0] = (c.g[T0][0] < c.g[FP][0]) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[T0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0025_18fc);
+                    }
+                    continue 'forward;
+                } else {
+                    c.cycles += 1;
+                    c.g[T1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x14));
+                    break;
+                }
+            }
+        } else {
+            c.cycles += 2;
+            c.g[T1][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x14));
+            'backward: loop {
+                c.cycles += 7;
+                c.g[V0][0] = (c.g[FP][0] < c.g[T1][0]) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[T1][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x14));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0025_18d0);
+                    }
+                    continue 'backward;
+                } else {
+                    c.cycles += 2;
+                    c.g[T0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x10));
+                    break;
+                }
+            }
+        }
+        c.cycles += 13;
+        c.sw((c.g[FP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+        c.sw((c.g[FP][0] as u32).wrapping_add(0x10), c.g[T0][0]);
+        c.g[V1][0] = 0x4246;
+        c.sw((c.g[FP][0] as u32).wrapping_add(0x14), c.g[T1][0]);
+        c.sw((c.g[T1][0] as u32).wrapping_add(0x10), c.g[FP][0]);
+        c.sw((c.g[T0][0] as u32).wrapping_add(0x14), c.g[FP][0]);
+        c.sh(c.g[FP][0] as u32, c.g[V1][0]);
+        c.g[V0][0] = c.lhu((c.g[FP][0] as u32).wrapping_add(0x2));
+        c.g[V0][0] = c.g[V0][0] | 0x4000;
+        c.sh((c.g[FP][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1b8));
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x4));
+        } else {
+            c.cycles += 5;
+            c.g[RA][0] = sx(0x0025_1958);
+            c.g[A0][0] = sx((c.g[S7][0] as u32).wrapping_add(0x3c));
+            call_ptr(c, callee::EA_MUTEX_INIT, 0x0025_1958)?;
+            c.g[V1][0] = 0x1;
+            c.sw((c.g[S7][0] as u32).wrapping_add(0x38), c.g[V1][0]);
+            c.g[V0][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x4));
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x1a0);
+        frame.restore(c, S1, 0x190);
+        frame.restore(c, S2, 0x180);
+        frame.restore(c, S3, 0x170);
+        frame.restore(c, S4, 0x160);
+        frame.restore(c, S5, 0x150);
+        frame.restore(c, S6, 0x140);
+        frame.restore(c, S7, 0x130);
+        frame.restore(c, FP, 0x120);
+        frame.restore_ra(c, 0x110);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MEM_HeapDestroy(int id)` (0x251998): tear down heap `id & 63`:
+/// destroy its lock when held, wipe the class words and clear the table
+/// slot. Returns 1 when a heap was registered, 0 otherwise.
+pub fn mem_heap_destroy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        c.g[A0][0] = c.g[A0][0] & 0x3f;
+        c.g[V0][0] = 0x4d0000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2438));
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+        c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = c.lw(c.g[S1][0] as u32);
+        let t = c.g[S0][0] == 0;
+        c.g[V0][0] = 0;
+        if t {
+            // No heap registered in this slot.
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+            let t = c.g[V0][0] == 0;
+            c.g[A0][0] = c.g[S0][0];
+            if t {
+                // Unlocked: nothing to destroy.
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x0025_19dc);
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(MEM_CLS_MUTEX));
+                call_ptr(c, callee::EA_MUTEX_DESTROY, 0x0025_19dc)?;
+                c.g[A0][0] = c.g[S0][0];
+            }
+            c.cycles += 5;
+            c.g[A1][0] = 0;
+            c.g[RA][0] = sx(0x0025_19ec);
+            c.g[A2][0] = 0x50;
+            call_ptr(c, callee::EA_MEM_SET, 0x0025_19ec)?;
+            c.sw(c.g[S1][0] as u32, 0);
+            c.g[V0][0] = 0x1;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_HeapFreeAll(int id)` (0x251a08): free every allocated block
+/// of heap `id & 63` and return the first failing block (1 when all freed).
+pub fn mem_heap_free_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A0][0] & 0x3f;
+        c.g[V0][0] = 0x4d0000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2438));
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+        c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(MEM_CLS_FIRST));
+        let t = c.g[S0][0] == 0;
+        c.g[V1][0] = 0x1;
+        if t {
+            // Empty heap: nothing to free.
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+            // Set when the scan runs off the end of the chain: that path
+            // restores and leaves at once, skipping the epilogue below.
+            let mut ran_off_end = false;
+            'scan: loop {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[V0][0] & 0xc000;
+                if c.g[V0][0] != 0 {
+                    c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0025_1a54);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                    callee::MEM_FREE.call(c, 0x0025_1a54)?;
+                    c.g[V1][0] = c.g[V0][0];
+                    c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                }
+                c.cycles += 2;
+                if c.g[S0][0] == 0 {
+                    frame.restore(c, S0, 0x10);
+                    ran_off_end = true;
+                    break;
+                } else {
+                    c.cycles += 2;
+                    if c.g[V1][0] != 0 {
+                        c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0025_1a40);
+                        }
+                        continue 'scan;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if !ran_off_end {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.g[V1][0];
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_FindBlockByName(const char *name)` (0x251c38): scan every
+/// registered heap for a block whose name matches and return its data
+/// pointer, or null. (`MEM_GetBlockName` is a stub that answers null in this
+/// build, so in the game the scan never matches.)
+pub fn mem_find_block_by_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        c.g[V0][0] = 0x4d0000;
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = 0;
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S0, 0x50);
+        c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2438));
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.g[S2][0] & 0x3f;
+        'outer: loop {
+            c.cycles += 5;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            c.g[V0][0] = c.lw(c.g[V0][0] as u32);
+            if c.g[V0][0] == 0 {
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+            } else {
+                c.cycles += 3;
+                c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(MEM_CLS_FIRST));
+                c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                'inner: loop {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0025_1c90);
+                    c.g[A0][0] = c.g[S1][0];
+                    callee::MEM_GET_BLOCK_NAME.call(c, 0x0025_1c90)?;
+                    let t = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[V0][0];
+                    if t {
+                        // No name: on to the next block.
+                        c.cycles += 1;
+                        c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    } else {
+                        c.cycles += 4;
+                        c.g[RA][0] = sx(0x0025_1ca0);
+                        c.g[A1][0] = c.g[S3][0];
+                        call_ptr(c, callee::STRCASECMP, 0x0025_1ca0)?;
+                        if c.g[V0][0] != 0 {
+                            c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                        } else {
+                            // Found: the block's data pointer.
+                            c.cycles += 2;
+                            c.g[V0][0] = c.g[S1][0];
+                            break 'outer;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0;
+                    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0025_1c88);
+                        }
+                        continue 'inner;
+                    } else {
+                        c.cycles += 1;
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        break;
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S2][0] as i64) < 64i64) as u64;
+            let t = c.g[V0][0] != 0;
+            c.g[V0][0] = c.g[S2][0] & 0x3f;
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0025_1c68);
+                }
+                continue 'outer;
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                break;
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MEM_HeapAddRegion(int id, void *mem, int size)` (0x251d50): attach
+/// a fresh memory region to heap `id & 63` as one more free block and
+/// return 1. Reuses the heap's alignment and flags.
+pub fn mem_heap_add_region(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 90;
+        let frame = Frame::open(c, 0x1a0);
+        c.g[A0][0] = c.g[A0][0] & 0x3f;
+        c.g[V0][0] = 0x4d0000;
+        frame.save(c, S2, 0x170);
+        frame.save(c, S3, 0x160);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2438));
+        frame.save(c, S4, 0x150);
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+        frame.save(c, S7, 0x120);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        frame.save(c, FP, 0x110);
+        frame.save(c, S6, 0x130);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S0, 0x190);
+        c.g[S7][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        frame.save(c, S5, 0x140);
+        c.g[A1][0] = 0x4a0000;
+        frame.save(c, S1, 0x180);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2e50));
+        frame.save_ra(c, 0x100);
+        c.g[S1][0] = c.lw(c.g[A0][0] as u32);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[S5][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_CLS_OVERHEAD));
+        c.g[A2][0] = c.g[S1][0];
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_CLS_ALIGN));
+        c.g[S2][0] = sx((c.g[S5][0] as u32).wrapping_add(0x10));
+        c.g[A3][0] = sx((c.g[S5][0] as u32).wrapping_add(0x30));
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2f));
+        c.g[S2][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S2][0] as u32));
+        c.g[V1][0] = sx(0u32.wrapping_sub(c.g[V1][0] as u32));
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S2][0] = c.g[S2][0] & c.g[V1][0];
+        c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+        c.g[S6][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_CLS_FLAGS));
+        c.g[FP][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x10));
+        c.g[RA][0] = sx(0x0025_1de4);
+        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_CLS_LAST));
+        call_ptr(c, callee::SPRINTF, 0x0025_1de4)?;
+        c.g[S3][0] = c.g[S6][0] | 0x8000;
+        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_CLS_LAST));
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0;
+        c.g[A3][0] = c.g[S5][0];
+        c.g[T0][0] = c.g[S3][0];
+        c.g[RA][0] = sx(0x0025_1e08);
+        c.g[T2][0] = c.g[S4][0];
+        callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_1e08)?;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0;
+        c.g[T0][0] = c.g[S3][0];
+        c.g[T1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A3][0] = c.g[S5][0];
+        c.g[RA][0] = sx(0x0025_1e28);
+        c.g[T2][0] = c.g[FP][0];
+        callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_1e28)?;
+        c.g[A2][0] = sx((c.g[S7][0] as u32).wrapping_sub(c.g[FP][0] as u32));
+        c.g[T1][0] = c.g[S4][0];
+        c.g[A3][0] = c.g[S5][0];
+        c.g[T0][0] = c.g[S6][0];
+        c.g[T2][0] = c.g[S7][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x10));
+        c.g[RA][0] = sx(0x0025_1e4c);
+        c.g[A0][0] = c.g[FP][0];
+        callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_1e4c)?;
+        c.g[A1][0] = 0x4a0000;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2e40));
+        c.g[RA][0] = sx(0x0025_1e60);
+        c.g[A2][0] = c.g[S1][0];
+        call_ptr(c, callee::SPRINTF, 0x0025_1e60)?;
+        c.g[A3][0] = c.g[S5][0];
+        c.g[A0][0] = c.g[S7][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0;
+        c.g[T0][0] = c.g[S6][0] | 0x8100;
+        c.g[T1][0] = c.g[FP][0];
+        c.g[RA][0] = sx(0x0025_1e80);
+        c.g[T2][0] = 0;
+        callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_1e80)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_CLS_NEXT));
+        c.g[A3][0] = sx((c.g[S1][0] as u32).wrapping_add(MEM_CLS_HEAD));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_CLS_PREV));
+        c.g[A2][0] = c.g[A3][0];
+        c.sw((c.g[S1][0] as u32).wrapping_add(MEM_CLS_LAST), c.g[S7][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        c.g[A0][0] = sx((c.g[V0][0] as u32) >> 31);
+        c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_sub(0x8));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = (c.g[V1][0] < c.g[FP][0]) as u64;
+        let t = c.g[V1][0] == 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[FP][0] as u32));
+        if t {
+            // The new block sits below the head: walk the next chain up to
+            // it; otherwise walk the prev chain down to it.
+            c.cycles += 1;
+            c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+            'forward: loop {
+                c.cycles += 7;
+                c.g[V0][0] = (c.g[A3][0] < c.g[FP][0]) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0025_1eec);
+                    }
+                    continue 'forward;
+                } else {
+                    c.cycles += 1;
+                    c.g[A2][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x14));
+                    break;
+                }
+            }
+        } else {
+            c.cycles += 2;
+            c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x14));
+            'backward: loop {
+                c.cycles += 7;
+                c.g[V0][0] = (c.g[FP][0] < c.g[A2][0]) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x14));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0025_1ec0);
+                    }
+                    continue 'backward;
+                } else {
+                    c.cycles += 2;
+                    c.g[A3][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x10));
+                    break;
+                    // (The original falls through to the join block here.)
+                }
+            }
+        }
+        c.cycles += 23;
+        c.sw((c.g[FP][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+        c.g[A0][0] = 0x4246;
+        c.sw((c.g[FP][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+        c.g[V0][0] = 0x1;
+        c.sw((c.g[FP][0] as u32).wrapping_add(0x14), c.g[A2][0]);
+        c.sw((c.g[A2][0] as u32).wrapping_add(0x10), c.g[FP][0]);
+        c.sw((c.g[A3][0] as u32).wrapping_add(0x14), c.g[FP][0]);
+        c.sh(c.g[FP][0] as u32, c.g[A0][0]);
+        c.g[V1][0] = c.lhu((c.g[FP][0] as u32).wrapping_add(0x2));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x190));
+        c.g[V1][0] = c.g[V1][0] | 0x4000;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x180));
+        c.sh((c.g[FP][0] as u32).wrapping_add(0x2), c.g[V1][0]);
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x170));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x160));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x150));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x140));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x110));
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MEM_PrintHeap(void *heap)` (0x251fc8): dump the given heap through
+/// the debug printer.
+pub fn mem_print_heap(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = 0x480000;
+        c.g[A2][0] = 0x250000;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xa8));
+        c.g[RA][0] = sx(0x0025_1fe4);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1f68));
+        callee::MEM_DUMP_HEAP_INFO.call(c, 0x0025_1fe4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MEM_DumpDefaultHeap(void)` (0x251ff0): dump the default heap (the
+/// heap pointer at `gp - 0x278`) through the heap printer.
+pub fn mem_dump_default_heap(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x278));
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0025_2004);
+        callee::MEM_PRINT_HEAP.call(c, 0x0025_2004)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MEM_DumpHeapInfo(void *heap, const char *fmt, void (*cb)(...))`
+/// (0x252010): walk heap `heap & 63` block by block and report each block
+/// (name, address, size, stride, flags, checksum, validity, tag name)
+/// through `cb`. Allocated blocks contribute their size to the running
+/// total, checksummed over the payload; free blocks are checksummed over
+/// the whole body. Prints the header, an empty-heap note or the per-block
+/// lines, then the totals.
+#[allow(clippy::too_many_lines)]
+pub fn mem_dump_heap_info(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S4, 0x60);
+        frame.save(c, S6, 0x40);
+        c.g[A0][0] = 0x480000;
+        frame.save(c, S1, 0x90);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, S5, 0x50);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save(c, S7, 0x30);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xe0));
+        frame.save(c, S2, 0x80);
+        c.g[S1][0] = 0x480000;
+        frame.save(c, S3, 0x70);
+        c.g[S7][0] = 0;
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        let t = c.g[S4][0] as u32;
+        c.g[RA][0] = sx(0x0025_2060);
+        c.g[S5][0] = 0;
+        call_ptr(c, t, 0x0025_2060)?;
+        let t = c.g[S4][0] as u32;
+        c.g[RA][0] = sx(0x0025_2068);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x140));
+        call_ptr(c, t, 0x0025_2068)?;
+        c.g[S0][0] = c.g[S0][0] & 0x3f;
+        c.g[V0][0] = 0x4d0000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2438));
+        c.g[S0][0] = sx((c.g[S0][0] as u32) << 2);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+        if c.g[A0][0] != 0 {
+            c.g[S1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(MEM_CLS_FIRST));
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = 0x480000;
+            let t = c.g[S4][0] as u32;
+            c.g[RA][0] = sx(0x0025_2094);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x198));
+            call_ptr(c, t, 0x0025_2094)?;
+            frame.restore(c, S0, 0xa0);
+            c.cycles += 11;
+            frame.restore(c, S1, 0x90);
+            frame.restore(c, S2, 0x80);
+            frame.restore(c, S3, 0x70);
+            frame.restore(c, S4, 0x60);
+            frame.restore(c, S5, 0x50);
+            frame.restore(c, S6, 0x40);
+            frame.restore(c, S7, 0x30);
+            frame.restore(c, FP, 0x20);
+            frame.restore_ra(c, 0x10);
+            frame.close(c);
+            return Ok(());
+        }
+        // The main block walk: S1 is the node, S3 its data pointer. The
+        // entry charges run once; only the per-block body repeats.
+        {
+            c.cycles += 2;
+            let t = c.g[S1][0] == 0;
+            c.g[V0][0] = 0x480000;
+            if t {
+                // No blocks: fall out to the totals.
+            } else {
+                c.cycles += 3;
+                c.g[FP][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1e8));
+                c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x10));
+                'blocks: loop {
+                    'one: {
+                        c.cycles += 13;
+                        c.g[V0][0] = 0x4a0000;
+                        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2e58));
+                        c.g[RA][0] = sx(0x0025_20c0);
+                        c.g[A0][0] = c.g[S3][0];
+                        callee::MEM_GET_BLOCK_NAME.call(c, 0x0025_20c0)?;
+                        c.g[S2][0] = c.g[S0][0];
+                        if c.g[V0][0] != 0 {
+                            c.g[S2][0] = c.g[V0][0];
+                        }
+                        c.g[RA][0] = sx(0x0025_20d0);
+                        c.g[A0][0] = c.g[S3][0];
+                        callee::MEM_GET_BLOCK_TAG.call(c, 0x0025_20d0)?;
+                        c.g[V1][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                        if c.g[V0][0] != 0 {
+                            c.g[S0][0] = c.g[V0][0];
+                        }
+                        c.g[V0][0] = c.g[V1][0] & 0x4000;
+                        if c.g[V0][0] == 0 {
+                            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                        } else {
+                            c.cycles += 4;
+                            c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                            c.g[V0][0] = ((c.g[S0][0] as i64) < 17i64) as u64;
+                            c.g[A0][0] = c.g[S1][0];
+                            if c.g[V0][0] == 0 {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.g[V1][0] & 0x8000;
+                                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x18));
+                                if c.g[V0][0] == 0 {
+                                    c.cycles += 5;
+                                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    c.g[RA][0] = sx(0x0025_210c);
+                                    c.g[A2][0] = 0xfbea;
+                                    call_ptr(c, callee::EA_CRC16, 0x0025_210c)?;
+                                    c.g[S5][0] = c.g[V0][0];
+                                    c.g[A0][0] = c.g[S1][0];
+                                }
+                            }
+                            c.cycles += 23;
+                            c.g[RA][0] = sx(0x0025_211c);
+                            c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            callee::MEM_VALIDATE_BLOCK.call(c, 0x0025_211c)?;
+                            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                            c.g[T1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                            c.g[T2][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            c.g[A3][0] = c.g[S3][0];
+                            c.g[V0][0] = 0x4a0000;
+                            c.g[T0][0] = c.g[S0][0];
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2e58));
+                            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                            c.g[A0][0] = c.g[S6][0];
+                            c.g[V0][0] = 0x4a0000;
+                            c.sw(c.g[SP][0] as u32, c.g[V1][0]);
+                            c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2e60));
+                            c.g[T3][0] = c.g[S5][0];
+                            c.g[V0][0] = 0x480000;
+                            let t = c.g[S4][0] as u32;
+                            c.g[RA][0] = sx(0x0025_2168);
+                            c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1b0));
+                            call_ptr(c, t, 0x0025_2168)?;
+                            c.g[V0][0] = 0x4a0000;
+                            break 'one;
+                        }
+                        c.cycles += 2;
+                        let t = c.g[A1][0] == 0;
+                        c.g[S5][0] = 0;
+                        if !t {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.g[V1][0] & 0x8000;
+                            if c.g[V0][0] == 0 {
+                                c.cycles += 4;
+                                c.g[A0][0] = c.g[S3][0];
+                                c.g[RA][0] = sx(0x0025_2190);
+                                c.g[A2][0] = 0xfbea;
+                                call_ptr(c, callee::EA_CRC16, 0x0025_2190)?;
+                                c.g[S5][0] = c.g[V0][0];
+                            }
+                        }
+                        c.cycles += 19;
+                        c.g[RA][0] = sx(0x0025_219c);
+                        c.g[A0][0] = c.g[S1][0];
+                        callee::MEM_VALIDATE_BLOCK.call(c, 0x0025_219c)?;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[T1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                        c.g[T2][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                        c.g[A2][0] = c.g[S2][0];
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S0][0]);
+                        c.g[V0][0] = 0x4a0000;
+                        c.sw(c.g[SP][0] as u32, c.g[V1][0]);
+                        c.g[A3][0] = c.g[S3][0];
+                        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                        c.g[A0][0] = c.g[S6][0];
+                        c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2e68));
+                        let t = c.g[S4][0] as u32;
+                        c.g[RA][0] = sx(0x0025_21dc);
+                        c.g[T3][0] = c.g[S5][0];
+                        call_ptr(c, t, 0x0025_21dc)?;
+                        c.g[V0][0] = 0x4a0000;
+                    }
+                    c.cycles += 5;
+                    let t = c.g[S4][0] as u32;
+                    c.g[RA][0] = sx(0x0025_21e8);
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2e70));
+                    call_ptr(c, t, 0x0025_21e8)?;
+                    c.g[S1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    let t = c.g[S1][0] != 0;
+                    c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0025_20b0);
+                        }
+                        continue 'blocks;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        c.cycles += 9;
+        c.g[A1][0] = c.g[S7][0];
+        c.g[A0][0] = 0x480000;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c0));
+        let t = c.g[S4][0] as u32;
+        c.g[RA][0] = sx(0x0025_2208);
+        c.g[A2][0] = c.g[A1][0];
+        call_ptr(c, t, 0x0025_2208)?;
+        c.g[V0][0] = 0x480000;
+        let t = c.g[S4][0] as u32;
+        c.g[RA][0] = sx(0x0025_2214);
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x140));
+        call_ptr(c, t, 0x0025_2214)?;
+        frame.restore(c, S0, 0xa0);
+        c.cycles += 11;
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MEM_ValidateBlock(sMemBlock *blk)` (0x2522b0): check a heap block
+/// header is well-formed and record the failure kind at `gp - 0x27c`.
+/// Small blocks (`0x4253`) need the allocated bit, free blocks (`0x4246`)
+/// the free bit plus two valid neighbour links, end-marked blocks
+/// (`0x424D`) the big-endian `BEND` trailer after the data when flag
+/// 0x2000 is set.
+/// Returns 1 when the block is usable, 0 otherwise.
+pub fn mem_validate_block(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = 0x4253;
+        c.g[V1][0] = c.lhu(c.g[S0][0] as u32);
+        let t = c.g[V1][0] != c.g[V0][0];
+        c.g[T0][0] = 0;
+        'done: {
+            'out: {
+                'err: {
+                    if t {
+                        // Not a small block: try the free-block tag below.
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                        c.g[V0][0] = c.g[V0][0] & 0x8000;
+                        if c.g[V0][0] != 0 {
+                            // Allocated small block: valid.
+                            c.g[T0][0] = 1;
+                            break 'out;
+                        }
+                        c.cycles += 2;
+                        c.g[V0][0] = 0x2;
+                        break 'err;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x4246;
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = 0x424d;
+                    if !t {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                        c.g[V0][0] = c.g[V0][0] & 0x4000;
+                        if c.g[V0][0] == 0 {
+                            // Plain block, never on the free list.
+                            frame.restore(c, S0, 0x10);
+                            break 'done;
+                        }
+                        c.cycles += 5;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                        callee::MEM_IS_VALID_BLOCK_LINK.call(c, 0x0025_230c)?;
+                        c.g[T0][0] = c.g[V0][0];
+                        if c.g[T0][0] == 0 {
+                            // Bad forward link.
+                            frame.restore(c, S0, 0x10);
+                            break 'done;
+                        }
+                        c.cycles += 4;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_FREE_PREV));
+                        callee::MEM_IS_VALID_BLOCK_LINK.call(c, 0x0025_2320)?;
+                        c.g[T0][0] = c.g[V0][0];
+                        break 'out;
+                    }
+                    c.cycles += 2;
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = 0x4;
+                    if t {
+                        break 'err;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                    c.g[V0][0] = c.g[V0][0] & 0x2000;
+                    let t = c.g[V0][0] == 0;
+                    c.g[A2][0] = 0x4245_0000;
+                    if !t {
+                        // End-marked block: the trailer is the big-endian
+                        // word at `blk + size + 0x10`.
+                        c.cycles += 16;
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                        c.g[A2][0] = c.g[A2][0] | 0x4e44;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.g[V0][0] = c.lbu(c.g[V1][0] as u32);
+                        c.g[A0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x1));
+                        c.g[A1][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x2));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32) << 16);
+                        c.g[A3][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x3));
+                        c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                        c.g[A1][0] = sx((c.g[A1][0] as u32) << 8);
+                        c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
+                        c.g[V0][0] = c.g[V0][0] | c.g[A3][0];
+                        let t = c.g[V0][0] != c.g[A2][0];
+                        c.g[V0][0] = 0x3;
+                        if t {
+                            break 'err;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[T0][0] = 1;
+                    break 'out;
+                }
+                c.cycles += 1;
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x27c), c.g[V0][0]);
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.g[T0][0];
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MEM_HeapFreeBlock(void *mem)` (0x2523d0): return the block at `mem`
+/// to its heap's free list, coalescing with free neighbours and splitting
+/// off the aligned remainder. Always returns 1 (null frees nothing).
+pub fn mem_heap_free_block(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        let t = c.g[S2][0] == 0;
+        frame.save_ra(c, 0);
+        // Set when the block is already unlocked: that path restored S0
+        // before leaving and must skip the shared tail below.
+        let mut unlocked = false;
+        'done: {
+            if t {
+                break 'done;
+            }
+            c.cycles += 10;
+            c.g[V0][0] = c.lhu((c.g[S2][0] as u32).wrapping_sub(0xe));
+            c.g[V1][0] = 0x4d0000;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2438));
+            c.g[V0][0] = c.g[V0][0] & 0x3f;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[S3][0] = c.lw(c.g[V0][0] as u32);
+            c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+            let t = c.g[V1][0] == 0;
+            c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x10));
+            if t {
+            } else {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x0025_2420);
+                c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(MEM_CLS_MUTEX));
+                call_ptr(c, callee::EA_MUTEX_LOCK, 0x0025_2420)?;
+            }
+            c.cycles += 5;
+            c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_sub(0x4));
+            c.g[V0][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+            c.g[V0][0] = c.g[V0][0] & 0x4000;
+            let t = c.g[V0][0] == 0;
+            c.g[S2][0] = c.lw((c.g[S2][0] as u32).wrapping_sub(0x8));
+            if t {
+                // Previous neighbour is not free: nothing to coalesce.
+            } else {
+                c.cycles += 14;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                c.g[A0][0] = 0x424f;
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_FREE_PREV));
+                c.g[S0][0] = c.g[S1][0];
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+                c.sh(c.g[S1][0] as u32, c.g[A0][0]);
+                c.g[V0][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                c.g[V0][0] = c.g[V0][0] & 0xbfff;
+                c.sh((c.g[S1][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+                c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_PREV));
+                c.sw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT), c.g[S2][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT), c.g[S0][0]);
+                c.sw((c.g[S2][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S0][0]);
+            }
+            c.cycles += 4;
+            c.g[V0][0] = c.lhu((c.g[S2][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+            c.g[V0][0] = c.g[V0][0] & 0x4000;
+            let t = c.g[V0][0] == 0;
+            c.g[A0][0] = 0x424f;
+            if t {
+                // Next neighbour is not free either.
+            } else {
+                c.cycles += 12;
+                c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_FREE_PREV));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+                c.sh(c.g[S2][0] as u32, c.g[A0][0]);
+                c.g[V0][0] = c.lhu((c.g[S2][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                c.g[V0][0] = c.g[V0][0] & 0xbfff;
+                c.sh((c.g[S2][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+                c.g[S2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                c.sw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT), c.g[S2][0]);
+                c.sw((c.g[S2][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S0][0]);
+            }
+            c.cycles += 19;
+            c.g[RA][0] = sx(0x0025_24b4);
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x10));
+            callee::MEM_GET_BLOCK_NAME.call(c, 0x0025_24b4)?;
+            c.g[A1][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+            c.g[RA][0] = sx(0x0025_24c0);
+            c.g[A0][0] = c.g[V0][0];
+            callee::MEM_GET_HEAP_BLOCK_OVERHEAD.call(c, 0x0025_24c0)?;
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+            c.g[A0][0] = 0x7;
+            c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_QUANTUM));
+            c.g[A2][0] = 0x8;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+            c.g[V0][0] = sx(0u32.wrapping_sub(c.g[A1][0] as u32));
+            if c.g[A0][0] == 0 {
+                c.g[V1][0] = c.g[A2][0];
+            }
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xf));
+            c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
+            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            if c.g[S0][0] == c.g[V1][0] {
+                c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_NEXT));
+            } else {
+                c.cycles += 8;
+                c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                c.g[S0][0] = c.g[V1][0];
+                c.sh((c.g[V1][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT), c.g[S2][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S1][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT), c.g[S0][0]);
+                c.sw((c.g[S2][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S0][0]);
+                c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_NEXT));
+            }
+            c.cycles += 12;
+            c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(MEM_CLS_HEAD));
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_PREV));
+            c.g[A2][0] = c.g[A3][0];
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+            c.g[A0][0] = sx((c.g[V0][0] as u32) >> 31);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = (c.g[V1][0] < c.g[S0][0]) as u64;
+            let t = c.g[V1][0] == 0;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+            if t {
+                c.cycles += 1;
+                c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+                'forward: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = (c.g[A3][0] < c.g[S0][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0025_257c);
+                        }
+                        continue 'forward;
+                    } else {
+                        c.cycles += 1;
+                        c.g[A2][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x14));
+                        break;
+                    }
+                }
+            } else {
+                c.cycles += 2;
+                c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x14));
+                'backward: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = (c.g[S0][0] < c.g[A2][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x14));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0025_2550);
+                        }
+                        continue 'backward;
+                    } else {
+                        c.cycles += 2;
+                        c.g[A3][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x10));
+                        break;
+                    }
+                }
+            }
+            c.cycles += 13;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+            c.g[V0][0] = 0x4246;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[A2][0]);
+            c.sw((c.g[A2][0] as u32).wrapping_add(0x10), c.g[S0][0]);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0x14), c.g[S0][0]);
+            c.sh(c.g[S0][0] as u32, c.g[V0][0]);
+            c.g[V1][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x2));
+            c.g[V1][0] = c.g[V1][0] | 0x4000;
+            c.sh((c.g[S0][0] as u32).wrapping_add(0x2), c.g[V1][0]);
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+            let t = c.g[V0][0] == 0;
+            frame.restore(c, S0, 0x40);
+            if t {
+                unlocked = true;
+            } else {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x0025_25d8);
+                c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(MEM_CLS_MUTEX));
+                call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0025_25d8)?;
+            }
+        }
+        if !unlocked {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x40);
+        }
+        c.cycles += 7;
+        c.g[V0][0] = 0x1;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MEM_GetBlockSizeLocked(void *mem)` (0x2525f8): the usable size of
+/// the block at `mem`, serialized on the global resize lock.
+pub fn mem_get_block_size_locked(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = 0x540000;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x7500));
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0025_261c);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, callee::EA_MUTEX_LOCK, 0x0025_261c)?;
+        c.g[RA][0] = sx(0x0025_2624);
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, callee::MEM_GET_BLOCK_SIZE, 0x0025_2624)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x0025_2630);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0025_2630)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `char *MEM_GetBlockName(void *data)` (0x252658): the name recorded for
+/// the block (always null: names are compiled out).
+pub fn mem_get_block_name(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0;
+    c.pc = t;
+}
+
+/// `void *MEM_HeapShrinkBlock(void *mem, int size)` (0x252718): shrink (or
+/// grow, within the following free block) the allocation at `mem` to `size`
+/// and return `mem`. A shrunken tail larger than 0x40 becomes its own free
+/// block; a size of -1 grows to the whole free run.
+pub fn mem_heap_shrink_block(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = 0x4d0000;
+        frame.save(c, S4, 0x30);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2438));
+        frame.save(c, S5, 0x20);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S6, 0x10);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S0, 0x70);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save_ra(c, 0);
+        frame.save(c, S1, 0x60);
+        c.g[S1][0] = c.lhu((c.g[S4][0] as u32).wrapping_sub(0xe));
+        c.g[V1][0] = c.g[S1][0] & 0x3f;
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S3][0] = c.lw(c.g[V1][0] as u32);
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+        let t = c.g[V0][0] == 0;
+        c.g[S6][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x10));
+        if t {
+        } else {
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x0025_2774);
+            c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(MEM_CLS_MUTEX));
+            call_ptr(c, callee::EA_MUTEX_LOCK, 0x0025_2774)?;
+        }
+        c.cycles += 5;
+        c.g[S2][0] = c.lw((c.g[S4][0] as u32).wrapping_sub(0x8));
+        c.g[V0][0] = c.lhu((c.g[S2][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+        c.g[V0][0] = c.g[V0][0] & 0x4000;
+        let t = c.g[V0][0] == 0;
+        c.g[A0][0] = 0x424f;
+        if t {
+            // The next block is not free: nothing to absorb.
+        } else {
+            c.cycles += 11;
+            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_FREE_NEXT));
+            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_FREE_PREV));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+            c.sh(c.g[S2][0] as u32, c.g[A0][0]);
+            c.g[V0][0] = c.lhu((c.g[S2][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+            c.g[V0][0] = c.g[V0][0] & 0xbfff;
+            c.sh((c.g[S2][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+            c.g[S2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_BLK_NEXT));
+            c.sw((c.g[S4][0] as u32).wrapping_sub(0x8), c.g[S2][0]);
+            c.sw((c.g[S2][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S6][0]);
+        }
+        c.cycles += 4;
+        c.g[S0][0] = c.g[S5][0];
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 8i64) as u64;
+        let t = c.g[V0][0] == 0;
+        c.g[V0][0] = 0xffffffffffffffff;
+        if t {
+            // Eight bytes or more: keep the requested size.
+        } else {
+            c.cycles += 2;
+            let t = c.g[S0][0] != c.g[V0][0];
+            c.g[V1][0] = 0x8;
+            if t {
+                // A small size rounds up to the minimum, unless negative.
+                c.cycles += 2;
+                c.g[V0][0] = ((c.g[S0][0] as i64) < 0i64) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[S0][0] = c.g[V1][0];
+                }
+            } else {
+                c.cycles += 2;
+                c.g[S0][0] = 0x40000000;
+            }
+        }
+        c.cycles += 16;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x0025_27e8);
+        c.g[A0][0] = 0;
+        callee::MEM_GET_HEAP_BLOCK_OVERHEAD.call(c, 0x0025_27e8)?;
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[S6][0] as u32));
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_QUANTUM));
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x10));
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf));
+        c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
+        c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x10));
+        c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S0][0] as i64)) as u64;
+        let t = c.g[V0][0] == 0;
+        c.g[A1][0] = c.lw((c.g[S6][0] as u32).wrapping_add(MEM_BLK_SIZE));
+        if t {
+            // The free run covers the request: keep it.
+        } else {
+            c.cycles += 2;
+            c.g[S0][0] = c.g[S1][0];
+            c.g[S5][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+        }
+        c.cycles += 7;
+        c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S5][0] as u32));
+        c.g[RA][0] = sx(0x0025_2830);
+        c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        call_ptr(c, callee::EA_MEM_MOVE, 0x0025_2830)?;
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+        c.g[V0][0] = ((c.g[V0][0] as i64) < 65i64) as u64;
+        let t = c.g[V0][0] != 0;
+        c.sw((c.g[S6][0] as u32).wrapping_add(MEM_BLK_SIZE), c.g[S5][0]);
+        if t {
+            // The tail is too small to split: absorb it.
+        } else {
+            c.cycles += 23;
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+            c.g[A1][0] = 0;
+            c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A2][0] = 0;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A3][0] = 0;
+            c.g[T0][0] = 0;
+            c.g[T1][0] = c.g[S6][0];
+            c.g[RA][0] = sx(0x0025_2868);
+            c.g[T2][0] = c.g[S2][0];
+            callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_2868)?;
+            c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_NEXT));
+            c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(MEM_CLS_HEAD));
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_PREV));
+            c.g[A2][0] = c.g[A3][0];
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+            c.g[A0][0] = sx((c.g[V0][0] as u32) >> 31);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = (c.g[V1][0] < c.g[S0][0]) as u64;
+            let t = c.g[V1][0] == 0;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+            if t {
+                c.cycles += 1;
+                c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+                'forward: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = (c.g[A3][0] < c.g[S0][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0025_28cc);
+                        }
+                        continue 'forward;
+                    } else {
+                        c.cycles += 1;
+                        c.g[A2][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x14));
+                        break;
+                    }
+                }
+            } else {
+                c.cycles += 1;
+                c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x14));
+                'backward: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = (c.g[S0][0] < c.g[A2][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x14));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0025_28a0);
+                        }
+                        continue 'backward;
+                    } else {
+                        c.cycles += 2;
+                        c.g[A3][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x10));
+                        break;
+                    }
+                }
+            }
+            c.cycles += 12;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+            c.g[V1][0] = 0x4246;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[A2][0]);
+            c.sw((c.g[A2][0] as u32).wrapping_add(0x10), c.g[S0][0]);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0x14), c.g[S0][0]);
+            c.sh(c.g[S0][0] as u32, c.g[V1][0]);
+            c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x2));
+            c.g[V0][0] = c.g[V0][0] | 0x4000;
+            c.sh((c.g[S0][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0xc), c.g[S0][0]);
+            c.sw((c.g[S6][0] as u32).wrapping_add(0x8), c.g[S0][0]);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+        let t = c.g[V0][0] == 0;
+        c.g[V0][0] = c.g[S4][0];
+        if t {
+        } else {
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x0025_2930);
+            c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(MEM_CLS_MUTEX));
+            call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0025_2930)?;
+            c.g[V0][0] = c.g[S4][0];
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_AllocNamedAligned(const char *name, size_t size, int align,
+/// ...)` (0x252980): allocate through the sized allocator, picking the
+/// size class from the alignment. Rounds the class down by two, or to
+/// zero for tiny alignments.
+pub fn mem_alloc_named_aligned(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S4, 0x10);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S1, 0x40);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[T0][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A3][0];
+        c.g[RA][0] = sx(0x0025_29b8);
+        c.g[A0][0] = c.g[S0][0];
+        callee::MATH_CEIL_LOG2.call(c, 0x0025_29b8)?;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2));
+        if (c.g[V0][0] as i64) < 0 {
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x0025_29cc);
+            c.g[A0][0] = c.g[S0][0];
+            callee::MATH_CEIL_LOG2.call(c, 0x0025_29cc)?;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2));
+        }
+        c.cycles += 16;
+        c.g[A2][0] = sx((c.g[V0][0] as u32) << 24);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[S1][0] | c.g[A2][0];
+        c.g[V0][0] = 0x10000000;
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A3][0] = c.g[S3][0];
+        c.g[RA][0] = sx(0x0025_29f0);
+        c.g[A2][0] = c.g[A2][0] | c.g[V0][0];
+        callee::OPERATOR_NEW_NAMED.call(c, 0x0025_29f0)?;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_AllocNamedAlignedHook(...)` (0x252f60): the hook variant of
+/// the named allocator: same arguments, forced through the heap path.
+pub fn mem_alloc_named_aligned_hook(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0025_2f70);
+        c.g[T1][0] = 0x1;
+        callee::MEM_ALLOC_NAMED_ALIGNED.call(c, 0x0025_2f70)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_HeapAllocAligned_Thunk(...)` (0x252f80): the thunk into the
+/// heap allocator core with the heap path forced.
+pub fn mem_heap_alloc_aligned_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0025_2f90);
+        c.g[T1][0] = 0x1;
+        callee::MEM_HEAP_ALLOC_ALIGNED.call(c, 0x0025_2f90)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_HeapAllocNamed128(const char *name, size_t size, int heap)`
+/// (0x252fc8): 128-byte-aligned named allocation on a heap.
+pub fn mem_heap_alloc_named128(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[T0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0x80;
+        c.g[A3][0] = 0;
+        c.g[RA][0] = sx(0x0025_2fe4);
+        c.g[T1][0] = 0x1;
+        callee::MEM_HEAP_ALLOC_ALIGNED.call(c, 0x0025_2fe4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_AllocNamedUnaligned(const char *name, size_t size, int heap)`
+/// (0x252ff0): unaligned named allocation.
+pub fn mem_alloc_named_unaligned(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[T0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[RA][0] = sx(0x0025_300c);
+        c.g[T1][0] = 0;
+        callee::MEM_ALLOC_NAMED_ALIGNED.call(c, 0x0025_300c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Resume addresses of [`mem_heap_alloc_named_unaligned`] (mirrors the
+/// generated `__entries` exactly: the start and the post-call head only;
+/// anything else, including the call's own return address, goes through
+/// `jump_out` for the trampoline to re-drive, just like the generated body).
+pub(crate) fn mem_heap_alloc_named_unaligned_entries(c: &mut Cpu) -> Flow {
+    // Entry with pc anywhere but the start runs the matching resume block.
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x0025_3018 => {
+                c.cycles += 8;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                c.g[T0][0] = c.g[A2][0];
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                c.g[RA][0] = sx(0x0025_3034);
+                c.g[T1][0] = 0;
+                callee::MEM_HEAP_ALLOC_ALIGNED.call(c, 0x0025_3034)?;
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                pc = 0x0025_3038;
+                continue;
+            }
+            0x0025_3038 => {
+                c.cycles += 2;
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.pc = t;
+                return Ok(());
+            }
+            _ => {
+                c.jump_out(pc, 0x0025_3018, 0x0025_3040);
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// `void *MEM_HeapAllocNamedUnaligned(const char *name, size_t size,
+/// int heap)` (0x253018): unaligned named allocation on a heap. Also
+/// entered at its epilogue (0x253038) when the trampoline re-drives it.
+pub fn mem_heap_alloc_named_unaligned(c: &mut Cpu) {
+    guest(c, |c| {
+        if c.pc != 0x0025_3018 {
+            return mem_heap_alloc_named_unaligned_entries(c);
+        }
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[T0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[RA][0] = sx(0x0025_3034);
+        c.g[T1][0] = 0;
+        callee::MEM_HEAP_ALLOC_ALIGNED.call(c, 0x0025_3034)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Anonymous heap allocation wrappers.
+
+/// `void *MEM_AllocAnon_2(size_t size)` (0x253040): allocate `size` bytes
+/// with no debug name, forwarding `(0, size, 0, 0, 0, 1)` to the named
+/// aligned allocator and returning its result.
+pub fn mem_alloc_anon_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A0][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0;
+        c.g[T1][0] = 1;
+        callee::MEM_ALLOC_NAMED_ALIGNED.call(c, 0x0025_3064)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_HeapAllocAnon_2(size_t size)` (0x253070): allocate `size` bytes
+/// from a heap with no debug name, forwarding `(0, size, 0, 0, 0, 1)` to
+/// the heap aligned allocator and returning its result.
+pub fn mem_heap_alloc_anon_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A0][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0;
+        c.g[T1][0] = 1;
+        callee::MEM_HEAP_ALLOC_ALIGNED.call(c, 0x0025_3094)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_AllocAnon(size_t size)` (0x2530a0): allocate `size` bytes with
+/// no debug name, forwarding `(0, size, 0, 0, 0, 0)` to the named aligned
+/// allocator and returning its result.
+pub fn mem_alloc_anon(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A0][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0;
+        c.g[T1][0] = 0;
+        callee::MEM_ALLOC_NAMED_ALIGNED.call(c, 0x0025_30c4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MEM_HeapAllocAnon(size_t size)` (0x2530d0): allocate `size` bytes
+/// from a heap with no debug name, forwarding `(0, size, 0, 0, 0, 0)` to
+/// the heap aligned allocator and returning its result.
+pub fn mem_heap_alloc_anon(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A0][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0;
+        c.g[T1][0] = 0;
+        callee::MEM_HEAP_ALLOC_ALIGNED.call(c, 0x0025_30f4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Heap queries and block moves.
+
+/// `int MEM_GetHeapInfo(void)` (0x3199d0): free bytes on the main heap,
+/// the heap total minus what the dlmalloc arena reports as in use.
+pub fn mem_get_heap_info(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S0, 0x50);
+        frame.save_ra(c, 0x30);
+        // The allocator mutex and the heap header.
+        c.g[S1][0] = sx(0x540000u32.wrapping_sub(0x7500));
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, callee::EA_MUTEX_LOCK, 0x0031_99f0)?;
+        c.g[A1][0] = sx(0x500000u32.wrapping_sub(0xdb0));
+        c.g[A0][0] = c.g[SP][0];
+        callee::DL_HEAP_MALLINFO.call(c, 0x0031_9a00)?;
+        c.g[V0][0] = Addr(sp(c).wrapping_add(0x1c)).lw(c);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[S0][0] = Addr(r32(c, GP).wrapping_add(0xdd0)).lw(c);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0031_9a14)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S0, 0x50);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* MEM_ResizeBlock(void* old, unsigned size)` (0x319bd8): allocate a
+/// fresh `size`-byte block, copy over the smaller of `size` and the old
+/// usable size, free the old block, and return the new one.
+pub fn mem_resize_block(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = 0x540000;
+        frame.save(c, S1, 0x50);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S5, 0x10);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S4, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0x100;
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S3][0] = c.g[A0][0];
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x25f8));
+        c.g[A3][0] = 0;
+        c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7500));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[S5][0] = c.g[V0][0];
+        callee::OPERATOR_NEW_NAMED.call(c, 0x0031_9c24)?;
+        c.g[S4][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, callee::EA_MUTEX_LOCK, 0x0031_9c30)?;
+        c.g[A0][0] = c.g[S3][0];
+        call_ptr(c, callee::MEM_GET_BLOCK_SIZE, 0x0031_9c38)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0031_9c44)?;
+        // Bytes to carry over: the request when it fits, else the old
+        // usable size (re-measured under the lock).
+        c.g[S0][0] = (c.g[S1][0] < c.g[S0][0]) as u64;
+        if c.g[S0][0] != 0 {
+            c.g[A0][0] = c.g[S1][0];
+        } else {
+            c.cycles += 8;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, callee::EA_MUTEX_LOCK, 0x0031_9c58)?;
+            c.g[A0][0] = c.g[S3][0];
+            call_ptr(c, callee::MEM_GET_BLOCK_SIZE, 0x0031_9c60)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0031_9c6c)?;
+            c.g[A0][0] = c.g[S0][0];
+        }
+        c.cycles += 21;
+        c.g[A2][0] = c.g[A0][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S4][0];
+        c.g[S0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x7500));
+        callee::MEMCPY.call(c, 0x0031_9c84)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, callee::EA_MUTEX_LOCK, 0x0031_9c8c)?;
+        c.g[A0][0] = c.g[S3][0];
+        callee::MEM_FREE_INTERNAL.call(c, 0x0031_9c94)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0031_9c9c)?;
+        c.g[V0][0] = c.g[S4][0];
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S5, 0x10);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S4, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MEM_FrameBeginStub(void* mem)` (0x319d10): frame-heap hook that
+/// does nothing and returns to its caller.
+pub fn mem_frame_begin_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int MEM_FrameCheckStub_ReturnZero(void* mem)` (0x319d18): frame-heap
+/// hook that reports failure (zero) and returns to its caller.
+pub fn mem_frame_check_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Small-block pools.
+
+/// `void MEM_InitSmallBlockPools(void)` (0x319d20): carve the seven
+/// size-class arenas (8 to 512 bytes) out of the main heap and thread each
+/// arena's blocks into its free list, publishing the pool heads.
+pub fn mem_init_small_block_pools(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 74;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        // Each pool: allocate `size` bytes, then build its free list.
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x25e8));
+        c.g[A2][0] = 0x1000000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x804;
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_9d40)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::MEM_INIT_POOL8.call(c, 0x0031_9d48)?;
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x25d8));
+        c.g[A2][0] = 0x2000000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x2004;
+        Addr(r32(c, GP).wrapping_add(0x2a70)).sw(c, c.g[V0][0]);
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_9d64)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::MEM_INIT_POOL16.call(c, 0x0031_9d6c)?;
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x25c8));
+        c.g[A2][0] = 0x3000000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x6004;
+        Addr(r32(c, GP).wrapping_add(0x2a60)).sw(c, c.g[V0][0]);
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_9d88)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::MEM_INIT_POOL32.call(c, 0x0031_9d90)?;
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x25b8));
+        c.g[A2][0] = 0x4000000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx(0x30000u32 | 0x2004);
+        Addr(r32(c, GP).wrapping_add(0x2a6c)).sw(c, c.g[V0][0]);
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_9db0)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::MEM_INIT_POOL64.call(c, 0x0031_9db8)?;
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x25a8));
+        c.g[A2][0] = 0x5000000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx(0x20000u32 | 0x5804);
+        Addr(r32(c, GP).wrapping_add(0x2a7c)).sw(c, c.g[V0][0]);
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_9dd8)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::MEM_INIT_POOL128.call(c, 0x0031_9de0)?;
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x2598));
+        c.g[A2][0] = 0x6000000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx(0x20000u32 | 0x4);
+        Addr(r32(c, GP).wrapping_add(0x2a84)).sw(c, c.g[V0][0]);
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_9e00)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::MEM_INIT_POOL256.call(c, 0x0031_9e08)?;
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x2588));
+        c.g[A2][0] = 0x7000000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx(0x20000u32 | 0x4);
+        Addr(r32(c, GP).wrapping_add(0x2a78)).sw(c, c.g[V0][0]);
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_9e28)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::MEM_INIT_POOL512.call(c, 0x0031_9e30)?;
+        c.g[V1][0] = 0x1;
+        frame.restore_ra(c, 0);
+        Addr(r32(c, GP).wrapping_add(0x2a68)).sw(c, c.g[V0][0]);
+        Addr(r32(c, GP).wrapping_add(0xdd8)).sw(c, c.g[V1][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* MEM_HeapMemalignOffset(DLHeap* heap, uint align, uint size,
+/// uint offset)` (0x320078): forward to the dlmalloc aligned allocator.
+pub fn mem_heap_memalign_offset(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x0031_f4e8), 0x0032_0088);
+}
+
+/// `void* MEM_InitPool8(void* arena)` (0x3200e8): thread the 8-byte blocks
+/// of the arena into a free list headed at `arena + 0x800`, returning the
+/// arena base.
+pub fn mem_init_pool8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        Addr((c.g[A0][0] as u32).wrapping_add(0x800)).sw(c, c.g[A0][0]);
+        c.g[A2][0] = 0;
+        c.g[A1][0] = c.g[A0][0];
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(8));
+        loop {
+            c.cycles += 7;
+            Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+            let more = c.g[A2][0] < 0xff;
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(8));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_00f8);
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[A0][0];
+                Addr((c.g[A0][0] as u32).wrapping_add(0x7f8)).sw(c, 0);
+                ret(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `void* MEM_InitPool16(void* arena)` (0x320120): thread the 16-byte blocks
+/// of the arena into a free list headed at `arena + 0x2000`.
+pub fn mem_init_pool16(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        Addr((c.g[A0][0] as u32).wrapping_add(0x2000)).sw(c, c.g[A0][0]);
+        c.g[A2][0] = 0;
+        c.g[A1][0] = c.g[A0][0];
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+        loop {
+            c.cycles += 7;
+            Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+            let more = c.g[A2][0] < 0x1ff;
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_0130);
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[A0][0];
+                Addr((c.g[A0][0] as u32).wrapping_add(0x1ff0)).sw(c, 0);
+                ret(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `void* MEM_InitPool32(void* arena)` (0x320158): thread the 32-byte blocks
+/// of the arena into a free list headed at `arena + 0x6000`.
+pub fn mem_init_pool32(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        Addr((c.g[A0][0] as u32).wrapping_add(0x6000)).sw(c, c.g[A0][0]);
+        c.g[A2][0] = 0;
+        c.g[A1][0] = c.g[A0][0];
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x20));
+        loop {
+            c.cycles += 7;
+            Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+            let more = c.g[A2][0] < 0x2ff;
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_0168);
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[A0][0];
+                Addr((c.g[A0][0] as u32).wrapping_add(0x5fe0)).sw(c, 0);
+                ret(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `void* MEM_InitPool64(void* arena)` (0x320190): link the 0xc80 64-byte
+/// blocks starting at `arena` into a free list, store its head just past
+/// them (`arena + 0x32000`) and return `arena`.
+pub fn mem_init_pool64(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        c.g[V0][0] = 0x30000;
+        c.g[A2][0] = 0;
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] = c.g[A0][0];
+        Addr((c.g[V0][0] as u32).wrapping_add(0x2000)).sw(c, c.g[A0][0]);
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+        loop {
+            c.cycles += 7;
+            Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+            let more = c.g[A2][0] < 0xc7f;
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x40));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_01a8);
+                }
+            } else {
+                c.cycles += 5;
+                c.g[V1][0] = 0x30000;
+                c.g[V0][0] = c.g[A0][0];
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr((c.g[V1][0] as u32).wrapping_add(0x1fc0)).sw(c, 0);
+                ret(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `void* MEM_InitPool128(void* arena)` (0x3201d8): link the 0x4b0 128-byte
+/// blocks starting at `arena` into a free list, store its head just past
+/// them (`arena + 0x25800`) and return `arena`.
+pub fn mem_init_pool128(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        c.g[V0][0] = 0x20000;
+        c.g[A2][0] = 0;
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] = c.g[A0][0];
+        Addr((c.g[V0][0] as u32).wrapping_add(0x5800)).sw(c, c.g[A0][0]);
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x80));
+        loop {
+            c.cycles += 7;
+            Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x80));
+            let more = c.g[A2][0] < 0x4af;
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x80));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_01f0);
+                }
+            } else {
+                c.cycles += 5;
+                c.g[V1][0] = 0x20000;
+                c.g[V0][0] = c.g[A0][0];
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr((c.g[V1][0] as u32).wrapping_add(0x5780)).sw(c, 0);
+                ret(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `void* MEM_InitPool256(void* arena)` (0x320220): link the 0x200 256-byte
+/// blocks starting at `arena` into a free list, store its head just past
+/// them (`arena + 0x20000`) and return `arena`.
+pub fn mem_init_pool256(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        c.g[V0][0] = 0x20000;
+        c.g[A2][0] = 0;
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] = c.g[A0][0];
+        Addr(c.g[V0][0] as u32).sw(c, c.g[A0][0]);
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x100));
+        loop {
+            c.cycles += 7;
+            Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x100));
+            let more = c.g[A2][0] < 0x1ff;
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x100));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_0238);
+                }
+            } else {
+                c.cycles += 6;
+                c.g[V1][0] = 0x10000;
+                c.g[V0][0] = c.g[A0][0];
+                c.g[V1][0] = c.g[V1][0] | 0x8000;
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr((c.g[V1][0] as u32).wrapping_add(0x7f00)).sw(c, 0);
+                ret(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `void* MEM_InitPool512(void* arena)` (0x320270): link the 0x100 512-byte
+/// blocks starting at `arena` into a free list, store its head just past
+/// them (`arena + 0x20000`) and return `arena`.
+pub fn mem_init_pool512(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        c.g[V0][0] = 0x20000;
+        c.g[A2][0] = 0;
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] = c.g[A0][0];
+        Addr(c.g[V0][0] as u32).sw(c, c.g[A0][0]);
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x200));
+        loop {
+            c.cycles += 7;
+            Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x200));
+            let more = c.g[A2][0] < 0xff;
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x200));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_0288);
+                }
+            } else {
+                c.cycles += 6;
+                c.g[V1][0] = 0x10000;
+                c.g[V0][0] = c.g[A0][0];
+                c.g[V1][0] = c.g[V1][0] | 0x8000;
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr((c.g[V1][0] as u32).wrapping_add(0x7e00)).sw(c, 0);
+                ret(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// MEM_Pool8Alloc (0x3202c0)
+
+/// The 8-byte pool's free-list head (`pool + 0x800`).
+pub(crate) const MEM_POOL8_FREE: u32 = 0x800;
+
+/// `void* MEM_Pool8Alloc(Pool8* pool)` (0x3202c0): pop a block off the
+/// 8-byte pool's free list (`pool + 0x800`); when the list is empty fall
+/// back to `MEM_PoolAlloc(0xc, a1)` (a1 is whatever the caller left there).
+pub fn mem_pool8_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let head = r32(c, A0).wrapping_add(MEM_POOL8_FREE);
+        c.g[V0][0] = c.lw(head);
+        if c.g[V0][0] != 0 {
+            c.g[V1][0] = c.lw(r32(c, V0)); // next free block
+            c.cycles += 2;
+            c.sw(head, c.g[V1][0]);
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = 0xc;
+            callee::MEM_POOL_ALLOC.call(c, 0x0032_02dc)?;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// MEM_ReportPoolStatN (0x320518..0x320548): pool-statistics hooks. Each body
+// is empty (charges 2 cycles and returns), so each port is a leaf.
+
+/// `void MEM_ReportPoolStat0(void)` (0x320518): pool-statistics hook; a
+/// no-op in this build, returns immediately.
+pub fn mem_report_pool_stat0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void MEM_ReportPoolStat1(void)` (0x320520): pool-statistics hook; a
+/// no-op in this build, returns immediately.
+pub fn mem_report_pool_stat1(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void MEM_ReportPoolStat2(void)` (0x320528): pool-statistics hook; a
+/// no-op in this build, returns immediately.
+pub fn mem_report_pool_stat2(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void MEM_ReportPoolStat3(void)` (0x320530): pool-statistics hook; a
+/// no-op in this build, returns immediately.
+pub fn mem_report_pool_stat3(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void MEM_ReportPoolStat4(void)` (0x320538): pool-statistics hook; a
+/// no-op in this build, returns immediately.
+pub fn mem_report_pool_stat4(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void MEM_ReportPoolStat5(void)` (0x320540): pool-statistics hook; a
+/// no-op in this build, returns immediately.
+pub fn mem_report_pool_stat5(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void MEM_ReportPoolStat6(void)` (0x320548): pool-statistics hook; a
+/// no-op in this build, returns immediately.
+pub fn mem_report_pool_stat6(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -4758,6 +7534,1855 @@ pub(crate) mod tests {
                     }
                     _ => dlm_pick_size(&mut r) as u64,
                 };
+            },
+        );
+    }
+
+    use crate::difftest::check_paths;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    pub(crate) use crate::game::lib::eafile::tests::ea_install_fakes;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_CTRL;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_MAGIC;
+    use crate::game::misc::tests::put_cstr;
+
+    use crate::game::ealib::seg_2dcae8::tests::oc445_install_fakes;
+    use crate::game::ealib::seg_2dcae8::tests::OC445_CTRL;
+    use crate::game::ealib::seg_2dcae8::tests::OC445_MAGIC;
+
+    use crate::difftest::events::Events;
+    use crate::game::bx::bxstring::GP_EMPTY_STRING;
+    pub(crate) use crate::game::fe::feasyncfile::tests::be_library;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::world;
+
+    /// Heap id slot in the class table.
+    pub(crate) fn heap_slot(id: u32) -> u32 {
+        MEM_HEAP_TABLE + ((id & 63) << 2)
+    }
+
+    /// Write `v` ORed with a nonzero filler (fixtures stay hard: no zero
+    /// words where the port overwrites or sizes).
+    pub(crate) fn write_filled(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(addr, v | 0x1111_1111);
+    }
+
+    /// Clearing the table zeroes all 64 slots (single arm).
+    #[test]
+    fn mem_clear_heap_table_matches() {
+        check_paths(
+            ee::s06::f_002516f0__generated,
+            mem_clear_heap_table,
+            24,
+            &[92],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2516f0, 0);
+                for w in 0..0x40u32 {
+                    write_filled(c, MEM_HEAP_TABLE + 4 * w, r.next_u32());
+                }
+                c.pc = 0x0025_16f0;
+            },
+        );
+    }
+
+    driven!(gen_mem_heap_create, ee::s06::f_00251718__generated);
+
+    driven!(hand_mem_heap_create, mem_heap_create);
+
+    /// Carve a heap out of `MEM`. `seed % 2` puts the first block above
+    /// the class head (the backward free-list walk) or, with a header size
+    /// that wraps the block below `MEM`, at or below it (the forward walk);
+    /// `seed / 2 % 4` picks the alignment (8-128), `seed / 8 % 2` the header
+    /// size, `seed / 16 % 2` the `t3` flag, `seed / 32 % 2` the first stack
+    /// flag (entry `sp + 0`) and `seed / 64 % 2` the lock flag (entry
+    /// `sp + 8`, through the real mutex init). `seed / 3 % 2` sets bit 6
+    /// and the flag bits 8 and 12-15 of the id (only `id & 0x3f` picks the
+    /// slot; the rest reaches the class and header flags). Seeds 128 and
+    /// up use a header of -0x60 with alignment 16, which puts the free
+    /// block exactly at the class head (the walks' equality edge). Neither
+    /// walk can take its back edge: the function points both free-list
+    /// words of the class at the class head just before it walks from
+    /// them.
+    pub(crate) fn mem_heap_create_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x251718, 0);
+        oc445_install_fakes();
+        c.bus.write32(OC445_CTRL, OC445_MAGIC);
+        const MEM: u32 = DATA + 0x1010;
+        const NAME: u32 = DATA + 0x801;
+        // Fixed 8-char name: fixed copy cost, varying tail byte.
+        let mut name = [b'H', b'e', b'a', b'p', b'0', b'0', b'0', b'0', 0];
+        name[7] = b'0' + (seed % 10) as u8;
+        for (i, b) in name.iter().enumerate() {
+            c.bus.write8(NAME + i as u32, *b);
+        }
+        let at_head = seed >= 128;
+        let align = if at_head {
+            16
+        } else {
+            [8u32, 16, 64, 128][(seed / 2 % 4) as usize]
+        };
+        let extra = [0u32, 0x30][(seed / 8 % 2) as usize];
+        let hdr = if at_head {
+            0u32.wrapping_sub(0x60)
+        } else if seed % 2 == 0 {
+            0x10 + extra
+        } else {
+            0u32.wrapping_sub(0x8f + align + extra)
+        };
+        // Region pre-fill first (the zero-fill call is faked away).
+        for w in 0..0x100u32 {
+            write_filled(c, MEM - 0x100 + 4 * w, r.next_u32());
+        }
+        let id = seed % 5;
+        c.bus.write32(heap_slot(id), 0xdead_beef);
+        c.g[A0][0] = (id | (seed / 3 % 2) * 0xf140) as u64;
+        c.g[A1][0] = NAME as u64;
+        c.g[A2][0] = MEM as u64;
+        c.g[A3][0] = 0x2000;
+        c.g[T0][0] = (r.next_u32() | 1) as u64;
+        c.g[T1][0] = align as u64;
+        c.g[T2][0] = hdr as u64;
+        c.g[T3][0] = (seed / 16 % 2) as u64;
+        c.bus.write32(crate::difftest::SP, seed / 32 % 2 * 0x101);
+        c.bus
+            .write32(crate::difftest::SP + 8, seed / 64 % 2 * 0x201);
+        c.pc = 0x0025_1718;
+    }
+
+    /// Totals: forward walk 257, backward walk 259; the lock arm adds the
+    /// real mutex init and its faked syscall, whose cost varies with the
+    /// seed (288 and 294 seen).
+    #[test]
+    fn mem_heap_create_matches() {
+        check_paths(
+            gen_mem_heap_create,
+            hand_mem_heap_create,
+            136,
+            &[257, 259, 288, 294],
+            &mem_heap_create_setup,
+        );
+    }
+
+    /// Events with every setup shape. Neither free-list walk can take its
+    /// back edge (see the setup), so no event lands in a walk; the events
+    /// delivered are those of the callees.
+    #[test]
+    fn mem_heap_create_events() {
+        check_events(
+            gen_mem_heap_create,
+            hand_mem_heap_create,
+            128,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x251718, 0);
+                mem_heap_create_setup(c, seed);
+                schedule(c, &mut r, seed, 0x0025_1718)
+            },
+        );
+    }
+
+    /// Destroy: empty slot (17), unlocked heap wiped (99), locked heap
+    /// through the real semaphore destroy (unpinned: syscall fake cost).
+    #[test]
+    fn mem_heap_destroy_matches() {
+        check_paths(
+            ee::s06::f_00251998__generated,
+            mem_heap_destroy,
+            48,
+            &[17, 99],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x251998, 0);
+                const CLS: u32 = DATA + 0x2010;
+                let id = (seed / 3 % 4) as u32;
+                match seed % 3 {
+                    0 => c.bus.write32(heap_slot(id), 0),
+                    _ => {
+                        c.bus.write32(heap_slot(id), CLS);
+                        for w in 0..0x14u32 {
+                            write_filled(c, CLS + 4 * w, r.next_u32());
+                        }
+                        c.bus.write32(CLS + 0x38, (seed % 3 == 2) as u32);
+                        c.bus.write32(CLS + 0x3c, DATA + 0x2400);
+                        c.bus.write32(DATA + 0x2400 + 0xc, 0);
+                    }
+                }
+                c.g[A0][0] = (id | ((seed / 12 % 2) << 6)) as u64;
+                c.pc = 0x0025_1998;
+            },
+        );
+    }
+
+    driven!(gen_mem_heap_free_all, ee::s06::f_00251a08__generated);
+
+    driven!(hand_mem_heap_free_all, mem_heap_free_all);
+
+    /// Free-all: `seed % 4` gives an empty slot, an empty list, or a
+    /// two-block chain whose first block is free (skipped) or allocated
+    /// (freed); the second is free and ends the chain. `seed / 16 % 2`
+    /// makes the free report failure (its own fake, with the EA fakes off),
+    /// which leaves the scan at the second block; otherwise the free goes
+    /// through the EA `MEM_Free` fake (cost varies with the seed).
+    pub(crate) fn mem_heap_free_all_setup(c: &mut Cpu, seed: u32, looping_only: bool) {
+        machine(c, seed, 0x251a08, 0);
+        oc445_install_fakes();
+        mem_install_fakes();
+        if seed / 16 % 2 == 1 {
+            c.bus.write32(MEM_FREE_GATE, MEM_FREE_MAGIC);
+        } else {
+            c.bus.write32(OC445_CTRL, OC445_MAGIC);
+        }
+        const CLS: u32 = DATA + 0x2010;
+        const N1: u32 = DATA + 0x3010;
+        const N2: u32 = DATA + 0x3110;
+        let shape = if looping_only { 2 + seed % 2 } else { seed % 4 };
+        let id = seed / 4 % 4;
+        match shape {
+            0 => c.bus.write32(heap_slot(id), 0),
+            1 => {
+                c.bus.write32(heap_slot(id), CLS);
+                c.bus.write32(CLS + 0x8, 0);
+            }
+            _ => {
+                c.bus.write32(heap_slot(id), CLS);
+                c.bus.write32(CLS + 0x8, N1);
+                c.bus.write16(N1, 0x424f);
+                c.bus
+                    .write16(N1 + 0x2, if shape == 3 { 0x3f81 } else { 0x7f81 });
+                c.bus.write32(N1 + 0x8, N2);
+                c.bus.write16(N2, 0x4246);
+                c.bus.write16(N2 + 0x2, 0x8081);
+                c.bus.write32(N2 + 0x8, 0);
+                write_filled(c, N1 + 0x4, 0x21);
+                write_filled(c, N2 + 0x4, 0x10);
+            }
+        }
+        c.g[A0][0] = (id | 0xffff_ff40) as u64;
+        c.pc = 0x0025_1a08;
+    }
+
+    /// Totals: empty slot or list 17, both blocks skipped 30, failed free
+    /// 33, live free through the EA fake 37-44 (the fake's cost varies).
+    #[test]
+    fn mem_heap_free_all_matches() {
+        check_paths(
+            gen_mem_heap_free_all,
+            hand_mem_heap_free_all,
+            48,
+            &[17, 30, 33, 37, 40, 41, 43, 44],
+            &|c, seed| mem_heap_free_all_setup(c, seed, false),
+        );
+    }
+
+    /// The scan head, with and without a live (faked) free.
+    #[test]
+    fn mem_heap_free_all_events() {
+        check_events(
+            gen_mem_heap_free_all,
+            hand_mem_heap_free_all,
+            48,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x251a08, 0);
+                mem_heap_free_all_setup(c, seed, true);
+                schedule(c, &mut r, seed, 0x0025_1a08)
+            },
+        );
+    }
+
+    driven!(gen_mem_find_block_by_name, ee::s06::f_00251c38__generated);
+
+    driven!(hand_mem_find_block_by_name, mem_find_block_by_name);
+
+    /// Find-by-name: `seed % 2` puts a heap with a three-block chain into
+    /// slot `seed / 2 % 4`; `seed / 8 % 3` gives the blocks no names, three
+    /// names that differ from the one asked for, or that name on the second
+    /// block (the faked lookup answers the name; `strcasecmp` is real).
+    /// Without `named` every block stays unnamed.
+    pub(crate) fn mem_find_block_by_name_setup(c: &mut Cpu, seed: u32, named: bool) {
+        machine(c, seed, 0x251c38, 0);
+        mem_install_fakes();
+        c.bus.write32(MEM_NAME_GATE, MEM_NAME_MAGIC);
+        const CLS: u32 = DATA + 0x2010;
+        const WANT: u32 = DATA + 0x801;
+        const OTHER: u32 = DATA + 0x901;
+        const SAME: u32 = DATA + 0xa01;
+        put_cstr(c, WANT, b"Rider");
+        put_cstr(c, OTHER, b"Riders");
+        let names = if named { seed / 8 % 3 } else { 0 };
+        if seed % 2 == 1 {
+            c.bus.write32(heap_slot((seed / 2 % 4) as u32), CLS);
+            c.bus.write32(CLS + 0x8, DATA + 0x3010);
+            for (i, n) in [DATA + 0x3010, DATA + 0x3110, DATA + 0x3210]
+                .iter()
+                .enumerate()
+            {
+                c.bus.write32(n + 0x8, if i == 2 { 0 } else { n + 0x100 });
+                let name = match names {
+                    0 => 0,
+                    1 => OTHER,
+                    _ if i == 1 => SAME,
+                    _ => OTHER,
+                };
+                c.bus.write32(n + 0x14, name);
+            }
+            put_cstr(c, SAME, b"Rider");
+        }
+        c.g[A0][0] = WANT as u64;
+        c.pc = 0x0025_1c38;
+    }
+
+    #[test]
+    fn mem_find_block_by_name_matches() {
+        check_paths(
+            gen_mem_find_block_by_name,
+            hand_mem_find_block_by_name,
+            48,
+            &[425, 433, 441, 449, 533, 567, 1167],
+            &|c, seed| mem_find_block_by_name_setup(c, seed, true),
+        );
+    }
+
+    /// Outer head on empty tables, inner head once a heap is present. The
+    /// blocks stay unnamed: an event inside the real `strcasecmp` is that
+    /// function's own check.
+    #[test]
+    fn mem_find_block_by_name_events() {
+        check_events(
+            gen_mem_find_block_by_name,
+            hand_mem_find_block_by_name,
+            48,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x251c38, 0);
+                mem_find_block_by_name_setup(c, seed, false);
+                schedule(c, &mut r, seed, 0x0025_1c38)
+            },
+        );
+    }
+
+    driven!(gen_mem_heap_add_region, ee::s06::f_00251d50__generated);
+
+    driven!(hand_mem_heap_add_region, mem_heap_add_region);
+
+    /// Add-region: high regions walk backwards (165), low regions walk
+    /// forwards (163); alignments, flags and heap ids vary cost-neutrally
+    /// (seeds 32-47 set the class flag bits 8, 14 and 15). With `long`, the
+    /// free-list walk takes one extra lap so the walk heads deliver events
+    /// (the short fixture walks exit on the first pass and never reach an
+    /// event check). Seeds 48 and up (`(seed - 48) / 2`) point the free
+    /// list at the new block itself: both words (the midpoint equals it),
+    /// the tail only (the backward walk meets it), or an odd head word one
+    /// past the head node (the midpoint's sign fix-up on an odd span).
+    pub(crate) fn mem_heap_add_region_setup(c: &mut Cpu, seed: u32, long: bool) {
+        let mut r = machine(c, seed, 0x251d50, 0);
+        oc445_install_fakes();
+        c.bus.write32(OC445_CTRL, OC445_MAGIC);
+        const CLS: u32 = DATA + 0x6010;
+        const HEADNODE: u32 = DATA + 0x6020;
+        const N1: u32 = DATA + 0x8010;
+        let mem = if seed % 2 == 0 {
+            DATA + 0x7010
+        } else {
+            DATA + 0x4010
+        };
+        let align = [0x10u32, 0x40][seed as usize / 4 % 2];
+        let ovh = 0x10u32;
+        let data = (mem + ovh + 0x10 + align + 0x2f) & 0u32.wrapping_sub(align);
+        for w in 0..0x20u32 {
+            write_filled(c, mem + 4 * w, r.next_u32());
+        }
+        c.bus.write32(data - 8, data - 0x10 + 0x80);
+        c.bus.write32(heap_slot((seed / 2 % 4) as u32), CLS);
+        c.bus.write32(CLS + 0x8, DATA + 0x6810);
+        c.bus.write32(CLS + 0xc, DATA + 0x6830);
+        write_filled(c, DATA + 0x6810, r.next_u32());
+        write_filled(c, DATA + 0x6830, r.next_u32());
+        // Align lives at +0x2c (the slot the body reads); +0x28 is the
+        // untouched shrink quantum.
+        c.bus.write32(CLS + 0x2c, align);
+        c.bus.write32(CLS + 0x30, ovh);
+        c.bus
+            .write32(CLS + 0x34, seed / 8 % 4 | (seed / 32 % 2) * 0xc100);
+        if seed % 2 == 0 {
+            c.bus.write32(CLS + 0x20, HEADNODE);
+            c.bus.write32(CLS + 0x24, HEADNODE);
+        } else {
+            c.bus.write32(CLS + 0x20, N1);
+            c.bus.write32(CLS + 0x24, N1);
+            c.bus.write32(N1 + 0x14, HEADNODE);
+        }
+        let new_block = data - 0x10;
+        match seed.checked_sub(48).map(|k| k / 2) {
+            Some(0) => {
+                c.bus.write32(CLS + 0x20, new_block);
+                c.bus.write32(CLS + 0x24, new_block);
+            }
+            Some(1) => {
+                c.bus.write32(CLS + 0x20, new_block - 0x40);
+                c.bus.write32(CLS + 0x24, new_block);
+            }
+            Some(_) => {
+                c.bus.write32(CLS + 0x20, HEADNODE + 1);
+                c.bus.write32(CLS + 0x24, HEADNODE);
+            }
+            None => {}
+        }
+        if long {
+            // One extra free-list lap so the walk takes a back edge and
+            // its event check delivers. Midpoints keep their short-walk
+            // side so the direction stays.
+            if seed % 2 == 0 {
+                // Backward walk: tail through a high node, out below the
+                // new block (midpoint stays below it: still backward).
+                const H1: u32 = DATA + 0x7800;
+                c.bus.write32(CLS + 0x24, H1);
+                c.bus.write32(H1 + 0x14, HEADNODE);
+            } else {
+                // Forward walk: head through a low node, out above the
+                // new block (midpoint stays above it: still forward).
+                const L1: u32 = DATA + 0x3000;
+                const LX: u32 = DATA + 0x9000;
+                c.bus.write32(CLS + 0x20, L1);
+                c.bus.write32(L1 + 0x10, LX);
+                c.bus.write32(LX + 0x14, HEADNODE);
+            }
+        }
+        c.g[A0][0] = ((seed / 2 % 4) | 0x40) as u64;
+        c.g[A1][0] = mem as u64;
+        c.g[A2][0] = 0x1000;
+        c.pc = 0x0025_1d50;
+    }
+
+    #[test]
+    fn mem_heap_add_region_matches() {
+        check_paths(
+            gen_mem_heap_add_region,
+            hand_mem_heap_add_region,
+            54,
+            &[163, 165],
+            &|c, seed| mem_heap_add_region_setup(c, seed, false),
+        );
+    }
+
+    /// Forward head for low regions, backward head for high ones (long
+    /// chains: each walk takes a back edge so the check delivers).
+    #[test]
+    fn mem_heap_add_region_events() {
+        check_events(
+            gen_mem_heap_add_region,
+            hand_mem_heap_add_region,
+            48,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x251d50, 0);
+                mem_heap_add_region_setup(c, seed, true);
+                schedule(c, &mut r, seed, 0x0025_1d50)
+            },
+        );
+    }
+
+    /// Build the two-block heap the dump tests walk at `table[id]`: an
+    /// allocated block (shape-selected tag/size/link validity) followed by
+    /// a free block, both with checksummable bodies.
+    pub(crate) fn mem_dump_heap_info_heap(c: &mut Cpu, seed: u32, id: u32) {
+        const CLS: u32 = DATA + 0x2010;
+        const B1: u32 = DATA + 0x3010;
+        const B2: u32 = DATA + 0x3110;
+        let shape = seed % 4;
+        c.bus.write32(heap_slot(id), CLS);
+        c.bus.write32(CLS + 0x8, B1);
+        c.bus.write32(CLS + 0x28, 0x10);
+        c.bus.write32(CLS + 0x30, 0x10);
+        c.bus.write32(CLS + 0x38, 0);
+        // Allocated block.
+        let (flags1, size1) = match shape {
+            0 | 1 => (0x4800u32, 0x20u32),
+            2 => (0xc800, 0x20),
+            _ => (0x4000, 0x10),
+        };
+        c.bus.write16(B1, 0x4246);
+        c.bus.write16(B1 + 0x2, flags1 as u16);
+        c.bus.write32(B1 + 0x4, size1);
+        c.bus.write32(B1 + 0x8, B2);
+        c.bus.write32(B1 + 0x10, DATA + 0x4010);
+        c.bus.write32(B1 + 0x14, DATA + 0x4020);
+        c.bus.write16(DATA + 0x4010, 0x4246);
+        c.bus
+            .write16(DATA + 0x4020, if shape == 3 { 0x1234 } else { 0x4246 });
+        if flags1 & 0x800 != 0 {
+            // Tag record the name lookup resolves.
+            c.bus.write32(B1 + 0x10 + size1 + 4, 0x5445_5354);
+            for i in 0..size1 {
+                c.bus.write8(B1 + 0x18 + i, (i ^ 0x5a) as u8);
+            }
+        }
+        for i in 0..8u32 {
+            c.bus.write8(B1 + 0x18 + i, (i ^ 0x5a) as u8);
+        }
+        // Free block.
+        let (tag2, flags2, size2) = match shape {
+            1 => (0x424du32, 0x2000u32, 0x10u32),
+            2 => (0x4253, 0x8000, 0),
+            3 => (0x1234, 0, 0x10),
+            _ => (0x4246, 0x4000, 0x10),
+        };
+        c.bus.write16(B2, tag2 as u16);
+        c.bus.write16(B2 + 0x2, flags2 as u16);
+        c.bus.write32(B2 + 0x4, size2);
+        c.bus.write32(B2 + 0x8, 0);
+        for i in 0..0x10u32 {
+            c.bus.write8(B2 + 0x10 + i, (i ^ 0xa5) as u8);
+        }
+        if tag2 == 0x424d {
+            // End marker the mixed-block check reads big-endian.
+            c.bus.write8(B2 + 0x20, b'E');
+            c.bus.write8(B2 + 0x21, b'N');
+            c.bus.write8(B2 + 0x22, b'D');
+            c.bus.write8(B2 + 0x23, b'D');
+        }
+    }
+
+    /// The two-word table (0x4801e8) `MEM_DumpHeapInfo` indexes with
+    /// `MEM_ValidateBlock`'s result (0 or 1); the word it picks goes to the
+    /// printer on the stack.
+    pub(crate) const MEM_DUMP_VALIDITY_WORDS: u32 = 0x0048_01e8;
+
+    driven!(gen_mem_dump_heap_info, ee::s06::f_00252010__generated);
+
+    driven!(hand_mem_dump_heap_info, mem_dump_heap_info);
+
+    /// Dump-info (`seed % 4`): empty heap; allocated+free with checksums;
+    /// checksum-skip arms; invalid links and unknown tags. Seeds 48 and up
+    /// give shape 2's allocated block 17 bytes, the smallest that is not
+    /// skipped as tiny. The two words of [`MEM_DUMP_VALIDITY_WORDS`] hold distinct
+    /// pointers.
+    pub(crate) fn mem_dump_heap_info_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x252010, 0);
+        ea_install_fakes();
+        mem_install_fakes();
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        c.bus.write32(MEM_DUMP_VALIDITY_WORDS, DATA + 0x5010);
+        c.bus.write32(MEM_DUMP_VALIDITY_WORDS + 4, DATA + 0x5020);
+        let shape = seed % 4;
+        let id = (seed / 4 % 4) as u32;
+        if shape != 0 {
+            mem_dump_heap_info_heap(c, seed, id);
+        }
+        if seed >= 48 && shape == 2 {
+            c.bus.write32(DATA + 0x3010 + 0x4, 17);
+        }
+        c.g[A0][0] = (DATA + id + shape * 0x40) as u64;
+        c.g[A1][0] = 0x480010;
+        c.g[A2][0] = 0x0025_1f68;
+        c.pc = 0x0025_2010;
+    }
+
+    #[test]
+    fn mem_dump_heap_info_matches() {
+        check_paths(
+            gen_mem_dump_heap_info,
+            hand_mem_dump_heap_info,
+            64,
+            &[55, 296, 485, 614],
+            &mem_dump_heap_info_setup,
+        );
+    }
+
+    /// The block-walk head across all four shapes.
+    #[test]
+    fn mem_dump_heap_info_events() {
+        check_events(
+            gen_mem_dump_heap_info,
+            hand_mem_dump_heap_info,
+            48,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x252010, 0);
+                mem_dump_heap_info_setup(c, seed);
+                schedule(c, &mut r, seed, 0x0025_2010)
+            },
+        );
+    }
+
+    /// Print-heap: empty heap (65) or a two-block heap (624). The
+    /// printer callback is the fixed-cost fake.
+    pub(crate) fn mem_print_heap_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x251fc8, 0);
+        ea_install_fakes();
+        mem_install_fakes();
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        if seed % 2 == 1 {
+            mem_dump_heap_info_heap(c, 1, 0x10);
+        }
+        c.g[A0][0] = (DATA + 0x10 + seed * 0x40) as u64;
+        c.pc = 0x0025_1fc8;
+    }
+
+    #[test]
+    fn mem_print_heap_matches() {
+        check_paths(
+            ee::s06::f_00251fc8__generated,
+            mem_print_heap,
+            32,
+            &[65, 624],
+            &mem_print_heap_setup,
+        );
+    }
+
+    /// Dump-default-heap: empty (73) or two-block (632) heap at `gp - 0x278`.
+    #[test]
+    fn mem_dump_default_heap_matches() {
+        check_paths(
+            ee::s06::f_00251ff0__generated,
+            mem_dump_default_heap,
+            32,
+            &[73, 632],
+            &|c, seed| {
+                machine(c, seed, 0x251ff0, 0);
+                ea_install_fakes();
+                mem_install_fakes();
+                c.bus.write32(EAF_CTRL, EAF_MAGIC);
+                let heap = DATA + 0x10 + seed * 0x11;
+                c.bus.write32(0x004a_30f0 - 0x278, heap);
+                if seed % 2 == 1 {
+                    mem_dump_heap_info_heap(c, 1, heap & 63);
+                }
+                c.pc = 0x0025_1ff0;
+            },
+        );
+    }
+
+    driven!(gen_mem_heap_free_block, ee::s06::f_002523d0__generated);
+
+    driven!(hand_mem_heap_free_block, mem_heap_free_block);
+
+    /// Free-block (`seed % 4`): null; plain free with a split relink; free
+    /// with both neighbours coalesced, then (`seed / 12 % 2`) no relink
+    /// (the coalesced block starts at the aligned end of the block below
+    /// it) or a relink (that block is 0x10 longer). `seed / 4 % 3 == 0`
+    /// locks the heap (real mutexes, unpinned). With `long`, the free-list
+    /// walk takes one extra lap so the walk heads deliver events (the short
+    /// fixture walks exit on the first pass and never reach an event check).
+    /// Seeds 48 and up are plain frees with an edge (`(seed - 48) % 5`):
+    /// both free-list words at the split block (the midpoint and the
+    /// forward walk meet it), the tail at it (the backward walk meets it),
+    /// a freed block whose flags already have the free bit, a size of 7
+    /// with a quantum of 1 (the minimum-size clamp's edge), or an odd head
+    /// word one past the tail (the midpoint's sign fix-up on an odd span).
+    pub(crate) fn mem_heap_free_block_setup(c: &mut Cpu, seed: u32, long: bool) {
+        machine(c, seed, 0x2523d0, 0);
+        ea_install_fakes();
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        const CLS: u32 = DATA + 0x2010;
+        let edge = seed.checked_sub(48).map(|k| k % 5);
+        let shape = if edge.is_some() { 1 } else { seed % 4 };
+        if shape == 0 {
+            c.g[A0][0] = 0;
+            c.pc = 0x0025_23d0;
+            return;
+        }
+        let locked = (seed / 4 % 3) == 0;
+        // Freed block S0, its physical neighbours, link scratch, sentinels.
+        const S0: u32 = DATA + 0x3210;
+        const BA: u32 = DATA + 0x31a0;
+        const FA: u32 = DATA + 0x32a0;
+        const F: u32 = DATA + 0x30a0;
+        const FE: u32 = DATA + 0x30f0;
+        const X2: u32 = DATA + 0x3410;
+        const Y2: u32 = DATA + 0x3430;
+        const LOW: u32 = DATA + 0x2f00;
+        c.bus.write32(CLS + 0x28, 0x10);
+        c.bus.write32(CLS + 0x30, 0x10);
+        c.bus.write32(CLS + 0x38, locked as u32);
+        c.bus.write32(CLS + 0x3c, DATA + 0x2400);
+        c.bus.write32(CLS + 0x20, CLS + 0x10);
+        c.bus.write32(CLS + 0x24, CLS + 0x10);
+        for (a, v) in [
+            (X2, 0x1111_1111u32),
+            (Y2, 0x2222_2222),
+            (X2 + 0x10, 0x3333_3333),
+            (Y2 + 0x10, 0x4444_4444),
+            (X2 + 0x14, 0x5555_5555),
+            (Y2 + 0x14, 0x6666_6666),
+        ] {
+            c.bus.write32(a, v);
+        }
+        if shape == 1 {
+            // Plain free: allocated neighbours, split relinked, forward
+            // walk (head links above the block).
+            const MEM: u32 = DATA + 0x3220;
+            c.bus.write32(heap_slot(2), CLS);
+            c.bus.write16(MEM - 0xe, 2);
+            c.bus.write32(S0 + 0x8, FA);
+            c.bus.write32(S0 + 0xc, BA);
+            c.bus.write16(FA, 0x424f);
+            c.bus.write16(FA + 0x2, 0);
+            c.bus.write16(BA, 0x424f);
+            c.bus.write16(BA + 0x2, 2);
+            c.bus.write32(BA + 0x4, 0x20);
+            c.bus.write32(CLS + 0x20, DATA + 0x9010);
+            c.bus.write32(CLS + 0x24, DATA + 0x9010);
+            c.bus.write32(DATA + 0x9010 + 0x14, CLS + 0x10);
+            // Where the split puts the freed block (BA + 0x40).
+            const SPLIT: u32 = DATA + 0x31e0;
+            c.bus.write32(SPLIT + 0x10, X2);
+            c.bus.write32(SPLIT + 0x14, Y2);
+            match edge {
+                Some(0) => {
+                    c.bus.write32(CLS + 0x20, SPLIT);
+                    c.bus.write32(CLS + 0x24, SPLIT);
+                }
+                Some(1) => {
+                    c.bus.write32(CLS + 0x20, SPLIT - 0x80);
+                    c.bus.write32(CLS + 0x24, SPLIT);
+                }
+                Some(2) => c.bus.write16(MEM - 0xe, 0x4002),
+                Some(3) => {
+                    c.bus.write32(CLS + 0x28, 1);
+                    c.bus.write32(BA + 0x4, 0u32.wrapping_sub(9));
+                }
+                Some(_) => {
+                    c.bus.write32(CLS + 0x20, LOW + 1);
+                    c.bus.write32(CLS + 0x24, LOW);
+                    c.bus.write32(LOW + 0x10, X2);
+                }
+                None => {}
+            }
+            c.g[A0][0] = MEM as u64;
+        } else {
+            // Coalesced free: both neighbours free, split lands on B, no
+            // relink (B sits exactly one aligned stride below S0, and BB
+            // one below B), then a backward walk (head links below B).
+            const MEM: u32 = S0 + 0x10;
+            const B: u32 = S0 - 0x40;
+            const BB: u32 = B - 0x40;
+            c.bus.write32(heap_slot(2), CLS);
+            c.bus.write16(S0 + 0x2, 2);
+            c.bus.write32(S0 + 0x8, F);
+            c.bus.write32(S0 + 0xc, B);
+            free_node(c, B, S0);
+            c.bus.write32(B + 0xc, BB);
+            c.bus.write16(BB + 0x2, 0x8002);
+            c.bus
+                .write32(BB + 0x4, [0x20, 0x30][(seed / 12 % 2) as usize]);
+            free_node(c, F, FE);
+            c.bus.write32(CLS + 0x20, LOW);
+            c.bus.write32(CLS + 0x24, LOW);
+            c.bus.write32(LOW + 0x10, CLS + 0x10);
+            c.g[A0][0] = MEM as u64;
+        }
+        if long {
+            // One extra free-list lap so the walk takes a back edge and
+            // its event check delivers (single-pass walks never check).
+            // Midpoints keep their short-walk side so the direction stays.
+            if shape == 1 {
+                // Forward walk: head through a low node, out above the
+                // split node (midpoint stays above it: still forward).
+                const F1: u32 = DATA + 0x1000;
+                const FX: u32 = DATA + 0x9100;
+                c.bus.write32(CLS + 0x20, F1);
+                c.bus.write32(F1 + 0x10, FX);
+                c.bus.write32(FX + 0x14, CLS + 0x10);
+            } else {
+                // Backward walk: tail through a node just above the split
+                // node, out below it (midpoint stays below it).
+                const H1: u32 = S0 - 0x10;
+                c.bus.write32(CLS + 0x24, H1);
+                c.bus.write32(H1 + 0x14, LOW);
+            }
+        }
+        c.pc = 0x0025_23d0;
+    }
+
+    /// A free-list node with end/back links and scratch neighbours.
+    pub(crate) fn free_node(c: &mut Cpu, node: u32, end: u32) {
+        c.bus.write16(node, 0x4246);
+        c.bus.write16(node + 0x2, 0x4002);
+        c.bus.write32(node + 0x4, 0x20);
+        c.bus.write32(node + 0x8, end);
+        c.bus.write32(node + 0x10, DATA + 0x3410);
+        c.bus.write32(node + 0x14, DATA + 0x3430);
+    }
+
+    #[test]
+    fn mem_heap_free_block_matches() {
+        check_paths(
+            gen_mem_heap_free_block,
+            hand_mem_heap_free_block,
+            58,
+            &[
+                16, 105, 107, 120, 122, 123, 124, 125, 128, 133, 143, 144, 147, 148, 155,
+            ],
+            &|c, seed| mem_heap_free_block_setup(c, seed, false),
+        );
+    }
+
+    /// Both list-walk heads across the free shapes.
+    #[test]
+    fn mem_heap_free_block_events() {
+        check_events(
+            gen_mem_heap_free_block,
+            hand_mem_heap_free_block,
+            48,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2523d0, 0);
+                mem_heap_free_block_setup(c, seed, true);
+                schedule(c, &mut r, seed, 0x0025_23d0)
+            },
+        );
+    }
+
+    /// Block-size under the global lock (single arm, pinned total 36:
+    /// entry 20, lock fake +7, fixed getsize +3, unlock fake +6).
+    #[test]
+    fn mem_get_block_size_locked_matches() {
+        check_paths(
+            ee::s06::f_002525f8__generated,
+            mem_get_block_size_locked,
+            32,
+            &[36],
+            &|c, seed| {
+                machine(c, seed, 0x2525f8, 0);
+                ea_install_fakes();
+                mem_install_fakes();
+                c.bus.write32(EAF_CTRL, EAF_MAGIC);
+                c.bus.write32(MEM_RET_GET_SIZE, 0x1234 + seed);
+                c.g[A0][0] = 0x800010;
+                c.g[A1][0] = 0x800010;
+                c.pc = 0x0025_25f8;
+            },
+        );
+    }
+
+    /// The stub name lookup always returns null (single arm).
+    #[test]
+    fn mem_get_block_name_matches() {
+        check_paths(
+            ee::s06::f_00252658__generated,
+            mem_get_block_name,
+            16,
+            &[2],
+            &|c, seed| {
+                machine(c, seed, 0x252658, 0);
+                c.g[A0][0] = (DATA + 0x10 + seed) as u64;
+                c.pc = 0x0025_2658;
+            },
+        );
+    }
+
+    driven!(gen_mem_heap_shrink_block, ee::s06::f_00252718__generated);
+
+    driven!(hand_mem_heap_shrink_block, mem_heap_shrink_block);
+
+    /// Shrink-block (`seed % 5`): plain shrink with split; grow without
+    /// split; grow-to-end via -1; tiny size with split; and (with
+    /// `seed / 5 % 2 == 0`) a locked heap through the real mutexes. The
+    /// split insert walks one step or (`seed / 10 % 3`, see
+    /// [`mem_heap_shrink_block_walk`]) two steps forward or backward.
+    /// Seeds 60 and up are the edges in [`SHRINK_EDGES`].
+    pub(crate) fn mem_heap_shrink_block_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x252718, 0);
+        ea_install_fakes();
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        const CLS: u32 = DATA + 0x2010;
+        const HEADNODE: u32 = DATA + 0x2020;
+        let edge = seed.checked_sub(60).map(|k| SHRINK_EDGES[k as usize]);
+        let shape = edge.map_or(seed % 5, |e| e.0);
+        c.bus.write32(CLS + 0x28, 0x10);
+        c.bus.write32(CLS + 0x30, 0x10);
+        c.bus
+            .write32(CLS + 0x38, ((seed / 5 % 2) == 0 && shape == 4) as u32);
+        c.bus.write32(CLS + 0x3c, DATA + 0x2400);
+        let (mem, old, size, fwd_kind): (u32, u32, i32, u32) = match shape {
+            0 => (DATA + 0x3020, 0x40, 0x10, 1),
+            1 => (DATA + 0x3120, 0x20, 0x28, 0),
+            2 => (DATA + 0x3220, 0x20, -1, 1),
+            3 => (DATA + 0x3320, 0x20, 4, 0),
+            _ => (DATA + 0x3420, 0x40, 0x10, 1),
+        };
+        // Grow fits without splitting only with a short free run.
+        let fwd_off: u32 = if shape == 1 { 0x50 } else { 0xa0 };
+        let blk = mem - 0x10;
+        let fwd = blk + fwd_off;
+        c.bus.write32(heap_slot(2), CLS);
+        c.bus.write16(blk, 0x424f);
+        c.bus.write16(blk + 0x2, 0x4002);
+        c.bus.write32(blk + 0x4, old);
+        c.bus.write32(blk + 0x8, fwd);
+        c.bus.write32(blk + 0xc, blk - fwd_off);
+        // Payload the move reads.
+        for w in 0..0x10u32 {
+            write_filled(c, mem + 4 * w, r.next_u32());
+        }
+        if fwd_kind == 1 {
+            // Free follower: unlink it, then absorb its span.
+            c.bus.write16(fwd, 0x4246);
+            c.bus.write16(fwd + 0x2, 0x4000);
+            c.bus.write32(fwd + 0x4, 0x40);
+            c.bus.write32(fwd + 0x8, fwd + 0x60);
+            c.bus.write32(fwd + 0x10, DATA + 0x3410);
+            c.bus.write32(fwd + 0x14, DATA + 0x3430);
+            c.bus.write32(DATA + 0x3410 + 0x10, 0x1111_1111);
+            c.bus.write32(DATA + 0x3430 + 0x10, 0x2222_2222);
+            c.bus.write32(DATA + 0x3410 + 0x14, 0x3333_3333);
+            c.bus.write32(DATA + 0x3430 + 0x14, 0x4444_4444);
+            c.bus.write32(fwd + 0x60 + 0x4, 0x30);
+        } else {
+            // Allocated follower: absorbed as plain span.
+            c.bus.write16(fwd, 0x424f);
+            c.bus.write16(fwd + 0x2, 0);
+            c.bus.write32(fwd + 0x4, 0x20);
+        }
+        // Free-list head for the split insert: above the block for the
+        // forward walk, below it (a low sentinel) for the backward walk.
+        if shape == 3 {
+            c.bus.write32(CLS + 0x20, DATA + 0x9010);
+            c.bus.write32(CLS + 0x24, DATA + 0x9010);
+            c.bus.write32(DATA + 0x9010 + 0x14, HEADNODE);
+        } else if shape == 1 || shape == 2 {
+            c.bus.write32(CLS + 0x20, HEADNODE);
+            c.bus.write32(CLS + 0x24, HEADNODE);
+        } else {
+            c.bus.write32(CLS + 0x20, DATA + 0x2f00);
+            c.bus.write32(CLS + 0x24, DATA + 0x2f00);
+            c.bus.write32(DATA + 0x2f00 + 0x10, HEADNODE);
+        }
+        let size = match edge {
+            Some((_, size, quantum, list)) => {
+                c.bus.write32(CLS + 0x28, quantum);
+                if let Some((head, tail)) = list {
+                    c.bus.write32(CLS + 0x20, DATA + head);
+                    c.bus.write32(CLS + 0x24, DATA + tail);
+                }
+                size
+            }
+            None => {
+                mem_heap_shrink_block_walk(c, seed / 10 % 3);
+                size
+            }
+        };
+        c.g[A0][0] = mem as u64;
+        c.g[A1][0] = size as u64;
+        c.pc = 0x0025_2718;
+    }
+
+    /// Edge cases of [`mem_heap_shrink_block_setup`] as (shape, size,
+    /// quantum, free-list head and tail as offsets from `DATA`): sizes at
+    /// the minimum-size clamp (8, 0, -2), a quantum of 1 that leaves a
+    /// 65-byte tail, and free lists that meet shape 0's split block (at
+    /// `DATA + 0x3050`): both words at it, the tail at it, and an odd head
+    /// word one past the tail.
+    pub(crate) const SHRINK_EDGES: [(u32, i32, u32, Option<(u32, u32)>); 7] = [
+        (3, 8, 0x10, None),
+        (3, 0, 0x10, None),
+        (3, -2, 0x10, None),
+        (0, 0x9f, 1, None),
+        (0, 0x10, 0x10, Some((0x3050, 0x3050))),
+        (0, 0x10, 0x10, Some((0x2f00, 0x3050))),
+        (0, 0x10, 0x10, Some((0x2f01, 0x2f00))),
+    ];
+
+    /// Free list for the split insert with `walk` 1 or 2 (0 keeps the
+    /// shape's own one-step list): 1 starts two nodes below every split
+    /// block with the tail far above, so the midpoint picks the forward
+    /// walk and it steps twice; 2 starts far below with the tail two nodes
+    /// above every split block, so the backward walk steps twice.
+    pub(crate) fn mem_heap_shrink_block_walk(c: &mut Cpu, walk: u32) {
+        const CLS: u32 = DATA + 0x2010;
+        const N1: u32 = DATA + 0x2e10;
+        const N2: u32 = DATA + 0x2e90;
+        const HI: u32 = DATA + 0x9010;
+        const LO: u32 = DATA + 0x1010;
+        const P1: u32 = DATA + 0x3f10;
+        const P2: u32 = DATA + 0x3e90;
+        match walk {
+            1 => {
+                c.bus.write32(CLS + 0x20, N1);
+                c.bus.write32(CLS + 0x24, HI);
+                c.bus.write32(N1 + 0x10, N2);
+                c.bus.write32(N2 + 0x10, HI);
+                c.bus.write32(HI + 0x14, N2);
+            }
+            2 => {
+                c.bus.write32(CLS + 0x20, LO);
+                c.bus.write32(CLS + 0x24, P1);
+                c.bus.write32(P1 + 0x14, P2);
+                c.bus.write32(P2 + 0x14, N1);
+                c.bus.write32(N1 + 0x10, N2);
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn mem_heap_shrink_block_matches() {
+        check_paths(
+            gen_mem_heap_shrink_block,
+            hand_mem_heap_shrink_block,
+            60 + SHRINK_EDGES.len() as u32,
+            &[
+                203, 227, 258, 262, 269, 270, 274, 276, 277, 283, 284, 293, 299, 301,
+            ],
+            &mem_heap_shrink_block_setup,
+        );
+    }
+
+    /// Events on every shape. On the unlocked split shapes with two-step
+    /// lists the event is due between the walk's two back edges (timed
+    /// from a dry run's total: the walk's second check sits 33 cycles
+    /// before the end going forward, 34 going backward, the first 7 before
+    /// it), so it lands inside the insert walk, not in the earlier move.
+    pub(crate) fn mem_heap_shrink_block_events_setup(c: &mut Cpu, seed: u32) -> Events {
+        let mut r = machine(c, seed, 0x252718, 0);
+        mem_heap_shrink_block_setup(c, seed);
+        let walk = seed / 10 % 3;
+        let split = matches!(seed % 5, 0 | 3) || (seed % 5 == 4 && seed / 5 % 2 == 1);
+        let total = if walk != 0 && split {
+            let mut d = crate::difftest::fresh();
+            mem_heap_shrink_block_setup(&mut d, seed);
+            let before = d.cycles;
+            crate::difftest::run_generated(&mut d, ee::s06::f_00252718__generated);
+            Some(d.cycles - before)
+        } else {
+            None
+        };
+        let mode = schedule(c, &mut r, seed, 0x0025_2718);
+        if let (Some(t), true) = (total, mode != Events::Off) {
+            c.next_event = c.cycles + t - if walk == 1 { 36 } else { 37 };
+        }
+        mode
+    }
+
+    #[test]
+    fn mem_heap_shrink_block_events() {
+        check_events(
+            gen_mem_heap_shrink_block,
+            hand_mem_heap_shrink_block,
+            60,
+            &mem_heap_shrink_block_events_setup,
+        );
+    }
+
+    /// Named-allocate: tiny alignment zeroes the class (69); larger ones
+    /// recompute it (112), alignment 4 with a class of exactly 0. The
+    /// flags in `t0` include bits that overlap the class byte and bit 28.
+    /// Operator new is faked.
+    #[test]
+    fn mem_alloc_named_aligned_matches() {
+        check_paths(
+            ee::s06::f_00252980__generated,
+            mem_alloc_named_aligned,
+            48,
+            &[69, 112],
+            &|c, seed| {
+                machine(c, seed, 0x252980, 0);
+                oc445_install_fakes();
+                c.bus.write32(OC445_CTRL, OC445_MAGIC);
+                c.g[A0][0] = (DATA + 0x900) as u64;
+                c.g[A1][0] = 0x100;
+                c.g[A2][0] = [1u64, 8, 0x80, 4][seed as usize % 4];
+                c.g[A3][0] = 0;
+                c.g[T0][0] = [0u64, 1, 0x0100_0000, 0x1000_0000][(seed / 4 % 4) as usize];
+                c.pc = 0x0025_2980;
+            },
+        );
+    }
+
+    /// Hook thunk into the named allocator: its two class arms (79, 116).
+    #[test]
+    fn mem_alloc_named_aligned_hook_matches() {
+        check_paths(
+            ee::s06::f_00252f60__generated,
+            mem_alloc_named_aligned_hook,
+            48,
+            &[79, 116],
+            &|c, seed| {
+                machine(c, seed, 0x252f60, 0);
+                oc445_install_fakes();
+                c.bus.write32(OC445_CTRL, OC445_MAGIC);
+                c.g[A0][0] = (DATA + 0x900) as u64;
+                c.g[A1][0] = 0x100;
+                c.g[A2][0] = [1u64, 8, 0x80][seed as usize % 3];
+                c.g[A3][0] = 0;
+                c.g[T0][0] = (seed / 3 % 2) as u64;
+                c.pc = 0x0025_2f60;
+            },
+        );
+    }
+
+    /// Thunk into the heap core (single arm: negative size exits early).
+    #[test]
+    fn mem_heap_alloc_aligned_thunk_matches() {
+        check_paths(
+            ee::s06::f_00252f80__generated,
+            mem_heap_alloc_aligned_thunk,
+            32,
+            &[44],
+            &|c, seed| {
+                machine(c, seed, 0x252f80, 0);
+                c.g[A0][0] = (ecd(seed) | 1) as u64;
+                // -1: a negative size takes the early exit (path 44). (A
+                // plain `0xffff_ffff` is positive in a 64-bit register, so
+                // the core's `(A1 as i64) < 0` test misses it.)
+                c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+                c.g[A2][0] = 0x10;
+                c.g[A3][0] = 0;
+                c.g[T0][0] = (seed % 3) as u64;
+                c.pc = 0x0025_2f80;
+            },
+        );
+    }
+
+    /// 128 thunk into the heap core (single arm).
+    #[test]
+    fn mem_heap_alloc_named128_matches() {
+        check_paths(
+            ee::s06::f_00252fc8__generated,
+            mem_heap_alloc_named128,
+            32,
+            &[47],
+            &|c, seed| {
+                machine(c, seed, 0x252fc8, 0);
+                c.g[A0][0] = (DATA + 0x900) as u64;
+                // -1: a negative size takes the early exit (path 47); see
+                // the thunk fixture above for why this is not 0xffff_ffff.
+                c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+                c.g[A2][0] = (seed % 3) as u64;
+                c.pc = 0x0025_2fc8;
+            },
+        );
+    }
+
+    /// Unaligned thunk into the named allocator (85 for every alignment).
+    #[test]
+    fn mem_alloc_named_unaligned_matches() {
+        check_paths(
+            ee::s06::f_00252ff0__generated,
+            mem_alloc_named_unaligned,
+            48,
+            &[85],
+            &|c, seed| {
+                machine(c, seed, 0x252ff0, 0);
+                oc445_install_fakes();
+                c.bus.write32(OC445_CTRL, OC445_MAGIC);
+                c.g[A0][0] = (DATA + 0x900) as u64;
+                c.g[A1][0] = 0x100;
+                c.g[A2][0] = [1u64, 8, 0x80][seed as usize % 3];
+                c.pc = 0x0025_2ff0;
+            },
+        );
+    }
+
+    /// Unaligned heap thunk: wrapper (47); resume at the epilogue, the
+    /// one real resume arm (2); seeds entering at the call's return
+    /// address leave through `jump_out` for the trampoline (3, 4, 8: the
+    /// fake's cost varies), exactly like the generated body, so the event
+    /// driver cannot be used here.
+    #[test]
+    fn mem_heap_alloc_named_unaligned_matches() {
+        check_paths(
+            ee::s06::f_00253018__generated,
+            mem_heap_alloc_named_unaligned,
+            32,
+            &[2, 3, 4, 8, 47],
+            &|c, seed| {
+                machine(c, seed, 0x253018, 0);
+                if seed % 4 == 3 && seed / 4 % 2 == 1 {
+                    // Resumed at the epilogue (0x253038): open frame, ra
+                    // already reloaded, so it returns to the test's ra.
+                    c.g[SP][0] = 0x01ef_fff0;
+                    c.g[RA][0] = crate::difftest::RA as u64;
+                    c.pc = 0x0025_3038;
+                } else if seed % 4 == 3 {
+                    // The call's own return address is no resume point: it
+                    // leaves through `jump_out`.
+                    c.g[SP][0] = 0x01ef_fff0;
+                    c.bus.write32(0x01ef_fff0, 0x0025_3000 + seed);
+                    c.pc = 0x0025_3034;
+                } else {
+                    c.g[A0][0] = (DATA + 0x900) as u64;
+                    // -1: a negative size takes the early exit (path 47);
+                    // see the thunk fixture above.
+                    c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+                    c.g[A2][0] = (seed % 3) as u64;
+                    c.pc = 0x0025_3018;
+                }
+            },
+        );
+    }
+
+    /// Validate-block: tag from `seed % 4` (small, free, end-marked,
+    /// unknown), the tag's steer bit from `(seed / 4) % 2`, link validity
+    /// from `(seed / 8) % 3`, the trailer match from `(seed / 24) % 2`;
+    /// the invalid-link tag, unknown tag, block size and mismatch byte
+    /// each from their own digit, flag junk from the rng. Valid links
+    /// stay `0x4246` so the real link check costs a pinned 32 cycles.
+    pub(crate) fn mem_validate_block_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x2522b0, 0);
+        const BLK: u32 = DATA + 0x2110;
+        const LA: u32 = DATA + 0x3110;
+        const LB: u32 = DATA + 0x3210;
+        // Hard pre-fill: every word the port reads or writes is nonzero.
+        for w in 0..0x1000u32 {
+            write_filled(c, DATA + 0x2000 + 4 * w, r.next_u32());
+        }
+        // The failure cell the error arms record.
+        write_filled(c, 0x004a_2e74, r.next_u32());
+        let tag = match seed % 4 {
+            0 => 0x4253,
+            1 => 0x4246,
+            2 => 0x424d,
+            _ => [0x0000u32, 0x4242, 0xffff][(seed / 7 % 3) as usize],
+        };
+        let bit = match tag {
+            0x4253 => 0x8000,
+            0x4246 => 0x4000,
+            0x424d => 0x2000,
+            _ => 0,
+        };
+        let flags = (r.next_u32() & 0x0fff) | if seed / 4 % 2 == 1 { bit } else { 0 };
+        let bad = [0x0000u32, 0x4242, 0x424d, 0x1234][(seed / 5 % 4) as usize];
+        let (ta, tb) = match seed / 8 % 3 {
+            0 => (0x4246, 0x4246),
+            1 => (bad, 0x4246),
+            _ => (0x4246, bad),
+        };
+        c.bus.write16(LA, ta as u16);
+        c.bus.write16(LB, tb as u16);
+        let size = [0x1ff0u32, 0x2ff0][(seed / 11 % 2) as usize];
+        let end = BLK.wrapping_add(size).wrapping_add(0x10);
+        let last = [0x45u8, 0x46, 0x47][(seed / 13 % 3) as usize];
+        c.bus.write8(end, b'B');
+        c.bus.write8(end + 1, b'E');
+        c.bus.write8(end + 2, b'N');
+        c.bus
+            .write8(end + 3, if seed / 24 % 2 == 0 { b'D' } else { last });
+        c.bus.write16(BLK, tag as u16);
+        c.bus.write16(BLK + 0x2, flags as u16);
+        c.bus.write32(BLK + 0x4, size);
+        c.bus.write32(BLK + 0x10, LA);
+        c.bus.write32(BLK + 0x14, LB);
+        c.g[A0][0] = BLK as u64;
+        c.pc = 0x0025_22b0;
+    }
+
+    /// Validate-block arms: small valid (17) / small stale (20); plain
+    /// free (19); free with good links (93), bad first link (57), bad
+    /// second link (94); unmarked end block (24); trailer good (40) /
+    /// bad (39); unknown tag (19, same total as plain free: both seeded).
+    #[test]
+    fn mem_validate_block_matches() {
+        check_paths(
+            ee::s06::f_002522b0__generated,
+            mem_validate_block,
+            96,
+            &[17, 19, 20, 24, 39, 40, 57, 93, 94],
+            &mem_validate_block_setup,
+        );
+    }
+
+    /// Hard nonzero-low pointers for the thunk fixtures.
+    pub(crate) fn ecd(seed: u32) -> u32 {
+        DATA + 0x910 + (seed % 8) * 0x10
+    }
+
+    // ------------------------------------------------- anonymous allocation
+
+    #[test]
+    fn mem_alloc_anon_2_matches() {
+        check(
+            ee::s06::f_00253040__generated,
+            mem_alloc_anon_2,
+            70,
+            &|c, seed| {
+                let _r = heap_alloc_machine(c, seed, 0x2530_40);
+                c.pc = 0x0025_3040;
+                c.g[A0][0] = [0, 1, 7, 64, 0x3ff, 0x1000, 0x4000][seed as usize % 7];
+            },
+        );
+    }
+
+    #[test]
+    fn mem_heap_alloc_anon_2_matches() {
+        // The callee rejects negative sizes before touching any heap list,
+        // so the fixture steers there; the wrapper itself is branch-free.
+        check(
+            ee::s06::f_00253070__generated,
+            mem_heap_alloc_anon_2,
+            40,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2530_70, 0);
+                c.pc = 0x0025_3070;
+                c.g[A0][0] = 0xffff_ffff_8000_0000 | (1 + seed % 0xfff) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn mem_alloc_anon_matches() {
+        check(
+            ee::s06::f_002530a0__generated,
+            mem_alloc_anon,
+            70,
+            &|c, seed| {
+                let _r = heap_alloc_machine(c, seed, 0x2530_a0);
+                c.pc = 0x0025_30a0;
+                c.g[A0][0] = [0, 1, 7, 64, 0x3ff, 0x1000, 0x4000][seed as usize % 7];
+            },
+        );
+    }
+
+    #[test]
+    fn mem_heap_alloc_anon_matches() {
+        // As above: negative sizes take the callee's early return, before
+        // any heap list is walked.
+        check(
+            ee::s06::f_002530d0__generated,
+            mem_heap_alloc_anon,
+            40,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2530_d0, 0);
+                c.pc = 0x0025_30d0;
+                c.g[A0][0] = 0xffff_ffff_c000_0000 | (1 + seed % 0xfff) as u64;
+            },
+        );
+    }
+
+    /// Machine with the BELibrary dummy, a world, the size-class pools and
+    /// a real heap arena, plus the shared empty string the string copy
+    /// path reads at `gp + GP_EMPTY_STRING`.
+    pub(crate) fn heap_alloc_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let r = machine(c, seed, salt, 0);
+        be_library(c);
+        world(c);
+        pool_allocator_3(c);
+        heap_init(c);
+        c.bus.write32(GAME_GP + GP_EMPTY_STRING, 0x0048_dcd4);
+        r
+    }
+
+    /// Run a setup allocator call the way the heap tests do.
+    pub(crate) fn heap_setup_call(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
+        for (i, a) in args.iter().enumerate() {
+            c.g[[A0, A1, A2, A3, T0, T1][i]][0] = *a;
+        }
+        c.g[RA][0] = crate::difftest::RA as u64;
+        c.pc = addr;
+        f(c);
+        assert_eq!(
+            c.pc,
+            crate::difftest::RA,
+            "setup call {addr:#x} did not return"
+        );
+        c.g[V0][0]
+    }
+
+    // ------------------------------------------------------------ heap info
+
+    #[test]
+    fn mem_get_heap_info_matches() {
+        // Straight-line: lock, mallinfo, unlock. The heap total is fixed;
+        // the arena state is identical on both machines.
+        check(
+            ee::s10::f_003199d0__generated,
+            mem_get_heap_info,
+            24,
+            &|c, seed| {
+                let _r = heap_alloc_machine(c, seed, 0x3199_d0);
+                c.bus.write32(GAME_GP + 0xdd0, 0x4_0000);
+                c.pc = 0x0031_99d0;
+            },
+        );
+    }
+
+    /// Resize a live block to below, at and above its old usable size, so
+    /// the request copy and the re-measured copy both run; spies note `v0`
+    /// and `s0` at the allocation and lock calls.
+    #[test]
+    fn mem_resize_block_matches() {
+        check_paths(
+            ee::s10::f_00319bd8__generated,
+            mem_resize_block,
+            40,
+            &[566, 567, 572, 628, 666, 669, 673, 676, 679, 708, 760, 772],
+            &|c, seed| {
+                let _r = heap_alloc_machine(c, seed, 0x319b_d8);
+                mem_install_fakes();
+                // The block to resize, filled with a seed-derived pattern.
+                let old_req = [16u64, 64, 256][seed as usize % 3];
+                let old = heap_setup_call(
+                    c,
+                    0x0031_7e30,
+                    ee::s10::f_00317e30,
+                    &[old_req, 0x0048_da08, 0x100, 0],
+                );
+                for i in 0..old_req {
+                    c.bus.write8(old as u32 + i as u32, (seed + i as u32) as u8);
+                }
+                // Below, at and above the old usable size, so both the short
+                // copy and the re-measured copy run.
+                let new = [8u64, old_req / 2, old_req, old_req + 8, 512][seed as usize % 5];
+                // Spy on v0/s0 at the allocation and lock calls.
+                c.bus.write32(MEM_SPY, MEM_SPY_MAGIC);
+                c.pc = 0x0031_9bd8;
+                c.g[A0][0] = old;
+                c.g[A1][0] = new;
+            },
+        );
+    }
+
+    #[test]
+    fn mem_frame_begin_stub_matches() {
+        check(
+            ee::s10::f_00319d10__generated,
+            mem_frame_begin_stub,
+            16,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x319d_10, 0);
+                c.pc = 0x0031_9d10;
+                c.g[A0][0] = (DATA + 0x3000) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn mem_frame_check_stub_matches() {
+        // The zero return is the whole contract; the scrambled v0 the
+        // machine leaves behind must come back zero.
+        check(
+            ee::s10::f_00319d18__generated,
+            mem_frame_check_stub,
+            16,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x319d_18, 0);
+                c.pc = 0x0031_9d18;
+                c.g[A0][0] = (DATA + 0x3000) as u64;
+            },
+        );
+    }
+
+    /// Seven allocate-then-init pairs and the pool-head publishes, over
+    /// a few allocator states. The seven arenas total ~640 KiB, so the heap
+    /// gets a 1 MiB arena of its own (clear of the fake-call log at
+    /// `fakes::LOG`), not the 256 KiB one the shared fixture provides. The
+    /// total is the whole body: a run that stops early costs less.
+    #[test]
+    fn mem_init_small_block_pools_matches() {
+        check_paths(
+            ee::s10::f_00319d20__generated,
+            mem_init_small_block_pools,
+            8,
+            &[52134],
+            &|c, seed| {
+                let _r = heap_alloc_machine(c, seed, 0x319d_20);
+                const BIG: u32 = DATA + 0x20_0000;
+                heap_setup_call(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[0x004f_f250, BIG as u64, 0x10_0000],
+                );
+                c.pc = 0x0031_9d20;
+            },
+        );
+    }
+
+    #[test]
+    fn mem_heap_memalign_offset_matches() {
+        // A private dlmalloc heap with some prior traffic, then aligned
+        // requests with small, odd and huge alignments and sizes.
+        check(
+            ee::s10::f_00320078__generated,
+            mem_heap_memalign_offset,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3200_78, 0);
+                const HEAP: u32 = DATA + 0x2000;
+                const ARENA: u32 = DATA + 0x4_0000;
+                heap_setup_call(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[HEAP as u64, ARENA as u64, 0x4_0000],
+                );
+                for _ in 0..r.next_u32() % 3 {
+                    heap_setup_call(
+                        c,
+                        0x0031_e818,
+                        ee::s10::DLHeap_Malloc,
+                        &[HEAP as u64, (r.next_u32() % 0x300) as u64],
+                    );
+                }
+                c.pc = 0x0032_0078;
+                c.g[A0][0] = HEAP as u64;
+                c.g[A1][0] = [8u64, 16, 64, 17][seed as usize % 4];
+                c.g[A2][0] = [0u64, 1, 64, 0x10000][seed as usize % 4];
+                c.g[A3][0] = (seed % 65) as u64;
+            },
+        );
+    }
+
+    // ---------------------------------------------------------- pool inits
+
+    driven!(gen_init_pool8, ee::s10::f_003200e8__generated);
+
+    driven!(hand_init_pool8, mem_init_pool8);
+
+    /// Arena for a pool init: pre-filled words with a seed-shifted base,
+    /// so the free-list stores land on hard (nonzero low byte) addresses.
+    pub(crate) fn pool_fixture(c: &mut Cpu, seed: u32, salt: u64, words: u32) -> u32 {
+        let mut r = machine(c, seed, salt, 0);
+        let base = DATA + 0x1_0110 + (seed % 8) * 0x410;
+        fill(c, &mut r, base, words);
+        c.g[A0][0] = base as u64;
+        base
+    }
+
+    #[test]
+    fn mem_init_pool8_matches() {
+        check(
+            ee::s10::f_003200e8__generated,
+            mem_init_pool8,
+            48,
+            &|c, seed| {
+                pool_fixture(c, seed, 0x3200_e8, 0x220);
+                c.pc = 0x0032_00e8;
+            },
+        );
+        check_events(gen_init_pool8, hand_init_pool8, 48, &|c, seed| {
+            pool_fixture(c, seed, 0x3200_e8, 0x220);
+            let mut r = Rng(0x3200_e800 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0032_00e8);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    driven!(gen_init_pool16, ee::s10::f_00320120__generated);
+
+    driven!(hand_init_pool16, mem_init_pool16);
+
+    #[test]
+    fn mem_init_pool16_matches() {
+        check(
+            ee::s10::f_00320120__generated,
+            mem_init_pool16,
+            48,
+            &|c, seed| {
+                pool_fixture(c, seed, 0x3201_20, 0x820);
+                c.pc = 0x0032_0120;
+            },
+        );
+        check_events(gen_init_pool16, hand_init_pool16, 48, &|c, seed| {
+            pool_fixture(c, seed, 0x3201_20, 0x820);
+            let mut r = Rng(0x3201_2000 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0032_0120);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    driven!(gen_init_pool32, ee::s10::f_00320158__generated);
+
+    driven!(hand_init_pool32, mem_init_pool32);
+
+    #[test]
+    fn mem_init_pool32_matches() {
+        check(
+            ee::s10::f_00320158__generated,
+            mem_init_pool32,
+            48,
+            &|c, seed| {
+                pool_fixture(c, seed, 0x3201_58, 0x1820);
+                c.pc = 0x0032_0158;
+            },
+        );
+        check_events(gen_init_pool32, hand_init_pool32, 48, &|c, seed| {
+            pool_fixture(c, seed, 0x3201_58, 0x1820);
+            let mut r = Rng(0x3201_5800 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0032_0158);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    driven!(gen_init_pool64, ee::s10::f_00320190__generated);
+
+    driven!(hand_init_pool64, mem_init_pool64);
+
+    #[test]
+    fn mem_init_pool64_matches() {
+        check(
+            ee::s10::f_00320190__generated,
+            mem_init_pool64,
+            32,
+            &|c, seed| {
+                pool_fixture(c, seed, 0x3201_90, 0xc810);
+                c.pc = 0x0032_0190;
+            },
+        );
+        check_events(gen_init_pool64, hand_init_pool64, 32, &|c, seed| {
+            pool_fixture(c, seed, 0x3201_90, 0xc810);
+            let mut r = Rng(0x3201_9000 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0032_0190);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    driven!(gen_init_pool128, ee::s10::f_003201d8__generated);
+
+    driven!(hand_init_pool128, mem_init_pool128);
+
+    #[test]
+    fn mem_init_pool128_matches() {
+        check(
+            ee::s10::f_003201d8__generated,
+            mem_init_pool128,
+            32,
+            &|c, seed| {
+                pool_fixture(c, seed, 0x3201_d8, 0x9620);
+                c.pc = 0x0032_01d8;
+            },
+        );
+        check_events(gen_init_pool128, hand_init_pool128, 32, &|c, seed| {
+            pool_fixture(c, seed, 0x3201_d8, 0x9620);
+            let mut r = Rng(0x3201_d800 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0032_01d8);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    driven!(gen_init_pool256, ee::s10::f_00320220__generated);
+
+    driven!(hand_init_pool256, mem_init_pool256);
+
+    #[test]
+    fn mem_init_pool256_matches() {
+        check(
+            ee::s10::f_00320220__generated,
+            mem_init_pool256,
+            32,
+            &|c, seed| {
+                pool_fixture(c, seed, 0x3202_20, 0x8010);
+                c.pc = 0x0032_0220;
+            },
+        );
+        check_events(gen_init_pool256, hand_init_pool256, 32, &|c, seed| {
+            pool_fixture(c, seed, 0x3202_20, 0x8010);
+            let mut r = Rng(0x3202_2000 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0032_0220);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    driven!(gen_init_pool512, ee::s10::f_00320270__generated);
+
+    driven!(hand_init_pool512, mem_init_pool512);
+
+    #[test]
+    fn mem_init_pool512_matches() {
+        check(
+            ee::s10::f_00320270__generated,
+            mem_init_pool512,
+            48,
+            &|c, seed| {
+                pool_fixture(c, seed, 0x3202_70, 0x8010);
+                c.pc = 0x0032_0270;
+            },
+        );
+        check_events(gen_init_pool512, hand_init_pool512, 48, &|c, seed| {
+            pool_fixture(c, seed, 0x3202_70, 0x8010);
+            let mut r = Rng(0x3202_7000 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0032_0270);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    /// MEM_Pool8Alloc: a free block (last or not) is popped; an empty list
+    /// falls back to the real MEM_PoolAlloc with the size-class pools on or
+    /// off (same shape as the `mem_pool16_alloc_matches` fixture). Totals:
+    /// popped 9; through the real MEM_PoolAlloc 43, 45, 53, 55, 1048,
+    /// 1190 and 1212 (its cost varies with the pools and the size).
+    #[test]
+    fn mem_pool8_alloc_matches() {
+        check_paths(
+            ee::s10::f_003202c0__generated,
+            mem_pool8_alloc,
+            200,
+            &[9, 43, 45, 53, 55, 1048, 1190, 1212],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_02c0, 0);
+                let pool8 = DATA + 0x20_0000;
+                if seed % 3 != 0 {
+                    let block = DATA + 0x30_0000 + 0x8 * (r.next_u32() % 16);
+                    c.bus.write32(pool8 + MEM_POOL8_FREE, block);
+                    c.bus
+                        .write32(block, if seed % 2 == 0 { 0 } else { block + 8 });
+                } else {
+                    c.bus.write32(pool8 + MEM_POOL8_FREE, 0);
+                    oc238_run(
+                        c,
+                        0x0031_ff60,
+                        ee::s10::f_0031ff60,
+                        &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                    );
+                    if seed % 2 == 0 {
+                        c.bus.write32(GAME_GP + 0xdd8, 1);
+                        const POOLS: [(u32, u32, u32); 7] = [
+                            (0x2a70, 0x800, 0x40),
+                            (0x2a60, 0x2000, 0x40),
+                            (0x2a6c, 0x6000, 0x40),
+                            (0x2a7c, 0x32000, 0x40),
+                            (0x2a84, 0x25800, 0x80),
+                            (0x2a78, 0x20000, 0x100),
+                            (0x2a68, 0x20000, 0x200),
+                        ];
+                        let mut pool = DATA + 0xc_0000;
+                        let mut base = DATA + 0x8_0000;
+                        for (slot, head, stride) in POOLS {
+                            for n in 0..64u32 {
+                                let node = base + stride * n;
+                                c.bus.write32(node, if n == 63 { 0 } else { node + stride });
+                            }
+                            c.bus.write32(pool + head, base);
+                            c.bus.write32(GAME_GP + slot, pool);
+                            pool += 0x100;
+                            base += 0x8000;
+                        }
+                    } else {
+                        c.bus.write32(GAME_GP + 0xdd8, 0);
+                    }
+                }
+                c.g[A0][0] = sx(pool8);
+                c.g[A1][0] = [0u64, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
+                c.pc = 0x0032_02c0;
+            },
+        );
+    }
+
+    /// MEM_ReportPoolStat0: empty hook; every seed returns with +2 cycles.
+    #[test]
+    fn mem_report_pool_stat0_matches() {
+        check(
+            ee::s10::f_00320518__generated,
+            mem_report_pool_stat0,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3205_18 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[RA][0] = sx(DATA + 0x100 + 0x10 * (seed % 16));
+                c.pc = 0x0032_0518;
+            },
+        );
+    }
+
+    /// MEM_ReportPoolStat1: empty hook; every seed returns with +2 cycles.
+    #[test]
+    fn mem_report_pool_stat1_matches() {
+        check(
+            ee::s10::f_00320520__generated,
+            mem_report_pool_stat1,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3205_20 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[RA][0] = sx(DATA + 0x100 + 0x10 * (seed % 16));
+                c.pc = 0x0032_0520;
+            },
+        );
+    }
+
+    /// MEM_ReportPoolStat2: empty hook; every seed returns with +2 cycles.
+    #[test]
+    fn mem_report_pool_stat2_matches() {
+        check(
+            ee::s10::f_00320528__generated,
+            mem_report_pool_stat2,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3205_28 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[RA][0] = sx(DATA + 0x100 + 0x10 * (seed % 16));
+                c.pc = 0x0032_0528;
+            },
+        );
+    }
+
+    /// MEM_ReportPoolStat3: empty hook; every seed returns with +2 cycles.
+    #[test]
+    fn mem_report_pool_stat3_matches() {
+        check(
+            ee::s10::f_00320530__generated,
+            mem_report_pool_stat3,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3205_30 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[RA][0] = sx(DATA + 0x100 + 0x10 * (seed % 16));
+                c.pc = 0x0032_0530;
+            },
+        );
+    }
+
+    /// MEM_ReportPoolStat4: empty hook; every seed returns with +2 cycles.
+    #[test]
+    fn mem_report_pool_stat4_matches() {
+        check(
+            ee::s10::f_00320538__generated,
+            mem_report_pool_stat4,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3205_38 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[RA][0] = sx(DATA + 0x100 + 0x10 * (seed % 16));
+                c.pc = 0x0032_0538;
+            },
+        );
+    }
+
+    /// MEM_ReportPoolStat5: empty hook; every seed returns with +2 cycles.
+    #[test]
+    fn mem_report_pool_stat5_matches() {
+        check(
+            ee::s10::f_00320540__generated,
+            mem_report_pool_stat5,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3205_40 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[RA][0] = sx(DATA + 0x100 + 0x10 * (seed % 16));
+                c.pc = 0x0032_0540;
+            },
+        );
+    }
+
+    /// MEM_ReportPoolStat6: empty hook; every seed returns with +2 cycles.
+    #[test]
+    fn mem_report_pool_stat6_matches() {
+        check(
+            ee::s10::f_00320548__generated,
+            mem_report_pool_stat6,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3205_48 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[RA][0] = sx(DATA + 0x100 + 0x10 * (seed % 16));
+                c.pc = 0x0032_0548;
             },
         );
     }

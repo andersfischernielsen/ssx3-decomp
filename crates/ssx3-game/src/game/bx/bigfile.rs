@@ -76,6 +76,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         big_file_get_entry_name_2,
         "BigFile_GetEntryName_2",
     ),
+    (0x0031_68b0, big_file_ctor_2, "BigFile_ctor_2"),
+    (0x0031_68e8, big_file_dtor, "BigFile_dtor"),
+    (0x0031_6930, big_file_unmount, "BigFile_Unmount"),
+    (0x0031_6978, big_file_mount, "BigFile_Mount"),
 ];
 
 /// `BigFile *BigFile_ctor(BigFile *this)` (0x316898): mark empty with size -1.
@@ -309,6 +313,8 @@ pub fn big_file_get_footer(c: &mut Cpu) {
 }
 
 pub(crate) mod callee {
+    use super::ee;
+    use crate::call::Callee;
     pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_FIND_ENTRY;
     pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_ENTRY_DATA;
     pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_ENTRY_OFFSET;
@@ -318,6 +324,24 @@ pub(crate) mod callee {
     pub(crate) use crate::game::lib::eafile::callee::EA_FILE_BIG_FIND_ENTRY;
     pub(crate) use crate::game::lib::eafile::callee::STRCHR;
     pub(crate) use crate::game::lib::eafile::callee::STRCPY;
+    pub(crate) use crate::game::misc::callee::BIG_FILE_MOUNT;
+    pub(crate) use crate::game::misc::callee::BIG_FILE_UNMOUNT;
+    pub(crate) use crate::game::misc::DPD_DELETE;
+
+    pub(crate) const EA_FILE_MOUNT_BIG: Callee = Callee {
+        addr: 0x003d_ed50,
+        f: ee::s14::EAFile_MountBig,
+    };
+
+    pub(crate) const EA_FILE_UNMOUNT_BIG: Callee = Callee {
+        addr: 0x003d_edc0,
+        f: ee::s14::EAFile_UnmountBig,
+    };
+
+    pub(crate) const EA_FILE_EXISTS: Callee = Callee {
+        addr: 0x003d_ee18,
+        f: ee::s14::EAFile_Exists,
+    };
 }
 
 /// `u32 BigFile_GetFooterVersion(...)` (0x3e2740): reads the footer
@@ -720,6 +744,153 @@ pub fn big_file_get_entry_name_2(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// BigFile_ctor_2 (0x3168b0)
+
+/// `BigFile *BigFile_ctor_2(BigFile *this)` (0x3168b0): empty file object
+/// (`size` -1, data 0) mounted at once.
+pub fn big_file_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        c.g[S0][0] = c.g[A0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+        c.g[RA][0] = sx(0x0031_68d0);
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        callee::BIG_FILE_MOUNT.call(c, 0x0031_68d0)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BigFile_dtor (0x3168e8)
+
+/// `void BigFile_dtor(BigFile *this, int free)` (0x3168e8): unmount, and
+/// delete the object when the low bit of `free` is set.
+pub fn big_file_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[RA][0] = sx(0x0031_6904);
+        c.g[S0][0] = c.g[A1][0];
+        callee::BIG_FILE_UNMOUNT.call(c, 0x0031_6904)?;
+        c.g[S0][0] &= 0x1;
+        let keep = c.g[S0][0] == 0;
+        frame.restore(c, S0, 0x20);
+        if !keep {
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x0031_6918);
+            c.g[A0][0] = c.g[S1][0];
+            callee::DPD_DELETE.call(c, 0x0031_6918)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BigFile_Unmount (0x316930)
+
+/// `int BigFile_Unmount(BigFile *this)` (0x316930): release the mount and
+/// clear the data word; nonzero when the unmount released something.
+pub fn big_file_unmount(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[V1][0] = 0x1;
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[RA][0] = sx(0x0031_6958);
+            c.g[A1][0] = 0x64;
+            callee::EA_FILE_UNMOUNT_BIG.call(c, 0x0031_6958)?;
+            c.g[V1][0] = (0u64 < c.g[V0][0]) as u64;
+        }
+        c.cycles += 6;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+        c.g[V0][0] = c.g[V1][0];
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BigFile_Mount (0x316978)
+
+/// `int BigFile_Mount(BigFile *this, path, memclass)` (0x316978): mount the
+/// big file at `path`, recording `memclass` while the mount runs; the data
+/// word afterwards (1 when the mount landed).
+pub fn big_file_mount(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A2][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x0031_69a8);
+        c.g[A1][0] = 0x64;
+        callee::EA_FILE_EXISTS.call(c, 0x0031_69a8)?;
+        c.g[S3][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x278));
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 8;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.sw((c.g[GP][0] as u32).wrapping_sub(0x278), c.g[S2][0]);
+            c.g[A2][0] = 0x64;
+            c.g[RA][0] = sx(0x0031_69d0);
+            c.g[A3][0] = c.g[S0][0];
+            callee::EA_FILE_MOUNT_BIG.call(c, 0x0031_69d0)?;
+            let landed = c.g[V0][0] != 0;
+            c.g[V0][0] = 0x1;
+            if landed {
+                c.cycles += 1;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            }
+            c.cycles += 2;
+            c.sw((c.g[GP][0] as u32).wrapping_sub(0x278), c.g[S3][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -733,13 +904,25 @@ pub(crate) mod tests {
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::RA as SENTINEL;
+    pub(crate) use crate::game::lib::eafile::tests::ea_fixed_costs;
     pub(crate) use crate::game::lib::eafile::tests::ea_install_fakes;
+    pub(crate) use crate::game::lib::eafile::tests::ea_install_worker_fakes;
+    pub(crate) use crate::game::lib::eafile::tests::ea_worker_fixture;
     pub(crate) use crate::game::lib::eafile::tests::put_ascii;
+    pub(crate) use crate::game::lib::eafile::tests::req_fixture;
     pub(crate) use crate::game::lib::eafile::tests::stream_block;
     pub(crate) use crate::game::lib::eafile::tests::zero_block;
     pub(crate) use crate::game::lib::eafile::tests::EAF_CTRL;
     pub(crate) use crate::game::lib::eafile::tests::EAF_MAGIC;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_REQ;
     pub(crate) use crate::game::lib::eafile::tests::EAF_RET_BIGTYPE;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_QUEUE;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_RELEASE;
+    pub(crate) use crate::game::misc::tests::huffmem_install_fakes;
+    pub(crate) use crate::game::misc::tests::HUFFMEM_CTRL;
+    pub(crate) use crate::game::misc::tests::HUFFMEM_MAGIC;
 
     #[test]
     fn big_file_ctor_matches() {
@@ -787,8 +970,6 @@ pub(crate) mod tests {
             },
         );
     }
-
-    use crate::difftest::RA as SENTINEL;
 
     // -- 0x003e2580 BigFile_GetHeaderSize ------------------------------------
 
@@ -1406,4 +1587,143 @@ pub(crate) mod tests {
         hand_big_file_get_footer_version,
         big_file_get_footer_version
     );
+
+    driven!(gen_big_file_ctor_2, ee::s10::f_003168b0__generated);
+
+    driven!(hand_big_file_ctor_2, big_file_ctor_2);
+
+    driven!(gen_big_file_dtor, ee::s10::f_003168e8__generated);
+
+    driven!(hand_big_file_dtor, big_file_dtor);
+
+    driven!(gen_big_file_unmount, ee::s10::f_00316930__generated);
+
+    driven!(hand_big_file_unmount, big_file_unmount);
+
+    driven!(gen_big_file_mount, ee::s10::f_00316978__generated);
+
+    driven!(hand_big_file_mount, big_file_mount);
+
+    /// File object and path of the mount tests (nonzero low bytes).
+    pub(crate) const BIG_OBJ: u32 = DATA + 0x614;
+
+    pub(crate) const BIG_PATH: u32 = DATA + 0x404;
+
+    /// The EA-backed mount fixture: request table, worker fakes and fixed
+    /// fake costs, steered by the status slot (`seed % 2`), the size word
+    /// (`seed / 2 % 2`), the queue cell (`seed / 4 % 2`) and the release
+    /// cell (`seed / 8 % 2`).
+    pub(crate) fn ea_mount_setup(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let r = machine(c, seed, salt, 0);
+        ea_install_fakes();
+        ea_install_worker_fakes();
+        req_fixture(c);
+        ea_worker_fixture(c, &[]);
+        ea_fixed_costs(c);
+        c.g[GP][0] = GAME_GP as u64;
+        put_ascii(c, BIG_PATH, "arch.big");
+        c.bus
+            .write32(DATA + 0x1000, if seed % 2 == 0 { 0x2000 } else { 0 });
+        c.bus.write32(DATA + 0x1008, (seed / 2 % 2) as u32);
+        c.bus
+            .write32(EAF_RET_QUEUE, if seed / 4 % 2 == 0 { 0 } else { EAF_REQ });
+        c.bus
+            .write32(EAF_RET_RELEASE, if seed / 8 % 2 == 0 { 0 } else { 5 });
+        r
+    }
+
+    /// Missing file (41), and a mounted file with the data word left 0 or
+    /// set to 1 (121, 129); `seed / 16 % 2` picks the prior data word.
+    #[test]
+    fn big_file_mount_matches() {
+        check_paths(
+            gen_big_file_mount,
+            hand_big_file_mount,
+            48,
+            &[41, 121, 129],
+            &|c, seed| {
+                let mut r = ea_mount_setup(c, seed, 0x316978);
+                c.bus.write32(BIG_OBJ + 4, seed / 16 % 2);
+                c.g[A0][0] = BIG_OBJ as u64;
+                c.g[A1][0] = BIG_PATH as u64;
+                c.g[A2][0] = (r.next_u32() | 0x8000_0001) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0031_6978;
+            },
+        );
+    }
+
+    /// Empty handle (13) and live handles whose release reports nothing or
+    /// something (35, 47); `seed / 16 % 3` picks the data word.
+    #[test]
+    fn big_file_unmount_matches() {
+        check_paths(
+            gen_big_file_unmount,
+            hand_big_file_unmount,
+            48,
+            &[13, 35, 47],
+            &|c, seed| {
+                let mut r = ea_mount_setup(c, seed, 0x316930);
+                c.bus.write32(BIG_OBJ, r.next_u32());
+                c.bus.write32(
+                    BIG_OBJ + 4,
+                    [0, 0x11, 0x8000_0017][(seed / 16 % 3) as usize],
+                );
+                c.g[A0][0] = BIG_OBJ as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0031_6930;
+            },
+        );
+    }
+
+    /// Mount at construction: missing file (54) and the two mounted shapes
+    /// (134, 142); `seed / 16 % 2` picks the prior data word.
+    #[test]
+    fn big_file_ctor_2_matches() {
+        check_paths(
+            gen_big_file_ctor_2,
+            hand_big_file_ctor_2,
+            48,
+            &[54, 134, 142],
+            &|c, seed| {
+                let mut r = ea_mount_setup(c, seed, 0x3168b0);
+                c.bus.write32(BIG_OBJ, r.next_u32());
+                c.bus.write32(BIG_OBJ + 4, seed / 16 % 2);
+                c.g[A0][0] = BIG_OBJ as u64;
+                c.g[A1][0] = BIG_PATH as u64;
+                c.g[A2][0] = (r.next_u32() | 0x8000_0001) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0031_68b0;
+            },
+        );
+    }
+
+    /// Unmount (the three unmount shapes, `seed / 16 % 3`) with and without
+    /// the delete bit (`seed / 48 % 4` picks `free`, high bits set): 27, 33,
+    /// 49 keep the object, 55, 61, 67 delete it.
+    #[test]
+    fn big_file_dtor_matches() {
+        check_paths(
+            gen_big_file_dtor,
+            hand_big_file_dtor,
+            192,
+            &[27, 33, 49, 55, 61, 67],
+            &|c, seed| {
+                let mut r = ea_mount_setup(c, seed, 0x3168e8);
+                huffmem_install_fakes();
+                ea_fixed_costs(c);
+                c.bus.write32(HUFFMEM_CTRL, HUFFMEM_MAGIC);
+                c.bus.write32(BIG_OBJ, r.next_u32());
+                c.bus.write32(
+                    BIG_OBJ + 4,
+                    [0, 0x11, 0x8000_0017][(seed / 16 % 3) as usize],
+                );
+                c.g[A0][0] = BIG_OBJ as u64;
+                c.g[A1][0] =
+                    [0u64, 1, 0xffff_fffe, 0xffff_ffff_8000_0001][(seed / 48 % 4) as usize];
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0031_68e8;
+            },
+        );
+    }
 }

@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -26,6 +27,7 @@ pub(crate) use crate::game::main::gamemode::gpo;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::movie::movieplayer::at as at_3;
 pub(crate) use crate::game::movie::movieplayer::word;
+use crate::game::seg::seg_316fb8::CTYPE_TABLE;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_2;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
@@ -91,12 +93,72 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_8e68, c_bx_string_set_at, "cBXString_SetAt"),
     (0x0031_9028, c_bx_string_right, "cBXString_Right"),
     (0x0031_90a8, cbx_string_left, "cBXString_Left"),
+    (
+        0x0031_8760,
+        cbx_string_op_plus_str_char,
+        "cBXString_OpPlusStrChar",
+    ),
+    (
+        0x0031_87c8,
+        cbx_string_op_plus_char_str,
+        "cBXString_OpPlusCharStr",
+    ),
+    (
+        0x0031_8830,
+        cbx_string_concat_in_place,
+        "cBXString_ConcatInPlace",
+    ),
+    (0x0031_8968, cbx_string_append_char, "cBXString_AppendChar"),
+    (
+        0x0031_8af8,
+        cbx_string_get_buffer_set_length,
+        "cBXString_GetBufferSetLength",
+    ),
+    (0x0031_8b40, cbx_string_free_extra, "cBXString_FreeExtra"),
+    (0x0031_8bc0, cbx_string_lock_buffer, "cBXString_LockBuffer"),
+    (0x0031_8c18, cbx_string_find_char, "cBXString_FindChar"),
+    (0x0031_8c60, cbx_string_find_one_of, "cBXString_FindOneOf"),
+    (
+        0x0031_8ca0,
+        cbx_string_reverse_find,
+        "cBXString_ReverseFind",
+    ),
+    (0x0031_8ce8, cbx_string_find_str, "cBXString_FindStr"),
+    (0x0031_8d90, cbx_string_make_lower, "cBXString_MakeLower"),
+    (
+        0x0031_8df8,
+        cbx_string_replace_char,
+        "cBXString_ReplaceChar",
+    ),
+    (
+        0x0031_8eb8,
+        cbx_string_ctor_char_count,
+        "cBXString_ctor_char_count",
+    ),
+    (0x0031_8f20, cbx_string_assign_char, "cBXString_assign_char"),
+    (0x0031_8f58, cbx_string_mid_from, "cBXString_MidFrom"),
+    (0x0031_8f90, cbx_string_mid, "cBXString_Mid"),
+    (
+        0x0031_9120,
+        cbx_string_span_including,
+        "cBXString_SpanIncluding",
+    ),
+    (
+        0x0031_9170,
+        cbx_string_span_excluding,
+        "cBXString_SpanExcluding",
+    ),
+    (0x0031_94a8, cbx_string_format, "cBXString_Format"),
+    (0x0031_94f0, cbx_string_trim_right, "cBXString_TrimRight"),
+    (0x0031_9578, cbx_string_trim_left, "cBXString_TrimLeft"),
 ];
 
 // ---------------------------------------------------------------------------
 // Callees and fixed addresses.
 
 pub(crate) mod callee {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_ALLOC_BUFFER;
     pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_CTOR_COPY;
@@ -132,6 +194,71 @@ pub(crate) mod callee {
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::CBX_STRING_DTOR as CBX_STRING_DTOR_2;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_BX_STRING_COPY_BEFORE_WRITE;
+
+    pub(crate) const BXSTRING_ASSIGN_COPY: Callee = Callee {
+        addr: 0x0031_83d8,
+        f: ee::s10::cBXString_AssignCopy,
+    };
+
+    pub(crate) const CBX_STRING_GET_BUFFER: Callee = Callee {
+        addr: 0x0031_89d0,
+        f: ee::s10::cBXString_GetBuffer,
+    };
+
+    pub(crate) const CBX_STRING_MID: Callee = Callee {
+        addr: 0x0031_8f90,
+        f: ee::s10::cBXString_Mid,
+    };
+
+    pub(crate) const CBX_STRING_LEFT: Callee = Callee {
+        addr: 0x0031_90a8,
+        f: ee::s10::cBXString_Left,
+    };
+
+    pub(crate) const CBX_STRING_FORMAT_V: Callee = Callee {
+        addr: 0x0031_91c0,
+        f: ee::s10::cBXString_FormatV,
+    };
+
+    pub(crate) const MEMMOVE: Callee = Callee {
+        addr: 0x0041_610c,
+        f: ee::s15::memmove,
+    };
+
+    pub(crate) const MEMSET: Callee = Callee {
+        addr: 0x0041_6210,
+        f: ee::s15::memset,
+    };
+
+    pub(crate) const STRCHR: Callee = Callee {
+        addr: 0x0041_6404,
+        f: ee::s15::strchr,
+    };
+
+    pub(crate) const STRCSPN: Callee = Callee {
+        addr: 0x0041_ab08,
+        f: ee::s15::strcspn,
+    };
+
+    pub(crate) const STRPBRK: Callee = Callee {
+        addr: 0x0041_ac40,
+        f: ee::s15::strpbrk,
+    };
+
+    pub(crate) const STRRCHR: Callee = Callee {
+        addr: 0x0041_acc0,
+        f: ee::s15::strrchr,
+    };
+
+    pub(crate) const STRSPN: Callee = Callee {
+        addr: 0x0041_ad10,
+        f: ee::s15::strspn,
+    };
+
+    pub(crate) const STRSTR: Callee = Callee {
+        addr: 0x0041_ad80,
+        f: ee::s15::strstr,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -1254,10 +1381,861 @@ pub fn cbx_string_get_buffer(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// String concatenation operators.
+
+/// gp-relative slot of the shared empty string a new `cBXString` starts
+/// from.
+pub(crate) const GP_EMPTY_STRING: u32 = 0xda0;
+
+/// `cBXString *cBXString_OpPlusStrChar(cBXString *self, cBXString *a, char ch)`
+/// (0x318760): `*self = *a + ch`, built in a stack temporary from the
+/// concatenation of `a`'s bytes and the single character.
+pub fn cbx_string_op_plus_str_char(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 25;
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(GP_EMPTY_STRING)).lw(c);
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[A3][0] = 1;
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        Addr(sp(c).wrapping_add(0x10)).sb(c, c.g[A2][0]);
+        c.g[A0][0] = c.g[SP][0];
+        Addr(sp(c)).sw(c, c.g[V0][0]);
+        c.g[T0][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+        c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_sub(8)).lw(c);
+        c.g[A2][0] = c.g[V0][0];
+        callee::CBX_STRING_CONCAT_COPY.call(c, 0x0031_8798)?;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S0][0];
+        callee::BXSTRING_CTOR_COPY.call(c, 0x0031_87a4)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 2;
+        callee::BXSTRING_DTOR.call(c, 0x0031_87b0)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x20);
+        frame.restore(c, S0, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cBXString *cBXString_OpPlusCharStr(cBXString *self, char ch, cBXString *b)`
+/// (0x3187c8): `*self = ch + *b`, built in a stack temporary from the
+/// concatenation of the single character and `b`'s bytes.
+pub fn cbx_string_op_plus_char_str(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 25;
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(GP_EMPTY_STRING)).lw(c);
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        Addr(sp(c).wrapping_add(0x10)).sb(c, c.g[A1][0]);
+        c.g[A0][0] = c.g[SP][0];
+        Addr(sp(c)).sw(c, c.g[V0][0]);
+        c.g[A1][0] = 1;
+        c.g[V0][0] = Addr(r32(c, A2)).lw(c);
+        c.g[A2][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[A3][0] = Addr((c.g[V0][0] as u32).wrapping_sub(8)).lw(c);
+        c.g[T0][0] = c.g[V0][0];
+        callee::CBX_STRING_CONCAT_COPY.call(c, 0x0031_8800)?;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S0][0];
+        callee::BXSTRING_CTOR_COPY.call(c, 0x0031_880c)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 2;
+        callee::BXSTRING_DTOR.call(c, 0x0031_8818)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x20);
+        frame.restore(c, S0, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cBXString_ConcatInPlace(cBXString *self, int len, const char *str)`
+/// (0x318830): append `len` bytes of `str` to `self`, either by copying
+/// into the spare capacity of a uniquely held buffer or by rebuilding
+/// through a copy when the buffer is shared or too small.
+pub fn cbx_string_concat_in_place(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x50);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        // The buffer header below the text: refcount at -0xc, length at -8,
+        // capacity at -4.
+        let text = Addr(r32(c, S1)).lw(c);
+        let shared = (Addr((text as u32).wrapping_sub(0xc)).lw(c) as i64) >= 2;
+        c.g[A3][0] = text;
+        c.g[V0][0] = ((Addr((text as u32).wrapping_sub(0xc)).lw(c) as i64) < 2) as u64;
+        c.g[A0][0] = sx((text as u32).wrapping_sub(0xc));
+        let mut slow = shared;
+        if !slow {
+            c.cycles += 6;
+            c.g[V0][0] = Addr((text as u32).wrapping_sub(8)).lw(c);
+            c.g[V1][0] = Addr((text as u32).wrapping_sub(4)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(r32(c, S2)));
+            c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V1][0] == 0 {
+                c.g[A0][0] = Addr(r32(c, A0).wrapping_add(4)).lw(c);
+            } else {
+                slow = true;
+            }
+        }
+        if slow {
+            // Shared buffer, or no room: copy self aside, reset, concatenate
+            // the old bytes with the new ones, drop the copy.
+            c.cycles += 17;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = c.g[S1][0];
+            callee::BXSTRING_CTOR_COPY.call(c, 0x0031_888c)?;
+            c.g[S0][0] = Addr(r32(c, S1)).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            callee::BXSTRING_RELEASE.call(c, 0x0031_8898)?;
+            c.g[A1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(8)).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A3][0] = c.g[S2][0];
+            c.g[T0][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S0][0];
+            callee::CBX_STRING_CONCAT_COPY.call(c, 0x0031_88b0)?;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = 2;
+            callee::BXSTRING_DTOR.call(c, 0x0031_88bc)?;
+            frame.restore(c, S0, 0x50);
+        } else {
+            // Unique buffer with room: memcpy the new bytes past the length,
+            // bump the length and re-terminate.
+            c.cycles += 13;
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(r32(c, A0)));
+            call_ptr(c, callee::MEMCPY, 0x0031_88d4)?;
+            c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+            c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_sub(8)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(r32(c, S2)));
+            Addr((c.g[A0][0] as u32).wrapping_sub(8)).sw(c, c.g[V0][0]);
+            c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_sub(8)).lw(c);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sb(c.g[V1][0] as u32, 0);
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cBXString *cBXString_AppendChar(cBXString *self, char ch)` (0x318968):
+/// append the single character `ch` to `self` through the in-place
+/// concatenation, returning `self`.
+pub fn cbx_string_append_char(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[S0][0] = c.g[A0][0];
+        Addr(sp(c)).sb(c, c.g[A1][0]);
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = 1;
+        callee::BXSTRING_CONCAT_IN_PLACE.call(c, 0x0031_8988)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `char *cBXString_GetBufferSetLength(cBXString *self, int len)`
+/// (0x318af8): detach the buffer for writing, record `len` as the new
+/// length, re-terminate, and return the buffer.
+pub fn cbx_string_get_buffer_set_length(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        callee::CBX_STRING_GET_BUFFER.call(c, 0x0031_8b14)?;
+        c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+        frame.restore_ra(c, 0);
+        Addr((c.g[V1][0] as u32).wrapping_sub(8)).sw(c, c.g[S0][0]);
+        c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(r32(c, S0)));
+        c.sb(c.g[V0][0] as u32, 0);
+        frame.restore(c, S0, 0x20);
+        c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+        frame.restore(c, S1, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cBXString_FreeExtra(cBXString *self)` (0x318b40): when the buffer
+/// holds spare capacity (length below capacity), rebuild it at exactly the
+/// used length through a copy; otherwise leave it alone.
+pub fn cbx_string_free_extra(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S0, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_sub(4)).lw(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_sub(8)).lw(c);
+        let full = c.g[V1][0] == c.g[A0][0];
+        c.g[A0][0] = c.g[SP][0];
+        if !full {
+            c.cycles += 16;
+            c.g[A1][0] = c.g[S1][0];
+            callee::BXSTRING_CTOR_COPY.call(c, 0x0031_8b70)?;
+            c.g[V1][0] = Addr(sp(c)).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[S0][0] = Addr((c.g[V1][0] as u32).wrapping_sub(8)).lw(c);
+            callee::BXSTRING_RELEASE.call(c, 0x0031_8b80)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S0][0];
+            callee::BXSTRING_ALLOC_BUFFER.call(c, 0x0031_8b8c)?;
+            c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = Addr(sp(c)).lw(c);
+            call_ptr(c, callee::MEMCPY, 0x0031_8b9c)?;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = 2;
+            callee::BXSTRING_DTOR.call(c, 0x0031_8ba8)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `char *cBXString_LockBuffer(cBXString *self)` (0x318bc0): detach the
+/// buffer for writing and mark it unshareable (refcount -1), returning it.
+pub fn cbx_string_lock_buffer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        callee::CBX_STRING_GET_BUFFER.call(c, 0x0031_8bd8)?;
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        Addr((c.g[A0][0] as u32).wrapping_sub(0xc)).sw(c, c.g[V1][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// String search.
+
+/// `int cBXString_FindChar(cBXString *self, char ch, int start)` (0x318c18):
+/// the index of the first `ch` at or after `start`, or -1. Implemented
+/// with the C library `strchr` over `text + start`.
+pub fn cbx_string_find_char(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = sx(r32(c, A1) << 24);
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = sx(((r32(c, A1)) as i32 >> 24) as u32);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(r32(c, A2)));
+        callee::STRCHR.call(c, 0x0031_8c3c)?;
+        c.g[V1][0] = c.g[V0][0];
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int cBXString_FindOneOf(cBXString *self, const char *set)` (0x318c60):
+/// the index of the first character from `set` in the string, or -1.
+/// Implemented with the C library `strpbrk`.
+pub fn cbx_string_find_one_of(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        callee::STRPBRK.call(c, 0x0031_8c78)?;
+        c.g[V1][0] = c.g[V0][0];
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int cBXString_ReverseFind(cBXString *self, char ch)` (0x318ca0): the
+/// index of the last `ch` in the string, or -1. Implemented with the C
+/// library `strrchr`.
+pub fn cbx_string_reverse_find(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = sx(r32(c, A1) << 24);
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = sx(((r32(c, A1)) as i32 >> 24) as u32);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        callee::STRRCHR.call(c, 0x0031_8cc0)?;
+        c.g[V1][0] = c.g[V0][0];
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int cBXString_FindStr(cBXString *self, const char *needle, int start)`
+/// (0x318ce8): the index of the needle's first match in the text at or
+/// after `start` (via the C library `strstr` over `text + start`), or -1.
+pub fn cbx_string_find_str(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(r32(c, A2)));
+        callee::STRSTR.call(c, 0x0031_8d04)?;
+        c.g[V1][0] = c.g[V0][0];
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Case conversion and replacement (loops with event checks).
+
+/// `void cBXString_MakeLower(cBXString *self)` (0x318d90): detach the
+/// buffer for writing, then lowercase every character in place through the
+/// character-class table.
+pub fn cbx_string_make_lower(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        callee::C_BX_STRING_COPY_BEFORE_WRITE.call(c, 0x0031_8da4)?;
+        c.g[S0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_sub(8)).lw(c);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+        let empty = (c.g[A2][0] as i64) < 0;
+        // The character-class table base the loop indexes with each byte.
+        c.g[V0][0] = 0x4a0000;
+        if !empty {
+            c.cycles += 2;
+            c.g[A3][0] = sx(CTYPE_TABLE);
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = c.lb(c.g[S0][0] as u32);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+                c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x20));
+                c.g[V0][0] = c.lbu(c.g[A1][0] as u32);
+                c.g[V0][0] = c.g[V0][0] & 1;
+                if c.g[V0][0] == 0 {
+                    c.g[V1][0] = c.g[A0][0];
+                }
+                c.sb(c.g[S0][0] as u32, c.g[V1][0]);
+                let more = (c.g[A2][0] as i64) >= 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_8dc0);
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cBXString_ReplaceChar(cBXString *self, char from, char to)`
+/// (0x318df8): detach the buffer for writing, then replace every `from`
+/// byte with `to` in place.
+pub fn cbx_string_replace_char(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x40);
+        c.g[A1][0] = sx(r32(c, A1) << 24);
+        frame.save(c, S0, 0x30);
+        c.g[A2][0] = sx(r32(c, A2) << 24);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = sx(((r32(c, A1)) as i32 >> 24) as u32);
+        c.g[S1][0] = sx(((r32(c, A2)) as i32 >> 24) as u32);
+        callee::C_BX_STRING_COPY_BEFORE_WRITE.call(c, 0x0031_8e24)?;
+        c.g[S0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(8)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+        if (c.g[V1][0] as i64) >= 0 {
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = c.lb(c.g[S0][0] as u32);
+                if c.g[V0][0] == c.g[S2][0] {
+                    c.sb(c.g[S0][0] as u32, c.g[S1][0]);
+                }
+                c.cycles += 3;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                let more = (c.g[V1][0] as i64) >= 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_8e38);
+                    }
+                } else {
+                    c.cycles += 1;
+                    break;
+                }
+            }
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Small constructors.
+
+/// `cBXString *cBXString_ctor_char_count(cBXString *self, char ch, int n)`
+/// (0x318eb8): point `self` at the shared empty string, then when `n` is
+/// positive allocate `n` bytes and fill them with `ch`.
+pub fn cbx_string_ctor_char_count(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(GP_EMPTY_STRING)).lw(c);
+        frame.save(c, S1, 0x20);
+        c.g[A1][0] = sx(r32(c, A1) << 24);
+        frame.save(c, S0, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = sx(((r32(c, A1)) as i32 >> 24) as u32);
+        let empty = (c.g[S0][0] as i64) <= 0;
+        Addr(r32(c, S1)).sw(c, c.g[V0][0]);
+        if !empty {
+            c.cycles += 6;
+            c.g[A1][0] = c.g[S0][0];
+            callee::BXSTRING_ALLOC_BUFFER.call(c, 0x0031_8ef0)?;
+            c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S0][0];
+            callee::MEMSET.call(c, 0x0031_8f00)?;
+        }
+        c.cycles += 7;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cBXString *cBXString_assign_char(cBXString *self, char ch)`
+/// (0x318f20): assign the single character `ch` to `self` through the
+/// copy assignment, returning `self`.
+pub fn cbx_string_assign_char(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[S0][0] = c.g[A0][0];
+        Addr(sp(c)).sb(c, c.g[A1][0]);
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = 1;
+        callee::BXSTRING_ASSIGN_COPY.call(c, 0x0031_8f40)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cBXString *cBXString_MidFrom(cBXString *self, cBXString *other,
+/// int start)` (0x318f58): assign the substring of `other` from `start` to
+/// its end into `self`, returning `self`.
+pub fn cbx_string_mid_from(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A3][0] = Addr((c.g[V0][0] as u32).wrapping_sub(8)).lw(c);
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(r32(c, A2)));
+        callee::CBX_STRING_MID.call(c, 0x0031_8f78)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Short-string builders.
+
+/// `cBXString* cBXString_Mid(cBXString* self, const cBXString* other,
+/// int start, int count)` (0x318f90): rebuild `*self` from the slice of
+/// `*other` at `start` of length `count`, clamping a negative start or count
+/// to zero and the end to the string length, built in a stack temporary.
+pub fn cbx_string_mid(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        // A negative count or start clamps to zero.
+        let mut take = 0u64;
+        if (c.g[A3][0] as i64) >= 0 {
+            take = c.g[A3][0];
+        }
+        let mut start = c.g[A2][0];
+        if (start as i64) < 0 {
+            start = 0;
+        }
+        let this = c.g[A0][0];
+        let other = c.g[A1][0];
+        let len = Addr(Addr(other as u32).lw(c) as u32).off(0xffff_fff8).lw(c);
+        // `end = start + take` is a 32-bit wrap; the end clamp compares it
+        // signed, the start clamp compares the full 64-bit length.
+        let end = (start as u32).wrapping_add(take as u32);
+        if (len as i64) < (end as i32 as i64) {
+            take = (len as u32).wrapping_sub(start as u32) as i32 as u64;
+        }
+        c.g[A3][0] = start;
+        c.g[S0][0] = this;
+        c.g[V0][0] = ((len as i64) < (end as i32 as i64)) as u64;
+        c.g[V1][0] = ((len as i64) < (start as i64)) as u64;
+        c.g[T2][0] = Addr(r32(c, GP).wrapping_add(GP_EMPTY_STRING)).lw(c);
+        c.g[A0][0] = other;
+        c.g[T1][0] = take;
+        c.g[A2][0] = 0;
+        c.g[A1][0] = c.g[SP][0];
+        if c.g[V1][0] == 0 {
+            c.g[A2][0] = take;
+        }
+        Addr(sp(c)).sw(c, c.g[T2][0]);
+        c.g[T0][0] = 0;
+        callee::CBX_STRING_ALLOC_COPY.call(c, 0x0031_8ff8)?;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S0][0];
+        callee::BXSTRING_CTOR_COPY.call(c, 0x0031_9004)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 2;
+        callee::BXSTRING_DTOR.call(c, 0x0031_9010)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cBXString* cBXString_SpanIncluding(cBXString* self, const cBXString* other,
+/// const char* accept)` (0x319120): assign to `*self` the leading run of
+/// `other`'s bytes that occur in `accept`.
+pub fn cbx_string_span_including(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = c.g[A2][0];
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+        callee::STRSPN.call(c, 0x0031_9144)?;
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S1][0];
+        callee::CBX_STRING_LEFT.call(c, 0x0031_9154)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cBXString* cBXString_SpanExcluding(cBXString* self, const cBXString* other,
+/// const char* reject)` (0x319170): assign to `*self` the leading run of
+/// `other`'s bytes that do not occur in `reject`.
+pub fn cbx_string_span_excluding(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = c.g[A2][0];
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+        callee::STRCSPN.call(c, 0x0031_9194)?;
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S1][0];
+        callee::CBX_STRING_LEFT.call(c, 0x0031_91a4)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int cBXString_Format(cBXString* self, const char* fmt, ...)` (0x3194a8):
+/// spill the register varargs (a2/a3/t0-t3 at `sp+0x50`, f12-f18 at
+/// `sp+0x40`) into its own frame and pass that area to `cBXString_FormatV`
+/// as the `va_list`.
+pub fn cbx_string_format(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x80);
+        Addr(frame.at(c, 0x50)).sd(c, c.g[A2][0]);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = sx(frame.at(c, 0x50));
+        Addr(frame.at(c, 0x58)).sd(c, c.g[A3][0]);
+        Addr(frame.at(c, 0x60)).sd(c, c.g[T0][0]);
+        Addr(frame.at(c, 0x68)).sd(c, c.g[T1][0]);
+        Addr(frame.at(c, 0x70)).sd(c, c.g[T2][0]);
+        Addr(frame.at(c, 0x78)).sd(c, c.g[T3][0]);
+        frame.save_fpr(c, 12, 0x40);
+        frame.save_fpr(c, 14, 0x44);
+        frame.save_fpr(c, 16, 0x48);
+        frame.save_fpr(c, 18, 0x4c);
+        callee::CBX_STRING_FORMAT_V.call(c, 0x0031_94e0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cBXString_TrimRight(cBXString* self)` (0x3194f0): drop the trailing
+/// whitespace run (byte-class table bit 3), truncating the string in place.
+pub fn cbx_string_trim_right(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        callee::C_BX_STRING_COPY_BEFORE_WRITE.call(c, 0x0031_9504)?;
+        'done: {
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[A3][0] = 0;
+            c.g[V0][0] = c.lb(c.g[A1][0] as u32);
+            c.g[A2][0] = c.lbu(c.g[A1][0] as u32);
+            if c.g[V0][0] == 0 {
+                break 'done;
+            }
+            c.cycles += 2;
+            // The byte-class table base the scan indexes with each byte.
+            c.g[V0][0] = 0x4a0000;
+            c.g[T0][0] = sx(CTYPE_TABLE);
+            loop {
+                c.cycles += 11;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) << 24);
+                if c.g[A3][0] == 0 {
+                    c.g[A3][0] = c.g[A1][0];
+                }
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                c.g[A0][0] = c.lb(c.g[A1][0] as u32);
+                c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                c.g[A2][0] = c.lbu(c.g[A1][0] as u32);
+                c.g[V1][0] = c.g[V1][0] & 0x8;
+                if c.g[V1][0] == 0 {
+                    c.g[A3][0] = 0;
+                }
+                if c.g[A0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_9520);
+                }
+            }
+        }
+        c.cycles += 2;
+        if c.g[A3][0] != 0 {
+            c.cycles += 5;
+            c.sb(c.g[A3][0] as u32, 0);
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+            Addr((c.g[V1][0] as u32).wrapping_sub(8)).sw(c, c.g[V0][0]);
+        }
+        frame.restore(c, S0, 0x10);
+        // Epilogue charge before the `ld ra`.
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cBXString_TrimLeft(cBXString* self)` (0x319578): drop the leading
+/// whitespace run (byte-class table bit 3), sliding the rest down in place.
+pub fn cbx_string_trim_left(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        callee::C_BX_STRING_COPY_BEFORE_WRITE.call(c, 0x0031_9590)?;
+        'done: {
+            c.g[A2][0] = Addr(c.g[S1][0] as u32).lw(c);
+            c.g[V0][0] = 0x4a0000;
+            c.g[A0][0] = sx(CTYPE_TABLE);
+            c.g[V1][0] = c.lb(c.g[A2][0] as u32);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V0][0] = c.lbu(c.g[V1][0] as u32);
+            c.g[V0][0] = c.g[V0][0] & 0x8;
+            if c.g[V0][0] == 0 {
+                c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                break 'done;
+            }
+            c.cycles += 1;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = c.lb(c.g[A2][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                c.g[V1][0] = c.g[V1][0] & 0x8;
+                if c.g[V1][0] != 0 {
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_95b8);
+                    }
+                } else {
+                    c.cycles += 1;
+                    c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    break;
+                }
+            }
+        }
+        c.cycles += 13;
+        c.g[A1][0] = c.g[A2][0];
+        c.g[S0][0] = Addr((c.g[A0][0] as u32).wrapping_sub(8)).lw(c);
+        c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+        callee::MEMMOVE.call(c, 0x0031_95f0)?;
+        c.g[V1][0] = Addr(c.g[S1][0] as u32).lw(c);
+        frame.restore(c, S1, 0x10);
+        Addr((c.g[V1][0] as u32).wrapping_sub(8)).sw(c, c.g[S0][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::check_paths;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::machine;
@@ -2064,5 +3042,884 @@ pub(crate) mod tests {
                 c.g[A1][0] = (if shared { 8 } else { 2 }) as u64;
             },
         );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
+    use crate::difftest::Rng;
+
+    pub(crate) use crate::game::bx::cubicspline::tests::heap_alloc_machine;
+    use crate::game::misc::tests::put_cstr;
+
+    /// A cBXString object at `obj` pointing at `buf`, with its header words
+    /// (refcount, length, capacity).
+    pub(crate) fn string_obj(c: &mut Cpu, obj: u32, buf: u32, refcount: u32, len: u32, cap: u32) {
+        c.bus.write32(obj, buf);
+        c.bus.write32(buf - 0xc, refcount);
+        c.bus.write32(buf - 8, len);
+        c.bus.write32(buf - 4, cap);
+    }
+
+    // ------------------------------------------------------- concatenation
+
+    /// The `*self = *a + ch` (or `ch + *b`) fixture: `self` pre-filled
+    /// non-zero, `a` a short string, the shared empty string at gp+0xda0.
+    pub(crate) fn op_plus_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        entry: u32,
+        other: u32,
+    ) -> u32 {
+        let mut r = heap_alloc_machine(c, seed, salt);
+        let this = DATA + 0x100;
+        let buf = DATA + 0x300;
+        fill(c, &mut r, this, 4);
+        let len = seed % 8;
+        string_obj(c, other, buf, 1, len, 0x100);
+        for i in 0..8u32 {
+            c.bus.write8(
+                buf + i,
+                b"ab\x80d\xffg\x9ah"[(seed as usize + i as usize) % 8],
+            );
+        }
+        c.bus.write8(buf + len, 0);
+        c.pc = entry;
+        this
+    }
+
+    /// A `char` argument with every register bit above the byte set: the
+    /// callee sees only the low byte (`sb`, or `sll`/`sra` by 24).
+    pub(crate) fn bxs_char_arg(ch: u8) -> u64 {
+        0xa5c3_5a3c_7e5d_3a00 | ch as u64
+    }
+
+    #[test]
+    fn cbx_string_op_plus_str_char_matches() {
+        check(
+            ee::s10::f_00318760__generated,
+            cbx_string_op_plus_str_char,
+            60,
+            &|c, seed| {
+                let this = op_plus_fixture(c, seed, 0x3187_60, 0x0031_8760, DATA + 0x200);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x200) as u64;
+                c.g[A2][0] = bxs_char_arg([b'!', 0, b'~', 0x80, 0xff][seed as usize % 5]);
+            },
+        );
+    }
+
+    #[test]
+    fn cbx_string_op_plus_char_str_matches() {
+        check(
+            ee::s10::f_003187c8__generated,
+            cbx_string_op_plus_char_str,
+            60,
+            &|c, seed| {
+                let this = op_plus_fixture(c, seed, 0x3187_c8, 0x0031_87c8, DATA + 0x200);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = bxs_char_arg([b'?', 0, b'#', 0x80, 0xe9][seed as usize % 5]);
+                c.g[A2][0] = (DATA + 0x200) as u64;
+            },
+        );
+    }
+
+    /// The in-place concatenation fixture: `self` with a `len`/`cap` header
+    /// steering the shared, full and room arms by `seed % 3`, the length by
+    /// `seed / 3 % 5` and the appended count by `seed / 15 % 6`.
+    pub(crate) fn concat_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        entry: u32,
+        tail: u8,
+    ) -> (u32, u32) {
+        let mut r = heap_alloc_machine(c, seed, salt);
+        let this = DATA + 0x100;
+        let buf = DATA + 0x1000;
+        let src = DATA + 0x2000;
+        let len = 3 + seed / 3 % 5;
+        let add = 1 + seed / 15 % 6;
+        let (refcount, cap) = match seed % 3 {
+            0 => (5, 0x100),
+            1 => (1, len + add - 1),
+            _ => (1, len + add + 8),
+        };
+        string_obj(c, this, buf, refcount, len, cap);
+        for i in 0..0x40u32 {
+            c.bus.write8(buf + i, tail);
+        }
+        for i in 0..len {
+            c.bus
+                .write8(buf + i, b"k\x80m\xe9o"[(seed + i) as usize % 5]);
+        }
+        for i in 0..add {
+            c.bus
+                .write8(src + i, b"0\xff2\x813"[(seed + i) as usize % 5]);
+        }
+        put_cstr(c, src + add, b"");
+        fill(c, &mut r, this + 4, 4);
+        c.pc = entry;
+        (this, add)
+    }
+
+    /// Totals of the generated body: every total the 120 seeds give: the
+    /// room arm (56-91, one per appended count) and the shared and full
+    /// rebuild arms (484-775). Seeds 90 and up own a buffer with exactly
+    /// enough room (the room arm's edge).
+    #[test]
+    fn cbx_string_concat_in_place_matches() {
+        check_paths(
+            ee::s10::f_00318830__generated,
+            cbx_string_concat_in_place,
+            120,
+            &[
+                56, 63, 70, 77, 84, 91, 484, 491, 498, 505, 512, 519, 526, 533, 540, 547, 704, 707,
+                717, 734, 741, 749, 763, 775,
+            ],
+            &|c, seed| {
+                let (this, add) = concat_fixture(c, seed, 0x3188_30, 0x0031_8830, 0xa5);
+                if seed >= 90 {
+                    let buf = DATA + 0x1000;
+                    let len = c.bus.read32(buf - 8);
+                    c.bus.write32(buf - 0xc, 1);
+                    c.bus.write32(buf - 4, len + add);
+                }
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = add as u64;
+                c.g[A2][0] = (DATA + 0x2000) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cbx_string_append_char_matches() {
+        check_paths(
+            ee::s10::f_00318968__generated,
+            cbx_string_append_char,
+            60,
+            &[69, 506, 513, 520, 527, 534, 695, 707, 713, 730, 734],
+            &|c, seed| {
+                let (this, _) = concat_fixture(c, seed, 0x3189_68, 0x0031_8968, 0x5a);
+                // The append is always one byte: re-steer the header for it
+                // (shared, exactly full, room) by `seed % 3`.
+                let len = 3 + seed / 3 % 5;
+                let (refcount, cap) = match seed % 3 {
+                    0 => (5, 0x100),
+                    1 => (1, len),
+                    _ => (1, len + 8),
+                };
+                c.bus.write32(DATA + 0x1000 - 0xc, refcount);
+                c.bus.write32(DATA + 0x1000 - 4, cap);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = bxs_char_arg([b'Q', 0, 0x7f, 0xff][seed as usize / 15 % 4]);
+            },
+        );
+    }
+
+    #[test]
+    fn cbx_string_get_buffer_set_length_matches() {
+        check_paths(
+            ee::s10::f_00318af8__generated,
+            cbx_string_get_buffer_set_length,
+            60,
+            &[39, 466, 480],
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x318a_f8);
+                let this = DATA + 0x100;
+                let buf = DATA + 0x1000;
+                let len = 4 + seed % 4;
+                string_obj(c, this, buf, if seed % 2 == 0 { 3 } else { 1 }, len, 0x40);
+                put_cstr(c, buf, b"h\xe9l\x80o");
+                fill(c, &mut r, buf + 8, 8);
+                c.pc = 0x0031_8af8;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (seed % 20) as u64;
+            },
+        );
+    }
+
+    /// Totals of the generated body: every total the 60 seeds give: the full-buffer
+    /// early out (15) and the rebuild through a copy (638-680).
+    #[test]
+    fn cbx_string_free_extra_matches() {
+        check_paths(
+            ee::s10::f_00318b40__generated,
+            cbx_string_free_extra,
+            60,
+            &[15, 638, 646, 661, 666, 680],
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x318b_40);
+                let this = DATA + 0x100;
+                let buf = DATA + 0x1000;
+                let len = 4 + seed / 2 % 5;
+                // Even seeds: length equals capacity (the early out); odd
+                // seeds: spare capacity (the rebuild through a copy).
+                let cap = if seed % 2 == 0 {
+                    len
+                } else {
+                    len + 1 + seed / 10 % 6
+                };
+                string_obj(c, this, buf, 1, len, cap);
+                put_cstr(c, buf, b"h\x80llo w\xe9rld");
+                fill(c, &mut r, buf + 12, 8);
+                c.pc = 0x0031_8b40;
+                c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cbx_string_lock_buffer_matches() {
+        check_paths(
+            ee::s10::f_00318bc0__generated,
+            cbx_string_lock_buffer,
+            40,
+            &[34, 360, 372, 466, 473, 480, 487],
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x318b_c0);
+                let this = DATA + 0x100;
+                let buf = DATA + 0x1000;
+                string_obj(
+                    c,
+                    this,
+                    buf,
+                    if seed % 2 == 0 { 3 } else { 1 },
+                    2 + seed / 2 % 6,
+                    0x20,
+                );
+                put_cstr(c, buf, b"h\x80llo w\xe9rld");
+                fill(c, &mut r, buf + 12, 4);
+                c.pc = 0x0031_8bc0;
+                c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    // ---------------------------------------------------------------- search
+
+    /// The find fixture: `self` over "he\x80lo w\xe9rld" (length 11, two
+    /// bytes >= 0x80) with a random tail, returning `(this, buf)`.
+    pub(crate) fn find_fixture(c: &mut Cpu, seed: u32, salt: u64) -> (u32, u32) {
+        let mut r = machine(c, seed, salt, 0);
+        let this = DATA + 0x100;
+        let buf = DATA + 0x1000;
+        string_obj(c, this, buf, 1, 11, 0x20);
+        put_cstr(c, buf, b"he\x80lo w\xe9rld");
+        fill(c, &mut r, buf + 12, 8);
+        (this, buf)
+    }
+
+    /// Totals of the generated body: every total the 72 seeds give (found and
+    /// missing arms, the `strchr` scan length varying with the start).
+    #[test]
+    fn cbx_string_find_char_matches() {
+        check_paths(
+            ee::s10::f_00318c18__generated,
+            cbx_string_find_char,
+            72,
+            &[
+                28, 30, 31, 35, 37, 38, 42, 44, 45, 52, 56, 58, 59, 63, 64, 65, 66, 70, 72, 73, 77,
+                78, 79, 84, 85, 86, 91, 93, 98, 100, 113, 138, 140,
+            ],
+            &|c, seed| {
+                let (this, buf) = find_fixture(c, seed, 0x318c_18);
+                let start = seed / 6 % 12;
+                // Found ('l'), missing ('z'), the terminator, the byte at
+                // the start itself, and the two bytes >= 0x80.
+                let ch = match seed % 6 {
+                    0 => b'l',
+                    1 => b'z',
+                    2 => 0,
+                    3 => c.bus.read8(buf + start),
+                    4 => 0x80,
+                    _ => 0xe9,
+                };
+                c.pc = 0x0031_8c18;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = bxs_char_arg(ch);
+                // An `int` start with the upper word set (the add is 32-bit).
+                c.g[A2][0] = 0xffff_ffff_0000_0000 | start as u64;
+            },
+        );
+    }
+
+    /// Totals of the generated body: every total the 36 seeds give (found and
+    /// missing arms, with the `strpbrk` scan cost).
+    #[test]
+    fn cbx_string_find_one_of_matches() {
+        check_paths(
+            ee::s10::f_00318c60__generated,
+            cbx_string_find_one_of,
+            36,
+            &[81, 86, 328],
+            &|c, seed| {
+                let (this, _) = find_fixture(c, seed, 0x318c_60);
+                // A set that hits ('aeiou'), one that misses ("xyz"), the
+                // empty set, and sets hitting a byte >= 0x80 first.
+                let sets: [&[u8]; 4] = [b"aeiou", b"xyz", b"", b"\xe9\x80"];
+                put_cstr(c, DATA + 0x2000, sets[seed as usize % 4]);
+                c.pc = 0x0031_8c60;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+            },
+        );
+    }
+
+    /// Totals of the generated body: every total the 48 seeds give: missing (114)
+    /// and found (116, the 2-cycle index arm).
+    #[test]
+    fn cbx_string_reverse_find_matches() {
+        check_paths(
+            ee::s10::f_00318ca0__generated,
+            cbx_string_reverse_find,
+            48,
+            &[114, 116],
+            &|c, seed| {
+                let (this, _) = find_fixture(c, seed, 0x318c_a0);
+                // Last 'l' (index 9, distinct from the first at 3), missing,
+                // the terminator, and the two bytes >= 0x80.
+                let ch = [b'l', b'z', 0, 0x80, 0xe9][seed as usize % 5];
+                c.pc = 0x0031_8ca0;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = bxs_char_arg(ch);
+            },
+        );
+    }
+
+    /// Totals of the generated body: every total the 45 seeds give (found and
+    /// missing arms, the `strstr` scan length varying with the start).
+    #[test]
+    fn cbx_string_find_str_matches() {
+        check_paths(
+            ee::s10::f_00318ce8__generated,
+            cbx_string_find_str,
+            45,
+            &[
+                26, 42, 49, 52, 53, 60, 63, 64, 71, 74, 82, 85, 93, 96, 107, 118, 129, 140,
+            ],
+            &|c, seed| {
+                let (this, _) = find_fixture(c, seed, 0x318c_e8);
+                let start = seed / 5 % 9;
+                // Present ("w\xe9rld", found iff start <= 6), missing, empty
+                // (matches at the start), overlapping ("o w") and a needle
+                // starting with a byte >= 0x80 (found iff start <= 2).
+                let needles: [&[u8]; 5] = [b"w\xe9rld", b"xyz", b"", b"o w", b"\x80l"];
+                put_cstr(c, DATA + 0x2000, needles[seed as usize % 5]);
+                c.pc = 0x0031_8ce8;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                // An `int` start with the upper word set (the add is 32-bit).
+                c.g[A2][0] = 0xffff_ffff_0000_0000 | start as u64;
+            },
+        );
+    }
+
+    // ------------------------------------------------- loops with event checks
+
+    driven!(gen_make_lower, ee::s10::f_00318d90__generated);
+
+    driven!(hand_make_lower, cbx_string_make_lower);
+
+    /// Load the game image (the class table with the game's own bytes);
+    /// call before the rest of the set-up, which it would overwrite.
+    pub(crate) fn bxs_ctype_image(c: &mut Cpu) {
+        crate::difftest::elf_image(c);
+        assert_eq!(
+            c.bus.read8(CTYPE_TABLE + b'A' as u32),
+            0x41,
+            "class table missing"
+        );
+        assert_eq!(c.bus.read8(CTYPE_TABLE + b'\t' as u32), 0x28);
+        assert_eq!(c.bus.read8(CTYPE_TABLE - 0x80), 0x6f);
+    }
+
+    /// The lowercasing fixture, steered by `key`: length `key % 13` (0 is
+    /// the empty early-out), shared by `key / 13 % 2` (the detach then
+    /// takes its realloc path), the pattern rotated by `key / 26`. The
+    /// pattern holds upper, lower, space, digit and other bytes, and bytes
+    /// >= 0x80 whose sign-extended class has the upper bit (0x80, 0x87) or
+    /// not (0x88, 0xff).
+    pub(crate) fn make_lower_fixture(c: &mut Cpu, seed: u32, key: u32) {
+        bxs_ctype_image(c);
+        let mut r = heap_alloc_machine(c, seed, 0x318d_90);
+        let this = DATA + 0x100;
+        let buf = DATA + 0x1000;
+        let len = key % 13;
+        let shared = key / 13 % 2 == 1;
+        string_obj(c, this, buf, if shared { 3 } else { 1 }, len, 0x20);
+        let pat = b"aB \x80Zq9!\x87\x88\xffMx";
+        for i in 0..len {
+            c.bus
+                .write8(buf + i, pat[(key / 26 + i) as usize % pat.len()]);
+        }
+        fill(c, &mut r, buf + len + 1, 4);
+        c.g[A0][0] = this as u64;
+    }
+
+    /// Totals of the generated body: every total the 78 seeds give: the empty early
+    /// out and each loop length on a private buffer (28-150), and the shared
+    /// buffer's detach with each length (325-596).
+    #[test]
+    fn cbx_string_make_lower_matches() {
+        check_paths(
+            ee::s10::f_00318d90__generated,
+            cbx_string_make_lower,
+            78,
+            &[
+                28, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 325, 342, 365, 460, 477,
+                494, 511, 528, 545, 562, 579, 596,
+            ],
+            &|c, seed| {
+                make_lower_fixture(c, seed, seed);
+                c.pc = 0x0031_8d90;
+            },
+        );
+        // The character loop's event check, delivered and unwinding: the
+        // lengths vary, so the first unwind lands on different iterations.
+        check_events(gen_make_lower, hand_make_lower, 78, &|c, seed| {
+            make_lower_fixture(c, seed, seed / 3);
+            let mut r = Rng(0x318d_9000 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0031_8d90);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    driven!(gen_replace_char, ee::s10::f_00318df8__generated);
+
+    driven!(hand_replace_char, cbx_string_replace_char);
+
+    /// The replace fixture, steered by `key`: length `key % 13` (0 is the
+    /// empty early-out) of a 12-byte pattern holding bytes >= 0x80, `from`
+    /// by `key / 13 % 4` (present, missing, and the two high bytes, which
+    /// match only as sign-extended bytes), shared by `key / 52 % 2`. Both
+    /// characters carry high register bits.
+    pub(crate) fn replace_char_fixture(c: &mut Cpu, seed: u32, key: u32) {
+        let mut r = heap_alloc_machine(c, seed, 0x318d_f8);
+        let this = DATA + 0x100;
+        let buf = DATA + 0x1000;
+        let len = key % 13;
+        let shared = key / 52 % 2 == 1;
+        string_obj(c, this, buf, if shared { 3 } else { 1 }, len, 0x20);
+        let base = b"hel\x80o w\xe9rl\x80d";
+        for i in 0..len {
+            c.bus.write8(buf + i, base[i as usize]);
+        }
+        fill(c, &mut r, buf + len + 1, 4);
+        let from = [b'l', b'z', 0x80, 0xe9][key as usize / 13 % 4];
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = bxs_char_arg(from);
+        c.g[A2][0] = bxs_char_arg(0xd8);
+    }
+
+    /// Totals of the generated body: every total the 104 seeds give: the empty early
+    /// out and each loop length on a private buffer (35-108), and the shared
+    /// buffer's detach with each length (328-557).
+    #[test]
+    fn cbx_string_replace_char_matches() {
+        check_paths(
+            ee::s10::f_00318df8__generated,
+            cbx_string_replace_char,
+            104,
+            &[
+                35, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 97, 102, 108, 328, 341, 349, 453, 466,
+                479, 492, 505, 518, 531, 544, 557,
+            ],
+            &|c, seed| {
+                replace_char_fixture(c, seed, seed);
+                c.pc = 0x0031_8df8;
+            },
+        );
+        // The replacement loop's event check, delivered and unwinding.
+        check_events(gen_replace_char, hand_replace_char, 312, &|c, seed| {
+            replace_char_fixture(c, seed, seed / 3);
+            let mut r = Rng(0x318d_f800 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0031_8df8);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    // ------------------------------------------------------- small constructors
+
+    /// Totals of the generated body: every total the 48 seeds give: the zero and
+    /// negative count early out (19) and the fill with each count (392-472).
+    #[test]
+    fn cbx_string_ctor_char_count_matches() {
+        check_paths(
+            ee::s10::f_00318eb8__generated,
+            cbx_string_ctor_char_count,
+            48,
+            &[19, 392, 399, 430, 437, 463, 465, 470, 472],
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x318e_b8);
+                let this = DATA + 0x100;
+                fill(c, &mut r, this, 4);
+                c.pc = 0x0031_8eb8;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = bxs_char_arg([b'A', 0x7f, 0, 0xff][seed as usize % 4]);
+                // `seed / 4 % 6`: zero, negative (low word positive, the
+                // compare is 64-bit) and four positive counts.
+                c.g[A2][0] = match seed / 4 % 6 {
+                    0 => 0,
+                    1 => 0xffff_ffff_0000_0005,
+                    k => (k as u64 - 1) * 5 + seed as u64 / 24,
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn cbx_string_assign_char_matches() {
+        check_paths(
+            ee::s10::f_00318f20__generated,
+            cbx_string_assign_char,
+            40,
+            &[75, 328],
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x318f_20);
+                let this = DATA + 0x100;
+                let buf = DATA + 0x3000;
+                // A valid object: the callee reads `*self` before replacing
+                // it, so a random pointer could walk off the RAM map. Even
+                // seeds share the buffer (detach path), odd seeds own it.
+                string_obj(c, this, buf, if seed % 2 == 0 { 3 } else { 1 }, 5, 0x20);
+                put_cstr(c, buf, b"hello");
+                fill(c, &mut r, buf + 8, 4);
+                c.pc = 0x0031_8f20;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = bxs_char_arg([b'k', 0, 0x80, 0xfe][seed as usize / 2 % 4]);
+            },
+        );
+    }
+
+    #[test]
+    fn cbx_string_mid_from_matches() {
+        check(
+            ee::s10::f_00318f58__generated,
+            cbx_string_mid_from,
+            48,
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x318f_58);
+                let this = DATA + 0x100;
+                let other = DATA + 0x200;
+                let buf = DATA + 0x1000;
+                fill(c, &mut r, this, 4);
+                string_obj(c, other, buf, 1, 11, 0x20);
+                put_cstr(c, buf, b"h\x80llo w\xe9rld");
+                fill(c, &mut r, buf + 12, 4);
+                c.pc = 0x0031_8f58;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = other as u64;
+                // Starts past the end exercise the clamp in the callee;
+                // `seed / 14 % 2` sets the upper word (the subtract is
+                // 32-bit; the callee's 64-bit clamp then sees a negative).
+                let hi = if seed / 14 % 2 == 1 {
+                    0xffff_ffff_0000_0000
+                } else {
+                    0
+                };
+                c.g[A2][0] = hi | (seed % 14) as u64;
+            },
+        );
+    }
+
+    // ------------------------------------------------------------- mid/span
+
+    #[test]
+    fn cbx_string_mid_matches() {
+        check_paths(
+            ee::s10::f_00318f90__generated,
+            cbx_string_mid,
+            42,
+            &[93, 358, 366, 493, 507],
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x318f_90);
+                let this = DATA + 0x104;
+                let other = DATA + 0x214;
+                let buf = DATA + 0x1300;
+                fill(c, &mut r, this, 4);
+                string_obj(c, other, buf, 1, 11, 0x20);
+                put_cstr(c, buf, b"h\x80llo w\xe9rld");
+                fill(c, &mut r, buf + 12, 4);
+                c.pc = 0x0031_8f90;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = other as u64;
+                // Negative, zero, inside, at the end, past the end, and
+                // negative as 64 bits with a positive low word (the clamps
+                // compare all 64 bits).
+                c.g[A2][0] = [
+                    0xffff_ffff_ffff_fffd,
+                    0,
+                    2,
+                    9,
+                    11,
+                    20,
+                    0xffff_ffff_0000_0002,
+                ][seed as usize % 7];
+                // Negative, zero, short, longer than the string, and the
+                // 64-bit negative with a positive low word.
+                c.g[A3][0] = [0xffff_ffff_ffff_ffff, 0, 3, 11, 100, 0xffff_ffff_0000_0003]
+                    [seed as usize / 7 % 6];
+            },
+        );
+    }
+
+    #[test]
+    fn cbx_string_span_including_matches() {
+        check_paths(
+            ee::s10::f_00319120__generated,
+            cbx_string_span_including,
+            24,
+            &[
+                108, 112, 119, 126, 133, 387, 393, 401, 411, 431, 436, 542, 612,
+            ],
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x3191_20);
+                let this = DATA + 0x104;
+                let other = DATA + 0x214;
+                let buf = DATA + 0x1300;
+                let accept = DATA + 0x2000;
+                fill(c, &mut r, this, 4);
+                let srcs: [&[u8]; 4] = [b"aa\x80abb", b"\x80\x80b", b"", b"ab\xe9abc"];
+                let src = srcs[seed as usize % 4];
+                string_obj(c, other, buf, 1, src.len() as u32, 0x20);
+                put_cstr(c, buf, src);
+                fill(c, &mut r, buf + 12, 4);
+                // Full, partial, empty and missing spans, and sets with
+                // bytes >= 0x80.
+                let sets: [&[u8]; 6] = [b"a", b"ab", b"z", b"", b"a\x80", b"\xe9ab"];
+                put_cstr(c, accept, sets[seed as usize / 4 % 6]);
+                c.pc = 0x0031_9120;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = other as u64;
+                c.g[A2][0] = accept as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cbx_string_span_excluding_matches() {
+        check_paths(
+            ee::s10::f_00319170__generated,
+            cbx_string_span_excluding,
+            24,
+            &[108, 117, 395, 401, 412, 414, 420, 442, 530, 579, 619],
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x3191_70);
+                let this = DATA + 0x104;
+                let other = DATA + 0x214;
+                let buf = DATA + 0x1300;
+                let reject = DATA + 0x2000;
+                fill(c, &mut r, this, 4);
+                let srcs: [&[u8]; 4] = [b"aa\x80abb", b"\x80\x80b", b"", b"ab\xe9abc"];
+                let src = srcs[seed as usize % 4];
+                string_obj(c, other, buf, 1, src.len() as u32, 0x20);
+                put_cstr(c, buf, src);
+                fill(c, &mut r, buf + 12, 4);
+                // Empty, full and missing spans, and sets with bytes >= 0x80.
+                let sets: [&[u8]; 6] = [b"a", b"z", b"", b"ab", b"\x80", b"\xe9z"];
+                put_cstr(c, reject, sets[seed as usize / 4 % 6]);
+                c.pc = 0x0031_9170;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = other as u64;
+                c.g[A2][0] = reject as u64;
+            },
+        );
+    }
+
+    // ---------------------------------------------------------------- format
+
+    #[test]
+    fn cbx_string_format_matches() {
+        check(
+            ee::s10::f_003194a8__generated,
+            cbx_string_format,
+            56,
+            &|c, seed| {
+                let mut r = heap_alloc_machine(c, seed, 0x3194_a8);
+                let this = DATA + 0x104;
+                let buf = DATA + 0x1300;
+                let fmt = DATA + 0x2100;
+                let arg = DATA + 0x2200;
+                string_obj(c, this, buf, 1, 5, 0x100);
+                put_cstr(c, buf, b"hello");
+                fill(c, &mut r, buf + 8, 4);
+                put_cstr(c, arg, b"w\xe9rld");
+                let fmts: [&[u8]; 7] = [
+                    b"%d",
+                    b"%s",
+                    b"v=%d s=%s!",
+                    b"%x-%c",
+                    b"%d-%d",
+                    b"100%%",
+                    b"%d %d %d %d %d %d",
+                ];
+                let which = seed as usize % 7;
+                put_cstr(c, fmt, fmts[which]);
+                // Distinct non-zero float arguments: each spill slot holds
+                // its own register.
+                for (i, f) in [12, 14, 16, 18].into_iter().enumerate() {
+                    c.f[f] = 0x3f80_0000 + 0x0011_0000 * i as u32 + seed;
+                }
+                c.pc = 0x0031_94a8;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = fmt as u64;
+                // The `%s` form takes its string in a2; the rest take ints.
+                c.g[A2][0] = if which == 1 {
+                    arg as u64
+                } else {
+                    [0, 42, 0xffff_ffff, 123456][seed as usize % 4]
+                };
+                c.g[A3][0] = if which == 2 {
+                    arg as u64
+                } else {
+                    (seed as u64).wrapping_mul(131).wrapping_add(7)
+                };
+                // Distinct non-zero register varargs, upper words set too.
+                for (i, t) in [T0, T1, T2, T3].into_iter().enumerate() {
+                    c.g[t][0] = 0x1357_0000_0000_0100 * (i as u64 + 1) + seed as u64;
+                }
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------ trim
+
+    driven!(gen_trim_right, ee::s10::f_003194f0__generated);
+
+    driven!(hand_trim_right, cbx_string_trim_right);
+
+    /// Strings with no, partial and full trailing runs (the game's class
+    /// table: tab, newline and space, and 0x80, whose sign-extended class
+    /// has the space bit; 0x81's has not), picked by `key % 8`; shared by
+    /// `key / 8 % 2` so the detach takes both paths.
+    pub(crate) fn trim_right_fixture(c: &mut Cpu, seed: u32, key: u32) {
+        bxs_ctype_image(c);
+        let mut r = heap_alloc_machine(c, seed, 0x3194_f0);
+        let this = DATA + 0x104;
+        let buf = DATA + 0x1300;
+        let bodies: [&[u8]; 8] = [
+            b"",
+            b"abc",
+            b"ab  \t",
+            b"   ",
+            b"a\x80",
+            b"\x81b\x80 \x80",
+            b"x\x89 y",
+            b" \n\x81",
+        ];
+        let body = bodies[key as usize % 8];
+        string_obj(
+            c,
+            this,
+            buf,
+            if key / 8 % 2 == 1 { 3 } else { 1 },
+            body.len() as u32,
+            0x20,
+        );
+        put_cstr(c, buf, body);
+        fill(c, &mut r, buf + 12, 4);
+        c.pc = 0x0031_94f0;
+        c.g[A0][0] = this as u64;
+    }
+
+    /// Totals of the generated body: every total the 32 seeds give: the empty early
+    /// out, the scan with and without the truncation on a private buffer
+    /// (29-91), and the shared buffer's detach (350-488).
+    #[test]
+    fn cbx_string_trim_right_matches() {
+        check_paths(
+            ee::s10::f_003194f0__generated,
+            cbx_string_trim_right,
+            32,
+            &[29, 58, 64, 69, 75, 91, 350, 369, 374, 465, 488],
+            &|c, seed| {
+                trim_right_fixture(c, seed, seed);
+            },
+        );
+        // The whitespace scan's event check, delivered and unwinding: the
+        // lengths vary, so the first unwind lands on different iterations.
+        check_events(gen_trim_right, hand_trim_right, 96, &|c, seed| {
+            trim_right_fixture(c, seed, seed / 3);
+            let mut r = Rng(0x3194_f000 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0031_94f0);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
+    }
+
+    driven!(gen_trim_left, ee::s10::f_00319578__generated);
+
+    driven!(hand_trim_left, cbx_string_trim_left);
+
+    /// Strings with no, partial and full leading runs (the game's class
+    /// table: tab, newline and space, and 0x80/0x89/0x8a, whose
+    /// sign-extended classes have the space bit; 0x81's and 0x87's have
+    /// not), picked by `key % 8`; shared by `key / 8 % 2` so the detach
+    /// takes both paths.
+    pub(crate) fn trim_left_fixture(c: &mut Cpu, seed: u32, key: u32) {
+        bxs_ctype_image(c);
+        let mut r = heap_alloc_machine(c, seed, 0x3195_78);
+        let this = DATA + 0x104;
+        let buf = DATA + 0x1300;
+        let bodies: [&[u8]; 8] = [
+            b"",
+            b"abc",
+            b"  \tabc",
+            b"   ",
+            b"\x80\x80x",
+            b"\x81abc",
+            b" \x80 \x87z",
+            b"\n\x89\x8a",
+        ];
+        let body = bodies[key as usize % 8];
+        string_obj(
+            c,
+            this,
+            buf,
+            if key / 8 % 2 == 1 { 3 } else { 1 },
+            body.len() as u32,
+            0x20,
+        );
+        put_cstr(c, buf, body);
+        fill(c, &mut r, buf + 12, 4);
+        c.pc = 0x0031_9578;
+        c.g[A0][0] = this as u64;
+    }
+
+    /// Totals of the generated body: every total the 32 seeds give: no leading run
+    /// and runs of each length on a private buffer (61-123), and the shared
+    /// buffer's detach (370-497).
+    #[test]
+    fn cbx_string_trim_left_matches() {
+        check_paths(
+            ee::s10::f_00319578__generated,
+            cbx_string_trim_left,
+            32,
+            &[61, 82, 84, 89, 98, 105, 123, 370, 372, 467, 483, 497],
+            &|c, seed| {
+                trim_left_fixture(c, seed, seed);
+            },
+        );
+        // The whitespace scan's event check, delivered and unwinding.
+        check_events(gen_trim_left, hand_trim_left, 96, &|c, seed| {
+            trim_left_fixture(c, seed, seed / 3);
+            let mut r = Rng(0x3195_7800 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0031_9578);
+            if mode != Events::Off {
+                c.next_event = c.cycles;
+            }
+            mode
+        });
     }
 }

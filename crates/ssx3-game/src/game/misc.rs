@@ -320,6 +320,29 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_f840, isnan, "isnan"),
     (0x0010_01d8, crt_frame_dummy, "frame_dummy"),
     (0x0041_8ef8, libc_qsort, "qsort"),
+    (0x002c_8348, huff_about, "HUFF_about"),
+    (0x002c_8468, huff_get_big_endian, "HUFF_GetBigEndian"),
+    (0x002c_84a0, huff_is, "HUFF_is"),
+    (0x002c_8550, huff_size, "HUFF_size"),
+    (0x002c_85a0, huff_decode, "HUFF_decode"),
+    (0x002c_85c0, huff_delta_encode, "HUFF_DeltaEncode"),
+    (0x002c_8600, huff_writebits, "HUFF_writebits"),
+    (0x002c_86f8, huff_treechase, "HUFF_treechase"),
+    (0x002c_8770, huff_maketree, "HUFF_maketree"),
+    (0x002c_8970, huff_minrep, "HUFF_minrep"),
+    (0x002c_8a78, huff_writenum, "HUFF_writenum"),
+    (0x002c_8c30, huff_writeexp, "HUFF_writeexp"),
+    (0x002c_8ca8, huff_writecode, "HUFF_writecode"),
+    (0x002c_8cf8, huff_init_num_tables, "HUFF_InitNumTables"),
+    (0x002c_9a48, huff_pack, "HUFF_pack"),
+    (0x002c_9f60, huff_encode_block, "HUFF_EncodeBlock"),
+    (0x002c_a100, huff_encode, "HUFF_encode"),
+    (
+        0x003b_49b0,
+        refpack_get_unpacked_size,
+        "RefPack_GetUnpackedSize",
+    ),
+    (0x003b_4d00, refpack_get_sizes, "RefPack_GetSizes"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15897,6 +15920,2407 @@ pub fn libc_qsort(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// HUFF_pack (0x002c9a48)
+
+/// Code-length list (`u32[count]`) of pending symbols.
+pub(crate) const HUFF_NUM_LIST: u32 = 0x0d04;
+
+/// Per-symbol nonzero flag table (`u32`, indexed `sym * 4`).
+pub(crate) const HUFF_SYM_FLAG: u32 = 0x0100;
+
+/// Per-symbol code length (`u32`, indexed `sym * 4`).
+pub(crate) const HUFF_CODE_LEN: u32 = 0x2564;
+
+/// Per-symbol codeword (`u32`, indexed `sym * 4`).
+pub(crate) const HUFF_CODE: u32 = 0x2964;
+
+/// Current input pointer (`u8 *`).
+pub(crate) const HUFF_IN_PTR: u32 = 0x2db0;
+
+/// Input end pointer (`u8 *`).
+pub(crate) const HUFF_IN_END: u32 = 0x2db4;
+
+/// Length of the code-length list.
+pub(crate) const HUFF_NUM_COUNT: u32 = 0x2dc0;
+
+/// Length of the symbol-order list.
+pub(crate) const HUFF_ORDER_COUNT: u32 = 0x2dc4;
+
+/// Order list (`u32`), scanned for the next present symbol.
+pub(crate) const HUFF_ORDER_TAB: u32 = 0x2dec;
+
+/// Pack-mode flag (0 = raw): selects run/delta coding.
+pub(crate) const HUFF_MODE: u32 = 0x2dd4;
+
+/// Delta-code base.
+pub(crate) const HUFF_DELTA_BASE: u32 = 0x2dd0;
+
+/// Literal fallback selector.
+pub(crate) const HUFF_LIT_SEL: u32 = 0x2dd8;
+
+/// Largest byte difference coded as a delta (signed).
+pub(crate) const HUFF_DELTA_MAX: u32 = 0x2de0;
+
+/// Smallest byte difference coded as a delta (signed).
+pub(crate) const HUFF_DELTA_MIN: u32 = 0x2ddc;
+
+/// Entry and the ten loop heads of `HUFF_pack`: the resume addresses after an
+/// unwind at a back edge.
+mod pack {
+    pub const ENTRY: u32 = 0x002c_9a48;
+    pub const END: u32 = 0x002c_9f5c;
+    /// Code-length list (`HUFF_writenum` per entry).
+    pub const NUM_LIST: u32 = 0x002c_9aa0;
+    /// Clearing the 256 present flags.
+    pub const CLEAR_FLAGS: u32 = 0x002c_9ad8;
+    /// Symbol-order list, one listed symbol per pass.
+    pub const ORDER_NEXT: u32 = 0x002c_9b10;
+    /// Forward scan to the listed symbol.
+    pub const ORDER_SCAN: u32 = 0x002c_9b20;
+    /// Main loop over the input bytes.
+    pub const MAIN: u32 = 0x002c_9b80;
+    /// Repeat-run count.
+    pub const RUN_COUNT: u32 = 0x002c_9bb0;
+    /// Multi-level repeat cost.
+    pub const LEVEL_COST: u32 = 0x002c_9c70;
+    /// Literal run, one `HUFF_writecode` per copy.
+    pub const LITERAL_RUN: u32 = 0x002c_9cf0;
+    /// Multi-level repeat codes, one level per pass.
+    pub const LEVEL_CODES: u32 = 0x002c_9d80;
+    /// One level's codes.
+    pub const LEVEL_CODE_RUN: u32 = 0x002c_9dc8;
+}
+
+/// Stages of `HUFF_pack` between its loop heads.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Pack {
+    Entry,
+    NumList,
+    CodeTables,
+    ClearFlags,
+    OrderNext,
+    OrderScan,
+    InputRange,
+    MainTest,
+    Main,
+    RunCount,
+    RunCost,
+    LevelCost,
+    LevelCostDone,
+    Choose,
+    LiteralRun,
+    LevelCodes,
+    LevelCodeRun,
+    LevelCodesNext,
+    CodesDone,
+    Tail,
+    Epilogue,
+}
+
+/// `void HUFF_pack(huff, out)` (0x002c9a48): Huffman-packs the pending input
+/// bytes (`in_ptr`..`in_end`): emits the stored code-length list, the symbol
+/// order, then each byte as a literal/writecode or a repeat-run/delta, and a
+/// fixed terminator. Re-entered at its ten loop heads after an unwind.
+pub fn huff_pack(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut st = match c.pc {
+            pack::ENTRY => Pack::Entry,
+            pack::NUM_LIST => Pack::NumList,
+            pack::CLEAR_FLAGS => Pack::ClearFlags,
+            pack::ORDER_NEXT => Pack::OrderNext,
+            pack::ORDER_SCAN => Pack::OrderScan,
+            pack::MAIN => Pack::Main,
+            pack::RUN_COUNT => Pack::RunCount,
+            pack::LEVEL_COST => Pack::LevelCost,
+            pack::LITERAL_RUN => Pack::LiteralRun,
+            pack::LEVEL_CODES => Pack::LevelCodes,
+            pack::LEVEL_CODE_RUN => Pack::LevelCodeRun,
+            pc => {
+                c.jump_out(pc, pack::ENTRY, pack::END);
+                return Ok(());
+            }
+        };
+        // The frame is opened at the entry stage; resume stages reuse it.
+        let frame = Frame { size: 0xd0 };
+        loop {
+            st = match st {
+                Pack::Entry => {
+                    // Frame + first codeword.
+                    c.cycles += 20;
+                    Frame::open(c, 0xd0);
+                    c.g[A3][0] = 0x8;
+                    frame.save(c, S4, 0x80);
+                    frame.save(c, S6, 0x60);
+                    c.g[S4][0] = c.g[A0][0];
+                    frame.save(c, S0, 0xc0);
+                    frame.save(c, S1, 0xb0);
+                    c.g[S6][0] = 0x1;
+                    frame.save(c, S2, 0xa0);
+                    frame.save(c, S3, 0x90);
+                    frame.save(c, S5, 0x70);
+                    frame.save(c, S7, 0x50);
+                    frame.save(c, FP, 0x40);
+                    frame.save_ra(c, 0x30);
+                    c.sw(c.g[SP][0] as u32, c.g[A1][0]);
+                    c.g[RA][0] = sx(0x002c_9a8c);
+                    c.g[A2][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                    callee::HUFF_WRITEBITS.call(c, 0x002c_9a8c)?;
+                    c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_NUM_COUNT));
+                    let skip_num_list = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(HUFF_CODE_LEN));
+                    if skip_num_list {
+                        Pack::CodeTables
+                    } else {
+                        // 0x002c9a98.
+                        c.cycles += 2;
+                        c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(HUFF_NUM_LIST));
+                        c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                        Pack::NumList
+                    }
+                }
+                Pack::NumList => {
+                    c.cycles += 9;
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x1));
+                    c.g[RA][0] = sx(0x002c_9ab4);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    callee::HUFF_WRITENUM.call(c, 0x002c_9ab4)?;
+                    c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_NUM_COUNT));
+                    c.g[V0][0] = (c.g[V0][0] < c.g[S6][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        // 0x002c9ac4.
+                        c.cycles += 1;
+                        c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(HUFF_CODE_LEN));
+                        Pack::CodeTables
+                    } else {
+                        c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                        if back_edge_unwinds(c, pack::NUM_LIST) {
+                            return Ok(());
+                        }
+                        Pack::NumList
+                    }
+                }
+                Pack::CodeTables => {
+                    // 0x002c9ac8: the code and bit-length table pointers.
+                    c.cycles += 4;
+                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(HUFF_CODE));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[S6][0] = 0u64;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                    Pack::ClearFlags
+                }
+                Pack::ClearFlags => {
+                    c.cycles += 7;
+                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S6][0] as u32));
+                    c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = (c.g[S6][0] < 0x100u64) as u64;
+                    let more = c.g[V0][0] != 0u64;
+                    c.sb(c.g[V1][0] as u32, 0u64);
+                    if more {
+                        if back_edge_unwinds(c, pack::CLEAR_FLAGS) {
+                            return Ok(());
+                        }
+                        Pack::ClearFlags
+                    } else {
+                        // Symbol order (0x002c9af4/0x002c9b04): mark each
+                        // listed symbol present, emitting the gap before it.
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_ORDER_COUNT));
+                        c.g[S2][0] = 0xff;
+                        let skip_order = c.g[V0][0] == 0u64;
+                        c.g[S6][0] = 0u64;
+                        if skip_order {
+                            Pack::InputRange
+                        } else {
+                            c.cycles += 3;
+                            c.g[S1][0] = sx((c.g[S4][0] as u32).wrapping_add(HUFF_ORDER_TAB));
+                            c.g[S3][0] = 0x1;
+                            c.g[V0][0] = sx((c.g[S6][0] as u32) << 2);
+                            Pack::OrderNext
+                        }
+                    }
+                }
+                Pack::OrderNext => {
+                    c.cycles += 4;
+                    c.g[S0][0] = sx((c.g[S6][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+                    c.g[T1][0] = c.lw(c.g[V0][0] as u32);
+                    Pack::OrderScan
+                }
+                Pack::OrderScan => {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    c.g[S2][0] = c.g[V0][0] & 0xff;
+                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[A0][0] as u32);
+                    let found = c.g[T1][0] == c.g[S2][0];
+                    if c.g[V0][0] == 0 {
+                        c.g[A2][0] = c.g[V1][0];
+                    }
+                    if !found {
+                        if back_edge_unwinds(c, pack::ORDER_SCAN) {
+                            return Ok(());
+                        }
+                        Pack::OrderScan
+                    } else {
+                        // 0x002c9b3c.
+                        c.cycles += 9;
+                        c.sb(c.g[A0][0] as u32, c.g[S3][0]);
+                        c.g[S6][0] = c.g[S0][0];
+                        c.g[A0][0] = c.g[S4][0];
+                        c.g[RA][0] = sx(0x002c_9b50);
+                        c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                        callee::HUFF_WRITENUM.call(c, 0x002c_9b50)?;
+                        c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_ORDER_COUNT));
+                        c.g[V0][0] = (c.g[S6][0] < c.g[V0][0]) as u64;
+                        let more = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = sx((c.g[S6][0] as u32) << 2);
+                        if more {
+                            if back_edge_unwinds(c, pack::ORDER_NEXT) {
+                                return Ok(());
+                            }
+                            Pack::OrderNext
+                        } else {
+                            Pack::InputRange
+                        }
+                    }
+                }
+                Pack::InputRange => {
+                    // 0x002c9b60: input range; raw mode stores the 32000
+                    // fallback first.
+                    c.cycles += 3;
+                    c.g[T2][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_MODE));
+                    if c.g[T2][0] == 0u64 {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x7d00;
+                        c.sw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR), c.g[V0][0]);
+                    }
+                    c.g[S7][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_IN_PTR));
+                    // 0x002c9b78: the previous byte starts out of range so the
+                    // first byte always takes the literal path.
+                    c.cycles += 2;
+                    c.g[T1][0] = 0x100;
+                    Pack::MainTest
+                }
+                Pack::MainTest => {
+                    // 0x002c9eb8: S6 is the current byte, T1 the previous
+                    // one; S7 walks the input.
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_IN_END));
+                    c.g[V0][0] = (c.g[S7][0] < c.g[A0][0]) as u64;
+                    if c.g[V0][0] == 0u64 {
+                        Pack::Epilogue
+                    } else {
+                        c.g[S6][0] = c.lbu(c.g[S7][0] as u32);
+                        if back_edge_unwinds(c, pack::MAIN) {
+                            return Ok(());
+                        }
+                        Pack::Main
+                    }
+                }
+                Pack::Main => {
+                    c.cycles += 2;
+                    let repeated = c.g[S6][0] == c.g[T1][0];
+                    c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(0x1));
+                    if !repeated {
+                        // Different byte: literal/delta tail (0x002c9e00).
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_LIT_SEL));
+                        Pack::Tail
+                    } else {
+                        // Repeat run (0x002c9b88): count extra copies of the byte.
+                        c.cycles += 8;
+                        c.g[V1][0] = sx((c.g[S7][0] as u32).wrapping_add(0x7530));
+                        c.g[S2][0] = 0u64;
+                        c.g[V0][0] = (c.g[A0][0] < c.g[V1][0]) as u64;
+                        c.g[T2][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_MODE));
+                        if c.g[V0][0] != 0 {
+                            c.g[V1][0] = c.g[A0][0];
+                        }
+                        c.g[V0][0] = (c.g[S7][0] < c.g[V1][0]) as u64;
+                        let no_run = c.g[V0][0] == 0u64;
+                        c.g[A0][0] = sx((c.g[S6][0] as u32) << 2);
+                        if no_run {
+                            Pack::RunCost
+                        } else {
+                            c.cycles += 2;
+                            c.g[S6][0] = c.lbu(c.g[S7][0] as u32);
+                            Pack::RunCount
+                        }
+                    }
+                }
+                Pack::RunCount => {
+                    c.cycles += 3;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    let run_end = c.g[S6][0] != c.g[T1][0];
+                    c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(0x1));
+                    if run_end {
+                        Pack::RunCost
+                    } else {
+                        // 0x002c9bbc.
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[S7][0] < c.g[V1][0]) as u64;
+                        if c.g[V0][0] == 0u64 {
+                            Pack::RunCost
+                        } else {
+                            c.g[S6][0] = c.lbu(c.g[S7][0] as u32);
+                            if back_edge_unwinds(c, pack::RUN_COUNT) {
+                                return Ok(());
+                            }
+                            Pack::RunCount
+                        }
+                    }
+                }
+                Pack::RunCost => {
+                    // 0x002c9bc8: cost of repeating vs coding literally.
+                    c.cycles += 7;
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[A1][0] = 0x7d00;
+                    c.g[T0][0] = 0x7d00;
+                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    let raw_mode = c.g[T2][0] == 0u64;
+                    c.mult(0, T4, S2, V1);
+                    if raw_mode {
+                        // Raw mode: both costs stay the fallback (0x002c9cbc).
+                        c.cycles += 1;
+                        c.g[V0][0] = (c.g[A1][0] < c.g[T4][0]) as u64;
+                        Pack::Choose
+                    } else {
+                        // 0x002c9be4.
+                        c.cycles += 9;
+                        c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                        c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(HUFF_SYM_FLAG));
+                        c.g[A3][0] = c.g[V1][0];
+                        c.g[A0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[A2][0] = c.g[V0][0];
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        let no_flag = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = (c.g[S2][0] < 0xfcu64) as u64;
+                        if !no_flag {
+                            c.cycles += 2;
+                            let too_long = c.g[V0][0] == 0u64;
+                            c.g[A1][0] = 0x14;
+                            if !too_long {
+                                // 0x002c9c10: repeat cost from the tables.
+                                c.cycles += 9;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[V1][0] = sx((c.g[S2][0] as u32) << 2);
+                                c.g[V1][0] =
+                                    sx((c.g[S4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                c.g[A0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(HUFF_NUM_BITS));
+                                c.g[A1][0] = c.lw(c.g[A0][0] as u32);
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3));
+                                c.g[A1][0] =
+                                    sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            }
+                        }
+                        // 0x002c9c34.
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[T2][0] < 0x2u64) as u64;
+                        let short_mode = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = (c.g[A1][0] < c.g[T4][0]) as u64;
+                        if short_mode {
+                            Pack::Choose
+                        } else {
+                            // Multi-level repeat search (0x002c9c40).
+                            c.cycles += 4;
+                            c.g[S3][0] = c.g[S2][0];
+                            c.g[S1][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x1));
+                            let single = c.g[S1][0] == 0u64;
+                            c.g[T0][0] = 0u64;
+                            if single {
+                                Pack::LevelCostDone
+                            } else {
+                                c.cycles += 8;
+                                c.g[V0][0] = sx((c.g[A2][0] as u32) << 2);
+                                c.g[A0][0] = sx((c.g[S1][0] as u32) << 2);
+                                c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[V1][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                                c.g[A3][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                c.g[T3][0] = 0u64;
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                                c.g[A2][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                Pack::LevelCost
+                            }
+                        }
+                    }
+                }
+                Pack::LevelCost => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                    if c.g[V0][0] == 0u64 {
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x4));
+                    } else {
+                        // 0x002c9c7c (the S1 == T3 fork rejoins; S1 is never
+                        // 0 here) + 0x002c9c88.
+                        c.cycles += 3;
+                        c.divu(0, S3, S1);
+                        c.cycles += 8;
+                        c.g[A0][0] = c.lw(c.g[A2][0] as u32);
+                        c.g[V1][0] = c.lo[0];
+                        c.g[S0][0] = c.lo[0];
+                        c.mult(0, V0, S0, S1);
+                        c.mult(0, V1, S0, A0);
+                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                        c.g[T0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x4));
+                    }
+                    // 0x002c9ca8.
+                    c.cycles += 3;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    let more = c.g[S1][0] != 0u64;
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x4));
+                    if more {
+                        if back_edge_unwinds(c, pack::LEVEL_COST) {
+                            return Ok(());
+                        }
+                        Pack::LevelCost
+                    } else {
+                        Pack::LevelCostDone
+                    }
+                }
+                Pack::LevelCostDone => {
+                    // 0x002c9cb4.
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x7d00;
+                    if c.g[S3][0] != 0 {
+                        c.g[T0][0] = c.g[V0][0];
+                    }
+                    // 0x002c9cbc.
+                    c.cycles += 1;
+                    c.g[V0][0] = (c.g[A1][0] < c.g[T4][0]) as u64;
+                    Pack::Choose
+                }
+                Pack::Choose => {
+                    // 0x002c9cc0 / 0x002c9cc8: emit codes only if either cost
+                    // beats the literal run.
+                    c.cycles += 2;
+                    let repeat_wins = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = (c.g[A1][0] < c.g[T0][0]) as u64;
+                    let mut literal_run = false;
+                    if !repeat_wins {
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[T0][0] < c.g[T4][0]) as u64;
+                        let coded_wins = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = (c.g[A1][0] < c.g[T0][0]) as u64;
+                        literal_run = !coded_wins;
+                    }
+                    if literal_run {
+                        // Literal run (0x002c9cd4): one writecode per copy.
+                        c.cycles += 5;
+                        c.g[V0][0] = 0xffff_ffff_ffff_0000;
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                        c.g[V0][0] = c.g[V0][0] | 0xffff;
+                        if c.g[S2][0] != c.g[V0][0] {
+                            c.cycles += 2;
+                            c.g[S0][0] = 0xffff_ffff_ffff_0000;
+                            c.g[S0][0] = c.g[S0][0] | 0xffff;
+                            Pack::LiteralRun
+                        } else {
+                            // No copies: the count selector is reloaded with
+                            // no extra charge and the tail (0x002c9e04) follows.
+                            c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_LIT_SEL));
+                            Pack::Tail
+                        }
+                    } else {
+                        // 0x002c9d18 (shared by both code arms).
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S4][0];
+                        if c.g[V0][0] == 0u64 {
+                            // Multi-level repeat codes (0x002c9d64).
+                            c.cycles += 3;
+                            c.g[S1][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x1));
+                            let done = c.g[S1][0] == 0u64;
+                            c.g[S3][0] = c.g[S2][0];
+                            if done {
+                                Pack::CodesDone
+                            } else {
+                                c.cycles += 4;
+                                c.g[S5][0] = 0xffff_ffff_ffff_0000;
+                                c.g[A3][0] = sx((c.g[S4][0] as u32).wrapping_add(HUFF_SYM_FLAG));
+                                c.g[S5][0] = c.g[S5][0] | 0xffff;
+                                c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                                Pack::LevelCodes
+                            }
+                        } else {
+                            // Repeat as code + count (0x002c9d20).
+                            c.cycles += 17;
+                            c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                            c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                            c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                            c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                            c.g[A3][0] = c.lw(c.g[V1][0] as u32);
+                            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                            c.g[RA][0] = sx(0x002c_9d4c);
+                            c.sq(9, (c.g[SP][0] as u32).wrapping_add(0x20));
+                            callee::HUFF_WRITEBITS.call(c, 0x002c_9d4c)?;
+                            c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                            c.g[A2][0] = c.g[S2][0];
+                            c.g[RA][0] = sx(0x002c_9d5c);
+                            c.g[A0][0] = c.g[S4][0];
+                            callee::HUFF_WRITENUM.call(c, 0x002c_9d5c)?;
+                            c.lq(9, (c.g[SP][0] as u32).wrapping_add(0x20));
+                            Pack::CodesDone
+                        }
+                    }
+                }
+                Pack::LiteralRun => {
+                    c.cycles += 8;
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[A2][0] = c.g[T1][0];
+                    c.sq(9, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[RA][0] = sx(0x002c_9d04);
+                    c.g[A0][0] = c.g[S4][0];
+                    callee::HUFF_WRITECODE.call(c, 0x002c_9d04)?;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    let more = c.g[S2][0] != c.g[S0][0];
+                    c.lq(9, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    if more {
+                        if back_edge_unwinds(c, pack::LITERAL_RUN) {
+                            return Ok(());
+                        }
+                        Pack::LiteralRun
+                    } else {
+                        // 0x002c9d10, then the count selector reloads with no
+                        // extra charge.
+                        c.cycles += 2;
+                        c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_LIT_SEL));
+                        Pack::Tail
+                    }
+                }
+                Pack::LevelCodes => {
+                    c.cycles += 6;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    let empty = c.g[V1][0] == 0u64;
+                    c.g[FP][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    if empty {
+                        Pack::LevelCodesNext
+                    } else {
+                        // 0x002c9d98 (the S1 == 0 fork rejoins; S1 is never 0
+                        // here) + 0x002c9da4.
+                        c.cycles += 3;
+                        c.divu(0, S3, S1);
+                        c.cycles += 6;
+                        c.g[V0][0] = c.lo[0];
+                        c.g[S0][0] = c.g[V0][0];
+                        c.mult(0, V1, S0, S1);
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                        let none = c.g[S0][0] == c.g[S5][0];
+                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                        if none {
+                            Pack::LevelCodesNext
+                        } else {
+                            c.cycles += 3;
+                            c.g[S2][0] = 0xffff_ffff_ffff_0000;
+                            c.g[S2][0] = c.g[S2][0] | 0xffff;
+                            Pack::LevelCodeRun
+                        }
+                    }
+                }
+                Pack::LevelCodeRun => {
+                    c.cycles += 11;
+                    c.g[A2][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.sq(7, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[RA][0] = sx(0x002c_9de8);
+                    c.sq(9, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    callee::HUFF_WRITECODE.call(c, 0x002c_9de8)?;
+                    c.lq(7, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    let more = c.g[S0][0] != c.g[S2][0];
+                    c.lq(9, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    if more {
+                        if back_edge_unwinds(c, pack::LEVEL_CODE_RUN) {
+                            return Ok(());
+                        }
+                        Pack::LevelCodeRun
+                    } else {
+                        Pack::LevelCodesNext
+                    }
+                }
+                Pack::LevelCodesNext => {
+                    // 0x002c9df4.
+                    c.cycles += 3;
+                    c.g[S1][0] = c.g[FP][0];
+                    if c.g[S1][0] == 0u64 {
+                        Pack::CodesDone
+                    } else {
+                        c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                        if back_edge_unwinds(c, pack::LEVEL_CODES) {
+                            return Ok(());
+                        }
+                        Pack::LevelCodes
+                    }
+                }
+                Pack::CodesDone => {
+                    // 0x002c9e00.
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_LIT_SEL));
+                    Pack::Tail
+                }
+                Pack::Tail => {
+                    // Tail (0x002c9e04): near-byte delta or a plain writecode.
+                    c.cycles += 2;
+                    let no_literal = c.g[V0][0] == 0u64;
+                    c.g[S1][0] = 0u64;
+                    if !no_literal {
+                        // 0x002c9e0c: the delta applies only for a difference
+                        // from the previous byte in DELTA_MIN..=DELTA_MAX;
+                        // above the max skips straight to the writecode.
+                        c.cycles += 5;
+                        c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_DELTA_MAX));
+                        c.g[A2][0] = sx((c.g[S6][0] as u32).wrapping_sub(c.g[T1][0] as u32));
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                        let within_max = c.g[V0][0] == 0u64;
+                        if within_max {
+                            // 0x002c9e20 (below the min skips the delta too).
+                            c.cycles += 4;
+                            c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_DELTA_MIN));
+                            c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            let within_min = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+                            if within_min {
+                                // 0x002c9e30.
+                                c.cycles += 5;
+                                c.g[A0][0] =
+                                    c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_DELTA_BASE));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                                c.g[V1][0] = (c.g[S6][0] < c.g[T1][0]) as u64;
+                                let rising = c.g[V1][0] == 0u64;
+                                c.g[A2][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                if !rising {
+                                    // 0x002c9e44: a falling step takes the odd
+                                    // index.
+                                    c.cycles += 5;
+                                    c.g[V0][0] =
+                                        sx((c.g[T1][0] as u32).wrapping_sub(c.g[S6][0] as u32));
+                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                                    c.g[V0][0] =
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                    c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                                }
+                                // 0x002c9e58.
+                                c.cycles += 10;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
+                                c.g[A0][0] = sx((c.g[S6][0] as u32) << 2);
+                                c.g[V1][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                                c.g[A0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                c.g[A3][0] = c.lw(c.g[V1][0] as u32);
+                                c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                                c.g[V0][0] = (c.g[A3][0] < c.g[V0][0]) as u64;
+                                let cheaper = c.g[V0][0] == 0u64;
+                                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                if !cheaper {
+                                    // 0x002c9e80: delta wins; no writecode follows.
+                                    c.cycles += 6;
+                                    c.g[A0][0] = c.g[S4][0];
+                                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                                    c.g[S1][0] = 0x1;
+                                    c.g[V0][0] =
+                                        sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                                    c.g[RA][0] = sx(0x002c_9e98);
+                                    c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                                    callee::HUFF_WRITEBITS.call(c, 0x002c_9e98)?;
+                                }
+                            }
+                        }
+                    }
+                    // 0x002c9e98.
+                    c.cycles += 2;
+                    let coded = c.g[S1][0] != 0u64;
+                    c.g[T1][0] = c.g[S6][0];
+                    if !coded {
+                        // 0x002c9ea0.
+                        c.cycles += 6;
+                        c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                        c.g[A2][0] = c.g[S6][0];
+                        c.sq(9, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.g[RA][0] = sx(0x002c_9eb4);
+                        c.g[A0][0] = c.g[S4][0];
+                        callee::HUFF_WRITECODE.call(c, 0x002c_9eb4)?;
+                        c.lq(9, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    }
+                    Pack::MainTest
+                }
+                Pack::Epilogue => {
+                    // Epilogue (0x002c9ec8): terminator code, count 0, two fixed codes.
+                    c.cycles += 37;
+                    c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.g[A3][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[RA][0] = sx(0x002c_9ef4);
+                    c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                    callee::HUFF_WRITEBITS.call(c, 0x002c_9ef4)?;
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[RA][0] = sx(0x002c_9f04);
+                    c.g[A2][0] = 0u64;
+                    callee::HUFF_WRITENUM.call(c, 0x002c_9f04)?;
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A2][0] = 0x2;
+                    c.g[RA][0] = sx(0x002c_9f18);
+                    c.g[A3][0] = 0x2;
+                    callee::HUFF_WRITEBITS.call(c, 0x002c_9f18)?;
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A2][0] = 0u64;
+                    c.g[RA][0] = sx(0x002c_9f2c);
+                    c.g[A3][0] = 0x7;
+                    callee::HUFF_WRITEBITS.call(c, 0x002c_9f2c)?;
+                    frame.restore(c, S0, 0xc0);
+                    frame.restore(c, S1, 0xb0);
+                    frame.restore(c, S2, 0xa0);
+                    frame.restore(c, S3, 0x90);
+                    frame.restore(c, S4, 0x80);
+                    frame.restore(c, S5, 0x70);
+                    frame.restore(c, S6, 0x60);
+                    frame.restore(c, S7, 0x50);
+                    frame.restore(c, FP, 0x40);
+                    frame.restore_ra(c, 0x30);
+                    frame.close(c);
+                    return Ok(());
+                }
+            };
+        }
+    })
+}
+
+/// Bit cursor of the Huffman stream state.
+pub(crate) const HUFF_BITCOUNT: u32 = 0x2da8;
+
+/// Pending output bits of the Huffman stream state.
+pub(crate) const HUFF_BITBUF: u32 = 0x2dac;
+
+/// Live-symbol count of the Huffman stream state.
+pub(crate) const HUFF_CUR: u32 = 0x2dcc;
+
+/// Bit length of each small number's code (`u32` per number).
+pub(crate) const HUFF_NUM_BITS: u32 = 0xd44;
+
+/// Code of each small number (`u32` per number).
+pub(crate) const HUFF_NUM_CODE: u32 = 0x1134;
+
+// ---------------------------------------------------------------------------
+// HUFF_about (0x2c8348)
+
+/// `void *HUFF_about()` (0x2c8348): allocate the codec-about record, clear
+/// it and fill the `HUFF` signature, sizes and embedded version strings.
+pub fn huff_about(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(0x0048_65c8);
+        c.g[A0][0] = 0x84;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        DPD_ALLOC.call(c, 0x002c_836c)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        if c.g[S0][0] != 0 {
+            c.cycles += 55;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0x84;
+            MEMSET.call(c, 0x002c_8384)?;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = 0xffff_ffff_ffff_ffef;
+            c.g[A1][0] = 0x84;
+            c.g[A2][0] = 0x64;
+            c.g[V1][0] |= 0xf;
+            c.g[V0][0] = 0x4855_0000;
+            c.g[V1][0] &= c.g[A0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+            c.g[A0][0] = 0x1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+            c.g[V0][0] |= 0x4646;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[A0][0]);
+            c.g[A1][0] = 0x4a00_00;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), 0u64);
+            c.g[T0][0] = 0x4800_00;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0u64);
+            c.g[A2][0] = 0x4a00_00;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x20), 0u64);
+            c.g[A3][0] = 0x4a00_00;
+            c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+            c.g[V1][0] = 0x4800_00;
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x3988));
+            c.g[T2][0] = sx((c.g[T0][0] as u32).wrapping_add(0x65d8));
+            c.ldl(4, (c.g[T2][0] as u32).wrapping_add(0x7));
+            c.ldr(4, c.g[T2][0] as u32);
+            c.ldl(5, (c.g[T2][0] as u32).wrapping_add(0xf));
+            c.ldr(5, (c.g[T2][0] as u32).wrapping_add(0x8));
+            c.g[T1][0] = c.lh((c.g[T2][0] as u32).wrapping_add(0x10));
+            c.sdl(4, (c.g[S0][0] as u32).wrapping_add(0x2b));
+            c.sdr(4, (c.g[S0][0] as u32).wrapping_add(0x24));
+            c.sdl(5, (c.g[S0][0] as u32).wrapping_add(0x33));
+            c.sdr(5, (c.g[S0][0] as u32).wrapping_add(0x2c));
+            c.sh((c.g[S0][0] as u32).wrapping_add(0x34), c.g[T1][0]);
+            c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3980));
+            c.g[A0][0] = c.lw(c.g[T1][0] as u32);
+            c.g[A1][0] = c.lb((c.g[T1][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x44), c.g[A0][0]);
+            c.sb((c.g[S0][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), c.g[V0][0]);
+            c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x3990));
+            c.ldl(10, (c.g[A1][0] as u32).wrapping_add(0x7));
+            c.ldr(10, c.g[A1][0] as u32);
+            c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x5b));
+            c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x54));
+            c.g[T2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x65f0));
+            c.ldl(6, (c.g[T2][0] as u32).wrapping_add(0x7));
+            c.ldr(6, c.g[T2][0] as u32);
+            c.g[T0][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x8));
+            c.sdl(6, (c.g[S0][0] as u32).wrapping_add(0x6b));
+            c.sdr(6, (c.g[S0][0] as u32).wrapping_add(0x64));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x6c), c.g[T0][0]);
+        }
+        c.cycles += 5;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_GetBigEndian (0x2c8468)
+
+/// `unsigned HUFF_GetBigEndian(p, n)` (0x2c8468): big-endian load of `n`
+/// bytes; 0 when `n` is 0.
+pub fn huff_get_big_endian(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0;
+    c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+    if c.g[A1][0] != 0 {
+        c.cycles += 1;
+        c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+        loop {
+            c.cycles += 7;
+            c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 8);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+            let done = c.g[A2][0] == c.g[A1][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            if done {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_8478);
+            }
+        }
+    }
+    c.cycles += 2;
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_is (0x2c84a0)
+
+/// `int HUFF_is(p)` (0x2c84a0): 100 when the first two bytes are one of the
+/// six HUFF magic values (`0x30FB`..`0x35FB`), else 0.
+pub fn huff_is(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0x2;
+        c.g[RA][0] = sx(0x002c_84bc);
+        c.g[S0][0] = c.g[A0][0];
+        callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_84bc)?;
+        c.g[V1][0] = 0x30fb;
+        let mut hit = c.g[V0][0] == c.g[V1][0];
+        c.g[S1][0] = 0;
+        if !hit {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[RA][0] = sx(0x002c_84d4);
+            c.g[A1][0] = 0x2;
+            callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_84d4)?;
+            c.g[V1][0] = 0x31fb;
+            hit = c.g[V0][0] == c.g[V1][0];
+            c.g[A0][0] = c.g[S0][0];
+            if !hit {
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x002c_84e8);
+                c.g[A1][0] = 0x2;
+                callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_84e8)?;
+                c.g[V1][0] = 0x32fb;
+                hit = c.g[V0][0] == c.g[V1][0];
+                c.g[A0][0] = c.g[S0][0];
+                if !hit {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x002c_84fc);
+                    c.g[A1][0] = 0x2;
+                    callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_84fc)?;
+                    c.g[V1][0] = 0x33fb;
+                    hit = c.g[V0][0] == c.g[V1][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    if !hit {
+                        c.cycles += 5;
+                        c.g[RA][0] = sx(0x002c_8510);
+                        c.g[A1][0] = 0x2;
+                        callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_8510)?;
+                        c.g[V1][0] = 0x34fb;
+                        hit = c.g[V0][0] == c.g[V1][0];
+                        c.g[A0][0] = c.g[S0][0];
+                        if !hit {
+                            c.cycles += 5;
+                            c.g[RA][0] = sx(0x002c_8524);
+                            c.g[A1][0] = 0x2;
+                            callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_8524)?;
+                            c.g[V1][0] = 0x35fb;
+                            hit = c.g[V0][0] == c.g[V1][0];
+                            c.g[V0][0] = c.g[S1][0];
+                        }
+                    }
+                }
+            }
+        }
+        if hit {
+            c.cycles += 2;
+            c.g[S1][0] = 0x64;
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_size (0x2c8550)
+
+/// `unsigned HUFF_size(p)` (0x2c8550): the decoded size word of a HUFF
+/// block: a 3-byte value after the header whose position depends on the
+/// magic's low bit.
+pub fn huff_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0x2;
+        c.g[RA][0] = sx(0x002c_8568);
+        c.g[S0][0] = c.g[A0][0];
+        callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_8568)?;
+        c.g[V0][0] &= 0x100;
+        let flag = c.g[V0][0] == 0;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5));
+        if !flag {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x002c_857c);
+            c.g[A1][0] = 0x3;
+            callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_857c)?;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2));
+            c.g[RA][0] = sx(0x002c_8590);
+            c.g[A1][0] = 0x3;
+            callee::HUFF_GET_BIG_ENDIAN.call(c, 0x002c_8590)?;
+        }
+        // The generated body restores S0 after the call on both arms.
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_decode (0x2c85a0)
+
+/// `int HUFF_decode(src, unused, out)` (0x2c85a0): decode the stream at
+/// `src` into `out` with `HUFF_DecodeStream` (the second argument is not
+/// used) and return the decoded length.
+pub fn huff_decode(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x002c_85b0);
+        c.g[A1][0] = c.g[A2][0];
+        callee::HUFF_DECODE_STREAM.call(c, 0x002c_85b0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_DeltaEncode (0x2c85c0)
+
+/// `void HUFF_DeltaEncode(src, dst, n)` (0x2c85c0): store each byte's
+/// difference from the previous one (`prev` starts at 0).
+pub fn huff_delta_encode(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[A3][0] = c.g[A0][0];
+    c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.g[V0][0] = (c.g[A3][0] < c.g[A2][0]) as u64;
+    c.g[V1][0] = 0;
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        loop {
+            c.cycles += 8;
+            c.g[V0][0] = c.lbu(c.g[A3][0] as u32);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+            c.g[A0][0] = (c.g[A3][0] < c.g[A2][0]) as u64;
+            c.sb(c.g[A1][0] as u32, c.g[V1][0]);
+            c.g[V1][0] = c.g[V0][0];
+            let more = c.g[A0][0] != 0;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_85d8);
+            }
+        }
+    }
+    c.cycles += 2;
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_writebits (0x2c8600)
+
+/// `void HUFF_writebits(s, out, code, len)` (0x2c8600): append `len` bits
+/// of `code` to the stream, flushing whole bytes into the out buffer.
+pub fn huff_writebits(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V0][0] = (c.g[A3][0] < 0x11) as u64;
+        let wide = c.g[V0][0] == 0;
+        c.g[S2][0] = c.g[A2][0];
+        if wide {
+            c.cycles += 10;
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x10));
+            c.g[RA][0] = sx(0x002c_8634);
+            c.g[A2][0] = sx((c.g[S2][0] as u32) >> 16);
+            callee::HUFF_WRITEBITS.call(c, 0x002c_8634)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x002c_8648);
+            c.g[A3][0] = 0x10;
+            callee::HUFF_WRITEBITS.call(c, 0x002c_8648)?;
+            // The generated body restores S0 here on the wide path too.
+            frame.restore(c, S0, 0x30);
+        } else {
+            c.cycles += 15;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(HUFF_BITCOUNT));
+            c.g[A0][0] = sx((c.g[A3][0] as u32) << 2);
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[A1][0] = 0x18;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(HUFF_BITBUF));
+            c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_BITCOUNT), c.g[V1][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+            c.g[V1][0] = (c.g[V1][0] < 0x8u64) as u64;
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x2d64));
+            c.g[V0][0] &= c.g[S2][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << ((c.g[A1][0] as u32) & 31));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_BITBUF), c.g[A2][0]);
+            if c.g[V1][0] == 0 {
+                c.cycles += 1;
+                loop {
+                    c.cycles += 19;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[A0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x2dae));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sb(c.g[V1][0] as u32, c.g[A0][0]);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(HUFF_BITBUF));
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(HUFF_BITCOUNT));
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2de4));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 8);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x8));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_BITBUF), c.g[V1][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = (c.g[A0][0] < 0x8u64) as u64;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x2de4), c.g[V0][0]);
+                    let done = c.g[V1][0] != 0;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_BITCOUNT), c.g[A0][0]);
+                    if done {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_8690);
+                    }
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_treechase (0x2c86f8)
+
+/// `void HUFF_treechase(s, i, d)` (0x2c86f8): stamp depth `d` on every leaf
+/// of the Huffman subtree rooted at code node `i`.
+pub fn huff_treechase(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S2, 0x10);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0);
+        let leaf = c.g[A1][0] < 0x100;
+        c.g[S2][0] = c.g[A0][0];
+        if leaf {
+            c.cycles += 4;
+            c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[V0][0] as u32).wrapping_add(HUFF_CODE_LEN), c.g[A2][0]);
+        } else {
+            c.cycles += 12;
+            c.g[S0][0] = sx((c.g[A1][0] as u32) << 2);
+            c.g[S1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1524));
+            c.g[RA][0] = sx(0x002c_8744);
+            c.g[A2][0] = c.g[S1][0];
+            callee::HUFF_TREECHASE.call(c, 0x002c_8744)?;
+            c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1d44));
+            c.g[RA][0] = sx(0x002c_8758);
+            c.g[A2][0] = c.g[S1][0];
+            callee::HUFF_TREECHASE.call(c, 0x002c_8758)?;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_maketree (0x2c8770)
+
+/// `void HUFF_maketree(s)` (0x2c8770): build the Huffman code tree from the
+/// symbol frequencies at `s + 0x100`, stamping each leaf's depth.
+pub fn huff_maketree(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x860);
+        c.g[T6][0] = c.g[A0][0];
+        frame.save(c, S2, 0x830);
+        c.g[T5][0] = 0x1;
+        frame.save(c, S0, 0x850);
+        c.g[S2][0] = 0x100;
+        frame.save(c, S1, 0x840);
+        c.g[T0][0] = 0;
+        frame.save_ra(c, 0x820);
+        c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x410));
+        c.sw(c.g[SP][0] as u32, 0u64);
+        c.g[A3][0] = 0x63;
+        c.g[A0][0] = sx((c.g[T6][0] as u32).wrapping_add(0x100));
+        c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x414));
+        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x4));
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+            let empty = c.g[V0][0] == 0;
+            c.sw((c.g[A0][0] as u32).wrapping_add(0x2464), c.g[A3][0]);
+            if !empty {
+                c.cycles += 5;
+                c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+                c.g[T5][0] = sx((c.g[T5][0] as u32).wrapping_add(0x1));
+                c.sw(c.g[A2][0] as u32, c.g[T0][0]);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+            }
+            c.cycles += 4;
+            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = (c.g[T0][0] < 0x100u64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_87b0);
+            }
+        }
+        c.cycles += 4;
+        c.g[A0][0] = sx((c.g[T5][0] as u32).wrapping_sub(0x1));
+        c.g[V0][0] = (c.g[T5][0] < 0x3u64) as u64;
+        let few = c.g[V0][0] != 0;
+        c.sw((c.g[T6][0] as u32).wrapping_add(0x2dc4), c.g[A0][0]);
+        if few {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+            c.g[A2][0] = 0x1;
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.g[T6][0];
+            c.g[RA][0] = sx(0x002c_8958);
+            c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+            callee::HUFF_TREECHASE.call(c, 0x002c_8958)?;
+            frame.restore(c, S0, 0x850);
+        } else {
+            c.cycles += 2;
+            c.g[T8][0] = c.g[V1][0];
+            'l_2c87f8: loop {
+                c.cycles += 13;
+                c.g[T0][0] = sx((c.g[T5][0] as u32).wrapping_sub(0x1));
+                c.g[A0][0] = sx((c.g[T0][0] as u32) << 2);
+                c.g[A3][0] = c.g[T0][0];
+                c.g[T0][0] = sx((c.g[T5][0] as u32).wrapping_sub(0x2));
+                c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
+                c.g[V1][0] = c.lw(c.g[V1][0] as u32);
+                c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[T4][0] = c.g[A3][0];
+                c.g[A2][0] = c.lw(c.g[A0][0] as u32);
+                c.g[V0][0] = (c.g[V1][0] < c.g[A2][0]) as u64;
+                let swap = c.g[V0][0] == 0;
+                c.g[T1][0] = c.g[T0][0];
+                if !swap {
+                    c.cycles += 4;
+                    c.g[A2][0] = c.g[V1][0];
+                    c.g[T1][0] = c.g[T4][0];
+                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[A3][0] = c.g[T0][0];
+                }
+                c.cycles += 5;
+                c.g[T7][0] = sx((c.g[S2][0] as u32) << 2);
+                c.g[S0][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1524));
+                c.g[S1][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1d44));
+                let skip_scan = c.g[T0][0] == 0;
+                c.g[T9][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                // The scan loop's only exit breaks the generated outer block,
+                // skipping the +1 below (the skip path still charges it).
+                let mut scan_outer = false;
+                if !skip_scan {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[A0][0];
+                    'l_2c8858: loop {
+                        'b_2c8894: {
+                            c.cycles += 5;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4));
+                            c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                            c.g[V0][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                            let above = c.g[V0][0] == 0;
+                            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x1));
+                            if above {
+                                break 'b_2c8894;
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
+                            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[SP][0] as u32));
+                            loop {
+                                c.cycles += 7;
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x4));
+                                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4));
+                                c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                                c.g[V0][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                                let higher = c.g[V0][0] != 0;
+                                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x1));
+                                if !higher {
+                                    break 'b_2c8894;
+                                }
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002c_8878);
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        let at_zero = c.g[T0][0] == 0;
+                        c.g[V0][0] = sx((c.g[A3][0] as u32) << 2);
+                        if !at_zero {
+                            c.cycles += 4;
+                            c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                            c.g[V0][0] = (c.g[A2][0] < c.g[V1][0]) as u64;
+                            let below = c.g[V0][0] != 0;
+                            c.g[A3][0] = c.g[T0][0];
+                            if below {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002c_8858);
+                                }
+                                continue 'l_2c8858;
+                            } else {
+                                c.cycles += 5;
+                                c.g[V1][0] = c.g[A2][0];
+                                c.g[A3][0] = c.g[T1][0];
+                                c.g[A2][0] = c.lw(c.g[A1][0] as u32);
+                                c.g[T1][0] = c.g[T0][0];
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002c_8858);
+                                }
+                                continue 'l_2c8858;
+                            }
+                        } else {
+                            scan_outer = true;
+                            break;
+                        }
+                    }
+                }
+                if !scan_outer {
+                    c.cycles += 1;
+                    c.g[V0][0] = sx((c.g[A3][0] as u32) << 2);
+                }
+                c.cycles += 25;
+                c.g[T1][0] = sx((c.g[T1][0] as u32) << 2);
+                c.g[A3][0] = sx((c.g[T8][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[T5][0] = c.g[T4][0];
+                c.g[T3][0] = sx((c.g[T8][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                c.g[T2][0] = c.lw(c.g[A3][0] as u32);
+                c.g[T4][0] = c.lw(c.g[T3][0] as u32);
+                c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = sx((c.g[T5][0] as u32) << 2);
+                c.sw(c.g[A0][0] as u32, c.g[A2][0]);
+                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sw(c.g[A3][0] as u32, c.g[S2][0]);
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[T7][0] as u32));
+                c.g[T0][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                c.g[A2][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[T7][0] as u32));
+                c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+                c.g[V1][0] = sx((c.g[T8][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sw(c.g[V0][0] as u32, c.g[T2][0]);
+                c.g[S2][0] = c.g[T9][0];
+                c.sw(c.g[T0][0] as u32, c.g[A0][0]);
+                c.g[A1][0] = (c.g[T5][0] < 0x3u64) as u64;
+                c.sw(c.g[A2][0] as u32, c.g[T4][0]);
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                let more = c.g[A1][0] == 0;
+                c.sw(c.g[T3][0] as u32, c.g[V0][0]);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_87f8);
+                    }
+                    continue 'l_2c87f8;
+                }
+                c.cycles += 6;
+                c.g[A0][0] = c.g[T6][0];
+                c.g[A1][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x1));
+                c.g[RA][0] = sx(0x002c_8938);
+                c.g[A2][0] = 0;
+                callee::HUFF_TREECHASE.call(c, 0x002c_8938)?;
+                frame.restore(c, S0, 0x850);
+                break;
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x840);
+        frame.restore(c, S2, 0x830);
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x820));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_minrep (0x2c8970)
+
+/// `int HUFF_minrep(s, v, n)` (0x2c8970): the cheapest bit cost of encoding
+/// value `v` with `n` table levels left (extra-level cost against the live
+/// tables, `20` fallback past the small-value range).
+pub fn huff_minrep(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S5, 0x10);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S3, 0x30);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        c.g[S2][0] = c.g[A1][0];
+        c.g[S4][0] = c.g[A0][0];
+        if c.g[S1][0] == 0 {
+            c.cycles += 2;
+            c.g[S3][0] = 0;
+            let v_zero = c.g[S2][0] == 0;
+            if !v_zero {
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[S2][0] < 0xfcu64) as u64;
+                let small = c.g[V0][0] == 0;
+                c.g[S3][0] = 0x14;
+                if !small {
+                    c.cycles += 10;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32) << 2);
+                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(HUFF_NUM_BITS));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(HUFF_CODE_LEN));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3));
+                    c.g[S3][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                }
+            }
+        } else {
+            c.cycles += 11;
+            c.g[S5][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+            c.g[RA][0] = sx(0x002c_89ac);
+            c.g[A2][0] = c.g[S5][0];
+            callee::HUFF_MINREP.call(c, 0x002c_89ac)?;
+            c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+            c.g[S3][0] = c.g[V0][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x100));
+            c.g[A0][0] = c.g[S4][0];
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.divu(0, 18, 17);
+                if c.g[S1][0] != 0 {
+                    // No-op guard the original keeps around the divide.
+                }
+                c.cycles += 15;
+                c.g[A2][0] = c.g[S5][0];
+                c.g[S0][0] = c.lo[0];
+                c.mult(0, 5, 16, 17);
+                c.g[RA][0] = sx(0x002c_89ec);
+                c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+                callee::HUFF_MINREP.call(c, 0x002c_89ec)?;
+                c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(HUFF_CUR));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(HUFF_CODE_LEN));
+                c.mult(0, 4, 4, 16);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = ((c.g[V0][0] as i64) < (c.g[S3][0] as i64)) as u64;
+                if c.g[V1][0] != 0 {
+                    c.g[S3][0] = c.g[V0][0];
+                }
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.g[S3][0];
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S5, 0x10);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_writenum (0x2c8a78)
+
+/// `void HUFF_writenum(s, x, v)` (0x2c8a78): encode `v` against the number
+/// tables (short values inline, longer ones as base + extra bits).
+pub fn huff_writenum(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A2][0];
+        c.g[S3][0] = c.g[A0][0];
+        c.g[S4][0] = c.g[A1][0];
+        c.g[V0][0] = (c.g[S2][0] < 0xfcu64) as u64;
+        if c.g[V0][0] != 0 {
+            c.cycles += 6;
+            c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V0][0] = c.g[V1][0];
+            c.g[S0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(HUFF_NUM_CODE));
+            c.g[S1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(HUFF_NUM_BITS));
+        } else {
+            c.cycles += 3;
+            c.g[S1][0] = 0x6;
+            c.g[V0][0] = (c.g[S2][0] < 0x1fcu64) as u64;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[S0][0] = 0xfc;
+            } else {
+                c.cycles += 3;
+                c.g[S1][0] = 0x7;
+                c.g[V0][0] = (c.g[S2][0] < 0x3fcu64) as u64;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[S0][0] = 0x1fc;
+                } else {
+                    c.cycles += 3;
+                    c.g[S1][0] = 0x8;
+                    c.g[V0][0] = (c.g[S2][0] < 0x7fcu64) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 2;
+                        c.g[S0][0] = 0x3fc;
+                    } else {
+                        c.cycles += 3;
+                        c.g[S1][0] = 0x9;
+                        c.g[V0][0] = (c.g[S2][0] < 0xffcu64) as u64;
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 2;
+                            c.g[S0][0] = 0x7fc;
+                        } else {
+                            c.cycles += 3;
+                            c.g[S1][0] = 0xa;
+                            c.g[V0][0] = (c.g[S2][0] < 0x1ffcu64) as u64;
+                            if c.g[V0][0] != 0 {
+                                c.cycles += 2;
+                                c.g[S0][0] = 0xffc;
+                            } else {
+                                c.cycles += 3;
+                                c.g[S1][0] = 0xb;
+                                c.g[V0][0] = (c.g[S2][0] < 0x3ffcu64) as u64;
+                                if c.g[V0][0] != 0 {
+                                    c.cycles += 2;
+                                    c.g[S0][0] = 0x1ffc;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[S1][0] = 0xc;
+                                    c.g[V0][0] = (c.g[S2][0] < 0x7ffcu64) as u64;
+                                    if c.g[V0][0] != 0 {
+                                        c.cycles += 2;
+                                        c.g[S0][0] = 0x3ffc;
+                                    } else {
+                                        c.cycles += 4;
+                                        c.g[V0][0] = 0xfffb;
+                                        c.g[V0][0] = (c.g[V0][0] < c.g[S2][0]) as u64;
+                                        let big = c.g[V0][0] != 0;
+                                        c.g[V0][0] = 0x10000;
+                                        if big {
+                                            c.cycles += 4;
+                                            c.g[V0][0] |= 0xfffb;
+                                            c.g[V0][0] = (c.g[V0][0] < c.g[S2][0]) as u64;
+                                            let bigger = c.g[V0][0] != 0;
+                                            c.g[V0][0] = 0x30000;
+                                            if bigger {
+                                                c.cycles += 4;
+                                                c.g[V0][0] |= 0xfffb;
+                                                c.g[V0][0] = (c.g[V0][0] < c.g[S2][0]) as u64;
+                                                let huge = c.g[V0][0] != 0;
+                                                c.g[V0][0] = 0x70000;
+                                                if huge {
+                                                    c.cycles += 4;
+                                                    c.g[V0][0] |= 0xffff;
+                                                    c.g[V0][0] = (c.g[V0][0] < c.g[S2][0]) as u64;
+                                                    let giant = c.g[V0][0] != 0;
+                                                    c.g[V0][0] = 0xf0000;
+                                                    if giant {
+                                                        c.cycles += 4;
+                                                        c.g[V0][0] |= 0xffff;
+                                                        c.g[V0][0] =
+                                                            (c.g[V0][0] < c.g[S2][0]) as u64;
+                                                        let vast = c.g[V0][0] != 0;
+                                                        c.g[S1][0] = 0x12;
+                                                        if vast {
+                                                            c.cycles += 1;
+                                                            c.g[S0][0] = 0x100000;
+                                                        } else {
+                                                            c.cycles += 3;
+                                                            c.g[S1][0] = 0x11;
+                                                            c.g[S0][0] = 0x80000;
+                                                        }
+                                                    } else {
+                                                        c.cycles += 4;
+                                                        c.g[S0][0] = 0x30000;
+                                                        c.g[S1][0] = 0x10;
+                                                        c.g[S0][0] |= 0xfffc;
+                                                    }
+                                                } else {
+                                                    c.cycles += 4;
+                                                    c.g[S0][0] = 0x10000;
+                                                    c.g[S1][0] = 0xf;
+                                                    c.g[S0][0] |= 0xfffc;
+                                                }
+                                            } else {
+                                                c.cycles += 3;
+                                                c.g[S1][0] = 0xe;
+                                                c.g[S0][0] = 0xfffc;
+                                            }
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[S1][0] = 0xd;
+                                            c.g[S0][0] = 0x7ffc;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 18;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+        c.g[RA][0] = sx(0x002c_8bf8);
+        c.g[A2][0] = 0x1;
+        callee::HUFF_WRITEBITS.call(c, 0x002c_8bf8)?;
+        c.g[A2][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[S4][0];
+        c.g[RA][0] = sx(0x002c_8c0c);
+        c.g[A3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2));
+        callee::HUFF_WRITEBITS.call(c, 0x002c_8c0c)?;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_writeexp (0x2c8c30)
+
+/// `void HUFF_writeexp(s, out, idx)` (0x2c8c30): write the code of the
+/// current symbol (`s->cur`), the number 0, then `idx` in 9 bits.
+pub fn huff_writeexp(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A2][0];
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(HUFF_CUR));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = c.g[V1][0];
+        c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(HUFF_CODE_LEN));
+        c.g[RA][0] = sx(0x002c_8c6c);
+        c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(HUFF_CODE));
+        callee::HUFF_WRITEBITS.call(c, 0x002c_8c6c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x002c_8c7c);
+        c.g[A2][0] = 0;
+        callee::HUFF_WRITENUM.call(c, 0x002c_8c7c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x002c_8c90);
+        c.g[A3][0] = 0x9;
+        callee::HUFF_WRITEBITS.call(c, 0x002c_8c90)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_writecode (0x2c8ca8)
+
+/// `void HUFF_writecode(s, x, idx)` (0x2c8ca8): encode `x` with the live
+/// tables, switching tables first when `idx` is the live one.
+pub fn huff_writecode(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A3][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(HUFF_CUR));
+        let same = c.g[A2][0] == c.g[V0][0];
+        c.g[V0][0] = sx((c.g[A2][0] as u32) << 2);
+        if same {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x002c_8cc8);
+            callee::HUFF_WRITEEXP.call(c, 0x002c_8cc8)?;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[A3][0];
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V0][0] = c.g[V1][0];
+            c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(HUFF_CODE_LEN));
+            c.g[RA][0] = sx(0x002c_8ce8);
+            c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(HUFF_CODE));
+            callee::HUFF_WRITEBITS.call(c, 0x002c_8ce8)?;
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_InitNumTables (0x2c8cf8)
+
+/// `void HUFF_InitNumTables(s)` (0x2c8cf8): fill the number length/base
+/// tables with the six geometric bands (0/0, 1/4, 2/12, 3/28, 4/60, 5/124).
+pub fn huff_init_num_tables(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(HUFF_NUM_CODE));
+    c.g[A1][0] = 0;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(HUFF_NUM_BITS));
+    c.g[V1][0] = c.g[A3][0];
+    loop {
+        c.cycles += 7;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x3f0), 0u64);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[V0][0] = (c.g[A1][0] < 0x4u64) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x002c_8d08);
+        }
+    }
+    c.cycles += 3;
+    let below = c.g[A1][0] < 0xcu64;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+    if !below {
+    } else {
+        c.cycles += 4;
+        c.g[T1][0] = 0x1;
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[T0][0] = 0x4;
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[A2][0] as u32, c.g[T1][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = (c.g[A1][0] < 0xcu64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_8d40);
+            }
+        }
+    }
+    c.cycles += 3;
+    let below = c.g[A1][0] < 0x1cu64;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+    if !below {
+    } else {
+        c.cycles += 4;
+        c.g[T1][0] = 0x2;
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[T0][0] = 0xc;
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[A2][0] as u32, c.g[T1][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = (c.g[A1][0] < 0x1cu64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_8d78);
+            }
+        }
+    }
+    c.cycles += 3;
+    let below = c.g[A1][0] < 0x3cu64;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+    if !below {
+    } else {
+        c.cycles += 4;
+        c.g[T1][0] = 0x3;
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[T0][0] = 0x1c;
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[A2][0] as u32, c.g[T1][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = (c.g[A1][0] < 0x3cu64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_8db0);
+            }
+        }
+    }
+    c.cycles += 3;
+    let below = c.g[A1][0] < 0x7cu64;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+    if !below {
+    } else {
+        c.cycles += 4;
+        c.g[T1][0] = 0x4;
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[T0][0] = 0x3c;
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[A2][0] as u32, c.g[T1][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = (c.g[A1][0] < 0x7cu64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_8de8);
+            }
+        }
+    }
+    c.cycles += 3;
+    let below = c.g[A1][0] < 0xfcu64;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+    if !below {
+    } else {
+        c.cycles += 4;
+        c.g[T0][0] = 0x5;
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[A2][0] = 0x7c;
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[A0][0] as u32, c.g[A2][0]);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = (c.g[A1][0] < 0xfcu64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_8e20);
+            }
+        }
+    }
+    c.cycles += 2;
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_EncodeBlock (0x2c9f60)
+
+/// `int HUFF_EncodeBlock(s, in, out, len, mode)` (0x2c9f60): analyse one
+/// input block and write its coded header, body and end marker.
+pub fn huff_encode_block(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[T0][0];
+        c.g[S2][0] = c.g[A2][0];
+        c.g[S3][0] = c.g[A1][0];
+        c.g[S4][0] = c.g[A3][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_BITCOUNT), 0u64);
+        c.g[A1][0] = 0x1;
+        c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_BITBUF), 0u64);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2d68));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2d64), 0u64);
+        loop {
+            c.cycles += 8;
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_sub(0x4));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.g[V1][0] = (c.g[A1][0] < 0x11u64) as u64;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+            let more = c.g[V1][0] != 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_9fa8);
+            }
+        }
+        c.cycles += 20;
+        c.g[RA][0] = sx(0x002c_9fd0);
+        c.g[A0][0] = c.g[S0][0];
+        callee::HUFF_INIT_NUM_TABLES.call(c, 0x002c_9fd0)?;
+        c.g[V0][0] = c.lw(c.g[S3][0] as u32);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0x39;
+        c.g[A2][0] = 0xf;
+        c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_IN_PTR), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2db8), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_IN_END), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2de8), c.g[V1][0]);
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x4), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_BITCOUNT), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(HUFF_BITBUF), 0u64);
+        c.g[RA][0] = sx(0x002c_a00c);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2de4), 0u64);
+        callee::HUFF_ANALYSIS.call(c, 0x002c_a00c)?;
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+        if c.g[S4][0] != c.g[V0][0] {
+            // Length changed: the 31FB/33FB/35FB header plus both lengths.
+            c.cycles += 2;
+            c.g[V0][0] = 0x1;
+            if c.g[S1][0] == 0 {
+                c.cycles += 2;
+                c.g[A2][0] = 0x31fb;
+            } else {
+                c.cycles += 2;
+                let not_one = c.g[S1][0] != c.g[V0][0];
+                c.g[V0][0] = c.g[S1][0] ^ 0x2;
+                if !not_one {
+                    c.cycles += 2;
+                    c.g[A2][0] = 0x33fb;
+                } else {
+                    c.cycles += 2;
+                    c.g[A2][0] = 0x35fb;
+                    if c.g[V0][0] != 0 {
+                        c.g[A2][0] = 0;
+                    }
+                }
+            }
+            c.cycles += 15;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x002c_a0a4);
+            c.g[A3][0] = 0x10;
+            callee::HUFF_WRITEBITS.call(c, 0x002c_a0a4)?;
+            c.g[A2][0] = c.g[S4][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x002c_a0b8);
+            c.g[A3][0] = 0x18;
+            callee::HUFF_WRITEBITS.call(c, 0x002c_a0b8)?;
+            c.g[A2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x002c_a0cc);
+            c.g[A3][0] = 0x18;
+            callee::HUFF_WRITEBITS.call(c, 0x002c_a0cc)?;
+            c.g[A0][0] = c.g[S0][0];
+        } else {
+            // Same length: the 30FB/32FB/34FB header plus the length.
+            c.cycles += 2;
+            c.g[V0][0] = 0x1;
+            if c.g[S1][0] == 0 {
+                c.cycles += 2;
+                c.g[A2][0] = 0x30fb;
+            } else {
+                c.cycles += 2;
+                let not_one = c.g[S1][0] != c.g[V0][0];
+                c.g[V0][0] = c.g[S1][0] ^ 0x2;
+                if !not_one {
+                    c.cycles += 2;
+                    c.g[A2][0] = 0x32fb;
+                } else {
+                    c.cycles += 2;
+                    c.g[A2][0] = 0x34fb;
+                    if c.g[V0][0] != 0 {
+                        c.g[A2][0] = 0;
+                    }
+                }
+            }
+            c.cycles += 11;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x002c_a050);
+            c.g[A3][0] = 0x10;
+            callee::HUFF_WRITEBITS.call(c, 0x002c_a050)?;
+            c.g[A2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x002c_a064);
+            c.g[A3][0] = 0x18;
+            callee::HUFF_WRITEBITS.call(c, 0x002c_a064)?;
+            c.g[A0][0] = c.g[S0][0];
+        }
+        c.cycles += 12;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x002c_a0dc);
+        c.g[A2][0] = 0x39;
+        callee::HUFF_PACK.call(c, 0x002c_a0dc)?;
+        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_encode (0x2ca100)
+
+/// `int HUFF_encode(src, size, dst, opts)` (0x2ca100): Huffman-compress one
+/// block, delta-encoding first for modes 1 (once) and 2 (twice); returns the
+/// output length, 0 when the stream state cannot be allocated.
+pub fn huff_encode(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S3, 0x60);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = 0;
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S4][0] = 0;
+        c.g[S5][0] = 0;
+        c.g[S6][0] = c.g[A2][0];
+        if c.g[A3][0] == 0 {
+        } else {
+            c.cycles += 1;
+            c.g[S4][0] = c.lw(c.g[A3][0] as u32);
+        }
+        c.cycles += 9;
+        c.g[A1][0] = 0x480000;
+        c.g[A0][0] = 0x31ec;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6600));
+        c.g[A2][0] = 0x20000000;
+        c.g[RA][0] = sx(0x002c_a15c);
+        c.g[A3][0] = 0;
+        DPD_ALLOC.call(c, 0x002c_a15c)?;
+        c.g[S3][0] = c.g[V0][0];
+        c.g[V0][0] = 0x1;
+        if c.g[S3][0] != 0 {
+            c.cycles += 2;
+            let mode_one = c.g[S4][0] == c.g[V0][0];
+            c.g[V0][0] = ((c.g[S4][0] as i64) < 2i64) as u64;
+            let mut direct = false;
+            if mode_one {
+                // Mode 1: scratch copy, then the shared delta below.
+                c.cycles += 9;
+                c.g[A1][0] = 0x480000;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6618));
+                c.g[A2][0] = 0x20000000;
+                c.g[RA][0] = sx(0x002c_a1a4);
+                c.g[A3][0] = 0;
+                callee::OPERATOR_NEW_NAMED.call(c, 0x002c_a1a4)?;
+                c.g[S1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S2][0];
+            } else {
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.sw(c.g[SP][0] as u32, c.g[S2][0]);
+                    direct = true;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x2;
+                    let mode_two = c.g[S4][0] == c.g[V0][0];
+                    c.g[A1][0] = 0x480000;
+                    if !mode_two {
+                        c.cycles += 2;
+                        c.sw(c.g[SP][0] as u32, c.g[S2][0]);
+                        direct = true;
+                    } else {
+                        // Mode 2: scratch copy, delta it, then the shared
+                        // delta below runs on the copy itself.
+                        c.cycles += 11;
+                        c.g[A3][0] = 0;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6618));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x002c_a1c4);
+                        c.g[A2][0] = 0x20000000;
+                        callee::OPERATOR_NEW_NAMED.call(c, 0x002c_a1c4)?;
+                        c.g[S1][0] = c.g[V0][0];
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        c.g[RA][0] = sx(0x002c_a1d8);
+                        c.g[A2][0] = c.g[S0][0];
+                        callee::HUFF_DELTA_ENCODE.call(c, 0x002c_a1d8)?;
+                        c.g[A0][0] = c.g[S1][0];
+                    }
+                }
+            }
+            if !direct {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[RA][0] = sx(0x002c_a1e8);
+                c.g[A2][0] = c.g[S0][0];
+                callee::HUFF_DELTA_ENCODE.call(c, 0x002c_a1e8)?;
+                c.sw(c.g[SP][0] as u32, c.g[S1][0]);
+            }
+            // The encode-block, tmp-free and state-free below stay inside the
+            // S3 != 0 region: an allocation failure skips them all.
+            c.cycles += 11;
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S6][0]);
+            c.g[A3][0] = c.g[S0][0];
+            c.g[T0][0] = c.g[S4][0];
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[S0][0]);
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = c.g[SP][0];
+            c.g[RA][0] = sx(0x002c_a210);
+            c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+            callee::HUFF_ENCODE_BLOCK.call(c, 0x002c_a210)?;
+            let no_tmp = c.g[S1][0] == 0;
+            c.g[S5][0] = c.g[V0][0];
+            if !no_tmp {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x002c_a220);
+                c.g[A0][0] = c.g[S1][0];
+                callee::EA_MEM_FREE.call(c, 0x002c_a220)?;
+            }
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x002c_a228);
+            c.g[A0][0] = c.g[S3][0];
+            DPD_DELETE.call(c, 0x002c_a228)?;
+        }
+        c.cycles += 11;
+        c.g[V0][0] = c.g[S5][0];
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003b49b0 RefPack_GetUnpackedSize
+
+/// `int RefPack_GetUnpackedSize(const void* src)` (0x3b49b0): pass `src` to
+/// `EAC_GetUnpackedSize` (0x3b4818) and return its answer: the unpacked
+/// size of the RefPack stream, or 0 when the header is not RefPack.
+pub fn refpack_get_unpacked_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::EAC_GET_UNPACKED_SIZE.call(c, 0x003b_49c0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003b4d00 RefPack_GetSizes
+
+/// Resume head of the packed-size walk below (the loop back-edges check
+/// events here).
+pub(crate) const REFPACK_SIZES_HEAD: u32 = 0x003b_4d50;
+
+/// `int RefPack_GetSizes(unsigned char* p, int* outlen)` (0x3b4d00): sniff
+/// a RefPack header: return its 3-byte unpacked size `n`, and when
+/// `outlen` is set, walk the pack opcodes to `q` and store the packed
+/// length `q - p` there. A null `p` returns 0. The low bit of the first
+/// byte selects the 5-byte long header.
+pub fn refpack_get_sizes(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[A3][0] = c.g[A0][0];
+        let empty = c.g[A3][0] == 0;
+        c.g[T0][0] = 0;
+        if !empty {
+            c.cycles += 17;
+            c.g[V0][0] = Addr(c.g[A3][0] as u32).lbu(c);
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x5));
+            c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 8);
+            c.g[V0][0] = c.g[V0][0] & 0x100;
+            if c.g[V0][0] != 0 {
+                c.g[A2][0] = c.g[V1][0];
+            }
+            c.g[T0][0] = Addr(c.g[A2][0] as u32).lbu(c);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+            c.g[V1][0] = Addr(c.g[A2][0] as u32).lbu(c);
+            c.g[V0][0] = sx((c.g[T0][0] as u32) << 8);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A0][0] = Addr(c.g[A2][0] as u32).lbu(c);
+            c.g[V0][0] = sx((c.g[T0][0] as u32) << 8);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+            let no_out = c.g[A1][0] == 0;
+            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            if !no_out {
+                loop {
+                    c.cycles += 4;
+                    c.g[A0][0] = Addr(c.g[A2][0] as u32).lbu(c);
+                    c.g[V0][0] = c.g[A0][0] & 0x80;
+                    let literal = c.g[V0][0] == 0;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    // 0xxxxxxx, the 2-byte form: skip the second byte and
+                    // `cmd & 3` literals.
+                    if literal {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.g[A0][0] & 0x3;
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        if event_due(c) {
+                            deliver_event_here(c, REFPACK_SIZES_HEAD);
+                        }
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[A0][0] & 0x40;
+                    let long = c.g[V0][0] != 0;
+                    c.g[V0][0] = c.g[A0][0] & 0x20;
+                    // 10xxxxxx, the 3-byte form: skip two bytes and the
+                    // second byte's top two bits of literals.
+                    if !long {
+                        c.cycles += 5;
+                        c.g[V0][0] = Addr(c.g[A2][0] as u32).lbu(c);
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 6);
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        if event_due(c) {
+                            deliver_event_here(c, REFPACK_SIZES_HEAD);
+                        }
+                        continue;
+                    }
+                    c.cycles += 2;
+                    let medium = c.g[V0][0] != 0;
+                    c.g[V0][0] = c.g[A0][0] & 0x1f;
+                    // 110xxxxx, the 4-byte form: skip three bytes and
+                    // `cmd & 3` literals.
+                    if !medium {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.g[A0][0] & 0x3;
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3));
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        if event_due(c) {
+                            deliver_event_here(c, REFPACK_SIZES_HEAD);
+                        }
+                        continue;
+                    }
+                    // 111xxxxx: a run of `(cmd & 0x1f) * 4 + 4` literals;
+                    // past 0x70 (0xfc-0xff) it is the end opcode.
+                    c.cycles += 5;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = (c.g[V0][0] < 0x71u64) as u64;
+                    if c.g[V1][0] == 0 {
+                        c.g[V0][0] = c.g[A0][0] & 0x3;
+                        break;
+                    }
+                    c.cycles += 2;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    if event_due(c) {
+                        deliver_event_here(c, REFPACK_SIZES_HEAD);
+                    }
+                }
+                c.cycles += 3;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+                c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+            }
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.g[V0][0] = c.g[T0][0];
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -21998,13 +24422,1594 @@ pub(crate) mod tests {
             },
         );
     }
+
+    use crate::difftest::check_paths;
+    use crate::difftest::check_paths_lohi;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
+    use crate::game::lib::eafile::tests::ea_fake_cost;
+    use crate::game::lib::eafile::tests::ea_fixed_costs;
+
+    use std::ptr::addr_of_mut;
+
+    /// Fixture addresses: nonzero low bytes, word-aligned, inside
+    /// `DATA..DATA+0xfffff` (clear of the fakes' call log).
+    pub(crate) const HUFF_S: u32 = DATA + 0x1104;
+
+    pub(crate) const HUFF_IN: u32 = DATA + 0x5104;
+
+    pub(crate) const HUFF_OUT: u32 = DATA + 0x5804;
+
+    pub(crate) const HUFF_OUTBUF: u32 = DATA + 0x6004;
+
+    /// The cost-compare edges [`huff_pack_fixture`] builds from seed 144 on
+    /// (the repeat cost is the current code's length + 2 x the count's bit
+    /// count + 3; the literal cost is the run times the byte's length):
+    /// mode 2 with the level cost equal to the literal cost; mode 2 with no
+    /// second present flag and the repeat cost equal to the literal cost;
+    /// mode 1 with those two equal, with a count whose bit count (31)
+    /// decides, and with a run of 253 (the longest the table prices); raw
+    /// mode with a literal cost of exactly 0x7d00; a delta step of exactly
+    /// 16 each way with the delta base at a code length; and mode 2 with the
+    /// repeat cost equal to the level cost.
+    pub(crate) const HUFF_PACK_EDGES: u32 = 8;
+
+    /// Generated-side cycle totals of the eight scenarios, each with both
+    /// delta windows, and of the edges: every walk the fixture claims.
+    pub(crate) const HUFF_PACK_PATHS: &[u64] = &[
+        2128, 3005, 3025, 3035, 3055, 3062, 3075, 3116, 3136, 3221, 3248, 3404, 3405, 3496, 3516,
+        3603, 3628, 3810, 4545, 5118, 5144, 5201, 5205, 5212, 5239, 5296, 5518, 5525, 5585, 5592,
+        5599, 5941, 5948, 5955, 5982, 6321, 6348, 6355, 6362, 287637,
+    ];
+
+    /// Build the HUFF state: code length = symbol, codeword 1..5, small-number
+    /// table 1, then the per-scenario counts, thresholds and input bytes
+    /// (`seed % 8` scenario, `seed / 8 % 4` last byte, `seed / 32 % 2` delta
+    /// window). All scenarios terminate: numbers stay below 0x1fc (no
+    /// unmapped-table reads), inputs are at most 8 bytes, modes at most 4.
+    /// Seeds 144 and up are the cost-compare edges in [`HUFF_PACK_EDGES`].
+    pub(crate) fn huff_pack_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        for i in 0..0x80u32 {
+            c.bus.write32(HUFF_S + HUFF_CODE_LEN + i * 4, i);
+            c.bus.write32(HUFF_S + HUFF_CODE + i * 4, 1 + (i % 5));
+            c.bus.write32(HUFF_S + HUFF_SYM_FLAG + i * 4, 0);
+        }
+        for i in 0..0x100u32 {
+            c.bus.write32(HUFF_S + HUFF_NUM_BITS + i * 4, 1);
+        }
+        for i in 0..0x40u32 {
+            c.bus.write32(HUFF_S + HUFF_NUM_CODE + i * 4, 0);
+        }
+        for i in 0..32u32 {
+            c.bus.write32(HUFF_S + 0x2d64 + i * 4, 0xffff_ffff);
+        }
+        let edge = seed.checked_sub(144);
+        let sc = match edge {
+            Some(0 | 1 | 7) => 2,
+            Some(2..=4) => 1,
+            Some(5) => 4,
+            Some(_) => 3,
+            None => seed % 8,
+        };
+        let d = if edge.is_some() { 0 } else { seed / 8 % 4 };
+        let window = edge == Some(6) || (edge.is_none() && seed / 32 % 2 != 0);
+        // (mode, cur, numcount, ordercount, lit_sel) per scenario.
+        let (mode, cur, n_nums, n_orders, lit) = match sc {
+            0 => (1, 0, 0, 0, 1),
+            1 => (1, 1, 1, 1, 1),
+            2 => (2, 2, 2, 2, 1),
+            3 => (1, 0x40, 0, 0, 1),
+            4 => (0, 0, 0, 0, 0),
+            5 => (1, 0, 2, 2, 1),
+            6 => (3, 1, 0, 0, 1),
+            _ => (4, 0, 0, 0, 1),
+        };
+        c.bus.write32(HUFF_S + HUFF_NUM_COUNT, n_nums);
+        c.bus.write32(HUFF_S + HUFF_ORDER_COUNT, n_orders);
+        c.bus.write32(HUFF_S + HUFF_MODE, mode);
+        c.bus.write32(HUFF_S + HUFF_CUR, cur);
+        c.bus.write32(HUFF_S + HUFF_LIT_SEL, lit);
+        c.bus.write32(HUFF_S + HUFF_DELTA_BASE, 0);
+        // Delta window: empty, or -16..=16 around the previous byte.
+        c.bus.write32(HUFF_S + HUFF_DELTA_MAX, 16);
+        c.bus.write32(
+            HUFF_S + HUFF_DELTA_MIN,
+            if window { -16i32 as u32 } else { 17 },
+        );
+        c.bus.write32(HUFF_S + 0x2da8, 0);
+        c.bus.write32(HUFF_S + 0x2dac, 0);
+        c.bus.write32(HUFF_S + 0x2de4, 0);
+        c.bus.write16(HUFF_S + 0x2dae, 0x5a5a);
+        // Code-length list values (all below 0x1fc, so writenum stays on
+        // its table/fixed paths with bit counts below 0x11).
+        let nums: &[u32] = match sc {
+            1 => &[5],
+            2 => &[5, 0x150],
+            5 => &[0x10 + d, 5],
+            _ => &[],
+        };
+        for (i, &n) in nums.iter().enumerate() {
+            c.bus.write32(HUFF_S + HUFF_NUM_LIST + i as u32 * 4, n);
+        }
+        // Order-list targets (any byte terminates the forward scan).
+        let orders: &[u32] = match sc {
+            1 => &[0x10],
+            2 => &[0x20, 0x05 + d],
+            5 => &[0x30, 0x07 + d],
+            _ => &[],
+        };
+        for (i, &o) in orders.iter().enumerate() {
+            c.bus.write32(HUFF_S + HUFF_ORDER_TAB + i as u32 * 4, o);
+        }
+        // Present flags that steer the repeat-cost recompute.
+        match sc {
+            1 => c.bus.write32(HUFF_S + HUFF_SYM_FLAG + 1 * 4, 7),
+            2 => {
+                c.bus.write32(HUFF_S + HUFF_SYM_FLAG + 2 * 4, 3);
+                c.bus.write32(HUFF_S + HUFF_SYM_FLAG + 3 * 4, 5);
+            }
+            6 => {
+                c.bus.write32(HUFF_S + HUFF_SYM_FLAG + 2 * 4, 3);
+                c.bus.write32(HUFF_S + HUFF_SYM_FLAG + 3 * 4, 5);
+            }
+            7 => {
+                for i in 1..4u32 {
+                    c.bus.write32(HUFF_S + HUFF_SYM_FLAG + i * 4, i);
+                }
+            }
+            _ => {}
+        }
+        let long_run: Vec<u8> = [0x41; 253].into_iter().chain([0x42]).collect();
+        let input: &[u8] = match edge {
+            Some(0) => &[3, 3, 3, 4, 4, 4, 4, 0x40],
+            Some(1) => {
+                c.bus.write32(HUFF_S + HUFF_SYM_FLAG + 3 * 4, 0);
+                &[7, 7, 0x40]
+            }
+            Some(2) => &[3, 3, 3, 0x42],
+            Some(3) => {
+                c.bus.write32(HUFF_S + HUFF_NUM_BITS + 2 * 4, 31);
+                &[0x20, 0x20, 0x20, 0x42]
+            }
+            Some(4) => &long_run,
+            Some(5) => {
+                c.bus.write32(HUFF_S + HUFF_CODE_LEN + 0x42 * 4, 0x3e80);
+                &[0x42, 0x42, 0x42, 0x43]
+            }
+            Some(6) => {
+                c.bus.write32(HUFF_S + HUFF_DELTA_BASE, 0x41);
+                &[0x40, 0x41, 0x51, 0x41]
+            }
+            Some(_) => {
+                c.bus.write32(HUFF_S + HUFF_NUM_BITS + 3 * 4, 2);
+                &[0x10, 0x10, 0x10, 0x10, 0x40]
+            }
+            None => &[],
+        };
+        // Input bytes: runs plus distinct bytes; nonzero everywhere.
+        let input: &[u8] = if edge.is_some() {
+            input
+        } else {
+            match sc {
+                1 => &[0x41, 0x41, 0x42],
+                2 => &[0x40, 0x40, 0x40, 0x40 + d as u8],
+                3 => &[0x40, 0x41 + d as u8],
+                4 => &[0x42, 0x42],
+                5 => &[0x43, 0x43, 0x43, 0x44 + d as u8],
+                6 => &[0x45, 0x45, 0x45, 0x45, 0x45, 0x46 + d as u8, 0x44],
+                7 => &[0x47, 0x47, 0x47, 0x47, 0x47, 0x47, 0x47, 0x48 + d as u8],
+                _ => &[],
+            }
+        };
+        for i in 0..8u32 {
+            c.bus.write8(HUFF_IN + i, 0xa5);
+        }
+        for (i, &b) in input.iter().enumerate() {
+            c.bus.write8(HUFF_IN + i as u32, b);
+        }
+        c.bus.write32(HUFF_S + HUFF_IN_PTR, HUFF_IN);
+        c.bus
+            .write32(HUFF_S + HUFF_IN_END, HUFF_IN + input.len() as u32);
+        // Bitstream out: pointer, count, and a nonzero-prefilled buffer.
+        c.bus.write32(HUFF_OUT, HUFF_OUTBUF);
+        c.bus.write32(HUFF_OUT + 4, 0);
+        for i in 0..64u32 {
+            c.bus.write8(HUFF_OUTBUF + i, 0xa5);
+        }
+        let _ = r.next_u32();
+        c.g[A0][0] = sx(HUFF_S);
+        c.g[A1][0] = sx(HUFF_OUT);
+        c.pc = 0x002c_9a48;
+    }
+
+    /// All eight scenarios with both delta windows, then the edges, against
+    /// the real bit-writing callees; every walk must hit its total in
+    /// [`HUFF_PACK_PATHS`].
+    #[test]
+    fn huff_pack_matches() {
+        check_paths(
+            ee::s09::f_002c9a48__generated,
+            huff_pack,
+            144 + HUFF_PACK_EDGES,
+            HUFF_PACK_PATHS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2c_9a48, 0);
+                huff_pack_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    driven!(huff_pack_gen, ee::s09::f_002c9a48__generated);
+
+    driven!(huff_pack_driven, huff_pack);
+
+    /// Each loop head of `HUFF_pack` with a fixture seed whose walk reaches
+    /// it and the cycle (after entry at cycle 1000) at which an event due
+    /// there is first taken at that head's back edge.
+    pub(crate) const HUFF_PACK_HEADS: [(u32, u32, u64); 10] = [
+        (0x002c_9aa0, 2, 0),
+        (0x002c_9ad8, 0, 0),
+        (0x002c_9b10, 2, 0x937),
+        (0x002c_9b20, 1, 0x7b3),
+        (0x002c_9b80, 1, 0x835),
+        (0x002c_9bb0, 2, 0x1204),
+        (0x002c_9c70, 6, 0x93b),
+        (0x002c_9cf0, 5, 0x1411),
+        (0x002c_9d80, 6, 0x9ef),
+        (0x002c_9dc8, 2, 0x1216),
+    ];
+
+    /// `seed % 10` picks the head, `seed / 10 % 3` the event mode: an
+    /// unwinding VBlank due at that head's first back edge, a delivered
+    /// event there that does not unwind, or none.
+    pub(crate) fn huff_pack_events_setup(c: &mut Cpu, seed: u32) -> Events {
+        let (_, fixture, at) = HUFF_PACK_HEADS[(seed % 10) as usize];
+        let mut r = machine(c, seed, 0x2c_9a48, 0);
+        huff_pack_fixture(c, &mut r, fixture);
+        let saved = (c.g[A0], c.g[A1], c.g[RA]);
+        ssx3_ps2::kernel::start_main_thread(c, 0x002c_9a48, 0, 0);
+        (c.g[A0], c.g[A1], c.g[RA]) = saved;
+        c.pc = 0x002c_9a48;
+        c.cycles = 1000;
+        match seed / 10 % 3 {
+            0 => {
+                c.next_event = 1000 + at;
+                Events::Unwind
+            }
+            1 => {
+                ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                    .sched
+                    .next_vblank = 1 << 40;
+                c.next_event = 1000 + at;
+                Events::Deliver
+            }
+            _ => Events::Off,
+        }
+    }
+
+    /// Both sides driven through unwinds and re-entries, the first unwind
+    /// landing on each of the ten heads in turn (checked on the generated
+    /// side below).
+    #[test]
+    fn huff_pack_events() {
+        check_events(huff_pack_gen, huff_pack_driven, 60, &|c, seed| {
+            huff_pack_events_setup(c, seed)
+        });
+        for (seed, &(head, _, _)) in HUFF_PACK_HEADS.iter().enumerate() {
+            let mut c = crate::difftest::fresh();
+            huff_pack_events_setup(&mut c, seed as u32);
+            ee::s09::f_002c9a48__generated(&mut c);
+            assert_eq!(c.pc, head | 1, "seed {seed}: first unwind");
+        }
+    }
+
+    /// Gate word of this module's allocator fakes.
+    pub(crate) const HUFFMEM_CTRL: u32 = DATA + 0x2_8000;
+
+    pub(crate) const HUFFMEM_MAGIC: u32 = 0x484d_0001;
+
+    /// Forced results of the alloc/new fakes (0: allocation fails).
+    pub(crate) const HUFFMEM_RET_ALLOC: u32 = DATA + 0x2_8004;
+
+    pub(crate) const HUFFMEM_RET_NEW: u32 = DATA + 0x2_8008;
+
+    /// Scratch blocks the alloc/new fakes hand out.
+    pub(crate) const HUFFMEM_AREA: u32 = DATA + 0x9000;
+
+    pub(crate) const HUFFMEM_TMP: u32 = DATA + 0xd000;
+
+    /// `EA_MemAllocNamed` fake: logs the call, answers the result cell.
+    pub(crate) fn huffmem_fake_alloc(c: &mut Cpu) {
+        if c.bus.read32(HUFFMEM_CTRL) != HUFFMEM_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(huffmem_fake_alloc),
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        let before = c.cycles;
+        fakes::fake(c, 0x0031_7d70, ra);
+        ea_fake_cost(c, before);
+        if c.pc != ra {
+            return;
+        }
+        c.g[V0][0] = c.bus.read32(HUFFMEM_RET_ALLOC) as u64;
+    }
+
+    /// `operator_new_named` fake: logs the call, answers the result cell.
+    pub(crate) fn huffmem_fake_new(c: &mut Cpu) {
+        if c.bus.read32(HUFFMEM_CTRL) != HUFFMEM_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(huffmem_fake_new),
+                ee::s10::f_00317e30__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        let before = c.cycles;
+        fakes::fake(c, 0x0031_7e30, ra);
+        ea_fake_cost(c, before);
+        if c.pc != ra {
+            return;
+        }
+        c.g[V0][0] = c.bus.read32(HUFFMEM_RET_NEW) as u64;
+    }
+
+    /// `__builtin_delete`/`EA_MemFree` fake: logs the call, frees nothing.
+    macro_rules! define_huffmem_fake_free {
+        ($name:ident, $addr:expr, $gen:expr) => {
+            pub(crate) fn $name(c: &mut Cpu) {
+                if c.bus.read32(HUFFMEM_CTRL) != HUFFMEM_MAGIC {
+                    return fakes::fall_back(c, fakes::prev_cell($name), $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                let before = c.cycles;
+                fakes::fake(c, $addr, ra);
+                ea_fake_cost(c, before);
+            }
+        };
+    }
+
+    define_huffmem_fake_free!(
+        huffmem_fake_free,
+        0x0031_7e98,
+        ee::s10::f_00317e98__generated
+    );
+
+    define_huffmem_fake_free!(
+        huffmem_fake_delete,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    /// `memset` fake: logs the call, then really fills the bytes (the real
+    /// body is a plain loop over fixture memory).
+    pub(crate) fn huffmem_fake_memset(c: &mut Cpu) {
+        if c.bus.read32(HUFFMEM_CTRL) != HUFFMEM_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(huffmem_fake_memset),
+                ee::s15::f_00416210__generated,
+            );
+        }
+        let dst = c.g[A0][0] as u32;
+        let val = c.g[A1][0] as u8;
+        let len = c.g[A2][0] as u32;
+        let ra = c.g[RA][0] as u32;
+        let before = c.cycles;
+        fakes::fake(c, 0x0041_6210, ra);
+        ea_fake_cost(c, before);
+        if c.pc != ra {
+            return;
+        }
+        for i in 0..len {
+            c.bus.write8(dst.wrapping_add(i), val);
+        }
+        c.g[V0][0] = c.g[A0][0];
+    }
+
+    /// Hook this module's allocator fakes (once per process).
+    pub(crate) fn huffmem_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            huffmem_fake_alloc,
+            fakes::prev_cell(huffmem_fake_alloc),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            huffmem_fake_new,
+            fakes::prev_cell(huffmem_fake_new),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            huffmem_fake_free,
+            fakes::prev_cell(huffmem_fake_free),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            huffmem_fake_delete,
+            fakes::prev_cell(huffmem_fake_delete),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00416210),
+            huffmem_fake_memset,
+            fakes::prev_cell(huffmem_fake_memset),
+        );
+    }
+
+    thread_local! {
+        /// Loop heads at which the spied generated run took its events.
+        static EVENT_HEADS: std::cell::RefCell<Vec<u32>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+        /// The event hook the spy hands each delivery on to.
+        static EVENT_INNER: std::cell::Cell<Option<fn(&mut Cpu) -> bool>> =
+            const { std::cell::Cell::new(None) };
+    }
+
+    /// Event-hook spy: notes the loop head (`pc`) of each delivery.
+    fn event_head_spy(c: &mut Cpu) -> bool {
+        EVENT_HEADS.with(|h| h.borrow_mut().push(c.pc));
+        let inner = EVENT_INNER.with(|i| i.get()).expect("event spy armed");
+        inner(c)
+    }
+
+    /// The loop heads at which the generated body takes events over
+    /// `setup(seed)`, in order.
+    pub(crate) fn event_heads(
+        generated: GuestFn,
+        seed: u32,
+        setup: &dyn Fn(&mut Cpu, u32) -> Events,
+    ) -> Vec<u32> {
+        let mut c = crate::difftest::fresh();
+        setup(&mut c, seed);
+        EVENT_INNER.with(|i| i.set(Some(c.hooks.event)));
+        EVENT_HEADS.with(|h| h.borrow_mut().clear());
+        c.hooks.event = event_head_spy;
+        crate::difftest::run_generated(&mut c, generated);
+        EVENT_HEADS.with(|h| std::mem::take(&mut *h.borrow_mut()))
+    }
+
+    /// Require that the generated body takes its first event at each of
+    /// `heads` for some seed (the events land inside each loop).
+    pub(crate) fn require_heads(
+        generated: GuestFn,
+        seeds: u32,
+        heads: &[u32],
+        setup: &dyn Fn(&mut Cpu, u32) -> Events,
+    ) {
+        let seen: std::collections::BTreeSet<u32> = (0..seeds)
+            .filter_map(|s| event_heads(generated, s, setup).first().copied())
+            .collect();
+        for h in heads {
+            assert!(seen.contains(h), "no event at head {h:#x} (seen {seen:x?})");
+        }
+    }
+
+    /// Enter at `entry` on a running guest thread at cycle 1000 with an
+    /// event due at `1000 + at`: an unwinding VBlank (`mode` 0), a
+    /// delivered event that does not unwind (1), or none (2).
+    pub(crate) fn event_at(c: &mut Cpu, entry: u32, at: u64, mode: u32) -> Events {
+        let saved = (c.g[A0], c.g[A1], c.g[A2], c.g[A3], c.g[T0], c.g[RA]);
+        ssx3_ps2::kernel::start_main_thread(c, entry, 0, 0);
+        (c.g[A0], c.g[A1], c.g[A2], c.g[A3], c.g[T0], c.g[RA]) = saved;
+        c.pc = entry;
+        c.cycles = 1000;
+        match mode {
+            0 => {
+                c.next_event = 1000 + at;
+                Events::Unwind
+            }
+            1 => {
+                ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                    .sched
+                    .next_vblank = 1 << 40;
+                c.next_event = 1000 + at;
+                Events::Deliver
+            }
+            _ => Events::Off,
+        }
+    }
+
+    driven!(gen_huff_about, ee::s09::f_002c8348__generated);
+
+    driven!(hand_huff_about, huff_about);
+
+    /// About record: allocation failure, or a filled record over seeded
+    /// version tables (generated totals: fail 20, filled 78).
+    #[test]
+    fn huff_about_matches() {
+        check_paths(
+            gen_huff_about,
+            hand_huff_about,
+            32,
+            &[20, 78],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2c8348, 0);
+                huffmem_install_fakes();
+                ea_fixed_costs(c);
+                c.bus.write32(HUFFMEM_CTRL, HUFFMEM_MAGIC);
+                for a in [
+                    0x0048_65d8u32,
+                    0x0048_65e0,
+                    0x004a_3980,
+                    0x004a_3990,
+                    0x0048_65f0,
+                ] {
+                    c.bus.write32(a, r.next_u32() | 0x0101_0101);
+                    c.bus.write32(a + 4, r.next_u32() | 0x0101_0101);
+                }
+                c.bus.write16(0x0048_65e8, (r.next_u32() | 0x101) as u16);
+                c.bus.write8(0x004a_3984, (r.next_u32() | 0x1) as u8);
+                for i in 0..0x84u32 {
+                    c.bus.write8(HUFFMEM_AREA + i, 0x5a);
+                }
+                c.bus.write32(
+                    HUFFMEM_RET_ALLOC,
+                    if seed % 2 == 0 { 0 } else { HUFFMEM_AREA },
+                );
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x002c_8348;
+            },
+        );
+    }
+
+    driven!(gen_huff_get_big_endian, ee::s09::f_002c8468__generated);
+
+    driven!(hand_huff_get_big_endian, huff_get_big_endian);
+
+    /// Big-endian loads of 0-4 bytes (generated totals 5, 13, 20, 27, 34).
+    #[test]
+    fn huff_get_big_endian_matches() {
+        check_paths(
+            gen_huff_get_big_endian,
+            hand_huff_get_big_endian,
+            40,
+            &[5, 13, 20, 27, 34],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2c8468, 0);
+                for i in 0..8u32 {
+                    c.bus.write8(DATA + 0x100 + i, (r.next_u32() | 1) as u8);
+                }
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (seed % 5) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x002c_8468;
+            },
+        );
+    }
+
+    /// Long loads, with real events on the back edge.
+    #[test]
+    fn huff_get_big_endian_events() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x2c8468, 0);
+            for i in 0..32u32 {
+                c.bus.write8(DATA + 0x103 + i, (r.next_u32() | 0x81) as u8);
+            }
+            c.g[A0][0] = (DATA + 0x103) as u64;
+            c.g[A1][0] = (8 + seed % 16) as u64;
+            c.g[RA][0] = SENTINEL as u64;
+            schedule(c, &mut r, seed, 0x002c_8468)
+        };
+        check_events(
+            gen_huff_get_big_endian,
+            hand_huff_get_big_endian,
+            60,
+            &setup,
+        );
+        require_heads(gen_huff_get_big_endian, 60, &[0x002c_8478], &setup);
+    }
+
+    driven!(gen_huff_is, ee::s09::f_002c84a0__generated);
+
+    driven!(hand_huff_is, huff_is);
+
+    /// Each magic, plus misses (generated totals: a hit on the first to
+    /// sixth compare 37, 63, 88, 113, 138, 163; a miss 161).
+    #[test]
+    fn huff_is_matches() {
+        check_paths(
+            gen_huff_is,
+            hand_huff_is,
+            56,
+            &[37, 63, 88, 113, 138, 161, 163],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2c84a0, 0);
+                let magics = [0x30fbu32, 0x31fb, 0x32fb, 0x33fb, 0x34fb, 0x35fb];
+                let m = if seed % 7 < 6 {
+                    magics[(seed % 7) as usize]
+                } else {
+                    r.next_u32() & 0xffff
+                };
+                c.bus.write8(DATA + 0x100, (m >> 8) as u8);
+                c.bus.write8(DATA + 0x100 + 1, (m & 0xff) as u8);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x002c_84a0;
+            },
+        );
+    }
+
+    driven!(gen_huff_size, ee::s09::f_002c8550__generated);
+
+    driven!(hand_huff_size, huff_size);
+
+    /// Both header positions (generated total 63 either way).
+    #[test]
+    fn huff_size_matches() {
+        check_paths(gen_huff_size, hand_huff_size, 32, &[63], &|c, seed| {
+            let mut r = machine(c, seed, 0x2c8550, 0);
+            let magic = if seed % 2 == 0 { 0x30fbu32 } else { 0x31fb };
+            c.bus.write8(DATA + 0x100, (magic >> 8) as u8);
+            c.bus.write8(DATA + 0x100 + 1, (magic & 0xff) as u8);
+            for i in 2..8u32 {
+                c.bus.write8(DATA + 0x100 + i, (r.next_u32() | 1) as u8);
+            }
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            c.g[RA][0] = SENTINEL as u64;
+            c.pc = 0x002c_8550;
+        });
+    }
+
+    driven!(gen_huff_decode, ee::s09::f_002c85a0__generated);
+
+    driven!(hand_huff_decode, huff_decode);
+
+    /// Decode of a valid block plus the null-input early exit. The block is
+    /// built by the real encoder: `HUFF_DecodeStream`'s bit loop only ends
+    /// on a valid prefix-coded stream (random bytes run it past the input
+    /// into zero RAM).
+    #[test]
+    fn huff_decode_matches() {
+        check(gen_huff_decode, hand_huff_decode, 24, &|c, seed| {
+            let mut r = machine(c, seed, 0x2c85a0, 0);
+            if seed % 4 == 0 {
+                c.g[A0][0] = 0;
+            } else {
+                // Build a valid block with the real encoder (same shape as
+                // huff_encode_matches, mode 0).
+                huffmem_install_fakes();
+                ea_fixed_costs(c);
+                c.bus.write32(HUFFMEM_CTRL, HUFFMEM_MAGIC);
+                for i in 0..0x3200u32 {
+                    c.bus.write8(HUFFMEM_AREA + i, 0x5a);
+                }
+                for i in 0..0x400u32 {
+                    c.bus.write8(HUFFMEM_TMP + i, 0xa5);
+                }
+                const SRC: u32 = DATA + 0x500;
+                for i in 0..16u32 {
+                    c.bus.write8(SRC + i, (r.next_u32() | 1) as u8);
+                }
+                const DST: u32 = DATA + 0x600;
+                for i in 0..0x400u32 {
+                    c.bus.write8(DST + i, 0xa5);
+                }
+                c.bus.write32(HUFFMEM_RET_ALLOC, HUFFMEM_AREA);
+                c.bus.write32(HUFFMEM_RET_NEW, HUFFMEM_TMP);
+                c.g[A0][0] = SRC as u64;
+                c.g[A1][0] = [1, 8, 16][(seed % 3) as usize] as u64;
+                c.g[A2][0] = DST as u64;
+                c.g[A3][0] = 0;
+                c.g[RA][0] = SENTINEL as u64;
+                ee::s09::f_002ca100__generated(c);
+                c.g[A0][0] = DST as u64;
+            }
+            for i in 0..16u32 {
+                c.bus.write8(DATA + 0x300 + i, 0x5a);
+            }
+            c.g[A1][0] = 0;
+            c.g[A2][0] = (DATA + 0x300) as u64;
+            c.g[RA][0] = SENTINEL as u64;
+            c.pc = 0x002c_85a0;
+        });
+    }
+
+    driven!(gen_huff_delta_encode, ee::s09::f_002c85c0__generated);
+
+    driven!(hand_huff_delta_encode, huff_delta_encode);
+
+    /// Empty, 1, 2, 4 and 8 byte runs (generated totals 7, 16, 24, 40, 72).
+    #[test]
+    fn huff_delta_encode_matches() {
+        check_paths(
+            gen_huff_delta_encode,
+            hand_huff_delta_encode,
+            40,
+            &[7, 16, 24, 40, 72],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2c85c0, 0);
+                for i in 0..16u32 {
+                    c.bus.write8(DATA + 0x100 + i, (r.next_u32() | 1) as u8);
+                    c.bus.write8(DATA + 0x200 + i, 0xa5);
+                }
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x200) as u64;
+                c.g[A2][0] = [0, 1, 2, 4, 8][(seed % 5) as usize] as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x002c_85c0;
+            },
+        );
+    }
+
+    /// Longer runs, with real events on the back edge.
+    #[test]
+    fn huff_delta_encode_events() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x2c85c0, 0);
+            for i in 0..64u32 {
+                c.bus.write8(DATA + 0x103 + i, (r.next_u32() | 1) as u8);
+                c.bus.write8(DATA + 0x205 + i, 0xa5);
+            }
+            c.g[A0][0] = (DATA + 0x103) as u64;
+            c.g[A1][0] = (DATA + 0x205) as u64;
+            c.g[A2][0] = (16 + seed % 32) as u64;
+            c.g[RA][0] = SENTINEL as u64;
+            schedule(c, &mut r, seed, 0x002c_85c0)
+        };
+        check_events(gen_huff_delta_encode, hand_huff_delta_encode, 60, &setup);
+        require_heads(gen_huff_delta_encode, 60, &[0x002c_85d8], &setup);
+    }
+
+    driven!(gen_huff_writebits, ee::s09::f_002c8600__generated);
+
+    driven!(hand_huff_writebits, huff_writebits);
+
+    /// Bit-writer fixture: the stream state, the out stream (buffer
+    /// pointer, cursor) and its buffer, all with nonzero low bytes.
+    pub(crate) const WB_S: u32 = DATA + 0x4004;
+
+    pub(crate) const WB_OUT: u32 = DATA + 0x1104;
+
+    pub(crate) const WB_BUF: u32 = DATA + 0x1203;
+
+    /// The state's bit masks at `s + 0x2d64`, `(1 << n) - 1` for n = 0..16,
+    /// as `HUFF_EncodeBlock` builds them before any write.
+    pub(crate) fn huff_masks(c: &mut Cpu, s: u32) {
+        for n in 0..17u32 {
+            c.bus.write32(s + 0x2d64 + 4 * n, (1u32 << n) - 1);
+        }
+    }
+
+    /// The writer state: number tables, masks, table-switch code
+    /// lengths/codes, pending bits and count, and an out buffer whose
+    /// cursor starts at 5.
+    pub(crate) fn writer_state(c: &mut Cpu, r: &mut Rng, bitcount: u32) {
+        c.g[A0][0] = WB_S as u64;
+        ee::s09::f_002c8cf8__generated(c);
+        huff_masks(c, WB_S);
+        for i in 0..16u32 {
+            c.bus.write32(WB_S + 0x2564 + 4 * i, 3 + i % 6);
+            c.bus.write32(WB_S + 0x2964 + 4 * i, 0x85 + 0x11 * i);
+        }
+        c.bus.write32(WB_S + HUFF_BITCOUNT, bitcount);
+        c.bus.write32(WB_S + HUFF_BITBUF, r.next_u32() | 0x100);
+        c.bus.write32(WB_S + 0x2de4, r.next_u32() & 0xf);
+        for i in 0..64u32 {
+            c.bus.write8(WB_BUF + i, 0xa5);
+        }
+        c.bus.write32(WB_OUT, WB_BUF);
+        c.bus.write32(WB_OUT + 4, 5);
+        c.g[A0][0] = WB_S as u64;
+        c.g[A1][0] = WB_OUT as u64;
+        c.g[RA][0] = SENTINEL as u64;
+    }
+
+    /// One `HUFF_writebits` call of `len` bits over `bitcount` pending
+    /// bits; the code word has high bits set above the mask.
+    pub(crate) fn writebits_setup(c: &mut Cpu, seed: u32, len: u64, bitcount: u32) {
+        let mut r = machine(c, seed, 0x2c8600, 0);
+        writer_state(c, &mut r, bitcount);
+        c.g[A2][0] = 0xffff_ffff_0000_0000 | (r.next_u32() | 0x8001) as u64;
+        c.g[A3][0] = len;
+        c.pc = 0x002c_8600;
+    }
+
+    /// `(len, pending bits)` classes: writes that stay below a byte (no
+    /// flush), flush one or two bytes, and the wide (> 16 bit) split.
+    pub(crate) const WRITEBITS_CLASSES: [(u64, u32); 12] = [
+        (0, 3),
+        (3, 0),
+        (5, 2),
+        (7, 0),
+        (8, 0),
+        (8, 4),
+        (15, 1),
+        (16, 0),
+        (16, 7),
+        (17, 0),
+        (24, 5),
+        (32, 0),
+    ];
+
+    /// Generated totals: no flush 31, one flush 51, two flushes 70; the
+    /// wide split into two narrow writes 126 (17 bits), 146 (24 over 5
+    /// pending) and 165 (32).
+    #[test]
+    fn huff_writebits_matches() {
+        check_paths(
+            gen_huff_writebits,
+            hand_huff_writebits,
+            48,
+            &[31, 51, 70, 126, 146, 165],
+            &|c, seed| {
+                let (len, bc) = WRITEBITS_CLASSES[(seed % 12) as usize];
+                writebits_setup(c, seed, len, bc);
+            },
+        );
+    }
+
+    /// Flushing writes, with real events on the flush loop's back edge.
+    #[test]
+    fn huff_writebits_events() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let (len, bc) = [(16u64, 0u32), (24, 0), (32, 7)][(seed % 3) as usize];
+            writebits_setup(c, seed, len, bc);
+            schedule(c, &mut Rng(seed as u64), seed, 0x002c_8600)
+        };
+        check_events(gen_huff_writebits, hand_huff_writebits, 60, &setup);
+        require_heads(gen_huff_writebits, 60, &[0x002c_8690], &setup);
+    }
+
+    driven!(gen_huff_treechase, ee::s09::f_002c86f8__generated);
+
+    driven!(hand_huff_treechase, huff_treechase);
+
+    /// Leaf stamp, one internal level and two (generated totals 18, 62,
+    /// 106).
+    #[test]
+    fn huff_treechase_matches() {
+        check_paths(
+            gen_huff_treechase,
+            hand_huff_treechase,
+            36,
+            &[18, 62, 106],
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2c86f8, 0);
+                // Depth table prefilled so the stamps show up in the diff.
+                for i in 0..0x300u32 {
+                    c.bus.write32(DATA + 0x1000 + 0x2564 + 4 * i, 0x5a5a_5a5a);
+                }
+                // Node 0x100 has leaf children 3 and 5; node 0x101 has the
+                // internal 0x100 on the left and leaf 7 on the right.
+                c.bus.write32(DATA + 0x1000 + 0x1524 + 4 * 0x100, 3);
+                c.bus.write32(DATA + 0x1000 + 0x1d44 + 4 * 0x100, 5);
+                c.bus.write32(DATA + 0x1000 + 0x1524 + 4 * 0x101, 0x100);
+                c.bus.write32(DATA + 0x1000 + 0x1d44 + 4 * 0x101, 7);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = [3, 0x100, 0x101][(seed % 3) as usize] as u64;
+                c.g[A2][0] = (1 + seed % 3) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x002c_86f8;
+            },
+        );
+    }
+
+    driven!(gen_huff_maketree, ee::s09::f_002c8770__generated);
+
+    driven!(hand_huff_maketree, huff_maketree);
+
+    /// Tree-builder state (nonzero low byte).
+    pub(crate) const MT_S: u32 = DATA + 0x1_0004;
+
+    /// Frequency table fixture. `seed % 6`: 0, 1, 2, 3, 5 or 9 live
+    /// symbols; `seed / 6 % 4`: rising, falling, equal or zigzag counts
+    /// (each sort arm); `seed / 24 % 2`: symbols from 0 or from 0xf7 (the
+    /// gather loop's last entries live).
+    pub(crate) fn maketree_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x2c8770, 0);
+        for i in 0..0xb80u32 {
+            c.bus.write32(MT_S + 4 * i, 0x5a5a_5a5a);
+        }
+        for i in 0..256u32 {
+            c.bus.write32(MT_S + 0x100 + 4 * i, 0);
+        }
+        let live = [0, 1, 2, 3, 5, 9][(seed % 6) as usize];
+        let base = [0, 0xf7][(seed / 24 % 2) as usize];
+        for k in 0..live {
+            let n = match seed / 6 % 4 {
+                0 => 1 + k,
+                1 => 20 - k,
+                2 => 7,
+                _ if k % 2 == 0 => 30 - k,
+                _ => 1 + k,
+            };
+            c.bus.write32(MT_S + 0x100 + 4 * (base + k), n);
+        }
+        c.g[A0][0] = MT_S as u64;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_8770;
+    }
+
+    /// Empty, one- and two-symbol (single treechase) and merged trees over
+    /// every count order (generated totals).
+    #[test]
+    fn huff_maketree_matches() {
+        check_paths(
+            gen_huff_maketree,
+            hand_huff_maketree,
+            48,
+            &[
+                1842, 1847, 1949, 1953, 2060, 2064, 2066, 2325, 2332, 2341, 2342, 2936, 2966, 3037,
+                3053,
+            ],
+            &maketree_setup,
+        );
+    }
+
+    /// Each loop head of `HUFF_maketree` (gather, merge, scan, inner scan),
+    /// a fixture seed whose build reaches it and a cycle (after entry at
+    /// 1000) at which an event due is first taken there.
+    pub(crate) const MAKETREE_HEADS: [(u32, u32, u64); 4] = [
+        (0x002c_87b0, 11, 5),
+        (0x002c_87f8, 11, 0x78e),
+        (0x002c_8858, 11, 0x7b0),
+        (0x002c_8878, 11, 0x737),
+    ];
+
+    /// `seed % 4` picks the head, `seed / 4 % 3` the event mode.
+    pub(crate) fn maketree_events_setup(c: &mut Cpu, seed: u32) -> Events {
+        let (_, fixture, at) = MAKETREE_HEADS[(seed % 4) as usize];
+        maketree_setup(c, fixture);
+        event_at(c, 0x002c_8770, at, seed / 4 % 3)
+    }
+
+    /// An event due inside each of the four loops, on both sides.
+    #[test]
+    fn huff_maketree_events() {
+        check_events(
+            gen_huff_maketree,
+            hand_huff_maketree,
+            60,
+            &maketree_events_setup,
+        );
+        let heads = MAKETREE_HEADS.map(|(h, _, _)| h);
+        require_heads(gen_huff_maketree, 60, &heads, &maketree_events_setup);
+    }
+
+    driven!(gen_huff_minrep, ee::s09::f_002c8970__generated);
+
+    driven!(hand_huff_minrep, huff_minrep);
+
+    /// Cost fixture, live table 3. `seed % 4`: value 0, small (inline
+    /// table), at the 0xfc fallback, past it (odd, so a two-level split
+    /// leaves a remainder); `seed / 4 % 3`: levels left 0, 1, 2;
+    /// `seed / 12 % 4`: which of the levels 1 and 2 above the live table
+    /// are in use; `seed / 48 % 2`: cheap or dear extra-level lengths.
+    pub(crate) fn minrep_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x2c8970, 0);
+        writer_state(c, &mut r, 0);
+        c.bus.write32(WB_S + HUFF_CUR, 3);
+        let used = seed / 12 % 4;
+        let dear = seed / 48 % 2;
+        for n in 0..3u32 {
+            let live = n == 0 || used >> (n - 1) & 1 != 0;
+            c.bus.write32(
+                WB_S + 0x100 + 4 * (3 + n),
+                if live { r.next_u32() | 0x101 } else { 0 },
+            );
+            c.bus.write32(
+                WB_S + 0x2564 + 4 * (3 + n),
+                [2 + n, 9 + 4 * n][dear as usize],
+            );
+        }
+        c.g[A1][0] = [0, 0x5b, 0xfc, 0x1_0001][(seed % 4) as usize] as u64;
+        c.g[A2][0] = (seed / 4 % 3) as u64;
+        c.pc = 0x002c_8970;
+    }
+
+    /// Every level/value/in-use shape (generated totals; LO/HI compared).
+    #[test]
+    fn huff_minrep_matches() {
+        check_paths_lohi(
+            gen_huff_minrep,
+            hand_huff_minrep,
+            96,
+            &[
+                24, 27, 37, 57, 60, 70, 90, 93, 99, 102, 103, 112, 132, 135, 145, 165, 168, 181,
+                191, 249, 252, 265, 275,
+            ],
+            &|c, seed| {
+                minrep_setup(c, seed);
+            },
+        );
+    }
+
+    /// The number-table fixture shared by the three writers below.
+    pub(crate) fn numtable_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x2c8a78, 0);
+        writer_state(c, &mut r, 0);
+    }
+
+    driven!(gen_huff_writenum, ee::s09::f_002c8a78__generated);
+
+    driven!(hand_huff_writenum, huff_writenum);
+
+    /// The lowest and highest value of each of the 14 magnitude bands: the
+    /// inline table below 0xfc, then base + extra bits from 6 to 0x12 bits.
+    pub(crate) const WRITENUM_BANDS: [u64; 28] = [
+        0,
+        0xfb,
+        0xfc,
+        0x1fb,
+        0x1fc,
+        0x3fb,
+        0x3fc,
+        0x7fb,
+        0x7fc,
+        0xffb,
+        0xffc,
+        0x1ffb,
+        0x1ffc,
+        0x3ffb,
+        0x3ffc,
+        0x7ffb,
+        0x7ffc,
+        0xfffb,
+        0xfffc,
+        0x1fffb,
+        0x1fffc,
+        0x3fffb,
+        0x3fffc,
+        0x7ffff,
+        0x80000,
+        0xfffff,
+        0x100000,
+        0x7fff_ffff,
+    ];
+
+    /// Every band edge (`seed % 28`) over 0 or 5 pending bits
+    /// (`seed / 28 % 2`); generated totals.
+    #[test]
+    fn huff_writenum_matches() {
+        let totals = [
+            98, 117, 118, 137, 138, 140, 143, 146, 149, 162, 165, 168, 171, 174, 179, 183, 193,
+            198, 202, 263, 323, 324, 326, 343, 344, 346,
+        ];
+        check_paths(
+            gen_huff_writenum,
+            hand_huff_writenum,
+            56,
+            &totals,
+            &|c, seed| {
+                numtable_setup(c, seed);
+                c.bus
+                    .write32(WB_S + HUFF_BITCOUNT, [0, 5][(seed / 28 % 2) as usize]);
+                c.g[A2][0] = WRITENUM_BANDS[(seed % 28) as usize];
+                c.pc = 0x002c_8a78;
+            },
+        );
+    }
+
+    driven!(gen_huff_writeexp, ee::s09::f_002c8c30__generated);
+
+    driven!(hand_huff_writeexp, huff_writeexp);
+
+    /// Switch codes of each live table with small and large escape values
+    /// (one path; the writers' flushes vary: generated totals).
+    #[test]
+    fn huff_writeexp_matches() {
+        check_paths(
+            gen_huff_writeexp,
+            hand_huff_writeexp,
+            32,
+            &[210, 229, 230],
+            &|c, seed| {
+                numtable_setup(c, seed);
+                c.g[A2][0] = (seed % 0x1000) as u64;
+                c.bus.write32(WB_S + HUFF_CUR, seed / 7 % 5);
+                c.pc = 0x002c_8c30;
+            },
+        );
+    }
+
+    driven!(gen_huff_writecode, ee::s09::f_002c8ca8__generated);
+
+    driven!(hand_huff_writecode, huff_writecode);
+
+    /// The live-table switch (`seed % 2` = 0) and the direct code write, for
+    /// live tables 0-4 (generated totals).
+    #[test]
+    fn huff_writecode_matches() {
+        let totals = [46, 66, 222, 241, 242];
+        check_paths(
+            gen_huff_writecode,
+            hand_huff_writecode,
+            32,
+            &totals,
+            &|c, seed| {
+                let cur = seed / 5 % 5;
+                numtable_setup(c, seed);
+                c.bus.write32(WB_S + HUFF_CUR, cur);
+                c.g[A2][0] = (if seed % 2 == 0 { cur } else { cur + 1 }) as u64;
+                c.pc = 0x002c_8ca8;
+            },
+        );
+    }
+
+    driven!(gen_huff_init_num_tables, ee::s09::f_002c8cf8__generated);
+
+    driven!(hand_huff_init_num_tables, huff_init_num_tables);
+
+    /// Number-table state: both tables dirty before the fill.
+    pub(crate) const NT_S: u32 = DATA + 0x1004;
+
+    pub(crate) fn init_num_tables_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x2c8cf8, 0);
+        fill(c, &mut r, NT_S + 0xd40, 0x200);
+        c.g[A0][0] = NT_S as u64;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_8cf8;
+    }
+
+    /// The six band fills over a dirty table (one path, generated total
+    /// 1805).
+    #[test]
+    fn huff_init_num_tables_matches() {
+        check_paths(
+            gen_huff_init_num_tables,
+            hand_huff_init_num_tables,
+            16,
+            &[1805],
+            &init_num_tables_setup,
+        );
+    }
+
+    /// Each band loop's head and a cycle (after entry at 1000) inside it:
+    /// the loops run 4, 8, 16, 32, 64 and 128 passes of 7 cycles.
+    pub(crate) const INIT_NUM_TABLES_HEADS: [(u32, u64); 6] = [
+        (0x002c_8d08, 5),
+        (0x002c_8d40, 50),
+        (0x002c_8d78, 150),
+        (0x002c_8db0, 300),
+        (0x002c_8de8, 600),
+        (0x002c_8e20, 1200),
+    ];
+
+    /// `seed % 6` picks the loop, `seed / 6 % 3` the event mode.
+    pub(crate) fn init_num_tables_events_setup(c: &mut Cpu, seed: u32) -> Events {
+        init_num_tables_setup(c, seed);
+        let (_, at) = INIT_NUM_TABLES_HEADS[(seed % 6) as usize];
+        event_at(c, 0x002c_8cf8, at, seed / 6 % 3)
+    }
+
+    /// An event due inside each of the six band loops, on both sides.
+    #[test]
+    fn huff_init_num_tables_events() {
+        check_events(
+            gen_huff_init_num_tables,
+            hand_huff_init_num_tables,
+            60,
+            &init_num_tables_events_setup,
+        );
+        let heads = INIT_NUM_TABLES_HEADS.map(|(h, _)| h);
+        require_heads(
+            gen_huff_init_num_tables,
+            60,
+            &heads,
+            &init_num_tables_events_setup,
+        );
+    }
+
+    driven!(gen_huff_encode_block, ee::s09::f_002c9f60__generated);
+
+    driven!(hand_huff_encode_block, huff_encode_block);
+
+    /// Encoder fixture: state block, source bytes (a fixed pattern with
+    /// bytes >= 0x80), out buffer and the block's in/out streams, all with
+    /// nonzero low bytes.
+    pub(crate) const HE_S: u32 = HUFFMEM_AREA + 0x14;
+
+    pub(crate) const HE_SRC: u32 = DATA + 0x503;
+
+    pub(crate) const HE_DST: u32 = DATA + 0x605;
+
+    pub(crate) const HE_IN: u32 = DATA + 0x404;
+
+    pub(crate) const HE_OUT: u32 = DATA + 0x414;
+
+    /// The fixed 16 source bytes and a dirty state/out buffer.
+    pub(crate) fn encoder_buffers(c: &mut Cpu) {
+        for i in 0..0x3200u32 {
+            c.bus.write8(HUFFMEM_AREA + i, 0x5a);
+        }
+        for i in 0..16u32 {
+            c.bus.write8(HE_SRC + i, (0x81 + 0x3b * i) as u8);
+        }
+        for i in 0..0x400u32 {
+            c.bus.write8(HE_DST + i, 0xa5);
+        }
+    }
+
+    /// One block of `len` bytes, the in stream claiming `in_len`, `mode`.
+    pub(crate) fn encode_block_setup(c: &mut Cpu, seed: u32, len: u32, in_len: u32, mode: u32) {
+        let _r = machine(c, seed, 0x2c9f60, 0);
+        encoder_buffers(c);
+        c.bus.write32(HE_IN, HE_SRC);
+        c.bus.write32(HE_IN + 4, in_len);
+        c.bus.write32(HE_OUT, HE_DST);
+        c.bus.write32(HE_OUT + 4, 0x5a5a_5a5a);
+        c.g[A0][0] = HE_S as u64;
+        c.g[A1][0] = HE_IN as u64;
+        c.g[A2][0] = HE_OUT as u64;
+        c.g[A3][0] = len as u64;
+        c.g[T0][0] = mode as u64;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_9f60;
+    }
+
+    /// Length 0, 1, 8 (`seed % 3`), the in stream's length equal or not
+    /// (`seed / 3 % 2`: the 30FB/32FB/34FB or 31FB/33FB/35FB header),
+    /// modes 0-5 (`seed / 6 % 6`: 1, 2 and the zero header past 2);
+    /// generated totals (analysis and pack run real).
+    #[test]
+    fn huff_encode_block_matches() {
+        check_paths(
+            gen_huff_encode_block,
+            hand_huff_encode_block,
+            48,
+            &[
+                24400, 24402, 25814, 25816, 25964, 25966, 29967, 29969, 33181, 33183, 35044, 35046,
+            ],
+            &|c, seed| {
+                let len = [0, 1, 8][(seed % 3) as usize];
+                let in_len = if seed / 3 % 2 == 0 { len } else { len + 1 };
+                encode_block_setup(c, seed, len, in_len, seed / 6 % 6);
+            },
+        );
+    }
+
+    /// The mask loop, with real events on its back edge.
+    #[test]
+    fn huff_encode_block_events() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            encode_block_setup(c, seed / 3, 8, 8, seed / 3 % 4);
+            schedule(c, &mut Rng(seed as u64), seed, 0x002c_9f60)
+        };
+        check_events(gen_huff_encode_block, hand_huff_encode_block, 60, &setup);
+        require_heads(gen_huff_encode_block, 60, &[0x002c_9fa8], &setup);
+    }
+
+    driven!(gen_huff_encode, ee::s09::f_002ca100__generated);
+
+    driven!(hand_huff_encode, huff_encode);
+
+    /// `HUFF_encode` fixture. `seed % 6`: no options (mode 0) or an
+    /// options word with mode 0, 1 (one delta pass), 2 (two), 3 or -1
+    /// (direct); `seed / 6 % 4`: length 0, 1, 8, 16; `seed / 24 % 3`: the
+    /// state allocation fails, the scratch allocation fails, or both live
+    /// (then modes 1 and 2 free the scratch block).
+    pub(crate) fn huff_encode_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x2ca100, 0);
+        huffmem_install_fakes();
+        ea_fixed_costs(c);
+        c.bus.write32(HUFFMEM_CTRL, HUFFMEM_MAGIC);
+        encoder_buffers(c);
+        for i in 0..0x400u32 {
+            c.bus.write8(HUFFMEM_TMP + i, 0xa5);
+        }
+        let alloc = seed / 24 % 3;
+        c.bus
+            .write32(HUFFMEM_RET_ALLOC, if alloc == 0 { 0 } else { HE_S });
+        c.bus.write32(
+            HUFFMEM_RET_NEW,
+            if alloc == 1 { 0 } else { HUFFMEM_TMP + 7 },
+        );
+        c.g[A0][0] = HE_SRC as u64;
+        c.g[A1][0] = [0, 1, 8, 16][(seed / 6 % 4) as usize];
+        c.g[A2][0] = HE_DST as u64;
+        match seed % 6 {
+            0 => c.g[A3][0] = 0,
+            m => {
+                c.bus
+                    .write32(DATA + 0x704, [0, 1, 2, 3, u32::MAX][m as usize - 1]);
+                c.g[A3][0] = (DATA + 0x704) as u64;
+            }
+        }
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_a100;
+    }
+
+    /// Every mode, length and allocation outcome (generated totals:
+    /// analysis and pack run real).
+    #[test]
+    fn huff_encode_matches() {
+        check_paths(
+            gen_huff_encode,
+            hand_huff_encode,
+            72,
+            &[
+                39, 40, 24459, 24460, 24462, 24467, 24483, 24488, 24497, 24502, 25873, 25874,
+                25876, 25881, 25906, 25911, 25929, 25934, 28065, 28070, 28345, 28350, 28742, 28747,
+                30648, 30653, 33240, 33241, 33243, 33248, 39544, 39545, 39547, 39552,
+            ],
+            &huff_encode_setup,
+        );
+    }
+
+    /// RefPack header under test: nonzero low byte, `lbu`-only reads.
+    pub(crate) const RPHEAD: u32 = DATA + 0x104;
+
+    /// A non-RefPack header, a short RefPack id, and a 3-byte-size
+    /// RefPack header (`n` = 0x123456).
+    pub(crate) fn refpack_unpacked_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3b_49b0, 0);
+        match seed % 3 {
+            0 => {
+                c.bus.write8(RPHEAD, 0x11);
+                c.bus.write8(RPHEAD + 1, 0x00);
+            }
+            1 => {
+                c.bus.write8(RPHEAD, 0x10);
+                c.bus.write8(RPHEAD + 1, 0xfb);
+            }
+            _ => {
+                c.bus.write8(RPHEAD, 0x90);
+                c.bus.write8(RPHEAD + 1, 0xfb);
+                c.bus.write8(RPHEAD + 2, 0x12);
+                c.bus.write8(RPHEAD + 3, 0x34);
+                c.bus.write8(RPHEAD + 4, 0x56);
+            }
+        }
+        c.g[A0][0] = sx(RPHEAD);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x003b_49b0;
+    }
+
+    /// Generated `RefPack_GetUnpackedSize` totals: 15 (not RefPack), 31
+    /// (short id), 41 (3-byte size).
+    pub(crate) const PATHS_REFPACK_UNPACKED: [u64; 3] = [15, 31, 41];
+
+    /// `RefPack_GetUnpackedSize`: the sniffer's answer passed through.
+    #[test]
+    fn refpack_get_unpacked_size_matches() {
+        check_paths(
+            ee::s13::f_003b49b0__generated,
+            refpack_get_unpacked_size,
+            48,
+            &PATHS_REFPACK_UNPACKED,
+            &refpack_unpacked_setup,
+        );
+    }
+
+    /// Packed-size header under test: nonzero low byte, `lbu`-only reads.
+    pub(crate) const RPSIZES: u32 = DATA + 0x104;
+
+    /// The out-length word: pre-filled nonzero, stored only on the walk.
+    pub(crate) const RPSIZE_OUT: u32 = DATA + 0x40c;
+
+    /// RefPack opcodes for the size walk: the 2-byte form (`0x00..0x7f`,
+    /// `cmd & 3` literals), the 3-byte form (`0x80..0xbf` plus a byte whose
+    /// top two bits count the literals), the 4-byte form (`0xc0..0xdf`), a
+    /// literal run (`0xe0..0xfb`) and the end opcode (`0xfc..0xff`).
+    #[derive(Clone, Copy)]
+    pub(crate) enum RpOp {
+        Copy2(u8),
+        Copy3(u8, u8),
+        Copy4(u8),
+        Literals(u8),
+        End(u8),
+    }
+
+    /// Write `ops` from `q` with the byte counts the walk skips (filler
+    /// 0xa5); returns the packed end `q`.
+    pub(crate) fn rp_ops(c: &mut Cpu, mut q: u32, ops: &[RpOp]) -> u32 {
+        let mut put = |q: &mut u32, b: u8| {
+            c.bus.write8(*q, b);
+            *q += 1;
+        };
+        for &op in ops {
+            let (cmd, b1, skip) = match op {
+                RpOp::Copy2(k) => (k, None, 1 + (k & 3) as u32),
+                RpOp::Copy3(k, b) => (k, Some(b), 1 + (b >> 6) as u32),
+                RpOp::Copy4(k) => (k, None, 3 + (k & 3) as u32),
+                RpOp::Literals(k) => (k, None, 4 + 4 * (k & 0x1f) as u32),
+                RpOp::End(k) => (k, None, (k & 3) as u32),
+            };
+            put(&mut q, cmd);
+            if let Some(b) = b1 {
+                put(&mut q, b);
+            }
+            for _ in 0..skip {
+                put(&mut q, 0xa5);
+            }
+        }
+        q
+    }
+
+    /// Each opcode class once, then the terminal.
+    pub(crate) const RP_EVERY: [RpOp; 5] = [
+        RpOp::Copy2(0x03),
+        RpOp::Copy3(0x80, 0xc7),
+        RpOp::Copy4(0xc2),
+        RpOp::Literals(0xe3),
+        RpOp::End(0xfe),
+    ];
+
+    /// The same classes in another order with other counts.
+    pub(crate) const RP_OTHER: [RpOp; 6] = [
+        RpOp::Literals(0xe0),
+        RpOp::Copy4(0xdf),
+        RpOp::Copy3(0xbf, 0x41),
+        RpOp::Copy2(0x7c),
+        RpOp::Copy2(0x01),
+        RpOp::End(0xfd),
+    ];
+
+    /// The RefPack header at `RPSIZES` (`long`: the low bit of the first
+    /// byte set, size at +5) with size bytes >= 0x80, then `ops`.
+    pub(crate) fn rp_header(c: &mut Cpu, long: bool, ops: &[RpOp]) {
+        c.bus.write8(RPSIZES, if long { 0x91 } else { 0x10 });
+        c.bus.write8(RPSIZES + 1, 0xfb);
+        let at = RPSIZES + if long { 5 } else { 2 };
+        for (i, b) in [0x9au8, 0xbc, 0xde].into_iter().enumerate() {
+            c.bus.write8(at + i as u32, b);
+        }
+        rp_ops(c, at + 3, ops);
+    }
+
+    /// `seed % 6`: null `p`; no out word (short and long header); a lone
+    /// terminal; every opcode class in two orders (short and long header).
+    pub(crate) fn refpack_sizes_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3b_4d00, 0);
+        c.bus.write32(RPSIZE_OUT, 0xa5a5_a5a5);
+        c.g[A0][0] = sx(RPSIZES);
+        c.g[A1][0] = sx(RPSIZE_OUT);
+        match seed % 6 {
+            0 => c.g[A0][0] = 0,
+            1 | 2 => {
+                rp_header(c, seed % 6 == 2, &[RpOp::End(0xff)]);
+                c.g[A1][0] = 0;
+            }
+            3 => rp_header(c, false, &[RpOp::End(0xfc)]),
+            4 => rp_header(c, false, &RP_EVERY),
+            _ => rp_header(c, true, &RP_OTHER),
+        }
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x003b_4d00;
+    }
+
+    /// Generated `RefPack_GetSizes` totals: 5 (null), 22 (no out word,
+    /// either header), 39 (lone terminal), 88 (every class), 96 (the other
+    /// order, long header).
+    pub(crate) const PATHS_REFPACK_SIZES: [u64; 5] = [5, 22, 39, 88, 96];
+
+    driven!(gen_refpack_get_sizes, ee::s13::f_003b4d00__generated);
+
+    driven!(hand_refpack_get_sizes, refpack_get_sizes);
+
+    /// A 20-opcode walk with events: the scheduled event lands on the
+    /// walk loop's back edge on both sides.
+    #[test]
+    fn refpack_get_sizes_events() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x3b_4d00, 0);
+            c.bus.write32(RPSIZE_OUT, 0xa5a5_a5a5);
+            let mut ops = Vec::new();
+            for _ in 0..4 {
+                ops.extend_from_slice(&RP_EVERY[..4]);
+                ops.push(RpOp::Copy2(0x00));
+            }
+            ops.push(RpOp::End(0xff));
+            rp_header(c, seed % 2 == 0, &ops);
+            c.g[A0][0] = sx(RPSIZES);
+            c.g[A1][0] = sx(RPSIZE_OUT);
+            c.g[RA][0] = SENTINEL as u64;
+            schedule(c, &mut r, seed, 0x003b_4d00)
+        };
+        check_events(gen_refpack_get_sizes, hand_refpack_get_sizes, 60, &setup);
+        require_heads(gen_refpack_get_sizes, 60, &[REFPACK_SIZES_HEAD], &setup);
+    }
+
+    #[test]
+    fn refpack_get_sizes_matches() {
+        check_paths(
+            ee::s13::f_003b4d00__generated,
+            refpack_get_sizes,
+            48,
+            &PATHS_REFPACK_SIZES,
+            &refpack_sizes_setup,
+        );
+    }
 }
 
 pub(crate) mod callee {
 
+    use super::ee;
+    use crate::call::Callee;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_AZIMUTH;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_ELEVATION;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_TEXTURE;
+
+    pub(crate) const HUFF_GET_BIG_ENDIAN: Callee = Callee {
+        addr: 0x002c_8468,
+        f: ee::s09::f_002c8468,
+    };
+
+    pub(crate) const HUFF_WRITEBITS: Callee = Callee {
+        addr: 0x002c_8600,
+        f: ee::s09::f_002c8600,
+    };
+
+    pub(crate) const HUFF_TREECHASE: Callee = Callee {
+        addr: 0x002c_86f8,
+        f: ee::s09::f_002c86f8,
+    };
+
+    pub(crate) const HUFF_MINREP: Callee = Callee {
+        addr: 0x002c_8970,
+        f: ee::s09::f_002c8970,
+    };
+
+    pub(crate) const HUFF_WRITENUM: Callee = Callee {
+        addr: 0x002c_8a78,
+        f: ee::s09::f_002c8a78,
+    };
+
+    pub(crate) const HUFF_WRITEEXP: Callee = Callee {
+        addr: 0x002c_8c30,
+        f: ee::s09::f_002c8c30,
+    };
+
+    pub(crate) const HUFF_WRITECODE: Callee = Callee {
+        addr: 0x002c_8ca8,
+        f: ee::s09::f_002c8ca8,
+    };
+
+    pub(crate) const EAC_GET_UNPACKED_SIZE: Callee = Callee {
+        addr: 0x003b_4818,
+        f: ee::s13::EAC_GetUnpackedSize,
+    };
+
+    pub(crate) const HUFF_DECODE_STREAM: Callee = Callee {
+        addr: 0x002c_76c0,
+        f: ee::s08::f_002c76c0,
+    };
+
+    pub(crate) const HUFF_DELTA_ENCODE: Callee = Callee {
+        addr: 0x002c_85c0,
+        f: ee::s09::f_002c85c0,
+    };
+
+    pub(crate) const HUFF_INIT_NUM_TABLES: Callee = Callee {
+        addr: 0x002c_8cf8,
+        f: ee::s09::f_002c8cf8,
+    };
+
+    pub(crate) const HUFF_ANALYSIS: Callee = Callee {
+        addr: 0x002c_8e48,
+        f: ee::s09::f_002c8e48,
+    };
+
+    pub(crate) const HUFF_PACK: Callee = Callee {
+        addr: 0x002c_9a48,
+        f: ee::s09::f_002c9a48,
+    };
+
+    pub(crate) const HUFF_ENCODE_BLOCK: Callee = Callee {
+        addr: 0x002c_9f60,
+        f: ee::s09::f_002c9f60,
+    };
+
+    pub(crate) const BIG_FILE_MOUNT: Callee = Callee {
+        addr: 0x0031_6978,
+        f: ee::s10::f_00316978,
+    };
+
+    pub(crate) const BIG_FILE_UNMOUNT: Callee = Callee {
+        addr: 0x0031_6930,
+        f: ee::s10::f_00316930,
+    };
+
+    pub(crate) use crate::game::bx::cubicspline::callee::OPERATOR_NEW_NAMED;
+
+    pub(crate) const EA_MEM_FREE: Callee = Callee {
+        addr: 0x0031_7e98,
+        f: ee::s10::EA_MemFree,
+    };
 }
 
 pub(crate) mod table_callee {
