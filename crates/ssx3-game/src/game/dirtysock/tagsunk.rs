@@ -29108,6 +29108,8 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 let _ = base_3(c, seed, 0x0026_2280, 4);
+                // The shared counter dispatches on `pc`: enter at the start.
+                c.pc = 0x0026_2280;
                 c.g[A0][0] = OBJ_2 as u64;
                 roster(c, seed % 5, seed);
             },
@@ -29122,10 +29124,91 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 let _ = base_3(c, seed, 0x0026_22f0, 4);
+                // The shared counter dispatches on `pc`: enter at the start.
+                c.pc = 0x0026_22f0;
                 c.g[A0][0] = OBJ_2 as u64;
                 roster(c, seed % 5, seed);
             },
         );
+    }
+
+    fn hand_count_permanent(c: &mut Cpu) {
+        count_resume(c, 0x0026_2280);
+        buddy_man_count_permanent_entries(c);
+    }
+
+    fn hand_count_temp(c: &mut Cpu) {
+        count_resume(c, 0x0026_22f0);
+        buddy_man_count_temp_entries(c);
+    }
+
+    /// Both roster counters with a due event (off, unwinding or delivered by
+    /// `seed % 3`) over rosters of 0-4 entries (`seed / 3 % 5`); the loop's
+    /// only event check is its back edge, so the hand side resumes at the
+    /// body head.
+    #[test]
+    fn buddy_man_count_entries_events() {
+        driven!(gen_permanent, ee::s07::f_00262280__generated);
+        driven!(gen_temp, ee::s07::f_002622f0__generated);
+        driven!(hand_permanent, hand_count_permanent);
+        driven!(hand_temp, hand_count_temp);
+        for (name, generated, hand, entry, body) in [
+            (
+                "BuddyMan_CountPermanentEntries",
+                gen_permanent as GuestFn,
+                hand_permanent as GuestFn,
+                0x0026_2280u32,
+                0x0026_22a8u32,
+            ),
+            (
+                "BuddyMan_CountTempEntries",
+                gen_temp,
+                hand_temp,
+                0x0026_22f0,
+                0x0026_2318,
+            ),
+        ] {
+            check_resumes(name, generated, hand, 150, &[body], &|c, seed| {
+                let mut r = base_3(c, seed, entry as u64 ^ 0xe7, 4);
+                c.g[A0][0] = OBJ_2 as u64;
+                roster(c, seed / 3 % 5, seed);
+                schedule(c, &mut r, seed, entry)
+            });
+        }
+    }
+
+    /// Both roster counters entered at each of the shared loop's heads with
+    /// the frame already open: `seed % 3` the head (loop test, body, the
+    /// branch's delay slot), `seed / 3 % 5` the roster size, `seed / 15 % 2`
+    /// the index already reached (30 seeds, the full 3x5x2 cross).
+    #[test]
+    fn buddy_man_count_heads_matches() {
+        const SEEDS: u32 = 30;
+        assert_eq!(SEEDS, 3 * 5 * 2, "head x roster size x index");
+        for (generated, hand, entry, heads) in [
+            (
+                ee::s07::f_00262280__generated as GuestFn,
+                buddy_man_count_permanent_entries as GuestFn,
+                0x0026_2280u32,
+                [0x0026_22bcu32, 0x0026_22a8, 0x0026_22a4],
+            ),
+            (
+                ee::s07::f_002622f0__generated,
+                buddy_man_count_temp_entries,
+                0x0026_22f0,
+                [0x0026_232c, 0x0026_2318, 0x0026_2314],
+            ),
+        ] {
+            check(generated, hand, SEEDS, &|c, seed| {
+                let _ = base_3(c, seed, entry as u64 ^ 0x4ead, 4);
+                roster(c, seed / 3 % 5, seed);
+                c.pc = heads[(seed % 3) as usize];
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.g[S2][0] = OBJ_2 as u64;
+                c.g[S0][0] = (seed / 15 % 2) as u64;
+                c.g[S1][0] = 0;
+            });
+        }
     }
 
     #[test]
@@ -31069,6 +31152,7 @@ pub(crate) mod tests {
     use crate::difftest::fakes::hook;
     use crate::difftest::fakes::prev_cell;
     use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::game::dirtysock::lobbyapi::tests::{check_resumes, count_resume};
     use std::ptr::addr_of_mut;
     use std::sync::atomic::AtomicUsize;
 
