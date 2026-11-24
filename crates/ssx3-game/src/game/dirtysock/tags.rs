@@ -7778,10 +7778,10 @@ pub(crate) mod tests {
     // 0x3ed0f8 TagFieldGetDelim.
     #[test]
     fn tag_field_get_delim_matches() {
-        const SEEDS: u32 = 576;
+        const SEEDS: u32 = 672;
         assert_eq!(
             SEEDS,
-            12 * 4 * 3 * 2 * 2,
+            14 * 4 * 3 * 2 * 2,
             "value x group x index x two nulls"
         );
         check(
@@ -7792,25 +7792,26 @@ pub(crate) mod tests {
                 let _ = machine(c, seed, 0x3ed0f8, 0);
                 tables(c);
                 c.pc = 0x003ed0f8;
-                // One digit per steering value: seed%12 the value bytes,
-                // seed/12%4 the group (null buffer = measure only, the
-                // lengths 0/1/6), seed/48%3 the field index, seed/144%2 a
-                // null record, seed/288%2 a null default (576 seeds, the
+                // One digit per steering value: seed%14 the value bytes,
+                // seed/14%4 the group (null buffer = measure only, the
+                // lengths 0/1/6), seed/56%3 the field index, seed/168%2 a
+                // null record, seed/336%2 a null default (672 seeds, the
                 // full cross). The parser's
                 // own arms turn on a space, a control byte, a high byte, an
-                // empty value, a leading delimiter and a '%xx' escape.
-                let group = (seed / 12) as usize % 4;
-                c.g[A0][0] = if (seed / 144) % 2 == 0 { 0 } else { sx(DATA) };
+                // empty value, a leading delimiter and a '%xx' escape (also
+                // one whose first or second digit is a space).
+                let group = (seed / 14) as usize % 4;
+                c.g[A0][0] = if (seed / 168) % 2 == 0 { 0 } else { sx(DATA) };
                 c.g[A1][0] = if group == 0 { 0 } else { sx(DATA + 0x200) };
                 c.g[A2][0] = [0x40u64, 0, 1, 6][group];
-                c.g[A3][0] = if (seed / 288) % 2 == 0 {
+                c.g[A3][0] = if (seed / 336) % 2 == 0 {
                     0
                 } else {
                     sx(DATA + 0x400)
                 };
-                c.g[T0][0] = ((seed / 48) % 3) as u64;
+                c.g[T0][0] = ((seed / 56) % 3) as u64;
                 c.g[T1][0] = b',' as u64;
-                let sample: &[u8] = match seed % 12 {
+                let sample: &[u8] = match seed % 14 {
                     0 => b"a,b,c",
                     1 => b" ab,c",
                     2 => b",b,c",
@@ -7822,7 +7823,9 @@ pub(crate) mod tests {
                     8 => b"%\xe0\xe0b",
                     9 => b"a b,c",
                     10 => b"a\x1fb,c",
-                    _ => b"\"q,b\",c",
+                    11 => b"\"q,b\",c",
+                    12 => b"% x,b",
+                    _ => b"%4 x,b",
                 };
                 put_str(c, DATA, sample);
                 put_str(c, DATA + 0x400, b"default");
@@ -7897,11 +7900,11 @@ pub(crate) mod tests {
     // 0x3ed378 TagFieldGetString.
     #[test]
     fn tag_field_get_string_matches() {
-        // One digit per steering value: seed%12 sample, seed/12%4 length
-        // argument, seed/48%2 null data, seed/96%2 null buffer, seed/192%2
-        // null default (384 seeds, the full 12x4x2x2x2 cross).
-        const SEEDS: u32 = 384;
-        assert_eq!(SEEDS, 12 * 4 * 2 * 2 * 2, "sample x length x three nulls");
+        // One digit per steering value: seed%14 sample, seed/14%4 length
+        // argument, seed/56%2 null data, seed/112%2 null buffer, seed/224%2
+        // null default (448 seeds, the full 14x4x2x2x2 cross).
+        const SEEDS: u32 = 448;
+        assert_eq!(SEEDS, 14 * 4 * 2 * 2 * 2, "sample x length x three nulls");
         check(
             ee::s14::f_003ed378__generated,
             tag_field_get_string,
@@ -7910,15 +7913,15 @@ pub(crate) mod tests {
                 let _ = machine(c, seed, 0x3ed378, 0);
                 tables(c);
                 c.pc = 0x003ed378;
-                let sample = seed % 12;
-                c.g[A0][0] = if (seed / 48) % 2 == 0 { 0 } else { sx(DATA) };
-                c.g[A1][0] = if (seed / 96) % 2 == 0 {
+                let sample = seed % 14;
+                c.g[A0][0] = if (seed / 56) % 2 == 0 { 0 } else { sx(DATA) };
+                c.g[A1][0] = if (seed / 112) % 2 == 0 {
                     0
                 } else {
                     sx(DATA + 0x200)
                 };
-                c.g[A2][0] = [0, 1, 8, 0x40][(seed / 12) as usize % 4] as u64;
-                c.g[A3][0] = if (seed / 192) % 2 == 0 {
+                c.g[A2][0] = [0, 1, 8, 0x40][(seed / 14) as usize % 4] as u64;
+                c.g[A3][0] = if (seed / 224) % 2 == 0 {
                     0
                 } else {
                     sx(DATA + 0x400)
@@ -7938,6 +7941,9 @@ pub(crate) mod tests {
                         8 => b"a sp",
                         9 => b"a\x1fsp",
                         10 => b"ab%41cd",
+                        // '%' escapes whose first or second digit is a space.
+                        11 => b"% x",
+                        12 => b"%4 x",
                         _ => b"",
                     },
                 );
@@ -7990,15 +7996,17 @@ pub(crate) mod tests {
     // 0x3ed678 TagFieldGetBinary.
     #[test]
     fn tag_field_get_binary_matches() {
-        // One digit per steering value: seed%6 value, seed/6%7 format,
-        // seed/42%4 size argument, seed/168%2 null buffer, seed/336%2 null
-        // data (672 seeds, the full 6x7x4x2x2 cross). Formats: the two
-        // baseline ones, empty, ':' after a count, a four-stage one, a
-        // five-stage one (the stage==5 arm), and an 's' first.
-        const SEEDS: u32 = 672;
+        // One digit per steering value: seed%7 value, seed/7%9 format,
+        // seed/63%4 size argument, seed/252%2 null buffer, seed/504%2 null
+        // data (1008 seeds, the full 7x9x4x2x2 cross). Formats: the two
+        // baseline ones, empty, ':' after a letter, a four-stage one, a
+        // five-stage one (the stage==5 arm), an 's' first, an 's' field
+        // followed by a byte (the ',' skip after a string), and ':' right
+        // after a count digit.
+        const SEEDS: u32 = 1008;
         assert_eq!(
             SEEDS,
-            6 * 7 * 4 * 2 * 2,
+            7 * 9 * 4 * 2 * 2,
             "value x format x size x two nulls"
         );
         check(
@@ -8009,14 +8017,14 @@ pub(crate) mod tests {
                 let _ = machine(c, seed, 0x3ed678, 0);
                 tables(c);
                 c.pc = 0x003ed678;
-                let fmt = (seed / 6) % 7;
-                c.g[A0][0] = if (seed / 336) % 2 == 0 { 0 } else { sx(DATA) };
-                c.g[A1][0] = if (seed / 168) % 2 == 0 {
+                let fmt = (seed / 7) % 9;
+                c.g[A0][0] = if (seed / 504) % 2 == 0 { 0 } else { sx(DATA) };
+                c.g[A1][0] = if (seed / 252) % 2 == 0 {
                     0
                 } else {
                     sx(DATA + 0x400)
                 };
-                c.g[A2][0] = [0, 1, 4, -1][(seed / 42) as usize % 4] as i64 as u64;
+                c.g[A2][0] = [0, 1, 4, -1][(seed / 63) as usize % 4] as i64 as u64;
                 c.g[A3][0] = sx(DATA + 0x200);
                 put_str(
                     c,
@@ -8028,19 +8036,61 @@ pub(crate) mod tests {
                         3 => b"b:2w1",
                         4 => b"b1w1l1s4",
                         5 => b"b1w1l1b1",
-                        _ => b"s4b1",
+                        6 => b"s4b1",
+                        7 => b"4sb",
+                        _ => b"2:b",
                     },
                 );
                 put_str(
                     c,
                     DATA,
-                    match seed % 6 {
+                    match seed % 7 {
                         0 => b"$4142",
                         1 => b"-12",
                         2 => b"0",
                         3 => b"4142,4344",
                         4 => b"",
-                        _ => b"$0a0b",
+                        5 => b"$0a0b",
+                        // A '0' past the first hex digit and inside a string.
+                        _ => b"a0,41",
+                    },
+                );
+            },
+        );
+    }
+
+    // A '*' after a letter repeats that letter until the buffer is full.
+    // Kept apart from the fixture above: its size -1 would repeat 0xffff
+    // times. One digit per steering value: seed%4 size argument, seed/4%2
+    // null buffer, seed/8%2 data longer or shorter than the repeat.
+    #[test]
+    fn tag_field_get_binary_repeat_matches() {
+        const SEEDS: u32 = 16;
+        assert_eq!(SEEDS, 4 * 2 * 2, "size x null buffer x data");
+        check(
+            ee::s14::f_003ed678__generated,
+            tag_field_get_binary,
+            SEEDS,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x3ed678, 0);
+                tables(c);
+                c.pc = 0x003ed678;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = if (seed / 4) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x400)
+                };
+                c.g[A2][0] = [1, 2, 3, 5][seed as usize % 4];
+                c.g[A3][0] = sx(DATA + 0x200);
+                put_str(c, DATA + 0x200, b"b*");
+                put_str(
+                    c,
+                    DATA,
+                    if (seed / 8) % 2 == 0 {
+                        b"414243"
+                    } else {
+                        b"41"
                     },
                 );
             },
@@ -8088,11 +8138,13 @@ pub(crate) mod tests {
     // 0x3ed970 TagFieldGetEncoded.
     #[test]
     fn tag_field_get_encoded_matches() {
-        // One digit per steering value: seed%8 value, seed/8%2 null record,
-        // seed/16%2 null buffer, seed/32%2 null key, seed/64%2 null default
-        // (128 seeds = the full 8x2x2x2x2 cross).
-        const SEEDS: u32 = 128;
-        assert_eq!(SEEDS, 8 * 2 * 2 * 2 * 2, "value x four nulls");
+        // One digit per steering value: seed%9 value, seed/9%4 length
+        // (0x40, 0, 1 and 3: the -1 return, the one-byte limit and a stop
+        // mid-value), seed/36%2 null record, seed/72%2 null buffer,
+        // seed/144%2 null key, seed/288%2 null default (576 seeds = the full
+        // 9x4x2x2x2x2 cross).
+        const SEEDS: u32 = 576;
+        assert_eq!(SEEDS, 9 * 4 * 2 * 2 * 2 * 2, "value x length x four nulls");
         check(
             ee::s14::f_003ed970__generated,
             tag_field_get_encoded,
@@ -8101,19 +8153,19 @@ pub(crate) mod tests {
                 let _ = machine(c, seed, 0x3ed970, 0);
                 tables(c);
                 c.pc = 0x003ed970;
-                c.g[A0][0] = if (seed / 8) % 2 == 0 { 0 } else { sx(DATA) };
-                c.g[A1][0] = if (seed / 16) % 2 == 0 {
+                c.g[A0][0] = if (seed / 36) % 2 == 0 { 0 } else { sx(DATA) };
+                c.g[A1][0] = if (seed / 72) % 2 == 0 {
                     0
                 } else {
                     sx(DATA + 0x200)
                 };
-                c.g[A2][0] = 0x40;
-                c.g[A3][0] = if (seed / 32) % 2 == 0 {
+                c.g[A2][0] = [0x40, 0, 1, 3][(seed / 9) as usize % 4];
+                c.g[A3][0] = if (seed / 144) % 2 == 0 {
                     0
                 } else {
                     sx(DATA + 0x400)
                 };
-                c.g[T0][0] = if (seed / 64) % 2 == 0 {
+                c.g[T0][0] = if (seed / 288) % 2 == 0 {
                     0
                 } else {
                     sx(DATA + 0x600)
@@ -8121,7 +8173,7 @@ pub(crate) mod tests {
                 put_str(
                     c,
                     DATA,
-                    match seed % 8 {
+                    match seed % 9 {
                         0 => b"$4142",
                         1 => b"plain",
                         2 => b"",
@@ -8129,7 +8181,9 @@ pub(crate) mod tests {
                         4 => b"$4",
                         5 => b"$",
                         6 => b"$4142b",
-                        _ => b"$0",
+                        7 => b"$0",
+                        // '0' as the second digit of the first and a later pair.
+                        _ => b"$a041a0",
                     },
                 );
                 put_str(c, DATA + 0x400, b"key");
