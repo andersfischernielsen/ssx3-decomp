@@ -6813,17 +6813,22 @@ pub(crate) mod tests {
     // 0x3eb1e0 TagFieldSetRaw.
     #[test]
     fn tag_field_set_raw_matches() {
-        // One digit per steering value: seed%6 term, seed/6%13 record,
-        // seed/78%2 null term, seed/156%2 null record (312 seeds, the full
-        // 6x13x2x2 cross). The record classes pick a printable record end, a
+        // One digit per steering value: seed%9 term, seed/9%16 record,
+        // seed/144%2 null term, seed/288%2 null record (576 seeds, the full
+        // 9x16x2x2 cross). The record classes pick a printable record end, a
         // length exactly on it (and one past it), spaces around the field, a
         // record whose head is class 1 ('=', a name mismatch, so the scan
-        // reaches the append arm), an empty record, the field second, and the
-        // base's buffer shorter than its record (len 8 on the 11-byte one).
-        const SEEDS: u32 = 312;
+        // reaches the append arm), an empty record, the field second, the
+        // base's buffer shorter than its record (len 8 on the 11-byte one), a
+        // '!' heading the field (class 0, not blank), a record ending in a
+        // space, and a buffer with exactly the room a 2-byte growth needs.
+        // The terms add a '!' head (passes the blank check, equal class-0
+        // heads), a `~` term (the append path's separator and room arms on
+        // every record end) and a 0xe0 head (negative as a signed byte).
+        const SEEDS: u32 = 576;
         assert_eq!(
             SEEDS,
-            6 * 13 * 2 * 2,
+            9 * 16 * 2 * 2,
             "term x record x null term x null record"
         );
         check(
@@ -6835,29 +6840,33 @@ pub(crate) mod tests {
                 tables(c);
                 c.pc = 0x003eb1e0;
                 let rec = DATA;
-                let class = (seed / 6) % 13;
+                let class = (seed / 9) % 16;
                 let len = match class {
                     2 => 6,
                     3 => 5,
                     12 => 8,
+                    15 => 5,
                     _ => 0x200,
                 };
-                c.g[A0][0] = if (seed / 156) % 2 == 0 { 0 } else { sx(rec) };
+                c.g[A0][0] = if (seed / 288) % 2 == 0 { 0 } else { sx(rec) };
                 c.g[A1][0] = len as u64;
                 let tmp = DATA + 0x400;
-                if (seed / 78) % 2 == 0 {
+                if (seed / 144) % 2 == 0 {
                     c.g[A2][0] = 0;
                 } else {
                     c.g[A2][0] = sx(tmp);
-                    let name = match seed % 6 {
-                        0 => "abc",
-                        1 => "x y",
-                        2 => "",
-                        3 => "=abc",
-                        4 => ":abc",
-                        _ => "k",
+                    let name: &[u8] = match seed % 9 {
+                        0 => b"abc",
+                        1 => b"x y",
+                        2 => b"",
+                        3 => b"=abc",
+                        4 => b":abc",
+                        5 => b"k",
+                        6 => b"!x=2",
+                        7 => b"~x=1",
+                        _ => b"\xe0abc",
                     };
-                    put_str(c, tmp, name.as_bytes());
+                    put_str(c, tmp, name);
                 }
                 put_str(
                     c,
@@ -6875,7 +6884,10 @@ pub(crate) mod tests {
                         9 => b"",
                         10 => b"=1\n",
                         11 => b"xy=2\nabc=1\n",
-                        _ => b"abc=1\nxy=2\n",
+                        12 => b"abc=1\nxy=2\n",
+                        13 => b"!x=1\n",
+                        14 => b"abc=1 ",
+                        _ => b"ab",
                     },
                 );
             },
@@ -6921,11 +6933,12 @@ pub(crate) mod tests {
                 // End-scan head: the old value is 100 chars, so the end
                 // scan is still running when the event fires past the
                 // six compare-loop edges (the `=` then matches and ends
-                // the compare with no edge of its own).
+                // the compare with no edge of its own). Every other value
+                // byte is a space, which the resumed scan must step over.
                 3 => {
                     put_str(c, rec, b"abcdef=");
                     for i in 0..100u32 {
-                        wb(c, rec + 7 + i, b'1');
+                        wb(c, rec + 7 + i, if i % 2 == 0 { b'1' } else { b' ' });
                     }
                     put_str(c, rec + 107, b"\n");
                     put_str(c, tmp, b"abcdef=9");
@@ -6933,11 +6946,12 @@ pub(crate) mod tests {
                 }
                 // Skip head: the first bytes mismatch in class only, so the
                 // compare loop exits with no edge and the skip runs over a
-                // 100-char non-matching field.
+                // 100-char non-matching field; every other byte is a space,
+                // which does not end the field for the resumed skip.
                 4 => {
                     wb(c, rec, b'z');
                     for i in 0..100u32 {
-                        wb(c, rec + 1 + i, b'1');
+                        wb(c, rec + 1 + i, if i % 2 == 0 { b'1' } else { b' ' });
                     }
                     put_str(c, rec + 101, b"\n");
                     put_str(c, tmp, b"a=9");
@@ -6981,14 +6995,16 @@ pub(crate) mod tests {
     // 0x3eb6d8 TagFieldFind.
     #[test]
     fn tag_field_find_matches() {
-        // One digit per steering value: seed%4 name, seed/4%8 record,
-        // seed/32%2 null record, seed/64%2 null name (128 seeds, the full
-        // 4x8x2x2 cross). The arms the record classes pick: a space before
+        // One digit per steering value: seed%4 name, seed/4%10 record,
+        // seed/40%2 null record, seed/80%2 null name (160 seeds, the full
+        // 4x10x2x2 cross). The arms the record classes pick: a space before
         // the name, a space or a NUL right after '=', a '!' before '=',
-        // an uppercase record (the fold), a 0xe0 byte, and a record with no
-        // trailing newline (the at-record-end match attempt).
-        const SEEDS: u32 = 128;
-        assert_eq!(SEEDS, 4 * 8 * 2 * 2, "one seed per name x record x nulls");
+        // an uppercase record (the fold), a 0xe0 byte, a record with no
+        // trailing newline (the at-record-end match attempt), a 1-char
+        // field name at the record start (the attempt at record[0]), and a
+        // '!' right before a matching name (not a field start).
+        const SEEDS: u32 = 160;
+        assert_eq!(SEEDS, 4 * 10 * 2 * 2, "one seed per name x record x nulls");
         check(
             ee::s14::f_003eb6d8__generated,
             tag_field_find,
@@ -6999,9 +7015,9 @@ pub(crate) mod tests {
                 c.pc = 0x003eb6d8;
                 let rec = DATA;
                 let name = DATA + 0x200;
-                let class = (seed / 4) % 8;
-                c.g[A0][0] = if (seed / 32) % 2 == 0 { 0 } else { sx(rec) };
-                c.g[A1][0] = if (seed / 64) % 2 == 0 { 0 } else { sx(name) };
+                let class = (seed / 4) % 10;
+                c.g[A0][0] = if (seed / 40) % 2 == 0 { 0 } else { sx(rec) };
+                c.g[A1][0] = if (seed / 80) % 2 == 0 { 0 } else { sx(name) };
                 put_str(
                     c,
                     rec,
@@ -7013,7 +7029,9 @@ pub(crate) mod tests {
                         4 => b"alpha!=\nbeta=2\n",
                         5 => b"ALPHA=1\nbeta=2\n",
                         6 => b"\xe0alpha=1\n",
-                        _ => b"alpha=1",
+                        7 => b"alpha=1",
+                        8 => b"a=1\nbeta=2\n",
+                        _ => b"x!alpha=1\n",
                     },
                 );
                 put_str(
@@ -7299,11 +7317,12 @@ pub(crate) mod tests {
     #[test]
     fn tag_field_rename_matches() {
         // One digit per steering value: seed%9 record, seed/9%3 name,
-        // seed/27%2 length argument, seed/54%2 new name (108 seeds = the full
-        // 9x3x2x2 cross). Record 6 puts a '!' inside the matched name (Find
+        // seed/27%3 length argument, seed/81%3 new name (243 seeds = the full
+        // 9x3x3x3 cross). Record 6 puts a '!' inside the matched name (Find
         // accepts it, so the walk sees 0x21), record 7 a space after '='.
-        const SEEDS: u32 = 108;
-        assert_eq!(SEEDS, 9 * 3 * 2 * 2, "record x name x length x new name");
+        // Length 13 is exactly the room record 0 needs to grow by 3.
+        const SEEDS: u32 = 243;
+        assert_eq!(SEEDS, 9 * 3 * 3 * 3, "record x name x length x new name");
         check(
             ee::s14::f_003eb9e8__generated,
             tag_field_rename,
@@ -7316,7 +7335,11 @@ pub(crate) mod tests {
                 let name = DATA + 0x200;
                 let val = DATA + 0x400;
                 c.g[A0][0] = sx(rec);
-                c.g[A1][0] = if (seed / 27) % 2 == 0 { 0x100 } else { 4 };
+                c.g[A1][0] = match (seed / 27) % 3 {
+                    0 => 0x100,
+                    1 => 4,
+                    _ => 13,
+                };
                 c.g[A2][0] = sx(name);
                 c.g[A3][0] = sx(val);
                 // A space, a '!' or an uppercase letter before the field, a
@@ -7349,18 +7372,23 @@ pub(crate) mod tests {
                 );
                 // A shorter new name on any field but the record-ending one
                 // loops forever in the reference body (0x3eba88), so the
-                // short name is only paired with that record; the other value
-                // of the digit is a longer name.
-                let shorter = seed % 9 == 3 && (seed / 54) % 2 == 1;
+                // short name is only paired with that record; the other
+                // values of the digit are a longer name and one as long as
+                // the old name (an in-place rename).
+                let new_name = (seed / 81) % 3;
+                let shorter = seed % 9 == 3 && new_name == 1;
+                let same: &[u8] = if (seed / 9) % 3 == 2 { b"bbb" } else { b"bb" };
                 put_str(
                     c,
                     val,
                     if shorter {
                         b"z"
-                    } else if (seed / 54) % 2 == 0 {
+                    } else if new_name == 0 {
                         b"hello"
-                    } else {
+                    } else if new_name == 1 {
                         b"helloo"
+                    } else {
+                        same
                     },
                 );
             },
