@@ -8,9 +8,17 @@ use crate::call::guest;
 use crate::call::Frame;
 pub(crate) use crate::game::fe::festatenethelppopup::fe_state_screen_init;
 pub(crate) use crate::game::fe::festateoptions::call_object_a2;
+pub(crate) use crate::game::fe::festateoptions::fe_options_dtor;
+pub(crate) use crate::game::fe::festateoptions::fe_options_ui_ctor;
+#[cfg(test)]
+pub(crate) use crate::game::fe::festateoptions::fe_setup;
 pub(crate) use crate::game::fe::festateoptions::screen_object;
 pub(crate) use crate::game::fe::festateoptions::ui_state_epilogue;
 pub(crate) use crate::game::fe::festateoptions::ui_state_frame;
+pub(crate) use crate::game::fe::festateoptions::FE_MEMCARD_STATE_DTOR;
+#[cfg(test)]
+pub(crate) use crate::game::fe::festateoptions::FE_SEEDS;
+pub(crate) use crate::game::fe::festateoptions::FE_UI_STATE_DTOR;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
@@ -56,6 +64,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0019_0858,
         c_fe_state_rider_bio_ctor,
         "cFEStateRiderBio_ctor",
+    ),
+    (
+        0x001d_e1b8,
+        fe_screen_select_profile_ctor_2,
+        "FEScreenSelectProfile_ctor_2",
+    ),
+    (
+        0x001d_e1f0,
+        fe_screen_select_profile_dtor,
+        "FEScreenSelectProfile_dtor",
+    ),
+    (
+        0x001d_e218,
+        cfe_state_profile_load_dtor,
+        "cFEStateProfileLoad_dtor",
     ),
 ];
 
@@ -670,6 +693,26 @@ pub fn c_fe_state_profile_load_v33(c: &mut Cpu) {
     })
 }
 
+/// `FEScreenSelectProfile::FEScreenSelectProfile` (0x1de1b8, `_ctor_2`).
+pub fn fe_screen_select_profile_ctor_2(c: &mut Cpu) {
+    guest(c, |c| fe_options_ui_ctor(c, 0x001d_e1d0, 0x3ea8))
+}
+
+/// `FEScreenSelectProfile::~FEScreenSelectProfile` (0x1de1f0).
+pub fn fe_screen_select_profile_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_options_dtor(c, FE_UI_STATE_DTOR, 0x001d_e20c, 0x2f30)
+    })
+}
+
+/// `cFEStateProfileLoad::~cFEStateProfileLoad` (0x1de218): the vptr, then the
+/// `MemCardStateBase` destructor.
+pub fn cfe_state_profile_load_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_options_dtor(c, FE_MEMCARD_STATE_DTOR, 0x001d_e234, 0x4030)
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -864,6 +907,44 @@ pub(crate) mod tests {
                 // generated body has secondary entries and dispatches on `pc`.
                 c.g[A0][0] = sx(this);
                 c.pc = 0x0018_faf0;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    #[test]
+    fn fe_screen_select_profile_ctor_2_matches() {
+        covered(
+            ee::s04::f_001de1b8__generated,
+            fe_screen_select_profile_ctor_2,
+            FE_SEEDS,
+            &|c, seed| {
+                fe_setup(c, seed, 0x001d_e1b8, 15);
+            },
+        );
+    }
+
+    #[test]
+    fn fe_screen_select_profile_dtor_matches() {
+        covered(
+            ee::s04::f_001de1f0__generated,
+            fe_screen_select_profile_dtor,
+            FE_SEEDS,
+            &|c, seed| {
+                fe_setup(c, seed, 0x001d_e1f0, 16);
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_profile_load_dtor_matches() {
+        covered(
+            ee::s04::f_001de218__generated,
+            cfe_state_profile_load_dtor,
+            FE_SEEDS,
+            &|c, seed| {
+                fe_setup(c, seed, 0x001d_e218, 17);
             },
         );
     }

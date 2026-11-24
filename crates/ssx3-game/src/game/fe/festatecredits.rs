@@ -6,12 +6,15 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
+use crate::call::Target;
 pub(crate) use crate::game::dirtysock::tagsunk::const_reg;
 pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at as at_2;
+pub(crate) use crate::game::fe::feasyncfile::fe_ctor_with_vtable;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::gp;
 pub(crate) use crate::game::fe::fereal::open;
+pub(crate) use crate::game::fe::festatebonusmaterial::FE_UI_STATE_CTOR;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
 pub(crate) use crate::game::fe::festateload::at;
@@ -54,6 +57,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0018_6610,
         fe_state_event_select_ctor,
         "cFEStateEventSelect_ctor",
+    ),
+    (
+        0x001d_e4b0,
+        c_fe_options_credits_ctor_2,
+        "cFEOptionsCredits_ctor_2",
     ),
 ];
 
@@ -350,6 +358,22 @@ pub fn c_fe_options_credits_handle_input(c: &mut Cpu) {
     })
 }
 
+/// `cFEOptionsCredits` constructor (0x1de4b0): `UIState_ctor(this, 0)`, then
+/// the vtable at `+8`.
+pub fn c_fe_options_credits_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_ctor_with_vtable(
+            c,
+            14,
+            true,
+            false,
+            Target::Table(FE_UI_STATE_CTOR),
+            0x001d_e4c8,
+            0x4208,
+        )
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -559,6 +583,17 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(pad);
             },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festatebonusmaterial::tests::ui_state_case;
+
+    #[test]
+    fn c_fe_options_credits_ctor_2_matches() {
+        ui_state_case(
+            ee::s04::f_001de4b0__generated,
+            c_fe_options_credits_ctor_2,
+            0x001d_e4b0,
         );
     }
 }

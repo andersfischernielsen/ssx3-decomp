@@ -8,9 +8,11 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -123,6 +125,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_7e68, ssx_app_flush_ticks, "SSXApp_FlushTicks"),
     (0x0022_8a78, ssx_app_load_locale, "SSXApp_LoadLocale"),
     (0x0022_9180, crowd_man2d_ctor, "CrowdMan2d_ctor"),
+    (0x0022_6830, ssxapp_ctor, "SSXApp_ctor"),
+    (
+        0x0022_7fa0,
+        mc_manager_exists_wrapper,
+        "MCManager_Exists_Wrapper",
+    ),
+    (0x0022_8bb8, ssxapp_v02, "SSXApp_v02"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -4411,6 +4420,116 @@ pub fn crowd_man2d_ctor(c: &mut Cpu) {
     })
 }
 
+/// `SSXApp::SSXApp(void* self)` (0x226830): constructs the app manager
+/// (0x316cd0), sets the app's fields, clears the 11-word table at
+/// `self+0x114` down to `self+0xbc` (the loop runs with event checks), and
+/// zeroes three 8-word blocks with `MEM_fill` (0x3e6448).
+pub fn ssxapp_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0031_6cd0, 0x0022_6844)?;
+        c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0xda0)).lw(c);
+        c.g[V0][0] = 0x0047_d9c8;
+        let base = c.g[S0][0] as u32;
+        Addr(base.wrapping_add(0xd4)).sw(c, 0);
+        let vtable = c.g[V0][0];
+        Addr(base.wrapping_add(0x5c)).sw(c, vtable);
+        c.g[A0][0] = 0xa;
+        let v1 = c.g[V1][0];
+        Addr(base.wrapping_add(0xcc)).sw(c, v1);
+        c.g[V0][0] = sx(base.wrapping_add(0x114));
+        Addr(base.wrapping_add(0xc4)).sw(c, v1);
+        Addr(base.wrapping_add(0xc8)).sw(c, v1);
+        Addr(base.wrapping_add(0xd8)).sw(c, 0);
+        Addr(base.wrapping_add(0xdc)).sw(c, 0);
+        Addr(base.wrapping_add(0xe0)).sw(c, 0);
+        Addr(base.wrapping_add(0xe4)).sw(c, 0);
+        Addr(base.wrapping_add(0xe8)).sw(c, 0);
+        loop {
+            c.cycles += 7;
+            let slot = c.g[V0][0] as u32;
+            Addr(slot).sw(c, 0);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+            let more = (c.g[A0][0] as i64) >= 0;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_6880);
+            }
+        }
+        c.cycles += 25;
+        c.g[V0][0] = 1;
+        let base = c.g[S0][0] as u32;
+        Addr(base.wrapping_add(0x118)).sw(c, 0);
+        Addr(base.wrapping_add(0x74)).sw(c, 0);
+        c.g[A0][0] = sx(base.wrapping_add(0xa8));
+        Addr(base.wrapping_add(0x68)).sw(c, 0);
+        c.g[A1][0] = 0;
+        Addr(base.wrapping_add(0x6c)).sw(c, 0);
+        c.g[A2][0] = 8;
+        Addr(base.wrapping_add(0x70)).sw(c, 0);
+        let one = c.g[V0][0];
+        Addr(base.wrapping_add(0x64)).sw(c, one);
+        Addr(base.wrapping_add(0x60)).sw(c, one);
+        call_ptr(c, 0x003e_6448, 0x0022_68cc)?;
+        let base = c.g[S0][0] as u32;
+        c.g[A0][0] = sx(base.wrapping_add(0xb8));
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 8;
+        call_ptr(c, 0x003e_6448, 0x0022_68dc)?;
+        let base = c.g[S0][0] as u32;
+        c.g[A0][0] = sx(base.wrapping_add(0xb0));
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 8;
+        call_ptr(c, 0x003e_6448, 0x0022_68ec)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool cSSXApp::hasMCManager(void)` (0x227fa0): tail-calls
+/// `cMCOverlayManager_hasManager` (0x23c850) through the function table.
+pub fn mc_manager_exists_wrapper(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x0023_c850), 0x0022_7fb0);
+}
+
+/// `void cSSXApp::v02(void* self)` (0x228bb8): tears down the world trigger
+/// manager (0x2b4b48), the audio system (0x284c28) and the app base (0x317400),
+/// then calls the app's virtual slot at `+0x3bc` through the table.
+pub fn ssxapp_v02(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x002b_4b48, 0x0022_8bcc)?;
+        call_ptr(c, 0x0028_4c28, 0x0022_8bd4)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0031_7400, 0x0022_8bdc)?;
+        c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x2a90)).lw(c);
+        c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x10d8)).lw(c);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x3b8)).lh(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x3bc)).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0022_8bf4)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6242,6 +6361,51 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _ = oc434_setup(c, seed, 0x229180, 6, 0x0022_9180);
                 c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::main::all_in_one_main::tests::object_machine;
+
+    #[test]
+    fn ssxapp_ctor_matches() {
+        check(
+            ee::s05::f_00226830__generated,
+            ssxapp_ctor,
+            40,
+            &|c, seed| {
+                let mut r = object_machine(c, seed, 0x6830);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP.wrapping_add(0xda0), r.next_u32());
+                c.g[A0][0] = sx(DATA + 0x1000);
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_exists_wrapper_matches() {
+        check(
+            ee::s05::f_00227fa0__generated,
+            mc_manager_exists_wrapper,
+            30,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x7fa0, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn ssxapp_v02_matches() {
+        check(
+            ee::s05::f_00228bb8__generated,
+            ssxapp_v02,
+            40,
+            &|c, seed| {
+                let _ = object_machine(c, seed, 0x8bb8);
+                c.bus.write32(GAME_GP.wrapping_add(0x2a90), DATA + 0x1000);
+                c.bus.write32(DATA + 0x1000 + 0x10d8, DATA + 0x2000);
+                c.bus.write16(DATA + 0x2000 + 0x3b8, (seed % 2) as u16);
+                c.bus.write32(DATA + 0x2000 + 0x3bc, 0x0070_0000);
             },
         );
     }

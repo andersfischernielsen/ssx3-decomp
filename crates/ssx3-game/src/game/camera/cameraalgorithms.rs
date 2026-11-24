@@ -34,6 +34,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         chase_cam_controller_set_algorithm,
         "ChaseCamController_SetAlgorithm",
     ),
+    (
+        0x0015_dae0,
+        game_camera_reset_all_chase_algorithms,
+        "GameCamera_ResetAllChaseAlgorithms",
+    ),
 ];
 
 /// `void GameCamera_SetCollisionFlag4a4(void)` (0x0015dac0): set the word at
@@ -593,6 +598,59 @@ pub(crate) fn set_algo_spline(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// `GameCamera_ResetAllChaseAlgorithms` (0x15dae0), `cCamera_snapChaseControllers`.
+//
+// `void GameCamera_ResetAllChaseAlgorithms()`: snap the chase controllers of
+// the race manager's two camera slots. Slot 0 always gets its algorithm's
+// snap call; slot 1 only when the rider count is at least 2.
+
+pub fn game_camera_reset_all_chase_algorithms(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        let world = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        c.g[V0][0] = world;
+        let cameras = Addr((world as u32).wrapping_add(0x84)).lw(c);
+        c.g[V1][0] = cameras;
+        c.g[S1][0] = Addr((cameras as u32).wrapping_add(0x84)).lw(c);
+        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4)).lw(c);
+        c.g[S0][0] = Addr(c.g[S1][0] as u32).lw(c);
+        c.g[A1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0xa8)).lw(c);
+        c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x14)).lw(c);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x20)).lh(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x24)).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0015_db1c)?;
+        // Read the callee-saved registers after the call, as the body does.
+        c.g[S0][0] = ((c.g[S0][0] as i64) < 2) as u64;
+        let only_slot0 = c.g[S0][0] != 0;
+        frame.restore(c, S0, 0x20);
+        if !only_slot0 {
+            c.cycles += 8;
+            let riders = c.g[S1][0] as u32;
+            c.g[V0][0] = Addr(riders.wrapping_add(0x8)).lw(c);
+            c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xa8)).lw(c);
+            c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x14)).lw(c);
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x20)).lh(c);
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x24)).lw(c);
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0015_db44)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1039,6 +1097,34 @@ pub(crate) mod tests {
                 c.g[A1][0] = if kind == 99 { u64::MAX } else { kind as u64 };
                 c.g[A2][0] = OC419_CTX as u64;
                 c.f[12] = r.f32(4.0);
+            },
+        );
+    }
+
+    #[test]
+    fn game_camera_reset_all_chase_algorithms_matches() {
+        covered(
+            ee::s01::f_0015dae0__generated,
+            game_camera_reset_all_chase_algorithms,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x0015_dae0, 8);
+                c.pc = 0x0015_dae0;
+                let w = DATA + 0x1000;
+                let x = DATA + 0x2000;
+                let rm = DATA + 0x3000;
+                c.bus.write32(GAME_GP - 0x848, w);
+                c.bus.write32(w + 0x84, x);
+                c.bus.write32(x + 0x84, rm);
+                c.bus.write32(rm, [0u32, 1, 2][(seed % 3) as usize]);
+                c.bus.write32(rm + 4, DATA + 0x4000);
+                c.bus.write32(rm + 8, DATA + 0x5000);
+                for cam in [DATA + 0x4000, DATA + 0x5000] {
+                    c.bus.write32(cam + 0xa8, DATA + 0x6000);
+                    c.bus.write32(DATA + 0x6000 + 0x14, DATA + 0x7000);
+                    c.bus.write16(DATA + 0x7000 + 0x20, 0);
+                    c.bus.write32(DATA + 0x7000 + 0x24, FAKE);
+                }
             },
         );
     }

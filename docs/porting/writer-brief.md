@@ -281,3 +281,16 @@ pseudo-C, how useful it was.
   the structures and add a path-count test (`fresh` + `run_generated`, the set
   of cycle totals over the seeds).
 
+- A shared helper body for "similar" functions must keep each function's own
+  register allocation (which `s` register holds which argument): the call
+  logs compare every register, so two siblings that differ only in S0/S2 fail.
+  Check the generated prologue of each sibling before sharing a body.
+- A port whose real callee is unported and unbounded on test data (runaway at
+  the cycle budget) is dropped from `OVERRIDES` with its test (`#[allow(dead_code)]`
+  on the function, a one-line reason); port the callee first.
+- Labelled-block bodies converted with a script lose the closing braces that
+  the generated text leaves at column 0: count `{` against `}` before handing
+  a module over (the brace balance must be 0 after the epilogue).
+- Flat static-init tables (hundreds of stores) are best generated from the
+  generated text by script with the cycle/store counts checked, not retyped.
+

@@ -27,6 +27,7 @@ pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_2;
 pub(crate) use crate::game::fe::fepopup::at as at_4;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lw_9 as lw_4;
+pub(crate) use crate::game::fe::fepopup::oc508_at;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_3;
 pub(crate) use crate::game::fe::festateoptions::gpa;
 pub(crate) use crate::game::fe::festaterewards::gp_4 as gp_5;
@@ -183,6 +184,141 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "FEUIInput_PollUsbKeyboard",
     ),
     (0x001d_d530, fe_ui_input_dtor, "FEUIInput_dtor"),
+    (
+        0x001d_b148,
+        lobby_menu_init_challenge_page,
+        "LobbyMenu_InitChallengePage",
+    ),
+    (
+        0x001d_b2b0,
+        lobby_menu_init_abort_page,
+        "LobbyMenu_InitAbortPage",
+    ),
+    (
+        0x001d_b330,
+        lobby_menu_fill_delete_persona_page,
+        "LobbyMenu_FillDeletePersonaPage",
+    ),
+    (
+        0x001d_b418,
+        lobby_menu_fill_persona_pages,
+        "LobbyMenu_FillPersonaPages",
+    ),
+    (
+        0x001d_b528,
+        lobby_menu_fill_room_list,
+        "LobbyMenu_FillRoomList",
+    ),
+    (
+        0x001d_b620,
+        lobby_menu_fill_occupant_list,
+        "LobbyMenu_FillOccupantList",
+    ),
+    (
+        0x001d_bab8,
+        lobby_menu_on_abort_page_action,
+        "LobbyMenu_OnAbortPageAction",
+    ),
+    (
+        0x001d_bad8,
+        lobby_menu_on_challenge_page_action,
+        "LobbyMenu_OnChallengePageAction",
+    ),
+    (
+        0x001d_bb20,
+        lobby_menu_on_chat_page_action,
+        "LobbyMenu_OnChatPageAction",
+    ),
+    (
+        0x001d_bb48,
+        lobby_menu_on_occupants_page_action,
+        "LobbyMenu_OnOccupantsPageAction",
+    ),
+    (
+        0x001d_bb90,
+        lobby_menu_on_select_room_page_action,
+        "LobbyMenu_OnSelectRoomPageAction",
+    ),
+    (
+        0x001d_bbc0,
+        lobby_menu_on_select_persona_page_action,
+        "LobbyMenu_OnSelectPersonaPageAction",
+    ),
+    (
+        0x001d_bbe8,
+        lobby_menu_on_create_persona_page_action,
+        "LobbyMenu_OnCreatePersonaPageAction",
+    ),
+    (
+        0x001d_bc10,
+        lobby_menu_on_delete_persona_page_action,
+        "LobbyMenu_OnDeletePersonaPageAction",
+    ),
+    (
+        0x001d_bc38,
+        lobby_menu_on_create_account_page_action,
+        "LobbyMenu_OnCreateAccountPageAction",
+    ),
+    (
+        0x001d_bc68,
+        lobby_menu_on_login_page_action,
+        "LobbyMenu_OnLoginPageAction",
+    ),
+    (
+        0x001d_cda0,
+        lobby_menu_destroy_login_page,
+        "LobbyMenu_DestroyLoginPage",
+    ),
+    (
+        0x001d_ce20,
+        lobby_menu_destroy_create_account_page,
+        "LobbyMenu_DestroyCreateAccountPage",
+    ),
+    (
+        0x001d_cea0,
+        lobby_menu_destroy_login_method_page,
+        "LobbyMenu_DestroyLoginMethodPage",
+    ),
+    (
+        0x001d_cfc8,
+        lobby_menu_destroy_delete_persona_page,
+        "LobbyMenu_DestroyDeletePersonaPage",
+    ),
+    (
+        0x001d_d060,
+        lobby_menu_destroy_create_persona_page,
+        "LobbyMenu_DestroyCreatePersonaPage",
+    ),
+    (
+        0x001d_d0c8,
+        lobby_menu_destroy_select_persona_page,
+        "LobbyMenu_DestroySelectPersonaPage",
+    ),
+    (
+        0x001d_d258,
+        lobby_menu_destroy_select_room_page,
+        "LobbyMenu_DestroySelectRoomPage",
+    ),
+    (
+        0x001d_d2f0,
+        lobby_menu_destroy_room_occupants_page,
+        "LobbyMenu_DestroyRoomOccupantsPage",
+    ),
+    (
+        0x001d_d398,
+        lobby_menu_destroy_chat_page,
+        "LobbyMenu_DestroyChatPage",
+    ),
+    (
+        0x001d_d440,
+        lobby_menu_destroy_challenge_page,
+        "LobbyMenu_DestroyChallengePage",
+    ),
+    (
+        0x001d_d4c0,
+        lobby_menu_destroy_abort_page,
+        "LobbyMenu_DestroyAbortPage",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2268,6 +2404,1292 @@ pub fn fe_ui_input_dtor(c: &mut Cpu) {
     })
 }
 
+/// `cMenuItem_activate(item, on)`: the row's activation (0x2ca388).
+pub(crate) const CMENU_ITEM_ACTIVATE: u32 = 0x002c_a388;
+
+/// The row array of one of the two lobby lists (rooms, occupants). Both
+/// fillers have the same shape; only the callees, the return addresses and
+/// the sizes differ.
+pub(crate) struct ItemList {
+    /// Offset of row 0 from the menu (rows are 0x24 apart).
+    items: u32,
+    /// Rows the menu holds.
+    rows: u32,
+    /// Count callee and its return address.
+    get_count: (u32, u32),
+    /// Name callee and its return address.
+    get_name: (u32, u32),
+    /// Third argument of the name callee (occupants pass 0).
+    name_a2: Option<u64>,
+    /// Return address after activating a filled row.
+    act_ret: u32,
+    /// Return address after activating row 0 for the empty placeholder.
+    empty_ret: u32,
+    /// Return address after deactivating the rows past the list.
+    clear_ret: u32,
+    /// Event heads of the fill loop and of the clear loop.
+    head_fill: u32,
+    head_clear: u32,
+    /// Low half of the placeholder string address (`0x460000 + x`).
+    empty_text_lo: u32,
+    /// Cycles of one fill iteration and of the clear setup.
+    fill_cycles: u64,
+    mult_cycles: u64,
+}
+
+pub(crate) const ROOM_LIST: ItemList = ItemList {
+    items: 0x168,
+    rows: 12,
+    get_count: (0x0025_f120, 0x001d_b558),
+    get_name: (0x0025_f150, 0x001d_b574),
+    name_a2: None,
+    act_ret: 0x001d_b584,
+    empty_ret: 0x001d_b5bc,
+    clear_ret: 0x001d_b5ec,
+    head_fill: 0x001d_b568,
+    head_clear: 0x001d_b5e0,
+    empty_text_lo: 0x7de8,
+    fill_cycles: 12,
+    mult_cycles: 4,
+};
+
+pub(crate) const OCCUPANT_LIST: ItemList = ItemList {
+    items: 0x16c,
+    rows: 24,
+    get_count: (0x0025_f1b0, 0x001d_b650),
+    get_name: (0x0025_f1e0, 0x001d_b670),
+    name_a2: Some(0),
+    act_ret: 0x001d_b680,
+    empty_ret: 0x001d_b6b8,
+    clear_ret: 0x001d_b6e4,
+    head_fill: 0x001d_b660,
+    head_clear: 0x001d_b6d8,
+    empty_text_lo: 0x7e00,
+    fill_cycles: 13,
+    mult_cycles: 3,
+};
+
+/// Fills a lobby list from `self` (S4) and `src` (S3): one row per entry of
+/// the count callee (name and activation), row 0 shows the placeholder when
+/// the list is empty (item ID -1), and the rows past the list are deactivated.
+pub(crate) fn fill_list(c: &mut Cpu, l: &ItemList) -> Flow {
+    c.cycles += 15;
+    let frame = Frame::open(c, 0x60);
+    frame.save(c, 19, 0x20);
+    frame.save(c, 20, 0x10);
+    c.g[S3][0] = c.g[A1][0];
+    c.g[S4][0] = c.g[A0][0];
+    frame.save(c, 17, 0x40);
+    frame.save(c, 18, 0x30);
+    c.g[A0][0] = c.g[S3][0];
+    frame.save(c, 16, 0x50);
+    frame.save_ra(c, 0);
+    c.g[S1][0] = 0;
+    call_ptr(c, l.get_count.0, l.get_count.1)?;
+    c.g[S2][0] = c.g[V0][0];
+    if (c.g[S2][0] as i64) > 0 {
+        c.cycles += 1;
+        c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(l.items));
+        loop {
+            c.cycles += l.fill_cycles;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A0][0] = c.g[S3][0];
+            if let Some(a2) = l.name_a2 {
+                c.g[A2][0] = a2;
+            }
+            call_ptr(c, l.get_name.0, l.get_name.1)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 1;
+            call_ptr(c, CMENU_ITEM_ACTIVATE, l.act_ret)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[S1][0]);
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S2][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, l.head_fill);
+            }
+        }
+    }
+    // Empty list: row 0 shows the placeholder, ID -1, and counts as one row.
+    c.cycles += 2;
+    if c.g[S1][0] == 0 {
+        c.cycles += 10;
+        c.g[V0][0] = 0x0046_0000;
+        c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(l.items));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(l.empty_text_lo));
+        c.g[A1][0] = 1;
+        c.sw((c.g[S4][0] as u32).wrapping_add(l.items + 0x14), c.g[V0][0]);
+        c.g[S1][0] = 1;
+        call_ptr(c, CMENU_ITEM_ACTIVATE, l.empty_ret)?;
+        c.g[V0][0] = u64::MAX;
+        c.sw((c.g[S4][0] as u32).wrapping_add(l.items + 0x8), c.g[V0][0]);
+    }
+    c.g[V0][0] = ((c.g[S1][0] as i64) < l.rows as i64) as u64;
+    // Deactivate the rows past the list (v0 keeps 0x24 when there are none).
+    c.cycles += 2;
+    let none_left = c.g[V0][0] == 0;
+    c.g[V0][0] = 0x24;
+    if !none_left {
+        c.cycles += l.mult_cycles;
+        c.mult(0, 2, 17, 2); // v0 = s1 * v0: the row offset
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(l.items));
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+        loop {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, CMENU_ITEM_ACTIVATE, l.clear_ret)?;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[S1][0] as i64) < l.rows as i64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, l.head_clear);
+            }
+        }
+    }
+    c.cycles += 8;
+    frame.restore(c, 16, 0x50);
+    frame.restore(c, 17, 0x40);
+    frame.restore(c, 18, 0x30);
+    frame.restore(c, 19, 0x20);
+    frame.restore(c, 20, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `LobbyMenu_FillRoomList` (0x1db528), the generated `LobbyMenu_updaterooms`:
+/// the room rows (12) from `LobbyMan_getnumrooms` and `LobbyMan_GetRoomName`.
+pub fn lobby_menu_fill_room_list(c: &mut Cpu) {
+    guest(c, |c| fill_list(c, &ROOM_LIST));
+}
+
+/// `LobbyMenu_FillOccupantList` (0x1db620): the occupant rows (24) of the room
+/// from `func_0025F1B0` (count) and `func_0025F1E0` (name, third argument 0).
+pub fn lobby_menu_fill_occupant_list(c: &mut Cpu) {
+    guest(c, |c| fill_list(c, &OCCUPANT_LIST));
+}
+
+/// `LobbyMenu_OnAbortPageAction` (0x1dbab8): forwards to `0x17e558` with the
+/// menu's screen at +0x130; returns 0.
+pub fn lobby_menu_on_abort_page_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x130));
+        call_ptr(c, 0x0017_e558, 0x001d_bac8)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `LobbyMenu_OnChallengePageAction` (0x1dbad8): the message's field +8 picks
+/// the screen action: 0 runs `0x17e490` (menu at +0x130), 1 runs `0x17e4f0`
+/// (menu at +0x134), anything else does nothing. Returns 0.
+pub fn lobby_menu_on_challenge_page_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = 1;
+        if c.g[V1][0] == 0 {
+            c.cycles += 4;
+            c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x130));
+            call_ptr(c, 0x0017_e490, 0x001d_baf4)?;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 2;
+            frame.restore_ra(c, 0);
+            if c.g[V1][0] == c.g[V0][0] {
+                c.cycles += 3;
+                c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x134));
+                call_ptr(c, 0x0017_e4f0, 0x001d_bb0c)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `LobbyMenu_OnChatPageAction` (0x1dbb20): `0x17e418(menu +0x130, msg +0x14)`.
+pub fn lobby_menu_on_chat_page_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x130));
+        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x14));
+        call_ptr(c, 0x0017_e418, 0x001d_bb34)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `LobbyMenu_OnOccupantsPageAction` (0x1dbb48): the message's field +8 is
+/// -2 (`0x17e3b8` with the menu at +0x134), -1 (nothing) or anything else
+/// (`0x17e368` with the menu at +0x130). Returns 0.
+pub fn lobby_menu_on_occupants_page_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = u64::MAX - 1;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        let not_minus_two = c.g[A1][0] != c.g[V0][0];
+        c.g[V0][0] = u64::MAX;
+        if !not_minus_two {
+            c.cycles += 4;
+            c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x134));
+            call_ptr(c, 0x0017_e3b8, 0x001d_bb68)?;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 2;
+            frame.restore_ra(c, 0);
+            if c.g[A1][0] != c.g[V0][0] {
+                c.cycles += 3;
+                c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x130));
+                call_ptr(c, 0x0017_e368, 0x001d_bb80)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `LobbyMenu_OnSelectRoomPageAction` (0x1dbb90): a message whose field +8 is
+/// negative does nothing; otherwise `0x17e2f8(menu +0x130, ...)`. Returns 0.
+pub fn lobby_menu_on_select_room_page_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        let negative = (c.g[A1][0] as i64) < 0;
+        frame.restore_ra(c, 0);
+        if !negative {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x130));
+            call_ptr(c, 0x0017_e2f8, 0x001d_bbac)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `LobbyMenu_OnSelectPersonaPageAction` (0x1dbbc0):
+/// `0x17e290(menu +0x4e0, msg +8)`. Returns 0.
+pub fn lobby_menu_on_select_persona_page_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4e0));
+        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        call_ptr(c, 0x0017_e290, 0x001d_bbd4)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `LobbyMenu_OnCreatePersonaPageAction` (0x1dbbe8):
+/// `0x17e1c0(menu +0x130, menu +0x180)`. Returns 0.
+pub fn lobby_menu_on_create_persona_page_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        let menu = c.g[A0][0] as u32;
+        c.g[A1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw(menu.wrapping_add(0x130));
+        c.g[A1][0] = sx(menu.wrapping_add(0x180));
+        call_ptr(c, 0x0017_e1c0, 0x001d_bc00)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `LobbyMenu_OnDeletePersonaPageAction` (0x1dbc10):
+/// `0x17e228(menu +0x130, msg +8)`. Returns 0.
+pub fn lobby_menu_on_delete_persona_page_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x130));
+        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        call_ptr(c, 0x0017_e228, 0x001d_bc24)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The create-account and login page actions: `callee(menu +0x130,
+/// menu +0x180, menu +0x1ac)`. Returns 0.
+pub(crate) fn persona_form_action(c: &mut Cpu, callee: u32, ret: u32) -> Flow {
+    c.cycles += 11;
+    let frame = Frame::open(c, 0x10);
+    let menu = c.g[A0][0] as u32;
+    c.g[A1][0] = c.g[A0][0];
+    frame.save_ra(c, 0);
+    c.g[A2][0] = sx(menu.wrapping_add(0x1ac));
+    c.g[A0][0] = c.lw(menu.wrapping_add(0x130));
+    c.g[A1][0] = sx(menu.wrapping_add(0x180));
+    call_ptr(c, callee, ret)?;
+    frame.restore_ra(c, 0);
+    c.g[V0][0] = 0;
+    frame.close(c);
+    Ok(())
+}
+
+/// `LobbyMenu_OnCreateAccountPageAction` (0x1dbc38).
+pub fn lobby_menu_on_create_account_page_action(c: &mut Cpu) {
+    guest(c, |c| persona_form_action(c, 0x0017_e030, 0x001d_bc54));
+}
+
+/// `LobbyMenu_OnLoginPageAction` (0x1dbc68).
+pub fn lobby_menu_on_login_page_action(c: &mut Cpu) {
+    guest(c, |c| persona_form_action(c, 0x0017_e118, 0x001d_bc84));
+}
+
+/// `sx((base as u32) + off)`: the 32-bit address arithmetic of the generated code.
+pub(crate) fn menu_sx_add(base: u64, off: u32) -> u64 {
+    sx((base as u32).wrapping_add(off))
+}
+
+/// `MenuSysItem_dtor(a0, 2)` (0x2ca280, through the function table), returning to `ret`.
+pub(crate) fn menu_item_dtor(c: &mut Cpu, a0: u64, ret: u32) -> Flow {
+    c.g[A0][0] = a0;
+    c.g[A1][0] = 0x2;
+    call_ptr(c, 0x002c_a280, ret)
+}
+
+/// `MenuSysPage_dtor(a0, a1)` (0x2caa80, through the function table), returning to `ret`.
+pub(crate) fn menu_page_dtor(c: &mut Cpu, a0: u64, a1: u64, ret: u32) -> Flow {
+    c.g[A0][0] = a0;
+    c.g[A1][0] = a1;
+    call_ptr(c, 0x002c_aa80, ret)
+}
+
+/// The `'l: loop` that destroys the 0x24-byte entries of a page's list: from
+/// `S0` down to `S2`, each entry's destructor found through its vtable
+/// (`+0x10` holds the vtable, `+0x8` a halfword offset for `a0`, `+0xc` the
+/// function). `head` is the loop's first instruction (the event check's pc),
+/// `ret` the return address of the destructor call.
+pub(crate) fn menu_list_walk(c: &mut Cpu, head: u32, ret: u32) -> Flow {
+    loop {
+        c.cycles += 8;
+        c.g[A1][0] = 0;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x10).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x8).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[RA][0] = sx(ret);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, ret)?;
+        let again = c.g[S2][0] != c.g[S0][0];
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
+        if !again {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// Destroys the items at `base + off` (each with a destructor call returning to
+/// `ret`), then the page at `base` with `a1`: the common tail of the
+/// `LobbyMenu_Destroy*Page` functions.
+pub(crate) fn lobby_menu_destroy_items(
+    c: &mut Cpu,
+    base: u64,
+    items: &[(u32, u32)],
+    page: (u64, u32),
+) -> Flow {
+    for &(off, ret) in items {
+        menu_item_dtor(c, menu_sx_add(base, off), ret)?;
+    }
+    menu_page_dtor(c, base, page.0, page.1)
+}
+
+/// `LobbyMenu_DestroyLoginPage(this, a1)` (0x1dcda0): six list items, then the page.
+pub fn lobby_menu_destroy_login_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        let s0 = c.g[S0][0];
+        let s1 = c.g[S1][0];
+        lobby_menu_destroy_items(
+            c,
+            s0,
+            &[
+                (0x1e4, 0x001d_cdc4),
+                (0x1c0, 0x001d_cdd0),
+                (0x194, 0x001d_cddc),
+                (0x168, 0x001d_cde8),
+                (0x150, 0x001d_cdf4),
+                (0x134, 0x001d_ce00),
+            ],
+            (s1, 0x001d_ce0c),
+        )?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_DestroyCreateAccountPage(this, a1)` (0x1dce20): six list items, then the page.
+pub fn lobby_menu_destroy_create_account_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        let s0 = c.g[S0][0];
+        let s1 = c.g[S1][0];
+        lobby_menu_destroy_items(
+            c,
+            s0,
+            &[
+                (0x1e4, 0x001d_ce44),
+                (0x1c0, 0x001d_ce50),
+                (0x194, 0x001d_ce5c),
+                (0x168, 0x001d_ce68),
+                (0x150, 0x001d_ce74),
+                (0x134, 0x001d_ce80),
+            ],
+            (s1, 0x001d_ce8c),
+        )?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_DestroyLoginMethodPage(this, a1)` (0x1dcea0): the largest of the
+/// page destructors, a straight run of item and page destructions.
+pub fn lobby_menu_destroy_login_method_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 74;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S3, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        let s0 = c.g[S0][0];
+        menu_item_dtor(c, menu_sx_add(s0, 0x578), 0x001d_cecc)?;
+        c.g[S1][0] = menu_sx_add(s0, 0x32c);
+        menu_item_dtor(c, menu_sx_add(s0, 0x55c), 0x001d_cedc)?;
+        c.g[S2][0] = menu_sx_add(s0, 0x130);
+        for (off, ret) in [
+            (0x544, 0x001d_ceec),
+            (0x528, 0x001d_cef8),
+            (0x510, 0x001d_cf04),
+            (0x4ec, 0x001d_cf10),
+            (0x4c0, 0x001d_cf1c),
+            (0x494, 0x001d_cf28),
+            (0x47c, 0x001d_cf34),
+            (0x460, 0x001d_cf40),
+        ] {
+            menu_item_dtor(c, menu_sx_add(s0, off), ret)?;
+        }
+        let s1 = c.g[S1][0];
+        menu_page_dtor(c, s1, 0x2, 0x001d_cf4c)?;
+        for (off, ret) in [
+            (0x314, 0x001d_cf58),
+            (0x2f0, 0x001d_cf64),
+            (0x2c4, 0x001d_cf70),
+            (0x298, 0x001d_cf7c),
+            (0x280, 0x001d_cf88),
+            (0x264, 0x001d_cf94),
+        ] {
+            menu_item_dtor(c, menu_sx_add(s0, off), ret)?;
+        }
+        let s2 = c.g[S2][0];
+        menu_page_dtor(c, s2, 0x2, 0x001d_cfa0)?;
+        let s3 = c.g[S3][0];
+        menu_page_dtor(c, s0, s3, 0x001d_cfac)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_DestroyDeletePersonaPage(this, a1)` (0x1dcfc8): walks the entries
+/// from `this + 0x1f8` down to `this + 0x168` (when they exist), then two items and the page.
+pub fn lobby_menu_destroy_delete_persona_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S2, 0x20);
+        let s1 = c.g[S1][0];
+        let v0 = menu_sx_add(s1, 0x168);
+        c.g[V0][0] = v0;
+        frame.save_ra(c, 0);
+        if v0 != 0 {
+            c.cycles += 3;
+            c.g[S0][0] = menu_sx_add(s1, 0x1f8);
+            c.g[S2][0] = v0;
+            if v0 != c.g[S0][0] {
+                c.cycles += 1;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
+                menu_list_walk(c, 0x001d_d000, 0x001d_d018)?;
+            }
+        }
+        c.cycles += 16;
+        menu_item_dtor(c, menu_sx_add(s1, 0x150), 0x001d_d02c)?;
+        menu_item_dtor(c, menu_sx_add(s1, 0x134), 0x001d_d038)?;
+        let s3 = c.g[S3][0];
+        menu_page_dtor(c, s1, s3, 0x001d_d044)?;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S3, 0x10);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_DestroyCreatePersonaPage(this, a1)` (0x1dd060): four items, then the page.
+pub fn lobby_menu_destroy_create_persona_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        let s0 = c.g[S0][0];
+        let s1 = c.g[S1][0];
+        lobby_menu_destroy_items(
+            c,
+            s0,
+            &[
+                (0x194, 0x001d_d084),
+                (0x168, 0x001d_d090),
+                (0x150, 0x001d_d09c),
+                (0x134, 0x001d_d0a8),
+            ],
+            (s1, 0x001d_d0b4),
+        )?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_DestroySelectPersonaPage(this, a1)` (0x1dd0c8): the largest page
+/// destructor. Three entry lists (`+0x518..0x5a8`, `+0x450..0x4e0`, and the
+/// items from `+0x264` to `+0x5c4`), then the page with the stored `a1`.
+pub fn lobby_menu_destroy_select_persona_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S1, 0x90);
+        c.g[S1][0] = c.g[A0][0];
+        let a1 = c.g[A1][0];
+        let a1_slot = frame.at(c, 0);
+        Addr(a1_slot).sw(c, a1);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        let s1 = c.g[S1][0];
+        c.g[A1][0] = 0x2;
+        c.g[S0][0] = menu_sx_add(s1, 0x5a8);
+        menu_item_dtor(c, menu_sx_add(s1, 0x5c4), 0x001d_d10c)?;
+        let s0 = c.g[S0][0];
+        menu_item_dtor(c, s0, 0x001d_d118)?;
+
+        // Block A: the list at +0x518 (its end is +0x5a8).
+        let v0 = menu_sx_add(s1, 0x518);
+        c.g[V0][0] = v0;
+        c.g[A0][0] = menu_sx_add(s1, 0x500);
+        if v0 != 0 {
+            c.cycles += 2;
+            let same = v0 == c.g[S0][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
+            if !same {
+                c.cycles += 1;
+                c.g[S2][0] = v0;
+                menu_list_walk(c, 0x001d_d130, 0x001d_d148)?;
+                c.cycles += 1;
+                c.g[A0][0] = menu_sx_add(s1, 0x500);
+            }
+        }
+
+        // Block B: the list at +0x450 (its end is +0x4e0).
+        c.cycles += 13;
+        menu_item_dtor(c, menu_sx_add(s1, 0x500), 0x001d_d15c)?;
+        c.g[S3][0] = menu_sx_add(s1, 0x2e8);
+        menu_item_dtor(c, menu_sx_add(s1, 0x4e4), 0x001d_d16c)?;
+        c.g[FP][0] = menu_sx_add(s1, 0x130);
+        c.g[V0][0] = menu_sx_add(s1, 0x450);
+        c.g[S4][0] = menu_sx_add(s1, 0x2c4);
+        c.g[S5][0] = menu_sx_add(s1, 0x298);
+        c.g[S6][0] = menu_sx_add(s1, 0x280);
+        let empty = c.g[V0][0] == 0;
+        c.g[S7][0] = menu_sx_add(s1, 0x264);
+        if !empty {
+            c.cycles += 3;
+            c.g[S0][0] = menu_sx_add(s1, 0x4e0);
+            let same = c.g[V0][0] == c.g[S0][0];
+            c.g[S2][0] = c.g[V0][0];
+            if !same {
+                c.cycles += 1;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
+                menu_list_walk(c, 0x001d_d198, 0x001d_d1b0)?;
+            }
+        }
+
+        // Block C: the rest, then the page with the stored a1.
+        c.cycles += 39;
+        let s3 = c.g[S3][0];
+        menu_item_dtor(c, menu_sx_add(s3, 0x150), 0x001d_d1c4)?;
+        menu_item_dtor(c, menu_sx_add(s3, 0x134), 0x001d_d1d0)?;
+        menu_page_dtor(c, s3, 0x2, 0x001d_d1dc)?;
+        let s4 = c.g[S4][0];
+        menu_item_dtor(c, s4, 0x001d_d1e8)?;
+        let s5 = c.g[S5][0];
+        menu_item_dtor(c, s5, 0x001d_d1f4)?;
+        let s6 = c.g[S6][0];
+        menu_item_dtor(c, s6, 0x001d_d200)?;
+        let s7 = c.g[S7][0];
+        menu_item_dtor(c, s7, 0x001d_d20c)?;
+        let fp = c.g[FP][0];
+        menu_page_dtor(c, fp, 0x2, 0x001d_d218)?;
+        let stored_a1 = Addr(frame.at(c, 0)).lw(c);
+        menu_page_dtor(c, s1, stored_a1, 0x001d_d224)?;
+
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_DestroySelectRoomPage(this, a1)` (0x1dd258): one list from
+/// `+0x318` down to `+0x168` (when present), two items and the page.
+pub fn lobby_menu_destroy_select_room_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S2, 0x20);
+        let s1 = c.g[S1][0];
+        let v0 = menu_sx_add(s1, 0x168);
+        c.g[V0][0] = v0;
+        frame.save_ra(c, 0);
+        if v0 != 0 {
+            c.cycles += 3;
+            c.g[S0][0] = menu_sx_add(s1, 0x318);
+            let same = v0 == c.g[S0][0];
+            c.g[S2][0] = v0;
+            if !same {
+                c.cycles += 1;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
+                menu_list_walk(c, 0x001d_d290, 0x001d_d2a8)?;
+            }
+        }
+        c.cycles += 16;
+        menu_item_dtor(c, menu_sx_add(s1, 0x150), 0x001d_d2bc)?;
+        menu_item_dtor(c, menu_sx_add(s1, 0x134), 0x001d_d2c8)?;
+        let s3 = c.g[S3][0];
+        menu_page_dtor(c, s1, s3, 0x001d_d2d4)?;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S3, 0x10);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_DestroyRoomOccupantsPage(this, a1)` (0x1dd2f0): the item at
+/// `+0x4cc`, a list from `+0x4cc` down to `+0x16c` (when present), then two
+/// items (`+0x154` before the list's end, `+0x138` after) and the page.
+pub fn lobby_menu_destroy_room_occupants_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S3, 0x10);
+        c.g[S0][0] = menu_sx_add(c.g[S1][0], 0x4cc);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        let s0 = c.g[S0][0];
+        menu_item_dtor(c, s0, 0x001d_d320)?;
+        let s1 = c.g[S1][0];
+        let v0 = menu_sx_add(s1, 0x16c);
+        c.g[V0][0] = v0;
+        if v0 != 0 {
+            c.cycles += 2;
+            let same = v0 == c.g[S0][0];
+            c.g[S2][0] = v0;
+            if !same {
+                c.cycles += 1;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
+                menu_list_walk(c, 0x001d_d338, 0x001d_d350)?;
+            }
+            c.cycles += 1;
+        }
+        c.cycles += 15;
+        menu_item_dtor(c, menu_sx_add(s1, 0x154), 0x001d_d364)?;
+        menu_item_dtor(c, menu_sx_add(s1, 0x138), 0x001d_d370)?;
+        let s3 = c.g[S3][0];
+        menu_page_dtor(c, s1, s3, 0x001d_d37c)?;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S3, 0x10);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_DestroyChatPage(this, a1)` (0x1dd398): a list from `+0x38c` down
+/// to `+0x194` (when present), three items and the page.
+pub fn lobby_menu_destroy_chat_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S2, 0x20);
+        let s1 = c.g[S1][0];
+        let v0 = menu_sx_add(s1, 0x194);
+        c.g[V0][0] = v0;
+        frame.save_ra(c, 0);
+        if v0 != 0 {
+            c.cycles += 3;
+            c.g[S0][0] = menu_sx_add(s1, 0x38c);
+            let same = v0 == c.g[S0][0];
+            c.g[S2][0] = v0;
+            if !same {
+                c.cycles += 1;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
+                menu_list_walk(c, 0x001d_d3d0, 0x001d_d3e8)?;
+            }
+        }
+        c.cycles += 19;
+        menu_item_dtor(c, menu_sx_add(s1, 0x168), 0x001d_d3fc)?;
+        menu_item_dtor(c, menu_sx_add(s1, 0x150), 0x001d_d408)?;
+        menu_item_dtor(c, menu_sx_add(s1, 0x134), 0x001d_d414)?;
+        let s3 = c.g[S3][0];
+        menu_page_dtor(c, s1, s3, 0x001d_d420)?;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S3, 0x10);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_InitAbortPage(page, arg)` (0x1db2b0): calls the page's base
+/// constructor (0x2caa58), stores `0x46d378` at `page+0x12c` and the word at
+/// `arg` at `page+0x130`, builds the abort item at `page+0x134` (0x2ccf98, with
+/// the string at `0x467de0`) and adds it to the page's menu (0x2cbcc8, index
+/// -1). Returns the page.
+pub fn lobby_menu_init_abort_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 31;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        call_ptr(c, 0x002c_aa58, 0x001d_b2d0)?;
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x134));
+        c.g[V0][0] = 0x470000;
+        c.g[A2][0] = 0x460000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2c88));
+        c.g[A3][0] = 0;
+        let title = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).off(0x12c).sw(c, title);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x7de0));
+        c.g[A1][0] = 0;
+        c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+        let word = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).off(0x130).sw(c, word);
+        call_ptr(c, 0x002c_cf98, 0x001d_b300)?;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        call_ptr(c, 0x002c_bcc8, 0x001d_b310)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_FillDeletePersonaPage(page, list)` (0x1db330): one 0x24-byte
+/// item per persona of the list (count at `list+0x6c`, persona words at
+/// `list+0x70`), from `page+0x168`. Each is activated (`MenuSysItem_SetVisible`,
+/// flag 1), gets its persona word at `+0x17c` and the next index at `+0x170`;
+/// the items from the count up to the fourth are deactivated (flag 0).
+pub fn lobby_menu_fill_delete_persona_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = 0;
+        frame.save(c, S4, 0x20);
+        frame.save(c, S0, 0x60);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S1, 0x50);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(c.g[S4][0] as u32).off(0x6c).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+        let empty = (c.g[V0][0] as i64) <= 0;
+        c.g[S3][0] = c.g[A0][0];
+        if !empty {
+            c.cycles += 2;
+            c.g[S5][0] = 0x24;
+            c.mult(0, V0, S2, S5);
+            loop {
+                c.cycles += 19;
+                c.mult(0, S0, S2, S5);
+                c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                c.g[A1][0] = 0x1;
+                c.g[S2][0] = c.g[S1][0];
+                c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x168));
+                c.g[V0][0] = sx((c.g[S1][0] as u32) << 2);
+                c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x70).lw(c);
+                let word = c.g[V1][0];
+                Addr(c.g[A2][0] as u32).off(0x17c).sw(c, word);
+                call_ptr(c, 0x002c_a388, 0x001d_b3a0)?;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                let next = c.g[S1][0];
+                Addr(c.g[S0][0] as u32).off(0x170).sw(c, next);
+                c.g[V0][0] = Addr(c.g[S4][0] as u32).off(0x6c).lw(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                let more = (c.g[S2][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.mult(0, V0, S2, S5);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x001d_b370);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S2][0] as i64) < 4) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x24;
+        if more {
+            c.cycles += 4;
+            c.mult(0, V0, S2, V0);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x168));
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x002c_a388, 0x001d_b3e4)?;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < 4) as u64;
+                let again = c.g[V0][0] != 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
+                if !again {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x001d_b3d8);
+                }
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_FillPersonaPages(page, list)` (0x1db418): the select-persona
+/// items at `page+0x518` (0x24 each, one per persona of the list, count at
+/// `list+0x6c`, persona words at `list+0x70`) get their persona word at `+0x14`
+/// and index at `+0x8`, and are activated; the items up to the fourth are
+/// deactivated. Then the delete-persona page at `page+0x2e8` is filled
+/// (`LobbyMenu_FillDeletePersonaPage`), and the two menu items at `page+0x5c4`
+/// and `page+0x5a8` are shown when the count is 2 or more (the first) and 4 or
+/// more (the second; their visibility flags are `count < 2 ^ 1` and `count < 4`).
+pub fn lobby_menu_fill_persona_pages(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S1, 0x60);
+        frame.save(c, S3, 0x40);
+        c.g[S1][0] = 0;
+        frame.save(c, S4, 0x30);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S0, 0x70);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S5, 0x20);
+        frame.save(c, S6, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(c.g[S3][0] as u32).off(0x6c).lw(c);
+        let empty = (c.g[V0][0] as i64) <= 0;
+        c.g[S4][0] = c.g[A0][0];
+        if !empty {
+            c.cycles += 2;
+            c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x518));
+            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(0x70));
+            loop {
+                c.cycles += 12;
+                c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+                let word = c.g[V0][0];
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0x1;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+                Addr(c.g[S0][0] as u32).off(0x14).sw(c, word);
+                call_ptr(c, 0x002c_a388, 0x001d_b470)?;
+                let index = c.g[S1][0];
+                Addr(c.g[S0][0] as u32).off(0x8).sw(c, index);
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = Addr(c.g[S3][0] as u32).off(0x6c).lw(c);
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let again = c.g[V0][0] != 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
+                if !again {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x001d_b458);
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[V0][0] = ((c.g[S1][0] as i64) < 4) as u64;
+        c.g[S2][0] = sx((c.g[S4][0] as u32).wrapping_add(0x2e8));
+        c.g[S5][0] = sx((c.g[S4][0] as u32).wrapping_add(0x5c4));
+        let more = c.g[V0][0] != 0;
+        c.g[S6][0] = sx((c.g[S4][0] as u32).wrapping_add(0x5a8));
+        if more {
+            c.cycles += 5;
+            c.g[V0][0] = 0x24;
+            c.mult(0, V0, S1, V0);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x518));
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x002c_a388, 0x001d_b4bc)?;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < 4) as u64;
+                let again = c.g[V0][0] != 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
+                if !again {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x001d_b4b0);
+                }
+            }
+        }
+        c.cycles += 22;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S2][0];
+        Callee {
+            addr: 0x001d_b330,
+            f: lobby_menu_fill_delete_persona_page,
+        }
+        .call(c, 0x001d_b4d8)?;
+        c.g[A1][0] = Addr(c.g[S3][0] as u32).off(0x6c).lw(c);
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A1][0] = ((c.g[A1][0] as i64) < 2) as u64;
+        c.g[A1][0] ^= 0x1;
+        call_ptr(c, 0x002c_a388, 0x001d_b4ec)?;
+        c.g[A1][0] = Addr(c.g[S3][0] as u32).off(0x6c).lw(c);
+        c.g[A0][0] = c.g[S6][0];
+        c.g[A1][0] = ((c.g[A1][0] as i64) < 4) as u64;
+        call_ptr(c, 0x002c_a388, 0x001d_b4fc)?;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LobbyMenu_InitChallengePage(page, accept_owner, decline_owner)` (0x1db148):
+/// the challenge page's base constructor (0x2caa58), its screen pointer
+/// `0x46d3d0`-tagged title, the two owners stored at `+0x130` and `+0x134` (the
+/// words they point to), then the six menu items (two label items, a spacer,
+/// two command items for accept and decline) added to the page in order.
+/// Returns the page.
+pub fn lobby_menu_init_challenge_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 90;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x138));
+        frame.save(c, S6, 0x20);
+        c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x154));
+        frame.save(c, S7, 0x10);
+        c.g[S5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x170));
+        frame.save_ra(c, 0);
+        c.g[S6][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18c));
+        call_ptr(c, 0x002c_aa58, 0x001d_b190)?;
+        c.g[S7][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1c8));
+        c.g[V0][0] = 0x470000;
+        c.g[A1][0] = 0x460000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2c30));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7da8));
+        let screen = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).off(0x12c).sw(c, screen);
+        c.g[A0][0] = c.g[S4][0];
+        c.g[V1][0] = Addr(c.g[S1][0] as u32).lw(c);
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1a4));
+        let accept = c.g[V1][0];
+        Addr(c.g[S0][0] as u32).off(0x130).sw(c, accept);
+        c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+        let decline = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).off(0x134).sw(c, decline);
+        call_ptr(c, 0x002c_d2a0, 0x001d_b1c4)?;
+        c.g[A1][0] = 0x460000;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7dc0));
+        call_ptr(c, 0x002c_d2a0, 0x001d_b1d4)?;
+        c.g[A1][0] = 0x460000;
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7dc8));
+        call_ptr(c, 0x002c_d2a0, 0x001d_b1e4)?;
+        c.g[A0][0] = c.g[S6][0];
+        c.g[A1][0] = 0xe;
+        call_ptr(c, 0x002c_d350, 0x001d_b1f0)?;
+        c.g[A2][0] = 0x460000;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x7dd0));
+        c.g[A1][0] = 0;
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x002c_cf98, 0x001d_b208)?;
+        c.g[A2][0] = 0x460000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = c.g[S7][0];
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x7dd8));
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x002c_cf98, 0x001d_b220)?;
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        call_ptr(c, 0x002c_bcc8, 0x001d_b230)?;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        call_ptr(c, 0x002c_bcc8, 0x001d_b240)?;
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        call_ptr(c, 0x002c_bcc8, 0x001d_b250)?;
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        call_ptr(c, 0x002c_bcc8, 0x001d_b260)?;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        call_ptr(c, 0x002c_bcc8, 0x001d_b270)?;
+        c.g[A1][0] = c.g[S7][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        call_ptr(c, 0x002c_bcc8, 0x001d_b280)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void LobbyMenu_DestroyChallengePage(LobbyMenu* page, int flags)`
+/// (0x1dd440): destroy the six menu items of the challenge-response page
+/// (`cMenuItem` at `page + 0x138 .. 0x1c8`, flags 2), then the page menu
+/// itself at `page` with the caller's flags.
+pub fn lobby_menu_destroy_challenge_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        const ITEMS: [(u32, u32); 6] = [
+            (0x1c8, 0x001d_d464),
+            (0x1a4, 0x001d_d470),
+            (0x18c, 0x001d_d47c),
+            (0x170, 0x001d_d488),
+            (0x154, 0x001d_d494),
+            (0x138, 0x001d_d4a0),
+        ];
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        for &(off, back) in ITEMS.iter() {
+            c.g[A0][0] = sx(oc508_at(c, S0, off));
+            c.g[A1][0] = 0x2;
+            call_ptr(c, 0x002c_a280, back)?;
+        }
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x002c_aa80, 0x001d_d4ac)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void LobbyMenu_DestroyAbortPage(LobbyMenu* page, int flags)` (0x1dd4c0):
+/// destroy the abort page's menu item (`page + 0x134`, flags 2), then the
+/// page menu at `page` with the caller's flags.
+pub fn lobby_menu_destroy_abort_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(oc508_at(c, S0, 0x134));
+        c.g[A1][0] = 0x2;
+        call_ptr(c, 0x002c_a280, 0x001d_d4e4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x002c_aa80, 0x001d_d4f0)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3193,6 +4615,921 @@ pub(crate) mod tests {
                     c.bus.write8(kb + 8 + b, v);
                 }
                 c.g[A0][0] = sx(input);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    use std::ptr::addr_of_mut;
+
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Gate of the callee fakes below: they log the call and run the real
+    /// body only when this magic word is not in the machine's RAM.
+    pub(crate) const OC505_GATE: u32 = DATA + 0xf_e000;
+
+    pub(crate) const OC505_MAGIC: u32 = 0x0505_6a7e;
+
+    /// A callee fake that logs the call (and unwinds when the machine says
+    /// so); the gate off runs the callee body it replaced.
+    macro_rules! gated {
+        ($fake:ident, $gen:path, $addr:expr) => {
+            pub(crate) fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC505_GATE) != OC505_MAGIC {
+                    return fakes::fall_back(c, fakes::prev_cell($fake), $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $addr, ra);
+            }
+        };
+    }
+
+    /// Installs a fake in a callee's override slot, once per process.
+    macro_rules! install {
+        ($slot:path, $fake:ident) => {
+            fakes::hook(addr_of_mut!($slot), $fake, fakes::prev_cell($fake));
+        };
+    }
+
+    gated!(
+        oc505_fake_0025f150,
+        ee::s06::f_0025f150__generated,
+        0x0025_f150
+    );
+
+    gated!(
+        oc505_fake_0025f1e0,
+        ee::s06::f_0025f1e0__generated,
+        0x0025_f1e0
+    );
+
+    gated!(
+        oc505_fake_002ca388,
+        ee::s09::f_002ca388__generated,
+        0x002c_a388
+    );
+
+    gated!(
+        oc505_fake_0017e558,
+        ee::s02::f_0017e558__generated,
+        0x0017_e558
+    );
+
+    gated!(
+        oc505_fake_0017e490,
+        ee::s02::f_0017e490__generated,
+        0x0017_e490
+    );
+
+    gated!(
+        oc505_fake_0017e4f0,
+        ee::s02::f_0017e4f0__generated,
+        0x0017_e4f0
+    );
+
+    gated!(
+        oc505_fake_0017e418,
+        ee::s02::f_0017e418__generated,
+        0x0017_e418
+    );
+
+    gated!(
+        oc505_fake_0017e3b8,
+        ee::s02::f_0017e3b8__generated,
+        0x0017_e3b8
+    );
+
+    gated!(
+        oc505_fake_0017e368,
+        ee::s02::f_0017e368__generated,
+        0x0017_e368
+    );
+
+    gated!(
+        oc505_fake_0017e2f8,
+        ee::s02::f_0017e2f8__generated,
+        0x0017_e2f8
+    );
+
+    gated!(
+        oc505_fake_0017e290,
+        ee::s02::f_0017e290__generated,
+        0x0017_e290
+    );
+
+    gated!(
+        oc505_fake_0017e228,
+        ee::s02::f_0017e228__generated,
+        0x0017_e228
+    );
+
+    gated!(
+        oc505_fake_0017e1c0,
+        ee::s02::f_0017e1c0__generated,
+        0x0017_e1c0
+    );
+
+    gated!(
+        oc505_fake_0017e030,
+        ee::s02::f_0017e030__generated,
+        0x0017_e030
+    );
+
+    gated!(
+        oc505_fake_0017e118,
+        ee::s02::f_0017e118__generated,
+        0x0017_e118
+    );
+
+    gated!(
+        oc505_fake_00317e50,
+        ee::s10::f_00317e50__generated,
+        0x0031_7e50
+    );
+
+    gated!(
+        oc505_fake_00318260,
+        ee::s10::f_00318260__generated,
+        0x0031_8260
+    );
+
+    gated!(
+        oc505_fake_00391c48,
+        ee::s12::f_00391c48__generated,
+        0x0039_1c48
+    );
+
+    gated!(
+        oc505_fake_003929f8,
+        ee::s13::f_003929f8__generated,
+        0x0039_29f8
+    );
+
+    gated!(
+        oc505_fake_00392b40,
+        ee::s13::f_00392b40__generated,
+        0x0039_2b40
+    );
+
+    /// The count callees return the test's row count (the fake logs the call
+    /// as usual; the result is the count the seed picked, -1 included).
+    pub(crate) fn oc505_fake_count_room(c: &mut Cpu) {
+        if c.bus.read32(OC505_GATE) != OC505_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc505_fake_count_room),
+                ee::s06::f_0025f120__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0025_f120, ra);
+        c.g[V0][0] = sx(c.bus.read32(OC505_GATE + 4));
+    }
+
+    /// The occupant count callee (see [`oc505_fake_count_room`]).
+    pub(crate) fn oc505_fake_count_occupants(c: &mut Cpu) {
+        if c.bus.read32(OC505_GATE) != OC505_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc505_fake_count_occupants),
+                ee::s06::f_0025f1b0__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0025_f1b0, ra);
+        c.g[V0][0] = sx(c.bus.read32(OC505_GATE + 4));
+    }
+
+    /// Installs every fake in its callee's override slot.
+    pub(crate) fn oc505_install_fakes() {
+        install!(ee::s06::OVERRIDE_0025F120, oc505_fake_count_room);
+        install!(ee::s06::OVERRIDE_0025F1B0, oc505_fake_count_occupants);
+        install!(ee::s06::OVERRIDE_0025F150, oc505_fake_0025f150);
+        install!(ee::s06::OVERRIDE_0025F1E0, oc505_fake_0025f1e0);
+        install!(ee::s09::OVERRIDE_002CA388, oc505_fake_002ca388);
+        install!(ee::s02::OVERRIDE_0017E558, oc505_fake_0017e558);
+        install!(ee::s02::OVERRIDE_0017E490, oc505_fake_0017e490);
+        install!(ee::s02::OVERRIDE_0017E4F0, oc505_fake_0017e4f0);
+        install!(ee::s02::OVERRIDE_0017E418, oc505_fake_0017e418);
+        install!(ee::s02::OVERRIDE_0017E3B8, oc505_fake_0017e3b8);
+        install!(ee::s02::OVERRIDE_0017E368, oc505_fake_0017e368);
+        install!(ee::s02::OVERRIDE_0017E2F8, oc505_fake_0017e2f8);
+        install!(ee::s02::OVERRIDE_0017E290, oc505_fake_0017e290);
+        install!(ee::s02::OVERRIDE_0017E228, oc505_fake_0017e228);
+        install!(ee::s02::OVERRIDE_0017E1C0, oc505_fake_0017e1c0);
+        install!(ee::s02::OVERRIDE_0017E030, oc505_fake_0017e030);
+        install!(ee::s02::OVERRIDE_0017E118, oc505_fake_0017e118);
+        install!(ee::s10::OVERRIDE_00317E50, oc505_fake_00317e50);
+        install!(ee::s10::OVERRIDE_00318260, oc505_fake_00318260);
+        install!(ee::s12::OVERRIDE_00391C48, oc505_fake_00391c48);
+        install!(ee::s13::OVERRIDE_003929F8, oc505_fake_003929f8);
+        install!(ee::s13::OVERRIDE_00392B40, oc505_fake_00392b40);
+    }
+
+    /// A scrambled machine with the callee gate open and an unwind picked
+    /// among `calls` fake calls.
+    pub(crate) fn oc505_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC505_GATE, OC505_MAGIC);
+        r
+    }
+
+    /// A row count in -1..m-1 (negative counts take the empty path).
+    pub(crate) fn rows(seed: u32, m: u32) -> u32 {
+        ((seed % m) as i32 - 1) as u32
+    }
+
+    /// A message whose +8 field is `v`; returns its address.
+    pub(crate) fn msg(c: &mut Cpu, v: u32) -> u64 {
+        let at = DATA + 0x300;
+        c.bus.write32(at + 8, v);
+        at as u64
+    }
+
+    #[test]
+    fn lobby_menu_fill_room_list_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001db528__generated,
+            lobby_menu_fill_room_list,
+            80,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1db5_28, 8);
+                c.pc = 0x001d_b528;
+                c.g[A0][0] = (DATA + 0x200) as u64;
+                c.g[A1][0] = (DATA + 0x6000) as u64;
+                c.bus.write32(OC505_GATE + 4, rows(seed, 15));
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_fill_occupant_list_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001db620__generated,
+            lobby_menu_fill_occupant_list,
+            80,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1db6_20, 8);
+                c.pc = 0x001d_b620;
+                c.g[A0][0] = (DATA + 0x200) as u64;
+                c.g[A1][0] = (DATA + 0x6000) as u64;
+                c.bus.write32(OC505_GATE + 4, rows(seed, 27));
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_abort_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbab8__generated,
+            lobby_menu_on_abort_page_action,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dba_b8, 1);
+                c.pc = 0x001d_bab8;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_challenge_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbad8__generated,
+            lobby_menu_on_challenge_page_action,
+            80,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dba_d8, 1);
+                c.pc = 0x001d_bad8;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = msg(c, [0u32, 1, 2, 9][(seed % 4) as usize]);
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_chat_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbb20__generated,
+            lobby_menu_on_chat_page_action,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dbb_20, 1);
+                c.pc = 0x001d_bb20;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x300) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_occupants_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbb48__generated,
+            lobby_menu_on_occupants_page_action,
+            80,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dbb_48, 1);
+                c.pc = 0x001d_bb48;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = msg(c, [0u32, u32::MAX - 1, u32::MAX, 3][(seed % 4) as usize]);
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_select_room_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbb90__generated,
+            lobby_menu_on_select_room_page_action,
+            80,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dbb_90, 1);
+                c.pc = 0x001d_bb90;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = msg(c, [0u32, u32::MAX, 0x7fff_ffff, 5][(seed % 4) as usize]);
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_select_persona_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbbc0__generated,
+            lobby_menu_on_select_persona_page_action,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dbb_c0, 1);
+                c.pc = 0x001d_bbc0;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x300) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_create_persona_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbbe8__generated,
+            lobby_menu_on_create_persona_page_action,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dbb_e8, 1);
+                c.pc = 0x001d_bbe8;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_delete_persona_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbc10__generated,
+            lobby_menu_on_delete_persona_page_action,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dbc_10, 1);
+                c.pc = 0x001d_bc10;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x300) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_create_account_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbc38__generated,
+            lobby_menu_on_create_account_page_action,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dbc_38, 1);
+                c.pc = 0x001d_bc38;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_on_login_page_action_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dbc68__generated,
+            lobby_menu_on_login_page_action,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dbc_68, 1);
+                c.pc = 0x001d_bc68;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    /// Gate: the fakes below only log when this word is set in the machine's RAM.
+    pub(crate) const OC506_GATE: u32 = DATA + 0x0020_0000;
+
+    pub(crate) const OC506_MAGIC: u32 = 0x0c0c_506a;
+
+    /// The fixture object (a page) and the vtable its list entries point at.
+    pub(crate) const OC506_THIS: u32 = DATA + 0x0020_0100;
+
+    pub(crate) const OC506_VT: u32 = DATA + 0x0020_0800;
+
+    /// A gated fake for a callee in the function table: logs the call with
+    /// [`fake_call`] when armed, otherwise runs what the slot held before.
+    macro_rules! oc506_fake {
+        ($fake:ident, $prev:ident, $target:expr, $generated:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC506_GATE) != OC506_MAGIC {
+                    return fall_back(c, &$prev, $generated);
+                }
+                fake_call(c, $target);
+            }
+        };
+    }
+
+    oc506_fake!(
+        oc506_fake_item,
+        OC506_PREV_ITEM,
+        0x002c_a280,
+        ee::s09::f_002ca280__generated
+    );
+
+    oc506_fake!(
+        oc506_fake_page,
+        OC506_PREV_PAGE,
+        0x002c_aa80,
+        ee::s09::f_002caa80__generated
+    );
+
+    oc506_fake!(
+        oc506_fake_delete,
+        OC506_PREV_DELETE,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    oc506_fake!(
+        oc506_fake_flag27,
+        OC506_PREV_FLAG27,
+        0x001e_1090,
+        ee::s04::f_001e1090__generated
+    );
+
+    oc506_fake!(
+        oc506_fake_free_backgrounds,
+        OC506_PREV_FREE_BG,
+        0x0017_abe0,
+        ee::s02::f_0017abe0__generated
+    );
+
+    oc506_fake!(
+        oc506_fake_get_human,
+        OC506_PREV_GET_HUMAN,
+        0x001a_0538,
+        ee::s03::f_001a0538__generated
+    );
+
+    oc506_fake!(
+        oc506_fake_get_human1,
+        OC506_PREV_GET_HUMAN1,
+        0x001a_0548,
+        ee::s03::f_001a0548__generated
+    );
+
+    /// Install the fakes in their override slots (once per process).
+    pub(crate) fn oc506_hook_all() {
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CA280),
+            oc506_fake_item,
+            &OC506_PREV_ITEM,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CAA80),
+            oc506_fake_page,
+            &OC506_PREV_PAGE,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc506_fake_delete,
+            &OC506_PREV_DELETE,
+        );
+        hook(
+            addr_of_mut!(ee::s04::OVERRIDE_001E1090),
+            oc506_fake_flag27,
+            &OC506_PREV_FLAG27,
+        );
+        hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0017ABE0),
+            oc506_fake_free_backgrounds,
+            &OC506_PREV_FREE_BG,
+        );
+        hook(
+            addr_of_mut!(ee::s03::OVERRIDE_001A0538),
+            oc506_fake_get_human,
+            &OC506_PREV_GET_HUMAN,
+        );
+        hook(
+            addr_of_mut!(ee::s03::OVERRIDE_001A0548),
+            oc506_fake_get_human1,
+            &OC506_PREV_GET_HUMAN1,
+        );
+    }
+
+    /// Scrambled machine, the gate armed, and a vtable whose function is the
+    /// log fake ([`FAKE`]) for the list entries' destructors.
+    pub(crate) fn oc506_arm(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC506_GATE, OC506_MAGIC);
+        c.bus.write32(OC506_VT + 0x8, 0);
+        c.bus.write32(OC506_VT + 0xc, FAKE);
+        r
+    }
+
+    /// Mark the list entries from `stop` up to `end` (absolute addresses, a
+    /// multiple of 0x24 apart) so their vtable pointer leads to [`OC506_VT`].
+    pub(crate) fn oc506_entries(c: &mut Cpu, stop: u32, end: u32) {
+        let mut p = stop;
+        while p < end {
+            c.bus.write32(p + 0x10, OC506_VT);
+            p += 0x24;
+        }
+    }
+
+    /// `this` for a page: the fixture object, or (for the guard of a list
+    /// that must be empty) an address that makes `this + off` zero.
+    pub(crate) fn oc506_this(seed: u32, empty_off: u32) -> u64 {
+        if seed % 4 == 3 {
+            0u64.wrapping_sub(empty_off as u64)
+        } else {
+            OC506_THIS as u64
+        }
+    }
+
+    #[test]
+    fn lobby_menu_destroy_login_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dcda0__generated,
+            lobby_menu_destroy_login_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dcda0, 8);
+                c.g[A0][0] = OC506_THIS as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_create_account_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dce20__generated,
+            lobby_menu_destroy_create_account_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dce20, 8);
+                c.g[A0][0] = OC506_THIS as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_login_method_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dcea0__generated,
+            lobby_menu_destroy_login_method_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dcea0, 24);
+                c.g[A0][0] = OC506_THIS as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_delete_persona_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dcfc8__generated,
+            lobby_menu_destroy_delete_persona_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dcfc8, 8);
+                let this = oc506_this(seed, 0x168);
+                c.g[A0][0] = this;
+                c.g[A1][0] = r.next_u32() as u64;
+                if this == OC506_THIS as u64 {
+                    oc506_entries(c, OC506_THIS + 0x168, OC506_THIS + 0x1f8);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_create_persona_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dd060__generated,
+            lobby_menu_destroy_create_persona_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dd060, 6);
+                c.g[A0][0] = OC506_THIS as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_select_persona_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dd0c8__generated,
+            lobby_menu_destroy_select_persona_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dd0c8, 40);
+                c.g[A0][0] = OC506_THIS as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                oc506_entries(c, OC506_THIS + 0x518, OC506_THIS + 0x5a8);
+                oc506_entries(c, OC506_THIS + 0x450, OC506_THIS + 0x4e0);
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_select_room_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dd258__generated,
+            lobby_menu_destroy_select_room_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dd258, 8);
+                let this = oc506_this(seed, 0x168);
+                c.g[A0][0] = this;
+                c.g[A1][0] = r.next_u32() as u64;
+                if this == OC506_THIS as u64 {
+                    oc506_entries(c, OC506_THIS + 0x168, OC506_THIS + 0x318);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_room_occupants_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dd2f0__generated,
+            lobby_menu_destroy_room_occupants_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dd2f0, 8);
+                let this = oc506_this(seed, 0x16c);
+                c.g[A0][0] = this;
+                c.g[A1][0] = r.next_u32() as u64;
+                if this == OC506_THIS as u64 {
+                    oc506_entries(c, OC506_THIS + 0x16c, OC506_THIS + 0x4cc);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_chat_page_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dd398__generated,
+            lobby_menu_destroy_chat_page,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dd398, 8);
+                let this = oc506_this(seed, 0x194);
+                c.g[A0][0] = this;
+                c.g[A1][0] = r.next_u32() as u64;
+                if this == OC506_THIS as u64 {
+                    oc506_entries(c, OC506_THIS + 0x194, OC506_THIS + 0x38c);
+                }
+            },
+        );
+    }
+
+    /// Gate: the fakes below only log when this word is set in the machine's RAM.
+    pub(crate) const OC507_GATE: u32 = DATA + 0x0020_0000;
+
+    pub(crate) const OC507_MAGIC: u32 = 0x0507_0507;
+
+    /// The fixture page and the argument word read by the function.
+    pub(crate) const OC507_PAGE: u32 = DATA + 0x0020_1000;
+
+    pub(crate) const OC507_ARG: u32 = DATA + 0x0020_2000;
+
+    /// The fixture persona list read by the delete-persona fill.
+    pub(crate) const OC507_OBJ: u32 = DATA + 0x0020_4000;
+
+    /// A gated fake for a callee in the function table: logs the call with
+    /// [`fake_call`] when armed, otherwise runs what the slot held before.
+    macro_rules! oc507_fake {
+        ($fake:ident, $prev:ident, $target:expr, $generated:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC507_GATE) != OC507_MAGIC {
+                    return fall_back(c, &$prev, $generated);
+                }
+                fake_call(c, $target);
+            }
+        };
+    }
+
+    oc507_fake!(
+        oc507_fake_page_ctor,
+        OC507_PREV_PAGE_CTOR,
+        0x002c_aa58,
+        ee::s09::f_002caa58__generated
+    );
+
+    oc507_fake!(
+        oc507_fake_item_ctor,
+        OC507_PREV_ITEM_CTOR,
+        0x002c_cf98,
+        ee::s09::f_002ccf98__generated
+    );
+
+    oc507_fake!(
+        oc507_fake_activate,
+        OC507_PREV_ACTIVATE,
+        0x002c_a388,
+        ee::s09::f_002ca388__generated
+    );
+
+    oc507_fake!(
+        oc507_fake_menu_add,
+        OC507_PREV_MENU_ADD,
+        0x002c_bcc8,
+        ee::s09::f_002cbcc8__generated
+    );
+
+    /// Install the fakes in their override slots (once per process).
+    pub(crate) fn oc507_hook_all() {
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CAA58),
+            oc507_fake_page_ctor,
+            &OC507_PREV_PAGE_CTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CCF98),
+            oc507_fake_item_ctor,
+            &OC507_PREV_ITEM_CTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CA388),
+            oc507_fake_activate,
+            &OC507_PREV_ACTIVATE,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CBCC8),
+            oc507_fake_menu_add,
+            &OC507_PREV_MENU_ADD,
+        );
+    }
+
+    /// Scrambled machine with the gate armed.
+    pub(crate) fn oc507_arm(c: &mut Cpu, seed: u32, salt: u64, calls: u32) {
+        crate::difftest::fakes::machine(c, seed, salt, calls);
+        c.bus.write32(OC507_GATE, OC507_MAGIC);
+    }
+
+    #[test]
+    fn lobby_menu_fill_delete_persona_page_matches() {
+        oc507_hook_all();
+        covered(
+            ee::s04::f_001db330__generated,
+            lobby_menu_fill_delete_persona_page,
+            200,
+            &|c, seed| {
+                oc507_arm(c, seed, 0x1db330, 6);
+                c.pc = 0x001d_b330;
+                c.g[A0][0] = sx(OC507_PAGE);
+                c.g[A1][0] = sx(OC507_OBJ);
+                let count = [0u32, 1, 2, 3, 5, 9][(seed % 6) as usize];
+                c.bus.write32(OC507_OBJ + 0x6c, count);
+                for i in 0..10u32 {
+                    c.bus.write32(
+                        OC507_OBJ + 0x70 + 4 * i,
+                        seed.wrapping_mul(0x2545_f491).rotate_left(i),
+                    );
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_fill_persona_pages_matches() {
+        oc507_hook_all();
+        covered(
+            ee::s04::f_001db418__generated,
+            lobby_menu_fill_persona_pages,
+            200,
+            &|c, seed| {
+                oc507_arm(c, seed, 0x1db418, 12);
+                c.pc = 0x001d_b418;
+                c.g[A0][0] = sx(OC507_PAGE);
+                c.g[A1][0] = sx(OC507_OBJ);
+                let count = [0u32, 1, 2, 3, 5, 9][(seed % 6) as usize];
+                c.bus.write32(OC507_OBJ + 0x6c, count);
+                for i in 0..10u32 {
+                    c.bus.write32(
+                        OC507_OBJ + 0x70 + 4 * i,
+                        seed.wrapping_mul(0x9e37_79b9).rotate_left(i + 3),
+                    );
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_init_challenge_page_matches() {
+        oc507_hook_all();
+        covered(
+            ee::s04::f_001db148__generated,
+            lobby_menu_init_challenge_page,
+            200,
+            &|c, seed| {
+                oc507_arm(c, seed, 0x1db148, 9);
+                c.pc = 0x001d_b148;
+                c.g[A0][0] = sx(OC507_PAGE);
+                c.g[A1][0] = sx(OC507_ARG);
+                c.g[A2][0] = sx(OC507_OBJ);
+                c.bus
+                    .write32(OC507_ARG, seed.wrapping_mul(0x2545_f491) ^ 0x31);
+                c.bus
+                    .write32(OC507_OBJ, seed.wrapping_mul(0x9e37_79b9) ^ 0x77);
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_init_abort_page_matches() {
+        oc507_hook_all();
+        covered(
+            ee::s04::f_001db2b0__generated,
+            lobby_menu_init_abort_page,
+            200,
+            &|c, seed| {
+                oc507_arm(c, seed, 0x1db2b0, 3);
+                c.pc = 0x001d_b2b0;
+                c.g[A0][0] = sx(OC507_PAGE);
+                c.g[A1][0] = sx(OC507_ARG);
+                c.bus
+                    .write32(OC507_ARG, seed.wrapping_mul(0x9e37_79b9) ^ 0x55);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn lobby_menu_destroy_challenge_page_matches() {
+        check(
+            ee::s04::f_001dd440__generated,
+            lobby_menu_destroy_challenge_page,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dd440);
+                c.g[A1][0] = if seed % 2 == 0 { 2 } else { 0 };
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_abort_page_matches() {
+        check(
+            ee::s04::f_001dd4c0__generated,
+            lobby_menu_destroy_abort_page,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dd4c0);
+                c.g[A1][0] = if seed % 2 == 0 { 2 } else { 0 };
             },
         );
     }

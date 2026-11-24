@@ -10,6 +10,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 pub(crate) use crate::game::dirtysock::tagsunk::arg;
+pub(crate) use crate::game::fe::festatebonusmaterial::FE_UI_STATE_CTOR;
 pub(crate) use crate::game::fe::festatecharsetup::oc437_fe_state_dtor;
 pub(crate) use crate::game::fe::ovstatepause::p;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
@@ -62,6 +63,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_e528,
         fe_state_event_select_dtor,
         "cFEStateEventSelect_dtor",
+    ),
+    (
+        0x001d_e4e8,
+        c_fe_state_event_select_ctor_2,
+        "cFEStateEventSelect_ctor_2",
     ),
 ];
 
@@ -606,6 +612,32 @@ pub fn fe_state_event_select_dtor(c: &mut Cpu) {
     oc437_fe_state_dtor(c, 0x2f30, 0x001d_e544)
 }
 
+/// `cFEStateEventSelect` constructor (0x1de4e8): `UIState_ctor(this, 0)`, then
+/// the vtable at `+8`, then `EventSelect_ctor(this + 0x48)` (the list inside),
+/// returning `this`.
+pub fn c_fe_state_event_select_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, FE_UI_STATE_CTOR, 0x001d_e500)?;
+        c.g[V1][0] = 0x47_0000;
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(0x48));
+        c.g[V1][0] = sx(0x47_0000u32.wrapping_sub(0x42d8));
+        let vtable = c.g[V1][0];
+        Addr(r32(c, S0).wrapping_add(8)).sw(c, vtable);
+        call_ptr(c, 0x0020_06b8, 0x001d_e514)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -893,6 +925,18 @@ pub(crate) mod tests {
                 c.g[A1][0] = if seed % 31 == 30 { 0 } else { sx(widget) };
                 c.g[A2][0] = action;
             },
+        );
+    }
+
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_state_case;
+
+    #[test]
+    fn c_fe_state_event_select_ctor_2_matches() {
+        heap_state_case(
+            ee::s04::f_001de4e8__generated,
+            c_fe_state_event_select_ctor_2,
+            0x001d_e4e8,
+            false,
         );
     }
 }

@@ -29,6 +29,14 @@ pub(crate) use crate::game::fe::feasyncfile::ui_init_screen;
 pub(crate) use crate::game::fe::feasyncfile::widget_action_v24;
 pub(crate) use crate::game::fe::fepopupmisc::p_2 as p_3;
 pub(crate) use crate::game::fe::fepopupmisc::sw;
+#[cfg(test)]
+pub(crate) use crate::game::fe::festateoptions::fe_setup;
+pub(crate) use crate::game::fe::festateoptions::fe_vptr;
+pub(crate) use crate::game::fe::festateoptions::FE_KEYBOARD_SET_KEY_ENABLED;
+#[cfg(test)]
+pub(crate) use crate::game::fe::festateoptions::FE_SEEDS;
+pub(crate) use crate::game::fe::festateoptions::FE_STRLEN;
+pub(crate) use crate::game::fe::festateoptions::FE_UI_STATE_CTOR_2;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_5;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::main::gamestate::gw;
@@ -341,6 +349,78 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001c_e6f0,
         cfe_state_trophy_room_count_event_entries,
         "cFEStateTrophyRoom_CountEventEntries",
+    ),
+    (
+        0x001d_dbd0,
+        c_fe_popup_confirm_base_ctor_2,
+        "cFEPopupConfirm_BaseCtor_2",
+    ),
+    (
+        0x001d_dc48,
+        c_ui_state_buy_popup_ctor_2,
+        "cUIStateBuyPopup_ctor_2",
+    ),
+    (
+        0x001d_dc90,
+        c_ui_state_buy_popup_dtor,
+        "cUIStateBuyPopup_dtor",
+    ),
+    (
+        0x001d_dcc8,
+        c_ui_state_buy_popup_set_song_credit_params_thunk,
+        "cUIStateBuyPopup_SetSongCreditParams_Thunk",
+    ),
+    (
+        0x001d_dce8,
+        c_ui_state_buy_popup_set_music_track_params_thunk,
+        "cUIStateBuyPopup_SetMusicTrackParams_Thunk",
+    ),
+    (
+        0x001d_dd08,
+        c_ui_state_buy_popup_set_reward_item_params_thunk,
+        "cUIStateBuyPopup_SetRewardItemParams_Thunk",
+    ),
+    (
+        0x001d_de78,
+        c_fe_popup_confirm_ctor_2,
+        "cFEPopupConfirm_ctor_2",
+    ),
+    (0x001d_deb8, c_fe_popup_confirm_dtor, "cFEPopupConfirm_dtor"),
+    (0x001d_e288, ckeyboard_popup_ctor_2, "cKeyboardPopup_ctor_2"),
+    (
+        0x001d_e2e8,
+        ckeyboard_popup_get_text_length,
+        "cKeyboardPopup_GetTextLength",
+    ),
+    (
+        0x001d_e350,
+        ckeyboard_popup_set_key4b_enabled,
+        "cKeyboardPopup_SetKey4BEnabled",
+    ),
+    (
+        0x001d_e378,
+        c_keyboard_popup_set_key_1c_enabled,
+        "cKeyboardPopup_SetKey1CEnabled",
+    ),
+    (
+        0x001d_e3a0,
+        c_keyboard_popup_set_key_45_enabled,
+        "cKeyboardPopup_SetKey45Enabled",
+    ),
+    (
+        0x001d_e3c8,
+        c_keyboard_popup_set_key_4f_enabled,
+        "cKeyboardPopup_SetKey4FEnabled",
+    ),
+    (
+        0x001d_e3f0,
+        c_keyboard_popup_set_key_29_enabled,
+        "cKeyboardPopup_SetKey29Enabled",
+    ),
+    (
+        0x001d_e418,
+        c_keyboard_popup_set_key_42_enabled,
+        "cKeyboardPopup_SetKey42Enabled",
     ),
 ];
 
@@ -5670,6 +5750,258 @@ pub fn cfe_popup_confirm_transition_in(c: &mut Cpu) {
     })
 }
 
+/// The guest address `c.g[reg] + off` (the generated
+/// `(c.g[reg][0] as u32).wrapping_add(off)`).
+pub(crate) fn oc508_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// The destructor shape of the FE states and popups: `this->vtable` (the
+/// word at +8) is set to `vt`, then the base destructor `base(this)` is
+/// called, returning to `ret`.
+pub(crate) fn oc508_vtable_dtor(c: &mut Cpu, vt: u64, base: u32, ret: u32) -> Flow {
+    c.cycles += 10;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[V1][0] = c.g[A0][0];
+    c.g[V0][0] = vt;
+    c.sw(oc508_at(c, V1, 0x8), c.g[V0][0]);
+    call_ptr(c, base, ret)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cFEPopupConfirm` base-constructor variant (0x1ddbd0): the base UI state
+/// (0x39e318) with no arguments, the vtable 0x46cbd8 at +8, the member at
+/// +0xbc set up (0x1c55f8), then the words at +0x2b0 and +0x2b4 take the
+/// game word at gp+0xda0. Returns `this`.
+pub fn c_fe_popup_confirm_base_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e318, 0x001d_dbec)?;
+        c.g[V1][0] = sx(0x0047_0000 - 0x3428);
+        c.g[A0][0] = sx(oc508_at(c, S0, 0xbc));
+        c.sw(oc508_at(c, S0, 0x8), c.g[V1][0]);
+        call_ptr(c, 0x001c_55f8, 0x001d_dc00)?;
+        c.g[V1][0] = c.lw(oc508_at(c, GP, 0xda0));
+        c.g[V0][0] = c.g[S0][0];
+        c.sw(oc508_at(c, S0, 0x2b4), c.g[V1][0]);
+        c.sw(oc508_at(c, S0, 0x2b0), c.g[V1][0]);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIStateBuyPopup::cUIStateBuyPopup(this)` variant (0x1ddc48): the base
+/// UI state (0x39e318), the vtable 0x46cb08 at +8, then the parameter block
+/// at +0x48 is reset (0x1ca8a0). Returns `this`.
+pub fn c_ui_state_buy_popup_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e318, 0x001d_dc64)?;
+        c.g[V1][0] = sx(0x0047_0000 - 0x34f8);
+        c.g[A0][0] = sx(oc508_at(c, S0, 0x48));
+        c.sw(oc508_at(c, S0, 0x8), c.g[V1][0]);
+        call_ptr(c, 0x001c_a8a0, 0x001d_dc78)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIStateBuyPopup::~cUIStateBuyPopup(this)` (0x1ddc90).
+pub fn c_ui_state_buy_popup_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        oc508_vtable_dtor(c, sx(0x0047_0000 - 0x2f30), 0x0039_e390, 0x001d_dcac)
+    })
+}
+
+/// The parameter thunks of the buy popup (+0x48 is the block the
+/// `cBuyPopupInfo` setter fills): `target(this + 0x48)`, returning to `ret`.
+pub(crate) fn oc508_params_thunk(c: &mut Cpu, target: u32, ret: u32) -> Flow {
+    c.cycles += 7;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[A0][0] = sx(oc508_at(c, A0, 0x48));
+    call_ptr(c, target, ret)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cUIStateBuyPopup::SetSongCreditParams` thunk (0x1ddcc8).
+pub fn c_ui_state_buy_popup_set_song_credit_params_thunk(c: &mut Cpu) {
+    guest(c, |c| oc508_params_thunk(c, 0x001c_a900, 0x001d_dcd8))
+}
+
+/// `cUIStateBuyPopup::SetMusicTrackParams` thunk (0x1ddce8).
+pub fn c_ui_state_buy_popup_set_music_track_params_thunk(c: &mut Cpu) {
+    guest(c, |c| oc508_params_thunk(c, 0x001c_a980, 0x001d_dcf8))
+}
+
+/// `cUIStateBuyPopup::SetRewardItemParams` thunk (0x1ddd08).
+pub fn c_ui_state_buy_popup_set_reward_item_params_thunk(c: &mut Cpu) {
+    guest(c, |c| oc508_params_thunk(c, 0x001c_aa18, 0x001d_dd18))
+}
+
+/// `cFEPopupConfirm::cFEPopupConfirm(this)` variant (0x1dde78): the base
+/// popup (0x1c58e8) with no arguments, the vtable 0x46c890 at +8. Returns
+/// `this`.
+pub fn c_fe_popup_confirm_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x001c_58e8, 0x001d_de94)?;
+        c.g[V1][0] = sx(0x0047_0000 - 0x3770);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        c.sw(oc508_at(c, S0, 0x8), c.g[V1][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cFEPopupConfirm::~cFEPopupConfirm(this)` (0x1ddeb8): vtable 0x46c890,
+/// then the base popup destructor (0x1c5a90).
+pub fn c_fe_popup_confirm_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        oc508_vtable_dtor(c, sx(0x0047_0000 - 0x3770), 0x001c_5a90, 0x001d_ded4)
+    })
+}
+
+/// `cKeyboardPopup::cKeyboardPopup` (0x1de288, `_ctor_2`, 76 bytes): the
+/// `UIState_ctor_2` base constructor with a1 = a2 = 0, then the vptr, the
+/// popup's character limit (0x3f at +0x60) and the `gp`-relative default
+/// (`lw gp+0xda0`) at +0x424.
+pub fn ckeyboard_popup_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, FE_UI_STATE_CTOR_2, 0x001d_e2a4)?;
+        c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0xda0)).lw(c);
+        c.g[V1][0] = fe_vptr(0x4138);
+        c.g[A0][0] = 0x3f;
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8)).sw(c, c.g[V1][0]);
+        c.g[V0][0] = c.g[S0][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x60)).sw(c, c.g[A0][0]);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x424)).sw(c, c.g[A1][0]);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cKeyboardPopup::GetTextLength` (0x1de2e8): `strlen(this + 0x74)`, its
+/// result returned as is.
+pub fn ckeyboard_popup_get_text_length(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x74));
+        call_ptr(c, FE_STRLEN, 0x001d_e2f8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cKeyboardPopup::SetKey4BEnabled(popup, enabled)` (0x1de350): the key
+/// 0x4b (the 4B key) set through `cKeyboardPopup_SetKeyEnabled` with a2 = the
+/// enable flag and a3 = 2.
+pub fn ckeyboard_popup_set_key4b_enabled(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0x4b;
+        c.g[A3][0] = 0x2;
+        call_ptr(c, FE_KEYBOARD_SET_KEY_ENABLED, 0x001d_e368)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cKeyboardPopup_SetKeyEnabled(this, index, value, key)` (0x1ce3c8), the
+/// callee of the five `SetKeyNNEnabled` wrappers below.
+pub(crate) const FE_KEYBOARD_SET_KEY_ENABLED_2: Callee = Callee {
+    addr: 0x001c_e3c8,
+    f: ee::s04::cKeyboardPopup_SetKeyEnabled,
+};
+
+/// The keyboard-popup wrappers (`cKeyboardPopup_setIncludeKey` family): a
+/// 0x10 frame holding `ra`, `a2 = a1` (the caller's flag), `a1 = index`,
+/// `a3 = 2` (the key), then `cKeyboardPopup_SetKeyEnabled` returning to `ret`.
+pub(crate) fn keyboard_popup_set_key_wrapper(c: &mut Cpu, index: u64, ret: u32) -> Flow {
+    c.cycles += 9;
+    let frame = Frame::open(c, 0x10);
+    c.g[A2][0] = c.g[A1][0];
+    frame.save_ra(c, 0);
+    c.g[A1][0] = index;
+    c.g[A3][0] = 2;
+    FE_KEYBOARD_SET_KEY_ENABLED_2.call(c, ret)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cKeyboardPopup_SetKey1CEnabled(this, flag)` (0x1de378): key 0x1c (the
+/// "include tab" key) enabled from `flag`.
+pub fn c_keyboard_popup_set_key_1c_enabled(c: &mut Cpu) {
+    guest(c, |c| keyboard_popup_set_key_wrapper(c, 0x1c, 0x001d_e390));
+}
+
+/// `cKeyboardPopup_SetKey45Enabled(this, flag)` (0x1de3a0).
+pub fn c_keyboard_popup_set_key_45_enabled(c: &mut Cpu) {
+    guest(c, |c| keyboard_popup_set_key_wrapper(c, 0x45, 0x001d_e3b8));
+}
+
+/// `cKeyboardPopup_SetKey4FEnabled(this, flag)` (0x1de3c8).
+pub fn c_keyboard_popup_set_key_4f_enabled(c: &mut Cpu) {
+    guest(c, |c| keyboard_popup_set_key_wrapper(c, 0x4f, 0x001d_e3e0));
+}
+
+/// `cKeyboardPopup_SetKey29Enabled(this, flag)` (0x1de3f0).
+pub fn c_keyboard_popup_set_key_29_enabled(c: &mut Cpu) {
+    guest(c, |c| keyboard_popup_set_key_wrapper(c, 0x29, 0x001d_e408));
+}
+
+/// `cKeyboardPopup_SetKey42Enabled(this, flag)` (0x1de418).
+pub fn c_keyboard_popup_set_key_42_enabled(c: &mut Cpu) {
+    guest(c, |c| keyboard_popup_set_key_wrapper(c, 0x42, 0x001d_e430));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7493,5 +7825,203 @@ pub(crate) mod tests {
             let k = hz / 60;
             assert!(n >= 24 * k - (k - 1) && n <= 25 * k, "{hz} Hz: {n} calls");
         }
+    }
+
+    /// Random registers, the game's gp, and the object (`this`) at
+    /// `DATA + 0x1000` in a0. The object's memory stays zero.
+    pub(crate) fn oc508_setup(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ ((seed as u64) << 8) ^ salt);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.g[A0][0] = sx(DATA + 0x1000);
+        r
+    }
+
+    #[test]
+    fn c_fe_popup_confirm_base_ctor_2_matches() {
+        check(
+            ee::s04::f_001ddbd0__generated,
+            c_fe_popup_confirm_base_ctor_2,
+            200,
+            &|c, seed| {
+                let mut r = oc508_setup(c, seed, 0x1ddbd0);
+                c.bus.write32(GAME_GP + 0xda0, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn c_ui_state_buy_popup_ctor_2_matches() {
+        check(
+            ee::s04::f_001ddc48__generated,
+            c_ui_state_buy_popup_ctor_2,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1ddc48);
+            },
+        );
+    }
+
+    #[test]
+    fn c_ui_state_buy_popup_dtor_matches() {
+        check(
+            ee::s04::f_001ddc90__generated,
+            c_ui_state_buy_popup_dtor,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1ddc90);
+            },
+        );
+    }
+
+    #[test]
+    fn c_ui_state_buy_popup_set_song_credit_params_thunk_matches() {
+        check(
+            ee::s04::f_001ddcc8__generated,
+            c_ui_state_buy_popup_set_song_credit_params_thunk,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1ddcc8);
+            },
+        );
+    }
+
+    #[test]
+    fn c_ui_state_buy_popup_set_music_track_params_thunk_matches() {
+        check(
+            ee::s04::f_001ddce8__generated,
+            c_ui_state_buy_popup_set_music_track_params_thunk,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1ddce8);
+            },
+        );
+    }
+
+    #[test]
+    fn c_ui_state_buy_popup_set_reward_item_params_thunk_matches() {
+        check(
+            ee::s04::f_001ddd08__generated,
+            c_ui_state_buy_popup_set_reward_item_params_thunk,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1ddd08);
+            },
+        );
+    }
+
+    #[test]
+    fn c_fe_popup_confirm_ctor_2_matches() {
+        check(
+            ee::s04::f_001dde78__generated,
+            c_fe_popup_confirm_ctor_2,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dde78);
+            },
+        );
+    }
+
+    #[test]
+    fn c_fe_popup_confirm_dtor_matches() {
+        check(
+            ee::s04::f_001ddeb8__generated,
+            c_fe_popup_confirm_dtor,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1ddeb8);
+            },
+        );
+    }
+
+    #[test]
+    fn ckeyboard_popup_ctor_2_matches() {
+        covered(
+            ee::s04::f_001de288__generated,
+            ckeyboard_popup_ctor_2,
+            FE_SEEDS,
+            &|c, seed| {
+                fe_setup(c, seed, 0x001d_e288, 18);
+            },
+        );
+    }
+
+    #[test]
+    fn ckeyboard_popup_get_text_length_matches() {
+        covered(
+            ee::s04::f_001de2e8__generated,
+            ckeyboard_popup_get_text_length,
+            FE_SEEDS,
+            &|c, seed| {
+                fe_setup(c, seed, 0x001d_e2e8, 19);
+            },
+        );
+    }
+
+    #[test]
+    fn ckeyboard_popup_set_key4b_enabled_matches() {
+        covered(
+            ee::s04::f_001de350__generated,
+            ckeyboard_popup_set_key4b_enabled,
+            FE_SEEDS,
+            &|c, seed| {
+                fe_setup(c, seed, 0x001d_e350, 20);
+            },
+        );
+    }
+
+    /// The five wrappers: a `this` object, a random flag in `a1`.
+    pub(crate) fn set_key_case(generated: GuestFn, hand: GuestFn, entry: u32) {
+        check(generated, hand, 200, &|c, seed| {
+            let mut r = machine(c, seed, entry as u64, 0);
+            c.g[A0][0] = (DATA + 0x1000) as u64;
+            c.g[A1][0] = r.next_u32() as u64;
+            c.pc = entry;
+        });
+    }
+
+    #[test]
+    fn c_keyboard_popup_set_key_1c_enabled_matches() {
+        set_key_case(
+            ee::s04::f_001de378__generated,
+            c_keyboard_popup_set_key_1c_enabled,
+            0x001d_e378,
+        );
+    }
+
+    #[test]
+    fn c_keyboard_popup_set_key_45_enabled_matches() {
+        set_key_case(
+            ee::s04::f_001de3a0__generated,
+            c_keyboard_popup_set_key_45_enabled,
+            0x001d_e3a0,
+        );
+    }
+
+    #[test]
+    fn c_keyboard_popup_set_key_4f_enabled_matches() {
+        set_key_case(
+            ee::s04::f_001de3c8__generated,
+            c_keyboard_popup_set_key_4f_enabled,
+            0x001d_e3c8,
+        );
+    }
+
+    #[test]
+    fn c_keyboard_popup_set_key_29_enabled_matches() {
+        set_key_case(
+            ee::s04::f_001de3f0__generated,
+            c_keyboard_popup_set_key_29_enabled,
+            0x001d_e3f0,
+        );
+    }
+
+    #[test]
+    fn c_keyboard_popup_set_key_42_enabled_matches() {
+        set_key_case(
+            ee::s04::f_001de418__generated,
+            c_keyboard_popup_set_key_42_enabled,
+            0x001d_e418,
+        );
     }
 }

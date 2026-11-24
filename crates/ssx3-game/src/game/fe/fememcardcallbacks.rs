@@ -25,6 +25,7 @@ pub(crate) use crate::game::fe::feasyncfile::lh_3 as lh_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_4;
 pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_3;
 pub(crate) use crate::game::fe::feasyncfile::STR_HASH;
+pub(crate) use crate::game::fe::fepopup::oc508_at;
 pub(crate) use crate::game::fe::fepopupmisc::gp_2 as gp;
 pub(crate) use crate::game::fe::fepopupmisc::lh;
 pub(crate) use crate::game::fe::fepopupmisc::lw_2;
@@ -279,6 +280,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_8700,
         mem_card_state_base_on_child_event,
         "MemCardStateBase_OnChildEvent",
+    ),
+    (
+        0x001d_de18,
+        mem_card_state_base_ctor_3,
+        "MemCardStateBase_ctor_3",
     ),
 ];
 
@@ -1426,6 +1432,8 @@ pub(crate) const MEMCARD_FE_BUSY: u32 = 0x1a8;
 pub(crate) const MEMCARD_FE_SAVE_FROM_PAUSE: u32 = 0x208;
 
 pub(crate) const MEMCARD_FE_LOAD_FROM_PAUSE: u32 = 0x204;
+/// The profile-loaded flag a finished load sets.
+pub(crate) const MEMCARD_FE_PROFILE_LOADED: u32 = 0x1b4;
 
 /// State vtable slots (`{delta, fn}` pairs): show a message in the popup
 /// (`MemCardStateBase_ShowMessage(text, single, a3, t0, selected, t2)`), and
@@ -1484,7 +1492,7 @@ pub(crate) const MEMCARD_TEMP_STRING_SIZE: u64 = 0x7d0;
 /// The size the game uses for the buffers of the messages that format a slot or
 /// card name in (overwrite, different card, checking card), and for the stack
 /// buffer `OnNotEnoughSpace2` builds its text in (the card name follows it).
-pub(crate) const MEMCARD_NAME_STRING_SIZE: u32 = 0x640;
+pub(crate) const MEMCARD_NAME_STRING_SIZE: u64 = 0x640;
 
 // Text ids (the format strings take the card's or the slot's name).
 /// `kT_CMNContinue`.
@@ -1762,19 +1770,28 @@ pub(crate) fn memcard_fe(c: &mut Cpu) -> u32 {
     Addr(memcard_gp(c, MEMCARD_FE_GP)).lw(c) as u32
 }
 
-/// Record which message the state shows.
-pub(crate) fn memcard_set_message(c: &mut Cpu, msg: u32) {
-    let fe = memcard_fe(c);
-    Addr(fe.wrapping_add(MEMCARD_FE_MESSAGE)).sw(c, msg as u64);
+/// Record which message the state shows, the state in `fe_reg` and the
+/// message id in `msg_reg` (the registers the original left them in).
+pub(crate) fn memcard_set_message(c: &mut Cpu, fe_reg: usize, msg_reg: usize, msg: u32) {
+    c.g[fe_reg][0] = memcard_fe(c) as u64;
+    c.g[msg_reg][0] = msg as u64;
+    Addr(r32(c, fe_reg).wrapping_add(MEMCARD_FE_MESSAGE)).sw(c, c.g[msg_reg][0]);
 }
 
 /// The localised text for the id string at `name`, in `v0`:
 /// `app->text_db->Find(StrHash(name))`, keeping the database (with the slot's
-/// `this` adjustment) in `s0` and its vtable in `s1`.
+/// `this` adjustment) in `s0` and its vtable in `s1`; the app pointer goes
+/// through `v0`.
 pub(crate) fn memcard_text(c: &mut Cpu, name: u32, rets: [u32; 2]) -> Flow {
-    c.g[V0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
+    memcard_text_via(c, V0, name, rets)
+}
+
+/// [`memcard_text`] with the app pointer in `app_reg` (still live at the
+/// `StrHash` call when it is not `v0`).
+pub(crate) fn memcard_text_via(c: &mut Cpu, app_reg: usize, name: u32, rets: [u32; 2]) -> Flow {
+    c.g[app_reg][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
     c.g[A0][0] = sx(name);
-    c.g[S0][0] = Addr(r32(c, V0).wrapping_add(MEMCARD_APP_TEXT_DB)).lw(c);
+    c.g[S0][0] = Addr(r32(c, app_reg).wrapping_add(MEMCARD_APP_TEXT_DB)).lw(c);
     c.g[S1][0] = Addr(r32(c, S0).wrapping_add(4)).lw(c);
     c.g[V0][0] = Addr(r32(c, S1).wrapping_add(MEMCARD_TEXT_DB_VT_FIND)).lh(c);
     c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
@@ -2011,8 +2028,8 @@ pub fn mem_card_ui_on_save_done(c: &mut Cpu) {
 
 /// `void cFEMemCard_callbackReadSuccess(void)` (`MemCardUI_OnLoadDone`,
 /// 0x1d67c8): the load finished. Drop the save title and mark the profile
-/// loaded (`+0x1b4`); a load started from the pause menu closes the screen,
-/// otherwise show "load done" with "Continue".
+/// loaded (`MEMCARD_FE_PROFILE_LOADED`); a load started from the pause menu
+/// closes the screen, otherwise show "load done" with "Continue".
 pub fn mem_card_ui_on_load_done(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
@@ -2026,7 +2043,7 @@ pub fn mem_card_ui_on_load_done(c: &mut Cpu) {
         c.g[A1][0] = memcard_fe(c) as u64;
         c.g[V0][0] = 1;
         c.g[V1][0] = Addr(r32(c, A1).wrapping_add(MEMCARD_FE_LOAD_FROM_PAUSE)).lw(c);
-        Addr(r32(c, A1).wrapping_add(0x1b4)).sw(c, c.g[V0][0]);
+        Addr(r32(c, A1).wrapping_add(MEMCARD_FE_PROFILE_LOADED)).sw(c, c.g[V0][0]);
         let from_pause = c.g[V1][0] != 0;
         Addr(r32(c, A1).wrapping_add(MEMCARD_FE_BUSY)).sw(c, 0);
         if from_pause {
@@ -2062,7 +2079,7 @@ pub fn mem_card_ui_confirm_overwrite(c: &mut Cpu) {
         frame.save(c, S1, 0x70);
         frame.save(c, S2, 0x60);
         frame.save_ra(c, 0x50);
-        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE as u64, 0x001d_6914)?;
+        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE, 0x001d_6914)?;
         c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
         c.g[S2][0] = c.g[V0][0];
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_6920)?;
@@ -2112,7 +2129,7 @@ pub fn mem_card_state_base_show_create_edit_msg(c: &mut Cpu) {
         memcard_text(c, MEMCARD_TEXT_CREATE_EDIT, [0x001d_6a30, 0x001d_6a40])?;
         let s2 = c.g[S2][0];
         memcard_copy(c, s2, 0x001d_6a4c)?;
-        memcard_set_message(c, MEMCARD_MSG_CREATE_EDIT);
+        memcard_set_message(c, T3, V0, MEMCARD_MSG_CREATE_EDIT);
         let s2 = c.g[S2][0];
         memcard_show_message(c, s2, 0, 0, 0, 0x001d_6a84)?;
         memcard_popup_v25(c, 1, 0x001d_6aa4)?;
@@ -2150,7 +2167,7 @@ pub fn mem_card_ui_on_load_failed(c: &mut Cpu) {
         memcard_text(c, MEMCARD_TEXT_LOAD_FAILED, [0x001d_6b48, 0x001d_6b58])?;
         let buf = c.g[S4][0];
         memcard_sprintf(c, buf, sp, 0x001d_6b68)?;
-        memcard_set_message(c, MEMCARD_MSG_LOAD_FAILED);
+        memcard_set_message(c, T3, V0, MEMCARD_MSG_LOAD_FAILED);
         memcard_show_message(c, buf, 1, 0, 0, 0x001d_6ba0)?;
         memcard_popup_option(
             c,
@@ -2190,7 +2207,7 @@ pub fn mem_card_ui_on_save_failed(c: &mut Cpu) {
         c.g[S0][0] = c.g[V0][0];
         memcard_new_temp_string(c, MEMCARD_TEMP_STRING_SIZE, 0x001d_6c6c)?;
         c.g[S4][0] = c.g[V0][0];
-        memcard_set_message(c, MEMCARD_MSG_SAVE_FAILED);
+        memcard_set_message(c, V1, V0, MEMCARD_MSG_SAVE_FAILED);
         let (manager, sp) = (c.g[S0][0], c.g[SP][0]);
         memcard_card_name(c, manager, sp, 0x001d_6c8c)?;
         memcard_text(c, MEMCARD_TEXT_SAVE_FAILED, [0x001d_6cac, 0x001d_6cbc])?;
@@ -2353,10 +2370,9 @@ pub fn mem_card_ui_on_save_corrupt(c: &mut Cpu) {
         let slot_name = sx(r32(c, SP).wrapping_add(0x200));
         let s0 = r32(c, S0);
         memcard_slot_name(c, s0, slot_name, 0x001d_7088)?;
-        // The state stays in a1 into the StrHash call.
-        c.g[A1][0] = memcard_fe(c) as u64;
-        memcard_set_message(c, MEMCARD_MSG_GAME_CORRUPT);
-        memcard_text(c, MEMCARD_TEXT_GAME_CORRUPT, [0x001d_70b4, 0x001d_70c4])?;
+        // The state stays in a1 and the app in v1 into the StrHash call.
+        memcard_set_message(c, A1, V0, MEMCARD_MSG_GAME_CORRUPT);
+        memcard_text_via(c, V1, MEMCARD_TEXT_GAME_CORRUPT, [0x001d_70b4, 0x001d_70c4])?;
         let (buf, sp) = (c.g[S4][0], c.g[SP][0]);
         memcard_sprintf(c, buf, sp, 0x001d_70d4)?;
         let s4 = c.g[S4][0];
@@ -2398,10 +2414,9 @@ pub fn mem_card_ui_show_corrupt_save(c: &mut Cpu) {
         c.g[S2][0] = c.g[V0][0];
         let s0 = c.g[S0][0];
         memcard_card_name(c, s0, c.g[SP][0], 0x001d_71e0)?;
-        memcard_set_message(c, MEMCARD_MSG_CORRUPT_SAVE);
+        memcard_set_message(c, V1, V0, MEMCARD_MSG_CORRUPT_SAVE);
         // The application stays in a1 into the StrHash call.
-        c.g[A1][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
-        memcard_text(c, MEMCARD_TEXT_CORRUPT_SAVE, [0x001d_720c, 0x001d_721c])?;
+        memcard_text_via(c, A1, MEMCARD_TEXT_CORRUPT_SAVE, [0x001d_720c, 0x001d_721c])?;
         let (buf, sp) = (c.g[S2][0], c.g[SP][0]);
         memcard_sprintf(c, buf, sp, 0x001d_722c)?;
         let s2 = c.g[S2][0];
@@ -2443,7 +2458,7 @@ pub fn mem_card_ui_confirm_format(c: &mut Cpu) {
         memcard_text(c, MEMCARD_TEXT_FORMAT_CARD, [0x001d_7380, 0x001d_7390])?;
         let (buf, sp) = (c.g[S2][0], c.g[SP][0]);
         memcard_sprintf(c, buf, sp, 0x001d_73a0)?;
-        memcard_set_message(c, MEMCARD_MSG_CONFIRM_FORMAT);
+        memcard_set_message(c, T3, V0, MEMCARD_MSG_CONFIRM_FORMAT);
         let s2 = c.g[S2][0];
         memcard_show_message(c, s2, 0, 0, 1, 0x001d_73d8)?;
         memcard_popup_v25(c, 1, 0x001d_73f8)?;
@@ -2472,10 +2487,15 @@ pub fn mem_card_ui_on_format_done(c: &mut Cpu) {
         c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
         c.g[S2][0] = c.g[V0][0];
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_7458)?;
-        memcard_text(c, MEMCARD_TEXT_FORMAT_COMPLETE, [0x001d_7478, 0x001d_7488])?;
+        memcard_text_via(
+            c,
+            V1,
+            MEMCARD_TEXT_FORMAT_COMPLETE,
+            [0x001d_7478, 0x001d_7488],
+        )?;
         let s2 = c.g[S2][0];
         memcard_copy(c, s2, 0x001d_7494)?;
-        memcard_set_message(c, MEMCARD_MSG_FORMAT_DONE);
+        memcard_set_message(c, T3, V0, MEMCARD_MSG_FORMAT_DONE);
         let s2 = c.g[S2][0];
         memcard_show_message(c, s2, 1, 0, 0, 0x001d_74cc)?;
         memcard_text(c, MEMCARD_TEXT_CONTINUE, [0x001d_74ec, 0x001d_74fc])?;
@@ -2504,7 +2524,7 @@ pub fn mem_card_ui_on_format_failed(c: &mut Cpu) {
         memcard_text(c, MEMCARD_TEXT_FORMAT_FAILED, [0x001d_75b0, 0x001d_75c0])?;
         let (buf, sp) = (c.g[S2][0], c.g[SP][0]);
         memcard_sprintf(c, buf, sp, 0x001d_75d0)?;
-        memcard_set_message(c, MEMCARD_MSG_FORMAT_FAILED);
+        memcard_set_message(c, T3, V0, MEMCARD_MSG_FORMAT_FAILED);
         let s2 = c.g[S2][0];
         memcard_show_message(c, s2, 1, 0, 0, 0x001d_7608)?;
         memcard_text(c, MEMCARD_TEXT_CONTINUE, [0x001d_7628, 0x001d_7638])?;
@@ -2549,7 +2569,7 @@ pub fn mem_card_ui_confirm_delete(c: &mut Cpu) {
             c.cycles += 55;
             memcard_new_temp_string(c, MEMCARD_TEMP_STRING_SIZE, 0x001d_76e0)?;
             c.g[S2][0] = c.g[V0][0];
-            memcard_set_message(c, MEMCARD_MSG_CONFIRM_DELETE);
+            memcard_set_message(c, V1, V0, MEMCARD_MSG_CONFIRM_DELETE);
             let (manager, sp) = (r32(c, S0), c.g[SP][0]);
             memcard_slot_name(c, manager, sp, 0x001d_7710)?;
             memcard_text(c, MEMCARD_TEXT_CONFIRM_DELETE, [0x001d_7730, 0x001d_7740])?;
@@ -2611,7 +2631,7 @@ pub fn mem_card_ui_on_card_not_detected2(c: &mut Cpu) {
         memcard_text(c, MEMCARD_TEXT_NOT_DETECTED, [0x001d_7860, 0x001d_7870])?;
         let (buf, sp) = (c.g[S4][0], c.g[SP][0]);
         memcard_sprintf(c, buf, sp, 0x001d_7880)?;
-        memcard_set_message(c, MEMCARD_MSG_NO_CARD);
+        memcard_set_message(c, T3, V0, MEMCARD_MSG_NO_CARD);
         memcard_show_message(c, buf, 0, 0, 0, 0x001d_78b8)?;
         memcard_popup_option(
             c,
@@ -2676,7 +2696,7 @@ pub fn mem_card_ui_on_not_enough_space(c: &mut Cpu) {
         c.g[S2][0] = c.g[V0][0];
         memcard_new_temp_string(c, MEMCARD_TEMP_STRING_SIZE, 0x001d_79dc)?;
         c.g[S4][0] = c.g[V0][0];
-        memcard_set_message(c, MEMCARD_MSG_NOT_ENOUGH_SPACE);
+        memcard_set_message(c, V1, V0, MEMCARD_MSG_NOT_ENOUGH_SPACE);
         let (manager, sp) = (c.g[S2][0], c.g[SP][0]);
         memcard_card_name(c, manager, sp, 0x001d_79fc)?;
         let buf = c.g[S4][0];
@@ -2720,9 +2740,9 @@ pub fn mem_card_ui_on_not_enough_space2(c: &mut Cpu) {
         frame.save(c, S3, 0x670);
         frame.save_ra(c, 0x660);
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_7b3c)?;
-        memcard_set_message(c, MEMCARD_MSG_NOT_ENOUGH_SPACE);
+        memcard_set_message(c, A0, V1, MEMCARD_MSG_NOT_ENOUGH_SPACE);
         c.g[S2][0] = c.g[V0][0];
-        c.g[S3][0] = sx(r32(c, SP).wrapping_add(MEMCARD_NAME_STRING_SIZE));
+        c.g[S3][0] = sx(r32(c, SP).wrapping_add(MEMCARD_NAME_STRING_SIZE as u32));
         let (manager, name) = (c.g[S2][0], c.g[S3][0]);
         memcard_card_name(c, manager, name, 0x001d_7b60)?;
         let sp = c.g[SP][0];
@@ -2828,12 +2848,12 @@ pub fn mem_card_ui_on_different_card(c: &mut Cpu) {
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_7d98)?;
         let (manager, sp) = (c.g[V0][0], c.g[SP][0]);
         memcard_card_name(c, manager, sp, 0x001d_7da8)?;
-        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE as u64, 0x001d_7dc0)?;
+        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE, 0x001d_7dc0)?;
         c.g[S4][0] = c.g[V0][0];
         memcard_text(c, MEMCARD_TEXT_DIFFERENT_CARD, [0x001d_7de4, 0x001d_7df4])?;
         let buf = c.g[S4][0];
         memcard_sprintf(c, buf, sp, 0x001d_7e04)?;
-        memcard_set_message(c, MEMCARD_MSG_DIFFERENT_CARD);
+        memcard_set_message(c, T3, V0, MEMCARD_MSG_DIFFERENT_CARD);
         memcard_show_message(c, buf, 1, 0, 0, 0x001d_7e3c)?;
         memcard_popup_option(
             c,
@@ -2886,7 +2906,7 @@ pub fn mem_card_ui_on_delete_done(c: &mut Cpu) {
             memcard_text(c, MEMCARD_TEXT_DELETE_DONE, [0x001d_7f30, 0x001d_7f40])?;
             let buf = c.g[S2][0];
             memcard_copy(c, buf, 0x001d_7f4c)?;
-            memcard_set_message(c, MEMCARD_MSG_DELETE_DONE);
+            memcard_set_message(c, T3, V0, MEMCARD_MSG_DELETE_DONE);
             memcard_show_message(c, buf, 1, 0, 0, 0x001d_7f84)?;
             memcard_text(c, MEMCARD_TEXT_CONTINUE, [0x001d_7fa4, 0x001d_7fb4])?;
             memcard_popup_set_option(c, 0, 0x001d_7fd8)?;
@@ -2934,7 +2954,7 @@ pub fn mem_card_ui_on_delete_failed(c: &mut Cpu) {
         memcard_text(c, MEMCARD_TEXT_DELETE_FAILED, [0x001d_8088, 0x001d_8098])?;
         let (buf, sp) = (c.g[S2][0], c.g[SP][0]);
         memcard_sprintf(c, buf, sp, 0x001d_80a8)?;
-        memcard_set_message(c, MEMCARD_MSG_DELETE_FAILED);
+        memcard_set_message(c, T3, V0, MEMCARD_MSG_DELETE_FAILED);
         memcard_show_message(c, buf, 1, 0, 0, 0x001d_80e0)?;
         memcard_text(c, MEMCARD_TEXT_CONTINUE, [0x001d_8100, 0x001d_8110])?;
         memcard_popup_set_option(c, 0, 0x001d_8134)?;
@@ -3568,7 +3588,7 @@ pub fn mem_card_state_base_set_mode(c: &mut Cpu) {
             memcard_screen_value(c, MEMCARD_NAME_FILE_DISPLAY, [0x001d_963c, 0x001d_9648])?;
             if memcard_find_text_box(c, [0x001d_9658, 0x001d_9664])? {
                 c.cycles += 9;
-                memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE as u64, 0x001d_9684)?;
+                memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE, 0x001d_9684)?;
                 c.g[A0][0] = c.g[S0][0];
                 c.g[S2][0] = c.g[V0][0];
                 c.g[A2][0] = Addr(r32(c, A0).wrapping_add(MEMCARD_MC_CARD_SLOT)).lw(c);
@@ -3602,7 +3622,7 @@ pub fn mem_card_state_base_set_mode(c: &mut Cpu) {
                     memcard_screen_value(c, MEMCARD_NAME_OFF, [0x001d_9550, 0x001d_955c])?;
                     if memcard_find_text_box(c, [0x001d_956c, 0x001d_9578])? {
                         c.cycles += 12;
-                        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE as u64, 0x001d_9598)?;
+                        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE, 0x001d_9598)?;
                         c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
                         c.g[S2][0] = c.g[V0][0];
                         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_95a4)?;
@@ -4632,6 +4652,38 @@ pub fn mem_card_state_base_update(c: &mut Cpu) {
     })
 }
 
+/// `MemCardStateBase` constructor variant (0x1dde18): the base UI state
+/// (0x39e2a0), then the fields at +0x48, +0x4c, +0x54 and +0x98 are cleared,
+/// the vtable is written at +8 (0x474e08, then 0x46c980 at the end), and the
+/// halfword at 0x4a1390 is stored at +0x58. Returns `this`.
+pub fn mem_card_state_base_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e2a0, 0x001d_de30)?;
+        c.sw(oc508_at(c, S0, 0x98), 0);
+        c.g[V1][0] = sx(0x0047_0000 + 0x4e08);
+        c.sw(oc508_at(c, S0, 0x48), 0);
+        c.sw(oc508_at(c, S0, 0x8), c.g[V1][0]);
+        c.g[A1][0] = 0x004a_0000;
+        c.sw(oc508_at(c, S0, 0x4c), 0);
+        c.sw(oc508_at(c, S0, 0x54), 0);
+        c.g[V1][0] = sx(0x0047_0000 - 0x3680);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        c.g[A0][0] = c.lhu(oc508_at(c, A1, 0x1390));
+        c.sw(oc508_at(c, S0, 0x8), c.g[V1][0]);
+        c.sh(oc508_at(c, S0, 0x58), c.g[A0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4680,42 +4732,42 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::ai::ai::tests::w16;
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
-    pub(crate) use crate::game::ai::rider::tests::slot_2 as slot;
+    pub(crate) use crate::game::ai::rider::tests::slot_2 as rider_vtable_slot;
     pub(crate) use crate::game::be::bedbprofile::tests::strict;
     pub(crate) use crate::game::bx::bxstringctor::tests::base_3;
     pub(crate) use crate::game::bx::bxstringctor::tests::slot_2;
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
     pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
-    pub(crate) use crate::game::dirtysock::tagsunk::tests::world_2 as world;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::world_2 as tagsunk_race_world;
     pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
-    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::check_all_2 as check_all;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as TAGSUNK_SEEDS;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as feasync_pooled_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as feasync_belib_world_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as feasync_race_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::check_all_2 as feasync_check_all_regs;
     pub(crate) use crate::game::fe::feasyncfile::tests::diff;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::put_str_3 as put_str;
+    pub(crate) use crate::game::fe::feasyncfile::tests::put_str_3 as feasync_put_str;
     pub(crate) use crate::game::fe::feasyncfile::tests::screen_with;
     pub(crate) use crate::game::fe::feasyncfile::tests::str_hash;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4_2 as OBJ4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as FEASYNC_OBJ2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as FEASYNC_OBJ3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4_2 as FEASYNC_OBJ4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as FEASYNC_OBJ;
     pub(crate) use crate::game::fe::fememcard::tests::vtable_at;
     pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2;
-    pub(crate) use crate::game::fe::festateoptions::tests::setup as setup_2;
+    pub(crate) use crate::game::fe::festateoptions::tests::setup as options_scrambled_setup;
     pub(crate) use crate::game::fe::festateoptions::tests::AUX;
     pub(crate) use crate::game::movie::movieplayer::tests::globals;
-    pub(crate) use crate::game::movie::movieplayer::tests::run_2 as run;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::belib_2 as belib;
+    pub(crate) use crate::game::movie::movieplayer::tests::run_2 as movie_setup_call;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::belib_2 as script_zero_belib;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_setup;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w as w_m2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w as script_w32;
     use ssx3_ee as ee;
 
     #[test]
@@ -4827,7 +4879,7 @@ pub(crate) mod tests {
         check(
             ee::s04::f_001d8be0__generated,
             mem_card_state_base_reset_state,
-            SEEDS,
+            TAGSUNK_SEEDS,
             &|c, seed| {
                 let _ = common(c, seed, 0x1d8be0, 1);
                 let this = DATA + 0x100;
@@ -4888,7 +4940,7 @@ pub(crate) mod tests {
             mem_card_state_base_v46,
             200,
             &|c, seed| {
-                let mut r = setup_2(c, seed, 31);
+                let mut r = options_scrambled_setup(c, seed, 31);
                 gpf(c, -0x10c8, AUX);
                 put(
                     c,
@@ -4908,7 +4960,7 @@ pub(crate) mod tests {
             mem_card_state_base_transition_out,
             200,
             &|c, seed| {
-                setup_2(c, seed, 32);
+                options_scrambled_setup(c, seed, 32);
                 c.g[A0][0] = AUX as u64;
                 put(c, AUX + 0x1c0, [6u32, 5, 7, 0x100][(seed % 4) as usize]);
             },
@@ -4924,7 +4976,7 @@ pub(crate) mod tests {
             memcard_ui_on_load_aborted,
             60,
             &|c, seed| {
-                base(c, seed, 0x1d72_a8);
+                feasync_race_base(c, seed, 0x1d72_a8);
                 let fe = DATA + 0x1000;
                 let vt = DATA + 0x1200;
                 c.bus.write32(GAME_GP - 0x10c8, fe);
@@ -4970,12 +5022,12 @@ pub(crate) mod tests {
             12,
             &|c, seed| {
                 machine(c, seed, 0x1d_8d68, 3);
-                belib(c);
-                world(c);
+                script_zero_belib(c);
+                tagsunk_race_world(c);
                 heap_setup(c);
                 c.g[A0][0] = (DATA + 0x2000) as u64;
-                w_m2(c, DATA + 0x2000 + 0x8, DATA + 0x2400);
-                slot(c, DATA + 0x2400, 0x120, 0, FAKE);
+                script_w32(c, DATA + 0x2000 + 0x8, DATA + 0x2400);
+                rider_vtable_slot(c, DATA + 0x2400, 0x120, 0, FAKE);
                 c.pc = 0x001d_8d68;
             },
         );
@@ -4983,7 +5035,7 @@ pub(crate) mod tests {
 
     /// A real heap block of `size` bytes.
     pub(crate) fn alloc(c: &mut Cpu, size: u32) -> u32 {
-        run(
+        movie_setup_call(
             c,
             0x0031_7d70,
             ee::s10::f_00317d70,
@@ -5000,9 +5052,9 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _ = alloc_base(c, seed, 0x1d99_48, 4);
                 let self_ = DATA;
-                w_m2(c, self_ + 0x228, (seed % 2) as u32);
+                script_w32(c, self_ + 0x228, (seed % 2) as u32);
                 let old = if seed % 3 == 0 { 0 } else { alloc(c, 0x100) };
-                w_m2(c, self_ + 0x1d4, old);
+                script_w32(c, self_ + 0x1d4, old);
                 c.g[A0][0] = self_ as u64;
                 c.g[A1][0] = 0x100;
             },
@@ -5017,7 +5069,7 @@ pub(crate) mod tests {
             40,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x1d93e8, 2);
-                put_str(c, DATA + 0x400, b"widget");
+                feasync_put_str(c, DATA + 0x400, b"widget");
                 let h = str_hash(c, DATA + 0x400);
                 let screen = DATA + 0x1000;
                 screen_with(c, &mut r, screen, h);
@@ -5085,18 +5137,18 @@ pub(crate) mod tests {
             cfe_popup_confirm_ctor,
             6,
             &|c, seed| {
-                let _ = base_4(c, seed, 0x001d_99c8, 2);
-                w_m2(c, GAME_GP.wrapping_sub(0x10b4), (seed % 2) as u32);
-                c.g[A0][0] = OBJ as u64;
-                c.g[A1][0] = OBJ2 as u64;
-                c.g[A2][0] = OBJ3 as u64;
-                c.g[A3][0] = OBJ4 as u64;
+                let _ = feasync_pooled_base(c, seed, 0x001d_99c8, 2);
+                script_w32(c, GAME_GP.wrapping_sub(0x10b4), (seed % 2) as u32);
+                c.g[A0][0] = FEASYNC_OBJ as u64;
+                c.g[A1][0] = FEASYNC_OBJ2 as u64;
+                c.g[A2][0] = FEASYNC_OBJ3 as u64;
+                c.g[A3][0] = FEASYNC_OBJ4 as u64;
                 c.g[T0][0] = (seed % 5) as u64;
                 c.g[T1][0] = (seed % 7) as u64;
                 c.g[T2][0] = (seed % 9) as u64;
                 c.g[T3][0] = (seed % 11) as u64;
-                w_m2(c, OBJ + 0x17c, 0);
-                w_m2(c, OBJ + 0x14c, 0);
+                script_w32(c, FEASYNC_OBJ + 0x17c, 0);
+                script_w32(c, FEASYNC_OBJ + 0x14c, 0);
             },
         );
     }
@@ -5108,7 +5160,7 @@ pub(crate) mod tests {
             memcard_state_base_is_card_ready,
             80,
             &|c, seed| {
-                let _r = base_5(c, seed, 0x1d98);
+                let _r = feasync_belib_world_base(c, seed, 0x1d98);
                 c.g[A0][0] = DATA as u64;
                 let m = DATA + 0x3000;
                 c.bus.write32(gp_at(-0x47c), m);
@@ -5136,19 +5188,19 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = fe_base(c, seed, 0x1d_8160);
                 c.g[A0][0] = sx(DATA);
-                w_m2(c, DATA + 0x424, (seed % 4) as u32);
-                w_m2(c, DATA + 0x428, (seed % 3) as u32);
-                w_m2(c, DATA + 0x434, r.next_u32());
-                w_m2(c, DATA + 0x1a0, r.next_u32());
-                w_m2(c, DATA + 0x1a4, r.next_u32());
-                w_m2(c, DATA + 0x1c0, r.next_u32());
+                script_w32(c, DATA + 0x424, (seed % 4) as u32);
+                script_w32(c, DATA + 0x428, (seed % 3) as u32);
+                script_w32(c, DATA + 0x434, r.next_u32());
+                script_w32(c, DATA + 0x1a0, r.next_u32());
+                script_w32(c, DATA + 0x1a4, r.next_u32());
+                script_w32(c, DATA + 0x1c0, r.next_u32());
             },
         );
     }
 
     #[test]
     fn memcard_state_base_handle_input_matches() {
-        check_all(
+        feasync_check_all_regs(
             ee::s04::f_001d8c50__generated,
             memcard_state_base_handle_input,
             60,
@@ -5291,7 +5343,8 @@ pub(crate) mod tests {
                 let from_pause = if seed % 3 == 0 { r.next_u32() | 1 } else { 0 };
                 c.bus
                     .write32(MEMCARD_T_FE + MEMCARD_FE_LOAD_FROM_PAUSE, from_pause);
-                c.bus.write32(MEMCARD_T_FE + 0x1b4, r.next_u32());
+                c.bus
+                    .write32(MEMCARD_T_FE + MEMCARD_FE_PROFILE_LOADED, r.next_u32());
                 c.bus.write32(MEMCARD_T_FE + 0x1f4, r.next_u32());
             },
         );
@@ -6110,6 +6163,21 @@ pub(crate) mod tests {
                     .write32(MEMCARD_T_FE + MEMCARD_FE_HAS_SAVE, r.next_u32() % 2);
                 c.bus.write32(MEMCARD_T_FE + MEMCARD_FE_REPLY_PENDING, flag);
                 c.pc = 0x001d_8700;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn mem_card_state_base_ctor_3_matches() {
+        check(
+            ee::s04::f_001dde18__generated,
+            mem_card_state_base_ctor_3,
+            200,
+            &|c, seed| {
+                let mut r = oc508_setup(c, seed, 0x1dde18);
+                c.bus.write16(0x004a_1390, r.next_u32() as u16);
             },
         );
     }

@@ -6,12 +6,15 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
 pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
 pub(crate) use crate::game::dirtysock::tagsunk::sw;
+pub(crate) use crate::game::fe::feasyncfile::fe_ctor_with_vtable;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::fepopup::ld;
@@ -23,6 +26,7 @@ pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_2;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -81,6 +85,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0018_7a38,
         c_fe_state_mem_card_scan_step,
         "cFEStateMemCard_ScanStep",
+    ),
+    (
+        0x001d_e950,
+        c_fe_state_mem_card_ctor_2,
+        "cFEStateMemCard_ctor_2",
     ),
 ];
 
@@ -883,6 +892,29 @@ pub fn c_fe_state_mem_card_scan_step(c: &mut Cpu) {
     return;
 }
 
+/// `MemCardStateBase_ctor` (0x1d53b0): the base constructor of the memory card
+/// state, called directly by `cFEStateMemCard_ctor_2`.
+pub(crate) const FE_MEMCARD_STATE_BASE_CTOR: Callee = Callee {
+    addr: 0x001d_53b0,
+    f: ee::s04::MemCardStateBase_ctor,
+};
+
+/// `cFEStateMemCard` constructor (0x1de950): `MemCardStateBase_ctor(this, 0, 0)`,
+/// then the vtable at `+8`.
+pub fn c_fe_state_mem_card_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_ctor_with_vtable(
+            c,
+            15,
+            true,
+            true,
+            Target::Direct(FE_MEMCARD_STATE_BASE_CTOR),
+            0x001d_e96c,
+            0x4a90,
+        )
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1215,6 +1247,18 @@ pub(crate) mod tests {
                 c.bus.write32(MEMCARD + 0x234, r.next_u32() % 4);
                 let _ = &mut r;
             },
+        );
+    }
+
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_state_case;
+
+    #[test]
+    fn c_fe_state_mem_card_ctor_2_matches() {
+        heap_state_case(
+            ee::s04::f_001de950__generated,
+            c_fe_state_mem_card_ctor_2,
+            0x001d_e950,
+            false,
         );
     }
 }

@@ -15991,6 +15991,473 @@ mod pack {
     /// One level's codes.
     pub const LEVEL_CODE_RUN: u32 = 0x002c_9dc8;
 }
+/// Forward half of `memmove`: `src >= dst`, 16-byte then 8-byte chunks for
+/// aligned bodies of 32+ bytes, bytes otherwise. Returns `dst` in `v0`.
+pub(crate) fn memmove_forward(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[A2][0] < 0x20u64) as u64;
+    if c.g[V0][0] == 0 {
+        c.cycles += 4;
+        c.g[V0][0] = c.g[A1][0] | c.g[V1][0];
+        c.g[V0][0] &= 0xf;
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            c.g[A3][0] = c.g[V1][0];
+            loop {
+                c.cycles += 11;
+                c.lq(3, c.g[A1][0] as u32);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x20));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+                c.g[A0][0] = (c.g[A2][0] < 0x20u64) as u64;
+                c.sq(3, c.g[A3][0] as u32);
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
+                c.lq(2, c.g[A1][0] as u32);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+                c.sq(2, c.g[A3][0] as u32);
+                let more = c.g[A0][0] == 0u64;
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0041_6184);
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[A2][0] < 0x8u64) as u64;
+            if c.g[V0][0] == 0 {
+                loop {
+                    c.cycles += 7;
+                    c.g[V1][0] = c.ld(c.g[A1][0] as u32);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x8));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = (c.g[A2][0] < 0x8u64) as u64;
+                    c.sd(c.g[A3][0] as u32, c.g[V1][0]);
+                    let more = c.g[V0][0] == 0u64;
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x8));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0041_61bc);
+                    }
+                }
+                c.cycles += 1;
+                c.g[V1][0] = c.g[A3][0];
+            } else {
+                c.g[V1][0] = c.g[A3][0];
+            }
+            c.cycles += 1;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+        } else {
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+        }
+    } else {
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0xffffffffffffffff;
+    let empty = c.g[A2][0] == c.g[V0][0];
+    c.g[A0][0] = c.g[V0][0];
+    if !empty {
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = c.lbu(c.g[A1][0] as u32);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.sb(c.g[V1][0] as u32, c.g[V0][0]);
+            let more = c.g[A2][0] != c.g[A0][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0041_61ec);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[T0][0];
+    abi::ret(c);
+}
+
+/// `fseek` epilogue: restore the 0x100 frame and return.
+pub(crate) fn finish_fseek(c: &mut Cpu) {
+    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xf0));
+    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xe0));
+    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0xd0));
+    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xc0));
+    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0xb0));
+    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0xa0));
+    c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x90));
+    c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x80));
+    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
+    c.pc = ra;
+}
+
+/// `fseek` validation-fail tail (generated 0x417170 + epilogue): errno `v1`
+/// already in place, `v0 = -1` already set. Stores errno and finishes.
+pub(crate) fn fseek_fail(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
+    c.cycles += 11;
+    finish_fseek(c);
+}
+
+/// `fseek` flush-and-fail tail: flush, and fail unless the flush itself
+/// failed (0x4173a4); otherwise retry the seek at the target position.
+pub(crate) fn fail_flushed(c: &mut Cpu) -> call::Flow {
+    c.cycles += 4;
+    c.g[RA][0] = sx(0x0041_73ac);
+    c.g[A0][0] = c.g[S0][0];
+    callee::FFLUSH.call(c, 0x0041_73ac)?;
+    let flush_failed = c.g[V0][0] != 0u64;
+    c.g[V0][0] = 0xffffffffffffffff;
+    if flush_failed {
+        c.cycles += 11;
+        finish_fseek(c);
+        return Ok(());
+    }
+    c.cycles += 7;
+    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+    c.g[A1][0] = c.g[S6][0];
+    let seek = c.g[S5][0] as u32;
+    c.g[RA][0] = sx(0x0041_73c4);
+    c.g[A2][0] = c.g[S4][0];
+    call::call_ptr(c, seek, 0x0041_73c4)?;
+    c.g[V1][0] = 0xffffffffffffffff;
+    let seek_failed = c.g[V0][0] == c.g[V1][0];
+    c.g[V0][0] = 0u64;
+    if seek_failed {
+        // The retry seek failed: back to the pre-seek check (fails).
+        if back_edge_unwinds(c, 0x0041_7100) {
+            return Ok(());
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0xffffffffffffffff;
+        c.cycles += 11;
+        finish_fseek(c);
+        return Ok(());
+    }
+    c.cycles += 6;
+    c.g[V1][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+    c.g[V1][0] &= 0xffdf;
+    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+    c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+    c.sw(c.g[S0][0] as u32, c.g[A0][0]);
+    c.cycles += 11;
+    finish_fseek(c);
+    Ok(())
+}
+
+/// `fseek` positioned tail (0x417178 on): with the target position in
+/// `S6`/`S2` and `S7` saying whether it is known, settle buffering and
+/// call the seek cookie. Shared by the `SEEK_CUR` path (which computes
+/// the target above) and the 0/2 paths (which jump here directly).
+pub(crate) fn fseek_positioned(c: &mut Cpu) -> call::Flow {
+    c.cycles += 2;
+    if c.g[A2][0] == 0 {
+        c.cycles += 3;
+        c.g[RA][0] = sx(0x0041_7188);
+        c.g[A0][0] = c.g[S0][0];
+        callee::SMAKEBUF.call(c, 0x0041_7188)?;
+        c.g[V1][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+    } else {
+        c.g[V1][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[V1][0] & 0x81a;
+    c.g[V0][0] = c.g[V1][0] & 0x400;
+    if c.g[V1][0] & 0x81a != 0 {
+        fail_flushed(c)?;
+        return Ok(());
+    }
+    c.cycles += 2;
+    let no_opt = c.g[V0][0] == 0u64;
+    // Delay slot of the check: gen sets `V0` on both paths.
+    c.g[V0][0] = 0x410000;
+    if no_opt {
+        c.cycles += 3;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7a30));
+        // Set on the regular-file arm below: gen `0x4171ec`
+        // continues at `0x4171fc`, past the flush tail.
+        let mut regular = false;
+        if c.g[S5][0] == c.g[V0][0] {
+            c.cycles += 3;
+            c.g[A1][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0xe));
+            c.g[A0][0] = c.g[S1][0];
+            if (c.g[A1][0] as i64) < 0 {
+                c.cycles += 1;
+                c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+            } else {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x0041_71c0);
+                c.g[A2][0] = c.g[SP][0];
+                callee::FSTAT_R.call(c, 0x0041_71c0)?;
+                if c.g[V0][0] == 0 {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = 0x8000;
+                    c.g[V0][0] &= 0xf000;
+                    if c.g[V0][0] != c.g[V1][0] {
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+                    } else {
+                        c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+                        c.cycles += 4;
+                        c.g[V1][0] = 0x400;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), c.g[V1][0]);
+                        c.g[V0][0] |= 0x400;
+                        c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                        regular = true;
+                    }
+                } else {
+                    c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+                }
+            }
+            if !regular {
+                c.cycles += 3;
+                c.g[V0][0] |= 0x800;
+                c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                fail_flushed(c)?;
+                return Ok(());
+            }
+        }
+        if !regular {
+            c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.cycles += 3;
+            c.g[V0][0] |= 0x800;
+            c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+            fail_flushed(c)?;
+            return Ok(());
+        }
+    }
+    c.cycles += 2;
+    if c.g[S4][0] == 0 {
+        c.cycles += 2;
+        c.g[S3][0] = c.g[S6][0];
+    } else {
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x0041_7218);
+        c.g[A2][0] = c.g[SP][0];
+        // Gen `0x4171fc` sets the fd in the delay slot of its branch.
+        c.g[A1][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0xe));
+        callee::FSTAT_R.call(c, 0x0041_7218)?;
+        // Gen tests the call result first; the `ld` is a delay slot.
+        let fstat_failed = c.g[V0][0] != 0u64;
+        c.g[V0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        if fstat_failed {
+            fail_flushed(c)?;
+            return Ok(());
+        }
+        c.cycles += 1;
+        c.g[S3][0] = c.g[V0][0].wrapping_add(c.g[S6][0]);
+    }
+    // `0x417224`: a known (`S7 != 0`) or freshly computed seek target.
+    // `refill_delta` selects the `0x417284` refill-delta block below over
+    // the `0x4172b4` unget-word block; gen charges `+11`/`+7` there.
+    c.cycles += 2;
+    let mut refill_delta = false;
+    if c.g[S7][0] == 0 {
+        c.cycles += 4;
+        c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+        c.g[V0][0] &= 0x1000;
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[S2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x50));
+        } else {
+            c.cycles += 7;
+            c.g[A1][0] = 0u64;
+            let seek = c.g[S5][0] as u32;
+            c.g[RA][0] = sx(0x0041_7250);
+            c.g[A2][0] = 0x1;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            call::call_ptr(c, seek, 0x0041_7250)?;
+            c.g[S2][0] = c.g[V0][0];
+            c.g[V0][0] = 0xffffffffffffffff;
+            if c.g[S2][0] == c.g[V0][0] {
+                fail_flushed(c)?;
+                return Ok(());
+            }
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.g[S2][0].wrapping_sub(c.g[V0][0]);
+        if c.g[V1][0] == 0 {
+            // No unget word: gen `0x4172b0` (+1) then `0x4172b4`.
+            c.cycles += 1;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x3c));
+            c.g[S2][0] = c.g[S2][0].wrapping_sub(c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x30));
+            // `0x41727c`.
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                refill_delta = true;
+            } else {
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            }
+        }
+    } else {
+        // Known target: gen rejoins at `0x41727c` with no extra edge.
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x30));
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        } else {
+            refill_delta = true;
+        }
+    }
+    if refill_delta {
+        c.cycles += 11;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x38));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[A2][0] = c.g[V0][0];
+        c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x3c));
+        c.g[V0][0] = c.g[S1][0] << 32;
+        c.g[S2][0] = c.g[S2][0].wrapping_add(c.g[A1][0]);
+        c.g[V0][0] >>= 32;
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    } else {
+        c.cycles += 7;
+        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[A2][0] = c.g[V1][0];
+        c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        c.g[V0][0] = c.g[S1][0] << 32;
+        c.g[V0][0] >>= 32;
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    }
+    c.cycles += 5;
+    c.g[S2][0] = c.g[S2][0].wrapping_sub(c.g[V0][0]);
+    c.g[V1][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+    c.g[V0][0] = c.g[V1][0] & 0x2000;
+    if c.g[V0][0] == 0 {
+        c.cycles += 3;
+        if (c.g[S3][0] as i64) >= (c.g[S2][0] as i64) {
+            c.cycles += 6;
+            c.g[V0][0] = c.g[S1][0] << 32;
+            c.g[V0][0] >>= 32;
+            c.g[V0][0] = c.g[S2][0].wrapping_add(c.g[V0][0]);
+            c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V0][0] != 0 {
+                c.cycles += 8;
+                c.g[V1][0] &= 0xffdf;
+                c.g[V0][0] = c.g[S3][0].wrapping_sub(c.g[S2][0]);
+                c.g[V0][0] = c.g[V0][0] << 32;
+                c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+                c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                c.cycles += 1;
+                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                c.cycles += 2;
+                c.g[V0][0] = 0u64;
+                c.cycles += 11;
+                finish_fseek(c);
+                return Ok(());
+            }
+            // `0x417328`: only the `S3 >= S2` way down charges `+1` here.
+            c.cycles += 1;
+        }
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4c));
+    } else {
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4c));
+    }
+    c.cycles += 9;
+    c.g[A2][0] = 0u64;
+    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
+    c.g[S2][0] = c.g[V0][0] & c.g[S3][0];
+    let seek = c.g[S5][0] as u32;
+    c.g[RA][0] = sx(0x0041_7344);
+    c.g[A1][0] = c.g[S2][0];
+    call::call_ptr(c, seek, 0x0041_7344)?;
+    c.g[V1][0] = 0xffffffffffffffff;
+    // Gen tests the cookie result first; the `S3 - S2` is a delay slot.
+    let seek_failed = c.g[V0][0] == c.g[V1][0];
+    c.g[V0][0] = c.g[S3][0].wrapping_sub(c.g[S2][0]);
+    if seek_failed {
+        fail_flushed(c)?;
+        return Ok(());
+    }
+    c.cycles += 7;
+    c.g[V1][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+    c.g[S1][0] = c.g[V0][0] << 32;
+    c.g[S1][0] = ((c.g[S1][0] as i64) >> 32) as u64;
+    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+    c.g[V1][0] &= 0xffdf;
+    c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+    if c.g[S1][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0u64;
+        c.cycles += 11;
+        finish_fseek(c);
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[RA][0] = sx(0x0041_7374);
+    c.g[A0][0] = c.g[S0][0];
+    callee::SREFILL.call(c, 0x0041_7374)?;
+    if c.g[V0][0] != 0 {
+        fail_flushed(c)?;
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+    c.g[V0][0] = (c.g[V1][0] < c.g[S1][0]) as u64;
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+    if c.g[V0][0] == 0 {
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+        c.cycles += 1;
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        c.cycles += 2;
+        c.g[V0][0] = 0u64;
+        c.cycles += 11;
+        finish_fseek(c);
+        return Ok(());
+    }
+    fail_flushed(c)?;
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use crate::difftest::check;
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_COUNT;
+    use crate::difftest::fill;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    pub(crate) use crate::game::main::ssxapp::tests::f;
+    pub(crate) use crate::game::visualfx::lensfx::tests::painter_sun;
+    use ssx3_ee_rt::cpu::sx;
+    use ssx3_ee_rt::Cpu;
+
+    // ----------------------------------------------------------------- sun
+
+    /// Bit n set: fake call n returns 0 (for the off-screen test).
+    pub(crate) const ZERO_RESULTS: u32 = fakes::LOG + 0x34;
 
 /// Stages of `HUFF_pack` between its loop heads.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -25920,6 +26387,116 @@ pub(crate) mod callee {
 
     use super::ee;
     use crate::call::Callee;
+    /// `fseek_positioned` arms the libc.rs `fseek` tests miss: `SEEK_SET`
+    /// on a `__SRD|__SOPT|__SOFF` stream with a FAKE cookie and a 0x60-byte
+    /// buffer at file position 0xfa0 (`_p` 0x20 past the base), without and
+    /// with an unget buffer (gen `0x4172b4` vs `0x417284`). Targets: outside
+    /// (seek, then `__srefill` whose read returns `_r` at, above and below
+    /// the 0xc4 skip), inside before and after `_p`, the last byte, the end,
+    /// the base, one below it.
+    #[test]
+    fn fseek_positioned_matches() {
+        use crate::difftest::fakes::{fake_jump_out, fake_syscall};
+        use crate::game::lib::libc::tests::file_fixture;
+        const TARGETS: [u64; 7] = [0x10c4, 0xfb0, 0xfd0, 0xfff, 0x1000, 0xfa0, 0xf9f];
+        check(
+            ee::s15::f_00417008__generated,
+            crate::game::lib::libc::fseek,
+            84,
+            &|c, seed| {
+                let _ = file_fixture(c, seed, 0x7284, 3);
+                c.pc = 0x0041_7008;
+                c.hooks.miss = fake_call;
+                c.hooks.jump_out = fake_jump_out;
+                c.hooks.syscall = fake_syscall;
+                c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                c.bus.write32(FILE + 0x1c, 3);
+                c.bus.write32(FILE + 0x20, FAKE); // read
+                c.bus.write32(FILE + 0x28, FAKE); // seek
+                c.bus.write16(FILE + 0xc, 0x1404);
+                c.bus.write32(FILE + 0x4c, 0x100); // _blksize
+                c.bus.write32(FILE + 0x50, 0x1000); // _offset
+                if seed % 2 == 0 {
+                    c.bus.write32(FILE, OUT + 0x20); // _p
+                    c.bus.write32(FILE + 0x4, 0x40); // _r
+                } else {
+                    // Unget buffer: `_up`/`_ur` hold the saved `_p`/`_r`.
+                    c.bus.write32(FILE, FILE + 0x42);
+                    c.bus.write32(FILE + 0x4, 1);
+                    c.bus.write32(FILE + 0x30, FILE + 0x40);
+                    c.bus.write32(FILE + 0x34, 3);
+                    c.bus.write32(FILE + 0x38, OUT + 0x20);
+                    c.bus.write32(FILE + 0x3c, 0x40);
+                }
+                // Fake call 1 is `__srefill`'s read on the plain arm.
+                c.bus
+                    .write32(LOG_RESULTS + 4, [0xc4, 0xd4, 0xc3][seed as usize / 14 % 3]);
+                c.g[A0][0] = FILE as u64;
+                c.g[A1][0] = TARGETS[seed as usize / 2 % 7];
+                c.g[A2][0] = 0;
+            },
+        );
+    }
+
+    /// The regular-file arm (gen `0x4171ac`) with `_file` 3, 0 and -1: only
+    /// a negative fd skips `_fstat_r` (gated fake: a regular file).
+    #[test]
+    fn fseek_positioned_regular_file_matches() {
+        use crate::game::lib::libc::tests::{file_fixture, libc_arm_fakes};
+        check(
+            ee::s15::f_00417008__generated,
+            crate::game::lib::libc::fseek,
+            30,
+            &|c, seed| {
+                let fd = [3, 0, 0xffff][seed as usize % 3];
+                let _ = file_fixture(c, seed, 0x71ac, fd);
+                c.pc = 0x0041_7008;
+                libc_arm_fakes(c, 3, 0x8000, 0x1000 + (seed / 3 % 2) as u64 * 0x100);
+                c.bus.write32(FILE + 0x1c, 3);
+                c.bus.write32(FILE + 0x28, 0x0041_7a30);
+                c.bus.write16(FILE + 0xc, 0);
+                c.g[A0][0] = FILE as u64;
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 2;
+            },
+        );
+    }
+
+    /// `memmove_forward`'s 32+ gate tests `(src | dst) & 0xf`: src and dst
+    /// sharing a nonzero low nibble must still take the byte loop.
+    #[test]
+    fn memmove_forward_matches() {
+        check(
+            ee::s15::f_0041610c__generated,
+            crate::game::lib::libc::memmove,
+            32,
+            &|c, seed| {
+                let mut r = Rng(0x6158 ^ seed as u64);
+                scramble(c, &mut r);
+                for j in 0..0x100u32 {
+                    c.bus.write8(DATA + j, 0x44);
+                    c.bus.write8(DATA + 0x400 + j, (j * 7 + 1) as u8);
+                }
+                let o = [1u32, 4, 8, 12][seed as usize % 4];
+                c.g[A0][0] = (DATA + o) as u64;
+                c.g[A1][0] = (DATA + 0x400 + o) as u64;
+                c.g[A2][0] = [32u64, 40, 47, 0x50][seed as usize / 4 % 4];
+            },
+        );
+    }
+
+    // ------------------------------------------------- `FILE` fixtures
+
+    /// The scratch `FILE`.
+    pub(crate) const FILE: u32 = DATA + 0x1000;
+
+    /// Output buffer for the printf family.
+    pub(crate) const OUT: u32 = DATA + 0x2000;
+}
+
+pub(crate) mod callee {
+    use super::ee;
+    use super::Callee;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_AZIMUTH;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_ELEVATION;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_TEXTURE;
@@ -26009,6 +26586,300 @@ pub(crate) mod callee {
     pub(crate) const EA_MEM_FREE: Callee = Callee {
         addr: 0x0031_7e98,
         f: ee::s10::EA_MemFree,
+    /// `char *strcpy(char*, const char*)` (`a0`, `a1` in, `v0` out).
+    pub const STRCPY: Callee = Callee {
+        addr: 0x0041_66f4,
+        f: ee::s15::strcpy,
+    };
+
+    /// `int _open_r(reent*, const char*, int, ...)` (returns the fd).
+    pub const OPEN_R: Callee = Callee {
+        addr: 0x0041_fcb0,
+        f: ee::s15::_open_r,
+    };
+
+    /// `_ctype_`-style flag word for a `FILE` open mode.
+    pub const SFLAGS: Callee = Callee {
+        addr: 0x0042_0180,
+        f: ee::s15::__sflags,
+    };
+
+    /// Finds a free `__sFILE` slot.
+    pub const SFP: Callee = Callee {
+        addr: 0x0042_0010,
+        f: ee::s15::__sfp,
+    };
+
+    /// First-use `stdio` setup.
+    pub const SINIT: Callee = Callee {
+        addr: 0x0042_00f0,
+        f: ee::s15::__sinit,
+    };
+
+    /// `int _fstat_r(reent*, int, struct stat*)`.
+    pub const FSTAT_R: Callee = Callee {
+        addr: 0x0041_fbf0,
+        f: ee::s15::_fstat_r,
+    };
+
+    /// `int fseek(FILE*, long, int)` (0x417008).
+    pub const FSEEK: Callee = Callee {
+        addr: 0x0041_7008,
+        f: ee::s15::fseek,
+    };
+
+    /// Walks the `__sFILE` glue list (`_fwalk`, 0x417418).
+    pub const FWALK: Callee = Callee {
+        addr: 0x0041_7418,
+        f: ee::s15::_fwalk,
+    };
+
+    /// Makes a `FILE` buffered (`__smakebuf`, 0x4174b0).
+    pub const SMAKEBUF: Callee = Callee {
+        addr: 0x0041_74b0,
+        f: ee::s15::__smakebuf,
+    };
+
+    /// `int __srefill(FILE*)` (0x417648).
+    pub const SREFILL: Callee = Callee {
+        addr: 0x0041_7648,
+        f: ee::s15::__srefill,
+    };
+
+    /// `int fflush(FILE*)` (0x41fe30).
+    pub const FFLUSH: Callee = Callee {
+        addr: 0x0041_fe30,
+        f: ee::s15::fflush,
+    };
+
+    /// `int __svfscanf(...)`: the `sscanf` core.
+    pub const SVFSCANF: Callee = Callee {
+        addr: 0x0041_7ab8,
+        f: ee::s15::__svfscanf,
+    };
+
+    /// `double strtod(const char*, char**)` (0x41a7e8).
+    pub const STRTOD: Callee = Callee {
+        addr: 0x0041_a7e8,
+        f: ee::s15::strtod,
+    };
+
+    /// `long strtol(const char*, char**, int)` (0x41e9e0).
+    pub const STRTOL: Callee = Callee {
+        addr: 0x0041_e9e0,
+        f: ee::s15::strtol,
+    };
+
+    /// `vfprintf` dispatch (already ported in `game/lib/libc.rs`).
+    pub const VFPRINTF_DISPATCH: Callee = Callee {
+        addr: 0x0041_b658,
+        f: ee::s15::vfprintf_dispatch,
+    };
+
+    /// The global `malloc` lock (generated, tiny).
+    pub const MALLOC_LOCK: Callee = Callee {
+        addr: 0x0041_8ca8,
+        f: ee::s15::__malloc_lock,
+    };
+
+    /// The global `malloc` unlock (generated, tiny).
+    pub const MALLOC_UNLOCK: Callee = Callee {
+        addr: 0x0041_8d08,
+        f: ee::s15::__malloc_unlock,
+    };
+
+    /// `void *_malloc_r(reent*, size_t)` (excluded big function; generated).
+    pub const MALLOC_R: Callee = Callee {
+        addr: 0x0041_dbf8,
+        f: ee::s15::_malloc_r,
+    };
+
+    /// `void _free_r(reent*, void*)` (0x41e340).
+    pub const FREE_R: Callee = Callee {
+        addr: 0x0041_e340,
+        f: ee::s15::_free_r,
+    };
+
+    /// `double _strtod_r(reent*, const char*, char**)`.
+    pub const STRTOD_R: Callee = Callee {
+        addr: 0x0041_98d8,
+        f: ee::s15::_strtod_r,
+    };
+
+    /// `unsigned long _strtoul_r(reent*, const char*, char**, int)` (0x41a840).
+    pub const STRTOUL_R: Callee = Callee {
+        addr: 0x0041_a840,
+        f: ee::s15::_strtoul_r,
+    };
+
+    /// `char *fcvtbuf(double, int, int*, int*)` (0x4218d8).
+    pub const FCVTBUF: Callee = Callee {
+        addr: 0x0042_18d8,
+        f: ee::s15::fcvtbuf,
+    };
+
+    /// `char *ecvtbuf(double, int, int*, int*)` (0x421a50).
+    pub const ECVTBUF: Callee = Callee {
+        addr: 0x0042_1a50,
+        f: ee::s15::ecvtbuf,
+    };
+
+    /// `char *_gcvt(double, int, char*)` (0x421b98).
+    pub const GCVT: Callee = Callee {
+        addr: 0x0042_1b98,
+        f: ee::s15::_gcvt,
+    };
+
+    /// `float __extendsfdf2(double)` (gcc soft-float; generated).
+    pub const EXTENDSFDF2: Callee = Callee {
+        addr: 0x0041_3af8,
+        f: ee::s15::__extendsfdf2,
+    };
+
+    /// `float __truncdfsf2(double)` (gcc soft-float; generated).
+    pub const TRUNCDFSF2: Callee = Callee {
+        addr: 0x0041_27a8,
+        f: ee::s15::__truncdfsf2,
+    };
+
+    /// `int __cmpdf2(double, double)` (gcc soft-float; generated).
+    pub const CMPDF2: Callee = Callee {
+        addr: 0x0041_2500,
+        f: ee::s15::__cmpdf2,
+    };
+
+    /// `long long __muldi3(...)` (gcc runtime; generated).
+    pub const MULDI3: Callee = Callee {
+        addr: 0x0041_14d0,
+        f: ee::s15::__muldi3,
+    };
+
+    /// `char *fcvt(double, int, int*, int*)` (0x418d48).
+    pub const FCVT: Callee = Callee {
+        addr: 0x0041_8d48,
+        f: ee::s15::fcvt,
+    };
+
+    /// `char *ecvt(double, int, int*, int*)` (0x418df8).
+    pub const ECVT: Callee = Callee {
+        addr: 0x0041_8df8,
+        f: ee::s15::ecvt,
+    };
+
+    /// `char *gcvt(double, int, char*)` (0x418e68).
+    pub const GCVT_DISPATCH: Callee = Callee {
+        addr: 0x0041_8e68,
+        f: ee::s15::gcvt,
+    };
+
+    /// `char *vfprintf_StrReverse(char*)` (0x41ae70).
+    pub const STR_REVERSE: Callee = Callee {
+        addr: 0x0041_ae70,
+        f: ee::s15::vfprintf_StrReverse,
+    };
+
+    /// `int vfprintf_BufferedWrite(int fd, const char *buf, size_t len, int mode)`
+    /// (0x41b550).
+    pub const BUFFERED_WRITE: Callee = Callee {
+        addr: 0x0041_b550,
+        f: ee::s15::f_0041b550,
+    };
+
+    /// `ssize_t _write(int, const void*, size_t)` (generated).
+    pub const WRITE: Callee = Callee {
+        addr: 0x0042_4368,
+        f: ee::s15::_write,
+    };
+
+    /// `void *_sbrk_r(reent*, ptrdiff_t)` (generated).
+    pub const SBRK_R: Callee = Callee {
+        addr: 0x0041_fd70,
+        f: ee::s15::_sbrk_r,
+    };
+
+    /// `int malloc_trim(reent *r, size_t pad)` (0x41e638).
+    pub const MALLOC_TRIM: Callee = Callee {
+        addr: 0x0041_e638,
+        f: ee::s15::f_0041e638,
+    };
+
+    /// `long _strtol_r(reent*, const char*, char**, int)` (0x41e7a8).
+    pub const STRTOL_R: Callee = Callee {
+        addr: 0x0041_e7a8,
+        f: ee::s15::f_0041e7a8,
+    };
+
+    /// `struct lconv *_localeconv_r(reent*)` (generated).
+    pub const LOCALECONV_R: Callee = Callee {
+        addr: 0x0041_ec08,
+        f: ee::s15::_localeconv_r,
+    };
+
+    /// `void *memset(void*, int, size_t)` (0x416210).
+    pub const MEMSET: Callee = Callee {
+        addr: 0x0041_6210,
+        f: ee::s15::memset,
+    };
+
+    /// `struct __sFileExt *__sfmoreglue(reent*, int)` (0x41ff98).
+    pub const SFMOREGLUE: Callee = Callee {
+        addr: 0x0041_ff98,
+        f: ee::s15::f_0041ff98,
+    };
+
+    /// `FILE *std(FILE *fp, int flags, int fd, reent *r)` (0x41ff40).
+    pub const STD: Callee = Callee {
+        addr: 0x0041_ff40,
+        f: ee::s15::f_0041ff40,
+    };
+
+    /// `size_t fread_bcopy(void *dst, const void *src, size_t n)` (0x420228).
+    pub const FREAD_BCOPY: Callee = Callee {
+        addr: 0x0042_0228,
+        f: ee::s15::f_00420228,
+    };
+
+    /// `Bigint *_Balloc(reent*, int)` (generated).
+    pub const BALLOC: Callee = Callee {
+        addr: 0x0042_0510,
+        f: ee::s15::_Balloc,
+    };
+
+    /// `char *_dtoa_r(reent*, double, int, int, int*, int*, char**)`
+    /// (generated, big).
+    pub const DTOA_R: Callee = Callee {
+        addr: 0x0042_2780,
+        f: ee::s15::_dtoa_r,
+    };
+
+    /// `void *_realloc_r(reent*, void*, size_t)` (generated).
+    pub const REALLOC_R: Callee = Callee {
+        addr: 0x0042_1f20,
+        f: ee::s15::_realloc_r,
+    };
+
+    /// `double __subdf3(double, double)` (generated).
+    pub const SUBDF3: Callee = Callee {
+        addr: 0x0041_1f70,
+        f: ee::s15::__subdf3,
+    };
+
+    /// `int _mprec_log10(int)` (generated).
+    pub const MPREC_LOG10: Callee = Callee {
+        addr: 0x0042_14c0,
+        f: ee::s15::_mprec_log10,
+    };
+
+    /// `char *print_e(double, int, int*, int*, char**, int)` (0x4216e8).
+    pub const PRINT_E: Callee = Callee {
+        addr: 0x0042_16e8,
+        f: ee::s15::f_004216e8,
+    };
+
+    /// `int __mcmp(Bigint*, Bigint*)` (generated).
+    pub const MCMP: Callee = Callee {
+        addr: 0x0042_0e28,
+        f: ee::s15::__mcmp,
     };
 }
 

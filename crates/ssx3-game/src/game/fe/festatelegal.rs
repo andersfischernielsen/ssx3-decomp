@@ -6,9 +6,14 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Frame;
+use crate::call::Target;
+pub(crate) use crate::game::fe::feasyncfile::fe_ctor_with_vtable;
+pub(crate) use crate::game::fe::feasyncfile::fe_dtor_with_vtable;
 pub(crate) use crate::game::fe::fepopupmisc::gp_2 as gp;
 pub(crate) use crate::game::fe::fepopupmisc::p_2 as p;
 pub(crate) use crate::game::fe::fepopupmisc::sw;
+pub(crate) use crate::game::fe::festatebonusmaterial::FE_UI_STATE_CTOR;
+pub(crate) use crate::game::fe::festatebonusmaterial::FE_UI_STATE_DTOR;
 use crate::tick;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -23,6 +28,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "FEScreenAutosavePopup_Update",
     ),
     (0x0018_87a0, cfe_state_options_ctor, "cFEStateOptions_ctor"),
+    (
+        0x001d_e990,
+        fe_screen_autosave_popup_ctor_2,
+        "FEScreenAutosavePopup_ctor_2",
+    ),
+    (
+        0x001d_e9c8,
+        fe_screen_autosave_popup_dtor,
+        "FEScreenAutosavePopup_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -120,6 +135,30 @@ pub fn fe_screen_autosave_popup_update(c: &mut Cpu) {
         abi::ret(c);
         Ok(())
     })
+}
+
+/// `FEScreenAutosavePopup` constructor (0x1de990): `UIState_ctor(this, 0)`,
+/// vtable at `+8`.
+pub fn fe_screen_autosave_popup_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_ctor_with_vtable(
+            c,
+            14,
+            true,
+            false,
+            Target::Table(FE_UI_STATE_CTOR),
+            0x001d_e9a8,
+            0x4b60,
+        )
+    });
+}
+
+/// `FEScreenAutosavePopup` destructor (0x1de9c8): vtable at `+8`, then
+/// `UIState_dtor(this)`.
+pub fn fe_screen_autosave_popup_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_dtor_with_vtable(c, 10, Target::Table(FE_UI_STATE_DTOR), 0x4b60, 0x001d_e9e4)
+    });
 }
 
 #[cfg(test)]
@@ -228,5 +267,25 @@ pub(crate) mod tests {
                 "{hz} Hz: fires only once"
             );
         }
+    }
+
+    pub(crate) use crate::game::fe::festatebonusmaterial::tests::ui_state_case;
+
+    #[test]
+    fn fe_screen_autosave_popup_ctor_2_matches() {
+        ui_state_case(
+            ee::s04::f_001de990__generated,
+            fe_screen_autosave_popup_ctor_2,
+            0x001d_e990,
+        );
+    }
+
+    #[test]
+    fn fe_screen_autosave_popup_dtor_matches() {
+        ui_state_case(
+            ee::s04::f_001de9c8__generated,
+            fe_screen_autosave_popup_dtor,
+            0x001d_e9c8,
+        );
     }
 }

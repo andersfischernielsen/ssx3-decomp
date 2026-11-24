@@ -162,6 +162,7 @@ pub fn rider_wipeout_state_build_board_spheres(c: &mut Cpu) {
         c.g[V0][0] = sx(r32(c, V0) << 5);
         c.lwc1(11, r32(c, V1).wrapping_add(MODEL_SCALE));
         c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+        // 70.0: the outer spheres' offset.
         c.g[AT][0] = 0x428c_0000;
         c.mtc1(AT, 10);
         // Quaternion's first rotation axis, with the original FPU ordering.
@@ -175,9 +176,11 @@ pub fn rider_wipeout_state_build_board_spheres(c: &mut Cpu) {
         c.mul_s(1, 0, 4);
         c.sw(frame.at(c, AXIS_OR_POINT + 12), 0);
         c.mul_s(7, 2, 5);
+        // 30.0: the inner spheres' offset.
         c.g[AT][0] = 0x41f0_0000;
         c.mtc1(AT, 8);
         c.add_s(3, 3, 6);
+        // 90.0, times the model scale: SetSpheres' f12.
         c.g[AT][0] = 0x42b4_0000;
         c.mtc1(AT, 13);
         c.mul_s(0, 0, 5);
@@ -2863,6 +2866,8 @@ pub(crate) mod tests {
         );
     }
 
+    /// The wipeout state at `DATA` with its rider, model, bones and sphere
+    /// tree; `seed % 4` picks the board bone and `seed / 4 % 5` the model scale.
     fn wipeout_board_spheres_setup(c: &mut Cpu, seed: u32) {
         use crate::difftest::put_vec;
 

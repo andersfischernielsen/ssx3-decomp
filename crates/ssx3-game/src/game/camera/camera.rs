@@ -419,6 +419,80 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0015_dc70, game_camera_ctor_2, "GameCamera_ctor"),
     (0x0015_de60, game_camera_init, "GameCamera_Init"),
     (0x0015_fff0, oc436_camera_wobble_init, "CameraWobble_Init"),
+    (
+        0x0016_0478,
+        manual_chase_camera_algorithm_dtor,
+        "ManualChaseCameraAlgorithm_dtor",
+    ),
+    (
+        0x0016_07a0,
+        matrix_chase_camera_algorithm_dtor,
+        "MatrixChaseCameraAlgorithm_dtor",
+    ),
+    (
+        0x0016_0bb8,
+        relative_chase_camera_algorithm_dtor,
+        "RelativeChaseCameraAlgorithm_dtor",
+    ),
+    (
+        0x0016_16e8,
+        idle_chase_camera_algorithm_dtor,
+        "IdleChaseCameraAlgorithm_dtor",
+    ),
+    (
+        0x0016_1f50,
+        chase_cam_controller_end_script_camera,
+        "ChaseCamController_EndScriptCamera",
+    ),
+    (
+        0x0016_2290,
+        chase_cam_controller_restore_default_algorithm,
+        "ChaseCamController_RestoreDefaultAlgorithm",
+    ),
+    (
+        0x0016_73f8,
+        chase_camera_algorithm_static_init,
+        "ChaseCameraAlgorithm_StaticInit",
+    ),
+    (0x0016_7de8, camera_algorithm_dtor, "CameraAlgorithm_dtor"),
+    (
+        0x0016_7ea0,
+        manual_cam_algo_base_dtor,
+        "ManualCamAlgoBase_dtor",
+    ),
+    (0x0016_7f10, manual_cam_algo_dtor, "ManualCamAlgo_dtor"),
+    (0x0016_7f40, editor_cam_algo_dtor, "EditorCamAlgo_dtor"),
+    (
+        0x0016_7f70,
+        rider_camera_algorithm_dtor,
+        "RiderCameraAlgorithm_dtor",
+    ),
+    (0x0016_8030, camera_base_dtor, "CameraBase_dtor"),
+    (
+        0x0016_8298,
+        chase_camera_algorithm_global_ctors,
+        "ChaseCameraAlgorithm_GlobalCtors",
+    ),
+    (
+        0x0016_82f8,
+        lazy_chase_camera_algorithm_dtor,
+        "LazyChaseCameraAlgorithm_dtor",
+    ),
+    (
+        0x0016_8690,
+        look_back_chase_camera_algorithm_dtor,
+        "LookBackChaseCameraAlgorithm_dtor",
+    ),
+    (
+        0x0016_8a08,
+        mid_right_chase_camera_algorithm_dtor,
+        "MidRightChaseCameraAlgorithm_dtor",
+    ),
+    (
+        0x0016_8d18,
+        mid_left_chase_camera_algorithm_dtor,
+        "MidLeftChaseCameraAlgorithm_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5472,7 +5546,8 @@ pub fn mid_left_chase_camera_reset_for_rider(c: &mut Cpu) {
 /// to the target's forward vector and then the global direction. Smooth
 /// the focus against the previous focus (+0x3b0), place the eye on the
 /// angle/radius orbit, then smooth its offset (+0x3a0). The first update
-/// (+0x394 == 0) initializes both histories without blending.
+/// (+0x394 == 0) initializes both histories without blending. The offset
+/// blend's two shares are a [`crate::tick::PER_TICK`] entry.
 pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     const FOCUS: u32 = 0x20;
     const EYE: u32 = 0x40;
@@ -5536,9 +5611,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     frame.save_fpr(c, 20, SAVED_F20);
     frame.save(c, S1, SAVED_WORLD_BASE);
     frame.save_ra(c, SAVED_RA);
-    c.g[RA][0] = sx(0x00160c38);
+    c.g[RA][0] = sx(0x0016_0c38);
     c.g[S0][0] = c.g[A0][0];
-    if call_ptr(c, 0x00162568, 0x00160c38).is_err() {
+    if call_ptr(c, 0x0016_2568, 0x0016_0c38).is_err() {
         return;
     }
     c.lwc1(20, r32(c, GP).wrapping_sub(GP_MIN_DIRECTION_COMPONENT));
@@ -5569,9 +5644,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
         c.g[A1][0] = Addr(r32(c, V0).wrapping_add(GET_FORWARD)).lh(c);
         c.g[V1][0] = Addr(r32(c, V0).wrapping_add(GET_FORWARD + 4)).lw(c);
         let target_method = r32(c, V1);
-        c.g[RA][0] = sx(0x00160c8c);
+        c.g[RA][0] = sx(0x0016_0c8c);
         c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
-        if call_ptr(c, target_method, 0x00160c8c).is_err() {
+        if call_ptr(c, target_method, 0x0016_0c8c).is_err() {
             return;
         }
         c.lq(2, frame.at(c, SIDE_OR_FORWARD));
@@ -5585,7 +5660,7 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
             c.cycles += 5;
             c.abs_s(0, 0);
             c.c_lt_s(0, 20);
-            c.g[V0][0] = 0x500000;
+            c.g[V0][0] = 0x0050_0000;
             if c.fcc() {
                 c.cycles += 3;
                 // 0x4ff140: global fallback direction.
@@ -5598,7 +5673,7 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     // Normalize the horizontal direction and its perpendicular, then get the focus.
     c.cycles += 68;
     c.sw(frame.at(c, DIRECTION + 8), 0u64);
-    c.g[S1][0] = 0x500000;
+    c.g[S1][0] = 0x0050_0000;
     // 0x4ff160: world up.
     c.lqc2(4, r32(c, S1).wrapping_sub(0xea0));
     c.lqc2(5, frame.at(c, DIRECTION));
@@ -5648,9 +5723,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     c.g[A1][0] = Addr(r32(c, V0).wrapping_add(GET_FOCUS)).lh(c);
     c.g[V1][0] = Addr(r32(c, V0).wrapping_add(GET_FOCUS + 4)).lw(c);
     let target_method = r32(c, V1);
-    c.g[RA][0] = sx(0x00160d98);
+    c.g[RA][0] = sx(0x0016_0d98);
     c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
-    if call_ptr(c, target_method, 0x00160d98).is_err() {
+    if call_ptr(c, target_method, 0x0016_0d98).is_err() {
         return;
     }
     c.mtc1(0, 0);
@@ -5703,9 +5778,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     c.lq(2, r32(c, S0).wrapping_add(FOCUS));
     c.lwc1(12, r32(c, S0).wrapping_add(ORBIT_ANGLE));
     c.lwc1(20, r32(c, GP).wrapping_sub(GP_ORBIT_RADIUS));
-    c.g[RA][0] = sx(0x00160e4c);
+    c.g[RA][0] = sx(0x0016_0e4c);
     c.sq(2, r32(c, S0).wrapping_add(PREVIOUS_FOCUS));
-    if call_ptr(c, 0x0031c040, 0x00160e4c).is_err() {
+    if call_ptr(c, 0x0031_c040, 0x0016_0e4c).is_err() {
         return;
     }
     c.mul_s(0, 0, 20);
@@ -5722,9 +5797,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     c.sqc2(5, frame.at(c, 0xd0));
     c.lq(2, frame.at(c, 0xd0));
     c.lwc1(12, r32(c, S0).wrapping_add(ORBIT_ANGLE));
-    c.g[RA][0] = sx(0x00160e8c);
+    c.g[RA][0] = sx(0x0016_0e8c);
     c.sq(2, frame.at(c, 0xb0));
-    if call_ptr(c, 0x0031bf60, 0x00160e8c).is_err() {
+    if call_ptr(c, 0x0031_bf60, 0x0016_0e8c).is_err() {
         return;
     }
     c.mul_s(0, 0, 20);
@@ -10239,6 +10314,750 @@ pub(crate) fn oc436_camera_wobble_init_resume_2(c: &mut Cpu) {
 // At install the orchestrator switches this to the generated twin; until
 // then the unwind form (not built for staging) has no name for it.
 
+/// Where a table store goes: an absolute address, or `gp + off`.
+#[derive(Clone, Copy)]
+pub(crate) enum CsiLoc {
+    A(u32),
+    G(i32),
+}
+
+/// What a table store writes: literal bits, or the `.sdata` word at `gp + off`.
+#[derive(Clone, Copy)]
+pub(crate) enum CsiSrc {
+    B(u32),
+    P(i32),
+}
+
+/// How a table store writes: `sw`, `swc1` (a bus word write), or `sb`.
+#[derive(Clone, Copy)]
+pub(crate) enum CsiKind {
+    W,
+    F,
+    B,
+}
+
+// The store tables below copy the generated body's stores in the order it
+// makes them, with the registers it leaves; `CsiLoc` and `CsiSrc` are the
+// address and value forms.
+
+pub(crate) fn csi_at(c: &Cpu, l: CsiLoc) -> Addr {
+    match l {
+        CsiLoc::A(a) => Addr(a),
+        CsiLoc::G(off) => Addr((c.g[GP][0] as u32).wrapping_add(off as u32)),
+    }
+}
+
+pub(crate) fn csi_src(c: &mut Cpu, s: CsiSrc) -> u32 {
+    match s {
+        CsiSrc::B(v) => v,
+        CsiSrc::P(off) => Addr((c.g[GP][0] as u32).wrapping_add(off as u32)).read_u32(c),
+    }
+}
+
+pub(crate) fn csi_run(c: &mut Cpu, table: &[(CsiKind, CsiLoc, CsiSrc)]) {
+    for &(k, l, s) in table {
+        let v = csi_src(c, s);
+        let a = csi_at(c, l);
+        match k {
+            CsiKind::W => a.sw(c, v as u64),
+            CsiKind::F => a.write_u32(c, v),
+            CsiKind::B => a.sb(c, v as u64),
+        }
+    }
+}
+
+pub(crate) fn csi_regs(c: &mut Cpu, regs: &[(usize, u64)]) {
+    for &(r, v) in regs {
+        c.g[r][0] = v;
+    }
+}
+
+pub(crate) fn csi_fprs(c: &mut Cpu, regs: &[(usize, CsiSrc)]) {
+    for &(f, s) in regs {
+        let v = csi_src(c, s);
+        c.f[f] = v;
+    }
+}
+
+/// `ChaseCameraAlgorithm_StaticInit(int initialize, int priority)` (0x1673f8),
+/// the chase camera's one-time static init. Does its work only for
+/// `priority == 0xffff` and a non-zero `initialize`: fills the camera colour
+/// table at `D_004C5020`, the flag records at `D_004A4D40`, the axis-flip
+/// matrix, calls `GameCamera_InitShakePresets` (0x15e2a8), then writes the byte
+/// and word fields at `gp+0x1c50..` and `persistentPlayerChoiceType[0..2] = 61`.
+/// 599 cycles before the call, 12 after (45 more in the callee).
+pub fn chase_camera_algorithm_static_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0xffff;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        // `priority` (a1) must be 0xffff and `initialize` (a0) non-zero.
+        if c.g[A1][0] == c.g[V0][0] {
+            c.cycles += 2;
+            c.g[T5][0] = 0x4c0000;
+            if c.g[A0][0] != 0 {
+                c.cycles += 584;
+                csi_body(c)?;
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The body after the entry checks: the stores before the call, the registers
+/// the original holds at the call, the call itself, then the stores and the
+/// final registers after it. An unwinding callee returns straight away.
+pub(crate) fn csi_body(c: &mut Cpu) -> Flow {
+    csi_run(c, CSI_PRE);
+    csi_regs(c, CSI_CALL_GPR);
+    csi_fprs(c, CSI_CALL_FPR);
+    call_ptr(c, 0x0015_e2a8, 0x0016_7d2c)?;
+    csi_regs(c, CSI_POST_GPR);
+    csi_fprs(c, CSI_POST_FPR);
+    csi_run(c, CSI_POST);
+    Ok(())
+}
+
+// Stores before the call (CSI_PRE) and after it (CSI_POST), in order.
+pub(crate) const CSI_PRE: &[(CsiKind, CsiLoc, CsiSrc)] = &[
+    (CsiKind::F, CsiLoc::A(0x004c5030), CsiSrc::P(-0x689c)),
+    (CsiKind::F, CsiLoc::A(0x004c5040), CsiSrc::P(-0x6898)),
+    (CsiKind::F, CsiLoc::A(0x004c5050), CsiSrc::P(-0x6894)),
+    (CsiKind::F, CsiLoc::A(0x004c505c), CsiSrc::P(-0x6890)),
+    (CsiKind::F, CsiLoc::A(0x004c5060), CsiSrc::P(-0x688c)),
+    (CsiKind::F, CsiLoc::A(0x004c5070), CsiSrc::P(-0x6888)),
+    (CsiKind::F, CsiLoc::A(0x004c5080), CsiSrc::P(-0x6884)),
+    (CsiKind::F, CsiLoc::A(0x004c508c), CsiSrc::P(-0x6880)),
+    (CsiKind::F, CsiLoc::A(0x004c5090), CsiSrc::P(-0x687c)),
+    (CsiKind::F, CsiLoc::A(0x004c50a0), CsiSrc::P(-0x6878)),
+    (CsiKind::F, CsiLoc::A(0x004c5020), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c502c), CsiSrc::B(0x3f000000)),
+    (CsiKind::W, CsiLoc::A(0x004c504c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5054), CsiSrc::P(-0x6874)),
+    (CsiKind::F, CsiLoc::A(0x004c5058), CsiSrc::P(-0x6870)),
+    (CsiKind::F, CsiLoc::A(0x004c5064), CsiSrc::P(-0x686c)),
+    (CsiKind::F, CsiLoc::A(0x004c5068), CsiSrc::P(-0x6868)),
+    (CsiKind::W, CsiLoc::A(0x004c506c), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c507c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5084), CsiSrc::P(-0x6864)),
+    (CsiKind::F, CsiLoc::A(0x004c5088), CsiSrc::P(-0x6860)),
+    (CsiKind::F, CsiLoc::A(0x004c5094), CsiSrc::P(-0x685c)),
+    (CsiKind::F, CsiLoc::A(0x004c509c), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5024), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5028), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5034), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5038), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c503c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5044), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5048), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5074), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5078), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5098), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c50a4), CsiSrc::P(-0x6858)),
+    (CsiKind::F, CsiLoc::A(0x004c50b0), CsiSrc::P(-0x6854)),
+    (CsiKind::F, CsiLoc::A(0x004c50bc), CsiSrc::P(-0x6850)),
+    (CsiKind::F, CsiLoc::A(0x004c50ec), CsiSrc::P(-0x684c)),
+    (CsiKind::F, CsiLoc::A(0x004c50a8), CsiSrc::P(-0x6848)),
+    (CsiKind::W, CsiLoc::A(0x004c50ac), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c50b4), CsiSrc::P(-0x6844)),
+    (CsiKind::F, CsiLoc::A(0x004c50b8), CsiSrc::P(-0x6840)),
+    (CsiKind::F, CsiLoc::A(0x004c50c0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c50cc), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c50d0), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c50dc), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c50e0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c50e8), CsiSrc::P(-0x683c)),
+    (CsiKind::F, CsiLoc::A(0x004c50f0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c50fc), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5100), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c510c), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5110), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c511c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5120), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c50c4), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c50c8), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c50d4), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c50d8), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c50e4), CsiSrc::P(-0x684c)),
+    (CsiKind::F, CsiLoc::A(0x004c50f4), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c50f8), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5104), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5108), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c5114), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c5118), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c5124), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c5128), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c512c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c516c), CsiSrc::B(0x3f000000)),
+    (CsiKind::F, CsiLoc::A(0x004c517c), CsiSrc::P(-0x6838)),
+    (CsiKind::F, CsiLoc::A(0x004c5190), CsiSrc::P(-0x6834)),
+    (CsiKind::F, CsiLoc::A(0x004c5130), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c513c), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5140), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c514c), CsiSrc::B(0x3f000000)),
+    (CsiKind::F, CsiLoc::A(0x004c5150), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c515c), CsiSrc::B(0x3f000000)),
+    (CsiKind::F, CsiLoc::A(0x004c5160), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5170), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5174), CsiSrc::P(-0x6830)),
+    (CsiKind::F, CsiLoc::A(0x004c5178), CsiSrc::P(-0x682c)),
+    (CsiKind::F, CsiLoc::A(0x004c5180), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5188), CsiSrc::P(-0x6828)),
+    (CsiKind::W, CsiLoc::A(0x004c518c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5194), CsiSrc::P(-0x6824)),
+    (CsiKind::F, CsiLoc::A(0x004c5198), CsiSrc::P(-0x6820)),
+    (CsiKind::W, CsiLoc::A(0x004c519c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c51a0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51ac), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51b0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5134), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5138), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5144), CsiSrc::B(0x3f000000)),
+    (CsiKind::F, CsiLoc::A(0x004c5148), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5154), CsiSrc::B(0x3f000000)),
+    (CsiKind::F, CsiLoc::A(0x004c5158), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5164), CsiSrc::B(0x3f000000)),
+    (CsiKind::F, CsiLoc::A(0x004c5168), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5184), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51a4), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51a8), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51b4), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51dc), CsiSrc::P(-0x681c)),
+    (CsiKind::F, CsiLoc::A(0x004c51fc), CsiSrc::P(-0x6818)),
+    (CsiKind::F, CsiLoc::A(0x004c51b8), CsiSrc::P(-0x6814)),
+    (CsiKind::W, CsiLoc::A(0x004c51bc), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c51c0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51c8), CsiSrc::P(-0x680c)),
+    (CsiKind::F, CsiLoc::A(0x004c51c4), CsiSrc::P(-0x6810)),
+    (CsiKind::W, CsiLoc::A(0x004c51cc), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c51d0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51d4), CsiSrc::P(-0x6808)),
+    (CsiKind::F, CsiLoc::A(0x004c51d8), CsiSrc::P(-0x6804)),
+    (CsiKind::F, CsiLoc::A(0x004c51e0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51e8), CsiSrc::P(-0x6800)),
+    (CsiKind::F, CsiLoc::A(0x004c51ec), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51f0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51f4), CsiSrc::P(-0x67fc)),
+    (CsiKind::F, CsiLoc::A(0x004c5200), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c520c), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5210), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c521c), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5220), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5224), CsiSrc::P(-0x67f8)),
+    (CsiKind::F, CsiLoc::A(0x004c5228), CsiSrc::P(-0x67f4)),
+    (CsiKind::W, CsiLoc::A(0x004c522c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5230), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c51e4), CsiSrc::P(-0x67f0)),
+    (CsiKind::F, CsiLoc::A(0x004c51f8), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5204), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5208), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5214), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5218), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5234), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5238), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c523c), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5270), CsiSrc::P(-0x67ec)),
+    (CsiKind::F, CsiLoc::A(0x004c528c), CsiSrc::P(-0x67e8)),
+    (CsiKind::F, CsiLoc::A(0x004c529c), CsiSrc::P(-0x67e4)),
+    (CsiKind::F, CsiLoc::A(0x004c52bc), CsiSrc::P(-0x67e0)),
+    (CsiKind::F, CsiLoc::A(0x004c5240), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5244), CsiSrc::P(-0x67dc)),
+    (CsiKind::W, CsiLoc::A(0x004c524c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5250), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c525c), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5260), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c526c), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c527c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5280), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5284), CsiSrc::P(-0x67d8)),
+    (CsiKind::F, CsiLoc::A(0x004c5288), CsiSrc::P(-0x67d4)),
+    (CsiKind::F, CsiLoc::A(0x004c5290), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5294), CsiSrc::P(-0x67d0)),
+    (CsiKind::F, CsiLoc::A(0x004c52a0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52a8), CsiSrc::P(-0x67cc)),
+    (CsiKind::W, CsiLoc::A(0x004c52ac), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c52b0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52b4), CsiSrc::P(-0x67c8)),
+    (CsiKind::F, CsiLoc::A(0x004c52c0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5248), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5254), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5258), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5264), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c5268), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c5274), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::A(0x004c5278), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5298), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52a4), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52b8), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52c4), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52dc), CsiSrc::P(-0x67f0)),
+    (CsiKind::F, CsiLoc::A(0x004c531c), CsiSrc::P(-0x67c4)),
+    (CsiKind::F, CsiLoc::A(0x004c532c), CsiSrc::P(-0x67c0)),
+    (CsiKind::F, CsiLoc::A(0x004c52cc), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52d0), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52e0), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c52ec), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c52f0), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c52fc), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5300), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c530c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5310), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5314), CsiSrc::P(-0x67bc)),
+    (CsiKind::F, CsiLoc::A(0x004c5320), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5328), CsiSrc::P(-0x67b8)),
+    (CsiKind::F, CsiLoc::A(0x004c5330), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5338), CsiSrc::P(-0x67b4)),
+    (CsiKind::W, CsiLoc::A(0x004c533c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5340), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5344), CsiSrc::P(-0x67b0)),
+    (CsiKind::F, CsiLoc::A(0x004c5348), CsiSrc::P(-0x67ac)),
+    (CsiKind::F, CsiLoc::A(0x004c52c8), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52d4), CsiSrc::P(-0x67f0)),
+    (CsiKind::F, CsiLoc::A(0x004c52d8), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c52e4), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c52e8), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c52f4), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c52f8), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5304), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c5308), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5318), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5324), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5334), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c534c), CsiSrc::B(0x0)),
+    (CsiKind::B, CsiLoc::G(0x1c68), CsiSrc::B(0x2)),
+    (CsiKind::B, CsiLoc::G(0x1c58), CsiSrc::B(0x0)),
+    (CsiKind::B, CsiLoc::G(0x1c60), CsiSrc::B(0x1)),
+    (CsiKind::B, CsiLoc::G(0x1c70), CsiSrc::B(0x3)),
+    (CsiKind::F, CsiLoc::A(0x004c536c), CsiSrc::P(-0x67a8)),
+    (CsiKind::F, CsiLoc::A(0x004c537c), CsiSrc::P(-0x67a4)),
+    (CsiKind::F, CsiLoc::A(0x004c5350), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5354), CsiSrc::P(-0x67a0)),
+    (CsiKind::F, CsiLoc::A(0x004c5358), CsiSrc::P(-0x679c)),
+    (CsiKind::W, CsiLoc::A(0x004c535c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5360), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5364), CsiSrc::P(-0x6798)),
+    (CsiKind::F, CsiLoc::A(0x004c5368), CsiSrc::P(-0x6794)),
+    (CsiKind::F, CsiLoc::A(0x004c5370), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5374), CsiSrc::P(-0x6790)),
+    (CsiKind::F, CsiLoc::A(0x004c5378), CsiSrc::P(-0x678c)),
+    (CsiKind::F, CsiLoc::A(0x004c5380), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c538c), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5390), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c539c), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::G(0x1c58), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::G(0x1c60), CsiSrc::B(0x101)),
+    (CsiKind::W, CsiLoc::G(0x1c68), CsiSrc::B(0x202)),
+    (CsiKind::W, CsiLoc::A(0x004c5384), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c5388), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c5394), CsiSrc::B(0x3f800000)),
+    (CsiKind::W, CsiLoc::A(0x004c5398), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::G(0x1c54), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::G(0x1c50), CsiSrc::B(0x0)),
+    (CsiKind::W, CsiLoc::G(0x1c70), CsiSrc::B(0x303)),
+    (CsiKind::B, CsiLoc::G(0x1c78), CsiSrc::B(0x4)),
+    (CsiKind::B, CsiLoc::G(0x1c80), CsiSrc::B(0x5)),
+    (CsiKind::B, CsiLoc::G(0x1c88), CsiSrc::B(0x6)),
+    (CsiKind::B, CsiLoc::G(0x1c98), CsiSrc::B(0x8)),
+    (CsiKind::B, CsiLoc::G(0x1ca0), CsiSrc::B(0x9)),
+    (CsiKind::B, CsiLoc::G(0x1ca8), CsiSrc::B(0xa)),
+    (CsiKind::B, CsiLoc::G(0x1cb0), CsiSrc::B(0xb)),
+    (CsiKind::B, CsiLoc::G(0x1cb8), CsiSrc::B(0xc)),
+    (CsiKind::B, CsiLoc::G(0x1cc0), CsiSrc::B(0xd)),
+    (CsiKind::B, CsiLoc::G(0x1c90), CsiSrc::B(0x7)),
+    (CsiKind::W, CsiLoc::G(0x1cb0), CsiSrc::B(0xb0b)),
+    (CsiKind::W, CsiLoc::G(0x1cb8), CsiSrc::B(0xc0c)),
+    (CsiKind::W, CsiLoc::G(0x1cc0), CsiSrc::B(0xd0d)),
+    (CsiKind::W, CsiLoc::G(0x1c78), CsiSrc::B(0x404)),
+    (CsiKind::W, CsiLoc::G(0x1c80), CsiSrc::B(0x505)),
+    (CsiKind::W, CsiLoc::G(0x1c88), CsiSrc::B(0x606)),
+    (CsiKind::W, CsiLoc::G(0x1c90), CsiSrc::B(0x707)),
+    (CsiKind::W, CsiLoc::G(0x1c98), CsiSrc::B(0x808)),
+    (CsiKind::W, CsiLoc::G(0x1ca0), CsiSrc::B(0x909)),
+    (CsiKind::W, CsiLoc::G(0x1ca8), CsiSrc::B(0xa0a)),
+    (CsiKind::F, CsiLoc::A(0x004c53a0), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53b0), CsiSrc::B(0xbf800000)),
+    (CsiKind::F, CsiLoc::A(0x004c53c0), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53dc), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c53cc), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53d0), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53a4), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53b4), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53c4), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c53d4), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53a8), CsiSrc::B(0x3f800000)),
+    (CsiKind::F, CsiLoc::A(0x004c53b8), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53c8), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53d8), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53ac), CsiSrc::B(0x0)),
+    (CsiKind::F, CsiLoc::A(0x004c53bc), CsiSrc::B(0x0)),
+];
+
+pub(crate) const CSI_POST: &[(CsiKind, CsiLoc, CsiSrc)] = &[
+    (CsiKind::B, CsiLoc::G(0x1cd0), CsiSrc::B(0xff)),
+    (CsiKind::W, CsiLoc::G(0x1ce4), CsiSrc::B(0x3d)),
+    (CsiKind::W, CsiLoc::G(0x1ce0), CsiSrc::B(0x3d)),
+    (CsiKind::W, CsiLoc::G(0x1cd0), CsiSrc::B(0xffffffff)),
+];
+
+pub(crate) const CSI_CALL_GPR: &[(usize, u64)] = &[
+    (A0, 0xb0b),
+    (A1, 0xa0a),
+    (A2, 0x909),
+    (A3, 0x808),
+    (AT, 0xffffffffbf800000),
+    (FP, 0x7),
+    (S0, 0x4c5310),
+    (S1, 0x4c5300),
+    (S2, 0x6),
+    (S3, 0x4c5180),
+    (S4, 0x4c5130),
+    (S5, 0x4c0000),
+    (S6, 0x4c0000),
+    (S7, 0x4c0000),
+    (T0, 0x707),
+    (T1, 0x404),
+    (T2, 0x505),
+    (T3, 0x606),
+    (T4, 0x4c53a0),
+    (T5, 0x4c5030),
+    (T6, 0x4c5330),
+    (T7, 0x4c0000),
+    (T8, 0x4c0000),
+    (T9, 0x4c0000),
+    (V0, 0xd0d),
+    (V1, 0xc0c),
+];
+
+pub(crate) const CSI_CALL_FPR: &[(usize, CsiSrc)] = &[
+    (0, CsiSrc::B(0x0)),
+    (1, CsiSrc::B(0x3f800000)),
+    (2, CsiSrc::B(0xbf800000)),
+    (3, CsiSrc::P(-0x67a0)),
+    (4, CsiSrc::P(-0x679c)),
+    (5, CsiSrc::P(-0x6798)),
+    (6, CsiSrc::P(-0x6794)),
+    (7, CsiSrc::P(-0x6790)),
+    (8, CsiSrc::P(-0x678c)),
+    (9, CsiSrc::P(-0x67cc)),
+    (10, CsiSrc::P(-0x67c8)),
+    (11, CsiSrc::P(-0x67f4)),
+    (12, CsiSrc::P(-0x67f0)),
+    (13, CsiSrc::P(-0x686c)),
+    (14, CsiSrc::P(-0x6868)),
+    (15, CsiSrc::P(-0x6864)),
+    (16, CsiSrc::P(-0x6860)),
+    (17, CsiSrc::P(-0x6874)),
+    (18, CsiSrc::P(-0x6870)),
+    (19, CsiSrc::P(-0x6858)),
+];
+
+pub(crate) const CSI_POST_GPR: &[(usize, u64)] = &[
+    (A0, 0x3d),
+    (V0, 0xffffffffffffffff),
+    (V1, 0xffffffffffffff00),
+];
+
+pub(crate) const CSI_POST_FPR: &[(usize, CsiSrc)] = &[];
+
+// ---------------------------------------------------------------------------
+// The chase camera algorithm destructors (0x160478, 0x1607a0, 0x160bb8,
+// 0x1616e8). Each stores its own vtable at `+0x10` of `self`, then runs the
+// base `ChaseCameraAlgorithm_dtor(self, flags)` with `flags` passed through.
+
+/// Shared body of the four chase-subclass destructors.
+pub(crate) fn oc490_chase_subclass_dtor(c: &mut Cpu, vtable: u32, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx(vtable);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        Addr((c.g[V1][0] as u32).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+        call_ptr(c, 0x0016_2458, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ManualChaseCameraAlgorithm_dtor(self, flags)` (0x160478).
+pub fn manual_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    oc490_chase_subclass_dtor(c, 0x0046_0000u32.wrapping_sub(0x4530), 0x0016_0494)
+}
+
+/// `MatrixChaseCameraAlgorithm_dtor(self, flags)` (0x1607a0).
+pub fn matrix_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    oc490_chase_subclass_dtor(c, 0x0046_0000u32.wrapping_sub(0x45a8), 0x0016_07bc)
+}
+
+/// `RelativeChaseCameraAlgorithm_dtor(self, flags)` (0x160bb8).
+pub fn relative_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    oc490_chase_subclass_dtor(c, 0x0046_0000u32.wrapping_sub(0x4620), 0x0016_0bd4)
+}
+
+/// `IdleChaseCameraAlgorithm_dtor(self, flags)` (0x1616e8).
+pub fn idle_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    oc490_chase_subclass_dtor(c, 0x0046_0000u32.wrapping_sub(0x44b8), 0x0016_1704)
+}
+
+// ---------------------------------------------------------------------------
+// The camera algorithm base destructors (0x167de8 `CameraAlgorithm_dtor`,
+// 0x167ea0 `ManualCamAlgoBase_dtor`). Store the base vtable at `+0x10`, then
+// `delete self` (operator_delete) when bit 0 of `flags` is set.
+
+/// Shared body of the two base-class destructors; `ret` is the return
+/// address of the `operator_delete` call in each.
+pub(crate) fn oc490_camera_base_dtor(c: &mut Cpu, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx(0x0046_0000u32.wrapping_sub(0x4220));
+        frame.save_ra(c, 0);
+        c.g[A1][0] &= 1;
+        Addr((c.g[A0][0] as u32).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e50, ret)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void CameraAlgorithm_dtor(CameraAlgorithm* self, int flags)` (0x167de8).
+pub fn camera_algorithm_dtor(c: &mut Cpu) {
+    oc490_camera_base_dtor(c, 0x0016_7e0c)
+}
+
+/// `void ManualCamAlgoBase_dtor(ManualCamAlgoBase* self, int flags)` (0x167ea0).
+pub fn manual_cam_algo_base_dtor(c: &mut Cpu) {
+    oc490_camera_base_dtor(c, 0x0016_7ec4)
+}
+
+// ---------------------------------------------------------------------------
+// `ChaseCamController_RestoreDefaultAlgorithm` (0x162290).
+//
+// `void ChaseCamController_RestoreDefaultAlgorithm(Ctrl* c)`: set the
+// controller's algorithm back to the one stored at `+0x24`, immediately.
+
+pub fn chase_cam_controller_restore_default_algorithm(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x24)).lw(c);
+        call_ptr(c, 0x0015_d050, 0x0016_22a4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `ChaseCamController_EndScriptCamera` (0x161f50).
+//
+// `void ChaseCamController_EndScriptCamera(Ctrl* c)`: clear the script-camera
+// bits (0 and 1) of the flag word at `+0x30`; unless bit 2 was set, switch to
+// the algorithm at `+0x24`, otherwise to the fixed one (0x42). The new
+// algorithm's argument comes from `+0x34`.
+
+/// The flag word at `+0x30` of the controller.
+pub(crate) const END_SCRIPT_CAM_FLAGS: u32 = 0x30;
+
+pub fn chase_cam_controller_end_script_camera(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 0xffff_ffff_ffff_fffd;
+        c.g[A0][0] = 0xffff_ffff_ffff_fffe;
+        c.g[A1][0] = 0x42;
+        let ctrl = c.g[A2][0] as u32;
+        c.g[V1][0] = Addr(ctrl.wrapping_add(END_SCRIPT_CAM_FLAGS)).lw(c);
+        let flags = c.g[V1][0];
+        let cleared = flags & c.g[V0][0];
+        c.g[V0][0] = cleared & c.g[A0][0];
+        c.g[V1][0] = flags & 4;
+        let scripted = c.g[V1][0] != 0;
+        Addr(ctrl.wrapping_add(END_SCRIPT_CAM_FLAGS)).sw(c, c.g[V0][0]);
+        if !scripted {
+            c.cycles += 1;
+            c.g[A1][0] = Addr(ctrl.wrapping_add(0x24)).lw(c);
+        }
+        c.cycles += 6;
+        c.g[A0][0] = c.g[A2][0];
+        c.g[A2][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x34)).lw(c);
+        call_ptr(c, 0x0015_d050, 0x0016_1f90)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `operator delete` (`__builtin_delete`, 0x317e50).
+pub(crate) const OPERATOR_DELETE: u32 = 0x0031_7e50;
+
+/// `ChaseCameraAlgorithm_dtor`, the base destructor the chase variants chain to.
+pub(crate) const CHASE_CAMERA_BASE_DTOR: u32 = 0x0016_2458;
+
+/// `ChaseCameraAlgorithm_StaticInit` (direct call from the global ctor).
+pub(crate) const CHASE_CAMERA_STATIC_INIT: u32 = 0x0016_73f8;
+
+/// The vtable word of the camera classes: `0x460000` minus the offset of the
+/// class's vtable inside the image.
+pub(crate) const VTABLE_BASE: u32 = 0x0046_0000;
+
+/// The deleting tail of a destructor: `a1 &= 1; if (a1) operator
+/// delete(this)`, the call returning to `ret`. Two cycles are charged only
+/// when it frees.
+pub(crate) fn delete_when_flagged(c: &mut Cpu, ret: u32) -> Flow {
+    c.g[A1][0] = c.g[A1][0] & 0x1;
+    if c.g[A1][0] != 0 {
+        c.cycles += 2;
+        call_ptr(c, OPERATOR_DELETE, ret)?;
+    }
+    Ok(())
+}
+
+/// A deleting destructor of a camera algorithm: stores `vtable` at
+/// `this + field`, then frees `this` when the delete flag is set.
+pub(crate) fn vtable_deleting_dtor(c: &mut Cpu, vtable: u32, field: u32, ret: u32) -> Flow {
+    c.cycles += 7;
+    let frame = Frame::open(c, 0x10);
+    c.g[V0][0] = sx(vtable);
+    frame.save_ra(c, 0);
+    let vt = c.g[V0][0];
+    Addr(r32(c, A0).wrapping_add(field)).sw(c, vt);
+    delete_when_flagged(c, ret)?;
+    c.cycles += 3;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// A chase-camera destructor that chains to the base destructor
+/// (`ChaseCameraAlgorithm_dtor`) after storing its own vtable at `this + 0x10`.
+pub(crate) fn chained_chase_dtor(c: &mut Cpu, vtable: u32, ret: u32) -> Flow {
+    c.cycles += 10;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[V1][0] = c.g[A0][0];
+    c.g[V0][0] = sx(vtable);
+    let vt = c.g[V0][0];
+    Addr(r32(c, V1).wrapping_add(0x10)).sw(c, vt);
+    call_ptr(c, CHASE_CAMERA_BASE_DTOR, ret)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `ManualCamAlgo::~ManualCamAlgo` (0x167f10): vtable at +0x10, then the
+/// deleting tail.
+pub fn manual_cam_algo_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        vtable_deleting_dtor(c, VTABLE_BASE - 0x4220, 0x10, 0x0016_7f34)
+    })
+}
+
+/// `EditorCamAlgo::~EditorCamAlgo` (0x167f40): same shape as
+/// [`manual_cam_algo_dtor`].
+pub fn editor_cam_algo_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        vtable_deleting_dtor(c, VTABLE_BASE - 0x4220, 0x10, 0x0016_7f64)
+    })
+}
+
+/// `RiderCameraAlgorithm::~RiderCameraAlgorithm` (0x167f70): same shape as
+/// [`manual_cam_algo_dtor`].
+pub fn rider_camera_algorithm_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        vtable_deleting_dtor(c, VTABLE_BASE - 0x4220, 0x10, 0x0016_7f94)
+    })
+}
+
+/// `CameraBase::~CameraBase` (0x168030): the vtable goes to +0x90 (the
+/// base's own slot), then the deleting tail.
+pub fn camera_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        vtable_deleting_dtor(c, VTABLE_BASE - 0x4750, 0x90, 0x0016_8054)
+    })
+}
+
+/// `ChaseCameraAlgorithm_GlobalCtors` (0x168298): one-time static setup with
+/// `a0 = 1`, `a1 = 0xffff`, through `ChaseCameraAlgorithm_StaticInit`.
+pub fn chase_camera_algorithm_global_ctors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x1;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xffff;
+        Callee {
+            addr: CHASE_CAMERA_STATIC_INIT,
+            f: ee::s02::f_001673f8,
+        }
+        .call(c, 0x0016_82ac)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LazyChaseCameraAlgorithm::~LazyChaseCameraAlgorithm` (0x1682f8): vtable
+/// at +0x10, then the chase base destructor.
+pub fn lazy_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        chained_chase_dtor(c, VTABLE_BASE - 0x39d8, 0x0016_8314)
+    })
+}
+
+/// `LookBackChaseCameraAlgorithm::~LookBackChaseCameraAlgorithm` (0x168690).
+pub fn look_back_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        chained_chase_dtor(c, VTABLE_BASE - 0x3960, 0x0016_86ac)
+    })
+}
+
+/// `MidRightChaseCameraAlgorithm::~MidRightChaseCameraAlgorithm` (0x168a08).
+pub fn mid_right_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        chained_chase_dtor(c, VTABLE_BASE - 0x3ac8, 0x0016_8a24)
+    })
+}
+
+/// `MidLeftChaseCameraAlgorithm::~MidLeftChaseCameraAlgorithm` (0x168d18).
+pub fn mid_left_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        chained_chase_dtor(c, VTABLE_BASE - 0x3a50, 0x0016_8d34)
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11886,23 +12705,28 @@ pub(crate) mod tests {
     /// to that input, isolating this recurrence from the other camera slews.
     #[test]
     fn relative_chase_camera_eye_follows_the_rate() {
+        const KEEP: u32 = 0x0049_c578;
+        const ADD: u32 = 0x0049_c57c;
+        /// The executable's shares: 0.97 kept, 0.03 added.
+        const KEEP_STOCK: u32 = 0x3f78_51ec;
+        const ADD_STOCK: u32 = 0x3cf5_c280;
         let sample = |hz: u32| {
             let mut c = crate::difftest::fresh();
             relative_update_setup(&mut c, 0);
             elf_image(&mut c);
             crate::tick::set_for_test(&mut c, hz);
-            let keep = crate::tick::per_tick_at(hz, 0x0049_c578, 0x3f78_51ec);
+            let keep = crate::tick::per_tick_at(hz, KEEP, KEEP_STOCK);
             let add = crate::tick::per_tick_values(hz)
                 .into_iter()
-                .find(|x| x.0 == 0x0049_c57c)
+                .find(|x| x.0 == ADD)
                 .map(|x| x.1)
-                .unwrap_or(0x3cf5_c280);
+                .unwrap_or(ADD_STOCK);
             if hz == 60 {
-                assert_eq!(keep, 0x3f78_51ec);
-                assert_eq!(add, 0x3cf5_c280);
+                assert_eq!(keep, KEEP_STOCK);
+                assert_eq!(add, ADD_STOCK);
             }
-            c.bus.write32(0x0049_c578, keep);
-            c.bus.write32(0x0049_c57c, add);
+            c.bus.write32(KEEP, keep);
+            c.bus.write32(ADD, add);
             c.bus.write32(DATA + 0x390, 0);
             c.bus.write32(DATA + 0x394, 0);
             put_vec(&mut c, DATA + 0x3b0, [0; 4]);
@@ -11940,10 +12764,8 @@ pub(crate) mod tests {
             out
         };
         let stock = sample(60);
-        println!("RELATIVE_RATE eye hz=60 samples={stock:?}");
         for hz in [120, 240] {
             let actual = sample(hz);
-            println!("RELATIVE_RATE eye hz={hz} samples={actual:?}");
             for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
                 for axis in 0..3 {
                     assert!(
@@ -12677,12 +13499,8 @@ pub(crate) mod tests {
                     out
                 };
                 let stock = sample(60);
-                println!("HEADING_RATE state={state} filter={filtered} hz=60 samples={stock:?}");
                 for hz in [120, 240] {
                     let actual = sample(hz);
-                    println!(
-                        "HEADING_RATE state={state} filter={filtered} hz={hz} samples={actual:?}"
-                    );
                     for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
                         for axis in 0..4 {
                             assert!((a[axis] - b[axis]).abs() < 0.001,
@@ -13378,6 +14196,361 @@ pub(crate) mod tests {
                 let (a, b) = (r.edge_f32(), r.edge_f32());
                 c.bus.write32(GAME_GP - 0x6c2c, a);
                 c.bus.write32(GAME_GP - 0x6c28, b);
+            },
+        );
+    }
+
+    use std::ptr::addr_of_mut;
+
+    /// The fixture's stack and return address (the difftest values).
+    pub(crate) const TEST_SP: u32 = crate::difftest::SP;
+
+    pub(crate) const TEST_RA: u32 = crate::difftest::RA;
+
+    #[test]
+    fn chase_camera_algorithm_static_init_matches() {
+        check(
+            ee::s02::f_001673f8__generated,
+            chase_camera_algorithm_static_init,
+            12,
+            &|c, seed| {
+                let mut r = Rng(0x1673_f8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(TEST_SP);
+                c.g[RA][0] = sx(TEST_RA);
+                c.pc = 0x0016_73f8;
+                // Priority 0xffff with a non-zero initialize runs the body; the
+                // other seeds take the two early exits.
+                c.g[A1][0] = if seed % 4 == 3 { 0x1234 } else { 0xffff };
+                c.g[A0][0] = if seed % 3 == 2 {
+                    0
+                } else {
+                    1 + (r.next_u32() % 5) as u64
+                };
+            },
+        );
+    }
+
+    /// Gate word for the fake of `ChaseCamController_SetAlgorithmImmediate`
+    /// (0x15d050), in the machine's own RAM.
+    pub(crate) const OC490_CTRL: u32 = DATA + 0x30_0000;
+
+    pub(crate) const OC490_MAGIC: u32 = 0x4f43_4f34;
+
+    /// Gated fake of `ChaseCamController_SetAlgorithmImmediate`: logs the call
+    /// while the gate is set, runs the previous body otherwise.
+    pub(crate) fn oc490_fake_set_algo_immediate(c: &mut Cpu) {
+        if c.bus.read32(OC490_CTRL) != OC490_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc490_fake_set_algo_immediate),
+                ee::s01::f_0015d050__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0015_d050);
+    }
+
+    pub(crate) fn oc490_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0015D050),
+            oc490_fake_set_algo_immediate,
+            fakes::prev_cell(oc490_fake_set_algo_immediate),
+        );
+    }
+
+    /// The chase/camera destructors: gate the spline and `operator_delete`
+    /// fakes on, `self` at `DATA + 0x1000`, random `flags`.
+    pub(crate) fn oc490_dtor_check(
+        generated: fn(&mut Cpu),
+        hand: fn(&mut Cpu),
+        entry: u32,
+        salt: u64,
+    ) {
+        oc430_install_fakes();
+        covered(generated, hand, 200, &|c, seed| {
+            let mut r = machine(c, seed, salt, 6);
+            c.bus.write32(OC430_CTRL, OC430_MAGIC);
+            c.pc = entry;
+            c.g[A0][0] = sx(DATA + 0x1000);
+            c.g[A1][0] = sx(r.next_u32());
+        });
+    }
+
+    #[test]
+    fn manual_chase_camera_algorithm_dtor_matches() {
+        oc490_dtor_check(
+            ee::s01::f_00160478__generated,
+            manual_chase_camera_algorithm_dtor,
+            0x0016_0478,
+            0x0016_0478,
+        );
+    }
+
+    #[test]
+    fn matrix_chase_camera_algorithm_dtor_matches() {
+        oc490_dtor_check(
+            ee::s01::f_001607a0__generated,
+            matrix_chase_camera_algorithm_dtor,
+            0x0016_07a0,
+            0x0016_07a0,
+        );
+    }
+
+    #[test]
+    fn relative_chase_camera_algorithm_dtor_matches() {
+        oc490_dtor_check(
+            ee::s01::f_00160bb8__generated,
+            relative_chase_camera_algorithm_dtor,
+            0x0016_0bb8,
+            0x0016_0bb8,
+        );
+    }
+
+    #[test]
+    fn idle_chase_camera_algorithm_dtor_matches() {
+        oc490_dtor_check(
+            ee::s01::f_001616e8__generated,
+            idle_chase_camera_algorithm_dtor,
+            0x0016_16e8,
+            0x0016_16e8,
+        );
+    }
+
+    #[test]
+    fn camera_algorithm_dtor_matches() {
+        oc490_dtor_check(
+            ee::s02::f_00167de8__generated,
+            camera_algorithm_dtor,
+            0x0016_7de8,
+            0x0016_7de8,
+        );
+    }
+
+    #[test]
+    fn manual_cam_algo_base_dtor_matches() {
+        oc490_dtor_check(
+            ee::s02::f_00167ea0__generated,
+            manual_cam_algo_base_dtor,
+            0x0016_7ea0,
+            0x0016_7ea0,
+        );
+    }
+
+    #[test]
+    fn chase_cam_controller_restore_default_algorithm_matches() {
+        oc490_install_fakes();
+        check(
+            ee::s01::f_00162290__generated,
+            chase_cam_controller_restore_default_algorithm,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0016_2290, 0);
+                c.bus.write32(OC490_CTRL, OC490_MAGIC);
+                c.pc = 0x0016_2290;
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.bus.write32(DATA + 0x1000 + 0x24, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn chase_cam_controller_end_script_camera_matches() {
+        oc490_install_fakes();
+        check(
+            ee::s01::f_00161f50__generated,
+            chase_cam_controller_end_script_camera,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0016_1f50, 0);
+                c.bus.write32(OC490_CTRL, OC490_MAGIC);
+                c.pc = 0x0016_1f50;
+                let ctrl = DATA + 0x1000;
+                c.g[A0][0] = sx(ctrl);
+                let flags = r.next_u32();
+                let flags = if seed % 2 == 0 { flags | 4 } else { flags & !4 };
+                c.bus.write32(ctrl + END_SCRIPT_CAM_FLAGS, flags);
+                c.bus.write32(ctrl + 0x24, r.next_u32());
+                c.bus.write32(ctrl + 0x34, r.next_u32());
+            },
+        );
+    }
+
+    /// Gate word: the fakes below answer only when this is in the machine's
+    /// RAM, so other tests in the process see the real callees.
+    pub(crate) const OC492_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC492_MAGIC: u32 = 0x0492_0492;
+
+    pub(crate) static OC492_PREV_FREE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC492_PREV_BASE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC492_PREV_LOAD_FILE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `operator delete` with the gate on: return at once, nothing freed.
+    pub(crate) fn oc492_free_fake(c: &mut Cpu) {
+        if c.bus.read32(OC492_CTRL) != OC492_MAGIC {
+            return fakes::fall_back(c, &OC492_PREV_FREE, ee::s10::f_00317e50__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// The chase base destructor with the gate on: return at once.
+    pub(crate) fn oc492_base_fake(c: &mut Cpu) {
+        if c.bus.read32(OC492_CTRL) != OC492_MAGIC {
+            return fakes::fall_back(c, &OC492_PREV_BASE, ee::s01::f_00162458__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// `CameraTriggerMan_LoadFile` with the gate on: returns the result the
+    /// setup wrote at `OC492_CTRL + 4`.
+    pub(crate) fn oc492_load_file_fake(c: &mut Cpu) {
+        if c.bus.read32(OC492_CTRL) != OC492_MAGIC {
+            return fakes::fall_back(c, &OC492_PREV_LOAD_FILE, ee::s02::f_0016c170__generated);
+        }
+        c.g[V0][0] = c.bus.read32(OC492_CTRL + 4) as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn oc492_hooks() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc492_free_fake,
+            &OC492_PREV_FREE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00162458),
+            oc492_base_fake,
+            &OC492_PREV_BASE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0016C170),
+            oc492_load_file_fake,
+            &OC492_PREV_LOAD_FILE,
+        );
+    }
+
+    /// Destructor fixture: `this` at DATA, the delete flag from the seed's
+    /// low bit (the other bits random), the gate on.
+    pub(crate) fn oc492_dtor_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        let mut r = Rng(0x492_0000 ^ seed as u64);
+        scramble(c, &mut r);
+        c.pc = entry;
+        c.bus.write32(OC492_CTRL, OC492_MAGIC);
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = (r.next_u32() as u64 & !1) | (seed as u64 & 1);
+    }
+
+    #[test]
+    fn manual_cam_algo_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_00167f10__generated,
+            manual_cam_algo_dtor,
+            200,
+            &|c, seed| oc492_dtor_setup(c, seed, 0x0016_7f10),
+        );
+    }
+
+    #[test]
+    fn editor_cam_algo_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_00167f40__generated,
+            editor_cam_algo_dtor,
+            200,
+            &|c, seed| oc492_dtor_setup(c, seed, 0x0016_7f40),
+        );
+    }
+
+    #[test]
+    fn rider_camera_algorithm_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_00167f70__generated,
+            rider_camera_algorithm_dtor,
+            200,
+            &|c, seed| oc492_dtor_setup(c, seed, 0x0016_7f70),
+        );
+    }
+
+    #[test]
+    fn camera_base_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_00168030__generated,
+            camera_base_dtor,
+            200,
+            &|c, seed| oc492_dtor_setup(c, seed, 0x0016_8030),
+        );
+    }
+
+    #[test]
+    fn chase_camera_algorithm_global_ctors_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_00168298__generated,
+            chase_camera_algorithm_global_ctors,
+            20,
+            &|c, seed| {
+                let mut r = Rng(0x492_1000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0016_8298;
+                c.g[GP][0] = sx(GAME_GP);
+            },
+        );
+    }
+
+    #[test]
+    fn lazy_chase_camera_algorithm_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_001682f8__generated,
+            lazy_chase_camera_algorithm_dtor,
+            200,
+            &|c, seed| {
+                oc492_dtor_setup(c, seed, 0x0016_82f8);
+            },
+        );
+    }
+
+    #[test]
+    fn look_back_chase_camera_algorithm_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_00168690__generated,
+            look_back_chase_camera_algorithm_dtor,
+            200,
+            &|c, seed| {
+                oc492_dtor_setup(c, seed, 0x0016_8690);
+            },
+        );
+    }
+
+    #[test]
+    fn mid_right_chase_camera_algorithm_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_00168a08__generated,
+            mid_right_chase_camera_algorithm_dtor,
+            200,
+            &|c, seed| {
+                oc492_dtor_setup(c, seed, 0x0016_8a08);
+            },
+        );
+    }
+
+    #[test]
+    fn mid_left_chase_camera_algorithm_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_00168d18__generated,
+            mid_left_chase_camera_algorithm_dtor,
+            200,
+            &|c, seed| {
+                oc492_dtor_setup(c, seed, 0x0016_8d18);
             },
         );
     }

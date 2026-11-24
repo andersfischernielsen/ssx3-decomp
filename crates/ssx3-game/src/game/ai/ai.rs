@@ -1840,6 +1840,9 @@ pub fn rider_uber_grind_sub_handle_input(c: &mut Cpu) {
     })
 }
 
+/// The body between the frame saves: return on a reset or a new railslide
+/// (playing the interrupt animation if it cut the hold short), else apply the
+/// boost and steering input and run the current phase (0 enter, 1 hold, 2 exit).
 fn uber_grind_input(c: &mut Cpu) -> Flow {
     use uber_input::*;
     c.g[A1][0] = Addr(r32(c, S1)).lw(c);
@@ -2013,6 +2016,8 @@ fn uber_grind_hold(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// Hold with unchanged input: aim the pose at the rail's target on a railslide
+/// (main state 4), else at 0, then pick the hold or lean animation by its size.
 fn uber_grind_pose(c: &mut Cpu) -> Flow {
     use uber_input::*;
     c.cycles += 5;
@@ -23266,6 +23271,9 @@ pub(crate) mod tests {
         );
     }
 
+    /// 20 cases (`seed % 20`) set the phase and the branch inputs, and
+    /// `seed / 20 % 3` picks one of three values for every pool slot read.
+    /// Real callees run; only the animation layer selector is fake.
     fn finish_line_input_setup(c: &mut Cpu, seed: u32) {
         use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
         use crate::difftest::{put_vec, DATA, GAME_GP};
@@ -23276,7 +23284,7 @@ pub(crate) mod tests {
 
         const ANIM: u32 = DATA + 0x5000;
 
-        const VT: u32 = DATA + 0x6000;
+        const LAYER_SELECTOR_VTABLE: u32 = DATA + 0x6000;
 
         let mut rng = machine(c, seed, 0x12c678, 0);
         let case = seed % 20;
@@ -23307,8 +23315,8 @@ pub(crate) mod tests {
         );
         // Real PlayAnim queries the virtual layer selector, which returns its
         // no-layer sentinel. No disc load, allocator or global override swap.
-        c.bus.write32(ANIM + 0x58, VT);
-        c.bus.write32(VT + 0x24, FAKE);
+        c.bus.write32(ANIM + 0x58, LAYER_SELECTOR_VTABLE);
+        c.bus.write32(LAYER_SELECTOR_VTABLE + 0x24, FAKE);
         for i in 0..8 {
             c.bus.write32(LOG_RESULTS + i * 4, 0x207);
         }
@@ -23417,16 +23425,18 @@ pub(crate) mod tests {
     #[test]
     fn rider_finish_line_sub_return_follows_the_rate() {
         const STEP: u32 = 0x0049_b8f8;
+        /// The executable's step: 1/30.
+        const STOCK_STEP: u32 = 0x3d08_8889;
 
         crate::tick::assert_slew_follows_the_rate(crate::difftest::DATA + 0x11fc, &|hz| {
             let mut c = crate::difftest::fresh();
             finish_line_input_setup(&mut c, 0);
             c.bus
-                .write32(STEP, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
+                .write32(STEP, crate::tick::per_tick_at(hz, STEP, STOCK_STEP));
             crate::difftest::run_generated(&mut c, rider_finish_line_sub_handle_input);
             assert_eq!(c.pc, crate::difftest::RA);
             let stored = c.bus.read32(crate::difftest::DATA + 0x1200);
-            assert_eq!(stored, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
+            assert_eq!(stored, crate::tick::per_tick_at(hz, STEP, STOCK_STEP));
             c
         });
     }
@@ -25365,13 +25375,13 @@ pub(crate) mod tests {
 
         const OWNER: u32 = DATA + 0x3000;
 
-        const CTRL: u32 = DATA + 0x5000;
+        const ANIM: u32 = DATA + 0x5000;
 
-        const VT: u32 = DATA + 0x6000;
+        const LAYER_SELECTOR_VTABLE: u32 = DATA + 0x6000;
 
         const LISTS: u32 = DATA + 0x7000;
 
-        const SEQ: u32 = DATA + 0x7100;
+        const SEQUENCE: u32 = DATA + 0x7100;
 
         const MODEL: u32 = DATA + 0x8000;
 
@@ -25426,7 +25436,7 @@ pub(crate) mod tests {
         c.bus.write32(DATA + 8, RIDER);
         c.bus.write32(DATA + 0x100, buttons);
         c.bus.write32(RIDER + 0x77c, OWNER);
-        c.bus.write32(RIDER + 0x784, CTRL);
+        c.bus.write32(RIDER + 0x784, ANIM);
         c.bus.write32(RIDER + 0x780, MODEL);
         c.bus.write32(RIDER + 0x860, OVERLAP);
         c.bus.write32(RIDER + 0x790, METRIX);
@@ -25461,14 +25471,14 @@ pub(crate) mod tests {
         }
         // Real animation queries; PlayAnim's virtual layer selector alone is
         // fake and returns the no-layer sentinel without loading a resource.
-        c.bus.write32(CTRL + 0x50, LISTS);
-        c.bus.write32(CTRL + 0x58, VT);
-        c.bus.write32(VT + 0x24, FAKE);
+        c.bus.write32(ANIM + 0x50, LISTS);
+        c.bus.write32(ANIM + 0x58, LAYER_SELECTOR_VTABLE);
+        c.bus.write32(LAYER_SELECTOR_VTABLE + 0x24, FAKE);
         for i in 0..8 {
             c.bus.write32(LOG_RESULTS + i * 4, 0x207);
         }
         for i in 0..4 {
-            c.bus.write32(LISTS + 8 * i + 4, SEQ);
+            c.bus.write32(LISTS + 8 * i + 4, SEQUENCE);
         }
         let anim = match case {
             7 | 8 => 12,
@@ -25476,16 +25486,17 @@ pub(crate) mod tests {
             11 | 13 => 11,
             _ => 9,
         };
-        c.bus.write32(CTRL + 8, anim);
+        c.bus.write32(ANIM + 8, anim);
         c.bus.write32(
-            SEQ + 0xc0,
+            SEQUENCE + 0xc0,
             if matches!(case, 3 | 7 | 15 | 16) {
                 0
             } else {
                 1
             },
         );
-        c.bus.write32(SEQ + 0xb0, if case == 16 { 1 } else { 0 });
+        c.bus
+            .write32(SEQUENCE + 0xb0, if case == 16 { 1 } else { 0 });
         for id in 9..=13 {
             c.bus.write32(
                 0x446990 + id * 28,
@@ -25582,6 +25593,8 @@ pub(crate) mod tests {
     /// game time.
     #[test]
     fn rider_uber_grind_sub_poses_follow_the_rate() {
+        /// The executable's pose steps: 3.5/60.
+        const STOCK_STEP: u32 = 0x3d6e_eef0;
         for (seed, step) in [
             (3, 0x0049_be1cu32),
             (9, 0x0049_be20),
@@ -25592,13 +25605,13 @@ pub(crate) mod tests {
                 let mut c = crate::difftest::fresh();
                 uber_grind_input_setup(&mut c, seed);
                 c.bus
-                    .write32(step, crate::tick::per_tick_at(hz, step, 0x3d6e_eef0));
+                    .write32(step, crate::tick::per_tick_at(hz, step, STOCK_STEP));
                 crate::difftest::run_generated(&mut c, rider_uber_grind_sub_handle_input);
                 assert_eq!(c.pc, crate::difftest::RA);
                 let at = crate::difftest::DATA + 0x123c;
                 assert_eq!(
                     c.bus.read32(at),
-                    crate::tick::per_tick_at(hz, step, 0x3d6e_eef0),
+                    crate::tick::per_tick_at(hz, step, STOCK_STEP),
                     "seed {seed} did not load {step:#x}"
                 );
                 c

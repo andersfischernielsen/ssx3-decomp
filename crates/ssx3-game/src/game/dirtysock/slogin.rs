@@ -9,8 +9,10 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -21,6 +23,17 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
+
+/// `lui` page of this unit's code: the step and done callbacks it stores as
+/// function pointers.
+const CODE_PAGE: u64 = 0x003f_0000;
+
+/// `lui` page of the unit's read-only data: the store template, step and
+/// dispatch tables and the section-name strings at 0x497xxx.
+const DATA_PAGE: u64 = 0x0049_0000;
+
+/// `lui` page of the login globals at 0x4a4bc8..0x4a4be0.
+const GLOBALS_PAGE: u64 = 0x004a_0000;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -1049,6 +1062,16 @@ pub(crate) mod login {
 
     /// Word at +0xd8: the current step, an index into the step tables (< 9).
     pub(crate) const STEP: u32 = 0xd8;
+    /// Word at +0xfc: the callback `SLogin_StepPoll` runs when the card-store
+    /// step reports done (cleared after it runs).
+    pub(crate) const DONE_CALLBACK: u32 = 0xfc;
+    /// Word at +0x100: the callback `SLogin_StepPoll` runs on its other exit
+    /// (cleared after it runs).
+    pub(crate) const RELEASE_CALLBACK: u32 = 0x100;
+    /// Word at +0x140: the card store the record calls go to.
+    pub(crate) const STORE: u32 = 0x140;
+    /// Word at +0x144: the card-store block of the record being read or written.
+    pub(crate) const BLOCK: u32 = 0x144;
 
     /// Word at +0x148: the error a failed step keeps until the error close
     /// reports it.
@@ -1197,8 +1220,10 @@ pub(crate) mod store {
     pub(crate) const CONFIG_HEAP: u32 = 0x18;
 }
 
+/// The store configuration template `SLogin_InitStore` copies.
 pub(crate) const LOGIN_STORE_TEMPLATE: u32 = 0x0049_7060;
 
+/// The step-function table `SLogin_StepUpdate` indexes by step.
 pub(crate) const STEP_TABLE: u32 = 0x0049_7080;
 
 /// The address of the `gp`-relative word at `off` (the `STATE_GP` and
@@ -1248,7 +1273,7 @@ pub fn slogin_alloc_state(c: &mut Cpu) {
         c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(4)).lw(c);
         c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(login::STATE_GP)).lw(c);
         let original_store = c.g[V0][0];
-        Addr((c.g[V1][0] as u32).wrapping_add(0x140)).sw(c, original_store);
+        Addr((c.g[V1][0] as u32).wrapping_add(login::STORE)).sw(c, original_store);
         c.g[A0][0] = c.g[V1][0];
         c.g[S0][0] = Addr(c.g[S0][0] as u32).lw(c);
         c.g[V0][0] = c.g[S0][0] | c.g[A0][0];
@@ -1260,22 +1285,22 @@ pub fn slogin_alloc_state(c: &mut Cpu) {
                 c.cycles += 19;
                 let source = c.g[S0][0] as u32;
                 let destination = c.g[A0][0] as u32;
-                c.ldl(3, source.wrapping_add(7));
-                c.ldr(3, source);
-                c.ldl(5, source.wrapping_add(15));
-                c.ldr(5, source.wrapping_add(8));
-                c.ldl(6, source.wrapping_add(23));
-                c.ldr(6, source.wrapping_add(16));
-                c.ldl(7, source.wrapping_add(31));
-                c.ldr(7, source.wrapping_add(24));
-                c.sdl(3, destination.wrapping_add(7));
-                c.sdr(3, destination);
-                c.sdl(5, destination.wrapping_add(15));
-                c.sdr(5, destination.wrapping_add(8));
-                c.sdl(6, destination.wrapping_add(23));
-                c.sdr(6, destination.wrapping_add(16));
-                c.sdl(7, destination.wrapping_add(31));
-                c.sdr(7, destination.wrapping_add(24));
+                c.ldl(V1, source.wrapping_add(7));
+                c.ldr(V1, source);
+                c.ldl(A1, source.wrapping_add(15));
+                c.ldr(A1, source.wrapping_add(8));
+                c.ldl(A2, source.wrapping_add(23));
+                c.ldr(A2, source.wrapping_add(16));
+                c.ldl(A3, source.wrapping_add(31));
+                c.ldr(A3, source.wrapping_add(24));
+                c.sdl(V1, destination.wrapping_add(7));
+                c.sdr(V1, destination);
+                c.sdl(A1, destination.wrapping_add(15));
+                c.sdr(A1, destination.wrapping_add(8));
+                c.sdl(A2, destination.wrapping_add(23));
+                c.sdr(A2, destination.wrapping_add(16));
+                c.sdl(A3, destination.wrapping_add(31));
+                c.sdr(A3, destination.wrapping_add(24));
                 c.g[S0][0] = sx(source.wrapping_add(0x20));
                 let more = c.g[S0][0] != c.g[V0][0];
                 c.g[A0][0] = sx(destination.wrapping_add(0x20));
@@ -1353,7 +1378,7 @@ pub fn slogin_free_state(c: &mut Cpu) {
         frame.save_ra(c, 0);
         c.g[A2][0] = 0x14c;
         c.g[A3][0] = 4;
-        c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x140)).lw(c);
+        c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_add(login::STORE)).lw(c);
         call_ptr(c, callee::TIB_EXT_MEM_FREE.addr, 0x003f_6db4)?;
         frame.restore_ra(c, 0);
         c.g[V0][0] = 0;
@@ -1370,22 +1395,22 @@ pub fn slogin_init_store(c: &mut Cpu) {
         let frame = Frame::open(c, 0x50);
         c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(login::STATE_GP)).lw(c);
         frame.save_ra(c, 0x40);
-        c.g[V1][0] = 0x0049_0000;
+        c.g[V1][0] = DATA_PAGE;
         c.g[T2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x7060));
         let template = LOGIN_STORE_TEMPLATE;
-        c.ldl(7, template.wrapping_add(7));
-        c.ldr(7, template);
-        c.ldl(8, template.wrapping_add(15));
-        c.ldr(8, template.wrapping_add(8));
-        c.ldl(9, template.wrapping_add(23));
-        c.ldr(9, template.wrapping_add(16));
+        c.ldl(A3, template.wrapping_add(7));
+        c.ldr(A3, template);
+        c.ldl(T0, template.wrapping_add(15));
+        c.ldr(T0, template.wrapping_add(8));
+        c.ldl(T1, template.wrapping_add(23));
+        c.ldr(T1, template.wrapping_add(16));
         let config = frame.at(c, 0);
-        c.sdl(7, config.wrapping_add(7));
-        c.sdr(7, config);
-        c.sdl(8, config.wrapping_add(15));
-        c.sdr(8, config.wrapping_add(8));
-        c.sdl(9, config.wrapping_add(23));
-        c.sdr(9, config.wrapping_add(16));
+        c.sdl(A3, config.wrapping_add(7));
+        c.sdr(A3, config);
+        c.sdl(T0, config.wrapping_add(15));
+        c.sdr(T0, config.wrapping_add(8));
+        c.sdl(T1, config.wrapping_add(23));
+        c.sdr(T1, config.wrapping_add(16));
         c.g[A3][0] = Addr(template.wrapping_add(24)).lb(c);
         c.g[T0][0] = Addr(template.wrapping_add(25)).lb(c);
         let a3 = c.g[A3][0];
@@ -1410,7 +1435,7 @@ pub fn slogin_init_store(c: &mut Cpu) {
         Addr(frame.at(c, 0x34)).sw(c, cipher_iface);
         c.g[A0][0] = sx(frame.at(c, 0x20));
         c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(login::STATE_GP)).lw(c);
-        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x140)).lw(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(login::STORE)).lw(c);
         let cache = c.g[V1][0];
         Addr(frame.at(c, 0x38)).sw(c, cache);
         call_ptr(c, callee::SLOGIN_STORE_INIT.addr, 0x003f_6e58)?;
@@ -1527,6 +1552,8 @@ pub fn slogin_op_update(c: &mut Cpu) {
     });
 }
 
+/// Copy the three step-result doublewords at login +0xec to +0x120 through
+/// the `scratch` registers.
 pub(crate) fn slogin_copy_step_snapshot(c: &mut Cpu, login: u32, scratch: [usize; 3]) {
     for (index, register) in scratch.into_iter().enumerate() {
         let source = login.wrapping_add(0xec + 8 * index as u32);
@@ -1587,7 +1614,7 @@ pub fn slogin_step_update(c: &mut Cpu) {
             c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xec)).lw(c);
             c.g[V0][0] = (c.g[V1][0] < 6) as u64;
             let valid_phase = c.g[V0][0] != 0;
-            c.g[V0][0] = 0x0049_0000;
+            c.g[V0][0] = DATA_PAGE;
             if !valid_phase {
                 c.cycles += 1;
                 c.g[V0][0] = 17;
@@ -1751,6 +1778,8 @@ pub fn slogin_step_update(c: &mut Cpu) {
     });
 }
 
+/// The failed-step tail of `SLogin_StepUpdate`: snapshot the step result, call
+/// the login's +0xdc callback, then clear the step callbacks.
 pub(crate) fn slogin_step_failure_cleanup(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
     c.cycles += 20;
     let login = c.g[V0][0] as u32;
@@ -1795,15 +1824,12 @@ pub fn slogin_on_step_error(c: &mut Cpu) {
 
 /// End a shared-login sequence after its final step reports an error.
 pub fn slogin_on_final_error(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        callee::SLOGIN_END_SEQUENCE.call(c, 0x003f_7208)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::SLOGIN_END_SEQUENCE),
+        0x003f_7208,
+    );
 }
 
 /// Advance the login sequence after one store step finishes.
@@ -1819,7 +1845,7 @@ pub fn slogin_on_step_done(c: &mut Cpu) {
         c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(login::STATE_GP)).lw(c);
         c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(login::STEP)).lw(c);
         c.g[V1][0] = (c.g[A0][0] < 6) as u64;
-        c.g[V0][0] = 0x0049_0000;
+        c.g[V0][0] = DATA_PAGE;
 
         let mut set_step = false;
         if c.g[V1][0] == 0 {
@@ -2010,6 +2036,8 @@ pub fn slogin_begin_sequence(c: &mut Cpu) {
     });
 }
 
+/// The shared body of the create, open and delete steps: set or clear the done
+/// callback, then run one card-store file call and map its result.
 pub(crate) fn slogin_file_step(
     c: &mut Cpu,
     callback: Option<u32>,
@@ -2022,24 +2050,24 @@ pub(crate) fn slogin_file_step(
         let frame = Frame::open(c, 0x10);
         c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(login::STATE_GP)).lw(c);
         if let Some(callback_address) = callback {
-            c.g[V1][0] = 0x003f_0000;
+            c.g[V1][0] = CODE_PAGE;
             frame.save_ra(c, 0);
             c.g[V1][0] = sx(callback_address);
-            c.g[A0][0] = 0x004a_0000;
+            c.g[A0][0] = GLOBALS_PAGE;
             let login = c.g[V0][0] as u32;
             let callback_value = c.g[V1][0];
-            Addr(login.wrapping_add(0xfc)).sw(c, callback_value);
+            Addr(login.wrapping_add(login::DONE_CALLBACK)).sw(c, callback_value);
         } else {
             frame.save_ra(c, 0);
-            c.g[A0][0] = 0x004a_0000;
+            c.g[A0][0] = GLOBALS_PAGE;
         }
         c.g[A1][0] = u64::MAX;
         c.g[A2][0] = 0;
         c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4bc8));
         let login = c.g[V0][0] as u32;
-        Addr(login.wrapping_add(0x100)).sw(c, 0);
+        Addr(login.wrapping_add(login::RELEASE_CALLBACK)).sw(c, 0);
         if callback.is_none() {
-            Addr(login.wrapping_add(0xfc)).sw(c, 0);
+            Addr(login.wrapping_add(login::DONE_CALLBACK)).sw(c, 0);
         }
         call_ptr(c, store_call, return_at)?;
         c.g[A0][0] = c.g[V0][0];
@@ -2083,6 +2111,7 @@ pub fn slogin_step_delete(c: &mut Cpu) {
     );
 }
 
+/// The shared body of the account and password write steps.
 pub(crate) fn slogin_write_record_step(
     c: &mut Cpu,
     release: u32,
@@ -2099,17 +2128,17 @@ pub(crate) fn slogin_write_record_step(
         let frame = Frame::open(c, 0x10);
         c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(login::STATE_GP)).lw(c);
         frame.save_ra(c, 0);
-        c.g[A2][0] = 0x003f_0000;
+        c.g[A2][0] = CODE_PAGE;
         c.g[A2][0] = sx(release);
-        c.g[V1][0] = 0x003f_0000;
+        c.g[V1][0] = CODE_PAGE;
         c.g[V1][0] = sx(done_callback);
         let login = c.g[V0][0] as u32;
         let release_value = c.g[A2][0];
-        Addr(login.wrapping_add(0x100)).sw(c, release_value);
-        c.g[A1][0] = Addr(login.wrapping_add(0x140)).lw(c);
-        c.g[A0][0] = sx(login.wrapping_add(0x144));
+        Addr(login.wrapping_add(login::RELEASE_CALLBACK)).sw(c, release_value);
+        c.g[A1][0] = Addr(login.wrapping_add(login::STORE)).lw(c);
+        c.g[A0][0] = sx(login.wrapping_add(login::BLOCK));
         let done_value = c.g[V1][0];
-        Addr(login.wrapping_add(0xfc)).sw(c, done_value);
+        Addr(login.wrapping_add(login::DONE_CALLBACK)).sw(c, done_value);
         c.g[A2][0] = 0x11;
         c.g[A3][0] = 0;
         call_ptr(c, callee::SLOGIN_STORE_ALLOC_BLOCK.addr, first_return)?;
@@ -2124,22 +2153,22 @@ pub(crate) fn slogin_write_record_step(
             c.g[A1][0] |= (tag & 0xffff) as u64;
             c.g[A2][0] = 0;
             let login = c.g[V1][0] as u32;
-            c.g[V0][0] = Addr(login.wrapping_add(0x144)).lw(c);
+            c.g[V0][0] = Addr(login.wrapping_add(login::BLOCK)).lw(c);
             c.g[T0][0] = 0x11;
-            c.ldl(4, login.wrapping_add(data_offset + 7));
-            c.ldr(4, login.wrapping_add(data_offset));
-            c.ldl(7, login.wrapping_add(data_offset + 15));
-            c.ldr(7, login.wrapping_add(data_offset + 8));
+            c.ldl(A0, login.wrapping_add(data_offset + 7));
+            c.ldr(A0, login.wrapping_add(data_offset));
+            c.ldl(A3, login.wrapping_add(data_offset + 15));
+            c.ldr(A3, login.wrapping_add(data_offset + 8));
             c.g[T1][0] = Addr(login.wrapping_add(data_offset + 16)).lb(c);
             let block = c.g[V0][0] as u32;
-            c.sdl(4, block.wrapping_add(7));
-            c.sdr(4, block);
-            c.sdl(7, block.wrapping_add(15));
-            c.sdr(7, block.wrapping_add(8));
+            c.sdl(A0, block.wrapping_add(7));
+            c.sdr(A0, block);
+            c.sdl(A3, block.wrapping_add(15));
+            c.sdr(A3, block.wrapping_add(8));
             let trailing_byte = c.g[T1][0];
             Addr(block.wrapping_add(16)).sb(c, trailing_byte);
             c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(login::STATE_GP)).lw(c);
-            c.g[A3][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x144)).lw(c);
+            c.g[A3][0] = Addr((c.g[A0][0] as u32).wrapping_add(login::BLOCK)).lw(c);
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x44));
             call_ptr(c, callee::SLOGIN_STORE_WRITE.addr, write_return)?;
             c.g[A0][0] = c.g[V0][0];
@@ -2182,6 +2211,7 @@ pub fn slogin_step_write_pass(c: &mut Cpu) {
     );
 }
 
+/// The shared body of the account and password read steps.
 pub(crate) fn slogin_step_read_record(
     c: &mut Cpu,
     release: u32,
@@ -2196,10 +2226,16 @@ pub(crate) fn slogin_step_read_record(
         frame.save_ra(c, 0);
         c.g[A2][0] = sx(release);
         c.g[V1][0] = sx(on_done);
-        c.sw((c.g[V0][0] as u32).wrapping_add(0x100), c.g[A2][0]);
-        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x140));
-        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x144));
-        c.sw((c.g[V0][0] as u32).wrapping_add(0xfc), c.g[V1][0]);
+        c.sw(
+            (c.g[V0][0] as u32).wrapping_add(login::RELEASE_CALLBACK),
+            c.g[A2][0],
+        );
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::STORE));
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(login::BLOCK));
+        c.sw(
+            (c.g[V0][0] as u32).wrapping_add(login::DONE_CALLBACK),
+            c.g[V1][0],
+        );
         c.g[A2][0] = 0x11;
         c.g[A3][0] = 0;
         call_ptr(c, callee::SLOGIN_STORE_ALLOC_BLOCK.addr, returns[0])?;
@@ -2213,7 +2249,7 @@ pub(crate) fn slogin_step_read_record(
             c.g[A1][0] = ((tag >> 16) as u64) << 16;
             c.g[A1][0] |= (tag & 0xffff) as u64;
             c.g[A2][0] = 0;
-            c.g[A3][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x144));
+            c.g[A3][0] = c.lw((c.g[A0][0] as u32).wrapping_add(login::BLOCK));
             c.g[T0][0] = 0x11;
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x44));
             call_ptr(c, callee::SLOGIN_STORE_READ.addr, returns[2])?;
@@ -2257,8 +2293,8 @@ pub fn slogin_step_close(c: &mut Cpu) {
         c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(login::STATE_GP));
         frame.save_ra(c, 0);
         c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x44));
-        c.sw((c.g[V0][0] as u32).wrapping_add(0xfc), 0);
-        c.sw((c.g[V0][0] as u32).wrapping_add(0x100), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(login::DONE_CALLBACK), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(login::RELEASE_CALLBACK), 0);
         call_ptr(c, callee::SLOGIN_STORE_CLOSE.addr, 0x003f_76f4)?;
         c.g[A0][0] = c.g[V0][0];
         callee::SLOGIN_MAP_STORE_ERROR.call(c, 0x003f_76fc)?;
@@ -2268,6 +2304,7 @@ pub fn slogin_step_close(c: &mut Cpu) {
     });
 }
 
+/// The shared epilogue of `SLogin_StepPoll`: return `a0`.
 pub(crate) fn slogin_poll_finish(c: &mut Cpu, frame: Frame) {
     c.cycles += 5;
     c.g[V0][0] = c.g[A0][0];
@@ -2338,14 +2375,14 @@ pub fn slogin_step_poll(c: &mut Cpu) {
                 }
 
                 c.cycles += 3;
-                c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xfc));
+                c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::DONE_CALLBACK));
                 if c.g[V0][0] != 0 {
                     c.cycles += 5;
                     let callback = c.g[V0][0] as u32;
                     call_ptr(c, callback, 0x003f_7790)?;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(login::STATE_GP));
                     c.g[A0][0] = c.g[V0][0];
-                    c.sw((c.g[V1][0] as u32).wrapping_add(0xfc), 0);
+                    c.sw((c.g[V1][0] as u32).wrapping_add(login::DONE_CALLBACK), 0);
                 }
                 c.cycles += 2;
                 if c.g[A0][0] != 0 {
@@ -2366,7 +2403,7 @@ pub fn slogin_step_poll(c: &mut Cpu) {
         }
 
         c.cycles += 3;
-        c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x100));
+        c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::RELEASE_CALLBACK));
         frame.restore(c, S0, 0x30);
         if c.g[V0][0] != 0 {
             c.cycles += 5;
@@ -2374,7 +2411,7 @@ pub fn slogin_step_poll(c: &mut Cpu) {
             call_ptr(c, callback, 0x003f_77cc)?;
             c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(login::STATE_GP));
             c.g[A0][0] = c.g[V0][0];
-            c.sw((c.g[V1][0] as u32).wrapping_add(0x100), 0);
+            c.sw((c.g[V1][0] as u32).wrapping_add(login::RELEASE_CALLBACK), 0);
             c.cycles += 1;
             frame.restore(c, S0, 0x30);
         }
@@ -2404,15 +2441,12 @@ pub fn slogin_fetch_store_info(c: &mut Cpu) {
 
 /// Continue the login sequence after the card-store file opens.
 pub fn slogin_on_open_done(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        callee::SLOGIN_FETCH_STORE_INFO.call(c, 0x003f_7830)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::SLOGIN_FETCH_STORE_INFO),
+        0x003f_7830,
+    );
 }
 
 /// Copy the account record into the login state, then release its card-store block.
@@ -2423,17 +2457,17 @@ pub fn slogin_on_read_acct_done(c: &mut Cpu) {
         c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(login::STATE_GP));
         frame.save_ra(c, 0);
         c.g[A0][0] = 0;
-        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x144));
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::BLOCK));
         c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::RECORD));
-        c.ldl(2, (c.g[A1][0] as u32).wrapping_add(7));
-        c.ldr(2, c.g[A1][0] as u32);
-        c.ldl(6, (c.g[A1][0] as u32).wrapping_add(15));
-        c.ldr(6, (c.g[A1][0] as u32).wrapping_add(8));
+        c.ldl(V0, (c.g[A1][0] as u32).wrapping_add(7));
+        c.ldr(V0, c.g[A1][0] as u32);
+        c.ldl(A2, (c.g[A1][0] as u32).wrapping_add(15));
+        c.ldr(A2, (c.g[A1][0] as u32).wrapping_add(8));
         c.g[A3][0] = c.lb((c.g[A1][0] as u32).wrapping_add(16));
-        c.sdl(2, (c.g[V1][0] as u32).wrapping_add(7));
-        c.sdr(2, c.g[V1][0] as u32);
-        c.sdl(6, (c.g[V1][0] as u32).wrapping_add(15));
-        c.sdr(6, (c.g[V1][0] as u32).wrapping_add(8));
+        c.sdl(V0, (c.g[V1][0] as u32).wrapping_add(7));
+        c.sdr(V0, c.g[V1][0] as u32);
+        c.sdl(A2, (c.g[V1][0] as u32).wrapping_add(15));
+        c.sdr(A2, (c.g[V1][0] as u32).wrapping_add(8));
         c.sb((c.g[V1][0] as u32).wrapping_add(16), c.g[A3][0]);
         callee::SLOGIN_FREE_ACCT_RECORD.call(c, 0x003f_7884)?;
         frame.restore_ra(c, 0);
@@ -2449,17 +2483,17 @@ pub fn slogin_on_read_pass_done(c: &mut Cpu) {
         let frame = Frame::open(c, 0x10);
         c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(login::STATE_GP));
         frame.save_ra(c, 0);
-        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x144));
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::BLOCK));
         c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::RECORD));
-        c.ldl(2, (c.g[A1][0] as u32).wrapping_add(7));
-        c.ldr(2, c.g[A1][0] as u32);
-        c.ldl(6, (c.g[A1][0] as u32).wrapping_add(15));
-        c.ldr(6, (c.g[A1][0] as u32).wrapping_add(8));
+        c.ldl(V0, (c.g[A1][0] as u32).wrapping_add(7));
+        c.ldr(V0, c.g[A1][0] as u32);
+        c.ldl(A2, (c.g[A1][0] as u32).wrapping_add(15));
+        c.ldr(A2, (c.g[A1][0] as u32).wrapping_add(8));
         c.g[A3][0] = c.lb((c.g[A1][0] as u32).wrapping_add(16));
-        c.sdl(2, (c.g[V1][0] as u32).wrapping_add(24));
-        c.sdr(2, (c.g[V1][0] as u32).wrapping_add(17));
-        c.sdl(6, (c.g[V1][0] as u32).wrapping_add(32));
-        c.sdr(6, (c.g[V1][0] as u32).wrapping_add(25));
+        c.sdl(V0, (c.g[V1][0] as u32).wrapping_add(24));
+        c.sdr(V0, (c.g[V1][0] as u32).wrapping_add(17));
+        c.sdl(A2, (c.g[V1][0] as u32).wrapping_add(32));
+        c.sdr(A2, (c.g[V1][0] as u32).wrapping_add(25));
         c.sb((c.g[V1][0] as u32).wrapping_add(33), c.g[A3][0]);
         c.g[A0][0] = 0;
         callee::SLOGIN_FREE_PASS_RECORD.call(c, 0x003f_78d4)?;
@@ -2497,6 +2531,7 @@ pub fn slogin_on_write_pass_done(c: &mut Cpu) {
     });
 }
 
+/// Free the login's card-store block and map the store result (both record kinds).
 pub(crate) fn slogin_free_record(c: &mut Cpu, first_return: u32, second_return: u32) {
     guest(c, |c| {
         c.cycles += 13;
@@ -2505,8 +2540,8 @@ pub(crate) fn slogin_free_record(c: &mut Cpu, first_return: u32, second_return: 
         frame.save_ra(c, 0);
         c.g[A2][0] = 0x11;
         c.g[A3][0] = 0;
-        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x140));
-        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x144));
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::STORE));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::BLOCK));
         call_ptr(c, callee::SLOGIN_STORE_FREE_BLOCK.addr, first_return)?;
         c.g[A0][0] = c.g[V0][0];
         callee::SLOGIN_MAP_STORE_ERROR.call(c, second_return)?;
@@ -2559,27 +2594,27 @@ pub fn slogin_set_step(c: &mut Cpu) {
         c.sw((c.g[V0][0] as u32).wrapping_add(login::STEP), c.g[A0][0]);
         if c.g[A1][0] != 0 {
             c.cycles += 22;
-            c.ldl(3, (c.g[V0][0] as u32).wrapping_add(0xdf));
-            c.ldr(3, (c.g[V0][0] as u32).wrapping_add(0xd8));
-            c.ldl(4, (c.g[V0][0] as u32).wrapping_add(0xe7));
-            c.ldr(4, (c.g[V0][0] as u32).wrapping_add(0xe0));
-            c.ldl(5, (c.g[V0][0] as u32).wrapping_add(0xef));
-            c.ldr(5, (c.g[V0][0] as u32).wrapping_add(0xe8));
-            c.ldl(7, (c.g[V0][0] as u32).wrapping_add(0xf7));
-            c.ldr(7, (c.g[V0][0] as u32).wrapping_add(0xf0));
-            c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x113));
-            c.sdr(3, (c.g[V0][0] as u32).wrapping_add(0x10c));
-            c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0x11b));
-            c.sdr(4, (c.g[V0][0] as u32).wrapping_add(0x114));
-            c.sdl(5, (c.g[V0][0] as u32).wrapping_add(0x123));
-            c.sdr(5, (c.g[V0][0] as u32).wrapping_add(0x11c));
-            c.sdl(7, (c.g[V0][0] as u32).wrapping_add(0x12b));
-            c.sdr(7, (c.g[V0][0] as u32).wrapping_add(0x124));
-            c.ldl(3, (c.g[V0][0] as u32).wrapping_add(0xff));
-            c.ldr(3, (c.g[V0][0] as u32).wrapping_add(0xf8));
-            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x100));
-            c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x133));
-            c.sdr(3, (c.g[V0][0] as u32).wrapping_add(0x12c));
+            c.ldl(V1, (c.g[V0][0] as u32).wrapping_add(0xdf));
+            c.ldr(V1, (c.g[V0][0] as u32).wrapping_add(0xd8));
+            c.ldl(A0, (c.g[V0][0] as u32).wrapping_add(0xe7));
+            c.ldr(A0, (c.g[V0][0] as u32).wrapping_add(0xe0));
+            c.ldl(A1, (c.g[V0][0] as u32).wrapping_add(0xef));
+            c.ldr(A1, (c.g[V0][0] as u32).wrapping_add(0xe8));
+            c.ldl(A3, (c.g[V0][0] as u32).wrapping_add(0xf7));
+            c.ldr(A3, (c.g[V0][0] as u32).wrapping_add(0xf0));
+            c.sdl(V1, (c.g[V0][0] as u32).wrapping_add(0x113));
+            c.sdr(V1, (c.g[V0][0] as u32).wrapping_add(0x10c));
+            c.sdl(A0, (c.g[V0][0] as u32).wrapping_add(0x11b));
+            c.sdr(A0, (c.g[V0][0] as u32).wrapping_add(0x114));
+            c.sdl(A1, (c.g[V0][0] as u32).wrapping_add(0x123));
+            c.sdr(A1, (c.g[V0][0] as u32).wrapping_add(0x11c));
+            c.sdl(A3, (c.g[V0][0] as u32).wrapping_add(0x12b));
+            c.sdr(A3, (c.g[V0][0] as u32).wrapping_add(0x124));
+            c.ldl(V1, (c.g[V0][0] as u32).wrapping_add(0xff));
+            c.ldr(V1, (c.g[V0][0] as u32).wrapping_add(0xf8));
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::RELEASE_CALLBACK));
+            c.sdl(V1, (c.g[V0][0] as u32).wrapping_add(0x133));
+            c.sdr(V1, (c.g[V0][0] as u32).wrapping_add(0x12c));
             c.sw((c.g[V0][0] as u32).wrapping_add(0x134), c.g[A0][0]);
         }
 
@@ -2588,7 +2623,7 @@ pub fn slogin_set_step(c: &mut Cpu) {
         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(login::STEP));
         c.g[V0][0] = (c.g[V0][0] < 9) as u64;
         let valid_step = c.g[V0][0] != 0;
-        c.g[V0][0] = 0x003f_0000;
+        c.g[V0][0] = CODE_PAGE;
         if valid_step {
             c.cycles += 3;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6f68));
@@ -2607,7 +2642,7 @@ pub fn slogin_set_step(c: &mut Cpu) {
             c.g[A1][0] = c.g[V1][0];
             if c.g[V0][0] != 0 {
                 c.cycles += 7;
-                c.g[V0][0] = 0x0049_0000;
+                c.g[V0][0] = DATA_PAGE;
                 c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x70c0));
                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
@@ -2629,7 +2664,7 @@ pub fn slogin_set_step(c: &mut Cpu) {
                 };
                 if callback != 0 {
                     c.cycles += 4;
-                    c.g[V0][0] = 0x003f_0000;
+                    c.g[V0][0] = CODE_PAGE;
                     c.g[V0][0] = sx(callback);
                     c.sw((c.g[A1][0] as u32).wrapping_add(0xe0), c.g[V0][0]);
                 }
@@ -2647,7 +2682,7 @@ pub fn slogin_set_step(c: &mut Cpu) {
                 c.g[A1][0] = c.g[V1][0];
                 if c.g[V0][0] != 0 {
                     c.cycles += 7;
-                    c.g[V0][0] = 0x0049_0000;
+                    c.g[V0][0] = DATA_PAGE;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x70f0));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
@@ -2734,7 +2769,7 @@ pub fn slogin_init_step_funcs(c: &mut Cpu) {
     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(login::STEP));
     c.g[V1][0] = (c.g[A0][0] < 9) as u64;
     let valid_step = c.g[V1][0] != 0;
-    c.g[V0][0] = 0x0049_0000;
+    c.g[V0][0] = DATA_PAGE;
     if valid_step {
         c.cycles += 6;
         c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
@@ -2758,7 +2793,7 @@ pub fn slogin_init_step_funcs(c: &mut Cpu) {
         };
         c.cycles += 5;
         c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(login::STATE_GP));
-        c.g[V0][0] = 0x003f_0000;
+        c.g[V0][0] = CODE_PAGE;
         c.g[V0][0] = sx(step_callback);
         c.sw((c.g[V1][0] as u32).wrapping_add(0xf0), c.g[V0][0]);
     } else {
@@ -2773,7 +2808,7 @@ pub fn slogin_init_step_funcs(c: &mut Cpu) {
         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(login::STEP));
         c.g[V0][0] = (c.g[V0][0] < 9) as u64;
         let valid_poll = c.g[V0][0] != 0;
-        c.g[V0][0] = 0x003f_0000;
+        c.g[V0][0] = CODE_PAGE;
         if valid_poll {
             c.cycles += 3;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7708));
@@ -2789,7 +2824,7 @@ pub fn slogin_init_step_funcs(c: &mut Cpu) {
             c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(login::STEP));
             c.g[V0][0] = (c.g[V0][0] < 9) as u64;
             let valid_nop = c.g[V0][0] != 0;
-            c.g[V0][0] = 0x003f_0000;
+            c.g[V0][0] = CODE_PAGE;
             if valid_nop {
                 c.cycles += 3;
                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x77f0));
@@ -2804,8 +2839,8 @@ pub fn slogin_init_step_funcs(c: &mut Cpu) {
     }
     c.cycles += 4;
     c.g[V0][0] = c.g[A1][0];
-    c.sw((c.g[V1][0] as u32).wrapping_add(0x100), 0);
-    c.sw((c.g[V1][0] as u32).wrapping_add(0xfc), 0);
+    c.sw((c.g[V1][0] as u32).wrapping_add(login::RELEASE_CALLBACK), 0);
+    c.sw((c.g[V1][0] as u32).wrapping_add(login::DONE_CALLBACK), 0);
     ret(c);
 }
 
@@ -2888,8 +2923,8 @@ pub fn slogin_clear_step_funcs(c: &mut Cpu) {
         c.cycles += 5;
         c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(login::STATE_GP));
         c.g[V0][0] = 0;
-        c.sw((c.g[V1][0] as u32).wrapping_add(0x100), 0);
-        c.sw((c.g[V1][0] as u32).wrapping_add(0xfc), 0);
+        c.sw((c.g[V1][0] as u32).wrapping_add(login::RELEASE_CALLBACK), 0);
+        c.sw((c.g[V1][0] as u32).wrapping_add(login::DONE_CALLBACK), 0);
         ret(c);
         return;
     }
@@ -3287,7 +3322,7 @@ pub fn slogin_map_store_error(c: &mut Cpu) {
     c.cycles += 3;
     c.g[V0][0] = (c.g[A0][0] < 0x73) as u64;
     let outside_table = c.g[V0][0] == 0;
-    c.g[V0][0] = 0x49_0000;
+    c.g[V0][0] = DATA_PAGE;
     if outside_table {
         c.cycles += 2;
         c.g[V0][0] = 0x18;
@@ -3596,49 +3631,35 @@ pub fn slogin_mc_get_error(c: &mut Cpu) {
 /// put the card state in state 11, phase 0x18, and call the interface method
 /// at +0x38 with the open file's handle. Returns 0.
 pub fn slogin_mc_abort_at_flush(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 17;
-        let frame = Frame::open(c, 0x10);
-        c.g[V0][0] = 1;
-        frame.save_ra(c, 0);
-        c.g[A0][0] = 11;
-        c.sw(c.g[A1][0] as u32, c.g[V0][0]);
-        c.g[V1][0] = 0x18;
-        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::STATE_GP)).lw(c);
-        c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::IFACE_GP)).lw(c);
-        c.sw(c.g[V0][0] as u32, c.g[A0][0]);
-        c.sw((c.g[V0][0] as u32).wrapping_add(card::PHASE), c.g[V1][0]);
-        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x38)).lw(c);
-        let target = c.g[V1][0] as u32;
-        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(card::FILE_HANDLE)).lw(c);
-        call_ptr(c, target, 0x003f_8754)?;
-        frame.restore_ra(c, 0);
-        c.g[V0][0] = 0;
-        frame.close(c);
-        Ok(())
-    });
+    slogin_mc_abort_file(c, callee::SLOGIN_MC_ABORT_AT_FLUSH.addr, 11, 0x18, 0x38);
 }
 
 /// `int SLoginMc_AbortAtClose(int, int* done)` (0x3f8768): set `*done = 1`,
 /// put the card state in state 12, phase 0x19, and call the interface method
 /// at +0x1c with the open file's handle. Returns 0.
 pub fn slogin_mc_abort_at_close(c: &mut Cpu) {
+    slogin_mc_abort_file(c, callee::SLOGIN_MC_ABORT_AT_CLOSE.addr, 12, 0x19, 0x1c);
+}
+
+/// The shared body of `SLoginMc_AbortAtFlush` and `SLoginMc_AbortAtClose`:
+/// enter `state`/`phase` and call interface method `method` on the open file.
+fn slogin_mc_abort_file(c: &mut Cpu, entry: u32, state: u64, phase: u64, method: u32) {
     guest(c, |c| {
         c.cycles += 17;
         let frame = Frame::open(c, 0x10);
         c.g[V0][0] = 1;
         frame.save_ra(c, 0);
-        c.g[A0][0] = 12;
+        c.g[A0][0] = state;
         c.sw(c.g[A1][0] as u32, c.g[V0][0]);
-        c.g[V1][0] = 0x19;
+        c.g[V1][0] = phase;
         c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::STATE_GP)).lw(c);
         c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::IFACE_GP)).lw(c);
         c.sw(c.g[V0][0] as u32, c.g[A0][0]);
         c.sw((c.g[V0][0] as u32).wrapping_add(card::PHASE), c.g[V1][0]);
-        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x1c)).lw(c);
+        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(method)).lw(c);
         let target = c.g[V1][0] as u32;
         c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(card::FILE_HANDLE)).lw(c);
-        call_ptr(c, target, 0x003f_879c)?;
+        call_ptr(c, target, entry + 0x34)?;
         frame.restore_ra(c, 0);
         c.g[V0][0] = 0;
         frame.close(c);
@@ -3679,17 +3700,17 @@ pub fn slogin_setup_icon_sys(c: &mut Cpu) {
     let frame = Frame::open(c, 0x520);
     // Reserve the title buffer and icon.sys payload in the guest frame.
     c.g[A2][0] = 0x40;
-    frame.save(c, 30, 0x490);
+    frame.save(c, FP, 0x490);
     c.g[A1][0] = 0u64;
     c.g[FP][0] = c.g[A0][0];
-    frame.save(c, 16, 0x510);
-    frame.save(c, 17, 0x500);
-    frame.save(c, 18, 0x4f0);
-    frame.save(c, 19, 0x4e0);
-    frame.save(c, 20, 0x4d0);
-    frame.save(c, 21, 0x4c0);
-    frame.save(c, 22, 0x4b0);
-    frame.save(c, 23, 0x4a0);
+    frame.save(c, S0, 0x510);
+    frame.save(c, S1, 0x500);
+    frame.save(c, S2, 0x4f0);
+    frame.save(c, S3, 0x4e0);
+    frame.save(c, S4, 0x4d0);
+    frame.save(c, S5, 0x4c0);
+    frame.save(c, S6, 0x4b0);
+    frame.save(c, S7, 0x4a0);
     frame.save_ra(c, 0x480);
     c.g[RA][0] = sx(0x003f8298);
     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x3d0));
@@ -3697,77 +3718,77 @@ pub fn slogin_setup_icon_sys(c: &mut Cpu) {
         return;
     }
     c.g[V1][0] = 0x80;
-    c.g[V0][0] = 0x490000;
+    c.g[V0][0] = DATA_PAGE;
     // Three static icon.sys template runs are copied to the guest frame.
     c.sw((c.g[SP][0] as u32).wrapping_add(0x3e8), c.g[V1][0]);
-    c.g[A0][0] = 0x490000;
+    c.g[A0][0] = DATA_PAGE;
     c.sw((c.g[SP][0] as u32).wrapping_add(0x3d8), c.g[V1][0]);
-    c.g[A1][0] = 0x490000;
+    c.g[A1][0] = DATA_PAGE;
     c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7320));
-    c.ldl(3, (c.g[T0][0] as u32).wrapping_add(0x7));
-    c.ldr(3, c.g[T0][0] as u32);
-    c.ldl(6, (c.g[T0][0] as u32).wrapping_add(0xf));
-    c.ldr(6, (c.g[T0][0] as u32).wrapping_add(0x8));
-    c.ldl(7, (c.g[T0][0] as u32).wrapping_add(0x17));
-    c.ldr(7, (c.g[T0][0] as u32).wrapping_add(0x10));
-    c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0x417));
-    c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x410));
-    c.sdl(6, (c.g[SP][0] as u32).wrapping_add(0x41f));
-    c.sdr(6, (c.g[SP][0] as u32).wrapping_add(0x418));
-    c.sdl(7, (c.g[SP][0] as u32).wrapping_add(0x427));
-    c.sdr(7, (c.g[SP][0] as u32).wrapping_add(0x420));
-    c.ldl(3, (c.g[T0][0] as u32).wrapping_add(0x1f));
-    c.ldr(3, (c.g[T0][0] as u32).wrapping_add(0x18));
-    c.ldl(6, (c.g[T0][0] as u32).wrapping_add(0x27));
-    c.ldr(6, (c.g[T0][0] as u32).wrapping_add(0x20));
-    c.ldl(7, (c.g[T0][0] as u32).wrapping_add(0x2f));
-    c.ldr(7, (c.g[T0][0] as u32).wrapping_add(0x28));
-    c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0x42f));
-    c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x428));
-    c.sdl(6, (c.g[SP][0] as u32).wrapping_add(0x437));
-    c.sdr(6, (c.g[SP][0] as u32).wrapping_add(0x430));
-    c.sdl(7, (c.g[SP][0] as u32).wrapping_add(0x43f));
-    c.sdr(7, (c.g[SP][0] as u32).wrapping_add(0x438));
+    c.ldl(V1, (c.g[T0][0] as u32).wrapping_add(0x7));
+    c.ldr(V1, c.g[T0][0] as u32);
+    c.ldl(A2, (c.g[T0][0] as u32).wrapping_add(0xf));
+    c.ldr(A2, (c.g[T0][0] as u32).wrapping_add(0x8));
+    c.ldl(A3, (c.g[T0][0] as u32).wrapping_add(0x17));
+    c.ldr(A3, (c.g[T0][0] as u32).wrapping_add(0x10));
+    c.sdl(V1, (c.g[SP][0] as u32).wrapping_add(0x417));
+    c.sdr(V1, (c.g[SP][0] as u32).wrapping_add(0x410));
+    c.sdl(A2, (c.g[SP][0] as u32).wrapping_add(0x41f));
+    c.sdr(A2, (c.g[SP][0] as u32).wrapping_add(0x418));
+    c.sdl(A3, (c.g[SP][0] as u32).wrapping_add(0x427));
+    c.sdr(A3, (c.g[SP][0] as u32).wrapping_add(0x420));
+    c.ldl(V1, (c.g[T0][0] as u32).wrapping_add(0x1f));
+    c.ldr(V1, (c.g[T0][0] as u32).wrapping_add(0x18));
+    c.ldl(A2, (c.g[T0][0] as u32).wrapping_add(0x27));
+    c.ldr(A2, (c.g[T0][0] as u32).wrapping_add(0x20));
+    c.ldl(A3, (c.g[T0][0] as u32).wrapping_add(0x2f));
+    c.ldr(A3, (c.g[T0][0] as u32).wrapping_add(0x28));
+    c.sdl(V1, (c.g[SP][0] as u32).wrapping_add(0x42f));
+    c.sdr(V1, (c.g[SP][0] as u32).wrapping_add(0x428));
+    c.sdl(A2, (c.g[SP][0] as u32).wrapping_add(0x437));
+    c.sdr(A2, (c.g[SP][0] as u32).wrapping_add(0x430));
+    c.sdl(A3, (c.g[SP][0] as u32).wrapping_add(0x43f));
+    c.sdr(A3, (c.g[SP][0] as u32).wrapping_add(0x438));
     c.g[V0][0] = 0x7;
     c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7350));
-    c.ldl(3, (c.g[T0][0] as u32).wrapping_add(0x7));
-    c.ldr(3, c.g[T0][0] as u32);
-    c.ldl(6, (c.g[T0][0] as u32).wrapping_add(0xf));
-    c.ldr(6, (c.g[T0][0] as u32).wrapping_add(0x8));
-    c.ldl(7, (c.g[T0][0] as u32).wrapping_add(0x17));
-    c.ldr(7, (c.g[T0][0] as u32).wrapping_add(0x10));
-    c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0x447));
-    c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x440));
-    c.sdl(6, (c.g[SP][0] as u32).wrapping_add(0x44f));
-    c.sdr(6, (c.g[SP][0] as u32).wrapping_add(0x448));
-    c.sdl(7, (c.g[SP][0] as u32).wrapping_add(0x457));
-    c.sdr(7, (c.g[SP][0] as u32).wrapping_add(0x450));
-    c.ldl(3, (c.g[T0][0] as u32).wrapping_add(0x1f));
-    c.ldr(3, (c.g[T0][0] as u32).wrapping_add(0x18));
-    c.ldl(6, (c.g[T0][0] as u32).wrapping_add(0x27));
-    c.ldr(6, (c.g[T0][0] as u32).wrapping_add(0x20));
-    c.ldl(7, (c.g[T0][0] as u32).wrapping_add(0x2f));
-    c.ldr(7, (c.g[T0][0] as u32).wrapping_add(0x28));
-    c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0x45f));
-    c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x458));
-    c.sdl(6, (c.g[SP][0] as u32).wrapping_add(0x467));
-    c.sdr(6, (c.g[SP][0] as u32).wrapping_add(0x460));
-    c.sdl(7, (c.g[SP][0] as u32).wrapping_add(0x46f));
-    c.sdr(7, (c.g[SP][0] as u32).wrapping_add(0x468));
+    c.ldl(V1, (c.g[T0][0] as u32).wrapping_add(0x7));
+    c.ldr(V1, c.g[T0][0] as u32);
+    c.ldl(A2, (c.g[T0][0] as u32).wrapping_add(0xf));
+    c.ldr(A2, (c.g[T0][0] as u32).wrapping_add(0x8));
+    c.ldl(A3, (c.g[T0][0] as u32).wrapping_add(0x17));
+    c.ldr(A3, (c.g[T0][0] as u32).wrapping_add(0x10));
+    c.sdl(V1, (c.g[SP][0] as u32).wrapping_add(0x447));
+    c.sdr(V1, (c.g[SP][0] as u32).wrapping_add(0x440));
+    c.sdl(A2, (c.g[SP][0] as u32).wrapping_add(0x44f));
+    c.sdr(A2, (c.g[SP][0] as u32).wrapping_add(0x448));
+    c.sdl(A3, (c.g[SP][0] as u32).wrapping_add(0x457));
+    c.sdr(A3, (c.g[SP][0] as u32).wrapping_add(0x450));
+    c.ldl(V1, (c.g[T0][0] as u32).wrapping_add(0x1f));
+    c.ldr(V1, (c.g[T0][0] as u32).wrapping_add(0x18));
+    c.ldl(A2, (c.g[T0][0] as u32).wrapping_add(0x27));
+    c.ldr(A2, (c.g[T0][0] as u32).wrapping_add(0x20));
+    c.ldl(A3, (c.g[T0][0] as u32).wrapping_add(0x2f));
+    c.ldr(A3, (c.g[T0][0] as u32).wrapping_add(0x28));
+    c.sdl(V1, (c.g[SP][0] as u32).wrapping_add(0x45f));
+    c.sdr(V1, (c.g[SP][0] as u32).wrapping_add(0x458));
+    c.sdl(A2, (c.g[SP][0] as u32).wrapping_add(0x467));
+    c.sdr(A2, (c.g[SP][0] as u32).wrapping_add(0x460));
+    c.sdl(A3, (c.g[SP][0] as u32).wrapping_add(0x46f));
+    c.sdr(A3, (c.g[SP][0] as u32).wrapping_add(0x468));
     if c.g[FP][0] != 0 {
         c.g[V0][0] = 0u64;
     }
     c.g[A3][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7380));
-    c.ldl(3, (c.g[A3][0] as u32).wrapping_add(0x7));
-    c.ldr(3, c.g[A3][0] as u32);
-    c.ldl(4, (c.g[A3][0] as u32).wrapping_add(0xf));
-    c.ldr(4, (c.g[A3][0] as u32).wrapping_add(0x8));
-    c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0x477));
-    c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x470));
-    c.sdl(4, (c.g[SP][0] as u32).wrapping_add(0x47f));
-    c.sdr(4, (c.g[SP][0] as u32).wrapping_add(0x478));
+    c.ldl(V1, (c.g[A3][0] as u32).wrapping_add(0x7));
+    c.ldr(V1, c.g[A3][0] as u32);
+    c.ldl(A0, (c.g[A3][0] as u32).wrapping_add(0xf));
+    c.ldr(A0, (c.g[A3][0] as u32).wrapping_add(0x8));
+    c.sdl(V1, (c.g[SP][0] as u32).wrapping_add(0x477));
+    c.sdr(V1, (c.g[SP][0] as u32).wrapping_add(0x470));
+    c.sdl(A0, (c.g[SP][0] as u32).wrapping_add(0x47f));
+    c.sdr(A0, (c.g[SP][0] as u32).wrapping_add(0x478));
     let t = c.g[V0][0] != 0u64;
-    frame.restore(c, 16, 0x510);
+    frame.restore(c, S0, 0x510);
     // A null icon has no metadata to install.
     if !t {
         c.cycles += 94;
@@ -3779,8 +3800,8 @@ pub fn slogin_setup_icon_sys(c: &mut Cpu) {
         if call_ptr(c, callee::MEMSET.addr, 0x003f_83bc).is_err() {
             return;
         }
-        c.g[V1][0] = 0x4a0000;
-        c.g[A0][0] = 0x490000;
+        c.g[V1][0] = GLOBALS_PAGE;
+        c.g[A0][0] = DATA_PAGE;
         c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4bd0));
         c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4bd0));
         c.g[A2][0] = c.lbu((c.g[V0][0] as u32).wrapping_add(0x4));
@@ -3800,7 +3821,7 @@ pub fn slogin_setup_icon_sys(c: &mut Cpu) {
         c.g[V1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x408));
         c.g[S1][0] = 0x10;
         c.g[A1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x410));
-        c.g[T1][0] = 0x490000;
+        c.g[T1][0] = DATA_PAGE;
         c.g[A2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x418));
         c.g[S7][0] = 0x296e;
         c.g[A3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x420));
@@ -3848,25 +3869,25 @@ pub fn slogin_setup_icon_sys(c: &mut Cpu) {
         c.sd((c.g[SP][0] as u32).wrapping_add(0xb8), c.g[A3][0]);
         c.sd((c.g[SP][0] as u32).wrapping_add(0xc0), c.g[T0][0]);
         c.g[A1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x73a0));
-        c.ldl(8, (c.g[A1][0] as u32).wrapping_add(0x7));
-        c.ldr(8, c.g[A1][0] as u32);
+        c.ldl(T0, (c.g[A1][0] as u32).wrapping_add(0x7));
+        c.ldr(T0, c.g[A1][0] as u32);
         c.g[V0][0] = c.lb((c.g[A1][0] as u32).wrapping_add(0x8));
-        c.sdl(8, (c.g[SP][0] as u32).wrapping_add(0x113));
-        c.sdr(8, (c.g[SP][0] as u32).wrapping_add(0x10c));
+        c.sdl(T0, (c.g[SP][0] as u32).wrapping_add(0x113));
+        c.sdr(T0, (c.g[SP][0] as u32).wrapping_add(0x10c));
         c.sb((c.g[SP][0] as u32).wrapping_add(0x114), c.g[V0][0]);
         c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(0x73a0));
-        c.ldl(6, (c.g[V0][0] as u32).wrapping_add(0x7));
-        c.ldr(6, c.g[V0][0] as u32);
+        c.ldl(A2, (c.g[V0][0] as u32).wrapping_add(0x7));
+        c.ldr(A2, c.g[V0][0] as u32);
         c.g[A3][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x8));
-        c.sdl(6, (c.g[SP][0] as u32).wrapping_add(0x153));
-        c.sdr(6, (c.g[SP][0] as u32).wrapping_add(0x14c));
+        c.sdl(A2, (c.g[SP][0] as u32).wrapping_add(0x153));
+        c.sdr(A2, (c.g[SP][0] as u32).wrapping_add(0x14c));
         c.sb((c.g[SP][0] as u32).wrapping_add(0x154), c.g[A3][0]);
         c.g[A3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x73a0));
-        c.ldl(3, (c.g[A3][0] as u32).wrapping_add(0x7));
-        c.ldr(3, c.g[A3][0] as u32);
+        c.ldl(V1, (c.g[A3][0] as u32).wrapping_add(0x7));
+        c.ldr(V1, c.g[A3][0] as u32);
         c.g[A1][0] = c.lb((c.g[A3][0] as u32).wrapping_add(0x8));
-        c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0x193));
-        c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x18c));
+        c.sdl(V1, (c.g[SP][0] as u32).wrapping_add(0x193));
+        c.sdr(V1, (c.g[SP][0] as u32).wrapping_add(0x18c));
         c.sb((c.g[SP][0] as u32).wrapping_add(0x194), c.g[A1][0]);
         c.sw(c.g[SP][0] as u32, c.g[FP][0]);
         c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
@@ -3881,17 +3902,17 @@ pub fn slogin_setup_icon_sys(c: &mut Cpu) {
         if callee::SLOGIN_MAP_STORE_ERROR.call(c, 0x003f_8520).is_err() {
             return;
         }
-        frame.restore(c, 16, 0x510);
+        frame.restore(c, S0, 0x510);
     }
     c.cycles += 11;
-    frame.restore(c, 17, 0x500);
-    frame.restore(c, 18, 0x4f0);
-    frame.restore(c, 19, 0x4e0);
-    frame.restore(c, 20, 0x4d0);
-    frame.restore(c, 21, 0x4c0);
-    frame.restore(c, 22, 0x4b0);
-    frame.restore(c, 23, 0x4a0);
-    frame.restore(c, 30, 0x490);
+    frame.restore(c, S1, 0x500);
+    frame.restore(c, S2, 0x4f0);
+    frame.restore(c, S3, 0x4e0);
+    frame.restore(c, S4, 0x4d0);
+    frame.restore(c, S5, 0x4c0);
+    frame.restore(c, S6, 0x4b0);
+    frame.restore(c, S7, 0x4a0);
+    frame.restore(c, FP, 0x490);
     frame.restore_ra(c, 0x480);
     frame.close(c);
 }
@@ -3909,12 +3930,12 @@ pub fn slogin_mc_open_step(c: &mut Cpu) {
             0x003f8c38 => {
                 c.cycles += 9;
                 Frame::open(c, 0xa0);
-                frame.save(c, 16, 0x90);
-                frame.save(c, 17, 0x80);
+                frame.save(c, S0, 0x90);
+                frame.save(c, S1, 0x80);
                 c.g[S0][0] = c.g[A0][0];
-                frame.save(c, 18, 0x70);
+                frame.save(c, S2, 0x70);
                 c.g[S1][0] = c.g[A1][0];
-                frame.save(c, 19, 0x60);
+                frame.save(c, S3, 0x60);
                 let t = c.g[S1][0] == 0u64;
                 frame.save_ra(c, 0x50);
                 if t {
@@ -4316,7 +4337,7 @@ pub fn slogin_mc_open_step(c: &mut Cpu) {
                 {
                     return;
                 }
-                frame.restore(c, 16, 0x90);
+                frame.restore(c, S0, 0x90);
                 pc = 0x003f8ee0;
                 continue;
             }
@@ -4411,7 +4432,7 @@ pub fn slogin_mc_open_step(c: &mut Cpu) {
                 if callee::SLOGIN_MC_GET_ERROR.call(c, 0x003f_8ec0).is_err() {
                     return;
                 }
-                frame.restore(c, 16, 0x90);
+                frame.restore(c, S0, 0x90);
                 pc = 0x003f8ee0;
                 continue;
             }
@@ -4436,15 +4457,15 @@ pub fn slogin_mc_open_step(c: &mut Cpu) {
             // Shared return path, also reached after a resumed retry.
             0x003f8edc => {
                 c.cycles += 1;
-                frame.restore(c, 16, 0x90);
+                frame.restore(c, S0, 0x90);
                 pc = 0x003f8ee0;
                 continue;
             }
             0x003f8ee0 => {
                 c.cycles += 6;
-                frame.restore(c, 17, 0x80);
-                frame.restore(c, 18, 0x70);
-                frame.restore(c, 19, 0x60);
+                frame.restore(c, S1, 0x80);
+                frame.restore(c, S2, 0x70);
+                frame.restore(c, S3, 0x60);
                 frame.restore_ra(c, 0x50);
                 frame.close(c);
                 return;
@@ -4510,22 +4531,22 @@ pub fn slogin_mc_set_icon_sys(c: &mut Cpu) {
                 } else {
                     loop {
                         c.cycles += 19;
-                        c.ldl(5, (c.g[A0][0] as u32).wrapping_add(7));
-                        c.ldr(5, c.g[A0][0] as u32);
-                        c.ldl(6, (c.g[A0][0] as u32).wrapping_add(15));
-                        c.ldr(6, (c.g[A0][0] as u32).wrapping_add(8));
-                        c.ldl(7, (c.g[A0][0] as u32).wrapping_add(23));
-                        c.ldr(7, (c.g[A0][0] as u32).wrapping_add(16));
-                        c.ldl(8, (c.g[A0][0] as u32).wrapping_add(31));
-                        c.ldr(8, (c.g[A0][0] as u32).wrapping_add(24));
-                        c.sdl(5, (c.g[V1][0] as u32).wrapping_add(7));
-                        c.sdr(5, c.g[V1][0] as u32);
-                        c.sdl(6, (c.g[V1][0] as u32).wrapping_add(15));
-                        c.sdr(6, (c.g[V1][0] as u32).wrapping_add(8));
-                        c.sdl(7, (c.g[V1][0] as u32).wrapping_add(23));
-                        c.sdr(7, (c.g[V1][0] as u32).wrapping_add(16));
-                        c.sdl(8, (c.g[V1][0] as u32).wrapping_add(31));
-                        c.sdr(8, (c.g[V1][0] as u32).wrapping_add(24));
+                        c.ldl(A1, (c.g[A0][0] as u32).wrapping_add(7));
+                        c.ldr(A1, c.g[A0][0] as u32);
+                        c.ldl(A2, (c.g[A0][0] as u32).wrapping_add(15));
+                        c.ldr(A2, (c.g[A0][0] as u32).wrapping_add(8));
+                        c.ldl(A3, (c.g[A0][0] as u32).wrapping_add(23));
+                        c.ldr(A3, (c.g[A0][0] as u32).wrapping_add(16));
+                        c.ldl(T0, (c.g[A0][0] as u32).wrapping_add(31));
+                        c.ldr(T0, (c.g[A0][0] as u32).wrapping_add(24));
+                        c.sdl(A1, (c.g[V1][0] as u32).wrapping_add(7));
+                        c.sdr(A1, c.g[V1][0] as u32);
+                        c.sdl(A2, (c.g[V1][0] as u32).wrapping_add(15));
+                        c.sdr(A2, (c.g[V1][0] as u32).wrapping_add(8));
+                        c.sdl(A3, (c.g[V1][0] as u32).wrapping_add(23));
+                        c.sdr(A3, (c.g[V1][0] as u32).wrapping_add(16));
+                        c.sdl(T0, (c.g[V1][0] as u32).wrapping_add(31));
+                        c.sdr(T0, (c.g[V1][0] as u32).wrapping_add(24));
                         c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(32));
                         let again = c.g[A0][0] != c.g[V0][0];
                         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(32));
@@ -4539,14 +4560,14 @@ pub fn slogin_mc_set_icon_sys(c: &mut Cpu) {
                     c.cycles += 2;
                 }
                 c.cycles += 15;
-                c.ldl(2, (c.g[A0][0] as u32).wrapping_add(7));
-                c.ldr(2, c.g[A0][0] as u32);
-                c.ldl(5, (c.g[A0][0] as u32).wrapping_add(15));
-                c.ldr(5, (c.g[A0][0] as u32).wrapping_add(8));
-                c.sdl(2, (c.g[V1][0] as u32).wrapping_add(7));
-                c.sdr(2, c.g[V1][0] as u32);
-                c.sdl(5, (c.g[V1][0] as u32).wrapping_add(15));
-                c.sdr(5, (c.g[V1][0] as u32).wrapping_add(8));
+                c.ldl(V0, (c.g[A0][0] as u32).wrapping_add(7));
+                c.ldr(V0, c.g[A0][0] as u32);
+                c.ldl(A1, (c.g[A0][0] as u32).wrapping_add(15));
+                c.ldr(A1, (c.g[A0][0] as u32).wrapping_add(8));
+                c.sdl(V0, (c.g[V1][0] as u32).wrapping_add(7));
+                c.sdr(V0, c.g[V1][0] as u32);
+                c.sdl(A1, (c.g[V1][0] as u32).wrapping_add(15));
+                c.sdr(A1, (c.g[V1][0] as u32).wrapping_add(8));
                 c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(card::IFACE_GP));
                 c.g[A0][0] = c.g[S0][0];
                 c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0x424));
@@ -4730,6 +4751,7 @@ pub fn slogin_mc_init(c: &mut Cpu) {
                         c.cycles += 2;
                         c.g[A0][0] = c.g[T0][0];
                     } else {
+                        c.g[V1][0] = c.lhu(c.g[A0][0] as u32);
                         c.cycles += 7;
                         c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
                         c.g[V0][0] = c.lhu(c.g[T3][0] as u32);
@@ -4985,6 +5007,7 @@ pub fn slogin_mc_start_open(c: &mut Cpu) {
     slogin_mc_start_named(c, true);
 }
 
+/// The shared body of `SLoginMc_StartDelete` and `SLoginMc_StartOpen`.
 pub(crate) fn slogin_mc_start_named(c: &mut Cpu, open: bool) {
     guest(c, |c| {
         // StartOpen's return addresses sit at the same offsets from its start
@@ -5220,22 +5243,22 @@ pub fn slogin_mc_start_seek(c: &mut Cpu) {
                     } else {
                         loop {
                             c.cycles += 19;
-                            c.ldl(5, (c.g[A0][0] as u32).wrapping_add(7));
-                            c.ldr(5, c.g[A0][0] as u32);
-                            c.ldl(6, (c.g[A0][0] as u32).wrapping_add(15));
-                            c.ldr(6, (c.g[A0][0] as u32).wrapping_add(8));
-                            c.ldl(7, (c.g[A0][0] as u32).wrapping_add(23));
-                            c.ldr(7, (c.g[A0][0] as u32).wrapping_add(16));
-                            c.ldl(8, (c.g[A0][0] as u32).wrapping_add(31));
-                            c.ldr(8, (c.g[A0][0] as u32).wrapping_add(24));
-                            c.sdl(5, (c.g[V1][0] as u32).wrapping_add(7));
-                            c.sdr(5, c.g[V1][0] as u32);
-                            c.sdl(6, (c.g[V1][0] as u32).wrapping_add(15));
-                            c.sdr(6, (c.g[V1][0] as u32).wrapping_add(8));
-                            c.sdl(7, (c.g[V1][0] as u32).wrapping_add(23));
-                            c.sdr(7, (c.g[V1][0] as u32).wrapping_add(16));
-                            c.sdl(8, (c.g[V1][0] as u32).wrapping_add(31));
-                            c.sdr(8, (c.g[V1][0] as u32).wrapping_add(24));
+                            c.ldl(A1, (c.g[A0][0] as u32).wrapping_add(7));
+                            c.ldr(A1, c.g[A0][0] as u32);
+                            c.ldl(A2, (c.g[A0][0] as u32).wrapping_add(15));
+                            c.ldr(A2, (c.g[A0][0] as u32).wrapping_add(8));
+                            c.ldl(A3, (c.g[A0][0] as u32).wrapping_add(23));
+                            c.ldr(A3, (c.g[A0][0] as u32).wrapping_add(16));
+                            c.ldl(T0, (c.g[A0][0] as u32).wrapping_add(31));
+                            c.ldr(T0, (c.g[A0][0] as u32).wrapping_add(24));
+                            c.sdl(A1, (c.g[V1][0] as u32).wrapping_add(7));
+                            c.sdr(A1, c.g[V1][0] as u32);
+                            c.sdl(A2, (c.g[V1][0] as u32).wrapping_add(15));
+                            c.sdr(A2, (c.g[V1][0] as u32).wrapping_add(8));
+                            c.sdl(A3, (c.g[V1][0] as u32).wrapping_add(23));
+                            c.sdr(A3, (c.g[V1][0] as u32).wrapping_add(16));
+                            c.sdl(T0, (c.g[V1][0] as u32).wrapping_add(31));
+                            c.sdr(T0, (c.g[V1][0] as u32).wrapping_add(24));
                             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(32));
                             let again = c.g[A0][0] != c.g[V0][0];
                             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(32));
@@ -5348,22 +5371,22 @@ pub fn slogin_mc_start_close(c: &mut Cpu) {
                     } else {
                         loop {
                             c.cycles += 19;
-                            c.ldl(5, (c.g[V1][0] as u32).wrapping_add(7));
-                            c.ldr(5, c.g[V1][0] as u32);
-                            c.ldl(6, (c.g[V1][0] as u32).wrapping_add(15));
-                            c.ldr(6, (c.g[V1][0] as u32).wrapping_add(8));
-                            c.ldl(7, (c.g[V1][0] as u32).wrapping_add(23));
-                            c.ldr(7, (c.g[V1][0] as u32).wrapping_add(16));
-                            c.ldl(8, (c.g[V1][0] as u32).wrapping_add(31));
-                            c.ldr(8, (c.g[V1][0] as u32).wrapping_add(24));
-                            c.sdl(5, (c.g[A0][0] as u32).wrapping_add(7));
-                            c.sdr(5, c.g[A0][0] as u32);
-                            c.sdl(6, (c.g[A0][0] as u32).wrapping_add(15));
-                            c.sdr(6, (c.g[A0][0] as u32).wrapping_add(8));
-                            c.sdl(7, (c.g[A0][0] as u32).wrapping_add(23));
-                            c.sdr(7, (c.g[A0][0] as u32).wrapping_add(16));
-                            c.sdl(8, (c.g[A0][0] as u32).wrapping_add(31));
-                            c.sdr(8, (c.g[A0][0] as u32).wrapping_add(24));
+                            c.ldl(A1, (c.g[V1][0] as u32).wrapping_add(7));
+                            c.ldr(A1, c.g[V1][0] as u32);
+                            c.ldl(A2, (c.g[V1][0] as u32).wrapping_add(15));
+                            c.ldr(A2, (c.g[V1][0] as u32).wrapping_add(8));
+                            c.ldl(A3, (c.g[V1][0] as u32).wrapping_add(23));
+                            c.ldr(A3, (c.g[V1][0] as u32).wrapping_add(16));
+                            c.ldl(T0, (c.g[V1][0] as u32).wrapping_add(31));
+                            c.ldr(T0, (c.g[V1][0] as u32).wrapping_add(24));
+                            c.sdl(A1, (c.g[A0][0] as u32).wrapping_add(7));
+                            c.sdr(A1, c.g[A0][0] as u32);
+                            c.sdl(A2, (c.g[A0][0] as u32).wrapping_add(15));
+                            c.sdr(A2, (c.g[A0][0] as u32).wrapping_add(8));
+                            c.sdl(A3, (c.g[A0][0] as u32).wrapping_add(23));
+                            c.sdr(A3, (c.g[A0][0] as u32).wrapping_add(16));
+                            c.sdl(T0, (c.g[A0][0] as u32).wrapping_add(31));
+                            c.sdr(T0, (c.g[A0][0] as u32).wrapping_add(24));
                             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(32));
                             let again = c.g[V1][0] != c.g[V0][0];
                             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(32));
@@ -5589,26 +5612,26 @@ pub fn slogin_mc_ascii_to_sjis(c: &mut Cpu) {
     c.g[A2][0] = c.g[A0][0];
     let frame = Frame::open(c, 0x30);
     c.g[V0][0] = c.lbu(c.g[A2][0] as u32);
-    c.g[V1][0] = 0x49_0000;
+    c.g[V1][0] = DATA_PAGE;
     c.g[T1][0] = c.g[A1][0];
     c.g[T2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x73b0));
-    c.ldl(4, (c.g[T2][0] as u32).wrapping_add(7));
-    c.ldr(4, c.g[T2][0] as u32);
-    c.ldl(7, (c.g[T2][0] as u32).wrapping_add(15));
-    c.ldr(7, (c.g[T2][0] as u32).wrapping_add(8));
-    c.ldl(8, (c.g[T2][0] as u32).wrapping_add(23));
-    c.ldr(8, (c.g[T2][0] as u32).wrapping_add(16));
-    c.sdl(4, sp(c).wrapping_add(7));
-    c.sdr(4, sp(c));
-    c.sdl(7, sp(c).wrapping_add(15));
-    c.sdr(7, sp(c).wrapping_add(8));
-    c.sdl(8, sp(c).wrapping_add(23));
-    c.sdr(8, sp(c).wrapping_add(16));
-    c.ldl(4, (c.g[T2][0] as u32).wrapping_add(31));
-    c.ldr(4, (c.g[T2][0] as u32).wrapping_add(24));
+    c.ldl(A0, (c.g[T2][0] as u32).wrapping_add(7));
+    c.ldr(A0, c.g[T2][0] as u32);
+    c.ldl(A3, (c.g[T2][0] as u32).wrapping_add(15));
+    c.ldr(A3, (c.g[T2][0] as u32).wrapping_add(8));
+    c.ldl(T0, (c.g[T2][0] as u32).wrapping_add(23));
+    c.ldr(T0, (c.g[T2][0] as u32).wrapping_add(16));
+    c.sdl(A0, sp(c).wrapping_add(7));
+    c.sdr(A0, sp(c));
+    c.sdl(A3, sp(c).wrapping_add(15));
+    c.sdr(A3, sp(c).wrapping_add(8));
+    c.sdl(T0, sp(c).wrapping_add(23));
+    c.sdr(T0, sp(c).wrapping_add(16));
+    c.ldl(A0, (c.g[T2][0] as u32).wrapping_add(31));
+    c.ldr(A0, (c.g[T2][0] as u32).wrapping_add(24));
     c.g[A3][0] = c.lb((c.g[T2][0] as u32).wrapping_add(32));
-    c.sdl(4, sp(c).wrapping_add(31));
-    c.sdr(4, sp(c).wrapping_add(24));
+    c.sdl(A0, sp(c).wrapping_add(31));
+    c.sdr(A0, sp(c).wrapping_add(24));
     c.sb(sp(c).wrapping_add(32), c.g[A3][0]);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
     c.g[A1][0] = 0;
@@ -5744,6 +5767,7 @@ pub fn slogin_mc_start_write(c: &mut Cpu) {
     slogin_mc_start_transfer(c, true);
 }
 
+/// The shared body of `SLoginMc_StartWrite` and `SLoginMc_StartRead`.
 pub(crate) fn slogin_mc_start_transfer(c: &mut Cpu, write: bool) {
     guest(c, |c| {
         let initialized_ret = if write { 0x003f_9f24 } else { 0x003f_9de4 };
@@ -5818,22 +5842,22 @@ pub(crate) fn slogin_mc_start_transfer(c: &mut Cpu, write: bool) {
                     } else {
                         loop {
                             c.cycles += 19;
-                            c.ldl(5, (c.g[A0][0] as u32).wrapping_add(7));
-                            c.ldr(5, c.g[A0][0] as u32);
-                            c.ldl(6, (c.g[A0][0] as u32).wrapping_add(15));
-                            c.ldr(6, (c.g[A0][0] as u32).wrapping_add(8));
-                            c.ldl(7, (c.g[A0][0] as u32).wrapping_add(23));
-                            c.ldr(7, (c.g[A0][0] as u32).wrapping_add(16));
-                            c.ldl(8, (c.g[A0][0] as u32).wrapping_add(31));
-                            c.ldr(8, (c.g[A0][0] as u32).wrapping_add(24));
-                            c.sdl(5, (c.g[V1][0] as u32).wrapping_add(7));
-                            c.sdr(5, c.g[V1][0] as u32);
-                            c.sdl(6, (c.g[V1][0] as u32).wrapping_add(15));
-                            c.sdr(6, (c.g[V1][0] as u32).wrapping_add(8));
-                            c.sdl(7, (c.g[V1][0] as u32).wrapping_add(23));
-                            c.sdr(7, (c.g[V1][0] as u32).wrapping_add(16));
-                            c.sdl(8, (c.g[V1][0] as u32).wrapping_add(31));
-                            c.sdr(8, (c.g[V1][0] as u32).wrapping_add(24));
+                            c.ldl(A1, (c.g[A0][0] as u32).wrapping_add(7));
+                            c.ldr(A1, c.g[A0][0] as u32);
+                            c.ldl(A2, (c.g[A0][0] as u32).wrapping_add(15));
+                            c.ldr(A2, (c.g[A0][0] as u32).wrapping_add(8));
+                            c.ldl(A3, (c.g[A0][0] as u32).wrapping_add(23));
+                            c.ldr(A3, (c.g[A0][0] as u32).wrapping_add(16));
+                            c.ldl(T0, (c.g[A0][0] as u32).wrapping_add(31));
+                            c.ldr(T0, (c.g[A0][0] as u32).wrapping_add(24));
+                            c.sdl(A1, (c.g[V1][0] as u32).wrapping_add(7));
+                            c.sdr(A1, c.g[V1][0] as u32);
+                            c.sdl(A2, (c.g[V1][0] as u32).wrapping_add(15));
+                            c.sdr(A2, (c.g[V1][0] as u32).wrapping_add(8));
+                            c.sdl(A3, (c.g[V1][0] as u32).wrapping_add(23));
+                            c.sdr(A3, (c.g[V1][0] as u32).wrapping_add(16));
+                            c.sdl(T0, (c.g[V1][0] as u32).wrapping_add(31));
+                            c.sdr(T0, (c.g[V1][0] as u32).wrapping_add(24));
                             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(32));
                             let again = c.g[A0][0] != c.g[V0][0];
                             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(32));
@@ -6354,22 +6378,22 @@ pub fn slogin_mc_get_file_state(c: &mut Cpu) {
     }
     loop {
         c.cycles += 19;
-        c.ldl(5, (c.g[V1][0] as u32).wrapping_add(7));
-        c.ldr(5, c.g[V1][0] as u32);
-        c.ldl(6, (c.g[V1][0] as u32).wrapping_add(15));
-        c.ldr(6, (c.g[V1][0] as u32).wrapping_add(8));
-        c.ldl(7, (c.g[V1][0] as u32).wrapping_add(23));
-        c.ldr(7, (c.g[V1][0] as u32).wrapping_add(16));
-        c.ldl(8, (c.g[V1][0] as u32).wrapping_add(31));
-        c.ldr(8, (c.g[V1][0] as u32).wrapping_add(24));
-        c.sdl(5, (c.g[A0][0] as u32).wrapping_add(7));
-        c.sdr(5, c.g[A0][0] as u32);
-        c.sdl(6, (c.g[A0][0] as u32).wrapping_add(15));
-        c.sdr(6, (c.g[A0][0] as u32).wrapping_add(8));
-        c.sdl(7, (c.g[A0][0] as u32).wrapping_add(23));
-        c.sdr(7, (c.g[A0][0] as u32).wrapping_add(16));
-        c.sdl(8, (c.g[A0][0] as u32).wrapping_add(31));
-        c.sdr(8, (c.g[A0][0] as u32).wrapping_add(24));
+        c.ldl(A1, (c.g[V1][0] as u32).wrapping_add(7));
+        c.ldr(A1, c.g[V1][0] as u32);
+        c.ldl(A2, (c.g[V1][0] as u32).wrapping_add(15));
+        c.ldr(A2, (c.g[V1][0] as u32).wrapping_add(8));
+        c.ldl(A3, (c.g[V1][0] as u32).wrapping_add(23));
+        c.ldr(A3, (c.g[V1][0] as u32).wrapping_add(16));
+        c.ldl(T0, (c.g[V1][0] as u32).wrapping_add(31));
+        c.ldr(T0, (c.g[V1][0] as u32).wrapping_add(24));
+        c.sdl(A1, (c.g[A0][0] as u32).wrapping_add(7));
+        c.sdr(A1, c.g[A0][0] as u32);
+        c.sdl(A2, (c.g[A0][0] as u32).wrapping_add(15));
+        c.sdr(A2, (c.g[A0][0] as u32).wrapping_add(8));
+        c.sdl(A3, (c.g[A0][0] as u32).wrapping_add(23));
+        c.sdr(A3, (c.g[A0][0] as u32).wrapping_add(16));
+        c.sdl(T0, (c.g[A0][0] as u32).wrapping_add(31));
+        c.sdr(T0, (c.g[A0][0] as u32).wrapping_add(24));
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(32));
         let again = c.g[V1][0] != c.g[V0][0];
         c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(32));
@@ -6388,29 +6412,23 @@ pub fn slogin_mc_get_file_state(c: &mut Cpu) {
 /// `SLoginMc_IsAvailable_Wrapper` (0x3fa360): forward the memory-card
 /// availability query to the card interface.
 pub fn slogin_mc_is_available_wrapper(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, callee::SLOGIN_MC_IS_AVAILABLE.addr, 0x003f_a370)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Table(callee::SLOGIN_MC_IS_AVAILABLE.addr),
+        0x003f_a370,
+    );
 }
 
 /// `SLoginMc_CalcSaveSize` (0x3fa6a8): compute the memory-card space needed for
 /// a shared-login save.
 pub fn slogin_mc_calc_save_size(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, callee::SLOGIN_MC_CALC_SAVE_SIZE_IMPL.addr, 0x003f_a6b8)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Table(callee::SLOGIN_MC_CALC_SAVE_SIZE_IMPL.addr),
+        0x003f_a6b8,
+    );
 }
 
 /// `SLoginMc_GetPortSlot` (0x3fa1d0): resolve a shared-login memory-card device
@@ -6459,6 +6477,7 @@ pub fn slogin_mc_get_port_slot(c: &mut Cpu) {
     });
 }
 
+/// The phase dispatch table of `SLoginMc_CreateStep`.
 pub(crate) const CREATE_CALLBACK_TABLE: u32 = 0x0049_7430;
 
 #[derive(Clone, Copy)]
@@ -6475,6 +6494,7 @@ pub(crate) enum CreateExit {
     FinishDevice,
 }
 
+/// The shared epilogue of `SLoginMc_CreateStep`, with or without `s0`.
 pub(crate) fn create_step_epilogue(c: &mut Cpu, frame: Frame, restore_s0: bool) {
     if restore_s0 {
         c.cycles += 1;
@@ -6541,7 +6561,7 @@ pub fn slogin_mc_create_step(c: &mut Cpu) {
             c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(card::PHASE)).lw(c);
             c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
             c.g[V1][0] = (c.g[A0][0] < 26) as u64;
-            c.g[V0][0] = 0x490000;
+            c.g[V0][0] = DATA_PAGE;
             if c.g[V1][0] == 0 {
                 c.cycles += 3;
                 c.g[V1][0] = 2;
@@ -6870,7 +6890,7 @@ pub fn slogin_mc_create_step(c: &mut Cpu) {
                         c.cycles += 6;
                         c.g[V0][0] = 6;
                         c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::IFACE_GP)).lw(c);
-                        c.g[A1][0] = 0x490000;
+                        c.g[A1][0] = DATA_PAGE;
                         let store_at = (c.g[A0][0] as u32).wrapping_add(card::PHASE);
                         let store_value = c.g[V0][0];
                         Addr(store_at).sw(c, store_value);
@@ -6941,7 +6961,7 @@ pub fn slogin_mc_create_step(c: &mut Cpu) {
                         c.cycles += 5;
                         c.g[V0][0] = 10;
                         c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::IFACE_GP)).lw(c);
-                        c.g[A1][0] = 0x490000;
+                        c.g[A1][0] = DATA_PAGE;
                         let store_at = (c.g[A0][0] as u32).wrapping_add(card::PHASE);
                         let store_value = c.g[V0][0];
                         Addr(store_at).sw(c, store_value);
@@ -7217,33 +7237,23 @@ pub fn slogin_mc_create_step(c: &mut Cpu) {
 /// `const ChecksumIface* SLoginMc_GetChecksumIface(const ChecksumIface** out)`
 /// (0x3fa6c8): forward to `SLoginMc_GetChecksumIfaceImpl`.
 pub fn slogin_mc_get_checksum_iface(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(
-            c,
-            callee::SLOGIN_MC_GET_CHECKSUM_IFACE_IMPL.addr,
-            0x003f_a6d8,
-        )?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Table(callee::SLOGIN_MC_GET_CHECKSUM_IFACE_IMPL.addr),
+        0x003f_a6d8,
+    );
 }
 
 /// `int SLoginMc_GetDataOffset(void)` (0x3fa6e8): forward to
 /// `SLoginMc_GetDataOffsetImpl` (the offset of the login data in the save).
 pub fn slogin_mc_get_data_offset(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, callee::SLOGIN_MC_GET_DATA_OFFSET_IMPL.addr, 0x003f_a6f8)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Table(callee::SLOGIN_MC_GET_DATA_OFFSET_IMPL.addr),
+        0x003f_a6f8,
+    );
 }
 
 /// The device-index jump table (8 words in the game's data).
@@ -7270,7 +7280,7 @@ pub fn slogin_mc_split_device_index(c: &mut Cpu) {
     c.cycles += 3;
     c.g[V0][0] = (c.g[A0][0] < 8) as u64;
     let in_range = c.g[V0][0] != 0;
-    c.g[V0][0] = 0x49_0000;
+    c.g[V0][0] = DATA_PAGE;
     if !in_range {
         c.cycles += 2;
         ret(c);
@@ -7357,7 +7367,7 @@ pub fn slogin_mc_build_dir_path(c: &mut Cpu) {
         c.g[A2][0] = SLOGIN_MC_PATH_BYTES;
         c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
         call_ptr(c, callee::MEMSET.addr, 0x003f_a7cc)?;
-        c.g[V1][0] = 0x4a_0000;
+        c.g[V1][0] = GLOBALS_PAGE;
         c.g[A0][0] = c.g[S1][0];
         c.g[V0][0] = c.lbu(BUILD_DIR_PATH_LEAD);
         c.sb(c.g[S0][0] as u32, c.g[V0][0]);
@@ -7765,7 +7775,7 @@ pub(crate) const CRC32_INTERFACE: u32 = 0x0049_7508;
 /// checksum interface at 0x497508.
 pub fn crc32_get_interface(c: &mut Cpu) {
     c.cycles += 3;
-    c.g[V0][0] = 0x49_0000;
+    c.g[V0][0] = DATA_PAGE;
     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(CRC32_INTERFACE & 0xffff));
     ret(c);
 }
@@ -7777,7 +7787,7 @@ pub(crate) const SLOGIN_STORE_CIPHER_INTERFACE: u32 = 0x0049_7528;
 /// cipher interface at 0x497528.
 pub fn slogin_store_get_cipher_iface(c: &mut Cpu) {
     c.cycles += 3;
-    c.g[V0][0] = 0x49_0000;
+    c.g[V0][0] = DATA_PAGE;
     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(SLOGIN_STORE_CIPHER_INTERFACE & 0xffff));
     ret(c);
 }
@@ -7837,7 +7847,7 @@ pub fn slogin_store_get_alignment(c: &mut Cpu) {
     c.g[V1][0] = 1;
     if valid_format {
         c.cycles += 7;
-        c.g[V0][0] = 0x49_0000;
+        c.g[V0][0] = DATA_PAGE;
         c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7580));
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
@@ -7919,7 +7929,7 @@ pub fn slogin_store_get_block_header(c: &mut Cpu) {
         c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_sub(BLOCK_HEADER_BYTES));
         if validate {
             c.cycles += 6;
-            c.g[A1][0] = 0x49_0000;
+            c.g[A1][0] = DATA_PAGE;
             c.g[A0][0] = c.g[S0][0];
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(BLOCK_HEADER_MAGIC & 0xffff));
             c.g[A2][0] = BLOCK_HEADER_BYTES as u64;
@@ -7965,7 +7975,7 @@ pub fn slogin_store_set_record_header(c: &mut Cpu) {
 /// store's 12-byte sentinel pattern at the start of an allocated block.
 pub fn slogin_store_write_sentinel(c: &mut Cpu) {
     c.cycles += 12;
-    c.g[V0][0] = 0x49_0000;
+    c.g[V0][0] = DATA_PAGE;
     c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_add(BLOCK_HEADER_MAGIC & 0xffff));
     c.ldl(V1, (c.g[A3][0] as u32).wrapping_add(7));
     c.ldr(V1, c.g[A3][0] as u32);
@@ -8059,21 +8069,21 @@ pub fn slogin_store_find_record(c: &mut Cpu) {
     ret(c);
 }
 
-// Directory entry words (`store::RECORD_STRIDE` bytes each).
+/// Directory entry words (`store::RECORD_STRIDE` bytes each).
 pub(crate) const RECORD_OFFSET: u32 = 4;
 
 pub(crate) const RECORD_SIZE: u32 = 8;
 
 pub(crate) const RECORD_CRC: u32 = 0xc;
 
-// Checksum interface slots (`Crc32_GetInterface`'s table).
+/// Checksum interface slots (`Crc32_GetInterface`'s table).
 pub(crate) const HASH_BEGIN: u32 = 0xc;
 
 pub(crate) const HASH_UPDATE: u32 = 0x10;
 
 pub(crate) const HASH_FINAL: u32 = 0x14;
 
-// Cipher interface slots (`SLoginStore_GetCipherIface`'s table).
+/// Cipher interface slots (`SLoginStore_GetCipherIface`'s table).
 pub(crate) const CIPHER_SET_KEY: u32 = 0xc;
 
 pub(crate) const CIPHER_ENCRYPT: u32 = 0x10;
@@ -9450,6 +9460,7 @@ pub fn slogin_store_read(c: &mut Cpu) {
     });
 }
 
+/// The DNAS relay block and its init, update and exit entry slots.
 pub(crate) const DNAS_RELAY_BASE: u32 = 0x0045_0000;
 
 pub(crate) const DNAS_INIT_SLOT: u32 = 0x152c;
@@ -9458,12 +9469,15 @@ pub(crate) const DNAS_UPDATE_SLOT: u32 = 0x1530;
 
 pub(crate) const DNAS_EXIT_SLOT: u32 = 0x1534;
 
+/// `"\x7fELF"` as a little-endian word.
 pub(crate) const ELF_MAGIC: u64 = 0x464c_457f;
 
+/// ELF header word `e_shoff` and the section header size.
 pub(crate) const ELF_SECTION_OFFSET: u32 = 0x20;
 
 pub(crate) const ELF_SECTION_SIZE: u64 = 0x28;
 
+/// The last ordinary section index (`SHN_LORESERVE - 1`) and `SHN_ABS`.
 pub(crate) const ELF_SPECIAL_SECTION_END: u64 = 0xfeff;
 
 pub(crate) const ELF_SECTION_ABS: u64 = 0xfff1;
@@ -9486,6 +9500,7 @@ pub(crate) const DNAS_RODATA_NAME: u32 = 0x0049_7630;
 
 pub(crate) const DNAS_RODATA_RELOCS: u32 = 0x0049_7638;
 
+/// ELF header word +0x10: `e_type` ET_REL (1) and `e_machine` EM_MIPS (8).
 pub(crate) const ELF_RELAY_TYPE: u64 = 0x0008_0001;
 
 /// ELF header halfwords: `e_shnum`, the section count, and `e_shstrndx`, the
@@ -9521,6 +9536,7 @@ pub(crate) const REL_PENDING_OFFSET: u32 = 0x100;
 
 pub(crate) const REL_COUNT_SLOT: u32 = 0x200;
 
+/// Call the relay entry stored in `slot` of the DNAS relay block.
 pub(crate) fn dnas_relay_call(c: &mut Cpu, slot: u32, ret: u32) {
     guest(c, |c| {
         c.cycles += 9;
@@ -9630,7 +9646,8 @@ pub fn dnas_rel_get_section_addr(c: &mut Cpu) {
         c.cycles += 5;
         let frame = Frame::open(c, 0x10);
         c.g[V0][0] = ELF_SPECIAL_SECTION_END;
-        let special = c.g[V0][0] < c.g[A1][0];
+        c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+        let special = c.g[V0][0] != 0;
         frame.save_ra(c, 0);
         if special {
             c.cycles += 3;
@@ -9745,9 +9762,9 @@ pub fn dnas_rel_elf_open(c: &mut Cpu) {
             c.cycles += 4;
             c.g[V1][0] = Addr((c.g[S3][0] as u32).wrapping_add(0x10)).lw(c);
             c.g[V0][0] = ELF_RELAY_TYPE;
-            if c.g[V1][0] != c.g[V0][0] {
-                c.g[V0][0] = c.g[S4][0];
-            } else {
+            let wrong_type = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = c.g[S4][0];
+            if !wrong_type {
                 c.cycles += 19;
                 c.sw((c.g[S0][0] as u32).wrapping_add(4), c.g[S1][0]);
                 c.g[A1][0] = DNAS_TEXT_NAME as u64;
@@ -10239,6 +10256,7 @@ pub fn dnas_rel_find_symbol(c: &mut Cpu) {
     });
 }
 
+/// `SLoginMc_DeleteStep` entry and end (its `jump_out` range).
 pub(crate) const DELETE_ENTRY: u32 = 0x003f_ae50;
 
 /// The back-edge head an unwind resumes at (restart on the next card).
@@ -10356,7 +10374,7 @@ pub(crate) fn delete_step_phase(c: &mut Cpu) -> Result<DeleteExit, Unwound> {
     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(card::PHASE));
     c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
     c.g[V1][0] = (c.g[A0][0] < 26) as u64;
-    c.g[V0][0] = 0x49_0000;
+    c.g[V0][0] = DATA_PAGE;
     if c.g[V1][0] == 0 {
         return Ok(delete_invalid_phase(c));
     }
@@ -10523,7 +10541,7 @@ pub(crate) fn delete_check_dir(c: &mut Cpu) -> Result<DeleteExit, Unwound> {
         c.g[A0][0] = c.lw(gp_slot(c, card::STATE_GP));
         c.g[V0][0] = 0x13;
         c.g[V1][0] = c.lw(gp_slot(c, card::IFACE_GP));
-        c.g[A1][0] = 0x49_0000;
+        c.g[A1][0] = DATA_PAGE;
         c.sw((c.g[A0][0] as u32).wrapping_add(card::PHASE), c.g[V0][0]);
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(card::ICON_SYS_NAME & 0xffff));
         delete_remove_file(c)?;
@@ -10596,7 +10614,7 @@ pub(crate) fn delete_after_icon_sys(c: &mut Cpu) -> Result<DeleteExit, Unwound> 
     c.cycles += 5;
     c.g[V0][0] = 0x14;
     c.g[V1][0] = c.lw(gp_slot(c, card::IFACE_GP));
-    c.g[A1][0] = 0x49_0000;
+    c.g[A1][0] = DATA_PAGE;
     c.sw((c.g[A0][0] as u32).wrapping_add(card::PHASE), c.g[V0][0]);
     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(card::VIEW_ICON_NAME & 0xffff));
     delete_remove_file(c)?;
@@ -11062,7 +11080,7 @@ pub fn slogin_store_alloc_block(c: &mut Cpu) {
             c.g[A1][0] = 0;
             callee::MEMSET.call(c, 0x003f_cea4)?;
             c.g[A1][0] = c.lw(c.g[S2][0] as u32);
-            c.g[A0][0] = 0x49_0000;
+            c.g[A0][0] = DATA_PAGE;
             c.g[V0][0] = 0;
             c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(BLOCK_HEADER_MAGIC & 0xffff));
             let pattern = c.g[T0][0] as u32;
@@ -11187,7 +11205,7 @@ pub fn dnas_rel_load(c: &mut Cpu) {
         c.g[A0][0] = c.g[SP][0];
         callee::DNAS_REL_ELF_OPEN.call(c, 0x003f_cff4)?;
         let opened = c.g[V0][0] != 0;
-        c.g[A1][0] = 0x49_0000;
+        c.g[A1][0] = DATA_PAGE;
         'done: {
             if !opened {
                 c.cycles += 2;
@@ -11217,7 +11235,7 @@ pub fn dnas_rel_load(c: &mut Cpu) {
             c.g[S0][0] = DNAS_RELAY_BASE as u64;
             c.sw(sp(c).wrapping_add(0x38), c.g[V1][0]);
             callee::DNAS_REL_RELOCATE_ALL.call(c, 0x003f_d04c)?;
-            c.g[A1][0] = 0x49_0000;
+            c.g[A1][0] = DATA_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x75a8));
             callee::DNAS_REL_FIND_SYMBOL.call(c, 0x003f_d05c)?;
@@ -11229,7 +11247,7 @@ pub fn dnas_rel_load(c: &mut Cpu) {
                 break 'done;
             }
             c.cycles += 7;
-            c.g[A1][0] = 0x49_0000;
+            c.g[A1][0] = DATA_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x75c0));
             c.g[S0][0] = DNAS_RELAY_BASE as u64;
@@ -11245,7 +11263,7 @@ pub fn dnas_rel_load(c: &mut Cpu) {
                 break 'done;
             }
             c.cycles += 7;
-            c.g[A1][0] = 0x49_0000;
+            c.g[A1][0] = DATA_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x75d8));
             c.g[S0][0] = DNAS_RELAY_BASE as u64;
@@ -12451,7 +12469,7 @@ pub(crate) mod tests {
             slogin_finish_op,
             60,
             &|c, seed| {
-                login_state(c, seed, 0x003f_7a30);
+                login_state_fixture(c, seed, 0x003f_7a30);
                 for i in 0..0x24u32 {
                     c.bus
                         .write32(DATA + 0xc0 + 4 * i, 0x4c00_0000 | i << 8 | seed);
@@ -12476,7 +12494,7 @@ pub(crate) mod tests {
             &[71, 93, 131, 132, 153, 154],
             &|c, seed| {
                 elf_image(c);
-                login_state(c, seed, 0x003f_7a60);
+                login_state_fixture(c, seed, 0x003f_7a60);
                 c.g[A0][0] = (seed % 11) as u64;
                 c.g[A1][0] = [0, 1, 0x100, 0x1ff][(seed / 11 % 4) as usize];
                 for i in 0..0x1au32 {
@@ -12501,7 +12519,7 @@ pub(crate) mod tests {
             &[51, 78],
             &|c, seed| {
                 elf_image(c);
-                login_state(c, seed, 0x003f_7c00);
+                login_state_fixture(c, seed, 0x003f_7c00);
                 for i in 0..0x14u32 {
                     c.bus
                         .write32(DATA + 0xec + 4 * i, 0x6100_0000 + (i << 8) + seed);
@@ -12520,7 +12538,7 @@ pub(crate) mod tests {
             90,
             &|c, seed| {
                 elf_image(c);
-                login_state(c, seed, 0x003f_7c00);
+                login_state_fixture(c, seed, 0x003f_7c00);
                 c.bus.write32(DATA + 0xd8, seed % 11);
                 let mut r = Rng(0x003f_7c00 ^ seed as u64);
                 schedule(c, &mut r, seed, 0x003f_7c00)
@@ -12597,7 +12615,7 @@ pub(crate) mod tests {
             slogin_end_sequence,
             60,
             &|c, seed| {
-                login_state(c, seed, 0x003f_7bd0);
+                login_state_fixture(c, seed, 0x003f_7bd0);
                 for i in 0..0x24u32 {
                     c.bus
                         .write32(DATA + 0xc0 + 4 * i, 0x4c00_0000 | i << 8 | seed);
@@ -12606,7 +12624,7 @@ pub(crate) mod tests {
         );
     }
 
-    pub(crate) fn login_state(c: &mut Cpu, seed: u32, entry: u32) {
+    pub(crate) fn login_state_fixture(c: &mut Cpu, seed: u32, entry: u32) {
         let mut r = Rng(0x3f75_0000 ^ seed as u64 ^ entry as u64);
         scramble(c, &mut r);
         c.pc = entry;
@@ -12623,7 +12641,7 @@ pub(crate) mod tests {
             slogin_reset_for_op,
             60,
             &|c, seed| {
-                login_state(c, seed, 0x003f_7990);
+                login_state_fixture(c, seed, 0x003f_7990);
                 for i in 0..0x24u32 {
                     c.bus
                         .write32(DATA + 0xc0 + 4 * i, 0x4c00_0000 | i << 8 | seed);
@@ -12642,7 +12660,7 @@ pub(crate) mod tests {
             slogin_clear_step_funcs,
             40,
             &|c, seed| {
-                login_state(c, seed, 0x003f_7d98);
+                login_state_fixture(c, seed, 0x003f_7d98);
                 for i in 0..0x24u32 {
                     c.bus
                         .write32(DATA + 0xc0 + 4 * i, 0x4c00_0000 | i << 8 | seed);
@@ -12659,7 +12677,7 @@ pub(crate) mod tests {
             slogin_clear_step_funcs,
             90,
             &|c, seed| {
-                login_state(c, seed, 0x003f_7d98);
+                login_state_fixture(c, seed, 0x003f_7d98);
                 let mut r = Rng(0x003f_7d98 ^ seed as u64);
                 schedule(c, &mut r, seed, 0x003f_7d98)
             },
@@ -12856,7 +12874,7 @@ pub(crate) mod tests {
         );
     }
 
-    pub(crate) fn poll_fake(c: &mut Cpu, target: u32) {
+    pub(crate) fn slogin_poll_fake(c: &mut Cpu, target: u32) {
         if target != FAKE || c.bus.read32(DATA + 0x100) == 2 {
             return fakes::fake_call(c, target);
         }
@@ -12880,7 +12898,7 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _r = fakes::machine(c, seed, 0x3f80_e000, 1);
                 let mode = seed % 5;
-                c.hooks.miss = poll_fake;
+                c.hooks.miss = slogin_poll_fake;
                 c.pc = 0x003f_80e0;
                 c.bus.write32(DATA + 0x100, mode);
                 c.bus.write32(GAME_GP + login::STATE_GP, DATA + 0x400);
@@ -13149,7 +13167,7 @@ pub(crate) mod tests {
         );
     }
 
-    pub(crate) fn abort_fixture(
+    pub(crate) fn mc_abort_fixture(
         c: &mut Cpu,
         seed: u32,
         salt: u64,
@@ -13175,7 +13193,7 @@ pub(crate) mod tests {
             slogin_mc_abort_at_flush,
             60,
             &|c, seed| {
-                abort_fixture(c, seed, 0x3f87_2000, 0x003f_8720, 0x38);
+                mc_abort_fixture(c, seed, 0x3f87_2000, 0x003f_8720, 0x38);
             },
         );
     }
@@ -13187,7 +13205,7 @@ pub(crate) mod tests {
             slogin_mc_abort_at_close,
             60,
             &|c, seed| {
-                abort_fixture(c, seed, 0x3f87_6800, 0x003f_8768, 0x1c);
+                mc_abort_fixture(c, seed, 0x3f87_6800, 0x003f_8768, 0x1c);
             },
         );
     }
@@ -13199,7 +13217,7 @@ pub(crate) mod tests {
             slogin_mc_abort_at_finish,
             60,
             &|c, seed| {
-                abort_fixture(c, seed, 0x3f87_b000, 0x003f_87b0, 0x14);
+                mc_abort_fixture(c, seed, 0x3f87_b000, 0x003f_87b0, 0x14);
             },
         );
     }
@@ -13337,9 +13355,6 @@ pub(crate) mod tests {
             },
         );
         let resumed = mc_hand_resumes().with(|n| n.get());
-        eprintln!(
-            "SLoginMc_OpenStep: hand re-entered at {MC_OPEN_STEP_RETRY_HEAD:#x} {resumed} times"
-        );
         assert!(resumed > 0, "the hand side never resumed at the retry head");
     }
 
@@ -16524,7 +16539,6 @@ pub(crate) mod tests {
             },
         );
         let resumed = DNAS_FIND_SYMBOL_HAND_RESUMES.load(Ordering::Relaxed) - before;
-        eprintln!("DnasRel_FindSymbol: hand re-entered at 0x3fd7a0 {resumed} times");
         assert!(resumed > 0, "the hand side never resumed at 0x3fd7a0");
     }
 
@@ -16910,7 +16924,6 @@ pub(crate) mod tests {
             },
         );
         let resumed = mc_hand_resumes().with(|n| n.get());
-        eprintln!("SLoginMc_DeleteStep: hand re-entered at {DELETE_RETRY_HEAD:#x} {resumed} times");
         assert!(resumed > 0, "the hand side never resumed at the retry head");
     }
 
@@ -18389,7 +18402,7 @@ pub(crate) mod tests {
             slogin_reset_for_op,
             90,
             &|c, seed| {
-                login_state(c, seed, 0x003f_7990);
+                login_state_fixture(c, seed, 0x003f_7990);
                 for i in 0..0x24u32 {
                     c.bus
                         .write32(DATA + 0xc0 + 4 * i, 0x4c00_0000 | i << 8 | seed);

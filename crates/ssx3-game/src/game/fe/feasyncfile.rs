@@ -1292,6 +1292,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x003d_f9d8, async_file_get_result, "AsyncFile_GetResult"),
     (0x003d_faf0, async_file_cancel, "AsyncFile_Cancel"),
+    (0x001d_e7b0, net_fe_state_ctor_2_2, "NetFEState_ctor_2"),
+    (0x001d_e8c8, fe_screen_blank_ctor_2, "FEScreenBlank_ctor_2"),
+    (0x001d_e918, fe_screen_blank_dtor, "FEScreenBlank_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5838,6 +5841,7 @@ macro_rules! child_event_switch {
         }
     };
 }
+use crate::call::Target;
 pub(crate) use crate::game::misc::add32 as add32_2;
 
 child_event_switch!(
@@ -19748,6 +19752,159 @@ pub fn async_file_cancel(c: &mut Cpu) {
     })
 }
 
+/// Calls a target (direct or through the function table) returning to `ret`.
+pub(crate) fn call_fe_target(c: &mut Cpu, target: Target, ret: u32) -> Flow {
+    match target {
+        Target::Direct(f) => f.call(c, ret),
+        Target::Table(addr) => call_ptr(c, addr, ret),
+    }
+}
+
+/// The shape of a `cFE*` constructor: `UIState_ctor`-style base construction
+/// (optionally zeroing `a1`/`a2` for it), then the vtable `0x470000 - off`
+/// stored at `this + 8`. The base constructor is `callee`, returning to `ret`.
+pub(crate) fn fe_ctor_with_vtable(
+    c: &mut Cpu,
+    cycles: u64,
+    zero_a1: bool,
+    zero_a2: bool,
+    callee: Target,
+    ret: u32,
+    vtable_off: u32,
+) -> Flow {
+    c.cycles += cycles;
+    let frame = Frame::open(c, 0x20);
+    if zero_a1 {
+        c.g[A1][0] = 0;
+    }
+    if zero_a2 {
+        c.g[A2][0] = 0;
+    }
+    frame.save(c, S0, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S0][0] = c.g[A0][0];
+    call_fe_target(c, callee, ret)?;
+    c.g[V1][0] = 0x47_0000;
+    c.g[V0][0] = c.g[S0][0];
+    c.g[V1][0] = sx(0x47_0000u32.wrapping_sub(vtable_off));
+    frame.restore_ra(c, 0);
+    let vtable = c.g[V1][0];
+    Addr(r32(c, S0).wrapping_add(8)).sw(c, vtable);
+    frame.restore(c, S0, 0x10);
+    frame.close(c);
+    Ok(())
+}
+
+/// The `cFE*` destructor shape: store the vtable `0x470000 - off` at
+/// `this + 8` (`this` is `a0`), then tail through `callee` returning to `ret`.
+pub(crate) fn fe_dtor_with_vtable(
+    c: &mut Cpu,
+    cycles: u64,
+    callee: Target,
+    vtable_off: u32,
+    ret: u32,
+) -> Flow {
+    c.cycles += cycles;
+    let frame = Frame::open(c, 0x10);
+    c.g[V0][0] = 0x47_0000;
+    frame.save_ra(c, 0);
+    c.g[V1][0] = c.g[A0][0];
+    c.g[V0][0] = sx(0x47_0000u32.wrapping_sub(vtable_off));
+    let vtable = c.g[V0][0];
+    Addr(r32(c, V1).wrapping_add(8)).sw(c, vtable);
+    call_fe_target(c, callee, ret)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `NetFEState` constructor (0x1de7b0, `cFEStateNet1`): `UIState_ctor_2`, then
+/// the vtable and the list/flag fields at `+0x48..+0x6bc`, a string built at
+/// `+0x6c0` and a 12-byte block allocated for `+0x6cc`, whose pointer is
+/// also stored at the block's `+4` (through `S1 = this + 0x6c8`).
+pub fn net_fe_state_ctor_2_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 44;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = 0;
+        frame.save(c, S0, 0x30);
+        c.g[A1][0] = 0;
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e318, 0x001d_e7d0)?;
+        let s0 = r32(c, S0);
+        c.g[S1][0] = sx(s0.wrapping_add(0x6c8));
+        c.g[V0][0] = 0x47_0000;
+        c.g[V1][0] = 2;
+        Addr(s0.wrapping_add(0x48)).sw(c, 0);
+        c.g[V0][0] = sx(0x47_0000u32.wrapping_sub(0x47f8));
+        Addr(s0.wrapping_add(0x58)).sw(c, 0);
+        c.g[A1][0] = 0x4a_0000;
+        Addr(s0.wrapping_add(0x69c)).sw(c, 0);
+        c.g[A1][0] = sx(0x4a_0000u32.wrapping_add(0x1390));
+        Addr(s0.wrapping_add(0x6a4)).sw(c, 0);
+        c.g[A0][0] = sx(s0.wrapping_add(0x6c0));
+        Addr(s0.wrapping_add(0x6ac)).sw(c, 0);
+        Addr(s0.wrapping_add(0x6b0)).sw(c, 0);
+        Addr(s0.wrapping_add(0x6b8)).sw(c, 0);
+        let two = c.g[V1][0];
+        Addr(s0.wrapping_add(0x6bc)).sw(c, two);
+        let vtable = c.g[V0][0];
+        Addr(s0.wrapping_add(8)).sw(c, vtable);
+        call_ptr(c, 0x0031_82d8, 0x001d_e814)?;
+        c.g[A1][0] = 0x46_0000;
+        c.g[A0][0] = 0xc;
+        c.g[A1][0] = sx(0x46_0000u32.wrapping_sub(0x3218));
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7d70, 0x001d_e82c)?;
+        c.g[A1][0] = c.g[V0][0];
+        frame.restore_ra(c, 0x10);
+        let s0 = r32(c, S0);
+        let block = c.g[A1][0];
+        Addr(s0.wrapping_add(0x6cc)).sw(c, block);
+        c.g[V0][0] = c.g[S0][0];
+        let s1 = r32(c, S1);
+        c.g[V1][0] = Addr(s1.wrapping_add(4)).lw(c);
+        let stored = c.g[A1][0];
+        Addr(c.g[V1][0] as u32).sw(c, stored);
+        c.g[A0][0] = Addr(s1.wrapping_add(4)).lw(c);
+        c.g[V1][0] = Addr(s0.wrapping_add(0x6cc)).lw(c);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        let a0 = c.g[A0][0] as u32;
+        let v1 = c.g[V1][0];
+        Addr(a0.wrapping_add(4)).sw(c, v1);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `FEScreenBlank` constructor (0x1de8c8): `NetFEState_ctor(this, 0, 0)` (the
+/// base at 0x1a8500), then the vtable at `+8`.
+pub fn fe_screen_blank_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_ctor_with_vtable(
+            c,
+            15,
+            true,
+            true,
+            Target::Table(0x001a_8500),
+            0x001d_e8e4,
+            0x4908,
+        )
+    });
+}
+
+/// `FEScreenBlank` destructor (0x1de918): vtable at `+8`, then the base
+/// destructor at 0x1a85d0.
+pub fn fe_screen_blank_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_dtor_with_vtable(c, 10, Target::Table(0x001a_85d0), 0x4908, 0x001d_e934)
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -27931,4 +28088,50 @@ pub(crate) mod tests {
         hand_async_file_on_read_range_chunk,
         async_file_on_read_range_chunk
     );
+
+    /// A constructor that calls game code which allocates or reads the
+    /// singleton: the pool allocator and a real heap arena (`call_machine`),
+    /// the BE library dummy and a world, the allocator mutex when `alloc`.
+    pub(crate) fn heap_state_case(generated: GuestFn, hand: GuestFn, entry: u32, alloc: bool) {
+        check(generated, hand, 40, &|c, seed| {
+            call_machine(c, seed, entry as u64, 0);
+            be_library_2(c);
+            world(c);
+            if alloc {
+                allocator(c);
+            }
+            c.g[A0][0] = (DATA + 0x2000) as u64;
+            c.pc = entry;
+        });
+    }
+
+    #[test]
+    fn net_fe_state_ctor_2_matches() {
+        heap_state_case(
+            ee::s04::f_001de7b0__generated,
+            net_fe_state_ctor_2_2,
+            0x001d_e7b0,
+            true,
+        );
+    }
+
+    #[test]
+    fn fe_screen_blank_ctor_2_matches() {
+        heap_state_case(
+            ee::s04::f_001de8c8__generated,
+            fe_screen_blank_ctor_2,
+            0x001d_e8c8,
+            true,
+        );
+    }
+
+    #[test]
+    fn fe_screen_blank_dtor_matches() {
+        heap_state_case(
+            ee::s04::f_001de918__generated,
+            fe_screen_blank_dtor,
+            0x001d_e918,
+            true,
+        );
+    }
 }
