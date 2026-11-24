@@ -160,6 +160,8 @@ fn lit_linear(c: vec3<f32>, l: vec3<f32>) -> vec3<f32> {
     return pow(clamp(out, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2)) * 255.0;
 }
 
+const COL_EPS: f32 = 0.01;
+
 fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 64u) != 0u) {
         // Destination alpha bit 7 (stored as a/128, so a >= 128 is 1.0).
@@ -168,8 +170,10 @@ fn shade(v: VOut) -> vec4<f32> {
             discard;
         }
     }
-    var rgb = floor(v.col.rgb);
-    var a = floor(v.col.a);
+    // (A colour the vertices share comes out of the rasterizer a rounding
+    // error short, 127.99998: the GS's integer interpolation keeps it.)
+    var rgb = floor(v.col.rgb + COL_EPS);
+    var a = floor(v.col.a + COL_EPS);
     if ((b.flags & 1u) != 0u) {
         let uv = v.stq.xy / v.stq.z;
         var ts = textureSampleBias(tex, samp, uv, b.lod_bias);
