@@ -18764,7 +18764,6 @@ pub(crate) fn fseek_positioned(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
-
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -26359,8 +26358,6 @@ pub(crate) mod tests {
         );
     }
 
-
-
     /// `fseek_positioned` arms the libc.rs `fseek` tests miss: `SEEK_SET`
     /// on a `__SRD|__SOPT|__SOFF` stream with a FAKE cookie and a 0x60-byte
     /// buffer at file position 0xfa0 (`_p` 0x20 past the base), without and
@@ -26467,7 +26464,6 @@ pub(crate) mod tests {
     /// Output buffer for the printf family.
     pub(crate) const OUT: u32 = DATA + 0x2000;
 }
-
 
 pub(crate) mod callee {
     use super::ee;
@@ -27208,4 +27204,3 @@ pub(crate) fn sun_epilogue(c: &mut Cpu, frame: Frame) {
     frame.restore_fpr(c, 20, 0xb0);
     frame.close(c);
 }
-
