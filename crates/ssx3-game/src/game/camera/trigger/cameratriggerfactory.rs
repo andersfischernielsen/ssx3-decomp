@@ -3111,7 +3111,8 @@ pub fn spoke_chase_camera_algorithm_compute_desired_eye(c: &mut Cpu) {
 /// gather the rider state and blend the eye toward the spoke camera's desired
 /// eye. Retention falls with the focus-to-eye distance and is square-rooted
 /// in handplant state 5. The focus is the target's focus point plus 37 units
-/// along the world up vector. All tuning remains loaded from the pool.
+/// along the world up vector. At other rates the retained share is raised to
+/// the power 60/hz, so the eye keeps as much per 1/60 s as at 60 Hz.
 pub fn spoke_chase_camera_algorithm_update(c: &mut Cpu) {
     use crate::game::camera::camera::{chase, chase_info};
     const RIG_RIDER: u32 = 4;
@@ -3162,13 +3163,13 @@ pub fn spoke_chase_camera_algorithm_update(c: &mut Cpu) {
     c.lwc1(19, r32(c, GP).wrapping_sub(GP_GATHER_F19));
     frame.save_ra(c, SAVED_RA);
     frame.save_fpr(c, 21, SAVED_ONE);
-    c.g[RA][0] = sx(0x00178248);
+    c.g[RA][0] = sx(0x0017_8248);
     frame.save_fpr(c, 20, SAVED_RETENTION);
-    if call_ptr(c, 0x00162568, 0x00178248).is_err() {
+    if call_ptr(c, 0x0016_2568, 0x0017_8248).is_err() {
         return;
     }
     c.lwc1(0, r32(c, GP).wrapping_sub(GP_FOV));
-    c.g[AT][0] = 0x43160000;
+    c.g[AT][0] = 0x4316_0000;
     c.mtc1(1, 2);
     c.swc1(0, c.g[S0][0] as u32);
     c.lqc2(3, r32(c, S0).wrapping_add(FOCUS));
@@ -3204,21 +3205,21 @@ pub fn spoke_chase_camera_algorithm_update(c: &mut Cpu) {
             c.div_s(1, 1, 0);
         } else {
             c.cycles += 4;
-            c.g[AT][0] = 0x3f800000;
+            c.g[AT][0] = 0x3f80_0000;
             c.mtc1(1, 1);
         }
     }
     // Handplant (state 5) retains the square root of the effective share.
     c.cycles += 11;
-    c.g[AT][0] = 0x3f800000;
+    c.g[AT][0] = 0x3f80_0000;
     c.mtc1(1, 21);
     c.g[V0][0] = Addr(r32(c, S0).wrapping_add(chase::RIG)).lw(c);
     c.sub_s(1, 21, 1);
     c.lwc1(0, r32(c, GP).wrapping_sub(GP_EYE_RETENTION));
     c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIG_RIDER)).lw(c);
-    c.g[RA][0] = sx(0x001782fc);
+    c.g[RA][0] = sx(0x0017_82fc);
     c.mul_s(20, 1, 0);
-    if call_ptr(c, 0x0011fe98, 0x001782fc).is_err() {
+    if call_ptr(c, callee::RIDER_GET_MAIN_STATE.addr, 0x0017_82fc).is_err() {
         return;
     }
     c.g[V1][0] = 0x5;
@@ -3245,9 +3246,9 @@ pub fn spoke_chase_camera_algorithm_update(c: &mut Cpu) {
     c.g[A1][0] = c.g[S0][0];
     c.g[A2][0] = sx(frame.at(c, INFO_DIRECTION));
     c.sub_s(20, 21, 20);
-    c.g[RA][0] = sx(0x0017833c);
+    c.g[RA][0] = sx(0x0017_833c);
     c.sq(2, frame.at(c, 0x80));
-    if call_ptr(c, 0x00177fc0, 0x0017833c).is_err() {
+    if call_ptr(c, 0x0017_7fc0, 0x0017_833c).is_err() {
         return;
     }
     c.mfc1(2, 20);
@@ -3265,13 +3266,13 @@ pub fn spoke_chase_camera_algorithm_update(c: &mut Cpu) {
     c.sqc2(5, frame.at(c, 0xb0));
     c.lq(2, frame.at(c, 0xb0));
     c.sq(2, r32(c, S0).wrapping_add(EYE));
-    c.g[RA][0] = sx(0x00178380);
+    c.g[RA][0] = sx(0x0017_8380);
     c.sq(2, frame.at(c, 0x70));
-    if call_ptr(c, 0x00177ef8, 0x00178380).is_err() {
+    if call_ptr(c, callee::SPOKE_CHASE_GET_FOCUS_POINT.addr, 0x0017_8380).is_err() {
         return;
     }
-    c.g[V0][0] = 0x500000;
-    c.g[AT][0] = 0x42140000;
+    c.g[V0][0] = 0x0050_0000;
+    c.g[AT][0] = 0x4214_0000;
     c.mtc1(1, 0);
     // 0x4ff160: world up.
     c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xea0));
@@ -12927,6 +12928,7 @@ pub(crate) mod tests {
         v.map(|x| x * len / n)
     }
 
+    /// Writes `v` at `at` as four f32s.
     fn spoke_put(c: &mut Cpu, at: u32, v: [f64; 4]) {
         put_vec(c, at, v.map(|x| (x as f32).to_bits()));
     }
@@ -13137,10 +13139,8 @@ pub(crate) mod tests {
                     out
                 };
                 let stock = sample(60);
-                println!("SPOKE_RATE state={state} start={start} hz=60 samples={stock:?}");
                 for hz in [120, 240] {
                     let actual = sample(hz);
-                    println!("SPOKE_RATE state={state} start={start} hz={hz} samples={actual:?}");
                     for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
                         for axis in 0..3 {
                             assert!((a[axis] - b[axis]).abs() < tolerance,
@@ -13268,18 +13268,21 @@ pub(crate) mod tests {
     fn spoke_chase_camera_heading_follows_the_rate() {
         const KEEP: u32 = 0x0049_d2f0;
         const ADD: u32 = 0x0049_d2f4;
+        /// The executable's shares: 0.96 kept, 0.04 added.
+        const KEEP_STOCK: u32 = 0x3f75_c28f;
+        const ADD_STOCK: u32 = 0x3d23_d710;
         for start in [10.0f64, 45.0, 90.0] {
             let angles = [60u32, 120, 240].map(|hz| {
                 // An entry the rewrite leaves alone keeps its executable bits.
                 let add = crate::tick::per_tick_values(hz)
                     .into_iter()
                     .find(|e| e.0 == ADD)
-                    .map_or(0x3d23_d710, |e| e.1);
+                    .map_or(ADD_STOCK, |e| e.1);
                 let mut c = crate::difftest::fresh();
                 let _ = machine(&mut c, 0, 0x177fc0, 0);
                 spoke_eye_objects(&mut c, 0);
                 c.bus
-                    .write32(KEEP, crate::tick::per_tick_at(hz, KEEP, 0x3f75_c28f));
+                    .write32(KEEP, crate::tick::per_tick_at(hz, KEEP, KEEP_STOCK));
                 c.bus.write32(ADD, add);
                 put_vec(&mut c, SPOKE_DIR, [1.0f32.to_bits(), 0, 0, 0]);
                 let (s, co) = start.to_radians().sin_cos();
@@ -13315,8 +13318,8 @@ pub(crate) mod tests {
         }
         // At 60 both entries keep the executable's bits.
         let at60 = crate::tick::per_tick_values(60);
-        assert!(at60.contains(&(KEEP, 0x3f75_c28f)), "keep share");
-        assert!(at60.contains(&(ADD, 0x3d23_d710)), "added share");
+        assert!(at60.contains(&(KEEP, KEEP_STOCK)), "keep share");
+        assert!(at60.contains(&(ADD, ADD_STOCK)), "added share");
     }
 
     /// The `BELibrary` singleton (`gp - 0x1f04`) and the world (`gp - 0x848`).

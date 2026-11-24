@@ -195,6 +195,15 @@ const HEX_DECODE_HI: u32 = 0x0049_61c0;
 /// table `TagFieldGetBinary` uses for every hex digit of its `b`/`w`/`l`
 /// values.
 const HEX_DECODE_LO: u32 = 0x0049_62c0;
+/// Month-length table `D_004969E0` that `ds_secstotime` walks (plain year,
+/// then the leap row at word 12).
+const MONTH_DAYS: u32 = 0x0049_69e0;
+/// `lui` page of the read-only tag tables above (`CLASS_TABLE`, `HEX_*`,
+/// `DATE_FMT`, `MONTH_DAYS`).
+const TAG_TABLE_PAGE: u64 = 0x0049_0000;
+/// `lui` page of the tag-name strings (`TAG_NAME_ADDR`, `EMPTY_NAME`,
+/// `TAG_FALLBACK_KEY`).
+const TAG_STRING_PAGE: u64 = 0x004a_0000;
 
 // `sDsTmK2` broken-down time fields (reference field order).
 const TM_SEC: u32 = 0x00;
@@ -203,6 +212,7 @@ const TM_HOUR: u32 = 0x08;
 const TM_MDAY: u32 = 0x0c;
 const TM_MON: u32 = 0x10;
 const TM_YEAR: u32 = 0x14;
+const TM_YDAY: u32 = 0x1c;
 const TM_ISDST: u32 = 0x20;
 const TM_SIZE: u32 = 0x24;
 /// Calendar year of `tm_year` 0.
@@ -1334,10 +1344,9 @@ pub fn tag_field_copy_tag(c: &mut Cpu) {
 
 /// `int TagFieldSetRaw(char* record, int len, const char* temp)` (0x3eb1e0):
 /// add or replace the `name=value` term `temp` in the record, returning
-/// the whole term's length, 0 for an identical term, or -1.
-/// Names compare through the class table at
-/// `0x4964c0`; fields are separated by the byte at `gp+0x1980`, and `~…`
-/// terms are appended at the end.
+/// the whole term's length, 0 for an identical term, or -1. Names compare
+/// through `CLASS_TABLE`; fields are separated by the byte at gp +
+/// `FIELD_SEP_GP`, and `~…` terms are appended at the end.
 pub fn tag_field_set_raw(c: &mut Cpu) {
     match c.pc {
         0x003e_b1e0 | 0x003e_b250 | 0x003e_b2e0 | 0x003e_b338 | 0x003e_b390 | 0x003e_b3c0
@@ -1417,7 +1426,7 @@ pub fn tag_field_set_raw(c: &mut Cpu) {
                 if resume == 0x003e_b1e0 {
                     c.cycles += 6;
                     // Kept for exactness: T6 scratch (consumer folded to CLASS_TABLE).
-                    c.g[T6][0] = 0x0049_0000;
+                    c.g[T6][0] = TAG_TABLE_PAGE;
                     c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[T5][0] = 0x1;
                     c.g[T3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
@@ -2088,7 +2097,7 @@ pub fn tag_field_find(c: &mut Cpu) {
             }
         }
         c.cycles += 8; // 0x3eb734
-        c.g[V0][0] = 0x0049_0000;
+        c.g[V0][0] = TAG_TABLE_PAGE;
         c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_sub(1));
         c.g[S0][0] = c.g[V0][0];
         c.g[T7][0] = sx(TAG_CHAR_CLASS);
@@ -2326,7 +2335,7 @@ pub fn tag_field_find_skip_ws(c: &mut Cpu) {
             c.cycles += 8;
             Frame::open(c, 0x10);
             // kept for exactness: A1 is overwritten with TAG_NAME_ADDR below.
-            c.g[A1][0] = 0x004a_0000;
+            c.g[A1][0] = TAG_STRING_PAGE;
             frame.save_ra(c, 0);
             c.g[A1][0] = sx(TAG_NAME_ADDR);
             callee::TAG_FIELD_FIND.call(c, 0x003e_b8cc)?;
@@ -2532,7 +2541,7 @@ pub fn tag_field_delete(c: &mut Cpu) {
 }
 
 /// `int TagFieldRename(char* record, int len, const char* name, const char* value)`
-/// (0x003e_b9e8): rename the `name` field to `value` (the 4th argument is the
+/// (0x3eb9e8): rename the `name` field to `value` (the 4th argument is the
 /// new name), shifting the record in place; 0 on success, -1 when the field
 /// or room is missing. On a shrink with a non-empty tail the original loops
 /// forever; this port reproduces that.
@@ -2723,7 +2732,7 @@ pub fn tag_field_rename(c: &mut Cpu) {
 }
 
 /// `int TagFieldSetAddress(char* record, int len, const char* name, unsigned int addr)`
-/// (0x003e_bfc8): store an IPv4 address field in dotted-decimal form.
+/// (0x3ebfc8): store an IPv4 address field in dotted-decimal form.
 pub fn tag_field_set_address(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 26;
@@ -2829,7 +2838,7 @@ pub fn tag_field_set_address(c: &mut Cpu) {
 }
 
 /// `int TagFieldSetString(char* record, int len, const char* name, const char* value)`
-/// (0x003e_c180): store a string value, quoting it when it contains a space
+/// (0x3ec180): store a string value, quoting it when it contains a space
 /// byte (0x20); a null value deletes the field. `=`, `"`, `:` and `%` itself
 /// (and any byte outside 0x20..=0x7e) are written as `%` followed by the two
 /// hex encode-table chars of the byte, whether or not the value is quoted.
@@ -2918,10 +2927,10 @@ pub fn tag_field_set_string(c: &mut Cpu) {
             // Copy the value, %-escaping the special chars.
             c.cycles += 2;
             let value_done = c.g[A1][0] == 0u64;
-            c.g[V0][0] = 0x0049_0000;
+            c.g[V0][0] = TAG_TABLE_PAGE;
             if !value_done {
                 c.cycles += 9;
-                c.g[V1][0] = 0x0049_0000;
+                c.g[V1][0] = TAG_TABLE_PAGE;
                 c.g[T5][0] = sx(HEX_ENCODE_HI);
                 c.g[T4][0] = sx(HEX_ENCODE_LO);
                 c.g[T3][0] = b'=' as u64;
@@ -3069,7 +3078,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                 c.cycles += 3;
                 c.g[T6][0] = b'a' as u64;
                 c.g[T5][0] = b',' as u64;
-                c.g[T4][0] = 0x0049_0000; // kept for exactness
+                c.g[T4][0] = TAG_TABLE_PAGE; // kept for exactness
                 'tmpl: loop {
                     c.cycles += 5;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
@@ -3280,10 +3289,10 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                         c.cycles += 3;
                         c.g[V0][0] = c.lbu(c.g[T2][0] as u32);
                         let empty_string = c.g[V0][0] == 0;
-                        c.g[V1][0] = 0x0049_0000;
+                        c.g[V1][0] = TAG_TABLE_PAGE;
                         if !empty_string {
                             c.cycles += 6;
-                            c.g[V0][0] = 0x0049_0000;
+                            c.g[V0][0] = TAG_TABLE_PAGE;
                             c.g[T3][0] = sx(CLASS_TABLE);
                             c.g[T0][0] = sx(HEX_ENCODE_HI);
                             c.g[A3][0] = b'%' as u64;
@@ -3433,7 +3442,7 @@ pub fn tag_field_set_encoded(c: &mut Cpu) {
         }
         if fallback {
             c.cycles += 3;
-            c.g[V0][0] = 0x004a_0000;
+            c.g[V0][0] = TAG_STRING_PAGE;
             c.g[S0][0] = sx(TAG_FALLBACK_KEY);
             c.g[A0][0] = c.g[S3][0];
         }
@@ -3450,8 +3459,8 @@ pub fn tag_field_set_encoded(c: &mut Cpu) {
         c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
         if has_bytes {
             c.cycles += 5;
-            c.g[V0][0] = 0x0049_0000;
-            c.g[V1][0] = 0x0049_0000;
+            c.g[V0][0] = TAG_TABLE_PAGE;
+            c.g[V1][0] = TAG_TABLE_PAGE;
             c.g[T3][0] = sx(HEX_ENCODE_HI);
             c.g[T2][0] = sx(HEX_ENCODE_LO);
             loop {
@@ -3546,7 +3555,7 @@ pub fn tag_field_set_date(c: &mut Cpu) {
             c.g[A0][0] = c.g[S3][0];
             callee::TAG_FIELD_COPY_TAG.call(c, 0x003e_c848)?;
             c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(TM_YEAR));
-            c.g[A1][0] = 0x0049_0000;
+            c.g[A1][0] = TAG_TABLE_PAGE;
             c.g[A3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(TM_MON));
             c.g[A0][0] = c.g[V0][0];
             c.g[T3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(TM_SEC));
@@ -3714,7 +3723,7 @@ pub fn tag_field_set_date_packed(c: &mut Cpu) {
 }
 
 /// `int TagFieldCopyField(char* record, int len, const char* name, char* data)`
-/// (0x003e_ca88): find `name` in `data` and copy the whole field into the record.
+/// (0x3eca88): find `name` in `data` and copy the whole field into the record.
 pub fn tag_field_copy_field(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
@@ -3824,7 +3833,7 @@ pub fn tag_field_printf(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V0][0] = ((c.g[S1][0] as i64) < 2) as u64;
             let len_short = c.g[V0][0] != 0;
-            c.g[S4][0] = 0x4a0000;
+            c.g[S4][0] = TAG_STRING_PAGE;
             if !len_short {
                 c.cycles += 2;
                 c.g[V0][0] = (c.g[A1][0] < 0x21) as u64;
@@ -4375,7 +4384,7 @@ pub fn tag_field_get_delim(c: &mut Cpu) {
                         c.cycles += 3;
                         c.g[V0][0] = c.g[A0][0] & 0xff;
                         let head_at_delim = c.g[V0][0] == c.g[T1][0];
-                        c.g[V0][0] = 0x490000;
+                        c.g[V0][0] = TAG_TABLE_PAGE;
                         if head_at_delim {
                             c.cycles += 1;
                             c.sb(c.g[T2][0] as u32, 0u64);
@@ -4384,7 +4393,7 @@ pub fn tag_field_get_delim(c: &mut Cpu) {
                             break 'body;
                         }
                         c.cycles += 6;
-                        c.g[V1][0] = 0x490000;
+                        c.g[V1][0] = TAG_TABLE_PAGE;
                         c.g[T6][0] = sx(HEX_DECODE_HI);
                         c.g[T5][0] = sx(HEX_DECODE_LO);
                         c.g[T4][0] = 0x25;
@@ -4835,8 +4844,8 @@ pub fn tag_field_get_string(c: &mut Cpu) {
                     break 'body;
                 }
                 c.cycles += 7;
-                c.g[V0][0] = 0x490000;
-                c.g[V1][0] = 0x490000;
+                c.g[V0][0] = TAG_TABLE_PAGE;
+                c.g[V1][0] = TAG_TABLE_PAGE;
                 c.g[T5][0] = sx(HEX_DECODE_HI);
                 c.g[T4][0] = sx(HEX_DECODE_LO);
                 c.g[T3][0] = b'%' as u64;
@@ -4981,7 +4990,7 @@ pub fn tag_field_get_binary(c: &mut Cpu) {
             }
             c.cycles += 2;
             let data_present = c.g[T0][0] != 0u64;
-            c.g[V0][0] = 0x4a0000;
+            c.g[V0][0] = TAG_STRING_PAGE;
             if !data_present {
                 c.cycles += 1;
                 c.g[T0][0] = sx(EMPTY_NAME);
@@ -5014,7 +5023,7 @@ pub fn tag_field_get_binary(c: &mut Cpu) {
             c.g[S2][0] = 0x2;
             c.g[S0][0] = 0x4;
             c.g[S1][0] = 0x8;
-            c.g[T9][0] = 0x490000;
+            c.g[T9][0] = TAG_TABLE_PAGE;
         }
         let mut resume_at = resume;
         loop {
@@ -5251,7 +5260,7 @@ pub fn tag_field_get_binary(c: &mut Cpu) {
                 if stage < 4 {
                     c.cycles += 2;
                     count_empty = (c.g[T4][0] as i64) <= 0;
-                    c.g[V0][0] = 0x490000;
+                    c.g[V0][0] = TAG_TABLE_PAGE;
                 }
                 if !count_empty {
                     if stage < 4 {
@@ -5467,13 +5476,13 @@ pub fn tag_field_get_encoded(c: &mut Cpu) {
                 }
                 c.cycles += 2;
                 let key_null = c.g[T4][0] == 0u64;
-                c.g[V0][0] = 0x4a0000;
+                c.g[V0][0] = TAG_STRING_PAGE;
                 let mut use_fallback_key = key_null;
                 if !key_null {
                     c.cycles += 3;
                     c.g[V0][0] = c.lbu(c.g[T4][0] as u32);
                     let key_nonempty = c.g[V0][0] != 0u64;
-                    c.g[V0][0] = 0x4a0000;
+                    c.g[V0][0] = TAG_STRING_PAGE;
                     use_fallback_key = !key_nonempty;
                 }
                 if use_fallback_key {
@@ -5573,8 +5582,8 @@ pub fn tag_field_get_encoded(c: &mut Cpu) {
                     if !bad_char {
                         if resume != HEAD_DECODE {
                             c.cycles += 6;
-                            c.g[V0][0] = 0x490000;
-                            c.g[V1][0] = 0x490000;
+                            c.g[V0][0] = TAG_TABLE_PAGE;
+                            c.g[V1][0] = TAG_TABLE_PAGE;
                             c.g[T7][0] = sx(HEX_DECODE_HI);
                             c.g[T6][0] = sx(HEX_DECODE_LO);
                             c.g[A1][0] = c.lbu(c.g[T0][0] as u32);
@@ -5684,7 +5693,7 @@ pub fn tag_field_get_date(c: &mut Cpu) {
                 c.g[A2][0] = c.lbu(c.g[S1][0] as u32);
                 if has_hex {
                     c.cycles += 3;
-                    c.g[V0][0] = 0x490000;
+                    c.g[V0][0] = TAG_TABLE_PAGE;
                     c.g[A3][0] = sx(HEX_DECODE_LO);
                     loop {
                         c.cycles += 11;
@@ -6095,7 +6104,7 @@ pub fn tag_field_parse_decimal(c: &mut Cpu) {
     c.cycles += 6;
     c.sw(c.g[A1][0] as u32, 0u64);
     c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
-    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x30));
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(b'0' as u32));
     c.g[V0][0] = (c.g[V0][0] < 0xau64) as u64;
     let t = c.g[V0][0] == 0u64;
     c.g[A2][0] = 0xa;
@@ -6116,7 +6125,7 @@ pub fn tag_field_parse_decimal(c: &mut Cpu) {
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
         c.sw(c.g[A1][0] as u32, c.g[V0][0]);
         c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
-        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x30));
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(b'0' as u32));
         c.g[V0][0] = (c.g[V0][0] < 0xau64) as u64;
         if c.g[V0][0] != 0u64 {
             c.g[V0][0] = c.lw(c.g[A1][0] as u32);
@@ -6161,7 +6170,7 @@ pub fn ds_secstotime(c: &mut Cpu) {
                     c.g[T0][0] = 0x3c;
                     c.g[T1][0] = 0x3c;
                     c.g[T2][0] = 0x3c;
-                    c.g[T5][0] = 0x7b2;
+                    c.g[T5][0] = EPOCH_YEAR as u64;
                     c.g[A1][0] = c.lo[0];
                     c.g[A3][0] = c.hi[0];
                     c.g[T4][0] = c.g[A1][0];
@@ -6172,9 +6181,9 @@ pub fn ds_secstotime(c: &mut Cpu) {
                     c.div(0, 2, 6);
                     c.g[A0][0] = c.hi[0];
                     c.g[V0][0] = c.lo[0];
-                    c.sw((c.g[T6][0] as u32).wrapping_add(0x4), c.g[A0][0]);
-                    c.sw((c.g[T6][0] as u32).wrapping_add(0x8), c.g[V0][0]);
-                    c.g[T7][0] = 0x490000;
+                    c.sw((c.g[T6][0] as u32).wrapping_add(TM_MIN), c.g[A0][0]);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(TM_HOUR), c.g[V0][0]);
+                    c.g[T7][0] = TAG_TABLE_PAGE;
                     pc = 0x003e_afdc;
                 }
                 0x003e_af2c => {
@@ -6304,11 +6313,12 @@ pub fn ds_secstotime(c: &mut Cpu) {
                     c.cycles += 9;
                     c.g[A0][0] = c.g[A0][0] & 0x1;
                     c.mult(0, 4, 4, 2);
-                    c.g[V1][0] = sx((c.g[T5][0] as u32).wrapping_sub(0x76c));
-                    c.g[V0][0] = sx((c.g[T7][0] as u32).wrapping_add(0x69e0));
-                    c.sw((c.g[T6][0] as u32).wrapping_add(0x14), c.g[V1][0]);
-                    c.sw((c.g[T6][0] as u32).wrapping_add(0x1c), c.g[T4][0]);
-                    c.sw((c.g[T6][0] as u32).wrapping_add(0x10), 0u64);
+                    c.g[V1][0] = sx((c.g[T5][0] as u32).wrapping_sub(YEAR_BASE));
+                    c.g[V0][0] =
+                        sx((c.g[T7][0] as u32).wrapping_add(MONTH_DAYS - TAG_TABLE_PAGE as u32));
+                    c.sw((c.g[T6][0] as u32).wrapping_add(TM_YEAR), c.g[V1][0]);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(TM_YDAY), c.g[T4][0]);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(TM_MON), 0u64);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     pc = 0x003e_b068;
                 }
@@ -6321,7 +6331,7 @@ pub fn ds_secstotime(c: &mut Cpu) {
                     c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
-                    c.sw((c.g[T6][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(TM_MON), c.g[V0][0]);
                     pc = 0x003e_b068;
                 }
                 0x003e_b068 => {
@@ -6329,7 +6339,7 @@ pub fn ds_secstotime(c: &mut Cpu) {
                     c.g[V1][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V0][0] = ((c.g[T4][0] as i64) < (c.g[V1][0] as i64)) as u64;
                     if c.g[V0][0] == 0u64 {
-                        c.g[V0][0] = c.lw((c.g[T6][0] as u32).wrapping_add(0x10));
+                        c.g[V0][0] = c.lw((c.g[T6][0] as u32).wrapping_add(TM_MON));
                         if back_edge_unwinds(c, 0x003e_b058) {
                             return Ok(());
                         }
@@ -6342,9 +6352,9 @@ pub fn ds_secstotime(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[V1][0] = sx((c.g[T4][0] as u32).wrapping_add(0x1));
                     c.g[V0][0] = c.g[T6][0];
-                    c.sw((c.g[T6][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(TM_MDAY), c.g[V1][0]);
                     let t = c.g[RA][0] as u32;
-                    c.sw((c.g[T6][0] as u32).wrapping_add(0x20), 0u64);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(TM_ISDST), 0u64);
                     c.pc = t;
                     return Ok(());
                 }
@@ -6732,15 +6742,15 @@ pub(crate) mod tests {
     }
 
     /// The tag helpers read these tables at fixed addresses: the field
-    /// separator (gp+0x1980), the name-class table (0x4964c0), Find's
-    /// byte-fold table (0x4963c0) and the two hex tables (0x4961c0/0x4962c0
-    /// decode, 0x495fc0/0x4960c0 encode). Stand-in values, not game strings.
-    /// `ds_secstotime` walks a month-length table at 0x4969e0, subtracting
+    /// separator (`FIELD_SEP_GP`), the name-class table (`CLASS_TABLE`),
+    /// Find's byte-fold table (`TAG_CHAR_CLASS`) and the `HEX_DECODE_*` /
+    /// `HEX_ENCODE_*` tables. Stand-in values, not game strings.
+    /// `ds_secstotime` walks the month-length table `MONTH_DAYS`, subtracting
     /// entries from the day count (plain row first, leap row at word 12);
     /// without game rodata the scan reads zeros and never terminates, so
     /// stand in the real month lengths (calendar facts, not game data).
     fn tables(c: &mut Cpu) {
-        c.bus.write8(0x004a_4a70, b'\n');
+        c.bus.write8(GAME_GP + FIELD_SEP_GP, b'\n');
         for (i, days) in [
             31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31,
             30, 31,
@@ -6748,7 +6758,7 @@ pub(crate) mod tests {
         .iter()
         .enumerate()
         {
-            c.bus.write32(0x0049_69e0 + i as u32 * 4, *days);
+            c.bus.write32(MONTH_DAYS + i as u32 * 4, *days);
         }
         for i in 0..256u32 {
             let cls = if (b'a'..=b'z').contains(&(i as u8))
@@ -6764,20 +6774,20 @@ pub(crate) mod tests {
             } else {
                 0
             };
-            c.bus.write8(0x0049_64c0 + i, cls);
+            c.bus.write8(CLASS_TABLE + i, cls);
             // Find compares folded bytes for equality only, so folding
-            // a-z up to A-Z (the fold at 0x4963c0) makes its name compare
+            // a-z up to A-Z (the fold at `TAG_CHAR_CLASS`) makes its name compare
             // case-insensitive; without this the zeroed table would match
             // every name against the first field.
             c.bus
                 .write8(TAG_CHAR_CLASS + i, (i as u8).to_ascii_uppercase());
             let v = (i as u8 as char).to_digit(16).unwrap_or(0) as u8;
-            c.bus.write8(0x0049_61c0 + i, v << 4);
-            c.bus.write8(0x0049_62c0 + i, v);
+            c.bus.write8(HEX_DECODE_HI + i, v << 4);
+            c.bus.write8(HEX_DECODE_LO + i, v);
             c.bus
-                .write8(0x0049_5fc0 + i, b"0123456789abcdef"[(i >> 4) as usize]);
+                .write8(HEX_ENCODE_HI + i, b"0123456789abcdef"[(i >> 4) as usize]);
             c.bus
-                .write8(0x0049_60c0 + i, b"0123456789abcdef"[(i & 15) as usize]);
+                .write8(HEX_ENCODE_LO + i, b"0123456789abcdef"[(i & 15) as usize]);
         }
     }
 
@@ -7182,7 +7192,7 @@ pub(crate) mod tests {
             tables(c);
             let rec = DATA;
             put_str(c, rec, b"tag=      value\n");
-            put_str(c, 0x004a_4a78, b"tag");
+            put_str(c, TAG_NAME_ADDR, b"tag");
             c.g[A0][0] = sx(rec);
             let mode = schedule(c, &mut r, seed, 0x003e_b8b8);
             // Due after the Find call returns, inside the whitespace loop

@@ -7,9 +7,11 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
@@ -6173,6 +6175,10 @@ pub fn mc_manager_update_states(c: &mut Cpu) {
     })
 }
 
+/// The `lui` page of the ASCII format strings (0x4a2c80..0x4a2c98) the save
+/// and free-space texts widen.
+const MC_STRINGS_PAGE: u64 = 0x004a_0000;
+
 /// `MCManager *MCManager_GetInstance(void)` (0x23c808): the manager singleton
 /// at `gp-0x47c`, creating it through `MCManager_ctor` on first use.
 pub fn mc_manager_get_instance(c: &mut Cpu) {
@@ -6270,29 +6276,23 @@ pub fn mc_manager_set_slot(c: &mut Cpu) {
 /// `void *MCManager_SetDataSize_Wrapper(MCManager *self)` (0x23cc58): call
 /// through to `MCManager_SetDataSize` and return.
 pub fn mc_manager_set_data_size_wrapper(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        callee::MC_MANAGER_SET_DATA_SIZE.call(c, 0x0023_cc68)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::MC_MANAGER_SET_DATA_SIZE),
+        0x0023_cc68,
+    );
 }
 
 /// `void *MCManager_State2F(MCManager *self)` (0x240f10): reset the manager
 /// through `MCManager_Reset` and return.
 pub fn mc_manager_state2f(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        callee::MC_MANAGER_RESET.call(c, 0x0024_0f20)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::MC_MANAGER_RESET),
+        0x0024_0f20,
+    );
 }
 
 /// `void *MCManager_ReadCurrentDirInfo(MCManager *self)` (0x241fb0): reread
@@ -6327,7 +6327,7 @@ pub fn mc_manager_state34(c: &mut Cpu) {
 
 /// `void *MCManager_SetDataSize(MCManager *self, int size)` (0x23caa0): store
 /// `size` as the pending data size at `self+0xf0` through the backend's size
-/// hook (vtable at `self+0x434`, method `+0x98/0x9c`).
+/// hook (driver at `mcus::CARD`, method `+0x98/0x9c`).
 pub fn mc_manager_set_data_size(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 18;
@@ -6427,41 +6427,23 @@ pub fn mc_manager_next_file(c: &mut Cpu) {
 }
 
 /// `void MCManager_WriteSaveByName(MCManager *self, int a, int b, int c)`
-/// (0x240fb0): flag the save pending at `gp-0x478`, run the backend's
-/// by-name write hook (vtable at `self+0x434`, method `+0x120/0x124`) and
-/// keep `c` at `self+0xe4`.
+/// (0x240fb0): write the save through the driver's by-name hook (method
+/// `+0x120`), see `mc_manager_write_save`.
 pub fn mc_manager_write_save_by_name(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 20;
-        let frame = Frame::open(c, 0x30);
-        c.g[V0][0] = 1;
-        frame.save(c, S0, 0x20);
-        frame.save(c, S1, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A3][0];
-        c.g[S1][0] = c.g[A0][0];
-        c.g[T0][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
-        Addr((c.g[GP][0] as u32).wrapping_sub(0x478)).sw(c, c.g[V0][0]);
-        c.g[V1][0] = Addr(c.g[T0][0] as u32).lw(c);
-        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x120).lh(c);
-        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x124).lw(c);
-        let target = r32(c, V0);
-        c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-        call_ptr(c, target, 0x0024_0fe8)?;
-        Addr(c.g[S1][0] as u32).off(0xe4).sw(c, c.g[S0][0]);
-        frame.restore(c, S0, 0x20);
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    mc_manager_write_save(c, 0x0024_0fb0, 0x120);
 }
 
 /// `void MCManager_WriteSaveBySlot(MCManager *self, int a, int b, int c)`
-/// (0x241050): flag the save pending at `gp-0x478`, run the backend's
-/// by-slot write hook (vtable at `self+0x434`, method `+0x130/0x134`) and
-/// keep `c` at `self+0xe4`.
+/// (0x241050): write the save through the driver's by-slot hook (method
+/// `+0x130`), see `mc_manager_write_save`.
 pub fn mc_manager_write_save_by_slot(c: &mut Cpu) {
+    mc_manager_write_save(c, 0x0024_1050, 0x130);
+}
+
+/// The two save writes: flag the save pending at `gp-0x478`, call the driver
+/// at `mcus::CARD` through its `{short delta; fn}` slot at `method` and keep
+/// `c` at `self+0xe4`.
+fn mc_manager_write_save(c: &mut Cpu, entry: u32, method: u32) {
     guest(c, |c| {
         c.cycles += 20;
         let frame = Frame::open(c, 0x30);
@@ -6474,11 +6456,11 @@ pub fn mc_manager_write_save_by_slot(c: &mut Cpu) {
         c.g[T0][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
         Addr((c.g[GP][0] as u32).wrapping_sub(0x478)).sw(c, c.g[V0][0]);
         c.g[V1][0] = Addr(c.g[T0][0] as u32).lw(c);
-        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x130).lh(c);
-        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x134).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(method).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(method + 4).lw(c);
         let target = r32(c, V0);
         c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-        call_ptr(c, target, 0x0024_1088)?;
+        call_ptr(c, target, entry + 0x38)?;
         Addr(c.g[S1][0] as u32).off(0xe4).sw(c, c.g[S0][0]);
         frame.restore(c, S0, 0x20);
         frame.restore(c, S1, 0x10);
@@ -6489,8 +6471,8 @@ pub fn mc_manager_write_save_by_slot(c: &mut Cpu) {
 }
 
 /// `void MCManager_State31(MCManager *self)` (0x23e268): when the backend
-/// at `+0x434` does not report the operation done, send message 0x32 to the
-/// message sink at `+0x748` (slot `+8/+0xc`).
+/// at `mcus::CARD` does not report the operation done, send message 0x32 to the
+/// message sink at `mcus::MSG` (slot `+8/+0xc`).
 pub fn mc_manager_state31(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6524,8 +6506,8 @@ pub fn mc_manager_state31(c: &mut Cpu) {
 }
 
 /// `int MCManager_ClampFileIndex(MCManager *self)` (0x2410d0): the smaller
-/// of the file count at `+0xec` and the backend's count (vtable at
-/// `self+0x434`, method `+0x220/0x224`); the backend is asked again when
+/// of the file count at `+0xec` and the backend's count (driver at
+/// `mcus::CARD`, method `+0x220/0x224`); the backend is asked again when
 /// its first count is not larger.
 pub fn mc_manager_clamp_file_index(c: &mut Cpu) {
     guest(c, |c| {
@@ -6644,12 +6626,9 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
         c.g[V1][0] = Addr(dev).off(0x350).lw(c);
         let missing = c.g[V1][0] == 0;
         c.g[S3][0] = c.g[A2][0];
-        // 7 cycles for the two skipped block tails, 6 for the middle one, 5
-        // for the outer one (see the generated nesting).
-        let mut tail = 7u64;
-        // The generated body also restores s0 just after the +0x344 load
-        // and s1 inside the +0x348 arm; the tail restores stay (the loads
-        // are idempotent, and s0 is reused as scratch on the full path).
+        // The compiled tail block a path joins: 0x2419b8 reloads s0 and s1,
+        // 0x2419bc only s1, 0x2419c0 neither (those arms reloaded them early).
+        let (mut reload_s0, mut reload_s1) = (true, true);
         'checks: {
             if missing {
                 break 'checks;
@@ -6659,22 +6638,22 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             let missing = c.g[V1][0] == 0;
             frame.restore(c, S0, 0x440);
             if missing {
-                tail = 6;
+                reload_s0 = false;
                 break 'checks;
             }
             c.cycles += 3;
             c.g[V1][0] = Addr(dev).off(0x348).lw(c);
             if c.g[V1][0] == 0 {
                 frame.restore(c, S1, 0x430);
-                tail = 5;
+                (reload_s0, reload_s1) = (false, false);
                 break 'checks;
             }
             c.cycles += 3;
             c.g[V1][0] = Addr(dev).off(0x34c).lw(c);
             let missing = c.g[V1][0] == 0;
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = MC_STRINGS_PAGE;
             if missing {
-                tail = 6;
+                reload_s0 = false;
                 break 'checks;
             }
             // Two wide strings then the formatted line.
@@ -6683,7 +6662,7 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c90));
             callee::USTR_FROM_ASCII_2.call(c, 0x0024_198c)?;
             c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x200));
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = MC_STRINGS_PAGE;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c98));
             c.g[A0][0] = c.g[S0][0];
             callee::USTR_FROM_ASCII_2.call(c, 0x0024_19a0)?;
@@ -6694,9 +6673,15 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.g[A3][0] = c.g[SP][0];
             callee::U_STR_SPRINTF.call(c, 0x0024_19b8)?;
         }
-        c.cycles += tail;
-        frame.restore(c, S0, 0x440);
-        frame.restore(c, S1, 0x430);
+        if reload_s0 {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x440);
+        }
+        if reload_s1 {
+            c.cycles += 1;
+            frame.restore(c, S1, 0x430);
+        }
+        c.cycles += 5;
         frame.restore(c, S2, 0x420);
         frame.restore(c, S3, 0x410);
         frame.restore_ra(c, 0x400);
@@ -6706,9 +6691,9 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
 }
 
 /// `void MCManager_State1E(MCManager *self)` (0x23fff0): when the backend
-/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// at `mcus::CARD` says the operation is done, return at once; otherwise poll
 /// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
-/// `+0x78` or report to the message sink at `+0x748` (slot `+8/+0xc`).
+/// `+0x78` or report to the message sink at `mcus::MSG` (slot `+8/+0xc`).
 pub fn mc_manager_state1e(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6789,9 +6774,9 @@ pub fn mc_manager_state1e(c: &mut Cpu) {
 }
 
 /// `void MCManager_State2B(MCManager *self)` (0x240cc0): when the backend
-/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// at `mcus::CARD` says the operation is done, return at once; otherwise poll
 /// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
-/// `+0x68` or report to the message sink at `+0x748` (slot `+8/+0xc`).
+/// `+0x68` or report to the message sink at `mcus::MSG` (slot `+8/+0xc`).
 pub fn mc_manager_state2b(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6881,9 +6866,9 @@ pub fn mc_manager_state2b(c: &mut Cpu) {
 }
 
 /// `void MCManager_State09(MCManager *self)` (0x2409c8): when the backend
-/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// at `mcus::CARD` says the operation is done, return at once; otherwise poll
 /// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
-/// `+0x70` or report to the message sink at `+0x748` (slot `+8/+0xc`).
+/// `+0x70` or report to the message sink at `mcus::MSG` (slot `+8/+0xc`).
 pub fn mc_manager_state09(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6985,7 +6970,7 @@ pub fn mc_manager_state09(c: &mut Cpu) {
 
 /// `void MCManager_State11_Save(MCManager *self)` (0x23f578): count the
 /// save down, update the progress fraction and either wait on the backend
-/// at `+0x434` (vtable `+0x248/0x24c`) or finish the progress bar and
+/// at `mcus::CARD` (vtable `+0x248/0x24c`) or finish the progress bar and
 /// start the save.
 pub fn mc_manager_state11_save(c: &mut Cpu) {
     guest(c, |c| {
@@ -7092,9 +7077,9 @@ pub fn mc_manager_state11_save(c: &mut Cpu) {
 }
 
 /// `void MCManager_State2C_Delete(MCManager *self)` (0x240d90): count the
-/// delete down and either wait on the backend at `+0x434` (vtable
+/// delete down and either wait on the backend at `mcus::CARD` (vtable
 /// `+0x248/0x24c`) or advance the delete slot and report to the message
-/// sink at `+0x748` (slot `+8/+0xc`).
+/// sink at `mcus::MSG` (slot `+8/+0xc`).
 pub fn mc_manager_state2c_delete(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 15;
@@ -7197,7 +7182,7 @@ pub fn mc_manager_state2c_delete(c: &mut Cpu) {
 }
 
 /// `void MCManager_State16(MCManager *self)` (0x23fd40): when the backend
-/// at `+0x434` says the operation is done, return at once; otherwise,
+/// at `mcus::CARD` says the operation is done, return at once; otherwise,
 /// when no load is pending and the backend poll (vtable `+0x1a8/0x1ac`)
 /// is ready, end the operation (or report it done).
 pub fn mc_manager_state16(c: &mut Cpu) {
@@ -7406,7 +7391,7 @@ pub fn mc_manager_begin_save(c: &mut Cpu) {
             }
         }
         c.cycles += 24;
-        c.g[A1][0] = 0x4a0000;
+        c.g[A1][0] = MC_STRINGS_PAGE;
         c.g[A0][0] = c.g[S0][0];
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c80));
         callee::USTR_FROM_ASCII_2.call(c, 0x0023_cbcc)?;
@@ -7510,7 +7495,7 @@ pub fn mc_manager_begin_load(c: &mut Cpu) {
             }
         }
         c.cycles += 24;
-        c.g[A1][0] = 0x4a0000;
+        c.g[A1][0] = MC_STRINGS_PAGE;
         c.g[A0][0] = c.g[S0][0];
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c80));
         callee::USTR_FROM_ASCII_2.call(c, 0x0023_c9d8)?;
@@ -7561,7 +7546,7 @@ pub fn mc_manager_format_save_desc(c: &mut Cpu) {
         if mode_is_one {
             c.cycles += 16;
             c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = MC_STRINGS_PAGE;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c88));
             c.g[A0][0] = c.g[S0][0];
             callee::USTR_FROM_ASCII_2.call(c, 0x0023_cd6c)?;
@@ -7617,7 +7602,7 @@ pub fn mc_manager_format_save_desc(c: &mut Cpu) {
                 if mode_is_zero {
                     c.cycles += 17;
                     c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
-                    c.g[A1][0] = 0x4a0000;
+                    c.g[A1][0] = MC_STRINGS_PAGE;
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c88));
                     c.g[A0][0] = c.g[S0][0];
                     callee::USTR_FROM_ASCII_2.call(c, 0x0023_cce8)?;
@@ -7919,7 +7904,7 @@ pub fn mc_manager_build_save_title(c: &mut Cpu) {
 
 /// `int MCManager_ClassifyCardState(MCManager *self, int arg)` (0x23e8a0):
 /// walk the card-state vtable cascade (busy chain, then idle chain),
-/// reporting 6, 7, 5, 4 or 0x1d through the message sink at `+0x748` along
+/// reporting 6, 7, 5, 4 or 0x1d through the message sink at `mcus::MSG` along
 /// the way, or finishing quietly. The state words at `+0xbc` and `+0x130`
 /// are only compared (against 0 and 4), never returned; the result is the
 /// last probe or sink call's return value.
@@ -7941,7 +7926,7 @@ pub fn mc_manager_classify_card_state(c: &mut Cpu) {
         call_ptr(c, target, 0x0023_e8d0)?;
         let busy = c.g[V0][0] != 0;
         c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
-        // 0 = report to the sink at +0x748, 1 = report 0x1d, 2 = finish quietly.
+        // 0 = report to the sink at `mcus::MSG`, 1 = report 0x1d, 2 = finish quietly.
         let mut seg = 0u8;
         if busy {
             c.cycles += 7;
@@ -8647,24 +8632,12 @@ pub(crate) fn mcv01_finish(c: &mut Cpu, frame: Frame, tail: McV01Tail) {
     frame.close(c);
 }
 
-/// `void MCManager_v01(MCManager *self, int state)` (0x23cf38): the manager's
-/// virtual method 1 (slot +8 of the vtable at `self+0x748`), which enters
-/// `state`: it does that state's entry work, then records the state in
-/// `mState` (+0x130).
-///
-/// The entry work is a switch over states 1..=0x38 through the jump table at
-/// 0x47c1a0 (read from guest memory, as the compiled `jr` does): resetting the
-/// pending-operation words and the update step (`MCManager_SetMode`, state 1),
-/// starting the state timer (+0x108) and the floats at +0x110/+0x114, setting
-/// or clearing the word at `gp - 0x478`, calling the screen callbacks stored
-/// in the manager's first words, and calling the card driver at +0x434: the
-/// busy poll, card info, the directory list, and the slots the format (0xb,
-/// 0x28), delete (0xe, 0x19), save (0xf) and load (0x1f) states start with.
-/// State 0xf first prints the save's file name into +0x134 as `"%s-%s%04d"`
-/// (product code, save type tag, number) and passes `"data/icon"` to driver
-/// slot 0x138, then the name to slot 0x118. States 0x32 and 0x34, and state 0x33
-/// while the card is busy (it posts state 0x35 instead), leave `mState` as it
-/// was. Other states, and values outside 1..=0x38, only record the state.
+/// `void MCManager_v01(MCManager *self, int state)` (0x23cf38): enter `state`
+/// (virtual method 1, slot +8 of the vtable at `mcus::MSG`). Runs the state's
+/// entry work through `mc_v01::JUMP_TABLE` (read from guest memory, as the
+/// compiled `jr` does), then records the state in `mcus::STATE`. States 0x32
+/// and 0x34, and 0x33 while the card is busy (it posts 0x35 instead), leave
+/// `mcus::STATE` as it was; values outside 1..=0x38 only record the state.
 pub fn mc_manager_v01(c: &mut Cpu) {
     guest(c, |c| {
         let frame = Frame { size: 0x660 };
@@ -9299,8 +9272,7 @@ pub(crate) const MC_STATUS_TEXT_TABLE_LEN: u64 = 0x38;
 /// localised message with the slot name ("1", "2", ...) formatted in; a
 /// formatted card with a name gives the device name (`mcus::DEVICE_NAME`,
 /// +0x18 of the device record), or the "memory device" message when that name
-/// is empty; a
-/// formatted card without one leaves `dst` alone.
+/// is empty; a formatted card without one leaves `dst` alone.
 pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 16;
@@ -9325,11 +9297,11 @@ pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
             callee::MC_MANAGER_FORMAT_SLOT_NAME.call(c, 0x0024_18cc)?;
             mc_card_error_sprintf(
                 c,
-                frame,
                 MC_TEXT_NOT_DETECTED,
                 [0x0024_18ec, 0x0024_18fc, 0x0024_190c],
             )?;
             c.cycles += 1;
+            frame.restore(c, S0, 0x230);
             mc_card_error_epilogue(c, frame);
             return Ok(());
         }
@@ -9367,10 +9339,10 @@ pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
             c.cycles += 15;
             mc_card_error_sprintf(
                 c,
-                frame,
                 MC_TEXT_NOT_DETECTED,
                 [0x0024_1884, 0x0024_1894, 0x0024_18a4],
             )?;
+            frame.restore(c, S0, 0x230);
             mc_card_error_epilogue(c, frame);
             return Ok(());
         }
@@ -9389,10 +9361,10 @@ pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
             c.cycles += 15;
             mc_card_error_sprintf(
                 c,
-                frame,
                 MC_TEXT_NOT_FORMATTED,
                 [0x0024_1884, 0x0024_1894, 0x0024_18a4],
             )?;
+            frame.restore(c, S0, 0x230);
             mc_card_error_epilogue(c, frame);
             return Ok(());
         }
@@ -9434,26 +9406,24 @@ pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
         c.cycles += 15;
         mc_card_error_sprintf(
             c,
-            frame,
             MC_TEXT_MEM_DEVICE,
             [0x0024_1884, 0x0024_1894, 0x0024_18a4],
         )?;
+        frame.restore(c, S0, 0x230);
         mc_card_error_epilogue(c, frame);
         Ok(())
     })
 }
 
 /// `UStr_Sprintf(dst, text(key), slot_name)` into `dst` (`s2`), the slot
-/// name in the frame's buffer; then reload `s0` as the compiled tail does.
-/// `rets`: the hash, lookup and format calls' return addresses.
-pub(crate) fn mc_card_error_sprintf(c: &mut Cpu, frame: Frame, key: u32, rets: [u32; 3]) -> Flow {
+/// name in the frame's buffer. `rets`: the hash, lookup and format calls'
+/// return addresses.
+pub(crate) fn mc_card_error_sprintf(c: &mut Cpu, key: u32, rets: [u32; 3]) -> Flow {
     memcard_text(c, key, [rets[0], rets[1]])?;
     c.g[A0][0] = c.g[S2][0];
     c.g[A1][0] = c.g[V0][0];
     c.g[A2][0] = c.g[SP][0];
-    callee::U_STR_SPRINTF.call(c, rets[2])?;
-    frame.restore(c, S0, 0x230);
-    Ok(())
+    callee::U_STR_SPRINTF.call(c, rets[2])
 }
 
 /// Reload s1, s2 and `ra`, pop the 0x240 frame and return.
@@ -9883,7 +9853,7 @@ pub(crate) fn mc_read_dir_info_epilogue(c: &mut Cpu, frame: Frame) {
 }
 
 /// Post the code in `a1` to the manager's message sink: `v0` holds the sink
-/// (`self->+0x748`); its slot 8 (`{short delta; fn}`) is called with
+/// (`mcus::MSG`); its slot 8 (`{short delta; fn}`) is called with
 /// `self + delta`, `self` in `this`.
 pub(crate) fn mc_check_report(c: &mut Cpu, this: usize, ret: u32) -> Flow {
     c.g[A0][0] = Addr(r32(c, V0).wrapping_add(8)).lh(c);
@@ -9925,7 +9895,7 @@ pub(crate) fn mc_check_quit(c: &mut Cpu, this: usize, quit: usize, ret: u32) -> 
 
 /// The card-ready probe of the check states: backend slots 0x1b8 and 0x1d0
 /// answer non-zero, 0x198 and 0x1d8 zero, stopping at the first that does
-/// not. `a1` holds the backend (`self->+0x434`) and the first call's cycles
+/// not. `a1` holds the backend (`mcus::CARD`) and the first call's cycles
 /// are charged by the caller; each later probe reloads it. A failed probe
 /// loads `v0 = self->fail` when given. `self` is in `this`; `rets` are the
 /// four return addresses.
@@ -9968,18 +9938,11 @@ pub(crate) enum State03End {
 }
 
 /// `void MCManager_State03_Check(MCManager *self)` (0x23e540): the card check
-/// after the boot wait. Returns at once while the backend (`+0x434`, slot
-/// 0x58) is busy. `quit` = save pending (`+0xbc`), delete pending (`+0xc0`) or
-/// the load-pressed hook (`+0x78`). With the word at `+0x128` set, a changed
-/// card (`+0xc8`) while quitting posts 0x38. Then `MCManager_PollCardStatus`;
-/// when it returns non-zero the status flags at `+0x43c` (old flags kept in
-/// `s2`) decide: flag 8 with `quit` or the word at `+0x124` →
-/// `MCManager_SetStateNoCard`; flag 1 → post 5; flag 0x10 with the word at
-/// `+0x120` → post 0x27; flag 8 dropped, or all flags cleared while others
-/// than 4 were set → `MCManager_OnCardScanned`. Without `quit`, a changed
-/// card → clear `+0xc8` and `MCManager_ReturnToSlotState`, flag 8 → post
-/// 0x31. Last the card-ready probe: ready → post 6, else post 7 with a save
-/// pending or 0x1d without.
+/// after the boot wait. Returns while the driver at `mcus::CARD` is busy, then
+/// polls the card and acts on the `mcus::CARD_STATUS` flags and
+/// `mcus::CARD_CHANGED` (the no-card state, a rescan, back to the slot screen,
+/// or posts 5, 0x27, 0x31, 0x38). Last it posts 6 for a ready card, else 7
+/// with a save pending (`mcus::SAVE`) or 0x1d without.
 pub fn mc_manager_state03_check(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
@@ -10189,19 +10152,12 @@ pub(crate) enum State06End {
 }
 
 /// `void MCManager_State06_Check(MCManager *self)` (0x23ec00): the card check
-/// after a directory listing. Polls the card (`MCManager_PollCardStatus`,
-/// kept in `s2`), counts the wait at `+0x108` down and returns while it was
-/// above 0 or the backend (`+0x434`, slot 0x58) is busy. A changed card
-/// (`+0xc8`): `quit` (save, delete pending or the load-pressed hook at
-/// `+0x78`) with the word at `+0x128` set posts 0x38; a ready card (the
-/// probe) posts 6. With a save pending (`+0xbc`) the flags at `+0x43c`
-/// decide: flag 8 → `MCManager_SetStateNoCard` when the poll was non-zero, else
-/// the slot's directory is reread and 7 posted; flag 1 → 0x14; a ready card
-/// that the backend says has no room (slot 0x68 zero, slot 0xa0 below slot
-/// 0xb8 or slot 0xc8 zero) → 0x15; otherwise reread and post 7. Without a
-/// save pending: flag 8 → `MCManager_SetStateNoCard` when quitting or the
-/// word at `+0x124` is set; flag 1 → 0x24 or 5 by the load-pressed hook;
-/// else reread the directory and post 0x1d.
+/// after a directory listing. Polls the card, then returns while the wait at
+/// `+0x108` runs or the driver is busy. A changed card can post 0x38
+/// (quitting) or 6 (ready). Otherwise the `mcus::CARD_STATUS` flags pick the
+/// next state: with a save pending 0x14, 0x15 (no room) or a directory reread
+/// and 7; without, 0x24 or 5, or a reread and 0x1d; flag 8 goes to the no-card
+/// state.
 pub fn mc_manager_state06_check(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
@@ -10429,17 +10385,12 @@ pub(crate) enum State07End {
 }
 
 /// `void MCManager_State07_Check(MCManager *self)` (0x23f698): the save/load
-/// screen's card check. Nothing while the periodic card poll (`+0x338`) runs.
-/// With the word at `+0x128` set, a changed card posts 0x38. A non-zero
-/// `MCManager_PollCardStatus` with the save-pressed hook quiet: status flag 8
-/// → `MCManager_SetStateNoCard`, else flags 0x10/2/1/4 post 0x27/0x30/5/0x17.
-/// A changed card → clear it and `MCManager_ReturnToSlotState`; the hook at
-/// `+0x6c` → post 1. Save pressed sets the ramp floats; with saving allowed:
-/// card not ready → 0xa, no room for a new file → 0x15, another used slot
-/// named as the one at `+0x276` → 0x37, the cursor's slot used → its name into
-/// `+0x234` and 9, else 0xd; without: driver slot 0x208 → 0x16, 0x210 → 0x17,
-/// `VT_CAN_SAVE` zero → 0x14. Last, delete pressed with deleting allowed: the
-/// cursor's name into `+0x234`, post 0x18.
+/// screen's card check. Nothing while the periodic card poll
+/// (`mcus::CHECK_CARD`) runs. Otherwise it reacts to the card status (the
+/// no-card state, or posts 0x27, 0x30, 5, 0x17) and a changed card, then to
+/// save pressed (0xa, 0x15, 0x37, 9 or 0xd when saving is allowed, else 0x16,
+/// 0x17 or 0x14) and last to delete pressed (the cursor's name into `+0x234`,
+/// post 0x18).
 pub fn mc_manager_state07_check(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 8;
@@ -10758,15 +10709,10 @@ pub(crate) fn mc_state07_body(c: &mut Cpu, frame: Frame) -> Result<State07End, U
 }
 
 /// `void MCManager_State20_Load(MCManager *self)` (0x240130): one step of a
-/// load. Counts the wait at `+0x108` down and stores the progress (backend
-/// slot 0x90 over the word at `+0xf0`, as floats) at `+0x10c`. A finished
-/// backend (slot 0x248) posts 0x24 and runs the hook at `+0x2c`. Otherwise,
-/// when backend slot 0xf8 answers 1: while `+0xe8` is below `+0xf0` the hook
-/// at `+0x1c` reads the rest (`+0xf0 - +0xe8`) and `MCManager_FinishLoad`
-/// follows when it returns 0; else the hook at `+0x20` returning 0 → backend
-/// slot 0x140 for the cursor `+0xf8`, then `MCManager_FinishLoad`; non-zero
-/// → `MCManager_CardSetState1E` and post 0x21. Any other answer: when the
-/// backend has finished meanwhile, run the hook at `+0x2c` and post 0x24.
+/// load. Counts the wait at `+0x108` down and stores the progress fraction at
+/// `+0x10c`; then either the load is done (post 0x24, hook at `+0x2c`), or
+/// the hooks at `+0x1c`/`+0x20` read the rest and `MCManager_FinishLoad`
+/// follows, or it fails into `MCManager_CardSetState1E` and post 0x21.
 pub fn mc_manager_state20_load(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 27;
@@ -10896,7 +10842,7 @@ pub(crate) fn mc_state1d_leave(c: &mut Cpu, frame: Frame) -> Flow {
 }
 
 /// The shared report tail (0x240578): charge `cycles` for the branch that
-/// got here, load the sink from `+0x748`, post `a1` and leave.
+/// got here, load the sink from `mcus::MSG`, post `a1` and leave.
 pub(crate) fn mc_state1d_report(c: &mut Cpu, frame: Frame, cycles: u64) -> Flow {
     c.cycles += cycles;
     c.g[V0][0] = mcus_at(r32(c, S0), mcus::MSG).lw(c);
@@ -10906,18 +10852,11 @@ pub(crate) fn mc_state1d_report(c: &mut Cpu, frame: Frame, cycles: u64) -> Flow 
 }
 
 /// `void MCManager_State1D_Check(MCManager *self)` (0x2402d0): the card check
-/// of state 0x1d. Nothing while the periodic card poll (`+0x338`) runs. `quit`
-/// = save or delete pending, or the load-pressed hook. A non-zero
-/// `MCManager_PollCardStatus` with the load-pressed hook quiet: status flag 8
-/// → `MCManager_SetStateNoCard` when the word at `+0x124`, the load- or
-/// delete-pressed hook or `quit` asks; else 0x27 (flag 0x10, word `+0x120`), 5
-/// (flag 1), 0x17 (flag 4, word `+0x11c`), or `MCManager_OnCardScanned` as in
-/// State03. Unless quitting, a changed card → clear it and
-/// `MCManager_ReturnToSlotState`, then flag 8 → post 0x31. Then the hook at
-/// `+0xa4`; still in state 0x1d: load pressed → 0x1f with loading allowed, else
-/// 0x24/0x25 by driver slots `VT_CAN_SAVE`, `VT_FILE_EXISTS` and 0x208; delete
-/// pressed with deleting allowed → the cursor's name into `+0x234`, post 0x18;
-/// the hook at `+0x6c` → post 1.
+/// of state 0x1d. Nothing while the periodic card poll (`mcus::CHECK_CARD`)
+/// runs. Otherwise it reacts to the card status (the no-card state, a rescan,
+/// or posts 0x27, 5, 0x17) and a changed card, runs the hook at `+0xa4` and,
+/// still in 0x1d, handles load pressed (0x1f, 0x24 or 0x25), delete pressed
+/// (post 0x18) and the hook at `+0x6c` (post 1).
 pub fn mc_manager_state1d_check(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 10;
@@ -11183,7 +11122,7 @@ pub fn mc_manager_state1d_check(c: &mut Cpu) {
     })
 }
 
-/// The manager's vtable, which the constructor stores at `+0x748` (its slot 8,
+/// The manager's vtable, which the constructor stores at `mcus::MSG` (its slot 8,
 /// `MCManager_v01`, enters a state).
 pub(crate) const MC_MANAGER_VTABLE: u32 = 0x0047_cbd8;
 
@@ -11247,16 +11186,11 @@ pub(crate) const MC_MANAGER_CTOR_HOOKS: [(u32, u32); 43] = [
 ];
 
 /// `MCManager *MCManager_ctor(MCManager *self)` (0x242288): set up a new
-/// memory-card manager and return it. Clears the save/delete pending words and
-/// `+0xc4`, sets the save mode to 2 and `+0x748` to the manager's vtable,
-/// enters mode 1 (`MCManager_SetMode`), then clears the state, the file
-/// cursor, the screen's offer words and most other words up to `+0x12c`; sets
-/// `+0xfc`, `+0x424` and `+0x444` to -1, `+0x128` to 1 and the ramp floats to
-/// 1.0 and the constant at `gp-0x5120`; clears the first device record (the
-/// compiled one-pass loop clears it again), the 0x42 bytes at `+0x234` and the
-/// slot, card and check words, sets the check ticks to 5, clears the word at
-/// `gp-0x478`, and points the 45 hook words `+0x00`..`+0xb0` at the default
-/// stubs.
+/// memory-card manager and return it: mode 1 (`MCManager_SetMode`), save mode
+/// 2, the manager's vtable at `mcus::MSG`, the field defaults (most words
+/// cleared, a few set to -1, 1 or 1.0, check ticks 5) and the hook words
+/// `+0x00..+0xb0` pointed at the default stubs (`MC_MANAGER_CTOR_HOOKS`). The
+/// first device record is cleared twice, as the compiled one-pass loop does.
 pub fn mc_manager_ctor(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 128;

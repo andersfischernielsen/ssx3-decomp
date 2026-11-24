@@ -260,6 +260,17 @@ pub(crate) mod callee {
     };
 }
 
+/// `lui` page of the tag keys, default strings and short formats this unit
+/// reads (`0x4a4860`..`0x4a4900`).
+const LOBBY_STRINGS_PAGE: u64 = 0x004a_0000;
+
+/// `lui` page of the debug-print and `sprintf` formats (`0x495f30`..`0x495f98`).
+const LOBBY_FORMATS_PAGE: u64 = 0x0049_0000;
+
+/// `lui` page of the static RPC request blocks the link and ping calls pass to
+/// `DirtyRpc_InitRequest` (`0x51ee98`..`0x51eee8`).
+const RPC_REQUESTS_PAGE: u64 = 0x0052_0000;
+
 // ---------------------------------------------------------------------------
 // The `LobbyApi` object. Field names here and parameter names in the port
 // docs below are provisional, read from how these functions use them.
@@ -410,6 +421,17 @@ pub(crate) const LOBBY_PINGREQ_NAME: u32 = 0x18;
 // the IOP and accessed through uncached (`0x2000_0000 |`) addresses. Names
 // are provisional, inferred from use.
 
+/// `+0x04`: the stats state: -1 never fetched, 0 idle, else a request in
+/// flight (`?`).
+pub(crate) const NET_GAME_LINK_STATS_STATE: u32 = 0x04;
+
+/// `+0x08`: the stat area `NetGameLinkStatus` returns, copied from the stats
+/// block (`?`).
+pub(crate) const NET_GAME_LINK_STAT_AREA: u32 = 0x08;
+
+/// The stats block's size in bytes.
+pub(crate) const NET_GAME_LINK_STATS_SIZE: u64 = 0x150;
+
 /// `+0x158`: the 0x150-byte stats block the IOP fills (`?`).
 pub(crate) const NET_GAME_LINK_STATS: u32 = 0x158;
 
@@ -421,8 +443,14 @@ pub(crate) const NET_GAME_LINK_RECV_READ: u32 = 0x160;
 /// (`?`).
 pub(crate) const NET_GAME_LINK_RECV_WRITE: u32 = 0x164;
 
+/// `+0x168`: receive buffer size in bytes (`?`).
+pub(crate) const NET_GAME_LINK_RECV_SIZE: u32 = 0x168;
+
 /// `+0x16c`: the receive buffer (`?`).
 pub(crate) const NET_GAME_LINK_RECV_BUF: u32 = 0x16c;
+
+/// `+0x170`: the tick the receive buffer was last handed back (`?`).
+pub(crate) const NET_GAME_LINK_RECV_TICK: u32 = 0x170;
 
 /// `+0x174`: send window size in bytes (`?`).
 pub(crate) const NET_GAME_LINK_SEND_SIZE: u32 = 0x174;
@@ -470,11 +498,17 @@ pub fn net_game_link_create(c: &mut Cpu) {
             (c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_RECV_BUF),
             c.g[V0][0],
         );
-        c.g[A1][0] = 0x150;
+        c.g[A1][0] = NET_GAME_LINK_STATS_SIZE;
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
-        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+        c.sw(
+            (c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_STATS_STATE),
+            c.g[A0][0],
+        );
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3f));
-        c.sw((c.g[S0][0] as u32).wrapping_add(0x168), c.g[S2][0]);
+        c.sw(
+            (c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_RECV_SIZE),
+            c.g[S2][0],
+        );
         c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
         c.sw(
             (c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_SEND_SIZE),
@@ -493,7 +527,7 @@ pub fn net_game_link_create(c: &mut Cpu) {
         );
         callee::DIRTY_RPC_SYNC_DCACHE.call(c, 0x003e_6778)?;
         c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_RECV_BUF));
-        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x168));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_RECV_SIZE));
         callee::DIRTY_RPC_SYNC_DCACHE.call(c, 0x003e_6784)?;
         c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_SEND_DONE));
         c.g[A1][0] = 0x4;
@@ -537,7 +571,7 @@ pub fn net_game_link_destroy(c: &mut Cpu) {
         frame.save(c, S0, 0x30);
         c.g[A2][0] = 0x64650000;
         frame.save(c, S1, 0x20);
-        c.g[S0][0] = 0x520000;
+        c.g[S0][0] = RPC_REQUESTS_PAGE;
         c.g[S1][0] = c.g[A0][0];
         c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1168));
         frame.save_ra(c, 0x10);
@@ -570,10 +604,9 @@ pub fn net_game_link_destroy(c: &mut Cpu) {
 /// `NetGameLink_CopyStats` (0x3e6878): the stats RPC's completion step.
 /// Takes the link from the caller's `0(sp)` word (the RPC callback's
 /// argument; nothing in `a0`) and copies 0x150 bytes from its stats
-/// block (uncached) to the stat area at `link + 8`: 32 bytes per pass with
-/// unaligned loads and stores when either address is not 8-byte aligned,
-/// with 64-bit loads and stores otherwise, then a 16-byte tail. Clears
-/// `+4` (no stats request in flight). Returns 0.
+/// block (uncached) to the stat area at `link + 8`, with unaligned loads and
+/// stores when either address is not 8-byte aligned. Clears `+4` (no stats
+/// request in flight). Returns 0.
 pub fn net_game_link_copy_stats(c: &mut Cpu) {
     c.cycles += 12;
     c.g[A2][0] = c.lw(c.g[SP][0] as u32);
@@ -581,7 +614,7 @@ pub fn net_game_link_copy_stats(c: &mut Cpu) {
     c.g[V0][0] = c.g[V0][0] | 0xffff;
     c.g[A0][0] = 0x20000000;
     c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(NET_GAME_LINK_STATS));
-    c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x8));
+    c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(NET_GAME_LINK_STAT_AREA));
     c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
     c.g[V1][0] = c.g[V1][0] | c.g[A0][0];
     c.g[V0][0] = c.g[V1][0] | c.g[A1][0];
@@ -650,7 +683,10 @@ pub fn net_game_link_copy_stats(c: &mut Cpu) {
     c.sdl(4, (c.g[A1][0] as u32).wrapping_add(0xf));
     c.sdr(4, (c.g[A1][0] as u32).wrapping_add(0x8));
     c.g[V0][0] = 0u64;
-    c.sw((c.g[A2][0] as u32).wrapping_add(0x4), 0u64);
+    c.sw(
+        (c.g[A2][0] as u32).wrapping_add(NET_GAME_LINK_STATS_STATE),
+        0u64,
+    );
     ret(c);
 }
 
@@ -672,26 +708,32 @@ pub fn net_game_link_status(c: &mut Cpu) {
         frame.save(c, S1, 0x40);
         frame.save(c, S2, 0x30);
         frame.save_ra(c, 0x10);
-        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_STATS_STATE));
         let first = c.g[V1][0] == c.g[V0][0];
         c.g[S3][0] = 0u64;
         if first {
             c.cycles += 2;
-            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+            c.sw(
+                (c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_STATS_STATE),
+                0u64,
+            );
             c.g[S3][0] = 0x1;
         }
         c.cycles += 3;
-        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_STATS_STATE));
         let busy = c.g[V0][0] != 0;
-        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_STAT_AREA));
         if !busy {
             c.cycles += 12;
             c.g[S2][0] = 0x1;
-            c.g[V0][0] = 0x520000;
+            c.g[V0][0] = RPC_REQUESTS_PAGE;
             c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1158));
             c.g[A1][0] = 0x676d0000;
             c.g[A2][0] = 0x73740000;
-            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[S2][0]);
+            c.sw(
+                (c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_STATS_STATE),
+                c.g[S2][0],
+            );
             c.g[A0][0] = c.g[S1][0];
             c.g[A1][0] = c.g[A1][0] | 0x6c6b;
             c.g[A2][0] = c.g[A2][0] | 0x6174;
@@ -711,9 +753,9 @@ pub fn net_game_link_status(c: &mut Cpu) {
                 c.g[A3][0] = 0u64;
                 c.g[T0][0] = 0u64;
                 c.g[T1][0] = 0u64;
-                c.g[T3][0] = 0x150;
+                c.g[T3][0] = NET_GAME_LINK_STATS_SIZE;
                 callee::DIRTY_RPC_CALL.call(c, 0x003e_69f8)?;
-                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_STAT_AREA));
             } else {
                 c.cycles += 21;
                 c.g[A0][0] = c.g[S1][0];
@@ -722,7 +764,7 @@ pub fn net_game_link_status(c: &mut Cpu) {
                 c.g[A3][0] = 0u64;
                 c.g[T0][0] = 0u64;
                 c.g[T1][0] = 0u64;
-                c.g[T3][0] = 0x150;
+                c.g[T3][0] = NET_GAME_LINK_STATS_SIZE;
                 c.sw(c.g[SP][0] as u32, c.g[S2][0]);
                 c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                 callee::DIRTY_RPC_CALL.call(c, 0x003e_6a28)?;
@@ -736,7 +778,7 @@ pub fn net_game_link_status(c: &mut Cpu) {
                 c.g[T2][0] = 0u64;
                 c.g[T3][0] = 0u64;
                 callee::NET_GAME_LINK_COPY_STATS.call(c, 0x003e_6a50)?;
-                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(NET_GAME_LINK_STAT_AREA));
             }
         }
         c.cycles += 7;
@@ -951,14 +993,17 @@ pub fn net_game_link_recv(c: &mut Cpu) {
                 c.g[V0][0],
             );
             callee::NET_TICK.call(c, 0x003e_6c14)?;
-            c.g[S0][0] = 0x520000;
+            c.g[S0][0] = RPC_REQUESTS_PAGE;
             c.g[A1][0] = 0x676d0000;
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1148));
             c.g[A2][0] = 0x72650000;
             c.g[A0][0] = c.g[S0][0];
             c.g[A1][0] = c.g[A1][0] | 0x6c6b;
             c.g[A2][0] = c.g[A2][0] | 0x6376;
-            c.sw((c.g[S1][0] as u32).wrapping_add(0x170), c.g[V0][0]);
+            c.sw(
+                (c.g[S1][0] as u32).wrapping_add(NET_GAME_LINK_RECV_TICK),
+                c.g[V0][0],
+            );
             callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_6c38)?;
             c.g[A3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(NET_GAME_LINK_RECV_BUF));
             c.g[A0][0] = c.g[S0][0];
@@ -1034,7 +1079,7 @@ pub fn net_game_link_send(c: &mut Cpu) {
         } else {
             c.cycles += 22;
             c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[S1][0] as u32));
-            c.g[S0][0] = 0x520000;
+            c.g[S0][0] = RPC_REQUESTS_PAGE;
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1138));
             c.g[A1][0] = 0x676d0000;
             c.g[A2][0] = 0x73650000;
@@ -1079,7 +1124,7 @@ pub fn net_game_link_control(c: &mut Cpu) {
         let frame = Frame::open(c, 0x60);
         frame.save(c, S0, 0x50);
         frame.save(c, S2, 0x30);
-        c.g[S0][0] = 0x520000;
+        c.g[S0][0] = RPC_REQUESTS_PAGE;
         frame.save(c, S1, 0x40);
         c.g[S2][0] = c.g[A1][0];
         c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A2][0]);
@@ -1151,21 +1196,21 @@ pub fn net_game_util_create(c: &mut Cpu) {
     })
 }
 
-/// `void NetGameUtilDestroy(long ctx)` (0x3e6e70): issue the `gmut/dest`
-/// RPC for `ctx`.
-pub fn net_game_util_destroy(c: &mut Cpu) {
+/// The body of the `NetGameUtil*` calls that issue `gmut/<tag>` for `ctx` (`a0`)
+/// and read no reply; `entry` is the port's address.
+fn net_game_util_ctx_rpc(c: &mut Cpu, entry: u32, tag: u32) {
     guest(c, |c| {
         c.cycles += 26;
         let frame = Frame::open(c, 0x40);
         c.g[A1][0] = 0x676d0000;
         frame.save(c, S0, 0x30);
-        c.g[A2][0] = 0x64650000;
+        c.g[A2][0] = u64::from(tag & 0xffff_0000);
         c.g[S0][0] = c.g[A0][0];
         frame.save_ra(c, 0x20);
         c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
         c.g[A1][0] = c.g[A1][0] | 0x7574;
-        c.g[A2][0] = c.g[A2][0] | 0x7374;
-        callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_6e98)?;
+        c.g[A2][0] = c.g[A2][0] | u64::from(tag & 0xffff);
+        callee::DIRTY_RPC_INIT_REQUEST.call(c, entry + 0x28)?;
         c.g[V1][0] = 0x1;
         c.g[A2][0] = c.g[S0][0];
         c.sw(c.g[SP][0] as u32, c.g[V1][0]);
@@ -1177,7 +1222,7 @@ pub fn net_game_util_destroy(c: &mut Cpu) {
         c.g[T1][0] = 0u64;
         c.g[T2][0] = 0u64;
         c.g[T3][0] = 0u64;
-        callee::DIRTY_RPC_CALL.call(c, 0x003e_6ec8)?;
+        callee::DIRTY_RPC_CALL.call(c, entry + 0x58)?;
         frame.restore(c, S0, 0x30);
         frame.restore_ra(c, 0x20);
         frame.close(c);
@@ -1185,38 +1230,16 @@ pub fn net_game_util_destroy(c: &mut Cpu) {
     })
 }
 
+/// `void NetGameUtilDestroy(long ctx)` (0x3e6e70): issue the `gmut/dest`
+/// RPC for `ctx`.
+pub fn net_game_util_destroy(c: &mut Cpu) {
+    net_game_util_ctx_rpc(c, 0x003e_6e70, u32::from_be_bytes(*b"dest"));
+}
+
 /// `void NetGameUtilReset(long ctx)` (0x3e6ed8): issue the `gmut/rset`
 /// RPC for `ctx`.
 pub fn net_game_util_reset(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 26;
-        let frame = Frame::open(c, 0x40);
-        c.g[A1][0] = 0x676d0000;
-        frame.save(c, S0, 0x30);
-        c.g[A2][0] = 0x72730000;
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0x20);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[A1][0] = c.g[A1][0] | 0x7574;
-        c.g[A2][0] = c.g[A2][0] | 0x6574;
-        callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_6f00)?;
-        c.g[V1][0] = 0x1;
-        c.g[A2][0] = c.g[S0][0];
-        c.sw(c.g[SP][0] as u32, c.g[V1][0]);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
-        c.g[A1][0] = 0x1;
-        c.g[A3][0] = 0u64;
-        c.g[T0][0] = 0u64;
-        c.g[T1][0] = 0u64;
-        c.g[T2][0] = 0u64;
-        c.g[T3][0] = 0u64;
-        callee::DIRTY_RPC_CALL.call(c, 0x003e_6f30)?;
-        frame.restore(c, S0, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
+    net_game_util_ctx_rpc(c, 0x003e_6ed8, u32::from_be_bytes(*b"rset"));
 }
 
 /// `long NetGameUtilConnect(long a, long b, long c)` (0x3e6f40): issue the
@@ -1340,35 +1363,7 @@ pub fn net_game_util_status(c: &mut Cpu) {
 /// `void NetGameUtilStat(long ctx)` (0x3e70b8): issue the `gmut/stat` RPC
 /// for `ctx` (no reply read back).
 pub fn net_game_util_stat(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 26;
-        let frame = Frame::open(c, 0x40);
-        c.g[A1][0] = 0x676d0000;
-        frame.save(c, S0, 0x30);
-        c.g[A2][0] = 0x73740000;
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0x20);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[A1][0] = c.g[A1][0] | 0x7574;
-        c.g[A2][0] = c.g[A2][0] | 0x6174;
-        callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_70e0)?;
-        c.g[V1][0] = 0x1;
-        c.g[A2][0] = c.g[S0][0];
-        c.sw(c.g[SP][0] as u32, c.g[V1][0]);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
-        c.g[A1][0] = 0x1;
-        c.g[A3][0] = 0u64;
-        c.g[T0][0] = 0u64;
-        c.g[T1][0] = 0u64;
-        c.g[T2][0] = 0u64;
-        c.g[T3][0] = 0u64;
-        callee::DIRTY_RPC_CALL.call(c, 0x003e_7110)?;
-        frame.restore(c, S0, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
+    net_game_util_ctx_rpc(c, 0x003e_70b8, u32::from_be_bytes(*b"stat"));
 }
 
 /// `void NetGameUtilAdvert(long ctx, const char* a, const char* b)`
@@ -1382,7 +1377,7 @@ pub fn net_game_util_advert(c: &mut Cpu) {
         frame.save(c, S1, 0x130);
         c.g[A3][0] = c.g[A2][0];
         c.g[S1][0] = c.g[A0][0];
-        c.g[A1][0] = 0x4a0000;
+        c.g[A1][0] = LOBBY_STRINGS_PAGE;
         frame.save(c, S0, 0x140);
         c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
         frame.save_ra(c, 0x120);
@@ -1419,35 +1414,7 @@ pub fn net_game_util_advert(c: &mut Cpu) {
 /// `void NetGameUtilWithdraw(long ctx)` (0x3e71b0): issue the `gmut/with`
 /// RPC for `ctx`.
 pub fn net_game_util_withdraw(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 26;
-        let frame = Frame::open(c, 0x40);
-        c.g[A1][0] = 0x676d0000;
-        frame.save(c, S0, 0x30);
-        c.g[A2][0] = 0x77690000;
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0x20);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[A1][0] = c.g[A1][0] | 0x7574;
-        c.g[A2][0] = c.g[A2][0] | 0x7468;
-        callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_71d8)?;
-        c.g[V1][0] = 0x1;
-        c.g[A2][0] = c.g[S0][0];
-        c.sw(c.g[SP][0] as u32, c.g[V1][0]);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
-        c.g[A1][0] = 0x1;
-        c.g[A3][0] = 0u64;
-        c.g[T0][0] = 0u64;
-        c.g[T1][0] = 0u64;
-        c.g[T2][0] = 0u64;
-        c.g[T3][0] = 0u64;
-        callee::DIRTY_RPC_CALL.call(c, 0x003e_7208)?;
-        frame.restore(c, S0, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
+    net_game_util_ctx_rpc(c, 0x003e_71b0, u32::from_be_bytes(*b"with"));
 }
 
 /// `long NetGameUtilLocate(long ctx, ?, const char* name)` (0x3e7218):
@@ -1466,7 +1433,7 @@ pub fn net_game_util_locate(c: &mut Cpu) {
         c.g[S1][0] = c.g[A0][0];
         if !have_name {
             c.cycles += 2;
-            c.g[V0][0] = 0x4a0000;
+            c.g[V0][0] = LOBBY_STRINGS_PAGE;
             c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4868));
         }
         c.cycles += 25;
@@ -1517,7 +1484,7 @@ pub fn net_game_util_query(c: &mut Cpu) {
         c.g[S3][0] = c.g[A3][0];
         if !have_name {
             c.cycles += 2;
-            c.g[V0][0] = 0x4a0000;
+            c.g[V0][0] = LOBBY_STRINGS_PAGE;
             c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4868));
         }
         c.cycles += 27;
@@ -1827,7 +1794,7 @@ pub fn proto_ping_response(c: &mut Cpu) {
                         c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                         c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
                         let pending = c.g[V0][0] != 0;
-                        c.g[S0][0] = 0x520000;
+                        c.g[S0][0] = RPC_REQUESTS_PAGE;
                         if pending {
                             break 'b_3e763c;
                         } else {
@@ -1837,7 +1804,7 @@ pub fn proto_ping_response(c: &mut Cpu) {
                             call_ptr(c, callee::INVALID_DCACHE.addr, 0x003e_7630)?;
                             c.g[V0][0] = 0xffff_ffff_ffff_ffff;
                             c.sw(c.g[S1][0] as u32, c.g[V0][0]);
-                            c.g[S0][0] = 0x520000;
+                            c.g[S0][0] = RPC_REQUESTS_PAGE;
                             break 'b_3e763c;
                         }
                     }
@@ -2441,7 +2408,7 @@ pub fn lobby_api_update_room_count(c: &mut Cpu) {
                 c.cycles += 3;
                 c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x10)).lw(c);
                 let same = c.g[S2][0] == c.g[V0][0];
-                c.g[A1][0] = 0x004a_0000;
+                c.g[A1][0] = LOBBY_STRINGS_PAGE;
                 if same {
                     break 'b_3e7b84;
                 }
@@ -2600,11 +2567,11 @@ pub fn lobby_api_process_pings(c: &mut Cpu) {
                     callee::TAG_FIELD_GET_ADDRESS.call(c, 0x003e_7ca0)?;
                     c.g[S5][0] = c.g[V0][0];
                     c.g[A0][0] = c.g[S4][0];
-                    c.g[V0][0] = 0x004a_0000;
+                    c.g[V0][0] = LOBBY_STRINGS_PAGE;
                     c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4880));
                     c.g[A1][0] = c.g[S2][0];
                     callee::TAG_FIELD_FIND.call(c, 0x003e_7cb8)?;
-                    c.g[A3][0] = 0x004a_0000;
+                    c.g[A3][0] = LOBBY_STRINGS_PAGE;
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x4888));
                     c.g[A1][0] = c.g[S3][0];
@@ -2651,12 +2618,12 @@ pub fn lobby_api_process_pings(c: &mut Cpu) {
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x190), 0u64);
                     callee::TAG_FIELD_SET_STRING.call(c, 0x003e_7d28)?;
                     c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x138));
-                    c.g[A2][0] = 0x004a_0000;
+                    c.g[A2][0] = LOBBY_STRINGS_PAGE;
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4890));
                     c.g[A0][0] = c.g[S0][0];
                     c.g[A1][0] = 0x200;
                     callee::TAG_FIELD_SET_NUMBER.call(c, 0x003e_7d40)?;
-                    c.g[A2][0] = 0x004a_0000;
+                    c.g[A2][0] = LOBBY_STRINGS_PAGE;
                     c.g[A3][0] = c.lw(c.g[SP][0] as u32);
                     c.g[A0][0] = c.g[S0][0];
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4898));
@@ -2686,7 +2653,7 @@ pub fn lobby_api_process_pings(c: &mut Cpu) {
                 0x003e_7d78 => {
                     c.cycles += 3;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x390), 0u64);
-                    c.g[S0][0] = 0x004a_0000;
+                    c.g[S0][0] = LOBBY_STRINGS_PAGE;
                     pc = 0x003e_7dc8;
                     continue;
                 }
@@ -2771,7 +2738,7 @@ pub fn lobby_api_process_pings(c: &mut Cpu) {
                 0x003e_7de4 => {
                     c.cycles += 2;
                     let no_users = c.g[V0][0] == 0;
-                    c.g[S2][0] = 0x004a_0000;
+                    c.g[S2][0] = LOBBY_STRINGS_PAGE;
                     if no_users {
                         pc = 0x003e_7e4c;
                     } else {
@@ -2851,7 +2818,7 @@ pub fn lobby_api_process_pings(c: &mut Cpu) {
                     c.g[A3][0] = c.g[SP][0];
                     callee::PROTO_PING_RESPONSE.call(c, 0x003e_7e68)?;
                     let replied = c.g[V0][0] != 0;
-                    c.g[A1][0] = 0x004a_0000;
+                    c.g[A1][0] = LOBBY_STRINGS_PAGE;
                     if replied {
                         if back_edge_unwinds(c, 0x003e_7c88) {
                             return Ok(());
@@ -2867,12 +2834,12 @@ pub fn lobby_api_process_pings(c: &mut Cpu) {
                     c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
                     c.g[S2][0] = 0x7069_0000;
                     c.g[S2][0] |= 0x6e67;
-                    c.g[FP][0] = 0x004a_0000;
+                    c.g[FP][0] = LOBBY_STRINGS_PAGE;
                     callee::PROTO_ARIES_TICK.call(c, 0x003e_7e84)?;
-                    c.g[S7][0] = 0x004a_0000;
+                    c.g[S7][0] = LOBBY_STRINGS_PAGE;
                     c.g[S4][0] = c.g[V0][0];
                     c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x190));
-                    c.g[S5][0] = 0x004a_0000;
+                    c.g[S5][0] = LOBBY_STRINGS_PAGE;
                     pc = 0x003e_7ef8;
                     continue;
                 }
@@ -3098,7 +3065,7 @@ pub fn lobby_api_create(c: &mut Cpu) {
                     break 'b_3e8078;
                 }
                 c.cycles += 6;
-                c.g[A2][0] = 0x004a_0000;
+                c.g[A2][0] = LOBBY_STRINGS_PAGE;
                 c.g[A3][0] = c.g[S1][0];
                 c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x48a8));
                 c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(LOBBY_API_TAG_BUF));
@@ -3457,7 +3424,7 @@ pub fn lobby_api_connect(c: &mut Cpu) {
             c.g[A2][0] = Addr((c.g[S2][0] as u32).wrapping_add(LOBBY_API_PEER_PORT)).lw(c);
             callee::PROTO_ARIES_CONNECT.call(c, 0x003e_82d0)?;
             c.g[A3][0] = Addr((c.g[S2][0] as u32).wrapping_add(LOBBY_API_PEER_PORT)).lw(c);
-            c.g[A1][0] = 0x0049_0000;
+            c.g[A1][0] = LOBBY_FORMATS_PAGE;
             c.g[A2][0] = Addr((c.g[S2][0] as u32).wrapping_add(LOBBY_API_PEER_HOST)).lw(c);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5f30));
             c.g[A0][0] = c.g[S2][0];
@@ -3559,7 +3526,7 @@ pub fn lobby_api_select_list(c: &mut Cpu) {
                 }
                 0x003e_83b0 => {
                     c.cycles += 4;
-                    c.g[V0][0] = 0x004a_0000;
+                    c.g[V0][0] = LOBBY_STRINGS_PAGE;
                     c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x48b0));
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x48b0));
                     pc = 0x003e_83ec;
@@ -3578,7 +3545,7 @@ pub fn lobby_api_select_list(c: &mut Cpu) {
                 }
                 0x003e_83c8 => {
                     c.cycles += 4;
-                    c.g[V0][0] = 0x004a_0000;
+                    c.g[V0][0] = LOBBY_STRINGS_PAGE;
                     c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x48b8));
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x48b8));
                     pc = 0x003e_83ec;
@@ -3596,7 +3563,7 @@ pub fn lobby_api_select_list(c: &mut Cpu) {
                 }
                 0x003e_83e0 => {
                     c.cycles += 3;
-                    c.g[V0][0] = 0x004a_0000;
+                    c.g[V0][0] = LOBBY_STRINGS_PAGE;
                     c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x48c0));
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x48c0));
                     pc = 0x003e_83ec;
@@ -3689,7 +3656,7 @@ pub fn lobby_api_select_list(c: &mut Cpu) {
                 0x003e_8474 => {
                     c.cycles += 2;
                     let unnamed = c.g[V0][0] == 0;
-                    c.g[A1][0] = 0x004a_0000;
+                    c.g[A1][0] = LOBBY_STRINGS_PAGE;
                     if unnamed {
                         pc = 0x003e_84a4;
                     } else {
@@ -3824,7 +3791,7 @@ pub fn lobby_api_select_list(c: &mut Cpu) {
                 0x003e_8544 => {
                     c.cycles += 2;
                     let unnamed = c.g[V0][0] == 0;
-                    c.g[A1][0] = 0x004a_0000;
+                    c.g[A1][0] = LOBBY_STRINGS_PAGE;
                     if unnamed {
                         pc = 0x003e_8574;
                     } else {
@@ -4678,14 +4645,14 @@ pub fn lobby_api_send(c: &mut Cpu) {
                     c.g[A2][0] = sx((c.g[S1][0] as u32).wrapping_add(LOBBY_API_TAG_BUF));
                     c.g[A1][0] = 0x200;
                     callee::TAG_FIELD_MERGE.call(c, 0x003e_8bec)?;
-                    c.g[V1][0] = 0x004a_0000;
+                    c.g[V1][0] = LOBBY_STRINGS_PAGE;
                     // Registers at the call: buf, key (find).
                     c.g[A0][0] = c.g[SP][0];
                     c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x48d8));
                     c.g[A1][0] = c.g[S2][0];
                     callee::TAG_FIELD_FIND.call(c, 0x003e_8c00)?;
                     c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x201));
-                    c.g[A3][0] = 0x004a_0000;
+                    c.g[A3][0] = LOBBY_STRINGS_PAGE;
                     c.g[S3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x200));
                     // Registers at the call: field, out, size, def (get).
                     c.g[A0][0] = c.g[V0][0];
@@ -4711,7 +4678,7 @@ pub fn lobby_api_send(c: &mut Cpu) {
                     c.g[A3][0] = sx((c.g[S1][0] as u32).wrapping_add(LOBBY_API_PASS_CODE));
                     c.g[T0][0] = c.g[S0][0];
                     callee::TAG_FIELD_SET_ENCODED.call(c, 0x003e_8c44)?;
-                    c.g[A2][0] = 0x004a_0000;
+                    c.g[A2][0] = LOBBY_STRINGS_PAGE;
                     c.g[A3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(LOBBY_API_PASS_NUMBER));
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x48e0));
                     // Registers at the call: buf, size, key, number.
@@ -4758,7 +4725,7 @@ pub fn lobby_api_send(c: &mut Cpu) {
                 }
                 0x003e_8cac => {
                     c.cycles += 12;
-                    c.g[A1][0] = 0x004a_0000;
+                    c.g[A1][0] = LOBBY_STRINGS_PAGE;
                     // Registers at the call: buf, key (find).
                     c.g[A0][0] = c.g[S3][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x48e8));
@@ -5035,7 +5002,7 @@ pub(crate) fn ping_body(c: &mut Cpu, frame: &Frame) -> crate::call::Flow {
     );
     // Registers at the call: dst, src, size (strncpy).
     call_ptr(c, callee::STRNCPY, 0x003e_8e90)?;
-    c.g[A2][0] = 0x004a_0000;
+    c.g[A2][0] = LOBBY_STRINGS_PAGE;
     c.g[A0][0] = c.g[SP][0];
     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4880));
     c.sb(c.g[SP][0] as u32, 0u64);
@@ -5043,7 +5010,7 @@ pub(crate) fn ping_body(c: &mut Cpu, frame: &Frame) -> crate::call::Flow {
     // Registers at the call: buf, size, key, value (set string).
     c.g[A1][0] = 0x100;
     callee::TAG_FIELD_SET_STRING.call(c, 0x003e_8eac)?;
-    c.g[A2][0] = 0x004a_0000;
+    c.g[A2][0] = LOBBY_STRINGS_PAGE;
     c.g[A0][0] = c.g[SP][0];
     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4890));
     c.g[A1][0] = 0x100;
@@ -5270,7 +5237,7 @@ pub(crate) fn debug_packet_print(c: &mut Cpu, frame: &Frame) -> crate::call::Flo
     c.g[T3][0] = sx(((c.g[T2][0] as u32) as i32 >> 16) as u32);
     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T2][0]);
     c.g[A3][0] = sx(((c.g[T0][0] as u32) as i32 >> 16) as u32);
-    c.g[A1][0] = 0x0049_0000;
+    c.g[A1][0] = LOBBY_FORMATS_PAGE;
     c.sw(c.g[SP][0] as u32, c.g[V0][0]);
     c.g[T0][0] = sx(((c.g[T0][0] as u32) as i32 >> 8) as u32);
     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5f48));
@@ -5355,7 +5322,7 @@ pub(crate) fn debug_packet_length_line(c: &mut Cpu, frame: &Frame) -> crate::cal
     c.g[V0][0] = 0x1;
     if empty {
         c.cycles += 6;
-        c.g[A1][0] = 0x0049_0000;
+        c.g[A1][0] = LOBBY_FORMATS_PAGE;
         c.g[A0][0] = c.g[S0][0];
         // Registers at the call: api, format (debug printf).
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5f68));
@@ -5369,7 +5336,7 @@ pub(crate) fn debug_packet_length_line(c: &mut Cpu, frame: &Frame) -> crate::cal
     c.g[V0][0] = ((c.g[A2][0] as i64) < 241i64) as u64;
     if control {
         c.cycles += 6;
-        c.g[A1][0] = 0x0049_0000;
+        c.g[A1][0] = LOBBY_FORMATS_PAGE;
         c.g[A0][0] = c.g[S0][0];
         // Registers at the call: api, format (debug printf).
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5f78));
@@ -5380,10 +5347,10 @@ pub(crate) fn debug_packet_length_line(c: &mut Cpu, frame: &Frame) -> crate::cal
     }
     c.cycles += 2;
     let long = c.g[V0][0] == 0u64;
-    c.g[A1][0] = 0x004a_0000;
+    c.g[A1][0] = LOBBY_STRINGS_PAGE;
     if long {
         c.cycles += 6;
-        c.g[A1][0] = 0x0049_0000;
+        c.g[A1][0] = LOBBY_FORMATS_PAGE;
         c.g[A0][0] = c.g[S0][0];
         // Registers at the call: api, format (debug printf).
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5f88));
@@ -5475,7 +5442,7 @@ pub fn lobby_api_trim_rank_list(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S4][0];
                     c.g[A2][0] = 0x4000;
                     call_ptr(c, callee::MEMSET.addr, 0x003e_91c4)?;
-                    c.g[S0][0] = 0x004a_0000;
+                    c.g[S0][0] = LOBBY_STRINGS_PAGE;
                     pc = 0x003e_9214;
                 }
                 0x003e_91cc => {
@@ -5801,7 +5768,7 @@ pub fn lobby_api_pick_room(c: &mut Cpu) {
                 c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A3][0]);
                 if !named {
                     c.cycles += 2;
-                    c.g[V0][0] = 0x004a_0000;
+                    c.g[V0][0] = LOBBY_STRINGS_PAGE;
                     c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4888));
                 }
                 c.cycles += 3;
@@ -5970,7 +5937,7 @@ pub fn lobby_api_server_ping_callback(c: &mut Cpu) {
         c.cycles += 9;
         // Registers at the call: reply text, key (find).
         c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
-        c.g[A1][0] = 0x004a_0000;
+        c.g[A1][0] = LOBBY_STRINGS_PAGE;
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4898));
         callee::TAG_FIELD_FIND.call(c, 0x003e_9520)?;
         // Registers at the call: field, def (get number).
@@ -5978,7 +5945,7 @@ pub fn lobby_api_server_ping_callback(c: &mut Cpu) {
         c.g[A1][0] = 0u64;
         callee::TAG_FIELD_GET_NUMBER.call(c, 0x003e_952c)?;
         let t = c.g[V0][0] != 0u64;
-        c.g[A1][0] = 0x0049_0000;
+        c.g[A1][0] = LOBBY_FORMATS_PAGE;
         if t {
             // Answered: the 0x3e956c tail, then the shared epilogue.
             server_ping_callback_tick(c)?;
@@ -6057,7 +6024,7 @@ pub fn lobby_api_ping_server(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
         let frame = Frame::open(c, 0x10);
-        c.g[A1][0] = 0x004a_0000;
+        c.g[A1][0] = LOBBY_STRINGS_PAGE;
         frame.save_ra(c, 0);
         c.g[T0][0] = 0x003f_0000;
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4900));
@@ -6788,7 +6755,7 @@ pub(crate) mod tests {
     }
 
     /// `check_events`, then require that the hand side itself was re-entered
-    /// at each of `heads` (pass a [`counted!`] hand). Prints the counts.
+    /// at each of `heads` (pass a [`counted!`] hand).
     pub(crate) fn check_resumes(
         name: &str,
         generated: GuestFn,
@@ -6800,7 +6767,6 @@ pub(crate) mod tests {
         HAND_RESUMES.with(|r| r.borrow_mut().clear());
         check_events(generated, hand, seeds, setup);
         let got = HAND_RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()));
-        eprintln!("{name}: hand re-entries per head {got:x?}");
         for h in heads {
             assert!(
                 got.get(h).copied().unwrap_or(0) > 0,
@@ -6937,7 +6903,7 @@ pub(crate) mod tests {
     }
 
     /// Non-zero filler (output buffers must show a missing store).
-    pub(crate) fn lobby_nz(c: &mut Cpu, seed: u32, at: u32, words: u32) {
+    pub(crate) fn lobby_fill_nonzero(c: &mut Cpu, seed: u32, at: u32, words: u32) {
         for i in 0..words {
             let w = 0xA5A5_0001u32
                 .wrapping_add((seed + 1).wrapping_mul(0x0101_0101))
@@ -7120,11 +7086,11 @@ pub(crate) mod tests {
                     c.bus.write32(LOBBY + 8, 0x5555_0000 + seed);
                 }
                 // Data record: non-zero reply word first.
-                lobby_nz(c, seed, LOBBY_REC, 64);
+                lobby_fill_nonzero(c, seed, LOBBY_REC, 64);
                 c.bus.write32(LOBBY_REC, 0x2468_0001 + (seed & 0xffff));
                 c.bus.write32(LOBBY + 0x10, LOBBY_REC);
                 c.bus.write32(LOBBY + 0xc, 0x3000 + seed);
-                lobby_nz(c, seed + 1, LOBBY_OUT, 64);
+                lobby_fill_nonzero(c, seed + 1, LOBBY_OUT, 64);
                 c.g[A0][0] = LOBBY as u64;
                 c.g[A1][0] = LOBBY_OUT as u64;
                 // `lenp`: none, at the queued length (kept), or above it
@@ -7284,7 +7250,7 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _r = lobby_base(c, seed, 0x3e77_f0, 0);
                 lobby_zero(c, LOBBY, 0x160);
-                lobby_nz(c, seed, LOBBY_OUT, 20);
+                lobby_fill_nonzero(c, seed, LOBBY_OUT, 20);
                 // Head: empty, `'ping'` (matches the `'ping'` wanted below),
                 // `'DQUE'` (matches any), another tag.
                 let tag = match seed % 4 {
@@ -7330,7 +7296,7 @@ pub(crate) mod tests {
     ) -> Events {
         let mut r = lobby_base(c, 1, 0x3e77_f1, 0);
         lobby_object(c);
-        lobby_nz(c, 1, LOBBY_OUT, 20);
+        lobby_fill_nonzero(c, 1, LOBBY_OUT, 20);
         lobby_req_chain(c, &[0x4451_5545]);
         c.bus.write32(LOBBY + LOBBY_API_REQUESTS, LOBBY_NODE);
         let mode = schedule_no_unwind(c, &mut r, seed, 0x003e_77f0);
@@ -7384,7 +7350,7 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _r = lobby_base(c, seed, 0x3e79_18, 1);
                 lobby_zero(c, LOBBY, 0x160);
-                lobby_nz(c, seed, LOBBY_OUT, 20);
+                lobby_fill_nonzero(c, seed, LOBBY_OUT, 20);
                 lobby_str(c, LOBBY_STR, b"pn");
                 lobby_str(c, LOBBY_STR + 0x20, b"qx");
                 // Queue shapes cover every match arm.
@@ -7453,7 +7419,7 @@ pub(crate) mod tests {
         check_events(gen_pop_ping, hand_pop_ping, 16, &|c, seed| {
             let mut r = lobby_base(c, seed, 0x3e79_19, 0);
             lobby_zero(c, LOBBY, 0x160);
-            lobby_nz(c, seed, LOBBY_OUT, 20);
+            lobby_fill_nonzero(c, seed, LOBBY_OUT, 20);
             lobby_str(c, LOBBY_STR, b"pn");
             // Two matching nodes so the walk loop iterates.
             lobby_ping_chain(c, &[(0x7069_6e67, 7, 0, b"xx"), (0x7069_6e67, 7, 0, b"pn")]);
@@ -7546,7 +7512,7 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _r = lobby_base(c, seed, 0x3e7b_00, 0);
                 lobby_zero(c, LOBBY, 0x160);
-                lobby_nz(c, seed, LOBBY_REC, 0x80);
+                lobby_fill_nonzero(c, seed, LOBBY_REC, 0x80);
                 let key = 0x77 + seed;
                 let count = seed % 256;
                 // Table: none, missing entry, same count, new count, an
@@ -7665,7 +7631,7 @@ pub(crate) mod tests {
     /// key, `pn`). Returns the address the code parses (the queue nodes and
     /// rooms must carry it to match).
     pub(crate) fn lobby_ping_record(c: &mut Cpu, rec: u32) -> u32 {
-        lobby_nz(c, 0x70c0, rec, 4);
+        lobby_fill_nonzero(c, 0x70c0, rec, 4);
         c.bus.write32(rec, 1);
         lobby_zero(c, rec + 0x10, 0x80);
         lobby_str(c, LOBBY_STR, b"10.1.2.3");
@@ -7765,7 +7731,7 @@ pub(crate) mod tests {
         }
         let room = |c: &mut Cpu, i: u32, server: u32| {
             let e = LOBBY_TAB + 0x200 + i * 0x80;
-            lobby_nz(c, seed + i, e, 0x20);
+            lobby_fill_nonzero(c, seed + i, e, 0x20);
             c.bus.write32(e + 0x64, server);
             e
         };
@@ -7783,7 +7749,7 @@ pub(crate) mod tests {
         }
         let user = |c: &mut Cpu, i: u32, name: &[u8]| {
             let u = LOBBY_TAB + 0x500 + i * 0x80;
-            lobby_nz(c, seed + 7 + i, u, 0x20);
+            lobby_fill_nonzero(c, seed + 7 + i, u, 0x20);
             lobby_str(c, u + 8, name);
             u
         };
@@ -7800,7 +7766,7 @@ pub(crate) mod tests {
             c.bus
                 .write32(LOBBY + LOBBY_API_TABLES2 + 0x14, LOBBY_TAB + 0x400);
         }
-        lobby_nz(c, seed, LOBBY + LOBBY_API_PING_COUNT, 1);
+        lobby_fill_nonzero(c, seed, LOBBY + LOBBY_API_PING_COUNT, 1);
         c.g[A0][0] = sx(LOBBY);
         c.pc = 0x003e_7c40;
         r
@@ -7924,7 +7890,7 @@ pub(crate) mod tests {
             &[6],
             &|c, seed| {
                 let _r = lobby_base(c, seed, 0x3e7f_58, 0);
-                lobby_nz(c, seed, LOBBY, 8);
+                lobby_fill_nonzero(c, seed, LOBBY, 8);
                 c.g[A0][0] = LOBBY as u64;
             },
         );
@@ -7941,7 +7907,7 @@ pub(crate) mod tests {
                 lobby_zero(c, LOBBY, 0x160);
                 // The event word the flags are OR-ed into: non-zero.
                 c.bus.write32(LOBBY + LOBBY_API_EVENTS, 0x0100_0010 + seed);
-                lobby_nz(c, seed, LOBBY_BUF, 4);
+                lobby_fill_nonzero(c, seed, LOBBY_BUF, 4);
                 c.g[A0][0] = LOBBY as u64;
                 c.g[A1][0] = LOBBY_BUF as u64;
                 c.g[A2][0] = (0x11 << (seed % 5)) as u64;
@@ -8028,7 +7994,7 @@ pub(crate) mod tests {
         if queue != 0 {
             c.bus.write32(LOBBY + LOBBY_API_REQUESTS, LOBBY_NODE);
         }
-        lobby_nz(c, seed, LOBBY + LOBBY_API_PING_COUNT, 4);
+        lobby_fill_nonzero(c, seed, LOBBY + LOBBY_API_PING_COUNT, 4);
         c.g[A0][0] = sx(LOBBY);
         c.pc = 0x003e_80c0;
         r
@@ -8186,9 +8152,9 @@ pub(crate) mod tests {
                 let _r = lobby_base(c, seed, 0x3e82_60, 2);
                 lobby_zero(c, LOBBY, 0x160);
                 // The counter and the connected byte it clears: non-zero.
-                lobby_nz(c, seed, LOBBY + LOBBY_API_CONNECT_WORD, 1);
+                lobby_fill_nonzero(c, seed, LOBBY + LOBBY_API_CONNECT_WORD, 1);
                 c.bus.write8(LOBBY + LOBBY_API_CONNECTED, 0x5a);
-                lobby_nz(c, seed, LOBBY_BUF, 4);
+                lobby_fill_nonzero(c, seed, LOBBY_BUF, 4);
                 // Host name for the tag copy; a zeroed Aries channel.
                 lobby_str(c, LOBBY_STR, b"host-name");
                 c.bus.write32(LOBBY + LOBBY_API_TAG_BUF, LOBBY_STR);
@@ -8361,7 +8327,7 @@ pub(crate) mod tests {
                     c.bus.write32(array, hash);
                     c.bus.write32(array + 4, 0x1111);
                     // The slot's words, non-zero so the tail's clears show.
-                    lobby_nz(
+                    lobby_fill_nonzero(
                         c,
                         seed,
                         LOBBY + LOBBY_API_TABLES + kind * LOBBY_SLOT_SIZE,
@@ -8576,7 +8542,7 @@ pub(crate) mod tests {
         let sub = seed / 25 % 4;
         // The merge source and the encoding words the login arms read.
         lobby_str(c, LOBBY + LOBBY_API_TAG_BUF, b"LANG=en\tVERS=3");
-        lobby_nz(c, seed, LOBBY + LOBBY_API_PASS_NUMBER, 8);
+        lobby_fill_nonzero(c, seed, LOBBY + LOBBY_API_PASS_NUMBER, 8);
         c.bus.write32(LOBBY + LOBBY_API_REQUESTS, 0);
         c.bus.write32(LOBBY + LOBBY_API_REQ_ID, seed);
         let data = DATA + 0x5000;
@@ -8781,7 +8747,7 @@ pub(crate) mod tests {
         let setup = |c: &mut Cpu, seed: u32| {
             lobby_base(c, seed, 0x8f08, 0);
             lobby_object(c);
-            lobby_nz(c, seed, LOBBY, LOBBY_WORDS);
+            lobby_fill_nonzero(c, seed, LOBBY, LOBBY_WORDS);
             let tag = match seed % 9 {
                 0 => 0x7374_6174u32,
                 1 => 0x7266_6c67u32,
@@ -9075,7 +9041,7 @@ pub(crate) mod tests {
             let rooms: Vec<u32> = (0..n)
                 .map(|i| {
                     let room = DATA + 0x2000 + i * 0x40;
-                    lobby_nz(c, seed + i, room, 0x10);
+                    lobby_fill_nonzero(c, seed + i, room, 0x10);
                     c.bus.write32(room + 8, if tie { 0 } else { i % 2 });
                     c.bus.write32(room + 0xc, 10);
                     let fill = match (empty, tie) {
@@ -9194,7 +9160,7 @@ pub(crate) mod tests {
             c.bus.write32(packet + 4, kind);
             c.bus.write32(packet + 0xc, buf);
             // Deadline and reply words non-zero, so their stores show.
-            lobby_nz(c, seed, LOBBY + LOBBY_API_SERVER_PING_A, 2);
+            lobby_fill_nonzero(c, seed, LOBBY + LOBBY_API_SERVER_PING_A, 2);
             c.bus.write32(LOBBY + LOBBY_API_SERVER_PING_C, seed / 6 % 4);
             c.g[A1][0] = sx(packet);
             c.pc = 0x003e_94f0;
