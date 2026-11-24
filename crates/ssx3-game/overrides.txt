@@ -7929,6 +7929,18 @@
 0x0024bf60    CameraSplashMenu_ctor
 0x0016f068    CameraBoxBoundObj_ClampPoint
 0x00247e60    RenderTogglesMenu_ctor
+# Phase 2 wave: oc476
+0x00125eb8    Player_dtor
+# Phase 2 wave: oc477, oc478, oc479, oc480, oc481, oc482, oc483, oc484
+# Phase 2 wave: oc477, oc478, oc479, oc480, oc481, oc482, oc483, oc484
+0x00142a50    RiderBase_dtor
+0x0033ed60    Cell_FindRailRecursive
+0x00364cd0    DeferMan_EmitMaterialSetup
+0x0017b4e0    DebugMenu_Update
+0x00331e90    OverlapList_GatherObjectsAndInstances
+0x00337a48    Nash_FindNearestRail
+0x0024e8d8    VisualEffectsMenus_StaticInitDestroy
+0x00338920    Cell_GatherObjectsRecursive
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

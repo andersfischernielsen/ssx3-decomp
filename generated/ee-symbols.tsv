@@ -427,7 +427,7 @@ s00	00125ad0	00125ad8	o	Rider_EmptyProgressHook
 s00	00125ad8	00125b18	o	Rider_GetSyncChecksum
 s00	00125b18	00125c6c	o	Player_ApplyRumble
 s00	00125c70	00125eb8	o	Player_ctor
-s00	00125eb8	001276f0	-	Player_dtor
+s00	00125eb8	001276f0	o	Player_dtor
 s00	001276f0	00127844	o	Player_GetTrickButton
 s00	00127848	001278c0	o	Player_GetUberGrindButton
 s00	001278c0	001278cc	-	Player_ResetRumble
@@ -717,7 +717,7 @@ s01	001424d0	0014262c	o	RiderFinishLineSub_dtor
 s01	00142630	0014278c	o	RiderResetSub_dtor
 s01	00142790	001428ec	o	Rider_DerivedDtor_458928
 s01	001428f0	00142a4c	o	RiderHandplantSub_dtor
-s01	00142a50	00143ff0	-	RiderBase_dtor
+s01	00142a50	00143ff0	o	RiderBase_dtor
 s01	00144068	00144070	-	RaceStateRace_Exit
 s01	001441a0	001441b8	o	DangerMan_ReleaseDanger
 s01	001441b8	00144364	-	DangerMan_GetRiderDangerLevel
@@ -1762,7 +1762,7 @@ s02	0017ac98	0017acc4	o	DebugMenu_SelectBackground
 s02	0017acc8	0017adfc	-	DebugMenu_LoadBackgrounds
 s02	0017ae00	0017b1ac	-	DebugMenu_DrawBackground
 s02	0017b1b0	0017b4dc	-	DebugMenu_ctor
-s02	0017b4e0	0017c5f8	-	DebugMenu_Update
+s02	0017b4e0	0017c5f8	o	DebugMenu_Update
 s02	0017c5f8	0017d008	-	DebugMenu_Render
 s02	0017d008	0017d0a8	o	DebugMenu_SetGameMode
 s02	0017d0a8	0017d1b8	-	DebugMenu_StartMultiplayer
@@ -4815,7 +4815,7 @@ s06	0024e0f8	0024e1fc	-	PowerUpFXTogglesMenu_dtor
 s06	0024e200	0024e388	o	SnowfallTogglesMenu_dtor
 s06	0024e388	0024e7c8	-	CameraSplashMenu_dtor
 s06	0024e7c8	0024e8d8	-	PathArrowMenu_dtor
-s06	0024e8d8	0024f6c0	-	VisualEffectsMenus_StaticInitDestroy
+s06	0024e8d8	0024f6c0	o	VisualEffectsMenus_StaticInitDestroy
 s06	0024f6c0	0024f7dc	o	VisualEffectsMainMenu_dtor
 s06	0024f7e0	0024f7fc	-	RenderTogglesMenu_OnActivate
 s06	0024f800	0024f81c	-	RenderTogglesMenu_OnDeactivate
@@ -8955,7 +8955,7 @@ s11	00330950	003309d4	o	CollSphereTree_CollideAABB
 s11	003309d8	00330ba4	o	Cell_GatherObjects
 s11	00330ba8	00331450	-	OverlapList_GatherObjects
 s11	00331450	00331e90	o	OverlapList_GatherType2
-s11	00331e90	00332db8	-	OverlapList_GatherObjectsAndInstances
+s11	00331e90	00332db8	o	OverlapList_GatherObjectsAndInstances
 s11	00332db8	00333ef4	oe	OverlapList_GatherAll
 s11	00333ef8	003342cc	o	OverlapList_CollideVolume
 s11	003342d0	00334458	o	OverlapList_FindClosestContact
@@ -8973,16 +8973,16 @@ s11	003369d8	00336d3c	oe	Nash_ProbeVertical
 s11	00336d40	00336f30	-	Cell_CollideObjectEx
 s11	00336f30	003378bc	-	Nash_CollideObjects
 s11	003378c0	00337a48	-	Nash_FindClosestObjectContact
-s11	00337a48	003388e0	-	Nash_FindNearestRail
+s11	00337a48	003388e0	o	Nash_FindNearestRail
 s11	003388e0	0033891c	-	Nash_ReturnSelf
-s11	00338920	00339594	-	Cell_GatherObjectsRecursive
+s11	00338920	00339594	o	Cell_GatherObjectsRecursive
 s11	00339598	0033a3d4	o	Cell_GatherType2Recursive
 s11	0033a3d8	0033b748	o	Cell_GatherObjInstRecursive
 s11	0033b748	0033ccf4	o	Cell_GatherAllRecursive
 s11	0033ccf8	0033dbe8	o	Cell_CollideVolumeRecursive
 s11	0033dbe8	0033dfd8	o	Cell_CollideColumnRecursive
 s11	0033dfd8	0033ed60	o	Cell_CollideObjectsRecursive
-s11	0033ed60	003400d8	e	Cell_FindRailRecursive
+s11	0033ed60	003400d8	oe	Cell_FindRailRecursive
 s11	003400d8	0034096c	-	Collision_StaticInit
 s11	00340970	00340a08	o	AIFwdDiffCacheEntry_ctor
 s11	00340a08	00340a10	-	CollVolume_RefineTriangleHit
@@ -9815,7 +9815,7 @@ s12	00364240	00364360	oe	DeferMan_ComputeSortKey
 s12	00364360	003645b4	o	DeferMan_EmitDefaultState
 s12	003645b8	00364b84	o	DeferMan_InternMatrixRecord
 s12	00364b88	00364c8c	o	DeferMan_SetScissor
-s12	00364cd0	00365e3c	e	DeferMan_EmitMaterialSetup
+s12	00364cd0	00365e3c	oe	DeferMan_EmitMaterialSetup
 s12	00365e40	00365f68	o	VramHeap_Init
 s12	00365f68	00365fa4	o	VramHeap_NodesToScratchpad
 s12	00365fa8	00365fe4	o	VramHeap_NodesFromScratchpad
