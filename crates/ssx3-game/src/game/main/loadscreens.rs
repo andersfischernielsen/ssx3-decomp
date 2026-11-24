@@ -1,20 +1,19 @@
-//! Staging module oc480 (wave wave226): hand-written replacements, each with its
-//! differential test against the generated body. Moved into the source-tree
-//! units by `tools/reorg_modules.py apply oc480`.
+//! `src/main/loadscreens.cpp`: hand-written replacements (moved from the
+//! batch modules by `tools/reorg_modules.py`).
 
-#![allow(unused_imports)]
-
-use crate::call::{call_ptr, guest, Callee, Frame};
-use crate::events::{back_edge_unwinds, deliver_event_here, event_due};
+use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::Callee;
+use crate::events::back_edge_unwinds;
 use ssx3_ee as ee;
-use ssx3_ee_rt::cpu::{reg::*, sx};
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;
 
-/// Replacements in this module: (address, function, name).
+/// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] =
-    &[(0x0017b4e0, debug_menu_update, "DebugMenu_Update")];
+    &[(0x0017_b4e0, debug_menu_update, "DebugMenu_Update")];
 
 /// `DebugMenu_Update` (0x0017b4e0): the normal entry, converted from the generated body
 /// (a `match pc` / labelled-block body: every register, cycle and call kept).
@@ -3071,21 +3070,28 @@ pub fn debug_menu_update(c: &mut Cpu) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
-    use crate::difftest::{fresh, run_generated, DATA, GAME_GP, SP};
+    use crate::difftest::fresh;
+    use crate::difftest::run_generated;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::SP;
 
-    const SELF: u32 = DATA + 0x2_0000;
-    const APP: u32 = DATA + 0x3_0000;
-    const BINDING: u32 = DATA + 0x1000;
-    const MAP: u32 = DATA + 0x2000;
+    pub(crate) const SELF: u32 = DATA + 0x2_0000;
+
+    pub(crate) const APP: u32 = DATA + 0x3_0000;
+
+    pub(crate) const BINDING: u32 = DATA + 0x1000;
+
+    pub(crate) const MAP: u32 = DATA + 0x2000;
 
     /// The menu (`SelectedItem` at `+0x8c1c`, `CurrentBack` at `+0x8c30`),
     /// the app's input binding (a map whose VM stops at once, with value
     /// 0..3 so the bool and the direction vary) and the menu items.
-    fn setup(c: &mut Cpu, seed: u32) {
+    pub(crate) fn setup(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0xb4e0, 0);
         c.bus.write32(GAME_GP - 0x848, APP);
         c.bus.write32(APP + 0xb0, BINDING);

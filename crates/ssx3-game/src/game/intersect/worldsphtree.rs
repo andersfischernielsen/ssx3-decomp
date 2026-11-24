@@ -241,6 +241,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cell_collide_objects_recursive,
         "Cell_CollideObjectsRecursive",
     ),
+    (
+        0x0033_1e90,
+        overlap_list_gather_objects_and_instances,
+        "OverlapList_GatherObjectsAndInstances",
+    ),
+    (0x0033_7a48, nash_find_nearest_rail, "Nash_FindNearestRail"),
+    (
+        0x0033_8920,
+        cell_gather_objects_recursive,
+        "Cell_GatherObjectsRecursive",
+    ),
+    (
+        0x0033_ed60,
+        cell_find_rail_recursive,
+        "Cell_FindRailRecursive",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -19020,6 +19036,11733 @@ pub fn cell_collide_objects_recursive(c: &mut Cpu) {
     });
 }
 
+/// `Cell_FindRailRecursive` (0x0033ed60): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn cell_find_rail_recursive(c: &mut Cpu) {
+    if c.pc != 0x0033ed60 {
+        return ee::s11::f_0033ed60__generated(c);
+    }
+    guest(c, |c| {
+        'b_33ee6c: {
+            c.cycles += 19;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xf0));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xe0));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0xc0));
+            c.g[S0][0] = c.g[A2][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xb0));
+            c.g[S2][0] = c.g[T1][0];
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0xa0));
+            c.g[S3][0] = c.g[A1][0];
+            c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x90));
+            c.g[FP][0] = c.g[T0][0];
+            c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[RA][0]);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A0][0]);
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xd0));
+            c.g[S1][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x28));
+            let t = c.g[S1][0] == 0u64;
+            c.g[S4][0] = c.g[A3][0];
+            if t {
+                break 'b_33ee6c;
+            } else {
+                c.cycles += 5;
+                c.g[S7][0] = 0x2;
+                c.g[S6][0] = 0x3;
+                c.g[S5][0] = 0x1;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                'l_33edc0: loop {
+                    'b_33ee64: {
+                        'b_33edf4: {
+                            c.cycles += 2;
+                            let t = c.g[V0][0] != c.g[S7][0];
+
+                            if t {
+                                break 'b_33edf4;
+                            } else {
+                                c.cycles += 11;
+                                c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                                c.g[A2][0] = c.g[A1][0];
+                                c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                                c.g[T1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+                                c.g[T2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
+                                c.g[RA][0] = sx(0x0033edec);
+                                c.g[T3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                                Callee {
+                                    addr: 0x0035c698,
+                                    f: ee::s11::RailModifier_FindClosestPoint,
+                                }
+                                .call(c, 0x0033edec)?;
+                                let t = true;
+                                c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                if t {
+                                    break 'b_33ee64;
+                                } else {
+                                    break 'b_33edf4;
+                                }
+                            }
+                        }
+                        'b_33ee28: {
+                            c.cycles += 2;
+                            let t = c.g[V0][0] != c.g[S6][0];
+
+                            if t {
+                                break 'b_33ee28;
+                            } else {
+                                c.cycles += 11;
+                                c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                                c.g[A2][0] = c.g[A1][0];
+                                c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                                c.g[T1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+                                c.g[T2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
+                                c.g[RA][0] = sx(0x0033ee20);
+                                c.g[T3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                                Callee {
+                                    addr: 0x00348290,
+                                    f: ee::s11::FlexRail_FindClosestPoint,
+                                }
+                                .call(c, 0x0033ee20)?;
+                                let t = true;
+                                c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                if t {
+                                    break 'b_33ee64;
+                                } else {
+                                    break 'b_33ee28;
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] != c.g[S5][0] {
+                            c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                            break 'b_33ee64;
+                        } else {
+                            'b_33ee60: {
+                                c.cycles += 6;
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                let t = c.g[V1][0] == 0u64;
+                                c.g[A0][0] = c.g[S1][0];
+                                if t {
+                                    break 'b_33ee60;
+                                } else {
+                                    c.cycles += 6;
+                                    c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
+                                    c.g[A2][0] = c.lw(c.g[S3][0] as u32);
+                                    c.g[A3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+                                    c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
+                                    c.g[RA][0] = sx(0x0033ee60);
+                                    c.g[T1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                                    Callee {
+                                        addr: 0x00335128,
+                                        f: ee::s11::Rail_FindNearestPoint,
+                                    }
+                                    .call(c, 0x0033ee60)?;
+                                    break 'b_33ee60;
+                                }
+                            }
+                            c.cycles += 1;
+                            c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                            break 'b_33ee64;
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[S1][0] != 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0033edc0);
+                        }
+                        continue 'l_33edc0;
+                    } else {
+                        break 'b_33ee6c;
+                    }
+                }
+            }
+        }
+        'b_3400ac: {
+            'b_3400a8: {
+                c.cycles += 4;
+                c.g[A1][0] = c.lw(c.g[S2][0] as u32);
+                c.g[V0][0] = 0xb;
+                let t = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7e));
+                if t {
+                    break 'b_3400a8;
+                } else {
+                    'b_33ef04: {
+                        c.cycles += 28;
+                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 23);
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2cc4));
+                        c.mtc1(2, 4);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32) << 1);
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.mtc1(4, 0);
+                        c.cvt_s_w(0, 0);
+                        c.mtc1(2, 1);
+                        c.cvt_s_w(1, 1);
+                        c.lwc1(3, c.g[S4][0] as u32);
+                        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+                        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                        c.sub_s(0, 0, 2);
+                        c.add_s(1, 1, 2);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                        c.sw(c.g[SP][0] as u32, c.g[A1][0]);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x14), 0u64);
+                        c.mul_s(15, 0, 4);
+                        c.mul_s(16, 1, 4);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                        c.c_lt_s(3, 16);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                        if t {
+                            break 'b_33ef04;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x10));
+                            c.c_lt_s(15, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33ef04;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+                                break 'b_33ef04;
+                            }
+                        }
+                    }
+                    'b_33ef64: {
+                        c.cycles += 18;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2cc0));
+                        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2));
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x18), 0u64);
+                        c.mtc1(3, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        c.lwc1(2, c.g[S4][0] as u32);
+                        c.add_s(1, 1, 3);
+                        c.mov_s(13, 2);
+                        c.sub_s(0, 0, 3);
+                        c.mul_s(14, 1, 4);
+                        c.c_lt_s(2, 14);
+                        let t = !c.fcc();
+                        c.mul_s(12, 0, 4);
+                        if t {
+                            break 'b_33ef64;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x10));
+                            c.c_lt_s(12, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33ef64;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+                                break 'b_33ef64;
+                            }
+                        }
+                    }
+                    'b_33ef7c: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        if t {
+                            break 'b_33ef7c;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                            if c.g[V0][0] == 0u64 {
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xe0));
+                                break 'b_3400ac;
+                            } else {
+                                break 'b_33ef7c;
+                            }
+                        }
+                    }
+                    'b_33efd8: {
+                        c.cycles += 17;
+                        c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2cbc));
+                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), 0u64);
+                        c.mtc1(2, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[A0][0] = c.g[V1][0];
+                        c.mtc1(3, 0);
+                        c.cvt_s_w(0, 0);
+                        c.lwc1(2, (c.g[S4][0] as u32).wrapping_add(0x4));
+                        c.add_s(1, 1, 3);
+                        c.mov_s(6, 2);
+                        c.sub_s(0, 0, 3);
+                        c.mul_s(11, 1, 4);
+                        c.c_lt_s(2, 11);
+                        let t = !c.fcc();
+                        c.mul_s(10, 0, 4);
+                        if t {
+                            break 'b_33efd8;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x14));
+                            c.c_lt_s(10, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33efd8;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                                break 'b_33efd8;
+                            }
+                        }
+                    }
+                    'b_33f02c: {
+                        c.cycles += 15;
+                        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2cb8));
+                        c.mtc1(3, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x20), 0u64);
+                        c.add_s(1, 1, 2);
+                        c.sub_s(0, 0, 2);
+                        c.mul_s(9, 1, 4);
+                        c.c_lt_s(6, 9);
+                        let t = !c.fcc();
+                        c.mul_s(8, 0, 4);
+                        if t {
+                            break 'b_33f02c;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x14));
+                            c.c_lt_s(8, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f02c;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                                break 'b_33f02c;
+                            }
+                        }
+                    }
+                    'b_33f044: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        if t {
+                            break 'b_33f044;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                            if c.g[V0][0] == 0u64 {
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xe0));
+                                break 'b_3400ac;
+                            } else {
+                                break 'b_33f044;
+                            }
+                        }
+                    }
+                    'b_33f0a0: {
+                        c.cycles += 17;
+                        c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2cb4));
+                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x24), 0u64);
+                        c.mtc1(2, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[A0][0] = c.g[V1][0];
+                        c.mtc1(3, 0);
+                        c.cvt_s_w(0, 0);
+                        c.lwc1(2, (c.g[S4][0] as u32).wrapping_add(0x8));
+                        c.add_s(1, 1, 3);
+                        c.mov_s(5, 2);
+                        c.sub_s(0, 0, 3);
+                        c.mul_s(7, 1, 4);
+                        c.c_lt_s(2, 7);
+                        let t = !c.fcc();
+                        c.mul_s(3, 0, 4);
+                        if t {
+                            break 'b_33f0a0;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x18));
+                            c.c_lt_s(3, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f0a0;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+                                break 'b_33f0a0;
+                            }
+                        }
+                    }
+                    'b_33f0f4: {
+                        c.cycles += 15;
+                        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2cb0));
+                        c.mtc1(3, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
+                        c.add_s(1, 1, 2);
+                        c.sub_s(0, 0, 2);
+                        c.mul_s(1, 1, 4);
+                        c.c_lt_s(5, 1);
+                        let t = !c.fcc();
+                        c.mul_s(2, 0, 4);
+                        if t {
+                            break 'b_33f0f4;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x18));
+                            c.c_lt_s(2, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f0f4;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+                                break 'b_33f0f4;
+                            }
+                        }
+                    }
+                    'b_33f108: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                        if t {
+                            break 'b_33f108;
+                        } else {
+                            c.cycles += 2;
+                            if c.g[V0][0] == 0u64 {
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xe0));
+                                break 'b_3400ac;
+                            } else {
+                                break 'b_33f108;
+                            }
+                        }
+                    }
+                    'b_33f130: {
+                        c.cycles += 4;
+                        c.c_lt_s(13, 15);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), 0u64);
+                        if t {
+                            break 'b_33f130;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x10));
+                            c.c_lt_s(16, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f130;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+                                break 'b_33f130;
+                            }
+                        }
+                    }
+                    'b_33f158: {
+                        c.cycles += 4;
+                        c.c_lt_s(13, 12);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x30), 0u64);
+                        if t {
+                            break 'b_33f158;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x10));
+                            c.c_lt_s(14, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f158;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+                                break 'b_33f158;
+                            }
+                        }
+                    }
+                    'b_33f180: {
+                        c.cycles += 4;
+                        c.c_lt_s(6, 10);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x34), 0u64);
+                        if t {
+                            break 'b_33f180;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x14));
+                            c.c_lt_s(11, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f180;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+                                break 'b_33f180;
+                            }
+                        }
+                    }
+                    'b_33f1a8: {
+                        c.cycles += 4;
+                        c.c_lt_s(6, 8);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x38), 0u64);
+                        if t {
+                            break 'b_33f1a8;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x14));
+                            c.c_lt_s(9, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f1a8;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+                                break 'b_33f1a8;
+                            }
+                        }
+                    }
+                    'b_33f1d0: {
+                        c.cycles += 4;
+                        c.c_lt_s(5, 3);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x3c), 0u64);
+                        if t {
+                            break 'b_33f1d0;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x18));
+                            c.c_lt_s(7, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f1d0;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x3c), c.g[V0][0]);
+                                break 'b_33f1d0;
+                            }
+                        }
+                    }
+                    'b_33f1f8: {
+                        c.cycles += 4;
+                        c.c_lt_s(5, 2);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x40), 0u64);
+                        if t {
+                            break 'b_33f1f8;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S4][0] as u32).wrapping_add(0x18));
+                            c.c_lt_s(1, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_33f1f8;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+                                break 'b_33f1f8;
+                            }
+                        }
+                    }
+                    'b_33f3c4: {
+                        'b_33f3c0: {
+                            c.cycles += 3;
+                            c.g[S2][0] = c.lw(c.g[FP][0] as u32);
+                            let t = c.g[S2][0] == 0u64;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                            if t {
+                                break 'b_33f3c0;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                if t {
+                                    break 'b_33f3c0;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                                    if t {
+                                        break 'b_33f3c0;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                                        if t {
+                                            break 'b_33f3c0;
+                                        } else {
+                                            'b_33f3a8: {
+                                                'b_33f3a4: {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    if t {
+                                                        break 'b_33f3a4;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[V0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        if t {
+                                                            break 'b_33f3a4;
+                                                        } else {
+                                                            c.cycles += 2;
+                                                            let t = c.g[V0][0] == 0u64;
+                                                            c.g[A0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            if t {
+                                                                break 'b_33f3a8;
+                                                            } else {
+                                                                'b_33f300: {
+                                                                    c.cycles += 3;
+                                                                    c.g[S1][0] = c
+                                                                        .lw((c.g[S2][0] as u32)
+                                                                            .wrapping_add(0x28));
+                                                                    if c.g[S1][0] == 0u64 {
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[S2][0] as u32);
+                                                                        break 'b_33f300;
+                                                                    } else {
+                                                                        c.cycles += 4;
+                                                                        c.g[S7][0] = 0x2;
+                                                                        c.g[S6][0] = 0x3;
+                                                                        c.g[S5][0] = 0x1;
+                                                                        c.g[V0][0] = c
+                                                                            .lw((c.g[S1][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        'l_33f250: loop {
+                                                                            'b_33f2f4: {
+                                                                                'b_33f284: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S7]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f284;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f27c);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x0035c698, f: ee::s11::RailModifier_FindClosestPoint }.call(c, 0x0033f27c)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33f2f4;
+                                                                                        } else {
+                                                                                            break 'b_33f284;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                'b_33f2b8: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S6]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f2b8;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f2b0);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x00348290, f: ee::s11::FlexRail_FindClosestPoint }.call(c, 0x0033f2b0)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33f2f4;
+                                                                                        } else {
+                                                                                            break 'b_33f2b8;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                c.cycles += 2;
+                                                                                if c.g[V0][0]
+                                                                                    != c.g[S5][0]
+                                                                                {
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33f2f4;
+                                                                                } else {
+                                                                                    'b_33f2f0: {
+                                                                                        c.cycles +=
+                                                                                            6;
+                                                                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                                                                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                                                        c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                                                        let t = c.g
+                                                                                            [V1][0]
+                                                                                            == 0u64;
+                                                                                        c.g[A0]
+                                                                                            [0] = c
+                                                                                            .g[S1]
+                                                                                            [0];
+                                                                                        if t {
+                                                                                            break 'b_33f2f0;
+                                                                                        } else {
+                                                                                            c.cycles += 6;
+                                                                                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                                                                                            c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                            c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                            c.g[RA][0] = sx(0x0033f2f0);
+                                                                                            c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                            Callee { addr: 0x00335128, f: ee::s11::Rail_FindNearestPoint }.call(c, 0x0033f2f0)?;
+                                                                                            break 'b_33f2f0;
+                                                                                        }
+                                                                                    }
+                                                                                    c.cycles += 1;
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33f2f4;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 2;
+                                                                            if c.g[S1][0] != 0u64 {
+                                                                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                                                                if event_due(c) {
+                                                                                    deliver_event_here(c, 0x0033f250);
+                                                                                }
+                                                                                continue 'l_33f250;
+                                                                            } else {
+                                                                                c.cycles += 1;
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S2][0]
+                                                                                        as u32);
+                                                                                break 'b_33f300;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                'b_33f314: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33f314;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f310);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f310)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33f314;
+                                                                    }
+                                                                }
+                                                                'b_33f328: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33f328;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f324);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f324)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33f328;
+                                                                    }
+                                                                }
+                                                                'b_33f33c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33f33c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f338);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f338)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33f33c;
+                                                                    }
+                                                                }
+                                                                'b_33f350: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33f350;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f34c);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f34c)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33f350;
+                                                                    }
+                                                                }
+                                                                'b_33f364: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33f364;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f360);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f360)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33f364;
+                                                                    }
+                                                                }
+                                                                'b_33f378: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33f378;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f374);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f374)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33f378;
+                                                                    }
+                                                                }
+                                                                'b_33f38c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33f38c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f388);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f388)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33f38c;
+                                                                    }
+                                                                }
+                                                                c.cycles += 2;
+                                                                let t = c.g[A0][0] == 0u64;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                if t {
+                                                                    break 'b_33f3c4;
+                                                                } else {
+                                                                    c.cycles += 4;
+                                                                    c.g[RA][0] = sx(0x0033f39c);
+                                                                    c.g[A1][0] = c.g[S0][0];
+                                                                    Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f39c)?;
+                                                                    let t = true;
+                                                                    c.g[V0][0] = c
+                                                                        .lw((c.g[SP][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    if t {
+                                                                        break 'b_33f3c4;
+                                                                    } else {
+                                                                        break 'b_33f3a4;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                break 'b_33f3a8;
+                                            }
+                                            c.cycles += 6;
+                                            c.g[T0][0] = c.g[S2][0];
+                                            c.g[A1][0] = c.g[S3][0];
+                                            c.g[A2][0] = c.g[S0][0];
+                                            c.g[A3][0] = c.g[S4][0];
+                                            c.g[RA][0] = sx(0x0033f3c0);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x0033ed60,
+                                                f: ee::s11::Cell_FindRailRecursive,
+                                            }
+                                            .call(c, 0x0033f3c0)?;
+                                            break 'b_33f3c0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        break 'b_33f3c4;
+                    }
+                    'b_33f59c: {
+                        'b_33f598: {
+                            c.cycles += 4;
+                            c.g[S2][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            let t = c.g[S2][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                            if t {
+                                break 'b_33f598;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                if t {
+                                    break 'b_33f598;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                                    if t {
+                                        break 'b_33f598;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                                        if t {
+                                            break 'b_33f598;
+                                        } else {
+                                            'b_33f580: {
+                                                'b_33f57c: {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    if t {
+                                                        break 'b_33f57c;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[V0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        if t {
+                                                            break 'b_33f57c;
+                                                        } else {
+                                                            c.cycles += 2;
+                                                            let t = c.g[V0][0] == 0u64;
+                                                            c.g[A0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            if t {
+                                                                break 'b_33f580;
+                                                            } else {
+                                                                'b_33f4d8: {
+                                                                    c.cycles += 3;
+                                                                    c.g[S1][0] = c
+                                                                        .lw((c.g[S2][0] as u32)
+                                                                            .wrapping_add(0x28));
+                                                                    if c.g[S1][0] == 0u64 {
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[S2][0] as u32);
+                                                                        break 'b_33f4d8;
+                                                                    } else {
+                                                                        c.cycles += 5;
+                                                                        c.g[S7][0] = 0x2;
+                                                                        c.g[S6][0] = 0x3;
+                                                                        c.g[S5][0] = 0x1;
+                                                                        c.g[V0][0] = c
+                                                                            .lw((c.g[S1][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        'l_33f428: loop {
+                                                                            'b_33f4cc: {
+                                                                                'b_33f45c: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S7]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f45c;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f454);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x0035c698, f: ee::s11::RailModifier_FindClosestPoint }.call(c, 0x0033f454)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33f4cc;
+                                                                                        } else {
+                                                                                            break 'b_33f45c;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                'b_33f490: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S6]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f490;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f488);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x00348290, f: ee::s11::FlexRail_FindClosestPoint }.call(c, 0x0033f488)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33f4cc;
+                                                                                        } else {
+                                                                                            break 'b_33f490;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                c.cycles += 2;
+                                                                                if c.g[V0][0]
+                                                                                    != c.g[S5][0]
+                                                                                {
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33f4cc;
+                                                                                } else {
+                                                                                    'b_33f4c8: {
+                                                                                        c.cycles +=
+                                                                                            6;
+                                                                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                                                                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                                                        c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                                                        let t = c.g
+                                                                                            [V1][0]
+                                                                                            == 0u64;
+                                                                                        c.g[A0]
+                                                                                            [0] = c
+                                                                                            .g[S1]
+                                                                                            [0];
+                                                                                        if t {
+                                                                                            break 'b_33f4c8;
+                                                                                        } else {
+                                                                                            c.cycles += 6;
+                                                                                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                                                                                            c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                            c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                            c.g[RA][0] = sx(0x0033f4c8);
+                                                                                            c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                            Callee { addr: 0x00335128, f: ee::s11::Rail_FindNearestPoint }.call(c, 0x0033f4c8)?;
+                                                                                            break 'b_33f4c8;
+                                                                                        }
+                                                                                    }
+                                                                                    c.cycles += 1;
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33f4cc;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 2;
+                                                                            if c.g[S1][0] != 0u64 {
+                                                                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                                                                if event_due(c) {
+                                                                                    deliver_event_here(c, 0x0033f428);
+                                                                                }
+                                                                                continue 'l_33f428;
+                                                                            } else {
+                                                                                c.cycles += 1;
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S2][0]
+                                                                                        as u32);
+                                                                                break 'b_33f4d8;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                'b_33f4ec: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33f4ec;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f4e8);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f4e8)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33f4ec;
+                                                                    }
+                                                                }
+                                                                'b_33f500: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33f500;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f4fc);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f4fc)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33f500;
+                                                                    }
+                                                                }
+                                                                'b_33f514: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33f514;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f510);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f510)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33f514;
+                                                                    }
+                                                                }
+                                                                'b_33f528: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33f528;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f524);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f524)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33f528;
+                                                                    }
+                                                                }
+                                                                'b_33f53c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33f53c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f538);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f538)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33f53c;
+                                                                    }
+                                                                }
+                                                                'b_33f550: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33f550;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f54c);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f54c)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33f550;
+                                                                    }
+                                                                }
+                                                                'b_33f564: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33f564;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f560);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f560)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33f564;
+                                                                    }
+                                                                }
+                                                                c.cycles += 2;
+                                                                let t = c.g[A0][0] == 0u64;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x8));
+                                                                if t {
+                                                                    break 'b_33f59c;
+                                                                } else {
+                                                                    c.cycles += 4;
+                                                                    c.g[RA][0] = sx(0x0033f574);
+                                                                    c.g[A1][0] = c.g[S0][0];
+                                                                    Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f574)?;
+                                                                    let t = true;
+                                                                    c.g[V0][0] = c
+                                                                        .lw((c.g[SP][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    if t {
+                                                                        break 'b_33f59c;
+                                                                    } else {
+                                                                        break 'b_33f57c;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                break 'b_33f580;
+                                            }
+                                            c.cycles += 6;
+                                            c.g[T0][0] = c.g[S2][0];
+                                            c.g[A1][0] = c.g[S3][0];
+                                            c.g[A2][0] = c.g[S0][0];
+                                            c.g[A3][0] = c.g[S4][0];
+                                            c.g[RA][0] = sx(0x0033f598);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x0033ed60,
+                                                f: ee::s11::Cell_FindRailRecursive,
+                                            }
+                                            .call(c, 0x0033f598)?;
+                                            break 'b_33f598;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        break 'b_33f59c;
+                    }
+                    'b_33f774: {
+                        'b_33f770: {
+                            c.cycles += 4;
+                            c.g[S2][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0xc));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            let t = c.g[S2][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                            if t {
+                                break 'b_33f770;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                                if t {
+                                    break 'b_33f770;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                                    if t {
+                                        break 'b_33f770;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                                        if t {
+                                            break 'b_33f770;
+                                        } else {
+                                            'b_33f758: {
+                                                'b_33f754: {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    if t {
+                                                        break 'b_33f754;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[V0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        if t {
+                                                            break 'b_33f754;
+                                                        } else {
+                                                            c.cycles += 2;
+                                                            let t = c.g[V0][0] == 0u64;
+                                                            c.g[A0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            if t {
+                                                                break 'b_33f758;
+                                                            } else {
+                                                                'b_33f6b0: {
+                                                                    c.cycles += 3;
+                                                                    c.g[S1][0] = c
+                                                                        .lw((c.g[S2][0] as u32)
+                                                                            .wrapping_add(0x28));
+                                                                    if c.g[S1][0] == 0u64 {
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[S2][0] as u32);
+                                                                        break 'b_33f6b0;
+                                                                    } else {
+                                                                        c.cycles += 5;
+                                                                        c.g[S7][0] = 0x2;
+                                                                        c.g[S6][0] = 0x3;
+                                                                        c.g[S5][0] = 0x1;
+                                                                        c.g[V0][0] = c
+                                                                            .lw((c.g[S1][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        'l_33f600: loop {
+                                                                            'b_33f6a4: {
+                                                                                'b_33f634: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S7]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f634;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f62c);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x0035c698, f: ee::s11::RailModifier_FindClosestPoint }.call(c, 0x0033f62c)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33f6a4;
+                                                                                        } else {
+                                                                                            break 'b_33f634;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                'b_33f668: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S6]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f668;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f660);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x00348290, f: ee::s11::FlexRail_FindClosestPoint }.call(c, 0x0033f660)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33f6a4;
+                                                                                        } else {
+                                                                                            break 'b_33f668;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                c.cycles += 2;
+                                                                                if c.g[V0][0]
+                                                                                    != c.g[S5][0]
+                                                                                {
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33f6a4;
+                                                                                } else {
+                                                                                    'b_33f6a0: {
+                                                                                        c.cycles +=
+                                                                                            6;
+                                                                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                                                                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                                                        c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                                                        let t = c.g
+                                                                                            [V1][0]
+                                                                                            == 0u64;
+                                                                                        c.g[A0]
+                                                                                            [0] = c
+                                                                                            .g[S1]
+                                                                                            [0];
+                                                                                        if t {
+                                                                                            break 'b_33f6a0;
+                                                                                        } else {
+                                                                                            c.cycles += 6;
+                                                                                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                                                                                            c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                            c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                            c.g[RA][0] = sx(0x0033f6a0);
+                                                                                            c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                            Callee { addr: 0x00335128, f: ee::s11::Rail_FindNearestPoint }.call(c, 0x0033f6a0)?;
+                                                                                            break 'b_33f6a0;
+                                                                                        }
+                                                                                    }
+                                                                                    c.cycles += 1;
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33f6a4;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 2;
+                                                                            if c.g[S1][0] != 0u64 {
+                                                                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                                                                if event_due(c) {
+                                                                                    deliver_event_here(c, 0x0033f600);
+                                                                                }
+                                                                                continue 'l_33f600;
+                                                                            } else {
+                                                                                c.cycles += 1;
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S2][0]
+                                                                                        as u32);
+                                                                                break 'b_33f6b0;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                'b_33f6c4: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33f6c4;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f6c0);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f6c0)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33f6c4;
+                                                                    }
+                                                                }
+                                                                'b_33f6d8: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33f6d8;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f6d4);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f6d4)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33f6d8;
+                                                                    }
+                                                                }
+                                                                'b_33f6ec: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33f6ec;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f6e8);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f6e8)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33f6ec;
+                                                                    }
+                                                                }
+                                                                'b_33f700: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33f700;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f6fc);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f6fc)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33f700;
+                                                                    }
+                                                                }
+                                                                'b_33f714: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33f714;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f710);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f710)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33f714;
+                                                                    }
+                                                                }
+                                                                'b_33f728: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33f728;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f724);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f724)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33f728;
+                                                                    }
+                                                                }
+                                                                'b_33f73c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33f73c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f738);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f738)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33f73c;
+                                                                    }
+                                                                }
+                                                                c.cycles += 2;
+                                                                let t = c.g[A0][0] == 0u64;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                if t {
+                                                                    break 'b_33f774;
+                                                                } else {
+                                                                    c.cycles += 4;
+                                                                    c.g[RA][0] = sx(0x0033f74c);
+                                                                    c.g[A1][0] = c.g[S0][0];
+                                                                    Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f74c)?;
+                                                                    let t = true;
+                                                                    c.g[V0][0] = c
+                                                                        .lw((c.g[SP][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    if t {
+                                                                        break 'b_33f774;
+                                                                    } else {
+                                                                        break 'b_33f754;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                break 'b_33f758;
+                                            }
+                                            c.cycles += 6;
+                                            c.g[T0][0] = c.g[S2][0];
+                                            c.g[A1][0] = c.g[S3][0];
+                                            c.g[A2][0] = c.g[S0][0];
+                                            c.g[A3][0] = c.g[S4][0];
+                                            c.g[RA][0] = sx(0x0033f770);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x0033ed60,
+                                                f: ee::s11::Cell_FindRailRecursive,
+                                            }
+                                            .call(c, 0x0033f770)?;
+                                            break 'b_33f770;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        break 'b_33f774;
+                    }
+                    'b_33f94c: {
+                        'b_33f948: {
+                            c.cycles += 4;
+                            c.g[S2][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x8));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                            let t = c.g[S2][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                            if t {
+                                break 'b_33f948;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                                if t {
+                                    break 'b_33f948;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                                    if t {
+                                        break 'b_33f948;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                                        if t {
+                                            break 'b_33f948;
+                                        } else {
+                                            'b_33f930: {
+                                                'b_33f92c: {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    if t {
+                                                        break 'b_33f92c;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[V0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        if t {
+                                                            break 'b_33f92c;
+                                                        } else {
+                                                            c.cycles += 2;
+                                                            let t = c.g[V0][0] == 0u64;
+                                                            c.g[A0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            if t {
+                                                                break 'b_33f930;
+                                                            } else {
+                                                                'b_33f888: {
+                                                                    c.cycles += 3;
+                                                                    c.g[S1][0] = c
+                                                                        .lw((c.g[S2][0] as u32)
+                                                                            .wrapping_add(0x28));
+                                                                    if c.g[S1][0] == 0u64 {
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[S2][0] as u32);
+                                                                        break 'b_33f888;
+                                                                    } else {
+                                                                        c.cycles += 5;
+                                                                        c.g[S7][0] = 0x2;
+                                                                        c.g[S6][0] = 0x3;
+                                                                        c.g[S5][0] = 0x1;
+                                                                        c.g[V0][0] = c
+                                                                            .lw((c.g[S1][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        'l_33f7d8: loop {
+                                                                            'b_33f87c: {
+                                                                                'b_33f80c: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S7]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f80c;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f804);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x0035c698, f: ee::s11::RailModifier_FindClosestPoint }.call(c, 0x0033f804)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33f87c;
+                                                                                        } else {
+                                                                                            break 'b_33f80c;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                'b_33f840: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S6]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f840;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f838);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x00348290, f: ee::s11::FlexRail_FindClosestPoint }.call(c, 0x0033f838)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33f87c;
+                                                                                        } else {
+                                                                                            break 'b_33f840;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                c.cycles += 2;
+                                                                                if c.g[V0][0]
+                                                                                    != c.g[S5][0]
+                                                                                {
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33f87c;
+                                                                                } else {
+                                                                                    'b_33f878: {
+                                                                                        c.cycles +=
+                                                                                            6;
+                                                                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                                                                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                                                        c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                                                        let t = c.g
+                                                                                            [V1][0]
+                                                                                            == 0u64;
+                                                                                        c.g[A0]
+                                                                                            [0] = c
+                                                                                            .g[S1]
+                                                                                            [0];
+                                                                                        if t {
+                                                                                            break 'b_33f878;
+                                                                                        } else {
+                                                                                            c.cycles += 6;
+                                                                                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                                                                                            c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                            c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                            c.g[RA][0] = sx(0x0033f878);
+                                                                                            c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                            Callee { addr: 0x00335128, f: ee::s11::Rail_FindNearestPoint }.call(c, 0x0033f878)?;
+                                                                                            break 'b_33f878;
+                                                                                        }
+                                                                                    }
+                                                                                    c.cycles += 1;
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33f87c;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 2;
+                                                                            if c.g[S1][0] != 0u64 {
+                                                                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                                                                if event_due(c) {
+                                                                                    deliver_event_here(c, 0x0033f7d8);
+                                                                                }
+                                                                                continue 'l_33f7d8;
+                                                                            } else {
+                                                                                c.cycles += 1;
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S2][0]
+                                                                                        as u32);
+                                                                                break 'b_33f888;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                'b_33f89c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33f89c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f898);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f898)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33f89c;
+                                                                    }
+                                                                }
+                                                                'b_33f8b0: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33f8b0;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f8ac);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f8ac)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33f8b0;
+                                                                    }
+                                                                }
+                                                                'b_33f8c4: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33f8c4;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f8c0);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f8c0)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33f8c4;
+                                                                    }
+                                                                }
+                                                                'b_33f8d8: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33f8d8;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f8d4);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f8d4)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33f8d8;
+                                                                    }
+                                                                }
+                                                                'b_33f8ec: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33f8ec;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f8e8);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f8e8)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33f8ec;
+                                                                    }
+                                                                }
+                                                                'b_33f900: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33f900;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f8fc);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f8fc)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33f900;
+                                                                    }
+                                                                }
+                                                                'b_33f914: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33f914;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033f910);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f910)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33f914;
+                                                                    }
+                                                                }
+                                                                c.cycles += 2;
+                                                                let t = c.g[A0][0] == 0u64;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x4));
+                                                                if t {
+                                                                    break 'b_33f94c;
+                                                                } else {
+                                                                    c.cycles += 4;
+                                                                    c.g[RA][0] = sx(0x0033f924);
+                                                                    c.g[A1][0] = c.g[S0][0];
+                                                                    Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033f924)?;
+                                                                    let t = true;
+                                                                    c.g[V0][0] = c
+                                                                        .lw((c.g[SP][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    if t {
+                                                                        break 'b_33f94c;
+                                                                    } else {
+                                                                        break 'b_33f92c;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                break 'b_33f930;
+                                            }
+                                            c.cycles += 6;
+                                            c.g[T0][0] = c.g[S2][0];
+                                            c.g[A1][0] = c.g[S3][0];
+                                            c.g[A2][0] = c.g[S0][0];
+                                            c.g[A3][0] = c.g[S4][0];
+                                            c.g[RA][0] = sx(0x0033f948);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x0033ed60,
+                                                f: ee::s11::Cell_FindRailRecursive,
+                                            }
+                                            .call(c, 0x0033f948)?;
+                                            break 'b_33f948;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        break 'b_33f94c;
+                    }
+                    'b_33fb24: {
+                        'b_33fb20: {
+                            c.cycles += 4;
+                            c.g[S2][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x18));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            let t = c.g[S2][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                            if t {
+                                break 'b_33fb20;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                                if t {
+                                    break 'b_33fb20;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                                    if t {
+                                        break 'b_33fb20;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                        if t {
+                                            break 'b_33fb20;
+                                        } else {
+                                            'b_33fb08: {
+                                                'b_33fb04: {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    if t {
+                                                        break 'b_33fb04;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[V0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        if t {
+                                                            break 'b_33fb04;
+                                                        } else {
+                                                            c.cycles += 2;
+                                                            let t = c.g[V0][0] == 0u64;
+                                                            c.g[A0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            if t {
+                                                                break 'b_33fb08;
+                                                            } else {
+                                                                'b_33fa60: {
+                                                                    c.cycles += 3;
+                                                                    c.g[S1][0] = c
+                                                                        .lw((c.g[S2][0] as u32)
+                                                                            .wrapping_add(0x28));
+                                                                    if c.g[S1][0] == 0u64 {
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[S2][0] as u32);
+                                                                        break 'b_33fa60;
+                                                                    } else {
+                                                                        c.cycles += 5;
+                                                                        c.g[S7][0] = 0x2;
+                                                                        c.g[S6][0] = 0x3;
+                                                                        c.g[S5][0] = 0x1;
+                                                                        c.g[V0][0] = c
+                                                                            .lw((c.g[S1][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        'l_33f9b0: loop {
+                                                                            'b_33fa54: {
+                                                                                'b_33f9e4: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S7]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33f9e4;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033f9dc);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x0035c698, f: ee::s11::RailModifier_FindClosestPoint }.call(c, 0x0033f9dc)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33fa54;
+                                                                                        } else {
+                                                                                            break 'b_33f9e4;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                'b_33fa18: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S6]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33fa18;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033fa10);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x00348290, f: ee::s11::FlexRail_FindClosestPoint }.call(c, 0x0033fa10)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33fa54;
+                                                                                        } else {
+                                                                                            break 'b_33fa18;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                c.cycles += 2;
+                                                                                if c.g[V0][0]
+                                                                                    != c.g[S5][0]
+                                                                                {
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33fa54;
+                                                                                } else {
+                                                                                    'b_33fa50: {
+                                                                                        c.cycles +=
+                                                                                            6;
+                                                                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                                                                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                                                        c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                                                        let t = c.g
+                                                                                            [V1][0]
+                                                                                            == 0u64;
+                                                                                        c.g[A0]
+                                                                                            [0] = c
+                                                                                            .g[S1]
+                                                                                            [0];
+                                                                                        if t {
+                                                                                            break 'b_33fa50;
+                                                                                        } else {
+                                                                                            c.cycles += 6;
+                                                                                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                                                                                            c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                            c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                            c.g[RA][0] = sx(0x0033fa50);
+                                                                                            c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                            Callee { addr: 0x00335128, f: ee::s11::Rail_FindNearestPoint }.call(c, 0x0033fa50)?;
+                                                                                            break 'b_33fa50;
+                                                                                        }
+                                                                                    }
+                                                                                    c.cycles += 1;
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33fa54;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 2;
+                                                                            if c.g[S1][0] != 0u64 {
+                                                                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                                                                if event_due(c) {
+                                                                                    deliver_event_here(c, 0x0033f9b0);
+                                                                                }
+                                                                                continue 'l_33f9b0;
+                                                                            } else {
+                                                                                c.cycles += 1;
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S2][0]
+                                                                                        as u32);
+                                                                                break 'b_33fa60;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                'b_33fa74: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33fa74;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fa70);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fa70)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33fa74;
+                                                                    }
+                                                                }
+                                                                'b_33fa88: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33fa88;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fa84);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fa84)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33fa88;
+                                                                    }
+                                                                }
+                                                                'b_33fa9c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33fa9c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fa98);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fa98)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33fa9c;
+                                                                    }
+                                                                }
+                                                                'b_33fab0: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33fab0;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033faac);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033faac)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33fab0;
+                                                                    }
+                                                                }
+                                                                'b_33fac4: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33fac4;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fac0);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fac0)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33fac4;
+                                                                    }
+                                                                }
+                                                                'b_33fad8: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33fad8;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fad4);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fad4)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33fad8;
+                                                                    }
+                                                                }
+                                                                'b_33faec: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33faec;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fae8);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fae8)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33faec;
+                                                                    }
+                                                                }
+                                                                c.cycles += 2;
+                                                                let t = c.g[A0][0] == 0u64;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                if t {
+                                                                    break 'b_33fb24;
+                                                                } else {
+                                                                    c.cycles += 4;
+                                                                    c.g[RA][0] = sx(0x0033fafc);
+                                                                    c.g[A1][0] = c.g[S0][0];
+                                                                    Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fafc)?;
+                                                                    let t = true;
+                                                                    c.g[V0][0] = c
+                                                                        .lw((c.g[SP][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    if t {
+                                                                        break 'b_33fb24;
+                                                                    } else {
+                                                                        break 'b_33fb04;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                break 'b_33fb08;
+                                            }
+                                            c.cycles += 6;
+                                            c.g[T0][0] = c.g[S2][0];
+                                            c.g[A1][0] = c.g[S3][0];
+                                            c.g[A2][0] = c.g[S0][0];
+                                            c.g[A3][0] = c.g[S4][0];
+                                            c.g[RA][0] = sx(0x0033fb20);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x0033ed60,
+                                                f: ee::s11::Cell_FindRailRecursive,
+                                            }
+                                            .call(c, 0x0033fb20)?;
+                                            break 'b_33fb20;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        break 'b_33fb24;
+                    }
+                    'b_33fcfc: {
+                        'b_33fcf8: {
+                            c.cycles += 4;
+                            c.g[S2][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x1c));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            let t = c.g[S2][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                            if t {
+                                break 'b_33fcf8;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                                if t {
+                                    break 'b_33fcf8;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                                    if t {
+                                        break 'b_33fcf8;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                        if t {
+                                            break 'b_33fcf8;
+                                        } else {
+                                            'b_33fce0: {
+                                                'b_33fcdc: {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    if t {
+                                                        break 'b_33fcdc;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[V0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        if t {
+                                                            break 'b_33fcdc;
+                                                        } else {
+                                                            c.cycles += 2;
+                                                            let t = c.g[V0][0] == 0u64;
+                                                            c.g[A0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            if t {
+                                                                break 'b_33fce0;
+                                                            } else {
+                                                                'b_33fc38: {
+                                                                    c.cycles += 3;
+                                                                    c.g[S1][0] = c
+                                                                        .lw((c.g[S2][0] as u32)
+                                                                            .wrapping_add(0x28));
+                                                                    if c.g[S1][0] == 0u64 {
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[S2][0] as u32);
+                                                                        break 'b_33fc38;
+                                                                    } else {
+                                                                        c.cycles += 5;
+                                                                        c.g[S7][0] = 0x2;
+                                                                        c.g[S6][0] = 0x3;
+                                                                        c.g[S5][0] = 0x1;
+                                                                        c.g[V0][0] = c
+                                                                            .lw((c.g[S1][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        'l_33fb88: loop {
+                                                                            'b_33fc2c: {
+                                                                                'b_33fbbc: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S7]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33fbbc;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033fbb4);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x0035c698, f: ee::s11::RailModifier_FindClosestPoint }.call(c, 0x0033fbb4)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33fc2c;
+                                                                                        } else {
+                                                                                            break 'b_33fbbc;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                'b_33fbf0: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S6]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33fbf0;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033fbe8);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x00348290, f: ee::s11::FlexRail_FindClosestPoint }.call(c, 0x0033fbe8)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33fc2c;
+                                                                                        } else {
+                                                                                            break 'b_33fbf0;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                c.cycles += 2;
+                                                                                if c.g[V0][0]
+                                                                                    != c.g[S5][0]
+                                                                                {
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33fc2c;
+                                                                                } else {
+                                                                                    'b_33fc28: {
+                                                                                        c.cycles +=
+                                                                                            6;
+                                                                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                                                                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                                                        c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                                                        let t = c.g
+                                                                                            [V1][0]
+                                                                                            == 0u64;
+                                                                                        c.g[A0]
+                                                                                            [0] = c
+                                                                                            .g[S1]
+                                                                                            [0];
+                                                                                        if t {
+                                                                                            break 'b_33fc28;
+                                                                                        } else {
+                                                                                            c.cycles += 6;
+                                                                                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                                                                                            c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                            c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                            c.g[RA][0] = sx(0x0033fc28);
+                                                                                            c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                            Callee { addr: 0x00335128, f: ee::s11::Rail_FindNearestPoint }.call(c, 0x0033fc28)?;
+                                                                                            break 'b_33fc28;
+                                                                                        }
+                                                                                    }
+                                                                                    c.cycles += 1;
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33fc2c;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 2;
+                                                                            if c.g[S1][0] != 0u64 {
+                                                                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                                                                if event_due(c) {
+                                                                                    deliver_event_here(c, 0x0033fb88);
+                                                                                }
+                                                                                continue 'l_33fb88;
+                                                                            } else {
+                                                                                c.cycles += 1;
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S2][0]
+                                                                                        as u32);
+                                                                                break 'b_33fc38;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                'b_33fc4c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33fc4c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fc48);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fc48)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33fc4c;
+                                                                    }
+                                                                }
+                                                                'b_33fc60: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33fc60;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fc5c);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fc5c)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33fc60;
+                                                                    }
+                                                                }
+                                                                'b_33fc74: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33fc74;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fc70);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fc70)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33fc74;
+                                                                    }
+                                                                }
+                                                                'b_33fc88: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33fc88;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fc84);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fc84)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33fc88;
+                                                                    }
+                                                                }
+                                                                'b_33fc9c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33fc9c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fc98);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fc98)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33fc9c;
+                                                                    }
+                                                                }
+                                                                'b_33fcb0: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33fcb0;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fcac);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fcac)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33fcb0;
+                                                                    }
+                                                                }
+                                                                'b_33fcc4: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33fcc4;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fcc0);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fcc0)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33fcc4;
+                                                                    }
+                                                                }
+                                                                c.cycles += 2;
+                                                                let t = c.g[A0][0] == 0u64;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x8));
+                                                                if t {
+                                                                    break 'b_33fcfc;
+                                                                } else {
+                                                                    c.cycles += 4;
+                                                                    c.g[RA][0] = sx(0x0033fcd4);
+                                                                    c.g[A1][0] = c.g[S0][0];
+                                                                    Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fcd4)?;
+                                                                    let t = true;
+                                                                    c.g[V0][0] = c
+                                                                        .lw((c.g[SP][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    if t {
+                                                                        break 'b_33fcfc;
+                                                                    } else {
+                                                                        break 'b_33fcdc;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                break 'b_33fce0;
+                                            }
+                                            c.cycles += 6;
+                                            c.g[T0][0] = c.g[S2][0];
+                                            c.g[A1][0] = c.g[S3][0];
+                                            c.g[A2][0] = c.g[S0][0];
+                                            c.g[A3][0] = c.g[S4][0];
+                                            c.g[RA][0] = sx(0x0033fcf8);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x0033ed60,
+                                                f: ee::s11::Cell_FindRailRecursive,
+                                            }
+                                            .call(c, 0x0033fcf8)?;
+                                            break 'b_33fcf8;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        break 'b_33fcfc;
+                    }
+                    'b_33fed4: {
+                        'b_33fed0: {
+                            c.cycles += 4;
+                            c.g[S2][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x14));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                            let t = c.g[S2][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                            if t {
+                                break 'b_33fed0;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                if t {
+                                    break 'b_33fed0;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                                    if t {
+                                        break 'b_33fed0;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                        if t {
+                                            break 'b_33fed0;
+                                        } else {
+                                            'b_33feb8: {
+                                                'b_33feb4: {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    if t {
+                                                        break 'b_33feb4;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[V0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        if t {
+                                                            break 'b_33feb4;
+                                                        } else {
+                                                            c.cycles += 2;
+                                                            let t = c.g[V0][0] == 0u64;
+                                                            c.g[A0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            if t {
+                                                                break 'b_33feb8;
+                                                            } else {
+                                                                'b_33fe10: {
+                                                                    c.cycles += 3;
+                                                                    c.g[S1][0] = c
+                                                                        .lw((c.g[S2][0] as u32)
+                                                                            .wrapping_add(0x28));
+                                                                    if c.g[S1][0] == 0u64 {
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[S2][0] as u32);
+                                                                        break 'b_33fe10;
+                                                                    } else {
+                                                                        c.cycles += 5;
+                                                                        c.g[S7][0] = 0x2;
+                                                                        c.g[S6][0] = 0x3;
+                                                                        c.g[S5][0] = 0x1;
+                                                                        c.g[V0][0] = c
+                                                                            .lw((c.g[S1][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        'l_33fd60: loop {
+                                                                            'b_33fe04: {
+                                                                                'b_33fd94: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S7]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33fd94;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033fd8c);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x0035c698, f: ee::s11::RailModifier_FindClosestPoint }.call(c, 0x0033fd8c)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33fe04;
+                                                                                        } else {
+                                                                                            break 'b_33fd94;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                'b_33fdc8: {
+                                                                                    c.cycles += 2;
+                                                                                    let t = c.g[V0]
+                                                                                        [0]
+                                                                                        != c.g[S6]
+                                                                                            [0];
+
+                                                                                    if t {
+                                                                                        break 'b_33fdc8;
+                                                                                    } else {
+                                                                                        c.cycles +=
+                                                                                            11;
+                                                                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[A3][0] = c.lw(c.g[S0][0] as u32);
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[A1]
+                                                                                            [0];
+                                                                                        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                        c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[RA][0] = sx(0x0033fdc0);
+                                                                                        c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                        Callee { addr: 0x00348290, f: ee::s11::FlexRail_FindClosestPoint }.call(c, 0x0033fdc0)?;
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
+                                                                                        if t {
+                                                                                            break 'b_33fe04;
+                                                                                        } else {
+                                                                                            break 'b_33fdc8;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                c.cycles += 2;
+                                                                                if c.g[V0][0]
+                                                                                    != c.g[S5][0]
+                                                                                {
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33fe04;
+                                                                                } else {
+                                                                                    'b_33fe00: {
+                                                                                        c.cycles +=
+                                                                                            6;
+                                                                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                                                                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                                                        c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                                                        let t = c.g
+                                                                                            [V1][0]
+                                                                                            == 0u64;
+                                                                                        c.g[A0]
+                                                                                            [0] = c
+                                                                                            .g[S1]
+                                                                                            [0];
+                                                                                        if t {
+                                                                                            break 'b_33fe00;
+                                                                                        } else {
+                                                                                            c.cycles += 6;
+                                                                                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                                                                                            c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                            c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                            c.g[RA][0] = sx(0x0033fe00);
+                                                                                            c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                            Callee { addr: 0x00335128, f: ee::s11::Rail_FindNearestPoint }.call(c, 0x0033fe00)?;
+                                                                                            break 'b_33fe00;
+                                                                                        }
+                                                                                    }
+                                                                                    c.cycles += 1;
+                                                                                    c.g[S1][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    break 'b_33fe04;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 2;
+                                                                            if c.g[S1][0] != 0u64 {
+                                                                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                                                                if event_due(c) {
+                                                                                    deliver_event_here(c, 0x0033fd60);
+                                                                                }
+                                                                                continue 'l_33fd60;
+                                                                            } else {
+                                                                                c.cycles += 1;
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S2][0]
+                                                                                        as u32);
+                                                                                break 'b_33fe10;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                'b_33fe24: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33fe24;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fe20);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fe20)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        break 'b_33fe24;
+                                                                    }
+                                                                }
+                                                                'b_33fe38: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33fe38;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fe34);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fe34)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        break 'b_33fe38;
+                                                                    }
+                                                                }
+                                                                'b_33fe4c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33fe4c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fe48);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fe48)?;
+                                                                        c.g[A0][0] = c
+                                                                            .lw((c.g[S2][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0xc));
+                                                                        break 'b_33fe4c;
+                                                                    }
+                                                                }
+                                                                'b_33fe60: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33fe60;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fe5c);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fe5c)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x10));
+                                                                        break 'b_33fe60;
+                                                                    }
+                                                                }
+                                                                'b_33fe74: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33fe74;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fe70);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fe70)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x14));
+                                                                        break 'b_33fe74;
+                                                                    }
+                                                                }
+                                                                'b_33fe88: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33fe88;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fe84);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fe84)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x18));
+                                                                        break 'b_33fe88;
+                                                                    }
+                                                                }
+                                                                'b_33fe9c: {
+                                                                    c.cycles += 2;
+                                                                    if c.g[A0][0] == 0u64 {
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33fe9c;
+                                                                    } else {
+                                                                        c.cycles += 3;
+                                                                        c.g[RA][0] = sx(0x0033fe98);
+                                                                        c.g[A1][0] = c.g[S0][0];
+                                                                        Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fe98)?;
+                                                                        c.g[A0][0] = c.lw((c.g[S2]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                        break 'b_33fe9c;
+                                                                    }
+                                                                }
+                                                                c.cycles += 2;
+                                                                let t = c.g[A0][0] == 0u64;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                if t {
+                                                                    break 'b_33fed4;
+                                                                } else {
+                                                                    c.cycles += 4;
+                                                                    c.g[RA][0] = sx(0x0033feac);
+                                                                    c.g[A1][0] = c.g[S0][0];
+                                                                    Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033feac)?;
+                                                                    let t = true;
+                                                                    c.g[V0][0] = c
+                                                                        .lw((c.g[SP][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    if t {
+                                                                        break 'b_33fed4;
+                                                                    } else {
+                                                                        break 'b_33feb4;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                break 'b_33feb8;
+                                            }
+                                            c.cycles += 6;
+                                            c.g[T0][0] = c.g[S2][0];
+                                            c.g[A1][0] = c.g[S3][0];
+                                            c.g[A2][0] = c.g[S0][0];
+                                            c.g[A3][0] = c.g[S4][0];
+                                            c.g[RA][0] = sx(0x0033fed0);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x0033ed60,
+                                                f: ee::s11::Cell_FindRailRecursive,
+                                            }
+                                            .call(c, 0x0033fed0)?;
+                                            break 'b_33fed0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        break 'b_33fed4;
+                    }
+                    c.cycles += 4;
+                    c.g[S2][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[S2][0] == 0u64;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    if t {
+                        break 'b_3400a8;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                        if t {
+                            break 'b_3400a8;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                            if t {
+                                break 'b_3400a8;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                if t {
+                                    break 'b_3400a8;
+                                } else {
+                                    'b_340090: {
+                                        'b_34008c: {
+                                            c.cycles += 2;
+                                            let t = c.g[V0][0] == 0u64;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                            if t {
+                                                break 'b_34008c;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] == 0u64;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                if t {
+                                                    break 'b_34008c;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                    if t {
+                                                        break 'b_340090;
+                                                    } else {
+                                                        'b_33ffe8: {
+                                                            c.cycles += 3;
+                                                            c.g[S1][0] = c.lw((c.g[S2][0] as u32)
+                                                                .wrapping_add(0x28));
+                                                            if c.g[S1][0] == 0u64 {
+                                                                c.g[A0][0] =
+                                                                    c.lw(c.g[S2][0] as u32);
+                                                                break 'b_33ffe8;
+                                                            } else {
+                                                                c.cycles += 5;
+                                                                c.g[S5][0] = 0x2;
+                                                                c.g[S4][0] = 0x3;
+                                                                c.g[S3][0] = 0x1;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[S1][0] as u32)
+                                                                        .wrapping_add(0x8));
+                                                                'l_33ff38: loop {
+                                                                    'b_33ffdc: {
+                                                                        'b_33ff6c: {
+                                                                            c.cycles += 2;
+                                                                            let t = c.g[V0][0]
+                                                                                != c.g[S5][0];
+
+                                                                            if t {
+                                                                                break 'b_33ff6c;
+                                                                            } else {
+                                                                                c.cycles += 11;
+                                                                                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                c.g[A3][0] = c
+                                                                                    .lw(c.g[S0][0]
+                                                                                        as u32);
+                                                                                c.g[A2][0] =
+                                                                                    c.g[A1][0];
+                                                                                c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                c.g[RA][0] =
+                                                                                    sx(0x0033ff64);
+                                                                                c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                Callee { addr: 0x0035c698, f: ee::s11::RailModifier_FindClosestPoint }.call(c, 0x0033ff64)?;
+                                                                                let t = true;
+                                                                                c.g[S1][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
+                                                                                if t {
+                                                                                    break 'b_33ffdc;
+                                                                                } else {
+                                                                                    break 'b_33ff6c;
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                        'b_33ffa0: {
+                                                                            c.cycles += 2;
+                                                                            let t = c.g[V0][0]
+                                                                                != c.g[S4][0];
+
+                                                                            if t {
+                                                                                break 'b_33ffa0;
+                                                                            } else {
+                                                                                c.cycles += 11;
+                                                                                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                                                                c.g[A3][0] = c
+                                                                                    .lw(c.g[S0][0]
+                                                                                        as u32);
+                                                                                c.g[A2][0] =
+                                                                                    c.g[A1][0];
+                                                                                c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                c.g[RA][0] =
+                                                                                    sx(0x0033ff98);
+                                                                                c.g[T3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                Callee { addr: 0x00348290, f: ee::s11::FlexRail_FindClosestPoint }.call(c, 0x0033ff98)?;
+                                                                                let t = true;
+                                                                                c.g[S1][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
+                                                                                if t {
+                                                                                    break 'b_33ffdc;
+                                                                                } else {
+                                                                                    break 'b_33ffa0;
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                        c.cycles += 2;
+                                                                        if c.g[V0][0] != c.g[S3][0]
+                                                                        {
+                                                                            c.g[S1][0] = c
+                                                                                .lw(c.g[S1][0]
+                                                                                    as u32);
+                                                                            break 'b_33ffdc;
+                                                                        } else {
+                                                                            'b_33ffd8: {
+                                                                                c.cycles += 6;
+                                                                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+                                                                                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                                                                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                                                c.g[V1][0] = c.g
+                                                                                    [V1][0]
+                                                                                    & c.g[A0][0];
+                                                                                let t = c.g[V1][0]
+                                                                                    == 0u64;
+                                                                                c.g[A0][0] =
+                                                                                    c.g[S1][0];
+                                                                                if t {
+                                                                                    break 'b_33ffd8;
+                                                                                } else {
+                                                                                    c.cycles += 6;
+                                                                                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                                                    c.g[A2][0] = c
+                                                                                        .lw(
+                                                                                        c.g[S0][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                                                    c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                                                                    c.g[RA][0] = sx(
+                                                                                        0x0033ffd8,
+                                                                                    );
+                                                                                    c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                                                                    Callee { addr: 0x00335128, f: ee::s11::Rail_FindNearestPoint }.call(c, 0x0033ffd8)?;
+                                                                                    break 'b_33ffd8;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 1;
+                                                                            c.g[S1][0] = c
+                                                                                .lw(c.g[S1][0]
+                                                                                    as u32);
+                                                                            break 'b_33ffdc;
+                                                                        }
+                                                                    }
+                                                                    c.cycles += 2;
+                                                                    if c.g[S1][0] != 0u64 {
+                                                                        c.g[V0][0] = c
+                                                                            .lw((c.g[S1][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x8));
+                                                                        if event_due(c) {
+                                                                            deliver_event_here(
+                                                                                c, 0x0033ff38,
+                                                                            );
+                                                                        }
+                                                                        continue 'l_33ff38;
+                                                                    } else {
+                                                                        c.cycles += 1;
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[S2][0] as u32);
+                                                                        break 'b_33ffe8;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        'b_33fffc: {
+                                                            c.cycles += 2;
+                                                            if c.g[A0][0] == 0u64 {
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x4));
+                                                                break 'b_33fffc;
+                                                            } else {
+                                                                c.cycles += 3;
+                                                                c.g[RA][0] = sx(0x0033fff8);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0033fff8)?;
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x4));
+                                                                break 'b_33fffc;
+                                                            }
+                                                        }
+                                                        'b_340010: {
+                                                            c.cycles += 2;
+                                                            if c.g[A0][0] == 0u64 {
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x8));
+                                                                break 'b_340010;
+                                                            } else {
+                                                                c.cycles += 3;
+                                                                c.g[RA][0] = sx(0x0034000c);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0034000c)?;
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x8));
+                                                                break 'b_340010;
+                                                            }
+                                                        }
+                                                        'b_340024: {
+                                                            c.cycles += 2;
+                                                            if c.g[A0][0] == 0u64 {
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                break 'b_340024;
+                                                            } else {
+                                                                c.cycles += 3;
+                                                                c.g[RA][0] = sx(0x00340020);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x00340020)?;
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                break 'b_340024;
+                                                            }
+                                                        }
+                                                        'b_340038: {
+                                                            c.cycles += 2;
+                                                            if c.g[A0][0] == 0u64 {
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x10));
+                                                                break 'b_340038;
+                                                            } else {
+                                                                c.cycles += 3;
+                                                                c.g[RA][0] = sx(0x00340034);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x00340034)?;
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x10));
+                                                                break 'b_340038;
+                                                            }
+                                                        }
+                                                        'b_34004c: {
+                                                            c.cycles += 2;
+                                                            if c.g[A0][0] == 0u64 {
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x14));
+                                                                break 'b_34004c;
+                                                            } else {
+                                                                c.cycles += 3;
+                                                                c.g[RA][0] = sx(0x00340048);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x00340048)?;
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x14));
+                                                                break 'b_34004c;
+                                                            }
+                                                        }
+                                                        'b_340060: {
+                                                            c.cycles += 2;
+                                                            if c.g[A0][0] == 0u64 {
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x18));
+                                                                break 'b_340060;
+                                                            } else {
+                                                                c.cycles += 3;
+                                                                c.g[RA][0] = sx(0x0034005c);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x0034005c)?;
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x18));
+                                                                break 'b_340060;
+                                                            }
+                                                        }
+                                                        'b_340074: {
+                                                            c.cycles += 2;
+                                                            if c.g[A0][0] == 0u64 {
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x1c));
+                                                                break 'b_340074;
+                                                            } else {
+                                                                c.cycles += 3;
+                                                                c.g[RA][0] = sx(0x00340070);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee { addr: 0x003411b8, f: ee::s11::Cell_FindRailSubtree }.call(c, 0x00340070)?;
+                                                                c.g[A0][0] = c
+                                                                    .lw((c.g[S2][0] as u32)
+                                                                        .wrapping_add(0x1c));
+                                                                break 'b_340074;
+                                                            }
+                                                        }
+                                                        c.cycles += 2;
+                                                        if c.g[A0][0] == 0u64 {
+                                                            c.lq(
+                                                                16,
+                                                                (c.g[SP][0] as u32)
+                                                                    .wrapping_add(0xe0),
+                                                            );
+                                                            break 'b_3400ac;
+                                                        } else {
+                                                            c.cycles += 4;
+                                                            c.g[RA][0] = sx(0x00340084);
+                                                            c.g[A1][0] = c.g[S0][0];
+                                                            Callee {
+                                                                addr: 0x003411b8,
+                                                                f: ee::s11::Cell_FindRailSubtree,
+                                                            }
+                                                            .call(c, 0x00340084)?;
+                                                            let t = true;
+                                                            c.lq(
+                                                                16,
+                                                                (c.g[SP][0] as u32)
+                                                                    .wrapping_add(0xe0),
+                                                            );
+                                                            if t {
+                                                                break 'b_3400ac;
+                                                            } else {
+                                                                break 'b_34008c;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        c.cycles += 1;
+                                        c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                        break 'b_340090;
+                                    }
+                                    c.cycles += 6;
+                                    c.g[A1][0] = c.g[S3][0];
+                                    c.g[A2][0] = c.g[S0][0];
+                                    c.g[A3][0] = c.g[S4][0];
+                                    c.g[T0][0] = c.g[S2][0];
+                                    c.g[RA][0] = sx(0x003400a8);
+                                    c.g[T1][0] = c.g[SP][0];
+                                    Callee {
+                                        addr: 0x0033ed60,
+                                        f: ee::s11::Cell_FindRailRecursive,
+                                    }
+                                    .call(c, 0x003400a8)?;
+                                    break 'b_3400a8;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xe0));
+            break 'b_3400ac;
+        }
+        c.cycles += 11;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf0));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `OverlapList_GatherObjectsAndInstances` (0x00331e90): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn overlap_list_gather_objects_and_instances(c: &mut Cpu) {
+    if c.pc != 0x00331e90 {
+        return ee::s11::f_00331e90__generated(c);
+    }
+    guest(c, |c| {
+        'b_3320e4: {
+            'b_3320e0: {
+                c.cycles += 37;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xe0));
+                c.g[A2][0] = 0x40;
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.g[S4][0] = c.g[A1][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xc0));
+                c.g[FP][0] = c.g[A0][0];
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_add(0xc));
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.g[A0][0] = sx((c.g[FP][0] as u32).wrapping_add(0x8));
+                c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_add(0x110));
+                c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[RA][0]);
+                c.g[V0][0] = c.lw(c.g[FP][0] as u32);
+                c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xa0));
+                c.g[V0][0] = sx((c.g[FP][0] as u32).wrapping_add(0x10c));
+                c.sw(c.g[SP][0] as u32, c.g[V1][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A1][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x18), c.g[A2][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), c.g[S4][0]);
+                c.sw((c.g[FP][0] as u32).wrapping_add(0x4), c.g[A3][0]);
+                c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                c.sw((c.g[FP][0] as u32).wrapping_add(0x8), 0u64);
+                c.sw(c.g[V0][0] as u32, 0u64);
+                c.g[S5][0] = c.lw(c.g[FP][0] as u32);
+                c.g[S1][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x10));
+                let t = c.g[S1][0] == 0u64;
+                c.g[S0][0] = c.g[SP][0];
+                if t {
+                    break 'b_3320e0;
+                } else {
+                    'b_3320bc: {
+                        c.cycles += 7;
+                        c.g[S3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.g[A0][0] = c.g[S5][0];
+                        c.g[RA][0] = sx(0x00331f34);
+                        c.g[A1][0] = c.g[S4][0];
+                        call_ptr(c, 0x00328360, 0x00331f34)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_3320bc;
+                        } else {
+                            'b_332018: {
+                                c.cycles += 6;
+                                c.g[A0][0] = c.g[SP][0];
+                                c.g[RA][0] = sx(0x00331f4c);
+                                c.g[A1][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x003309d8,
+                                    f: ee::s11::Cell_GatherObjects,
+                                }
+                                .call(c, 0x00331f4c)?;
+                                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                                if c.g[A2][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_332018;
+                                } else {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                                    'l_331f60: loop {
+                                        'b_331fe0: {
+                                            c.cycles += 6;
+                                            c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
+                                            c.lwc1(0, c.g[V0][0] as u32);
+                                            c.c_le_s(0, 1);
+                                            let t = !c.fcc();
+                                            c.g[V1][0] = 0u64;
+                                            if t {
+                                                break 'b_331fe0;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                                c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x158));
+                                                c.c_le_s(0, 1);
+                                                let t = !c.fcc();
+
+                                                if t {
+                                                    break 'b_331fe0;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.lwc1(
+                                                        1,
+                                                        (c.g[V0][0] as u32).wrapping_add(0x4),
+                                                    );
+                                                    c.lwc1(
+                                                        0,
+                                                        (c.g[A2][0] as u32).wrapping_add(0x168),
+                                                    );
+                                                    c.c_le_s(1, 0);
+                                                    let t = !c.fcc();
+
+                                                    if t {
+                                                        break 'b_331fe0;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.lwc1(
+                                                            1,
+                                                            (c.g[V0][0] as u32).wrapping_add(0x14),
+                                                        );
+                                                        c.lwc1(
+                                                            0,
+                                                            (c.g[A2][0] as u32).wrapping_add(0x15c),
+                                                        );
+                                                        c.c_le_s(0, 1);
+                                                        let t = !c.fcc();
+
+                                                        if t {
+                                                            break 'b_331fe0;
+                                                        } else {
+                                                            c.cycles += 5;
+                                                            c.lwc1(
+                                                                1,
+                                                                (c.g[V0][0] as u32)
+                                                                    .wrapping_add(0x8),
+                                                            );
+                                                            c.lwc1(
+                                                                0,
+                                                                (c.g[A2][0] as u32)
+                                                                    .wrapping_add(0x16c),
+                                                            );
+                                                            c.c_le_s(1, 0);
+                                                            let t = !c.fcc();
+
+                                                            if t {
+                                                                break 'b_331fe0;
+                                                            } else {
+                                                                c.cycles += 6;
+                                                                c.lwc1(
+                                                                    1,
+                                                                    (c.g[V0][0] as u32)
+                                                                        .wrapping_add(0x18),
+                                                                );
+                                                                c.lwc1(
+                                                                    0,
+                                                                    (c.g[A2][0] as u32)
+                                                                        .wrapping_add(0x160),
+                                                                );
+                                                                c.c_le_s(0, 1);
+                                                                if c.fcc() {
+                                                                    c.g[V1][0] = 0x1;
+                                                                    break 'b_331fe0;
+                                                                } else {
+                                                                    break 'b_331fe0;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        'b_33200c: {
+                                            c.cycles += 2;
+                                            if c.g[V1][0] == 0u64 {
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_33200c;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                                                c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                                                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                                                c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                                c.g[V1][0] =
+                                                    sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                                c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_33200c;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[A2][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00331f60);
+                                            }
+                                            continue 'l_331f60;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_332018;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_33202c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_33202c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332028);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332028)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_33202c;
+                                }
+                            }
+                            'b_332040: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_332040;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033203c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x0033203c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_332040;
+                                }
+                            }
+                            'b_332054: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_332054;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332050);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332050)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_332054;
+                                }
+                            }
+                            'b_332068: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_332068;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332064);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332064)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_332068;
+                                }
+                            }
+                            'b_33207c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_33207c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332078);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332078)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_33207c;
+                                }
+                            }
+                            'b_332090: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_332090;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033208c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x0033208c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_332090;
+                                }
+                            }
+                            'b_3320a4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_3320a4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003320a0);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003320a0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_3320a4;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x24));
+                                break 'b_3320e4;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x003320b4);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x003320b4)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x24));
+                                if t {
+                                    break 'b_3320e4;
+                                } else {
+                                    break 'b_3320bc;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x24));
+                        break 'b_3320e4;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A0][0] = c.g[S3][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[SP][0];
+                        c.g[A2][0] = c.g[SP][0];
+                        c.g[A3][0] = c.g[S4][0];
+                        c.g[RA][0] = sx(0x003320e0);
+                        c.g[T1][0] = c.g[S5][0];
+                        Callee {
+                            addr: 0x0033a3d8,
+                            f: ee::s11::Cell_GatherObjInstRecursive,
+                        }
+                        .call(c, 0x003320e0)?;
+                        break 'b_3320e0;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x24));
+            break 'b_3320e4;
+        }
+        'b_3322d4: {
+            'b_3322d0: {
+                c.cycles += 12;
+                c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x50));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x28), c.g[V1][0]);
+                c.g[S1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x14));
+                c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x64));
+                c.g[S6][0] = sx((c.g[S5][0] as u32).wrapping_add(0x28));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), c.g[V1][0]);
+                c.g[S7][0] = sx((c.g[S5][0] as u32).wrapping_add(0x3c));
+                c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x78));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[V1][0]);
+                c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x8c));
+                let t = c.g[V0][0] == 0u64;
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x34), c.g[V1][0]);
+                if t {
+                    break 'b_3322d0;
+                } else {
+                    'b_3322ac: {
+                        c.cycles += 8;
+                        c.g[S2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                        c.g[S3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x21));
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[RA][0] = sx(0x00332128);
+                        c.g[A1][0] = c.g[S4][0];
+                        call_ptr(c, 0x00328360, 0x00332128)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_3322ac;
+                        } else {
+                            'b_332204: {
+                                c.cycles += 6;
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[RA][0] = sx(0x00332140);
+                                c.g[A1][0] = c.g[S2][0];
+                                Callee {
+                                    addr: 0x003309d8,
+                                    f: ee::s11::Cell_GatherObjects,
+                                }
+                                .call(c, 0x00332140)?;
+                                c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x24));
+                                let t = c.g[A2][0] == 0u64;
+                                c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                                if t {
+                                    break 'b_332204;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                    'l_332150: loop {
+                                        'b_3321d0: {
+                                            c.cycles += 6;
+                                            c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
+                                            c.lwc1(0, c.g[V0][0] as u32);
+                                            c.c_le_s(0, 1);
+                                            let t = !c.fcc();
+                                            c.g[V1][0] = 0u64;
+                                            if t {
+                                                break 'b_3321d0;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                                c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x158));
+                                                c.c_le_s(0, 1);
+                                                let t = !c.fcc();
+
+                                                if t {
+                                                    break 'b_3321d0;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.lwc1(
+                                                        1,
+                                                        (c.g[V0][0] as u32).wrapping_add(0x4),
+                                                    );
+                                                    c.lwc1(
+                                                        0,
+                                                        (c.g[A2][0] as u32).wrapping_add(0x168),
+                                                    );
+                                                    c.c_le_s(1, 0);
+                                                    let t = !c.fcc();
+
+                                                    if t {
+                                                        break 'b_3321d0;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.lwc1(
+                                                            1,
+                                                            (c.g[V0][0] as u32).wrapping_add(0x14),
+                                                        );
+                                                        c.lwc1(
+                                                            0,
+                                                            (c.g[A2][0] as u32).wrapping_add(0x15c),
+                                                        );
+                                                        c.c_le_s(0, 1);
+                                                        let t = !c.fcc();
+
+                                                        if t {
+                                                            break 'b_3321d0;
+                                                        } else {
+                                                            c.cycles += 5;
+                                                            c.lwc1(
+                                                                1,
+                                                                (c.g[V0][0] as u32)
+                                                                    .wrapping_add(0x8),
+                                                            );
+                                                            c.lwc1(
+                                                                0,
+                                                                (c.g[A2][0] as u32)
+                                                                    .wrapping_add(0x16c),
+                                                            );
+                                                            c.c_le_s(1, 0);
+                                                            let t = !c.fcc();
+
+                                                            if t {
+                                                                break 'b_3321d0;
+                                                            } else {
+                                                                c.cycles += 6;
+                                                                c.lwc1(
+                                                                    1,
+                                                                    (c.g[V0][0] as u32)
+                                                                        .wrapping_add(0x18),
+                                                                );
+                                                                c.lwc1(
+                                                                    0,
+                                                                    (c.g[A2][0] as u32)
+                                                                        .wrapping_add(0x160),
+                                                                );
+                                                                c.c_le_s(0, 1);
+                                                                if c.fcc() {
+                                                                    c.g[V1][0] = 0x1;
+                                                                    break 'b_3321d0;
+                                                                } else {
+                                                                    break 'b_3321d0;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        'b_3321fc: {
+                                            c.cycles += 2;
+                                            if c.g[V1][0] == 0u64 {
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_3321fc;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                                                c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                                                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                                                c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                                c.g[V1][0] =
+                                                    sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                                c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_3321fc;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[A2][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00332150);
+                                            }
+                                            continue 'l_332150;
+                                        } else {
+                                            break 'b_332204;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_33221c: {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                                    break 'b_33221c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332218);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332218)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                                    break 'b_33221c;
+                                }
+                            }
+                            'b_332230: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                                    break 'b_332230;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033222c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x0033222c)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                                    break 'b_332230;
+                                }
+                            }
+                            'b_332244: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                                    break 'b_332244;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332240);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332240)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                                    break 'b_332244;
+                                }
+                            }
+                            'b_332258: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
+                                    break 'b_332258;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332254);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332254)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
+                                    break 'b_332258;
+                                }
+                            }
+                            'b_33226c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x14));
+                                    break 'b_33226c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332268);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332268)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x14));
+                                    break 'b_33226c;
+                                }
+                            }
+                            'b_332280: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
+                                    break 'b_332280;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033227c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x0033227c)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
+                                    break 'b_332280;
+                                }
+                            }
+                            'b_332294: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1c));
+                                    break 'b_332294;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332290);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332290)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1c));
+                                    break 'b_332294;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x38));
+                                break 'b_3322d4;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x003322a4);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x003322a4)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x38));
+                                if t {
+                                    break 'b_3322d4;
+                                } else {
+                                    break 'b_3322ac;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x38));
+                        break 'b_3322d4;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A0][0] = c.g[S3][0];
+                        c.g[T0][0] = c.g[S2][0];
+                        c.g[T1][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x003322d0);
+                        c.g[A3][0] = c.g[S4][0];
+                        Callee {
+                            addr: 0x0033a3d8,
+                            f: ee::s11::Cell_GatherObjInstRecursive,
+                        }
+                        .call(c, 0x003322d0)?;
+                        break 'b_3322d0;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x38));
+            break 'b_3322d4;
+        }
+        'b_33249c: {
+            'b_332498: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x22));
+                if t {
+                    break 'b_332498;
+                } else {
+                    'b_332474: {
+                        c.cycles += 7;
+                        c.g[S1][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x10));
+                        c.g[A0][0] = c.g[S6][0];
+                        c.g[RA][0] = sx(0x003322ec);
+                        c.g[A1][0] = c.g[S4][0];
+                        call_ptr(c, 0x00328360, 0x003322ec)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_332474;
+                        } else {
+                            'b_3323cc: {
+                                c.cycles += 6;
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[RA][0] = sx(0x00332304);
+                                c.g[A1][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x003309d8,
+                                    f: ee::s11::Cell_GatherObjects,
+                                }
+                                .call(c, 0x00332304)?;
+                                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                                let t = c.g[A2][0] == 0u64;
+                                c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                                if t {
+                                    break 'b_3323cc;
+                                } else {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                    'l_332318: loop {
+                                        'b_332398: {
+                                            c.cycles += 6;
+                                            c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
+                                            c.lwc1(0, c.g[V0][0] as u32);
+                                            c.c_le_s(0, 1);
+                                            let t = !c.fcc();
+                                            c.g[V1][0] = 0u64;
+                                            if t {
+                                                break 'b_332398;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                                c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x158));
+                                                c.c_le_s(0, 1);
+                                                let t = !c.fcc();
+
+                                                if t {
+                                                    break 'b_332398;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.lwc1(
+                                                        1,
+                                                        (c.g[V0][0] as u32).wrapping_add(0x4),
+                                                    );
+                                                    c.lwc1(
+                                                        0,
+                                                        (c.g[A2][0] as u32).wrapping_add(0x168),
+                                                    );
+                                                    c.c_le_s(1, 0);
+                                                    let t = !c.fcc();
+
+                                                    if t {
+                                                        break 'b_332398;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.lwc1(
+                                                            1,
+                                                            (c.g[V0][0] as u32).wrapping_add(0x14),
+                                                        );
+                                                        c.lwc1(
+                                                            0,
+                                                            (c.g[A2][0] as u32).wrapping_add(0x15c),
+                                                        );
+                                                        c.c_le_s(0, 1);
+                                                        let t = !c.fcc();
+
+                                                        if t {
+                                                            break 'b_332398;
+                                                        } else {
+                                                            c.cycles += 5;
+                                                            c.lwc1(
+                                                                1,
+                                                                (c.g[V0][0] as u32)
+                                                                    .wrapping_add(0x8),
+                                                            );
+                                                            c.lwc1(
+                                                                0,
+                                                                (c.g[A2][0] as u32)
+                                                                    .wrapping_add(0x16c),
+                                                            );
+                                                            c.c_le_s(1, 0);
+                                                            let t = !c.fcc();
+
+                                                            if t {
+                                                                break 'b_332398;
+                                                            } else {
+                                                                c.cycles += 6;
+                                                                c.lwc1(
+                                                                    1,
+                                                                    (c.g[V0][0] as u32)
+                                                                        .wrapping_add(0x18),
+                                                                );
+                                                                c.lwc1(
+                                                                    0,
+                                                                    (c.g[A2][0] as u32)
+                                                                        .wrapping_add(0x160),
+                                                                );
+                                                                c.c_le_s(0, 1);
+                                                                if c.fcc() {
+                                                                    c.g[V1][0] = 0x1;
+                                                                    break 'b_332398;
+                                                                } else {
+                                                                    break 'b_332398;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        'b_3323c4: {
+                                            c.cycles += 2;
+                                            if c.g[V1][0] == 0u64 {
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_3323c4;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                                                c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                                                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                                                c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                                c.g[V1][0] =
+                                                    sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                                c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_3323c4;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[A2][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00332318);
+                                            }
+                                            continue 'l_332318;
+                                        } else {
+                                            break 'b_3323cc;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_3323e4: {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_3323e4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003323e0);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003323e0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_3323e4;
+                                }
+                            }
+                            'b_3323f8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_3323f8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003323f4);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003323f4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_3323f8;
+                                }
+                            }
+                            'b_33240c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_33240c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332408);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332408)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_33240c;
+                                }
+                            }
+                            'b_332420: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_332420;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033241c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x0033241c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_332420;
+                                }
+                            }
+                            'b_332434: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_332434;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332430);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332430)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_332434;
+                                }
+                            }
+                            'b_332448: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_332448;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332444);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332444)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_332448;
+                                }
+                            }
+                            'b_33245c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_33245c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332458);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332458)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_33245c;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x4c));
+                                break 'b_33249c;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x0033246c);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x0033246c)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x4c));
+                                if t {
+                                    break 'b_33249c;
+                                } else {
+                                    break 'b_332474;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x4c));
+                        break 'b_33249c;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[T1][0] = c.g[S6][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x00332498);
+                        c.g[A3][0] = c.g[S4][0];
+                        Callee {
+                            addr: 0x0033a3d8,
+                            f: ee::s11::Cell_GatherObjInstRecursive,
+                        }
+                        .call(c, 0x00332498)?;
+                        break 'b_332498;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x4c));
+            break 'b_33249c;
+        }
+        'b_332664: {
+            'b_332660: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x23));
+                if t {
+                    break 'b_332660;
+                } else {
+                    'b_33263c: {
+                        c.cycles += 7;
+                        c.g[S1][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0x10));
+                        c.g[A0][0] = c.g[S7][0];
+                        c.g[RA][0] = sx(0x003324b4);
+                        c.g[A1][0] = c.g[S4][0];
+                        call_ptr(c, 0x00328360, 0x003324b4)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_33263c;
+                        } else {
+                            'b_332594: {
+                                c.cycles += 6;
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[RA][0] = sx(0x003324cc);
+                                c.g[A1][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x003309d8,
+                                    f: ee::s11::Cell_GatherObjects,
+                                }
+                                .call(c, 0x003324cc)?;
+                                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                                let t = c.g[A2][0] == 0u64;
+                                c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                                if t {
+                                    break 'b_332594;
+                                } else {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                    'l_3324e0: loop {
+                                        'b_332560: {
+                                            c.cycles += 6;
+                                            c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
+                                            c.lwc1(0, c.g[V0][0] as u32);
+                                            c.c_le_s(0, 1);
+                                            let t = !c.fcc();
+                                            c.g[V1][0] = 0u64;
+                                            if t {
+                                                break 'b_332560;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                                c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x158));
+                                                c.c_le_s(0, 1);
+                                                let t = !c.fcc();
+
+                                                if t {
+                                                    break 'b_332560;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.lwc1(
+                                                        1,
+                                                        (c.g[V0][0] as u32).wrapping_add(0x4),
+                                                    );
+                                                    c.lwc1(
+                                                        0,
+                                                        (c.g[A2][0] as u32).wrapping_add(0x168),
+                                                    );
+                                                    c.c_le_s(1, 0);
+                                                    let t = !c.fcc();
+
+                                                    if t {
+                                                        break 'b_332560;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.lwc1(
+                                                            1,
+                                                            (c.g[V0][0] as u32).wrapping_add(0x14),
+                                                        );
+                                                        c.lwc1(
+                                                            0,
+                                                            (c.g[A2][0] as u32).wrapping_add(0x15c),
+                                                        );
+                                                        c.c_le_s(0, 1);
+                                                        let t = !c.fcc();
+
+                                                        if t {
+                                                            break 'b_332560;
+                                                        } else {
+                                                            c.cycles += 5;
+                                                            c.lwc1(
+                                                                1,
+                                                                (c.g[V0][0] as u32)
+                                                                    .wrapping_add(0x8),
+                                                            );
+                                                            c.lwc1(
+                                                                0,
+                                                                (c.g[A2][0] as u32)
+                                                                    .wrapping_add(0x16c),
+                                                            );
+                                                            c.c_le_s(1, 0);
+                                                            let t = !c.fcc();
+
+                                                            if t {
+                                                                break 'b_332560;
+                                                            } else {
+                                                                c.cycles += 6;
+                                                                c.lwc1(
+                                                                    1,
+                                                                    (c.g[V0][0] as u32)
+                                                                        .wrapping_add(0x18),
+                                                                );
+                                                                c.lwc1(
+                                                                    0,
+                                                                    (c.g[A2][0] as u32)
+                                                                        .wrapping_add(0x160),
+                                                                );
+                                                                c.c_le_s(0, 1);
+                                                                if c.fcc() {
+                                                                    c.g[V1][0] = 0x1;
+                                                                    break 'b_332560;
+                                                                } else {
+                                                                    break 'b_332560;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        'b_33258c: {
+                                            c.cycles += 2;
+                                            if c.g[V1][0] == 0u64 {
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_33258c;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                                                c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                                                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                                                c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                                c.g[V1][0] =
+                                                    sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                                c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_33258c;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[A2][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x003324e0);
+                                            }
+                                            continue 'l_3324e0;
+                                        } else {
+                                            break 'b_332594;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_3325ac: {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_3325ac;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003325a8);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003325a8)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_3325ac;
+                                }
+                            }
+                            'b_3325c0: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_3325c0;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003325bc);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003325bc)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_3325c0;
+                                }
+                            }
+                            'b_3325d4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_3325d4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003325d0);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003325d0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_3325d4;
+                                }
+                            }
+                            'b_3325e8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_3325e8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003325e4);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003325e4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_3325e8;
+                                }
+                            }
+                            'b_3325fc: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_3325fc;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003325f8);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003325f8)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_3325fc;
+                                }
+                            }
+                            'b_332610: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_332610;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033260c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x0033260c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_332610;
+                                }
+                            }
+                            'b_332624: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_332624;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332620);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332620)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_332624;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x60));
+                                break 'b_332664;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00332634);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332634)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x60));
+                                if t {
+                                    break 'b_332664;
+                                } else {
+                                    break 'b_33263c;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x60));
+                        break 'b_332664;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[T1][0] = c.g[S7][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x00332660);
+                        c.g[A3][0] = c.g[S4][0];
+                        Callee {
+                            addr: 0x0033a3d8,
+                            f: ee::s11::Cell_GatherObjInstRecursive,
+                        }
+                        .call(c, 0x00332660)?;
+                        break 'b_332660;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x60));
+            break 'b_332664;
+        }
+        'b_33282c: {
+            'b_332828: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                if t {
+                    break 'b_332828;
+                } else {
+                    'b_332804: {
+                        c.cycles += 8;
+                        c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x24));
+                        c.g[A1][0] = c.g[S4][0];
+                        c.g[S1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = sx(0x00332680);
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x00328360, 0x00332680)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_332804;
+                        } else {
+                            'b_33275c: {
+                                c.cycles += 6;
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[RA][0] = sx(0x00332698);
+                                c.g[A1][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x003309d8,
+                                    f: ee::s11::Cell_GatherObjects,
+                                }
+                                .call(c, 0x00332698)?;
+                                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                                let t = c.g[A2][0] == 0u64;
+                                c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                                if t {
+                                    break 'b_33275c;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                    'l_3326a8: loop {
+                                        'b_332728: {
+                                            c.cycles += 6;
+                                            c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
+                                            c.lwc1(0, c.g[V0][0] as u32);
+                                            c.c_le_s(0, 1);
+                                            let t = !c.fcc();
+                                            c.g[V1][0] = 0u64;
+                                            if t {
+                                                break 'b_332728;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                                c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x158));
+                                                c.c_le_s(0, 1);
+                                                let t = !c.fcc();
+
+                                                if t {
+                                                    break 'b_332728;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.lwc1(
+                                                        1,
+                                                        (c.g[V0][0] as u32).wrapping_add(0x4),
+                                                    );
+                                                    c.lwc1(
+                                                        0,
+                                                        (c.g[A2][0] as u32).wrapping_add(0x168),
+                                                    );
+                                                    c.c_le_s(1, 0);
+                                                    let t = !c.fcc();
+
+                                                    if t {
+                                                        break 'b_332728;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.lwc1(
+                                                            1,
+                                                            (c.g[V0][0] as u32).wrapping_add(0x14),
+                                                        );
+                                                        c.lwc1(
+                                                            0,
+                                                            (c.g[A2][0] as u32).wrapping_add(0x15c),
+                                                        );
+                                                        c.c_le_s(0, 1);
+                                                        let t = !c.fcc();
+
+                                                        if t {
+                                                            break 'b_332728;
+                                                        } else {
+                                                            c.cycles += 5;
+                                                            c.lwc1(
+                                                                1,
+                                                                (c.g[V0][0] as u32)
+                                                                    .wrapping_add(0x8),
+                                                            );
+                                                            c.lwc1(
+                                                                0,
+                                                                (c.g[A2][0] as u32)
+                                                                    .wrapping_add(0x16c),
+                                                            );
+                                                            c.c_le_s(1, 0);
+                                                            let t = !c.fcc();
+
+                                                            if t {
+                                                                break 'b_332728;
+                                                            } else {
+                                                                c.cycles += 6;
+                                                                c.lwc1(
+                                                                    1,
+                                                                    (c.g[V0][0] as u32)
+                                                                        .wrapping_add(0x18),
+                                                                );
+                                                                c.lwc1(
+                                                                    0,
+                                                                    (c.g[A2][0] as u32)
+                                                                        .wrapping_add(0x160),
+                                                                );
+                                                                c.c_le_s(0, 1);
+                                                                if c.fcc() {
+                                                                    c.g[V1][0] = 0x1;
+                                                                    break 'b_332728;
+                                                                } else {
+                                                                    break 'b_332728;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        'b_332754: {
+                                            c.cycles += 2;
+                                            if c.g[V1][0] == 0u64 {
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_332754;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                                                c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                                                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                                                c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                                c.g[V1][0] =
+                                                    sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                                c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_332754;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[A2][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x003326a8);
+                                            }
+                                            continue 'l_3326a8;
+                                        } else {
+                                            break 'b_33275c;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_332774: {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_332774;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332770);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332770)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_332774;
+                                }
+                            }
+                            'b_332788: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_332788;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332784);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332784)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_332788;
+                                }
+                            }
+                            'b_33279c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_33279c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332798);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332798)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_33279c;
+                                }
+                            }
+                            'b_3327b0: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_3327b0;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003327ac);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003327ac)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_3327b0;
+                                }
+                            }
+                            'b_3327c4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_3327c4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003327c0);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003327c0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_3327c4;
+                                }
+                            }
+                            'b_3327d8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_3327d8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003327d4);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003327d4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_3327d8;
+                                }
+                            }
+                            'b_3327ec: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_3327ec;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003327e8);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003327e8)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_3327ec;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x74));
+                                break 'b_33282c;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x003327fc);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x003327fc)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x74));
+                                if t {
+                                    break 'b_33282c;
+                                } else {
+                                    break 'b_332804;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x74));
+                        break 'b_33282c;
+                    } else {
+                        c.cycles += 7;
+                        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x00332828);
+                        c.g[A3][0] = c.g[S4][0];
+                        Callee {
+                            addr: 0x0033a3d8,
+                            f: ee::s11::Cell_GatherObjInstRecursive,
+                        }
+                        .call(c, 0x00332828)?;
+                        break 'b_332828;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x74));
+            break 'b_33282c;
+        }
+        'b_3329f4: {
+            'b_3329f0: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                if t {
+                    break 'b_3329f0;
+                } else {
+                    'b_3329cc: {
+                        c.cycles += 8;
+                        c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x25));
+                        c.g[A1][0] = c.g[S4][0];
+                        c.g[S1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = sx(0x00332848);
+                        c.g[A0][0] = c.g[V1][0];
+                        call_ptr(c, 0x00328360, 0x00332848)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_3329cc;
+                        } else {
+                            'b_332924: {
+                                c.cycles += 6;
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[RA][0] = sx(0x00332860);
+                                c.g[A1][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x003309d8,
+                                    f: ee::s11::Cell_GatherObjects,
+                                }
+                                .call(c, 0x00332860)?;
+                                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                                let t = c.g[A2][0] == 0u64;
+                                c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                                if t {
+                                    break 'b_332924;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                    'l_332870: loop {
+                                        'b_3328f0: {
+                                            c.cycles += 6;
+                                            c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
+                                            c.lwc1(0, c.g[V0][0] as u32);
+                                            c.c_le_s(0, 1);
+                                            let t = !c.fcc();
+                                            c.g[V1][0] = 0u64;
+                                            if t {
+                                                break 'b_3328f0;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                                c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x158));
+                                                c.c_le_s(0, 1);
+                                                let t = !c.fcc();
+
+                                                if t {
+                                                    break 'b_3328f0;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.lwc1(
+                                                        1,
+                                                        (c.g[V0][0] as u32).wrapping_add(0x4),
+                                                    );
+                                                    c.lwc1(
+                                                        0,
+                                                        (c.g[A2][0] as u32).wrapping_add(0x168),
+                                                    );
+                                                    c.c_le_s(1, 0);
+                                                    let t = !c.fcc();
+
+                                                    if t {
+                                                        break 'b_3328f0;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.lwc1(
+                                                            1,
+                                                            (c.g[V0][0] as u32).wrapping_add(0x14),
+                                                        );
+                                                        c.lwc1(
+                                                            0,
+                                                            (c.g[A2][0] as u32).wrapping_add(0x15c),
+                                                        );
+                                                        c.c_le_s(0, 1);
+                                                        let t = !c.fcc();
+
+                                                        if t {
+                                                            break 'b_3328f0;
+                                                        } else {
+                                                            c.cycles += 5;
+                                                            c.lwc1(
+                                                                1,
+                                                                (c.g[V0][0] as u32)
+                                                                    .wrapping_add(0x8),
+                                                            );
+                                                            c.lwc1(
+                                                                0,
+                                                                (c.g[A2][0] as u32)
+                                                                    .wrapping_add(0x16c),
+                                                            );
+                                                            c.c_le_s(1, 0);
+                                                            let t = !c.fcc();
+
+                                                            if t {
+                                                                break 'b_3328f0;
+                                                            } else {
+                                                                c.cycles += 6;
+                                                                c.lwc1(
+                                                                    1,
+                                                                    (c.g[V0][0] as u32)
+                                                                        .wrapping_add(0x18),
+                                                                );
+                                                                c.lwc1(
+                                                                    0,
+                                                                    (c.g[A2][0] as u32)
+                                                                        .wrapping_add(0x160),
+                                                                );
+                                                                c.c_le_s(0, 1);
+                                                                if c.fcc() {
+                                                                    c.g[V1][0] = 0x1;
+                                                                    break 'b_3328f0;
+                                                                } else {
+                                                                    break 'b_3328f0;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        'b_33291c: {
+                                            c.cycles += 2;
+                                            if c.g[V1][0] == 0u64 {
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_33291c;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                                                c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                                                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                                                c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                                c.g[V1][0] =
+                                                    sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                                c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_33291c;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[A2][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00332870);
+                                            }
+                                            continue 'l_332870;
+                                        } else {
+                                            break 'b_332924;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_33293c: {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_33293c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332938);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332938)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_33293c;
+                                }
+                            }
+                            'b_332950: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_332950;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033294c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x0033294c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_332950;
+                                }
+                            }
+                            'b_332964: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_332964;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332960);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332960)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_332964;
+                                }
+                            }
+                            'b_332978: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_332978;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332974);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332974)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_332978;
+                                }
+                            }
+                            'b_33298c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_33298c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332988);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332988)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_33298c;
+                                }
+                            }
+                            'b_3329a0: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_3329a0;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033299c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x0033299c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_3329a0;
+                                }
+                            }
+                            'b_3329b4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_3329b4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003329b0);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x003329b0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_3329b4;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x88));
+                                break 'b_3329f4;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x003329c4);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x003329c4)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x88));
+                                if t {
+                                    break 'b_3329f4;
+                                } else {
+                                    break 'b_3329cc;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x88));
+                        break 'b_3329f4;
+                    } else {
+                        c.cycles += 7;
+                        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x003329f0);
+                        c.g[A3][0] = c.g[S4][0];
+                        Callee {
+                            addr: 0x0033a3d8,
+                            f: ee::s11::Cell_GatherObjInstRecursive,
+                        }
+                        .call(c, 0x003329f0)?;
+                        break 'b_3329f0;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x88));
+            break 'b_3329f4;
+        }
+        'b_332bbc: {
+            'b_332bb8: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                if t {
+                    break 'b_332bb8;
+                } else {
+                    'b_332b94: {
+                        c.cycles += 8;
+                        c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x26));
+                        c.g[A1][0] = c.g[S4][0];
+                        c.g[S1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = sx(0x00332a10);
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x00328360, 0x00332a10)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_332b94;
+                        } else {
+                            'b_332aec: {
+                                c.cycles += 6;
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[RA][0] = sx(0x00332a28);
+                                c.g[A1][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x003309d8,
+                                    f: ee::s11::Cell_GatherObjects,
+                                }
+                                .call(c, 0x00332a28)?;
+                                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                                let t = c.g[A2][0] == 0u64;
+                                c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                                if t {
+                                    break 'b_332aec;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                    'l_332a38: loop {
+                                        'b_332ab8: {
+                                            c.cycles += 6;
+                                            c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
+                                            c.lwc1(0, c.g[V0][0] as u32);
+                                            c.c_le_s(0, 1);
+                                            let t = !c.fcc();
+                                            c.g[V1][0] = 0u64;
+                                            if t {
+                                                break 'b_332ab8;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                                c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x158));
+                                                c.c_le_s(0, 1);
+                                                let t = !c.fcc();
+
+                                                if t {
+                                                    break 'b_332ab8;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.lwc1(
+                                                        1,
+                                                        (c.g[V0][0] as u32).wrapping_add(0x4),
+                                                    );
+                                                    c.lwc1(
+                                                        0,
+                                                        (c.g[A2][0] as u32).wrapping_add(0x168),
+                                                    );
+                                                    c.c_le_s(1, 0);
+                                                    let t = !c.fcc();
+
+                                                    if t {
+                                                        break 'b_332ab8;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.lwc1(
+                                                            1,
+                                                            (c.g[V0][0] as u32).wrapping_add(0x14),
+                                                        );
+                                                        c.lwc1(
+                                                            0,
+                                                            (c.g[A2][0] as u32).wrapping_add(0x15c),
+                                                        );
+                                                        c.c_le_s(0, 1);
+                                                        let t = !c.fcc();
+
+                                                        if t {
+                                                            break 'b_332ab8;
+                                                        } else {
+                                                            c.cycles += 5;
+                                                            c.lwc1(
+                                                                1,
+                                                                (c.g[V0][0] as u32)
+                                                                    .wrapping_add(0x8),
+                                                            );
+                                                            c.lwc1(
+                                                                0,
+                                                                (c.g[A2][0] as u32)
+                                                                    .wrapping_add(0x16c),
+                                                            );
+                                                            c.c_le_s(1, 0);
+                                                            let t = !c.fcc();
+
+                                                            if t {
+                                                                break 'b_332ab8;
+                                                            } else {
+                                                                c.cycles += 6;
+                                                                c.lwc1(
+                                                                    1,
+                                                                    (c.g[V0][0] as u32)
+                                                                        .wrapping_add(0x18),
+                                                                );
+                                                                c.lwc1(
+                                                                    0,
+                                                                    (c.g[A2][0] as u32)
+                                                                        .wrapping_add(0x160),
+                                                                );
+                                                                c.c_le_s(0, 1);
+                                                                if c.fcc() {
+                                                                    c.g[V1][0] = 0x1;
+                                                                    break 'b_332ab8;
+                                                                } else {
+                                                                    break 'b_332ab8;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        'b_332ae4: {
+                                            c.cycles += 2;
+                                            if c.g[V1][0] == 0u64 {
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_332ae4;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                                                c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                                                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                                                c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                                c.g[V1][0] =
+                                                    sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                                c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                                                c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                                break 'b_332ae4;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[A2][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00332a38);
+                                            }
+                                            continue 'l_332a38;
+                                        } else {
+                                            break 'b_332aec;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_332b04: {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_332b04;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332b00);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332b00)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_332b04;
+                                }
+                            }
+                            'b_332b18: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_332b18;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332b14);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332b14)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_332b18;
+                                }
+                            }
+                            'b_332b2c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_332b2c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332b28);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332b28)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_332b2c;
+                                }
+                            }
+                            'b_332b40: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_332b40;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332b3c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332b3c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_332b40;
+                                }
+                            }
+                            'b_332b54: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_332b54;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332b50);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332b50)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_332b54;
+                                }
+                            }
+                            'b_332b68: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_332b68;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332b64);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332b64)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_332b68;
+                                }
+                            }
+                            'b_332b7c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_332b7c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00332b78);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00340c20,
+                                        f: ee::s11::Cell_GatherObjInstSubtree,
+                                    }
+                                    .call(c, 0x00332b78)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_332b7c;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x9c));
+                                break 'b_332bbc;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00332b8c);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332b8c)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x9c));
+                                if t {
+                                    break 'b_332bbc;
+                                } else {
+                                    break 'b_332b94;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x9c));
+                        break 'b_332bbc;
+                    } else {
+                        c.cycles += 7;
+                        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x00332bb8);
+                        c.g[A3][0] = c.g[S4][0];
+                        Callee {
+                            addr: 0x0033a3d8,
+                            f: ee::s11::Cell_GatherObjInstRecursive,
+                        }
+                        .call(c, 0x00332bb8)?;
+                        break 'b_332bb8;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x9c));
+            break 'b_332bbc;
+        }
+        'b_332d7c: {
+            c.cycles += 2;
+            let t = c.g[V0][0] == 0u64;
+            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x34));
+            if t {
+                break 'b_332d7c;
+            } else {
+                'b_332d5c: {
+                    c.cycles += 8;
+                    c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x27));
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[S1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = sx(0x00332bd8);
+                    c.g[A0][0] = c.g[V1][0];
+                    call_ptr(c, 0x00328360, 0x00332bd8)?;
+                    c.g[V1][0] = c.g[V0][0];
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[V0][0] = 0x2;
+                    if t {
+                        break 'b_332d5c;
+                    } else {
+                        'b_332cb4: {
+                            c.cycles += 6;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[RA][0] = sx(0x00332bf0);
+                            c.g[A1][0] = c.g[S1][0];
+                            Callee {
+                                addr: 0x003309d8,
+                                f: ee::s11::Cell_GatherObjects,
+                            }
+                            .call(c, 0x00332bf0)?;
+                            c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                            let t = c.g[A2][0] == 0u64;
+                            c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                            if t {
+                                break 'b_332cb4;
+                            } else {
+                                c.cycles += 1;
+                                c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                'l_332c00: loop {
+                                    'b_332c80: {
+                                        c.cycles += 6;
+                                        c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
+                                        c.lwc1(0, c.g[V0][0] as u32);
+                                        c.c_le_s(0, 1);
+                                        let t = !c.fcc();
+                                        c.g[V1][0] = 0u64;
+                                        if t {
+                                            break 'b_332c80;
+                                        } else {
+                                            c.cycles += 5;
+                                            c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                            c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x158));
+                                            c.c_le_s(0, 1);
+                                            let t = !c.fcc();
+
+                                            if t {
+                                                break 'b_332c80;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x4));
+                                                c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x168));
+                                                c.c_le_s(1, 0);
+                                                let t = !c.fcc();
+
+                                                if t {
+                                                    break 'b_332c80;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.lwc1(
+                                                        1,
+                                                        (c.g[V0][0] as u32).wrapping_add(0x14),
+                                                    );
+                                                    c.lwc1(
+                                                        0,
+                                                        (c.g[A2][0] as u32).wrapping_add(0x15c),
+                                                    );
+                                                    c.c_le_s(0, 1);
+                                                    let t = !c.fcc();
+
+                                                    if t {
+                                                        break 'b_332c80;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.lwc1(
+                                                            1,
+                                                            (c.g[V0][0] as u32).wrapping_add(0x8),
+                                                        );
+                                                        c.lwc1(
+                                                            0,
+                                                            (c.g[A2][0] as u32).wrapping_add(0x16c),
+                                                        );
+                                                        c.c_le_s(1, 0);
+                                                        let t = !c.fcc();
+
+                                                        if t {
+                                                            break 'b_332c80;
+                                                        } else {
+                                                            c.cycles += 6;
+                                                            c.lwc1(
+                                                                1,
+                                                                (c.g[V0][0] as u32)
+                                                                    .wrapping_add(0x18),
+                                                            );
+                                                            c.lwc1(
+                                                                0,
+                                                                (c.g[A2][0] as u32)
+                                                                    .wrapping_add(0x160),
+                                                            );
+                                                            c.c_le_s(0, 1);
+                                                            if c.fcc() {
+                                                                c.g[V1][0] = 0x1;
+                                                                break 'b_332c80;
+                                                            } else {
+                                                                break 'b_332c80;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    'b_332cac: {
+                                        c.cycles += 2;
+                                        if c.g[V1][0] == 0u64 {
+                                            c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                            break 'b_332cac;
+                                        } else {
+                                            c.cycles += 9;
+                                            c.g[A1][0] =
+                                                c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                                            c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                                            c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                            c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                                            c.g[V0][0] =
+                                                sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                            c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                            c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                                            c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+                                            break 'b_332cac;
+                                        }
+                                    }
+                                    c.cycles += 2;
+                                    if c.g[A2][0] != 0u64 {
+                                        c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x00332c00);
+                                        }
+                                        continue 'l_332c00;
+                                    } else {
+                                        break 'b_332cb4;
+                                    }
+                                }
+                            }
+                        }
+                        'b_332ccc: {
+                            c.cycles += 3;
+                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                            if c.g[A0][0] == 0u64 {
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                break 'b_332ccc;
+                            } else {
+                                c.cycles += 3;
+                                c.g[RA][0] = sx(0x00332cc8);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332cc8)?;
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                break 'b_332ccc;
+                            }
+                        }
+                        'b_332ce0: {
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                break 'b_332ce0;
+                            } else {
+                                c.cycles += 3;
+                                c.g[RA][0] = sx(0x00332cdc);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332cdc)?;
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                break 'b_332ce0;
+                            }
+                        }
+                        'b_332cf4: {
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                break 'b_332cf4;
+                            } else {
+                                c.cycles += 3;
+                                c.g[RA][0] = sx(0x00332cf0);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332cf0)?;
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                break 'b_332cf4;
+                            }
+                        }
+                        'b_332d08: {
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                break 'b_332d08;
+                            } else {
+                                c.cycles += 3;
+                                c.g[RA][0] = sx(0x00332d04);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332d04)?;
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                break 'b_332d08;
+                            }
+                        }
+                        'b_332d1c: {
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                break 'b_332d1c;
+                            } else {
+                                c.cycles += 3;
+                                c.g[RA][0] = sx(0x00332d18);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332d18)?;
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                break 'b_332d1c;
+                            }
+                        }
+                        'b_332d30: {
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                break 'b_332d30;
+                            } else {
+                                c.cycles += 3;
+                                c.g[RA][0] = sx(0x00332d2c);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332d2c)?;
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                break 'b_332d30;
+                            }
+                        }
+                        'b_332d44: {
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                break 'b_332d44;
+                            } else {
+                                c.cycles += 3;
+                                c.g[RA][0] = sx(0x00332d40);
+                                c.g[A1][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00340c20,
+                                    f: ee::s11::Cell_GatherObjInstSubtree,
+                                }
+                                .call(c, 0x00332d40)?;
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                break 'b_332d44;
+                            }
+                        }
+                        c.cycles += 2;
+                        let t = c.g[A0][0] == 0u64;
+
+                        if t {
+                            break 'b_332d7c;
+                        } else {
+                            c.cycles += 4;
+                            c.g[RA][0] = sx(0x00332d54);
+                            c.g[A1][0] = c.g[S0][0];
+                            Callee {
+                                addr: 0x00340c20,
+                                f: ee::s11::Cell_GatherObjInstSubtree,
+                            }
+                            .call(c, 0x00332d54)?;
+                            let t = true;
+
+                            if t {
+                                break 'b_332d7c;
+                            } else {
+                                break 'b_332d5c;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 2;
+                let t = c.g[V1][0] != c.g[V0][0];
+                c.g[A1][0] = c.g[S0][0];
+                if t {
+                    break 'b_332d7c;
+                } else {
+                    c.cycles += 6;
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A3][0] = c.g[S4][0];
+                    c.g[T0][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x00332d7c);
+                    c.g[A2][0] = c.g[A1][0];
+                    Callee {
+                        addr: 0x0033a3d8,
+                        f: ee::s11::Cell_GatherObjInstRecursive,
+                    }
+                    .call(c, 0x00332d7c)?;
+                    break 'b_332d7c;
+                }
+            }
+        }
+        c.cycles += 15;
+        c.g[V0][0] = 0xffffffffffff0000;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.g[V0][0] = c.g[V0][0] | 0xffff;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.sw((c.g[FP][0] as u32).wrapping_add(0x210), c.g[V0][0]);
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `Nash_FindNearestRail` (0x00337a48): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn nash_find_nearest_rail(c: &mut Cpu) {
+    if c.pc != 0x00337a48 {
+        return ee::s11::f_00337a48__generated(c);
+    }
+    guest(c, |c| {
+        'b_337c90: {
+            'b_337c8c: {
+                c.cycles += 40;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x110));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x54));
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                c.g[S3][0] = c.g[A0][0];
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x100));
+                c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xf0));
+                c.g[S5][0] = c.g[SP][0];
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0xe0));
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+                c.sq(22, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
+                c.lq(2, c.g[A1][0] as u32);
+                c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x28));
+                c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sq(2, c.g[SP][0] as u32);
+                c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x24));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), 0u64);
+                c.lqc2(3, c.g[SP][0] as u32);
+                c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, c.g[SP][0] as u32);
+                c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[S1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[A1][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x34), c.g[A2][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x38), c.g[A3][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x3c), c.g[A0][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x40), c.g[V1][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x44), c.g[SP][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x54), 0u64);
+                let t = c.g[S1][0] == 0u64;
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x50), 0u64);
+                if t {
+                    break 'b_337c8c;
+                } else {
+                    'b_337c68: {
+                        c.cycles += 7;
+                        c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x58));
+                        c.g[A0][0] = c.g[S3][0];
+                        c.g[RA][0] = sx(0x00337af8);
+                        c.g[A1][0] = c.g[SP][0];
+                        call_ptr(c, 0x00328360, 0x00337af8)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_337c68;
+                        } else {
+                            'b_337bc4: {
+                                c.cycles += 3;
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                if c.g[S0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_337bc4;
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[S6][0] = 0x2;
+                                    c.g[S4][0] = 0x3;
+                                    c.g[S2][0] = 0x1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    'l_337b20: loop {
+                                        'b_337bb8: {
+                                            'b_337b50: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S6][0];
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                if t {
+                                                    break 'b_337b50;
+                                                } else {
+                                                    c.cycles += 10;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00337b48);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x0035c698,
+                                                        f: ee::s11::RailModifier_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00337b48)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_337bb8;
+                                                    } else {
+                                                        break 'b_337b50;
+                                                    }
+                                                }
+                                            }
+                                            'b_337b7c: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S4][0];
+                                                c.g[A3][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_337b7c;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00337b74);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x00348290,
+                                                        f: ee::s11::FlexRail_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00337b74)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_337bb8;
+                                                    } else {
+                                                        break 'b_337b7c;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != c.g[S2][0] {
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_337bb8;
+                                            } else {
+                                                'b_337bb4: {
+                                                    c.cycles += 6;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x68));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                    if t {
+                                                        break 'b_337bb4;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A2][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x30));
+                                                        c.g[A3][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        c.g[T0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        c.g[RA][0] = sx(0x00337bb4);
+                                                        c.g[T1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x34));
+                                                        Callee {
+                                                            addr: 0x00335128,
+                                                            f: ee::s11::Rail_FindNearestPoint,
+                                                        }
+                                                        .call(c, 0x00337bb4)?;
+                                                        break 'b_337bb4;
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_337bb8;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[S0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00337b20);
+                                            }
+                                            continue 'l_337b20;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_337bc4;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_337bd8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_337bd8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337bd4);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337bd4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_337bd8;
+                                }
+                            }
+                            'b_337bec: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_337bec;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337be8);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337be8)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_337bec;
+                                }
+                            }
+                            'b_337c00: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_337c00;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337bfc);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337bfc)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_337c00;
+                                }
+                            }
+                            'b_337c14: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_337c14;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337c10);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337c10)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_337c14;
+                                }
+                            }
+                            'b_337c28: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_337c28;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337c24);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337c24)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_337c28;
+                                }
+                            }
+                            'b_337c3c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_337c3c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337c38);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337c38)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_337c3c;
+                                }
+                            }
+                            'b_337c50: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_337c50;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337c4c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337c4c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_337c50;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x24));
+                                break 'b_337c90;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00337c60);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                Callee {
+                                    addr: 0x003411b8,
+                                    f: ee::s11::Cell_FindRailSubtree,
+                                }
+                                .call(c, 0x00337c60)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x24));
+                                if t {
+                                    break 'b_337c90;
+                                } else {
+                                    break 'b_337c68;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x24));
+                        break 'b_337c90;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[A2][0] = c.g[A1][0];
+                        c.g[A3][0] = c.g[SP][0];
+                        c.g[RA][0] = sx(0x00337c8c);
+                        c.g[T1][0] = c.g[S3][0];
+                        Callee {
+                            addr: 0x0033ed60,
+                            f: ee::s11::Cell_FindRailRecursive,
+                        }
+                        .call(c, 0x00337c8c)?;
+                        break 'b_337c8c;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x24));
+            break 'b_337c90;
+        }
+        'b_337e70: {
+            'b_337e6c: {
+                c.cycles += 12;
+                c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x50));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x60), c.g[V1][0]);
+                c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x14));
+                c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x64));
+                c.g[S4][0] = sx((c.g[S3][0] as u32).wrapping_add(0x28));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x64), c.g[V1][0]);
+                c.g[FP][0] = sx((c.g[S3][0] as u32).wrapping_add(0x3c));
+                c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x78));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x68), c.g[V1][0]);
+                c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x8c));
+                let t = c.g[V0][0] == 0u64;
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x6c), c.g[V1][0]);
+                if t {
+                    break 'b_337e6c;
+                } else {
+                    'b_337e48: {
+                        c.cycles += 8;
+                        c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                        c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x59));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x00337cd4);
+                        c.g[A1][0] = c.g[S5][0];
+                        call_ptr(c, 0x00328360, 0x00337cd4)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_337e48;
+                        } else {
+                            'b_337da4: {
+                                c.cycles += 3;
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                if c.g[S0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_337da4;
+                                } else {
+                                    c.cycles += 5;
+                                    c.g[S7][0] = 0x2;
+                                    c.g[S6][0] = 0x3;
+                                    c.g[S2][0] = 0x1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    'l_337d00: loop {
+                                        'b_337d98: {
+                                            'b_337d30: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S7][0];
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                if t {
+                                                    break 'b_337d30;
+                                                } else {
+                                                    c.cycles += 10;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00337d28);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x0035c698,
+                                                        f: ee::s11::RailModifier_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00337d28)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_337d98;
+                                                    } else {
+                                                        break 'b_337d30;
+                                                    }
+                                                }
+                                            }
+                                            'b_337d5c: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S6][0];
+                                                c.g[A3][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_337d5c;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00337d54);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x00348290,
+                                                        f: ee::s11::FlexRail_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00337d54)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_337d98;
+                                                    } else {
+                                                        break 'b_337d5c;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != c.g[S2][0] {
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_337d98;
+                                            } else {
+                                                'b_337d94: {
+                                                    c.cycles += 6;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x68));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                    if t {
+                                                        break 'b_337d94;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A2][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x30));
+                                                        c.g[A3][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        c.g[T0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        c.g[RA][0] = sx(0x00337d94);
+                                                        c.g[T1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x34));
+                                                        Callee {
+                                                            addr: 0x00335128,
+                                                            f: ee::s11::Rail_FindNearestPoint,
+                                                        }
+                                                        .call(c, 0x00337d94)?;
+                                                        break 'b_337d94;
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_337d98;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[S0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00337d00);
+                                            }
+                                            continue 'l_337d00;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_337da4;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_337db8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_337db8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337db4);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337db4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_337db8;
+                                }
+                            }
+                            'b_337dcc: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_337dcc;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337dc8);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337dc8)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_337dcc;
+                                }
+                            }
+                            'b_337de0: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_337de0;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337ddc);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337ddc)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_337de0;
+                                }
+                            }
+                            'b_337df4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_337df4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337df0);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337df0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_337df4;
+                                }
+                            }
+                            'b_337e08: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_337e08;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337e04);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337e04)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_337e08;
+                                }
+                            }
+                            'b_337e1c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_337e1c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337e18);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337e18)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_337e1c;
+                                }
+                            }
+                            'b_337e30: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_337e30;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337e2c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337e2c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_337e30;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x38));
+                                break 'b_337e70;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00337e40);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                Callee {
+                                    addr: 0x003411b8,
+                                    f: ee::s11::Cell_FindRailSubtree,
+                                }
+                                .call(c, 0x00337e40)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x38));
+                                if t {
+                                    break 'b_337e70;
+                                } else {
+                                    break 'b_337e48;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x38));
+                        break 'b_337e70;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[T1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[A1][0];
+                        c.g[RA][0] = sx(0x00337e6c);
+                        c.g[A3][0] = c.g[S5][0];
+                        Callee {
+                            addr: 0x0033ed60,
+                            f: ee::s11::Cell_FindRailRecursive,
+                        }
+                        .call(c, 0x00337e6c)?;
+                        break 'b_337e6c;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x38));
+            break 'b_337e70;
+        }
+        'b_338020: {
+            'b_33801c: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x5a));
+                if t {
+                    break 'b_33801c;
+                } else {
+                    'b_337ff8: {
+                        c.cycles += 7;
+                        c.g[S1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x10));
+                        c.g[A0][0] = c.g[S4][0];
+                        c.g[RA][0] = sx(0x00337e88);
+                        c.g[A1][0] = c.g[S5][0];
+                        call_ptr(c, 0x00328360, 0x00337e88)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_337ff8;
+                        } else {
+                            'b_337f54: {
+                                c.cycles += 3;
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                if c.g[S0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_337f54;
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[S6][0] = 0x2;
+                                    c.g[S4][0] = 0x3;
+                                    c.g[S2][0] = 0x1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    'l_337eb0: loop {
+                                        'b_337f48: {
+                                            'b_337ee0: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S6][0];
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                if t {
+                                                    break 'b_337ee0;
+                                                } else {
+                                                    c.cycles += 10;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00337ed8);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x0035c698,
+                                                        f: ee::s11::RailModifier_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00337ed8)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_337f48;
+                                                    } else {
+                                                        break 'b_337ee0;
+                                                    }
+                                                }
+                                            }
+                                            'b_337f0c: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S4][0];
+                                                c.g[A3][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_337f0c;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00337f04);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x00348290,
+                                                        f: ee::s11::FlexRail_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00337f04)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_337f48;
+                                                    } else {
+                                                        break 'b_337f0c;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != c.g[S2][0] {
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_337f48;
+                                            } else {
+                                                'b_337f44: {
+                                                    c.cycles += 6;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x68));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                    if t {
+                                                        break 'b_337f44;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A2][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x30));
+                                                        c.g[A3][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        c.g[T0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        c.g[RA][0] = sx(0x00337f44);
+                                                        c.g[T1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x34));
+                                                        Callee {
+                                                            addr: 0x00335128,
+                                                            f: ee::s11::Rail_FindNearestPoint,
+                                                        }
+                                                        .call(c, 0x00337f44)?;
+                                                        break 'b_337f44;
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_337f48;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[S0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00337eb0);
+                                            }
+                                            continue 'l_337eb0;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_337f54;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_337f68: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_337f68;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337f64);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337f64)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_337f68;
+                                }
+                            }
+                            'b_337f7c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_337f7c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337f78);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337f78)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_337f7c;
+                                }
+                            }
+                            'b_337f90: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_337f90;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337f8c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337f8c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_337f90;
+                                }
+                            }
+                            'b_337fa4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_337fa4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337fa0);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337fa0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_337fa4;
+                                }
+                            }
+                            'b_337fb8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_337fb8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337fb4);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337fb4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_337fb8;
+                                }
+                            }
+                            'b_337fcc: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_337fcc;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337fc8);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337fc8)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_337fcc;
+                                }
+                            }
+                            'b_337fe0: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_337fe0;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00337fdc);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00337fdc)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_337fe0;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4c));
+                                break 'b_338020;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00337ff0);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                Callee {
+                                    addr: 0x003411b8,
+                                    f: ee::s11::Cell_FindRailSubtree,
+                                }
+                                .call(c, 0x00337ff0)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4c));
+                                if t {
+                                    break 'b_338020;
+                                } else {
+                                    break 'b_337ff8;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4c));
+                        break 'b_338020;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[T1][0] = c.g[S4][0];
+                        c.g[A2][0] = c.g[A1][0];
+                        c.g[RA][0] = sx(0x0033801c);
+                        c.g[A3][0] = c.g[S5][0];
+                        Callee {
+                            addr: 0x0033ed60,
+                            f: ee::s11::Cell_FindRailRecursive,
+                        }
+                        .call(c, 0x0033801c)?;
+                        break 'b_33801c;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4c));
+            break 'b_338020;
+        }
+        'b_3381d0: {
+            'b_3381cc: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x5b));
+                if t {
+                    break 'b_3381cc;
+                } else {
+                    'b_3381a8: {
+                        c.cycles += 7;
+                        c.g[S1][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x10));
+                        c.g[A0][0] = c.g[FP][0];
+                        c.g[RA][0] = sx(0x00338038);
+                        c.g[A1][0] = c.g[S5][0];
+                        call_ptr(c, 0x00328360, 0x00338038)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_3381a8;
+                        } else {
+                            'b_338104: {
+                                c.cycles += 3;
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                if c.g[S0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_338104;
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[S6][0] = 0x2;
+                                    c.g[S4][0] = 0x3;
+                                    c.g[S2][0] = 0x1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    'l_338060: loop {
+                                        'b_3380f8: {
+                                            'b_338090: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S6][0];
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                if t {
+                                                    break 'b_338090;
+                                                } else {
+                                                    c.cycles += 10;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00338088);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x0035c698,
+                                                        f: ee::s11::RailModifier_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00338088)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_3380f8;
+                                                    } else {
+                                                        break 'b_338090;
+                                                    }
+                                                }
+                                            }
+                                            'b_3380bc: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S4][0];
+                                                c.g[A3][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_3380bc;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x003380b4);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x00348290,
+                                                        f: ee::s11::FlexRail_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x003380b4)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_3380f8;
+                                                    } else {
+                                                        break 'b_3380bc;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != c.g[S2][0] {
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_3380f8;
+                                            } else {
+                                                'b_3380f4: {
+                                                    c.cycles += 6;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x68));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                    if t {
+                                                        break 'b_3380f4;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A2][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x30));
+                                                        c.g[A3][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        c.g[T0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        c.g[RA][0] = sx(0x003380f4);
+                                                        c.g[T1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x34));
+                                                        Callee {
+                                                            addr: 0x00335128,
+                                                            f: ee::s11::Rail_FindNearestPoint,
+                                                        }
+                                                        .call(c, 0x003380f4)?;
+                                                        break 'b_3380f4;
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_3380f8;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[S0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00338060);
+                                            }
+                                            continue 'l_338060;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_338104;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_338118: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_338118;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338114);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338114)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_338118;
+                                }
+                            }
+                            'b_33812c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_33812c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338128);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338128)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_33812c;
+                                }
+                            }
+                            'b_338140: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_338140;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033813c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x0033813c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_338140;
+                                }
+                            }
+                            'b_338154: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_338154;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338150);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338150)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_338154;
+                                }
+                            }
+                            'b_338168: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_338168;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338164);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338164)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_338168;
+                                }
+                            }
+                            'b_33817c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_33817c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338178);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338178)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_33817c;
+                                }
+                            }
+                            'b_338190: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_338190;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033818c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x0033818c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_338190;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x60));
+                                break 'b_3381d0;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x003381a0);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                Callee {
+                                    addr: 0x003411b8,
+                                    f: ee::s11::Cell_FindRailSubtree,
+                                }
+                                .call(c, 0x003381a0)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x60));
+                                if t {
+                                    break 'b_3381d0;
+                                } else {
+                                    break 'b_3381a8;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x60));
+                        break 'b_3381d0;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[T1][0] = c.g[FP][0];
+                        c.g[A2][0] = c.g[A1][0];
+                        c.g[RA][0] = sx(0x003381cc);
+                        c.g[A3][0] = c.g[S5][0];
+                        Callee {
+                            addr: 0x0033ed60,
+                            f: ee::s11::Cell_FindRailRecursive,
+                        }
+                        .call(c, 0x003381cc)?;
+                        break 'b_3381cc;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x60));
+            break 'b_3381d0;
+        }
+        'b_338388: {
+            'b_338384: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x60));
+                if t {
+                    break 'b_338384;
+                } else {
+                    'b_338360: {
+                        c.cycles += 8;
+                        c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x5c));
+                        c.g[A1][0] = c.g[S5][0];
+                        c.g[S1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = sx(0x003381ec);
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x00328360, 0x003381ec)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_338360;
+                        } else {
+                            'b_3382bc: {
+                                c.cycles += 3;
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                if c.g[S0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_3382bc;
+                                } else {
+                                    c.cycles += 5;
+                                    c.g[S6][0] = 0x2;
+                                    c.g[S4][0] = 0x3;
+                                    c.g[S2][0] = 0x1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    'l_338218: loop {
+                                        'b_3382b0: {
+                                            'b_338248: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S6][0];
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                if t {
+                                                    break 'b_338248;
+                                                } else {
+                                                    c.cycles += 10;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00338240);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x0035c698,
+                                                        f: ee::s11::RailModifier_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00338240)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_3382b0;
+                                                    } else {
+                                                        break 'b_338248;
+                                                    }
+                                                }
+                                            }
+                                            'b_338274: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S4][0];
+                                                c.g[A3][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_338274;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x0033826c);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x00348290,
+                                                        f: ee::s11::FlexRail_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x0033826c)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_3382b0;
+                                                    } else {
+                                                        break 'b_338274;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != c.g[S2][0] {
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_3382b0;
+                                            } else {
+                                                'b_3382ac: {
+                                                    c.cycles += 6;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x68));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                    if t {
+                                                        break 'b_3382ac;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A2][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x30));
+                                                        c.g[A3][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        c.g[T0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        c.g[RA][0] = sx(0x003382ac);
+                                                        c.g[T1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x34));
+                                                        Callee {
+                                                            addr: 0x00335128,
+                                                            f: ee::s11::Rail_FindNearestPoint,
+                                                        }
+                                                        .call(c, 0x003382ac)?;
+                                                        break 'b_3382ac;
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_3382b0;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[S0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00338218);
+                                            }
+                                            continue 'l_338218;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_3382bc;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_3382d0: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_3382d0;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003382cc);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003382cc)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_3382d0;
+                                }
+                            }
+                            'b_3382e4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_3382e4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003382e0);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003382e0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_3382e4;
+                                }
+                            }
+                            'b_3382f8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_3382f8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003382f4);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003382f4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_3382f8;
+                                }
+                            }
+                            'b_33830c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_33830c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338308);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338308)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_33830c;
+                                }
+                            }
+                            'b_338320: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_338320;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033831c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x0033831c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_338320;
+                                }
+                            }
+                            'b_338334: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_338334;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338330);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338330)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_338334;
+                                }
+                            }
+                            'b_338348: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_338348;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338344);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338344)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_338348;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x74));
+                                break 'b_338388;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00338358);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                Callee {
+                                    addr: 0x003411b8,
+                                    f: ee::s11::Cell_FindRailSubtree,
+                                }
+                                .call(c, 0x00338358)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x74));
+                                if t {
+                                    break 'b_338388;
+                                } else {
+                                    break 'b_338360;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x74));
+                        break 'b_338388;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x60));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[A2][0] = c.g[A1][0];
+                        c.g[RA][0] = sx(0x00338384);
+                        c.g[A3][0] = c.g[S5][0];
+                        Callee {
+                            addr: 0x0033ed60,
+                            f: ee::s11::Cell_FindRailRecursive,
+                        }
+                        .call(c, 0x00338384)?;
+                        break 'b_338384;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x74));
+            break 'b_338388;
+        }
+        'b_338540: {
+            'b_33853c: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x64));
+                if t {
+                    break 'b_33853c;
+                } else {
+                    'b_338518: {
+                        c.cycles += 8;
+                        c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x5d));
+                        c.g[A1][0] = c.g[S5][0];
+                        c.g[S1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = sx(0x003383a4);
+                        c.g[A0][0] = c.g[V1][0];
+                        call_ptr(c, 0x00328360, 0x003383a4)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_338518;
+                        } else {
+                            'b_338474: {
+                                c.cycles += 3;
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                if c.g[S0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_338474;
+                                } else {
+                                    c.cycles += 5;
+                                    c.g[S6][0] = 0x2;
+                                    c.g[S4][0] = 0x3;
+                                    c.g[S2][0] = 0x1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    'l_3383d0: loop {
+                                        'b_338468: {
+                                            'b_338400: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S6][0];
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                if t {
+                                                    break 'b_338400;
+                                                } else {
+                                                    c.cycles += 10;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x003383f8);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x0035c698,
+                                                        f: ee::s11::RailModifier_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x003383f8)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_338468;
+                                                    } else {
+                                                        break 'b_338400;
+                                                    }
+                                                }
+                                            }
+                                            'b_33842c: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S4][0];
+                                                c.g[A3][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_33842c;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00338424);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x00348290,
+                                                        f: ee::s11::FlexRail_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00338424)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_338468;
+                                                    } else {
+                                                        break 'b_33842c;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != c.g[S2][0] {
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_338468;
+                                            } else {
+                                                'b_338464: {
+                                                    c.cycles += 6;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x68));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                    if t {
+                                                        break 'b_338464;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A2][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x30));
+                                                        c.g[A3][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        c.g[T0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        c.g[RA][0] = sx(0x00338464);
+                                                        c.g[T1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x34));
+                                                        Callee {
+                                                            addr: 0x00335128,
+                                                            f: ee::s11::Rail_FindNearestPoint,
+                                                        }
+                                                        .call(c, 0x00338464)?;
+                                                        break 'b_338464;
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_338468;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[S0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x003383d0);
+                                            }
+                                            continue 'l_3383d0;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_338474;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_338488: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_338488;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338484);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338484)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_338488;
+                                }
+                            }
+                            'b_33849c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_33849c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338498);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338498)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_33849c;
+                                }
+                            }
+                            'b_3384b0: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_3384b0;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003384ac);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003384ac)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_3384b0;
+                                }
+                            }
+                            'b_3384c4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_3384c4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003384c0);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003384c0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_3384c4;
+                                }
+                            }
+                            'b_3384d8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_3384d8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003384d4);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003384d4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_3384d8;
+                                }
+                            }
+                            'b_3384ec: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_3384ec;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003384e8);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003384e8)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_3384ec;
+                                }
+                            }
+                            'b_338500: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_338500;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003384fc);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003384fc)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_338500;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x88));
+                                break 'b_338540;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00338510);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                Callee {
+                                    addr: 0x003411b8,
+                                    f: ee::s11::Cell_FindRailSubtree,
+                                }
+                                .call(c, 0x00338510)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x88));
+                                if t {
+                                    break 'b_338540;
+                                } else {
+                                    break 'b_338518;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x88));
+                        break 'b_338540;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x64));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[A2][0] = c.g[A1][0];
+                        c.g[RA][0] = sx(0x0033853c);
+                        c.g[A3][0] = c.g[S5][0];
+                        Callee {
+                            addr: 0x0033ed60,
+                            f: ee::s11::Cell_FindRailRecursive,
+                        }
+                        .call(c, 0x0033853c)?;
+                        break 'b_33853c;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x88));
+            break 'b_338540;
+        }
+        'b_3386f8: {
+            'b_3386f4: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x68));
+                if t {
+                    break 'b_3386f4;
+                } else {
+                    'b_3386d0: {
+                        c.cycles += 8;
+                        c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x5e));
+                        c.g[A1][0] = c.g[S5][0];
+                        c.g[S1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = sx(0x0033855c);
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x00328360, 0x0033855c)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_3386d0;
+                        } else {
+                            'b_33862c: {
+                                c.cycles += 3;
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                if c.g[S0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_33862c;
+                                } else {
+                                    c.cycles += 5;
+                                    c.g[S6][0] = 0x2;
+                                    c.g[S4][0] = 0x3;
+                                    c.g[S2][0] = 0x1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    'l_338588: loop {
+                                        'b_338620: {
+                                            'b_3385b8: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S6][0];
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                if t {
+                                                    break 'b_3385b8;
+                                                } else {
+                                                    c.cycles += 10;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x003385b0);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x0035c698,
+                                                        f: ee::s11::RailModifier_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x003385b0)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_338620;
+                                                    } else {
+                                                        break 'b_3385b8;
+                                                    }
+                                                }
+                                            }
+                                            'b_3385e4: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S4][0];
+                                                c.g[A3][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_3385e4;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x003385dc);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x00348290,
+                                                        f: ee::s11::FlexRail_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x003385dc)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_338620;
+                                                    } else {
+                                                        break 'b_3385e4;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != c.g[S2][0] {
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_338620;
+                                            } else {
+                                                'b_33861c: {
+                                                    c.cycles += 6;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x68));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                    if t {
+                                                        break 'b_33861c;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A2][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x30));
+                                                        c.g[A3][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        c.g[T0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        c.g[RA][0] = sx(0x0033861c);
+                                                        c.g[T1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x34));
+                                                        Callee {
+                                                            addr: 0x00335128,
+                                                            f: ee::s11::Rail_FindNearestPoint,
+                                                        }
+                                                        .call(c, 0x0033861c)?;
+                                                        break 'b_33861c;
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_338620;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[S0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00338588);
+                                            }
+                                            continue 'l_338588;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_33862c;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_338640: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_338640;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033863c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x0033863c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_338640;
+                                }
+                            }
+                            'b_338654: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_338654;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338650);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338650)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_338654;
+                                }
+                            }
+                            'b_338668: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_338668;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338664);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338664)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_338668;
+                                }
+                            }
+                            'b_33867c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_33867c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338678);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338678)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_33867c;
+                                }
+                            }
+                            'b_338690: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_338690;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033868c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x0033868c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_338690;
+                                }
+                            }
+                            'b_3386a4: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_3386a4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003386a0);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003386a0)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_3386a4;
+                                }
+                            }
+                            'b_3386b8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_3386b8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003386b4);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003386b4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_3386b8;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x9c));
+                                break 'b_3386f8;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x003386c8);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                Callee {
+                                    addr: 0x003411b8,
+                                    f: ee::s11::Cell_FindRailSubtree,
+                                }
+                                .call(c, 0x003386c8)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x9c));
+                                if t {
+                                    break 'b_3386f8;
+                                } else {
+                                    break 'b_3386d0;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x9c));
+                        break 'b_3386f8;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x68));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[A2][0] = c.g[A1][0];
+                        c.g[RA][0] = sx(0x003386f4);
+                        c.g[A3][0] = c.g[S5][0];
+                        Callee {
+                            addr: 0x0033ed60,
+                            f: ee::s11::Cell_FindRailRecursive,
+                        }
+                        .call(c, 0x003386f4)?;
+                        break 'b_3386f4;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x9c));
+            break 'b_3386f8;
+        }
+        'b_3388b0: {
+            'b_3388ac: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x6c));
+                if t {
+                    break 'b_3388ac;
+                } else {
+                    'b_338888: {
+                        c.cycles += 8;
+                        c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x5f));
+                        c.g[A1][0] = c.g[S5][0];
+                        c.g[S1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = sx(0x00338714);
+                        c.g[A0][0] = c.g[V1][0];
+                        call_ptr(c, 0x00328360, 0x00338714)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_338888;
+                        } else {
+                            'b_3387e4: {
+                                c.cycles += 3;
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                if c.g[S0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                    break 'b_3387e4;
+                                } else {
+                                    c.cycles += 5;
+                                    c.g[S4][0] = 0x2;
+                                    c.g[S3][0] = 0x3;
+                                    c.g[S2][0] = 0x1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    'l_338740: loop {
+                                        'b_3387d8: {
+                                            'b_338770: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S4][0];
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                if t {
+                                                    break 'b_338770;
+                                                } else {
+                                                    c.cycles += 10;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00338768);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x0035c698,
+                                                        f: ee::s11::RailModifier_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00338768)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_3387d8;
+                                                    } else {
+                                                        break 'b_338770;
+                                                    }
+                                                }
+                                            }
+                                            'b_33879c: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != c.g[S3][0];
+                                                c.g[A3][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_33879c;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[A0][0] =
+                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                    c.g[A2][0] = c.g[A1][0];
+                                                    c.g[T0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[T1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x3c));
+                                                    c.g[T2][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x40));
+                                                    c.g[RA][0] = sx(0x00338794);
+                                                    c.g[T3][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x34));
+                                                    Callee {
+                                                        addr: 0x00348290,
+                                                        f: ee::s11::FlexRail_FindClosestPoint,
+                                                    }
+                                                    .call(c, 0x00338794)?;
+                                                    let t = true;
+                                                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                    if t {
+                                                        break 'b_3387d8;
+                                                    } else {
+                                                        break 'b_33879c;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != c.g[S2][0] {
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_3387d8;
+                                            } else {
+                                                'b_3387d4: {
+                                                    c.cycles += 6;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x68));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x38));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                                                    if t {
+                                                        break 'b_3387d4;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A2][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x30));
+                                                        c.g[A3][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x3c));
+                                                        c.g[T0][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x40));
+                                                        c.g[RA][0] = sx(0x003387d4);
+                                                        c.g[T1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x34));
+                                                        Callee {
+                                                            addr: 0x00335128,
+                                                            f: ee::s11::Rail_FindNearestPoint,
+                                                        }
+                                                        .call(c, 0x003387d4)?;
+                                                        break 'b_3387d4;
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                                                break 'b_3387d8;
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if c.g[S0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00338740);
+                                            }
+                                            continue 'l_338740;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            break 'b_3387e4;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_3387f8: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_3387f8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x003387f4);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x003387f4)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                    break 'b_3387f8;
+                                }
+                            }
+                            'b_33880c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_33880c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338808);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338808)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                    break 'b_33880c;
+                                }
+                            }
+                            'b_338820: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_338820;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033881c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x0033881c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    break 'b_338820;
+                                }
+                            }
+                            'b_338834: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_338834;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338830);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338830)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                    break 'b_338834;
+                                }
+                            }
+                            'b_338848: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_338848;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338844);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338844)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_338848;
+                                }
+                            }
+                            'b_33885c: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_33885c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00338858);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x00338858)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                                    break 'b_33885c;
+                                }
+                            }
+                            'b_338870: {
+                                c.cycles += 2;
+                                if c.g[A0][0] == 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_338870;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0033886c);
+                                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                    Callee {
+                                        addr: 0x003411b8,
+                                        f: ee::s11::Cell_FindRailSubtree,
+                                    }
+                                    .call(c, 0x0033886c)?;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                    break 'b_338870;
+                                }
+                            }
+                            c.cycles += 2;
+                            let t = c.g[A0][0] == 0u64;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x50));
+                            if t {
+                                break 'b_3388b0;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00338880);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                Callee {
+                                    addr: 0x003411b8,
+                                    f: ee::s11::Cell_FindRailSubtree,
+                                }
+                                .call(c, 0x00338880)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x50));
+                                if t {
+                                    break 'b_3388b0;
+                                } else {
+                                    break 'b_338888;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x50));
+                    if t {
+                        break 'b_3388b0;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x6c));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A3][0] = c.g[S5][0];
+                        c.g[T0][0] = c.g[S1][0];
+                        c.g[RA][0] = sx(0x003388ac);
+                        c.g[A2][0] = c.g[A1][0];
+                        Callee {
+                            addr: 0x0033ed60,
+                            f: ee::s11::Cell_FindRailRecursive,
+                        }
+                        .call(c, 0x003388ac)?;
+                        break 'b_3388ac;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x50));
+            break 'b_3388b0;
+        }
+        c.cycles += 12;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x100));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xf0));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x110));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `Cell_GatherObjectsRecursive` (0x00338920): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn cell_gather_objects_recursive(c: &mut Cpu) {
+    if c.pc != 0x00338920 {
+        return ee::s11::f_00338920__generated(c);
+    }
+    guest(c, |c| {
+        'b_339568: {
+            'b_339564: {
+                c.cycles += 24;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xe0));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.g[S3][0] = c.g[T0][0];
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.g[S4][0] = c.g[A1][0];
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                c.g[S5][0] = c.g[A0][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xc0));
+                c.g[S0][0] = c.g[T1][0];
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                c.g[A1][0] = c.g[S3][0];
+                c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.g[S1][0] = c.g[A2][0];
+                c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.g[S2][0] = c.g[A3][0];
+                c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[RA][0]);
+                c.g[RA][0] = sx(0x00338970);
+                c.g[A0][0] = c.g[S4][0];
+                Callee {
+                    addr: 0x003309d8,
+                    f: ee::s11::Cell_GatherObjects,
+                }
+                .call(c, 0x00338970)?;
+                c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                c.g[V0][0] = 0xb;
+                let t = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7e));
+                if t {
+                    break 'b_339564;
+                } else {
+                    'b_338a04: {
+                        c.cycles += 28;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 23);
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2d58));
+                        c.mtc1(2, 4);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32) << 1);
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.mtc1(4, 0);
+                        c.cvt_s_w(0, 0);
+                        c.mtc1(2, 1);
+                        c.cvt_s_w(1, 1);
+                        c.lwc1(3, c.g[S2][0] as u32);
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                        c.sub_s(0, 0, 2);
+                        c.add_s(1, 1, 2);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                        c.sw(c.g[SP][0] as u32, c.g[A1][0]);
+                        c.g[S7][0] = 0u64;
+                        c.mul_s(15, 0, 4);
+                        c.mul_s(16, 1, 4);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                        c.c_lt_s(3, 16);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                        if t {
+                            break 'b_338a04;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x10));
+                            c.c_lt_s(15, 0);
+                            if c.fcc() {
+                                c.g[S7][0] = 0x1;
+                                break 'b_338a04;
+                            } else {
+                                break 'b_338a04;
+                            }
+                        }
+                    }
+                    'b_338a64: {
+                        c.cycles += 18;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2d54));
+                        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2));
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x10), 0u64);
+                        c.mtc1(3, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        c.lwc1(2, c.g[S2][0] as u32);
+                        c.add_s(1, 1, 3);
+                        c.mov_s(13, 2);
+                        c.sub_s(0, 0, 3);
+                        c.mul_s(14, 1, 4);
+                        c.c_lt_s(2, 14);
+                        let t = !c.fcc();
+                        c.mul_s(12, 0, 4);
+                        if t {
+                            break 'b_338a64;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x10));
+                            c.c_lt_s(12, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338a64;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                                break 'b_338a64;
+                            }
+                        }
+                    }
+                    'b_338a78: {
+                        c.cycles += 2;
+                        let t = c.g[S7][0] != 0u64;
+                        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        if t {
+                            break 'b_338a78;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                            let t = c.g[V0][0] == 0u64;
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                            if t {
+                                break 'b_339568;
+                            } else {
+                                break 'b_338a78;
+                            }
+                        }
+                    }
+                    'b_338ad4: {
+                        c.cycles += 17;
+                        c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2d50));
+                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x14), 0u64);
+                        c.mtc1(2, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[A0][0] = c.g[V1][0];
+                        c.mtc1(3, 0);
+                        c.cvt_s_w(0, 0);
+                        c.lwc1(2, (c.g[S2][0] as u32).wrapping_add(0x4));
+                        c.add_s(1, 1, 3);
+                        c.mov_s(6, 2);
+                        c.sub_s(0, 0, 3);
+                        c.mul_s(11, 1, 4);
+                        c.c_lt_s(2, 11);
+                        let t = !c.fcc();
+                        c.mul_s(10, 0, 4);
+                        if t {
+                            break 'b_338ad4;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x14));
+                            c.c_lt_s(10, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338ad4;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+                                break 'b_338ad4;
+                            }
+                        }
+                    }
+                    'b_338b28: {
+                        c.cycles += 15;
+                        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2d4c));
+                        c.mtc1(3, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x18), 0u64);
+                        c.add_s(1, 1, 2);
+                        c.sub_s(0, 0, 2);
+                        c.mul_s(9, 1, 4);
+                        c.c_lt_s(6, 9);
+                        let t = !c.fcc();
+                        c.mul_s(8, 0, 4);
+                        if t {
+                            break 'b_338b28;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x14));
+                            c.c_lt_s(8, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338b28;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+                                break 'b_338b28;
+                            }
+                        }
+                    }
+                    'b_338b40: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        if t {
+                            break 'b_338b40;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                            let t = c.g[V0][0] == 0u64;
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                            if t {
+                                break 'b_339568;
+                            } else {
+                                break 'b_338b40;
+                            }
+                        }
+                    }
+                    'b_338b9c: {
+                        c.cycles += 17;
+                        c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2d48));
+                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), 0u64);
+                        c.mtc1(2, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[A0][0] = c.g[V1][0];
+                        c.mtc1(3, 0);
+                        c.cvt_s_w(0, 0);
+                        c.lwc1(2, (c.g[S2][0] as u32).wrapping_add(0x8));
+                        c.add_s(1, 1, 3);
+                        c.mov_s(5, 2);
+                        c.sub_s(0, 0, 3);
+                        c.mul_s(7, 1, 4);
+                        c.c_lt_s(2, 7);
+                        let t = !c.fcc();
+                        c.mul_s(3, 0, 4);
+                        if t {
+                            break 'b_338b9c;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x18));
+                            c.c_lt_s(3, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338b9c;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                                break 'b_338b9c;
+                            }
+                        }
+                    }
+                    'b_338bf0: {
+                        c.cycles += 15;
+                        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2d44));
+                        c.mtc1(3, 1);
+                        c.cvt_s_w(1, 1);
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x20), 0u64);
+                        c.add_s(1, 1, 2);
+                        c.sub_s(0, 0, 2);
+                        c.mul_s(1, 1, 4);
+                        c.c_lt_s(5, 1);
+                        let t = !c.fcc();
+                        c.mul_s(2, 0, 4);
+                        if t {
+                            break 'b_338bf0;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x18));
+                            c.c_lt_s(2, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338bf0;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                                break 'b_338bf0;
+                            }
+                        }
+                    }
+                    'b_338c04: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                        if t {
+                            break 'b_338c04;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V0][0] == 0u64;
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                            if t {
+                                break 'b_339568;
+                            } else {
+                                break 'b_338c04;
+                            }
+                        }
+                    }
+                    'b_338c28: {
+                        c.cycles += 4;
+                        c.c_lt_s(13, 15);
+                        let t = !c.fcc();
+                        c.g[S6][0] = 0u64;
+                        if t {
+                            break 'b_338c28;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x10));
+                            c.c_lt_s(16, 0);
+                            if c.fcc() {
+                                c.g[S6][0] = 0x1;
+                                break 'b_338c28;
+                            } else {
+                                break 'b_338c28;
+                            }
+                        }
+                    }
+                    'b_338c50: {
+                        c.cycles += 4;
+                        c.c_lt_s(13, 12);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x24), 0u64);
+                        if t {
+                            break 'b_338c50;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x10));
+                            c.c_lt_s(14, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338c50;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+                                break 'b_338c50;
+                            }
+                        }
+                    }
+                    'b_338c78: {
+                        c.cycles += 4;
+                        c.c_lt_s(6, 10);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
+                        if t {
+                            break 'b_338c78;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x14));
+                            c.c_lt_s(11, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338c78;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+                                break 'b_338c78;
+                            }
+                        }
+                    }
+                    'b_338c9c: {
+                        c.cycles += 4;
+                        c.c_lt_s(6, 8);
+                        let t = !c.fcc();
+                        c.g[FP][0] = 0u64;
+                        if t {
+                            break 'b_338c9c;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x14));
+                            c.c_lt_s(9, 0);
+                            if c.fcc() {
+                                c.g[FP][0] = 0x1;
+                                break 'b_338c9c;
+                            } else {
+                                break 'b_338c9c;
+                            }
+                        }
+                    }
+                    'b_338cc4: {
+                        c.cycles += 4;
+                        c.c_lt_s(5, 3);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), 0u64);
+                        if t {
+                            break 'b_338cc4;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x18));
+                            c.c_lt_s(7, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338cc4;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+                                break 'b_338cc4;
+                            }
+                        }
+                    }
+                    'b_338cec: {
+                        c.cycles += 4;
+                        c.c_lt_s(5, 2);
+                        let t = !c.fcc();
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x30), 0u64);
+                        if t {
+                            break 'b_338cec;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x18));
+                            c.c_lt_s(1, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_338cec;
+                            } else {
+                                c.cycles += 1;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+                                break 'b_338cec;
+                            }
+                        }
+                    }
+                    'b_338df8: {
+                        c.cycles += 3;
+                        c.g[S0][0] = c.lw(c.g[S3][0] as u32);
+                        let t = c.g[S0][0] == 0u64;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        if t {
+                            break 'b_338df8;
+                        } else {
+                            'b_338df4: {
+                                c.cycles += 2;
+                                let t = c.g[S7][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                                if t {
+                                    break 'b_338df4;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                    if t {
+                                        break 'b_338df4;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                                        if t {
+                                            break 'b_338df8;
+                                        } else {
+                                            'b_338dd8: {
+                                                c.cycles += 2;
+                                                let t = c.g[S6][0] == 0u64;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                                                if t {
+                                                    break 'b_338dd8;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                                                    if t {
+                                                        break 'b_338dd8;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[A0][0] = c.g[S1][0];
+                                                        if t {
+                                                            break 'b_338dd8;
+                                                        } else {
+                                                            'b_338d48: {
+                                                                c.cycles += 5;
+                                                                c.g[RA][0] = sx(0x00338d30);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee {
+                                                                    addr: 0x003309d8,
+                                                                    f: ee::s11::Cell_GatherObjects,
+                                                                }
+                                                                .call(c, 0x00338d30)?;
+                                                                c.g[A0][0] =
+                                                                    c.lw(c.g[S0][0] as u32);
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_338d48;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338d44);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338d44)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_338d48;
+                                                                }
+                                                            }
+                                                            'b_338d5c: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_338d5c;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338d58);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338d58)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_338d5c;
+                                                                }
+                                                            }
+                                                            'b_338d70: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_338d70;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338d6c);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338d6c)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_338d70;
+                                                                }
+                                                            }
+                                                            'b_338d84: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_338d84;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338d80);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338d80)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_338d84;
+                                                                }
+                                                            }
+                                                            'b_338d98: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_338d98;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338d94);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338d94)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_338d98;
+                                                                }
+                                                            }
+                                                            'b_338dac: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_338dac;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338da8);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338da8)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_338dac;
+                                                                }
+                                                            }
+                                                            'b_338dc0: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_338dc0;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338dbc);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338dbc)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_338dc0;
+                                                                }
+                                                            }
+                                                            c.cycles += 2;
+                                                            let t = c.g[A0][0] == 0u64;
+                                                            c.g[V0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0xc));
+                                                            if t {
+                                                                break 'b_338df8;
+                                                            } else {
+                                                                c.cycles += 4;
+                                                                c.g[RA][0] = sx(0x00338dd0);
+                                                                c.g[A1][0] = c.g[S1][0];
+                                                                Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338dd0)?;
+                                                                let t = true;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                if t {
+                                                                    break 'b_338df8;
+                                                                } else {
+                                                                    break 'b_338dd8;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 7;
+                                            c.g[T0][0] = c.g[S0][0];
+                                            c.g[A0][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.g[S4][0];
+                                            c.g[A2][0] = c.g[S1][0];
+                                            c.g[A3][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00338df4);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00338920,
+                                                f: ee::s11::Cell_GatherObjectsRecursive,
+                                            }
+                                            .call(c, 0x00338df4)?;
+                                            break 'b_338df4;
+                                        }
+                                    }
+                                }
+                            }
+                            c.cycles += 1;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                            break 'b_338df8;
+                        }
+                    }
+                    'b_338f08: {
+                        'b_338f04: {
+                            c.cycles += 4;
+                            c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            let t = c.g[S0][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                            if t {
+                                break 'b_338f04;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[S7][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                                if t {
+                                    break 'b_338f04;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                                    if t {
+                                        break 'b_338f04;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                        if t {
+                                            break 'b_338f08;
+                                        } else {
+                                            'b_338ee8: {
+                                                c.cycles += 2;
+                                                let t = c.g[S6][0] == 0u64;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                                                if t {
+                                                    break 'b_338ee8;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    if t {
+                                                        break 'b_338ee8;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[A0][0] = c.g[S1][0];
+                                                        if t {
+                                                            break 'b_338ee8;
+                                                        } else {
+                                                            'b_338e58: {
+                                                                c.cycles += 5;
+                                                                c.g[RA][0] = sx(0x00338e40);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee {
+                                                                    addr: 0x003309d8,
+                                                                    f: ee::s11::Cell_GatherObjects,
+                                                                }
+                                                                .call(c, 0x00338e40)?;
+                                                                c.g[A0][0] =
+                                                                    c.lw(c.g[S0][0] as u32);
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_338e58;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338e54);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338e54)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_338e58;
+                                                                }
+                                                            }
+                                                            'b_338e6c: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_338e6c;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338e68);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338e68)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_338e6c;
+                                                                }
+                                                            }
+                                                            'b_338e80: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_338e80;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338e7c);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338e7c)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_338e80;
+                                                                }
+                                                            }
+                                                            'b_338e94: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_338e94;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338e90);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338e90)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_338e94;
+                                                                }
+                                                            }
+                                                            'b_338ea8: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_338ea8;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338ea4);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338ea4)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_338ea8;
+                                                                }
+                                                            }
+                                                            'b_338ebc: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_338ebc;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338eb8);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338eb8)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_338ebc;
+                                                                }
+                                                            }
+                                                            'b_338ed0: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_338ed0;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338ecc);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338ecc)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_338ed0;
+                                                                }
+                                                            }
+                                                            c.cycles += 2;
+                                                            let t = c.g[A0][0] == 0u64;
+                                                            c.g[V0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x8));
+                                                            if t {
+                                                                break 'b_338f08;
+                                                            } else {
+                                                                c.cycles += 4;
+                                                                c.g[RA][0] = sx(0x00338ee0);
+                                                                c.g[A1][0] = c.g[S1][0];
+                                                                Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338ee0)?;
+                                                                let t = true;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x8));
+                                                                if t {
+                                                                    break 'b_338f08;
+                                                                } else {
+                                                                    break 'b_338ee8;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 7;
+                                            c.g[T0][0] = c.g[S0][0];
+                                            c.g[A0][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.g[S4][0];
+                                            c.g[A2][0] = c.g[S1][0];
+                                            c.g[A3][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00338f04);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00338920,
+                                                f: ee::s11::Cell_GatherObjectsRecursive,
+                                            }
+                                            .call(c, 0x00338f04)?;
+                                            break 'b_338f04;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        break 'b_338f08;
+                    }
+                    'b_339014: {
+                        'b_339010: {
+                            c.cycles += 4;
+                            c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            let t = c.g[S0][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                            if t {
+                                break 'b_339010;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[S7][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                                if t {
+                                    break 'b_339010;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                                    if t {
+                                        break 'b_339010;
+                                    } else {
+                                        c.cycles += 2;
+                                        if c.g[V0][0] == 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                                            break 'b_339014;
+                                        } else {
+                                            'b_338ff8: {
+                                                c.cycles += 2;
+                                                let t = c.g[S6][0] == 0u64;
+                                                c.g[T0][0] = c.g[S0][0];
+                                                if t {
+                                                    break 'b_338ff8;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[FP][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    if t {
+                                                        break 'b_338ff8;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[A0][0] = c.g[S1][0];
+                                                        if t {
+                                                            break 'b_338ff8;
+                                                        } else {
+                                                            'b_338f68: {
+                                                                c.cycles += 5;
+                                                                c.g[RA][0] = sx(0x00338f50);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee {
+                                                                    addr: 0x003309d8,
+                                                                    f: ee::s11::Cell_GatherObjects,
+                                                                }
+                                                                .call(c, 0x00338f50)?;
+                                                                c.g[A0][0] =
+                                                                    c.lw(c.g[S0][0] as u32);
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_338f68;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338f64);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338f64)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_338f68;
+                                                                }
+                                                            }
+                                                            'b_338f7c: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_338f7c;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338f78);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338f78)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_338f7c;
+                                                                }
+                                                            }
+                                                            'b_338f90: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_338f90;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338f8c);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338f8c)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_338f90;
+                                                                }
+                                                            }
+                                                            'b_338fa4: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_338fa4;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338fa0);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338fa0)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_338fa4;
+                                                                }
+                                                            }
+                                                            'b_338fb8: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_338fb8;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338fb4);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338fb4)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_338fb8;
+                                                                }
+                                                            }
+                                                            'b_338fcc: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_338fcc;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338fc8);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338fc8)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_338fcc;
+                                                                }
+                                                            }
+                                                            'b_338fe0: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_338fe0;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00338fdc);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338fdc)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_338fe0;
+                                                                }
+                                                            }
+                                                            c.cycles += 2;
+                                                            let t = c.g[A0][0] == 0u64;
+                                                            c.g[V0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0xc));
+                                                            if t {
+                                                                break 'b_339014;
+                                                            } else {
+                                                                c.cycles += 4;
+                                                                c.g[RA][0] = sx(0x00338ff0);
+                                                                c.g[A1][0] = c.g[S1][0];
+                                                                Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00338ff0)?;
+                                                                let t = true;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                if t {
+                                                                    break 'b_339014;
+                                                                } else {
+                                                                    break 'b_338ff8;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 6;
+                                            c.g[A0][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.g[S4][0];
+                                            c.g[A2][0] = c.g[S1][0];
+                                            c.g[A3][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00339010);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00338920,
+                                                f: ee::s11::Cell_GatherObjectsRecursive,
+                                            }
+                                            .call(c, 0x00339010)?;
+                                            break 'b_339010;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        break 'b_339014;
+                    }
+                    'b_339120: {
+                        'b_33911c: {
+                            c.cycles += 4;
+                            c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                            let t = c.g[S0][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                            if t {
+                                break 'b_33911c;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[S7][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                                if t {
+                                    break 'b_33911c;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                    if t {
+                                        break 'b_33911c;
+                                    } else {
+                                        c.cycles += 2;
+                                        if c.g[V0][0] == 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                            break 'b_339120;
+                                        } else {
+                                            'b_339104: {
+                                                c.cycles += 2;
+                                                let t = c.g[S6][0] == 0u64;
+                                                c.g[T0][0] = c.g[S0][0];
+                                                if t {
+                                                    break 'b_339104;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[FP][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                                                    if t {
+                                                        break 'b_339104;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[A0][0] = c.g[S1][0];
+                                                        if t {
+                                                            break 'b_339104;
+                                                        } else {
+                                                            'b_339074: {
+                                                                c.cycles += 5;
+                                                                c.g[RA][0] = sx(0x0033905c);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee {
+                                                                    addr: 0x003309d8,
+                                                                    f: ee::s11::Cell_GatherObjects,
+                                                                }
+                                                                .call(c, 0x0033905c)?;
+                                                                c.g[A0][0] =
+                                                                    c.lw(c.g[S0][0] as u32);
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_339074;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339070);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339070)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_339074;
+                                                                }
+                                                            }
+                                                            'b_339088: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_339088;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339084);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339084)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_339088;
+                                                                }
+                                                            }
+                                                            'b_33909c: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_33909c;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339098);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339098)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_33909c;
+                                                                }
+                                                            }
+                                                            'b_3390b0: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_3390b0;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003390ac);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003390ac)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_3390b0;
+                                                                }
+                                                            }
+                                                            'b_3390c4: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_3390c4;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003390c0);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003390c0)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_3390c4;
+                                                                }
+                                                            }
+                                                            'b_3390d8: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_3390d8;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003390d4);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003390d4)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_3390d8;
+                                                                }
+                                                            }
+                                                            'b_3390ec: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_3390ec;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003390e8);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003390e8)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_3390ec;
+                                                                }
+                                                            }
+                                                            c.cycles += 2;
+                                                            let t = c.g[A0][0] == 0u64;
+                                                            c.g[V0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x4));
+                                                            if t {
+                                                                break 'b_339120;
+                                                            } else {
+                                                                c.cycles += 4;
+                                                                c.g[RA][0] = sx(0x003390fc);
+                                                                c.g[A1][0] = c.g[S1][0];
+                                                                Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003390fc)?;
+                                                                let t = true;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x4));
+                                                                if t {
+                                                                    break 'b_339120;
+                                                                } else {
+                                                                    break 'b_339104;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 6;
+                                            c.g[A0][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.g[S4][0];
+                                            c.g[A2][0] = c.g[S1][0];
+                                            c.g[A3][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x0033911c);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00338920,
+                                                f: ee::s11::Cell_GatherObjectsRecursive,
+                                            }
+                                            .call(c, 0x0033911c)?;
+                                            break 'b_33911c;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        break 'b_339120;
+                    }
+                    'b_339230: {
+                        'b_33922c: {
+                            c.cycles += 4;
+                            c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x18));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            let t = c.g[S0][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                            if t {
+                                break 'b_33922c;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                                if t {
+                                    break 'b_33922c;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                    if t {
+                                        break 'b_33922c;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                                        if t {
+                                            break 'b_33922c;
+                                        } else {
+                                            'b_339214: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] == 0u64;
+                                                c.g[T0][0] = c.g[S0][0];
+                                                if t {
+                                                    break 'b_339214;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[FP][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                                                    if t {
+                                                        break 'b_339214;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[A0][0] = c.g[S1][0];
+                                                        if t {
+                                                            break 'b_339214;
+                                                        } else {
+                                                            'b_339184: {
+                                                                c.cycles += 5;
+                                                                c.g[RA][0] = sx(0x0033916c);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee {
+                                                                    addr: 0x003309d8,
+                                                                    f: ee::s11::Cell_GatherObjects,
+                                                                }
+                                                                .call(c, 0x0033916c)?;
+                                                                c.g[A0][0] =
+                                                                    c.lw(c.g[S0][0] as u32);
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_339184;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339180);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339180)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_339184;
+                                                                }
+                                                            }
+                                                            'b_339198: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_339198;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339194);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339194)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_339198;
+                                                                }
+                                                            }
+                                                            'b_3391ac: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_3391ac;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003391a8);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003391a8)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_3391ac;
+                                                                }
+                                                            }
+                                                            'b_3391c0: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_3391c0;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003391bc);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003391bc)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_3391c0;
+                                                                }
+                                                            }
+                                                            'b_3391d4: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_3391d4;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003391d0);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003391d0)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_3391d4;
+                                                                }
+                                                            }
+                                                            'b_3391e8: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_3391e8;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003391e4);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003391e4)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_3391e8;
+                                                                }
+                                                            }
+                                                            'b_3391fc: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_3391fc;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003391f8);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003391f8)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_3391fc;
+                                                                }
+                                                            }
+                                                            c.cycles += 2;
+                                                            let t = c.g[A0][0] == 0u64;
+                                                            c.g[V0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0xc));
+                                                            if t {
+                                                                break 'b_339230;
+                                                            } else {
+                                                                c.cycles += 4;
+                                                                c.g[RA][0] = sx(0x0033920c);
+                                                                c.g[A1][0] = c.g[S1][0];
+                                                                Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x0033920c)?;
+                                                                let t = true;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                if t {
+                                                                    break 'b_339230;
+                                                                } else {
+                                                                    break 'b_339214;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 6;
+                                            c.g[A0][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.g[S4][0];
+                                            c.g[A2][0] = c.g[S1][0];
+                                            c.g[A3][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x0033922c);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00338920,
+                                                f: ee::s11::Cell_GatherObjectsRecursive,
+                                            }
+                                            .call(c, 0x0033922c)?;
+                                            break 'b_33922c;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        break 'b_339230;
+                    }
+                    'b_339340: {
+                        'b_33933c: {
+                            c.cycles += 4;
+                            c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x1c));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            let t = c.g[S0][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                            if t {
+                                break 'b_33933c;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                                if t {
+                                    break 'b_33933c;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                                    if t {
+                                        break 'b_33933c;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                                        if t {
+                                            break 'b_33933c;
+                                        } else {
+                                            'b_339324: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] == 0u64;
+                                                c.g[T0][0] = c.g[S0][0];
+                                                if t {
+                                                    break 'b_339324;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[FP][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    if t {
+                                                        break 'b_339324;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[A0][0] = c.g[S1][0];
+                                                        if t {
+                                                            break 'b_339324;
+                                                        } else {
+                                                            'b_339294: {
+                                                                c.cycles += 5;
+                                                                c.g[RA][0] = sx(0x0033927c);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee {
+                                                                    addr: 0x003309d8,
+                                                                    f: ee::s11::Cell_GatherObjects,
+                                                                }
+                                                                .call(c, 0x0033927c)?;
+                                                                c.g[A0][0] =
+                                                                    c.lw(c.g[S0][0] as u32);
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_339294;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339290);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339290)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_339294;
+                                                                }
+                                                            }
+                                                            'b_3392a8: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_3392a8;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003392a4);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003392a4)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_3392a8;
+                                                                }
+                                                            }
+                                                            'b_3392bc: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_3392bc;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003392b8);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003392b8)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_3392bc;
+                                                                }
+                                                            }
+                                                            'b_3392d0: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_3392d0;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003392cc);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003392cc)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_3392d0;
+                                                                }
+                                                            }
+                                                            'b_3392e4: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_3392e4;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003392e0);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003392e0)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_3392e4;
+                                                                }
+                                                            }
+                                                            'b_3392f8: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_3392f8;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003392f4);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003392f4)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_3392f8;
+                                                                }
+                                                            }
+                                                            'b_33930c: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_33930c;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339308);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339308)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_33930c;
+                                                                }
+                                                            }
+                                                            c.cycles += 2;
+                                                            let t = c.g[A0][0] == 0u64;
+                                                            c.g[V0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x8));
+                                                            if t {
+                                                                break 'b_339340;
+                                                            } else {
+                                                                c.cycles += 4;
+                                                                c.g[RA][0] = sx(0x0033931c);
+                                                                c.g[A1][0] = c.g[S1][0];
+                                                                Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x0033931c)?;
+                                                                let t = true;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x8));
+                                                                if t {
+                                                                    break 'b_339340;
+                                                                } else {
+                                                                    break 'b_339324;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 6;
+                                            c.g[A0][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.g[S4][0];
+                                            c.g[A2][0] = c.g[S1][0];
+                                            c.g[A3][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x0033933c);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00338920,
+                                                f: ee::s11::Cell_GatherObjectsRecursive,
+                                            }
+                                            .call(c, 0x0033933c)?;
+                                            break 'b_33933c;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        break 'b_339340;
+                    }
+                    'b_339454: {
+                        'b_339450: {
+                            c.cycles += 4;
+                            c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                            let t = c.g[S0][0] == 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                            if t {
+                                break 'b_339450;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                                if t {
+                                    break 'b_339450;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                                    if t {
+                                        break 'b_339450;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                                        if t {
+                                            break 'b_339450;
+                                        } else {
+                                            'b_339434: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] == 0u64;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                                                if t {
+                                                    break 'b_339434;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                                    if t {
+                                                        break 'b_339434;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        let t = c.g[V0][0] == 0u64;
+                                                        c.g[A0][0] = c.g[S1][0];
+                                                        if t {
+                                                            break 'b_339434;
+                                                        } else {
+                                                            'b_3393a4: {
+                                                                c.cycles += 5;
+                                                                c.g[RA][0] = sx(0x0033938c);
+                                                                c.g[A1][0] = c.g[S0][0];
+                                                                Callee {
+                                                                    addr: 0x003309d8,
+                                                                    f: ee::s11::Cell_GatherObjects,
+                                                                }
+                                                                .call(c, 0x0033938c)?;
+                                                                c.g[A0][0] =
+                                                                    c.lw(c.g[S0][0] as u32);
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_3393a4;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003393a0);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003393a0)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    break 'b_3393a4;
+                                                                }
+                                                            }
+                                                            'b_3393b8: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_3393b8;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003393b4);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003393b4)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x8));
+                                                                    break 'b_3393b8;
+                                                                }
+                                                            }
+                                                            'b_3393cc: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_3393cc;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003393c8);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003393c8)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0xc));
+                                                                    break 'b_3393cc;
+                                                                }
+                                                            }
+                                                            'b_3393e0: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_3393e0;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003393dc);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003393dc)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x10));
+                                                                    break 'b_3393e0;
+                                                                }
+                                                            }
+                                                            'b_3393f4: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_3393f4;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x003393f0);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003393f0)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    break 'b_3393f4;
+                                                                }
+                                                            }
+                                                            'b_339408: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_339408;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339404);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339404)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x18));
+                                                                    break 'b_339408;
+                                                                }
+                                                            }
+                                                            'b_33941c: {
+                                                                c.cycles += 2;
+                                                                if c.g[A0][0] == 0u64 {
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_33941c;
+                                                                } else {
+                                                                    c.cycles += 3;
+                                                                    c.g[RA][0] = sx(0x00339418);
+                                                                    c.g[A1][0] = c.g[S1][0];
+                                                                    Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339418)?;
+                                                                    c.g[A0][0] = c
+                                                                        .lw((c.g[S0][0] as u32)
+                                                                            .wrapping_add(0x1c));
+                                                                    break 'b_33941c;
+                                                                }
+                                                            }
+                                                            c.cycles += 2;
+                                                            let t = c.g[A0][0] == 0u64;
+                                                            c.g[V0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0xc));
+                                                            if t {
+                                                                break 'b_339454;
+                                                            } else {
+                                                                c.cycles += 4;
+                                                                c.g[RA][0] = sx(0x0033942c);
+                                                                c.g[A1][0] = c.g[S1][0];
+                                                                Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x0033942c)?;
+                                                                let t = true;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[SP][0] as u32)
+                                                                        .wrapping_add(0xc));
+                                                                if t {
+                                                                    break 'b_339454;
+                                                                } else {
+                                                                    break 'b_339434;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 7;
+                                            c.g[T0][0] = c.g[S0][0];
+                                            c.g[A0][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.g[S4][0];
+                                            c.g[A2][0] = c.g[S1][0];
+                                            c.g[A3][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00339450);
+                                            c.g[T1][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00338920,
+                                                f: ee::s11::Cell_GatherObjectsRecursive,
+                                            }
+                                            .call(c, 0x00339450)?;
+                                            break 'b_339450;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                        break 'b_339454;
+                    }
+                    c.cycles += 4;
+                    c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[S0][0] == 0u64;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    if t {
+                        break 'b_339564;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                        if t {
+                            break 'b_339564;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                            if t {
+                                break 'b_339564;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                                if t {
+                                    break 'b_339564;
+                                } else {
+                                    'b_339548: {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
+                                        if t {
+                                            break 'b_339548;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = c.g[V0][0] == 0u64;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[SP][0] as u32).wrapping_add(0x2c));
+                                            if t {
+                                                break 'b_339548;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] == 0u64;
+                                                c.g[A0][0] = c.g[S1][0];
+                                                if t {
+                                                    break 'b_339548;
+                                                } else {
+                                                    'b_3394b8: {
+                                                        c.cycles += 5;
+                                                        c.g[RA][0] = sx(0x003394a0);
+                                                        c.g[A1][0] = c.g[S0][0];
+                                                        Callee {
+                                                            addr: 0x003309d8,
+                                                            f: ee::s11::Cell_GatherObjects,
+                                                        }
+                                                        .call(c, 0x003394a0)?;
+                                                        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                                                        if c.g[A0][0] == 0u64 {
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x4));
+                                                            break 'b_3394b8;
+                                                        } else {
+                                                            c.cycles += 3;
+                                                            c.g[RA][0] = sx(0x003394b4);
+                                                            c.g[A1][0] = c.g[S1][0];
+                                                            Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003394b4)?;
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x4));
+                                                            break 'b_3394b8;
+                                                        }
+                                                    }
+                                                    'b_3394cc: {
+                                                        c.cycles += 2;
+                                                        if c.g[A0][0] == 0u64 {
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x8));
+                                                            break 'b_3394cc;
+                                                        } else {
+                                                            c.cycles += 3;
+                                                            c.g[RA][0] = sx(0x003394c8);
+                                                            c.g[A1][0] = c.g[S1][0];
+                                                            Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003394c8)?;
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x8));
+                                                            break 'b_3394cc;
+                                                        }
+                                                    }
+                                                    'b_3394e0: {
+                                                        c.cycles += 2;
+                                                        if c.g[A0][0] == 0u64 {
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0xc));
+                                                            break 'b_3394e0;
+                                                        } else {
+                                                            c.cycles += 3;
+                                                            c.g[RA][0] = sx(0x003394dc);
+                                                            c.g[A1][0] = c.g[S1][0];
+                                                            Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003394dc)?;
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0xc));
+                                                            break 'b_3394e0;
+                                                        }
+                                                    }
+                                                    'b_3394f4: {
+                                                        c.cycles += 2;
+                                                        if c.g[A0][0] == 0u64 {
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            break 'b_3394f4;
+                                                        } else {
+                                                            c.cycles += 3;
+                                                            c.g[RA][0] = sx(0x003394f0);
+                                                            c.g[A1][0] = c.g[S1][0];
+                                                            Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x003394f0)?;
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                            break 'b_3394f4;
+                                                        }
+                                                    }
+                                                    'b_339508: {
+                                                        c.cycles += 2;
+                                                        if c.g[A0][0] == 0u64 {
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x14));
+                                                            break 'b_339508;
+                                                        } else {
+                                                            c.cycles += 3;
+                                                            c.g[RA][0] = sx(0x00339504);
+                                                            c.g[A1][0] = c.g[S1][0];
+                                                            Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339504)?;
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x14));
+                                                            break 'b_339508;
+                                                        }
+                                                    }
+                                                    'b_33951c: {
+                                                        c.cycles += 2;
+                                                        if c.g[A0][0] == 0u64 {
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x18));
+                                                            break 'b_33951c;
+                                                        } else {
+                                                            c.cycles += 3;
+                                                            c.g[RA][0] = sx(0x00339518);
+                                                            c.g[A1][0] = c.g[S1][0];
+                                                            Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x00339518)?;
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x18));
+                                                            break 'b_33951c;
+                                                        }
+                                                    }
+                                                    'b_339530: {
+                                                        c.cycles += 2;
+                                                        if c.g[A0][0] == 0u64 {
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x1c));
+                                                            break 'b_339530;
+                                                        } else {
+                                                            c.cycles += 3;
+                                                            c.g[RA][0] = sx(0x0033952c);
+                                                            c.g[A1][0] = c.g[S1][0];
+                                                            Callee { addr: 0x00340a40, f: ee::s11::Cell_GatherObjectsSubtree }.call(c, 0x0033952c)?;
+                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x1c));
+                                                            break 'b_339530;
+                                                        }
+                                                    }
+                                                    c.cycles += 2;
+                                                    let t = c.g[A0][0] == 0u64;
+                                                    c.lq(
+                                                        16,
+                                                        (c.g[SP][0] as u32).wrapping_add(0xd0),
+                                                    );
+                                                    if t {
+                                                        break 'b_339568;
+                                                    } else {
+                                                        c.cycles += 4;
+                                                        c.g[RA][0] = sx(0x00339540);
+                                                        c.g[A1][0] = c.g[S1][0];
+                                                        Callee {
+                                                            addr: 0x00340a40,
+                                                            f: ee::s11::Cell_GatherObjectsSubtree,
+                                                        }
+                                                        .call(c, 0x00339540)?;
+                                                        let t = true;
+                                                        c.lq(
+                                                            16,
+                                                            (c.g[SP][0] as u32).wrapping_add(0xd0),
+                                                        );
+                                                        if t {
+                                                            break 'b_339568;
+                                                        } else {
+                                                            break 'b_339548;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 7;
+                                    c.g[A0][0] = c.g[S5][0];
+                                    c.g[A1][0] = c.g[S4][0];
+                                    c.g[A2][0] = c.g[S1][0];
+                                    c.g[A3][0] = c.g[S2][0];
+                                    c.g[T0][0] = c.g[S0][0];
+                                    c.g[RA][0] = sx(0x00339564);
+                                    c.g[T1][0] = c.g[SP][0];
+                                    Callee {
+                                        addr: 0x00338920,
+                                        f: ee::s11::Cell_GatherObjectsRecursive,
+                                    }
+                                    .call(c, 0x00339564)?;
+                                    break 'b_339564;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xd0));
+            break 'b_339568;
+        }
+        c.cycles += 11;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -21812,6 +33555,361 @@ pub(crate) mod tests {
                 c.g[T1][0] = sx(CELL);
                 c.pc = 0x0033_dfd8;
             },
+        );
+    }
+
+    use crate::difftest::fresh;
+    use crate::difftest::run_generated;
+
+    pub(crate) const CTX_2: u32 = DATA + 0x1000;
+
+    pub(crate) const CTX2_3: u32 = DATA + 0x1100;
+
+    pub(crate) const BOX_3: u32 = DATA + 0x1200;
+
+    pub(crate) const NODE_2: u32 = DATA + 0x2000;
+
+    pub(crate) const CELL_2: u32 = DATA + 0x1300;
+
+    pub(crate) const LEAF: u32 = DATA + 0x3000;
+
+    pub(crate) const ITEMS: u32 = DATA + 0x8000;
+
+    pub(crate) fn f32bits(v: f32) -> u32 {
+        v.to_bits()
+    }
+
+    /// A level-12 cell whose eight children are null or leaves (level 11),
+    /// an object list of rail / flex-rail / other items on the node, and a
+    /// box that overlaps some child cells and contains others.
+    pub(crate) fn setup_4(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0xed60, 0);
+        c.bus.write32(GAME_GP_02CC4, f32bits(0.2));
+        for i in 0..0x40u32 {
+            c.bus.write32(CTX_2 + 4 * i, r.next_u32() & 0x3f);
+            c.bus.write32(CTX2_3 + 4 * i, r.next_u32() & 0x3f);
+        }
+        c.bus.write32(CELL_2, if seed % 7 == 0 { 11 } else { 12 });
+        for k in 1..4u32 {
+            c.bus.write32(CELL_2 + 4 * k, r.next_u32() % 3);
+        }
+        let lo = |r: &mut crate::difftest::Rng| f32bits((r.next_u32() % 9000) as f32 - 1000.0);
+        let mut mins = [0f32; 3];
+        for k in 0..3u32 {
+            mins[k as usize] = (r.next_u32() % 9000) as f32 - 1000.0;
+            c.bus.write32(BOX_3 + 4 * k, f32bits(mins[k as usize]));
+        }
+        let _ = lo;
+        for k in 0..3u32 {
+            let span = if seed % 3 == 0 {
+                20000.0
+            } else {
+                (r.next_u32() % 7000) as f32
+            };
+            c.bus
+                .write32(BOX_3 + 0x10 + 4 * k, f32bits(mins[k as usize] + span));
+        }
+        for k in 0..8u32 {
+            let leaf = LEAF + 0x100 * k;
+            let present = r.next_u32() % 4 != 0;
+            c.bus
+                .write32(NODE_2 + 4 * k, if present { leaf } else { 0 });
+        }
+        // Object list: 0..3 items.
+        let n = r.next_u32() % 4;
+        let mut head = 0;
+        for k in 0..n {
+            let it = ITEMS + 0x40 * k;
+            c.bus.write32(it, head);
+            c.bus.write32(it + 8, 1 + r.next_u32() % 3);
+            c.bus.write32(it + 0xc, ITEMS + 0x1000 + 0x100 * k);
+            head = it;
+        }
+        c.bus.write32(NODE_2 + 0x28, head);
+        c.g[A0][0] = (seed % 2) as u64;
+        c.g[A1][0] = CTX_2 as u64;
+        c.g[A2][0] = CTX2_3 as u64;
+        c.g[A3][0] = BOX_3 as u64;
+        c.g[T0][0] = NODE_2 as u64;
+        c.g[T1][0] = CELL_2 as u64;
+        c.pc = 0x0033_ed60;
+    }
+
+    pub(crate) const GAME_GP_02CC4: u32 = crate::difftest::GAME_GP - 0x2cc4;
+
+    #[test]
+    fn cell_find_rail_recursive_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..200 {
+            let mut c = fresh();
+            setup_4(&mut c, seed);
+            let b = c.cycles;
+            run_generated(&mut c, ee::s11::f_0033ed60__generated);
+            seen.insert(c.cycles - b);
+        }
+        assert!(seen.len() >= 20, "paths: {} {seen:?}", seen.len());
+    }
+
+    #[test]
+    fn cell_find_rail_recursive_matches() {
+        check(
+            ee::s11::f_0033ed60__generated,
+            cell_find_rail_recursive,
+            200,
+            &setup_4,
+        );
+    }
+
+    pub(crate) const SELF: u32 = DATA;
+
+    pub(crate) const GRID: u32 = DATA + 0x4000;
+
+    pub(crate) const BOX_4: u32 = DATA + 0x1200;
+
+    pub(crate) const TREES: u32 = DATA + 0x6000;
+
+    pub(crate) const LEAVES: u32 = DATA + 0x10000;
+
+    /// The eight grid cells (key at `+0`, tree at `+0x10`, stride 0x14),
+    /// trees with null or leaf children, and a box that classifies
+    /// differently against each cell.
+    pub(crate) fn setup_5(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x1e90, 0);
+        for k in 0..6u32 {
+            c.bus
+                .write32(crate::difftest::GAME_GP - 0x2d44 - 4 * k, f32bits(0.2));
+        }
+        c.bus.write32(SELF, GRID);
+        c.bus.write32(GRID + 0xa0, r.next_u32() & 0xff);
+        for i in 0..8u32 {
+            let cell = GRID + 0x14 * i;
+            c.bus.write32(cell, 12);
+            c.bus.write32(cell + 4, i & 1);
+            c.bus.write32(cell + 8, (i >> 1) & 1);
+            c.bus.write32(cell + 0xc, (i >> 2) & 1);
+            let tree = TREES + 0x400 * i;
+            c.bus
+                .write32(cell + 0x10, if r.next_u32() % 5 == 0 { 0 } else { tree });
+            for k in 0..8u32 {
+                let present = r.next_u32() % 3 != 0;
+                c.bus.write32(
+                    tree + 4 * k,
+                    if present {
+                        LEAVES + 0x100 * (8 * i + k)
+                    } else {
+                        0
+                    },
+                );
+            }
+        }
+        let mut mins = [0f32; 3];
+        for k in 0..3u32 {
+            mins[k as usize] = (r.next_u32() % 10000) as f32 - 2000.0;
+            c.bus.write32(BOX_4 + 4 * k, f32bits(mins[k as usize]));
+        }
+        for k in 0..3u32 {
+            let span = if seed % 3 == 0 {
+                30000.0
+            } else {
+                (r.next_u32() % 6000) as f32
+            };
+            c.bus
+                .write32(BOX_4 + 0x10 + 4 * k, f32bits(mins[k as usize] + span));
+        }
+        c.g[A0][0] = SELF as u64;
+        c.g[A1][0] = BOX_4 as u64;
+        c.pc = 0x0033_1e90;
+    }
+
+    #[test]
+    fn overlap_list_gather_objects_and_instances_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..200 {
+            let mut c = fresh();
+            setup_5(&mut c, seed);
+            let b = c.cycles;
+            run_generated(&mut c, ee::s11::f_00331e90__generated);
+            seen.insert(c.cycles - b);
+        }
+        assert!(seen.len() >= 20, "paths: {} {seen:?}", seen.len());
+    }
+
+    #[test]
+    fn overlap_list_gather_objects_and_instances_matches() {
+        check(
+            ee::s11::f_00331e90__generated,
+            overlap_list_gather_objects_and_instances,
+            200,
+            &setup_5,
+        );
+    }
+
+    pub(crate) const CELL_3: u32 = DATA + 0x4000;
+
+    pub(crate) const POINT: u32 = DATA + 0x1200;
+
+    pub(crate) const OUT_A: u32 = DATA + 0x1300;
+
+    pub(crate) const OUT_B: u32 = DATA + 0x1400;
+
+    pub(crate) const TREE: u32 = DATA + 0x6000;
+
+    /// A cell (key at `+0`, tree at `+0x10`) holding a tree with an object
+    /// list of rails / flex rails and null or leaf children; a query point
+    /// and radius around it.
+    pub(crate) fn setup_6(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x7a48, 0);
+        for k in 0..6u32 {
+            c.bus
+                .write32(crate::difftest::GAME_GP - 0x2d44 - 4 * k, f32bits(0.2));
+        }
+        c.bus.write32(CELL_3, 12);
+        c.bus.write32(CELL_3 + 4, r.next_u32() % 2);
+        c.bus.write32(CELL_3 + 8, r.next_u32() % 2);
+        c.bus.write32(CELL_3 + 0xc, r.next_u32() % 2);
+        c.bus
+            .write32(CELL_3 + 0x10, if seed % 9 == 0 { 0 } else { TREE });
+        for k in 0..8u32 {
+            let present = r.next_u32() % 3 != 0;
+            c.bus
+                .write32(TREE + 4 * k, if present { LEAVES + 0x100 * k } else { 0 });
+        }
+        let n = r.next_u32() % 4;
+        let mut head = 0;
+        for k in 0..n {
+            let it = ITEMS + 0x40 * k;
+            c.bus.write32(it, head);
+            c.bus.write32(it + 8, 1 + r.next_u32() % 3);
+            c.bus.write32(it + 0xc, ITEMS + 0x1000 + 0x100 * k);
+            head = it;
+        }
+        c.bus.write32(TREE + 0x28, head);
+        for k in 0..3u32 {
+            c.bus
+                .write32(POINT + 4 * k, f32bits((r.next_u32() % 9000) as f32 - 500.0));
+        }
+        c.bus.write32(POINT + 12, f32bits(1.0));
+        c.g[T0][0] = f32bits((r.next_u32() % 3000) as f32 + 50.0) as u64;
+        c.mtc1(T0, 12);
+        c.g[A0][0] = CELL_3 as u64;
+        c.g[A1][0] = POINT as u64;
+        c.g[A2][0] = OUT_A as u64;
+        c.g[A3][0] = OUT_B as u64;
+        c.pc = 0x0033_7a48;
+    }
+
+    #[test]
+    fn nash_find_nearest_rail_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..200 {
+            let mut c = fresh();
+            setup_6(&mut c, seed);
+            let b = c.cycles;
+            run_generated(&mut c, ee::s11::f_00337a48__generated);
+            seen.insert(c.cycles - b);
+        }
+        assert!(seen.len() >= 10, "paths: {} {seen:?}", seen.len());
+    }
+
+    #[test]
+    fn nash_find_nearest_rail_matches() {
+        check(
+            ee::s11::f_00337a48__generated,
+            nash_find_nearest_rail,
+            200,
+            &setup_6,
+        );
+    }
+
+    pub(crate) const CTX_3: u32 = DATA + 0x1000;
+
+    pub(crate) const CTX2_4: u32 = DATA + 0x1100;
+
+    pub(crate) const BOX_5: u32 = DATA + 0x1200;
+
+    pub(crate) const NODE_3: u32 = DATA + 0x2000;
+
+    pub(crate) const CELL_4: u32 = DATA + 0x1300;
+
+    /// A level-12 cell whose eight children are null or leaves (level 11),
+    /// an object list of rail / flex-rail / other items on the node, and a
+    /// box that overlaps some child cells and contains others.
+    pub(crate) fn setup_7(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x8920, 0);
+        for k in 0..6u32 {
+            c.bus
+                .write32(crate::difftest::GAME_GP - 0x2d44 - 4 * k, f32bits(0.2));
+        }
+        for i in 0..0x40u32 {
+            c.bus.write32(CTX_3 + 4 * i, r.next_u32() & 0x3f);
+            c.bus.write32(CTX2_4 + 4 * i, r.next_u32() & 0x3f);
+        }
+        c.bus.write32(CELL_4, if seed % 7 == 0 { 11 } else { 12 });
+        for k in 1..4u32 {
+            c.bus.write32(CELL_4 + 4 * k, r.next_u32() % 3);
+        }
+        let lo = |r: &mut crate::difftest::Rng| f32bits((r.next_u32() % 9000) as f32 - 1000.0);
+        let mut mins = [0f32; 3];
+        for k in 0..3u32 {
+            mins[k as usize] = (r.next_u32() % 9000) as f32 - 1000.0;
+            c.bus.write32(BOX_5 + 4 * k, f32bits(mins[k as usize]));
+        }
+        let _ = lo;
+        for k in 0..3u32 {
+            let span = if seed % 3 == 0 {
+                20000.0
+            } else {
+                (r.next_u32() % 7000) as f32
+            };
+            c.bus
+                .write32(BOX_5 + 0x10 + 4 * k, f32bits(mins[k as usize] + span));
+        }
+        for k in 0..8u32 {
+            let leaf = LEAF + 0x100 * k;
+            let present = r.next_u32() % 4 != 0;
+            c.bus
+                .write32(NODE_3 + 4 * k, if present { leaf } else { 0 });
+        }
+        // Object list: 0..3 items.
+        let n = r.next_u32() % 4;
+        let mut head = 0;
+        for k in 0..n {
+            let it = ITEMS + 0x40 * k;
+            c.bus.write32(it, head);
+            c.bus.write32(it + 8, 1 + r.next_u32() % 3);
+            c.bus.write32(it + 0xc, ITEMS + 0x1000 + 0x100 * k);
+            head = it;
+        }
+        c.bus.write32(NODE_3 + 0x28, head);
+        c.g[A0][0] = (seed % 2) as u64;
+        c.g[A1][0] = CTX_3 as u64;
+        c.g[A2][0] = CTX2_4 as u64;
+        c.g[A3][0] = BOX_5 as u64;
+        c.g[T0][0] = NODE_3 as u64;
+        c.g[T1][0] = CELL_4 as u64;
+        c.pc = 0x0033_8920;
+    }
+
+    #[test]
+    fn cell_gather_objects_recursive_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..200 {
+            let mut c = fresh();
+            setup_7(&mut c, seed);
+            let b = c.cycles;
+            run_generated(&mut c, ee::s11::f_00338920__generated);
+            seen.insert(c.cycles - b);
+        }
+        assert!(seen.len() >= 20, "paths: {} {seen:?}", seen.len());
+    }
+
+    #[test]
+    fn cell_gather_objects_recursive_matches() {
+        check(
+            ee::s11::f_00338920__generated,
+            cell_gather_objects_recursive,
+            200,
+            &setup_7,
         );
     }
 }

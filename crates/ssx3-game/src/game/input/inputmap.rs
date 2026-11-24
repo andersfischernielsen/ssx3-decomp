@@ -951,6 +951,293 @@ pub fn input_map_create_parser_2(c: &mut Cpu) {
     })
 }
 
+/// `str_InputMap`, the allocation tag of the map (0x480000 - 0x6550).
+pub(crate) const STR_INPUT_MAP: u64 = 0x0047_9ab0;
+
+/// The bindings `InputMap_LoadFromFile` compiles, in index order: the return
+/// address of each `InputMap_CompileEntry` call (the generated code's layout),
+/// the address of the binding's name string, and the name (the reference's
+/// `str_` identifier without its prefix).
+pub(crate) const COMPILE_BINDINGS: [(u32, u32, &str); 205] = [
+    (0x00226bdc, 0x00479ac0, "CruiseTurn"),
+    (0x00226bf0, 0x00479ad0, "CruiseCrouch"),
+    (0x00226c04, 0x00479ae0, "CruiseBrake"),
+    (0x00226c18, 0x00479af0, "BoardPress"),
+    (0x00226c2c, 0x00479b00, "BoardPivot"),
+    (0x00226c40, 0x00479b10, "AttackLeft"),
+    (0x00226c54, 0x00479b20, "AttackRight"),
+    (0x00226c68, 0x00479b30, "PrewindTurn"),
+    (0x00226c7c, 0x00479b40, "PrewindSpin"),
+    (0x00226c90, 0x00479b50, "PrewindFlip"),
+    (0x00226ca4, 0x00479b60, "AirAdjRotFB"),
+    (0x00226cb8, 0x00479b70, "AirAdjRotLR"),
+    (0x00226ccc, 0x00479b80, "LateSpin"),
+    (0x00226ce0, 0x00479b90, "RailSpin"),
+    (0x00226cf4, 0x004a28b8, "Spin"),
+    (0x00226d08, 0x004a28c0, "Flip"),
+    (0x00226d1c, 0x00479ba0, "WipeoutRecover"),
+    (0x00226d30, 0x00479bb0, "JumpPressed"),
+    (0x00226d44, 0x00479bc0, "JumpHeld"),
+    (0x00226d58, 0x00479bd0, "BoostPressed"),
+    (0x00226d6c, 0x00479be0, "BoostHeld"),
+    (0x00226d80, 0x004a28c8, "Tweak"),
+    (0x00226d94, 0x00479bf0, "OllieHeld"),
+    (0x00226da8, 0x00479c00, "RailBalance"),
+    (0x00226dbc, 0x00479c10, "HandplantBalance"),
+    (0x00226dd0, 0x00479c28, "Handplant"),
+    (0x00226de4, 0x00479c38, "GateAnticipate"),
+    (0x00226df8, 0x00479c48, "UberGrind1"),
+    (0x00226e0c, 0x00479c58, "UberGrind2"),
+    (0x00226e20, 0x00479c68, "UberGrind3"),
+    (0x00226e34, 0x00479c78, "UberGrind4"),
+    (0x00226e48, 0x004a28d0, "Trick1"),
+    (0x00226e5c, 0x004a28d8, "Trick2"),
+    (0x00226e70, 0x004a28e0, "Trick3"),
+    (0x00226e84, 0x004a28e8, "Trick4"),
+    (0x00226e98, 0x004a28f0, "Trick5"),
+    (0x00226eac, 0x004a28f8, "Trick6"),
+    (0x00226ec0, 0x004a2900, "Trick7"),
+    (0x00226ed4, 0x004a2908, "Trick8"),
+    (0x00226ee8, 0x004a2910, "Trick9"),
+    (0x00226efc, 0x004a2918, "Trick10"),
+    (0x00226f10, 0x004a2920, "Trick11"),
+    (0x00226f24, 0x004a2928, "Trick12"),
+    (0x00226f38, 0x004a2930, "Trick13"),
+    (0x00226f4c, 0x004a2938, "Trick14"),
+    (0x00226f60, 0x004a2940, "Trick15"),
+    (0x00226f74, 0x00479c88, "ResetPath"),
+    (0x00226f88, 0x00479c98, "CameraActivate"),
+    (0x00226f9c, 0x00479ca8, "CameraTurn"),
+    (0x00226fb0, 0x00479cb8, "CameraPitch"),
+    (0x00226fc4, 0x00479cc8, "CameraMove"),
+    (0x00226fd8, 0x00479cd8, "CameraStrafe"),
+    (0x00226fec, 0x00479ce8, "CameraBoost"),
+    (0x00227000, 0x00479cf8, "CameraInGameTurn"),
+    (0x00227014, 0x00479d10, "CameraInGamePitch"),
+    (0x00227028, 0x00479d28, "CameraInGameZoom"),
+    (0x0022703c, 0x00479d40, "CameraInGameNext"),
+    (0x00227050, 0x00479d58, "CameraNextStatCam"),
+    (0x00227064, 0x00479d70, "CameraPrevStatCam"),
+    (0x00227078, 0x00479d88, "CameraGoToStatCam"),
+    (0x0022708c, 0x00479da0, "MenuButton"),
+    (0x002270a0, 0x004a2948, "MenuKey"),
+    (0x002270b4, 0x00479db0, "MenuLeft"),
+    (0x002270c8, 0x00479dc0, "MenuRight"),
+    (0x002270dc, 0x004a2950, "MenuUp"),
+    (0x002270f0, 0x00479dd0, "MenuDown"),
+    (0x00227104, 0x00479de0, "MenuLeftShift"),
+    (0x00227118, 0x00479df0, "MenuRightShift"),
+    (0x0022712c, 0x00479e00, "EditorHelp"),
+    (0x00227140, 0x00479e10, "EditorCursorSnap"),
+    (0x00227154, 0x00479e28, "EditorRotateLeft"),
+    (0x00227168, 0x00479e40, "EditorRotateRight"),
+    (0x0022717c, 0x00479e58, "EditorRotateUp"),
+    (0x00227190, 0x00479e68, "EditorRotateDown"),
+    (0x002271a4, 0x00479e80, "EditorRotateHold"),
+    (0x002271b8, 0x00479e98, "EditorZoomIn"),
+    (0x002271cc, 0x00479ea8, "EditorZoomOut"),
+    (0x002271e0, 0x00479eb8, "EditorModeOrient"),
+    (0x002271f4, 0x00479ed0, "EditorModeSlow"),
+    (0x00227208, 0x00479ee0, "EditorModeFast"),
+    (0x0022721c, 0x00479ef0, "EditorModeFaster"),
+    (0x00227230, 0x00479f08, "EditorModeLeft"),
+    (0x00227244, 0x00479f18, "EditorModeRight"),
+    (0x00227258, 0x00479f28, "EditorModeUp"),
+    (0x0022726c, 0x00479f38, "EditorModeDown"),
+    (0x00227280, 0x00479f48, "EditorTeleportAI"),
+    (0x00227294, 0x00479f60, "PEAddEvent"),
+    (0x002272a8, 0x00479f70, "PEStartPath"),
+    (0x002272bc, 0x00479f80, "PEMoveNode"),
+    (0x002272d0, 0x00479f90, "PEDeleteNode"),
+    (0x002272e4, 0x00479fa0, "PEWaitForNoInput"),
+    (0x002272f8, 0x00479fb8, "CVToggleDisplayMode"),
+    (0x0022730c, 0x00479fd0, "CVMoveCursor"),
+    (0x00227320, 0x00479fe0, "CVTriggerHeld"),
+    (0x00227334, 0x00479ff0, "CVTriggerReleased"),
+    (0x00227348, 0x0047a008, "CVMoveModelChangeAxis"),
+    (0x0022735c, 0x0047a020, "CVMoveModelToggle"),
+    (0x00227370, 0x0047a038, "CVMoveModelCancel"),
+    (0x00227384, 0x0047a050, "CVEditModelSelect"),
+    (0x00227398, 0x0047a068, "CVEditModelHideMenu"),
+    (0x002273ac, 0x0047a080, "CVEditModelZeroValue"),
+    (0x002273c0, 0x0047a098, "FEAdvance"),
+    (0x002273d4, 0x0047a0a8, "ReplayExit"),
+    (0x002273e8, 0x0047a0b8, "ReplayPlay"),
+    (0x002273fc, 0x0047a0c8, "ReplayFForward"),
+    (0x00227410, 0x0047a0d8, "ReplayFBackward"),
+    (0x00227424, 0x0047a0e8, "ReplayStepForward"),
+    (0x00227438, 0x0047a100, "ReplayStepSlow"),
+    (0x0022744c, 0x0047a110, "ReplayCycleCamera"),
+    (0x00227460, 0x0047a128, "ReplayDebugLoad"),
+    (0x00227474, 0x0047a138, "ReplayDebugSave"),
+    (0x00227488, 0x004a2958, "NISSkip"),
+    (0x0022749c, 0x004a2960, "UIStart"),
+    (0x002274b0, 0x0047a148, "UISelect"),
+    (0x002274c4, 0x004a2968, "UIUp"),
+    (0x002274d8, 0x004a2970, "UIDown"),
+    (0x002274ec, 0x004a2978, "UILeft"),
+    (0x00227500, 0x004a2980, "UIRight"),
+    (0x00227514, 0x004a2988, "UIUp2"),
+    (0x00227528, 0x004a2990, "UIDown2"),
+    (0x0022753c, 0x004a2998, "UILeft2"),
+    (0x00227550, 0x0047a158, "UIRight2"),
+    (0x00227564, 0x004a29a0, "UINext"),
+    (0x00227578, 0x0047a168, "UIPrevious"),
+    (0x0022758c, 0x0047a178, "UIOption"),
+    (0x002275a0, 0x004a29a8, "UIMisc"),
+    (0x002275b4, 0x0047a188, "UIRShift1"),
+    (0x002275c8, 0x0047a198, "UIRShift2"),
+    (0x002275dc, 0x0047a1a8, "UILShift1"),
+    (0x002275f0, 0x0047a1b8, "UILShift2"),
+    (0x00227604, 0x0047a1c8, "UIRShift1Held"),
+    (0x00227618, 0x0047a1d8, "UIRShift2Held"),
+    (0x0022762c, 0x0047a1e8, "UILShift1Held"),
+    (0x00227640, 0x0047a1f8, "UILShift2Held"),
+    (0x00227654, 0x0047a208, "UICheatMode"),
+    (0x00227668, 0x0047a218, "UICheatUp"),
+    (0x0022767c, 0x0047a228, "UICheatDown"),
+    (0x00227690, 0x0047a238, "UICheatLeft"),
+    (0x002276a4, 0x0047a248, "UICheatRight"),
+    (0x002276b8, 0x0047a258, "UICheatButton1"),
+    (0x002276cc, 0x0047a268, "UICheatButton2"),
+    (0x002276e0, 0x0047a278, "UICheatButton3"),
+    (0x002276f4, 0x0047a288, "UICheatButton4"),
+    (0x00227708, 0x0047a298, "UICheatAnyKey"),
+    (0x0022771c, 0x0047a2a8, "UICamZoom"),
+    (0x00227730, 0x0047a2b8, "UICamRotate"),
+    (0x00227744, 0x0047a2c8, "UICamPan"),
+    (0x00227758, 0x0047a2d8, "UIUpHeld"),
+    (0x0022776c, 0x0047a2e8, "UIDownHeld"),
+    (0x00227780, 0x0047a2f8, "UILeftHeld"),
+    (0x00227794, 0x0047a308, "UIRightHeld"),
+    (0x002277a8, 0x0047a318, "UINextHeld"),
+    (0x002277bc, 0x0047a328, "UIPreviousHeld"),
+    (0x002277d0, 0x0047a338, "UIOptionHeld"),
+    (0x002277e4, 0x0047a348, "UIMiscHeld"),
+    (0x002277f8, 0x0047a358, "UINextReleased"),
+    (0x0022780c, 0x0047a368, "UIPreviousReleased"),
+    (0x00227820, 0x0047a380, "UIOptionReleased"),
+    (0x00227834, 0x0047a398, "UIMiscReleased"),
+    (0x00227848, 0x0047a3a8, "ScriptMenuKey"),
+    (0x0022785c, 0x0047a3b8, "ScriptEditHelp"),
+    (0x00227870, 0x0047a3c8, "ScriptEditHeadingDelta"),
+    (0x00227884, 0x0047a3e0, "ScriptEditPitchDelta"),
+    (0x00227898, 0x0047a3f8, "ScriptEditFOVDelta"),
+    (0x002278ac, 0x0047a410, "ScriptEditRollDelta"),
+    (0x002278c0, 0x0047a428, "ScriptEditJitterDelta"),
+    (0x002278d4, 0x0047a440, "ScriptEditJitterRollDelta"),
+    (0x002278e8, 0x0047a460, "ScriptEditManualForwardMove"),
+    (0x002278fc, 0x0047a480, "ScriptEditManualSideMove"),
+    (0x00227910, 0x0047a4a0, "ScriptEditManualUpMove"),
+    (0x00227924, 0x0047a4b8, "ScriptEditTargetForwardMove"),
+    (0x00227938, 0x0047a4d8, "ScriptEditTargetSideMove"),
+    (0x0022794c, 0x0047a4f8, "ScriptEditTargetUpMove"),
+    (0x00227960, 0x0047a510, "ScriptEditTargetCamDistDelta"),
+    (0x00227974, 0x0047a530, "ScriptEditSubjectLeadDistDelta"),
+    (0x00227988, 0x0047a550, "ScriptEditSubjectLeadHeightDelta"),
+    (0x0022799c, 0x0047a578, "ScriptEditSubjectMoveCamForward"),
+    (0x002279b0, 0x0047a598, "ScriptEditAlgoLeadDistDelta"),
+    (0x002279c4, 0x0047a5b8, "ScriptEditAlgoLeadHeightDelta"),
+    (0x002279d8, 0x0047a5d8, "ScriptEditAlgoCamDistDelta"),
+    (0x002279ec, 0x0047a5f8, "ScreenCapture"),
+    (0x00227a00, 0x0047a608, "VideoCapture"),
+    (0x00227a14, 0x0047a618, "NetRiderAnalyzerToggle"),
+    (0x00227a28, 0x0047a630, "MemCardKey"),
+    (0x00227a3c, 0x0047a640, "TestCameraFB"),
+    (0x00227a50, 0x0047a650, "TestCameraLR"),
+    (0x00227a64, 0x0047a660, "TestCameraOnOff"),
+    (0x00227a78, 0x0047a670, "ChaseCamZoom"),
+    (0x00227a8c, 0x0047a680, "ChaseCamLR"),
+    (0x00227aa0, 0x0047a690, "ChaseCam"),
+    (0x00227ab4, 0x0047a6a0, "ChaseManualCamHeading"),
+    (0x00227ac8, 0x0047a6b8, "ChaseManualCamPitch"),
+    (0x00227adc, 0x0047a6d0, "ChaseManualCamStrafe"),
+    (0x00227af0, 0x0047a6e8, "ChaseManualCamForward"),
+    (0x00227b04, 0x0047a700, "ChaseManualCamFast"),
+    (0x00227b18, 0x0047a718, "TestTerrainType"),
+    (0x00227b2c, 0x0047a728, "MissionDebugPlay"),
+    (0x00227b40, 0x0047a740, "MissionDebugPreview"),
+    (0x00227b54, 0x0047a758, "MissionDebugRecord"),
+    (0x00227b68, 0x0047a770, "MissionDebugAnyPressed"),
+    (0x00227b7c, 0x0047a788, "VoipOnOff"),
+    (0x00227b90, 0x0047a798, "ConsoleReset"),
+    (0x00227ba4, 0x0047a7a8, "ReplayMenuUp"),
+    (0x00227bb8, 0x0047a7b8, "ReplayMenuDown"),
+    (0x00227bcc, 0x0047a7c8, "ReplayTimeLine"),
+];
+
+/// `void InputMap_LoadFromFile(void *self, const char *path)` (0x226b60),
+/// `cSSXApp_loadInputMap` in the reference. Reads the map file at `path`
+/// (its `#include`s expanded) into a new 0x18-byte `InputMap` initialised for
+/// 205 bindings, frees the text, compiles the bindings and purges the file.
+/// Returns the map in v0.
+///
+/// Not registered in `OVERRIDES`: the first callee,
+/// `cInputPreProcessor_loadFileSize` (0x325f48, `InputPreproc_Run` in the
+/// generated code), reads the file through the resumable preprocessor. It has
+/// no override slot, so a test cannot fake it, and running it on test data
+/// does not stay bounded.
+pub fn input_map_load_from_file(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        c.g[A0][0] = c.g[SP][0];
+        frame.save(c, S1, 0x30);
+        frame.save_ra(c, 0x20);
+        // `size` out-parameter in the frame.
+        c.g[A2][0] = sx(frame.at(c, 0x10));
+        call_ptr(c, 0x0032_5f48, 0x0022_6b7c)?;
+        c.g[S1][0] = c.g[V0][0];
+
+        // `new InputMap` (0x18 bytes, tagged str_InputMap), then `init(205)`.
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A1][0] = STR_INPUT_MAP;
+        c.g[A0][0] = 0x18;
+        call_ptr(c, 0x0031_7d70, 0x0022_6b98)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xcd;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0032_0ca0, 0x0022_6ba8)?;
+
+        // loadMapFile(map, data, size): the size is read back from the frame.
+        c.g[A2][0] = Addr(frame.at(c, 0x10)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0032_0db0, 0x0022_6bb8)?;
+
+        // Free the text when the loader returned one.
+        c.g[A2][0] = 0x0048_0000;
+        if c.g[S1][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e98, 0x0022_6bc8)?;
+            c.g[A2][0] = 0x0048_0000;
+        }
+        c.cycles += 1032;
+
+        // compileMap(map, index, name) for every binding; a1 and a2 are left
+        // as the last call set them.
+        for (index, &(ret, name, _)) in COMPILE_BINDINGS.iter().enumerate() {
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = index as u64;
+            c.g[A2][0] = sx(name);
+            call_ptr(c, 0x0032_0e18, ret)?;
+        }
+
+        // purgeMapFile(map); the result is the map.
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0032_0f10, 0x0022_7bd4)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S0, 0x40);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

@@ -270,3 +270,14 @@ every difference a parameter.
 Per function: written (or skipped, and why), its test, and anything uncertain
 (branches the fixture may not reach, assumptions). For functions with Ghidra
 pseudo-C, how useful it was.
+
+- Resumable dispatcher bodies (`match pc` blocks, or labelled blocks with an
+  `__entries` twin) are not ported by writers: the orchestrator converts them
+  with `tools/port_dispatcher.py ADDR SHARD Name fn_name` (run it after
+  `prep` + `regen`: it reads `f_X__generated`). The port is the generated body
+  with its calls through `call_ptr` / `Callee::call`, `?` for unwinds, and an
+  `if c.pc != ENTRY { return ..::f_X__generated(c) }` guard for resumes. Its
+  test fixture must reach the body (a bare `A0 = DATA` exits at once): build
+  the structures and add a path-count test (`fresh` + `run_generated`, the set
+  of cycle totals over the seeds).
+

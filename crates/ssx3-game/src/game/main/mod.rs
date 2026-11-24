@@ -9,6 +9,7 @@ pub mod gameload;
 pub mod gamemode;
 pub mod gamerender;
 pub mod gamestate;
+pub mod loadscreens;
 pub mod loadscreens_prestart;
 pub mod racestate;
 pub mod sectionman;
@@ -26,6 +27,7 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(gamemode::OVERRIDES);
     v.extend_from_slice(gamerender::OVERRIDES);
     v.extend_from_slice(gamestate::OVERRIDES);
+    v.extend_from_slice(loadscreens::OVERRIDES);
     v.extend_from_slice(loadscreens_prestart::OVERRIDES);
     v.extend_from_slice(racestate::OVERRIDES);
     v.extend_from_slice(sectionman::OVERRIDES);
