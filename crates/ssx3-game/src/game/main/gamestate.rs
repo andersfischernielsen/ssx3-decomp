@@ -3,6 +3,8 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
+use crate::abi::set_word;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -12,6 +14,8 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
+use crate::call::Unwound;
+use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::be::gp as gp_4;
@@ -263,6 +267,53 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_state_results_enter,
         "GameStateResults_Enter",
     ),
+    (
+        0x0023_4e00,
+        game_state_countdown_load_state,
+        "GameStateCountdown_LoadState",
+    ),
+    (
+        0x0023_4ed8,
+        game_state_race_load_state,
+        "GameStateRace_LoadState",
+    ),
+    (
+        0x0023_61e8,
+        game_state_warp_to_event_load_state,
+        "GameStateWarpToEvent_LoadState",
+    ),
+    (
+        0x0023_6b18,
+        game_state_event_switch_load_load_state,
+        "GameStateEventSwitchLoad_LoadState",
+    ),
+    (
+        0x0023_6b90,
+        game_state_reset_ai_load_state,
+        "GameStateResetAI_LoadState",
+    ),
+    (
+        0x0023_6d80,
+        game_state_pre_race_menu_load_state,
+        "GameStatePreRaceMenu_LoadState",
+    ),
+    (
+        0x0023_6ee8,
+        game_state_results_load_state,
+        "GameStateResults_LoadState",
+    ),
+    (
+        0x0023_6fc8,
+        game_state_finish_cinematic_load_state,
+        "GameStateFinishCinematic_LoadState",
+    ),
+    (
+        0x0023_7280,
+        input_sync_add_remote_pad,
+        "InputSync_AddRemotePad",
+    ),
+    (0x0023_73b8, input_sync_update, "InputSync_Update"),
+    (0x0023_7948, input_sync_empty_hook, "InputSync_EmptyHook"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4229,6 +4280,1173 @@ pub fn game_state_results_enter(c: &mut Cpu) {
     })
 }
 
+/// `GameState_LoadState` (0x233b28), the shared body of the `*_LoadState`
+/// wrappers below. It loads `a1`'s vtable and calls its slot 0x14 with
+/// `a0 = a1 + (lh slot 0x10)`; the wrappers only forward `a0`/`a1`.
+pub(crate) const GAME_STATE_LOAD_STATE: Callee = Callee {
+    addr: 0x0023_3b28,
+    f: ee::s06::f_00233b28,
+};
+
+/// `GameStateCountdown_LoadState(state)` (0x234e00): `GameState_LoadState`
+/// on the same arguments; returns to 0x234e10.
+pub fn game_state_countdown_load_state(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GAME_STATE_LOAD_STATE), 0x0023_4e10)
+}
+
+/// `GameStateRace_LoadState(state)` (0x234ed8): `GameState_LoadState`; returns
+/// to 0x234ee8.
+pub fn game_state_race_load_state(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GAME_STATE_LOAD_STATE), 0x0023_4ee8)
+}
+
+/// `GameStateWarpToEvent_LoadState(state)` (0x2361e8): `GameState_LoadState`;
+/// returns to 0x2361f8.
+pub fn game_state_warp_to_event_load_state(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GAME_STATE_LOAD_STATE), 0x0023_61f8)
+}
+
+/// `GameStateEventSwitchLoad_LoadState(state)` (0x236b18): `GameState_LoadState`;
+/// returns to 0x236b28.
+pub fn game_state_event_switch_load_load_state(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GAME_STATE_LOAD_STATE), 0x0023_6b28)
+}
+
+/// `GameStateResetAI_LoadState(state)` (0x236b90): `GameState_LoadState`;
+/// returns to 0x236ba0.
+pub fn game_state_reset_ai_load_state(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GAME_STATE_LOAD_STATE), 0x0023_6ba0)
+}
+
+/// `GameStatePreRaceMenu_LoadState(state)` (0x236d80): `GameState_LoadState`;
+/// returns to 0x236d90.
+pub fn game_state_pre_race_menu_load_state(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GAME_STATE_LOAD_STATE), 0x0023_6d90)
+}
+
+/// `GameStateResults_LoadState(state)` (0x236ee8): `GameState_LoadState`;
+/// returns to 0x236ef8.
+pub fn game_state_results_load_state(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GAME_STATE_LOAD_STATE), 0x0023_6ef8)
+}
+
+/// `GameStateFinishCinematic_LoadState(state)` (0x236fc8): `GameState_LoadState`;
+/// returns to 0x236fd8.
+pub fn game_state_finish_cinematic_load_state(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GAME_STATE_LOAD_STATE), 0x0023_6fd8)
+}
+
+/// Entry and end of `InputSync_Update` (0x2373b8..0x237944).
+pub(crate) const UPDATE_ENTRY: u32 = 0x0023_73b8;
+
+pub(crate) const UPDATE_END: u32 = 0x0023_7944;
+
+/// Its stack frame (`addiu sp, sp, -0x160`).
+pub(crate) const UPDATE_FRAME: u32 = 0x160;
+
+/// The shared epilogue block (restores s0..s4 and `ra`, returns).
+pub(crate) const UPDATE_EPILOGUE: u32 = 0x0023_7924;
+
+/// `InputSync_UnpackSample(this, src, dst)` (0x237be8).
+pub(crate) const UPDATE_UNPACK_SAMPLE: Callee = Callee {
+    addr: 0x0023_7be8,
+    f: ee::s06::f_00237be8,
+};
+
+/// `InputSync_SendSample(this, sample)` (0x237a98).
+pub(crate) const UPDATE_SEND_SAMPLE: Callee = Callee {
+    addr: 0x0023_7a98,
+    f: ee::s06::f_00237a98,
+};
+
+/// `cGameComm_PopPacket(gc, channel, dst, size)` (0x257bd8).
+pub(crate) const UPDATE_POP_PACKET: Callee = Callee {
+    addr: 0x0025_7bd8,
+    f: ee::s06::f_00257bd8,
+};
+
+/// `cGameComm_GetInputDelay(gc)` (0x258360).
+pub(crate) const UPDATE_INPUT_DELAY: Callee = Callee {
+    addr: 0x0025_8360,
+    f: ee::s06::f_00258360,
+};
+
+/// `gp - off`: the address of a gp-relative global.
+#[inline(always)]
+pub(crate) fn update_gp_slot(c: &Cpu, off: u32) -> u32 {
+    r32(c, GP).wrapping_sub(off)
+}
+
+/// `off(reg)`: an address off a register.
+#[inline(always)]
+pub(crate) fn update_reg_off(c: &Cpu, reg: usize, off: u32) -> u32 {
+    r32(c, reg).wrapping_add(off)
+}
+
+/// Signed `a < b` as the compiled `slt` leaves it (0 or 1, 64-bit).
+#[inline(always)]
+pub(crate) fn update_slt(a: u64, b: u64) -> u64 {
+    ((a as i64) < (b as i64)) as u64
+}
+
+/// Event check at a loop back edge with the loop head `head`: when an event
+/// is due, deliver it with `pc = head`; an unwind request returns from the
+/// body (the trampoline re-enters at `head`).
+#[inline(always)]
+pub(crate) fn update_back_edge(c: &mut Cpu, head: u32) -> Flow {
+    if event_due(c) && deliver_event(c, head) {
+        return Err(Unwound);
+    }
+    Ok(())
+}
+
+/// One 0x20-byte step of the sample copy with unaligned accesses (`ldl`/`ldr`
+/// pairs, the generated loop at 0x2374ac), from `src` to `dst`.
+#[inline(always)]
+pub(crate) fn update_copy_unaligned(c: &mut Cpu, src: u32, dst: u32) {
+    c.ldl(A1, src.wrapping_add(0x7));
+    c.ldr(A1, src);
+    c.ldl(A3, src.wrapping_add(0xf));
+    c.ldr(A3, src.wrapping_add(0x8));
+    c.ldl(T2, src.wrapping_add(0x17));
+    c.ldr(T2, src.wrapping_add(0x10));
+    c.ldl(T3, src.wrapping_add(0x1f));
+    c.ldr(T3, src.wrapping_add(0x18));
+    c.sdl(A1, dst.wrapping_add(0x7));
+    c.sdr(A1, dst);
+    c.sdl(A3, dst.wrapping_add(0xf));
+    c.sdr(A3, dst.wrapping_add(0x8));
+    c.sdl(T2, dst.wrapping_add(0x17));
+    c.sdr(T2, dst.wrapping_add(0x10));
+    c.sdl(T3, dst.wrapping_add(0x1f));
+    c.sdr(T3, dst.wrapping_add(0x18));
+}
+
+/// One 0x20-byte step of the sample copy with aligned doublewords (the
+/// generated loop at 0x237504), from `src` to `dst`.
+#[inline(always)]
+pub(crate) fn update_copy_aligned(c: &mut Cpu, src: u32, dst: u32) {
+    c.g[A1][0] = c.ld(src);
+    c.g[A3][0] = c.ld(src.wrapping_add(0x8));
+    c.g[T2][0] = c.ld(src.wrapping_add(0x10));
+    c.g[T3][0] = c.ld(src.wrapping_add(0x18));
+    let (a1, a3, t2, t3) = (c.g[A1][0], c.g[A3][0], c.g[T2][0], c.g[T3][0]);
+    c.sd(dst, a1);
+    c.sd(dst.wrapping_add(0x8), a3);
+    c.sd(dst.wrapping_add(0x10), t2);
+    c.sd(dst.wrapping_add(0x18), t3);
+}
+
+/// `void InputSync_Update(InputSync *self)` (0x2373b8): for each synced pad,
+/// fill its sample ring. A remote pad (no source pad) takes the network
+/// packets while the ring is short (or the game comms are idle, a neutral
+/// sample otherwise). A local pad (a source pad) samples its buttons every
+/// `numsamples` ticks, sends them, and refreshes the send limit from the
+/// comms' input delay. Returns early while the comms are below state 14.
+///
+/// The body is the generated block structure, one arm per block, so a call
+/// that unwinds or an event that asks for a thread switch resumes at the
+/// same block (`c.pc`), as the compiled code does. The struct fields:
+/// self `+0` sendlimit, `+4` latency, `+8` numsamples, `+0xc` tick, `+0x10`
+/// numsyncedpads, `+0x14` syncedpads (stride 0x18: `+0` samples, `+4`
+/// readpos, `+8` writepos, `+0xc` sourcepad).
+pub fn input_sync_update(c: &mut Cpu) {
+    guest(c, input_sync_update_body);
+}
+
+pub(crate) fn input_sync_update_body(c: &mut Cpu) -> Flow {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            // Prologue: `if (GameComm()->mState < 14) return;`.
+            0x0023_73b8 => {
+                c.cycles += 12;
+                let frame = Frame::open(c, UPDATE_FRAME);
+                let gc_slot = update_gp_slot(c, 0x204);
+                c.g[V1][0] = c.lw(gc_slot);
+                frame.save(c, S2, 0x130);
+                frame.save(c, S0, 0x150);
+                frame.save(c, S1, 0x140);
+                frame.save(c, S3, 0x120);
+                frame.save(c, S4, 0x110);
+                frame.save_ra(c, 0x100);
+                let state_slot = update_reg_off(c, V1, 0x70);
+                c.g[V0][0] = c.lw(state_slot);
+                c.g[V0][0] = update_slt(c.g[V0][0], 14);
+                let t = c.g[V0][0] != 0;
+                c.g[S2][0] = c.g[A0][0];
+                pc = if t { UPDATE_EPILOGUE } else { 0x0023_73e8 };
+                continue;
+            }
+            // `for (i = 0; i < self->numsyncedpads; i++)`: the test before the loop.
+            0x0023_73e8 => {
+                c.cycles += 3;
+                let count_slot = update_reg_off(c, S2, 0x10);
+                c.g[V0][0] = c.lw(count_slot);
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[S0][0] = 0;
+                pc = if t { UPDATE_EPILOGUE } else { 0x0023_73f4 };
+                continue;
+            }
+            0x0023_73f4 => {
+                c.cycles += 3;
+                set_word(c, S4, r32(c, SP).wrapping_add(0x70));
+                c.g[V0][0] = 0x18;
+                pc = 0x0023_7400;
+                continue;
+            }
+            // Loop head: `psp = &syncedpads[i]`; a local pad (source pad set) goes to 0x237720.
+            0x0023_7400 => {
+                c.cycles += 6;
+                c.mult(0, V0, S0, V0);
+                set_word(c, V0, r32(c, V0).wrapping_add(0x14));
+                set_word(c, S1, r32(c, S2).wrapping_add(r32(c, V0)));
+                let pad_source_slot = update_reg_off(c, S1, 0xc);
+                c.g[V1][0] = c.lw(pad_source_slot);
+                if c.g[V1][0] != 0 {
+                    let sendlimit_slot = update_reg_off(c, S2, 0);
+                    c.g[V0][0] = c.lw(sendlimit_slot);
+                    pc = 0x0023_7720;
+                    continue;
+                }
+                pc = 0x0023_7418;
+                continue;
+            }
+            // Remote pad: `if (sp.sourcepad == 0)`, with `net` from the comms state.
+            0x0023_7418 => {
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(update_gp_slot(c, 0x204));
+                let sync_slot = update_reg_off(c, V1, 0x40);
+                c.g[V0][0] = c.lw(sync_slot);
+                let t = c.g[V0][0] == 0;
+                c.g[A0][0] = 0;
+                pc = if t { 0x0023_743c } else { 0x0023_7428 };
+                continue;
+            }
+            0x0023_7428 => {
+                c.cycles += 3;
+                let error_slot = update_reg_off(c, V1, 0x4);
+                c.g[V0][0] = c.lw(error_slot);
+                let t = c.g[V0][0] != 0;
+                pc = if t { 0x0023_743c } else { 0x0023_7434 };
+                continue;
+            }
+            0x0023_7434 => {
+                c.cycles += 2;
+                let connected_slot = update_reg_off(c, V1, 0);
+                c.g[V0][0] = c.lw(connected_slot);
+                c.g[A0][0] = (0u64 < c.g[V0][0]) as u64;
+                pc = 0x0023_743c;
+                continue;
+            }
+            // `net` is `a0`; s3 = i + 1 for the loop tail.
+            0x0023_743c => {
+                c.cycles += 2;
+                let t = c.g[A0][0] == 0;
+                set_word(c, S3, r32(c, S0).wrapping_add(0x1));
+                pc = if t { 0x0023_75a4 } else { 0x0023_7444 };
+                continue;
+            }
+            // Network `while` loop: its condition sits at 0x23755c.
+            0x0023_7444 => {
+                c.cycles += 2;
+                let latency_slot = update_reg_off(c, S2, 0x4);
+                c.g[V0][0] = c.lw(latency_slot);
+                pc = 0x0023_755c;
+                continue;
+            }
+            0x0023_744c => {
+                c.cycles += 1;
+                pc = 0x0023_7450;
+                continue;
+            }
+            // Network body: decode the packet (a2 holds the packet index s0 here).
+            0x0023_7450 => {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[SP][0];
+                UPDATE_UNPACK_SAMPLE.call(c, 0x0023_745c)?;
+                pc = 0x0023_745c;
+                continue;
+            }
+            // Resume after the unpack.
+            0x0023_745c => {
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[V0][0] = c.lw(numsamples_slot);
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[A3][0] = 0;
+                pc = if t { 0x0023_7558 } else { 0x0023_7468 };
+                continue;
+            }
+            // Network copy loop over numsamples: write the sample into the ring.
+            0x0023_7468 => {
+                c.cycles += 4;
+                c.g[T1][0] = 0;
+                c.g[T0][0] = 0x64;
+                let latency_slot = update_reg_off(c, S2, 0x4);
+                c.g[A0][0] = c.lw(latency_slot);
+                pc = 0x0023_7478;
+                continue;
+            }
+            0x0023_7478 => {
+                c.cycles += 4;
+                c.g[A2][0] = c.g[SP][0];
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V0][0] = c.lw(writepos_slot);
+                pc = 0x0023_7488;
+                continue;
+            }
+            0x0023_7488 => {
+                c.cycles += 8;
+                c.div(0, V0, A0);
+                let samples_slot = update_reg_off(c, S1, 0);
+                c.g[A1][0] = c.lw(samples_slot);
+                c.g[V1][0] = c.hi[0];
+                c.mult(0, V1, V1, T0);
+                set_word(c, V1, r32(c, V1).wrapping_add(r32(c, A1)));
+                c.g[V0][0] = c.g[V1][0] & 0x7;
+                let t = c.g[V0][0] == 0;
+                set_word(c, A0, r32(c, A3).wrapping_add(0x1));
+                pc = if t { 0x0023_7500 } else { 0x0023_74a8 };
+                continue;
+            }
+            0x0023_74a8 => {
+                c.cycles += 1;
+                set_word(c, V0, r32(c, SP).wrapping_add(0x60));
+                pc = 0x0023_74ac;
+                continue;
+            }
+            // Unaligned 0x20-byte copy steps until a2 reaches the sample end.
+            0x0023_74ac => {
+                c.cycles += 19;
+                let src = r32(c, A2);
+                let dst = r32(c, V1);
+                update_copy_unaligned(c, src, dst);
+                set_word(c, A2, src.wrapping_add(0x20));
+                let t = c.g[A2][0] != c.g[V0][0];
+                set_word(c, V1, dst.wrapping_add(0x20));
+                if t {
+                    update_back_edge(c, 0x0023_74ac)?;
+                    pc = 0x0023_74ac;
+                    continue;
+                }
+                pc = 0x0023_74f8;
+                continue;
+            }
+            0x0023_74f8 => {
+                c.cycles += 2;
+                pc = 0x0023_7530;
+                continue;
+            }
+            0x0023_7500 => {
+                c.cycles += 1;
+                set_word(c, V0, r32(c, SP).wrapping_add(0x60));
+                pc = 0x0023_7504;
+                continue;
+            }
+            // Aligned doubleword copy steps.
+            0x0023_7504 => {
+                c.cycles += 11;
+                let src = r32(c, A2);
+                let dst = r32(c, V1);
+                update_copy_aligned(c, src, dst);
+                set_word(c, A2, src.wrapping_add(0x20));
+                let t = c.g[A2][0] != c.g[V0][0];
+                set_word(c, V1, dst.wrapping_add(0x20));
+                if t {
+                    update_back_edge(c, 0x0023_7504)?;
+                    pc = 0x0023_7504;
+                    continue;
+                }
+                pc = 0x0023_7530;
+                continue;
+            }
+            // The last word, then `s1->writepos++` and the inner `for` test.
+            0x0023_7530 => {
+                c.cycles += 10;
+                let src = r32(c, A2);
+                c.g[V0][0] = c.lw(src);
+                let dst = r32(c, V1);
+                let word = c.g[V0][0];
+                c.sw(dst, word);
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V0][0] = c.lw(writepos_slot);
+                c.g[A3][0] = c.g[A0][0];
+                set_word(c, V0, r32(c, V0).wrapping_add(0x1));
+                let writepos_value = c.g[V0][0];
+                c.sw(writepos_slot, writepos_value);
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[V1][0] = c.lw(numsamples_slot);
+                c.g[V1][0] = update_slt(c.g[A3][0], c.g[V1][0]);
+                if c.g[V1][0] != 0 {
+                    let latency_slot = update_reg_off(c, S2, 0x4);
+                    c.g[A0][0] = c.lw(latency_slot);
+                    update_back_edge(c, 0x0023_7478)?;
+                    pc = 0x0023_7478;
+                    continue;
+                }
+                pc = 0x0023_7558;
+                continue;
+            }
+            0x0023_7558 => {
+                c.cycles += 1;
+                let latency_slot = update_reg_off(c, S2, 0x4);
+                c.g[V0][0] = c.lw(latency_slot);
+                pc = 0x0023_755c;
+                continue;
+            }
+            // While condition: `writepos - readpos < latency + 1 - numsamples`.
+            // s0 becomes the compressed-sample buffer (sp + 0x70).
+            0x0023_755c => {
+                c.cycles += 9;
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V1][0] = c.lw(writepos_slot);
+                let readpos_slot = update_reg_off(c, S1, 0x4);
+                c.g[A1][0] = c.lw(readpos_slot);
+                set_word(c, V0, r32(c, V0).wrapping_add(0x1));
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[A0][0] = c.lw(numsamples_slot);
+                set_word(c, V1, r32(c, V1).wrapping_sub(r32(c, A1)));
+                set_word(c, V0, r32(c, V0).wrapping_sub(r32(c, A0)));
+                c.g[V1][0] = update_slt(c.g[V1][0], c.g[V0][0]);
+                let t = c.g[V1][0] == 0;
+                set_word(c, S0, r32(c, SP).wrapping_add(0x70));
+                if t {
+                    pc = 0x0023_7910;
+                    continue;
+                }
+                pc = 0x0023_7580;
+                continue;
+            }
+            // Network: `cGameComm_PopPacket(GameComm(), 0, compressed, 0x1c)`.
+            0x0023_7580 => {
+                c.cycles += 7;
+                c.g[A0][0] = c.lw(update_gp_slot(c, 0x204));
+                c.g[A1][0] = 0;
+                c.g[A2][0] = c.g[S0][0];
+                c.g[A3][0] = 0x1c;
+                UPDATE_POP_PACKET.call(c, 0x0023_7594)?;
+                pc = 0x0023_7594;
+                continue;
+            }
+            // Resume after `PopPacket`: a packet came in, so unpack it.
+            0x0023_7594 => {
+                let t = c.g[V0][0] != 0;
+                c.g[A2][0] = c.g[S0][0];
+                if t {
+                    update_back_edge(c, 0x0023_7450)?;
+                    pc = 0x0023_7450;
+                    continue;
+                }
+                pc = 0x0023_759c;
+                continue;
+            }
+            0x0023_759c => {
+                c.cycles += 2;
+                let t = true;
+                let numsamples_slot = update_reg_off(c, S2, 0x10);
+                c.g[V0][0] = c.lw(numsamples_slot);
+                pc = if t { 0x0023_7914 } else { 0x0023_75a4 };
+                continue;
+            }
+            // Remote pad with the comms idle: a neutral sample, unpacked,
+            // then the ring fill.
+            0x0023_75a4 => {
+                c.cycles += 20;
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0x1c;
+                call_ptr(c, 0x003e_6448, 0x0023_75b4)?;
+                pc = 0x0023_75b4;
+                continue;
+            }
+            // Resume after `EA_MemSet`: flag the neutral sample as 24 buttons, unpack it.
+            0x0023_75b4 => {
+                c.g[V0][0] = 0x18;
+                c.g[A0][0] = c.g[S2][0];
+                let compressed_buttons = r32(c, SP).wrapping_add(0x70);
+                let value = c.g[V0][0];
+                c.sb(compressed_buttons, value);
+                c.g[A1][0] = c.g[SP][0];
+                c.g[A2][0] = c.g[S4][0];
+                UPDATE_UNPACK_SAMPLE.call(c, 0x0023_75cc)?;
+                pc = 0x0023_75cc;
+                continue;
+            }
+            // Resume after the second unpack: fill the ring while it is short.
+            0x0023_75cc => {
+                let latency_slot = update_reg_off(c, S2, 0x4);
+                c.g[V0][0] = c.lw(latency_slot);
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V1][0] = c.lw(writepos_slot);
+                let readpos_slot = update_reg_off(c, S1, 0x4);
+                c.g[A0][0] = c.lw(readpos_slot);
+                set_word(c, V0, r32(c, V0).wrapping_add(0x1));
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[A1][0] = c.lw(numsamples_slot);
+                set_word(c, V1, r32(c, V1).wrapping_sub(r32(c, A0)));
+                set_word(c, V0, r32(c, V0).wrapping_sub(r32(c, A1)));
+                c.g[V1][0] = update_slt(c.g[V1][0], c.g[V0][0]);
+                if c.g[V1][0] == 0 {
+                    let count_slot = update_reg_off(c, S2, 0x10);
+                    c.g[V0][0] = c.lw(count_slot);
+                    pc = 0x0023_7914;
+                    continue;
+                }
+                pc = 0x0023_75f4;
+                continue;
+            }
+            0x0023_75f4 => {
+                c.cycles += 1;
+                pc = 0x0023_75f8;
+                continue;
+            }
+            // Ring fill loop head (`numsamples <= 0` skips the body).
+            0x0023_75f8 => {
+                c.cycles += 2;
+                let t = (c.g[A1][0] as i64) <= 0;
+                c.g[A3][0] = 0;
+                pc = if t { 0x0023_76f0 } else { 0x0023_7600 };
+                continue;
+            }
+            0x0023_7600 => {
+                c.cycles += 4;
+                c.g[T1][0] = 0;
+                c.g[T0][0] = 0x64;
+                let latency_slot = update_reg_off(c, S2, 0x4);
+                c.g[A0][0] = c.lw(latency_slot);
+                pc = 0x0023_7610;
+                continue;
+            }
+            0x0023_7610 => {
+                c.cycles += 4;
+                c.g[A2][0] = c.g[SP][0];
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V0][0] = c.lw(writepos_slot);
+                pc = 0x0023_7620;
+                continue;
+            }
+            0x0023_7620 => {
+                c.cycles += 8;
+                c.div(0, V0, A0);
+                let samples_slot = update_reg_off(c, S1, 0);
+                c.g[A1][0] = c.lw(samples_slot);
+                c.g[V1][0] = c.hi[0];
+                c.mult(0, V1, V1, T0);
+                set_word(c, V1, r32(c, V1).wrapping_add(r32(c, A1)));
+                c.g[V0][0] = c.g[V1][0] & 0x7;
+                let t = c.g[V0][0] == 0;
+                set_word(c, A0, r32(c, A3).wrapping_add(0x1));
+                pc = if t { 0x0023_7698 } else { 0x0023_7640 };
+                continue;
+            }
+            0x0023_7640 => {
+                c.cycles += 1;
+                set_word(c, V0, r32(c, SP).wrapping_add(0x60));
+                pc = 0x0023_7644;
+                continue;
+            }
+            0x0023_7644 => {
+                c.cycles += 19;
+                let src = r32(c, A2);
+                let dst = r32(c, V1);
+                update_copy_unaligned(c, src, dst);
+                set_word(c, A2, src.wrapping_add(0x20));
+                let t = c.g[A2][0] != c.g[V0][0];
+                set_word(c, V1, dst.wrapping_add(0x20));
+                if t {
+                    update_back_edge(c, 0x0023_7644)?;
+                    pc = 0x0023_7644;
+                    continue;
+                }
+                pc = 0x0023_7690;
+                continue;
+            }
+            0x0023_7690 => {
+                c.cycles += 2;
+                pc = 0x0023_76c8;
+                continue;
+            }
+            0x0023_7698 => {
+                c.cycles += 1;
+                set_word(c, V0, r32(c, SP).wrapping_add(0x60));
+                pc = 0x0023_769c;
+                continue;
+            }
+            0x0023_769c => {
+                c.cycles += 11;
+                let src = r32(c, A2);
+                let dst = r32(c, V1);
+                update_copy_aligned(c, src, dst);
+                set_word(c, A2, src.wrapping_add(0x20));
+                let t = c.g[A2][0] != c.g[V0][0];
+                set_word(c, V1, dst.wrapping_add(0x20));
+                if t {
+                    update_back_edge(c, 0x0023_769c)?;
+                    pc = 0x0023_769c;
+                    continue;
+                }
+                pc = 0x0023_76c8;
+                continue;
+            }
+            0x0023_76c8 => {
+                c.cycles += 10;
+                let src = r32(c, A2);
+                c.g[V0][0] = c.lw(src);
+                let dst = r32(c, V1);
+                let word = c.g[V0][0];
+                c.sw(dst, word);
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V0][0] = c.lw(writepos_slot);
+                c.g[A3][0] = c.g[A0][0];
+                set_word(c, V0, r32(c, V0).wrapping_add(0x1));
+                let writepos_value = c.g[V0][0];
+                c.sw(writepos_slot, writepos_value);
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[V1][0] = c.lw(numsamples_slot);
+                c.g[V1][0] = update_slt(c.g[A3][0], c.g[V1][0]);
+                if c.g[V1][0] != 0 {
+                    let latency_slot = update_reg_off(c, S2, 0x4);
+                    c.g[A0][0] = c.lw(latency_slot);
+                    update_back_edge(c, 0x0023_7610)?;
+                    pc = 0x0023_7610;
+                    continue;
+                }
+                pc = 0x0023_76f0;
+                continue;
+            }
+            // Ring fill done: the while condition again (writepos - readpos < ...).
+            0x0023_76f0 => {
+                c.cycles += 10;
+                let latency_slot = update_reg_off(c, S2, 0x4);
+                c.g[V0][0] = c.lw(latency_slot);
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V1][0] = c.lw(writepos_slot);
+                let readpos_slot = update_reg_off(c, S1, 0x4);
+                c.g[A0][0] = c.lw(readpos_slot);
+                set_word(c, V0, r32(c, V0).wrapping_add(0x1));
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[A1][0] = c.lw(numsamples_slot);
+                set_word(c, V1, r32(c, V1).wrapping_sub(r32(c, A0)));
+                set_word(c, V0, r32(c, V0).wrapping_sub(r32(c, A1)));
+                c.g[V1][0] = update_slt(c.g[V1][0], c.g[V0][0]);
+                let t = c.g[V1][0] != 0;
+                if t {
+                    update_back_edge(c, 0x0023_75f8)?;
+                    pc = 0x0023_75f8;
+                    continue;
+                }
+                pc = 0x0023_7718;
+                continue;
+            }
+            0x0023_7718 => {
+                c.cycles += 2;
+                let t = true;
+                let count_slot = update_reg_off(c, S2, 0x10);
+                c.g[V0][0] = c.lw(count_slot);
+                pc = if t { 0x0023_7914 } else { 0x0023_7720 };
+                continue;
+            }
+            // Local pad (source pad set): the ring fill is due while the ring is short.
+            0x0023_7720 => {
+                c.cycles += 9;
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V1][0] = c.lw(writepos_slot);
+                let readpos_slot = update_reg_off(c, S1, 0x4);
+                c.g[A0][0] = c.lw(readpos_slot);
+                set_word(c, V0, r32(c, V0).wrapping_add(0x1));
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[A1][0] = c.lw(numsamples_slot);
+                set_word(c, V1, r32(c, V1).wrapping_sub(r32(c, A0)));
+                set_word(c, V0, r32(c, V0).wrapping_sub(r32(c, A1)));
+                c.g[V1][0] = update_slt(c.g[V1][0], c.g[V0][0]);
+                let t = c.g[V1][0] == 0;
+                set_word(c, S3, r32(c, S0).wrapping_add(0x1));
+                if t {
+                    pc = 0x0023_7910;
+                    continue;
+                }
+                pc = 0x0023_7744;
+                continue;
+            }
+            // `if (++self->tick % self->numsamples == 0)`.
+            0x0023_7744 => {
+                c.cycles += 6;
+                let tick_slot = update_reg_off(c, S2, 0xc);
+                c.g[V0][0] = c.lw(tick_slot);
+                set_word(c, V0, r32(c, V0).wrapping_add(0x1));
+                c.div(0, V0, A1);
+                let tick_value = c.g[V0][0];
+                c.sw(tick_slot, tick_value);
+                pc = 0x0023_775c;
+                continue;
+            }
+            0x0023_775c => {
+                c.cycles += 3;
+                c.g[V1][0] = c.hi[0];
+                if c.g[V1][0] != 0 {
+                    let count_slot = update_reg_off(c, S2, 0x10);
+                    c.g[V0][0] = c.lw(count_slot);
+                    pc = 0x0023_7914;
+                    continue;
+                }
+                pc = 0x0023_7768;
+                continue;
+            }
+            // Local sample: the pad's buttons go into the sample at sp + 0x90.
+            0x0023_7768 => {
+                c.cycles += 6;
+                let pad_slot = update_reg_off(c, S1, 0xc);
+                c.g[V1][0] = c.lw(pad_slot);
+                c.g[A1][0] = 0;
+                set_word(c, S0, r32(c, SP).wrapping_add(0x90));
+                let buttons_slot = r32(c, V1);
+                c.g[V0][0] = c.lw(buttons_slot);
+                let t = (c.g[V0][0] as i64) <= 0;
+                let sample_count_slot = r32(c, SP).wrapping_add(0x90);
+                let value = c.g[V0][0];
+                c.sw(sample_count_slot, value);
+                pc = if t { 0x0023_77c0 } else { 0x0023_7780 };
+                continue;
+            }
+            0x0023_7780 => {
+                c.cycles += 4;
+                c.g[A2][0] = c.g[V1][0];
+                set_word(c, A0, r32(c, SP).wrapping_add(0x94));
+                set_word(c, V1, r32(c, A2).wrapping_add(0x4));
+                pc = 0x0023_7790;
+                continue;
+            }
+            0x0023_7790 => {
+                c.cycles += 5;
+                let count_slot = r32(c, A2);
+                c.g[V0][0] = c.lw(count_slot);
+                c.mtc1(0, 0);
+                c.g[V0][0] = update_slt(c.g[A1][0], c.g[V0][0]);
+                if c.g[V0][0] != 0 {
+                    let float_slot = r32(c, V1);
+                    c.lwc1(0, float_slot);
+                    pc = 0x0023_77a4;
+                    continue;
+                }
+                pc = 0x0023_77a4;
+                continue;
+            }
+            0x0023_77a4 => {
+                c.cycles += 7;
+                let out_slot = r32(c, A0);
+                c.swc1(0, out_slot);
+                set_word(c, A1, r32(c, A1).wrapping_add(0x1));
+                set_word(c, A0, r32(c, A0).wrapping_add(0x4));
+                let count_slot = r32(c, SP).wrapping_add(0x90);
+                c.g[V0][0] = c.lw(count_slot);
+                c.g[V0][0] = update_slt(c.g[A1][0], c.g[V0][0]);
+                let t = c.g[V0][0] != 0;
+                set_word(c, V1, r32(c, V1).wrapping_add(0x1c));
+                if t {
+                    update_back_edge(c, 0x0023_7790)?;
+                    pc = 0x0023_7790;
+                    continue;
+                }
+                pc = 0x0023_77c0;
+                continue;
+            }
+            // `InputSync_SendSample(self, localsample)`.
+            0x0023_77c0 => {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S0][0];
+                UPDATE_SEND_SAMPLE.call(c, 0x0023_77cc)?;
+                pc = 0x0023_77cc;
+                continue;
+            }
+            // Resume after `SendSample`: copy the sample into the ring.
+            0x0023_77cc => {
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[V0][0] = c.lw(numsamples_slot);
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[A3][0] = 0;
+                pc = if t { 0x0023_78c8 } else { 0x0023_77d8 };
+                continue;
+            }
+            0x0023_77d8 => {
+                c.cycles += 4;
+                c.g[T1][0] = 0;
+                c.g[T0][0] = 0x64;
+                let latency_slot = update_reg_off(c, S2, 0x4);
+                c.g[A0][0] = c.lw(latency_slot);
+                pc = 0x0023_77e8;
+                continue;
+            }
+            0x0023_77e8 => {
+                c.cycles += 4;
+                c.g[A2][0] = c.g[S0][0];
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V0][0] = c.lw(writepos_slot);
+                pc = 0x0023_77f8;
+                continue;
+            }
+            0x0023_77f8 => {
+                c.cycles += 8;
+                c.div(0, V0, A0);
+                let samples_slot = update_reg_off(c, S1, 0);
+                c.g[A1][0] = c.lw(samples_slot);
+                c.g[V1][0] = c.hi[0];
+                c.mult(0, V1, V1, T0);
+                set_word(c, V1, r32(c, V1).wrapping_add(r32(c, A1)));
+                c.g[V0][0] = c.g[V1][0] & 0x7;
+                let t = c.g[V0][0] == 0;
+                set_word(c, A0, r32(c, A3).wrapping_add(0x1));
+                pc = if t { 0x0023_7870 } else { 0x0023_7818 };
+                continue;
+            }
+            0x0023_7818 => {
+                c.cycles += 1;
+                set_word(c, V0, r32(c, SP).wrapping_add(0xf0));
+                pc = 0x0023_781c;
+                continue;
+            }
+            0x0023_781c => {
+                c.cycles += 19;
+                let src = r32(c, A2);
+                let dst = r32(c, V1);
+                update_copy_unaligned(c, src, dst);
+                set_word(c, A2, src.wrapping_add(0x20));
+                let t = c.g[A2][0] != c.g[V0][0];
+                set_word(c, V1, dst.wrapping_add(0x20));
+                if t {
+                    update_back_edge(c, 0x0023_781c)?;
+                    pc = 0x0023_781c;
+                    continue;
+                }
+                pc = 0x0023_7868;
+                continue;
+            }
+            0x0023_7868 => {
+                c.cycles += 2;
+                pc = 0x0023_78a0;
+                continue;
+            }
+            0x0023_7870 => {
+                c.cycles += 1;
+                set_word(c, V0, r32(c, SP).wrapping_add(0xf0));
+                pc = 0x0023_7874;
+                continue;
+            }
+            0x0023_7874 => {
+                c.cycles += 11;
+                let src = r32(c, A2);
+                let dst = r32(c, V1);
+                update_copy_aligned(c, src, dst);
+                set_word(c, A2, src.wrapping_add(0x20));
+                let t = c.g[A2][0] != c.g[V0][0];
+                set_word(c, V1, dst.wrapping_add(0x20));
+                if t {
+                    update_back_edge(c, 0x0023_7874)?;
+                    pc = 0x0023_7874;
+                    continue;
+                }
+                pc = 0x0023_78a0;
+                continue;
+            }
+            0x0023_78a0 => {
+                c.cycles += 10;
+                let src = r32(c, A2);
+                c.g[V0][0] = c.lw(src);
+                let dst = r32(c, V1);
+                let word = c.g[V0][0];
+                c.sw(dst, word);
+                let writepos_slot = update_reg_off(c, S1, 0x8);
+                c.g[V0][0] = c.lw(writepos_slot);
+                c.g[A3][0] = c.g[A0][0];
+                set_word(c, V0, r32(c, V0).wrapping_add(0x1));
+                let writepos_value = c.g[V0][0];
+                c.sw(writepos_slot, writepos_value);
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[V1][0] = c.lw(numsamples_slot);
+                c.g[V1][0] = update_slt(c.g[A3][0], c.g[V1][0]);
+                if c.g[V1][0] != 0 {
+                    let latency_slot = update_reg_off(c, S2, 0x4);
+                    c.g[A0][0] = c.lw(latency_slot);
+                    update_back_edge(c, 0x0023_77e8)?;
+                    pc = 0x0023_77e8;
+                    continue;
+                }
+                pc = 0x0023_78c8;
+                continue;
+            }
+            // `n = (int)(cGameComm_getLatency(GameComm()) / SSXApp->TimerPeriod)`,
+            // `if (n <= 1) n = 2; sendlimit = n * numsamples`, capped at latency.
+            0x0023_78c8 => {
+                c.cycles += 17;
+                c.g[A0][0] = c.lw(update_gp_slot(c, 0x204));
+                UPDATE_INPUT_DELAY.call(c, 0x0023_78d0)?;
+                pc = 0x0023_78d0;
+                continue;
+            }
+            // Resume after `cGameComm_GetInputDelay`: the send limit.
+            0x0023_78d0 => {
+                c.g[V0][0] = c.lw(update_gp_slot(c, 0x848));
+                c.g[V1][0] = 0x1;
+                c.g[A0][0] = 0x2;
+                let numsamples_slot = update_reg_off(c, S2, 0x8);
+                c.g[A1][0] = c.lw(numsamples_slot);
+                let period_slot = update_reg_off(c, V0, 0x14);
+                c.lwc1(1, period_slot);
+                let latency_slot = update_reg_off(c, S2, 0x4);
+                c.g[A2][0] = c.lw(latency_slot);
+                c.div_s(0, 0, 1);
+                c.cvt_w_s(1, 0);
+                c.mfc1(2, 1);
+                c.g[V1][0] = update_slt(c.g[V1][0], c.g[V0][0]);
+                if c.g[V1][0] == 0 {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.mult(0, V0, V0, A1);
+                c.g[V1][0] = update_slt(c.g[A2][0], c.g[V0][0]);
+                let t = c.g[V1][0] == 0;
+                let sendlimit_slot = r32(c, S2);
+                let sendlimit = c.g[V0][0];
+                c.sw(sendlimit_slot, sendlimit);
+                pc = if t { 0x0023_7910 } else { 0x0023_790c };
+                continue;
+            }
+            0x0023_790c => {
+                c.cycles += 1;
+                let sendlimit_slot = r32(c, S2);
+                let latency = c.g[A2][0];
+                c.sw(sendlimit_slot, latency);
+                pc = 0x0023_7910;
+                continue;
+            }
+            0x0023_7910 => {
+                c.cycles += 1;
+                let count_slot = update_reg_off(c, S2, 0x10);
+                c.g[V0][0] = c.lw(count_slot);
+                pc = 0x0023_7914;
+                continue;
+            }
+            // Loop tail: `i = i + 1`, while `i < numsyncedpads` (back edge with event check).
+            0x0023_7914 => {
+                c.cycles += 4;
+                c.g[S0][0] = c.g[S3][0];
+                c.g[V0][0] = update_slt(c.g[S0][0], c.g[V0][0]);
+                let t = c.g[V0][0] != 0;
+                c.g[V0][0] = 0x18;
+                if t {
+                    update_back_edge(c, 0x0023_7400)?;
+                    pc = 0x0023_7400;
+                    continue;
+                }
+                pc = UPDATE_EPILOGUE;
+                continue;
+            }
+            // Epilogue: restore s0..s4 and `ra`, pop the frame, return.
+            0x0023_7924 => {
+                c.cycles += 8;
+                let frame = Frame { size: UPDATE_FRAME };
+                frame.restore(c, S0, 0x150);
+                frame.restore(c, S1, 0x140);
+                frame.restore(c, S2, 0x130);
+                frame.restore(c, S3, 0x120);
+                frame.restore(c, S4, 0x110);
+                frame.restore_ra(c, 0x100);
+                frame.close(c);
+                return Ok(());
+            }
+            _ => {
+                c.jump_out(pc, UPDATE_ENTRY, UPDATE_END);
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// `cInputSync_SyncedPad* InputSync_AddRemotePad(InputSync* self (a0), void*
+/// realinputmap (a1))` (0x237280; reference `cInputSync_createremoteinput`).
+///
+/// Appends a pad record to `self->syncedpads` (the `numsyncedpads`-th, 0x18
+/// bytes each, from +0x14). Its sample buffer is `latency * 100` bytes with
+/// every sample's `NumButtons` (+0 of each 0x64-byte sample) set to 0x18;
+/// the record gets `readpos = 0`, `writepos = sendlimit`, `sourcepad = 0`,
+/// a 676-byte destination pad (its first word zeroed) and an 8-byte input
+/// object, linked to the pad with `ValuePair_SetFirst/Second`. Returns the
+/// input object.
+pub fn input_sync_add_remote_pad(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 34;
+        let frame = Frame::open(c, 0x50);
+        c.g[V1][0] = 0x18;
+        frame.save(c, S0, 0x40);
+        c.g[A2][0] = 0;
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = 0x64;
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x10);
+        c.g[A3][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A1][0];
+        c.g[A1][0] = 0x47_c078; // InputSamples tag
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c); // numsyncedpads
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x4).lw(c); // latency
+        c.mult(0, V1, V0, V1); // v1 = numsyncedpads * 0x18
+        c.mult(0, 0, A0, S0); // lo = latency * 0x64
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        let v0 = c.g[V0][0];
+        Addr(c.g[S1][0] as u32).off(0x10).sw(c, v0); // numsyncedpads++
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x14));
+        c.g[A0][0] = c.lo[0]; // latency * 100
+        c.g[RA][0] = sx(0x002372e0);
+        c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        call_ptr(c, 0x00317e30, 0x002372e0)?; // operator_new_named
+        let v0 = c.g[V0][0];
+        Addr(c.g[S2][0] as u32).sw(c, v0); // syncedPad->samples
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x4).lw(c);
+        c.mult(0, 0, A2, S0); // lo = latency * 0x64
+        c.g[A2][0] = c.lo[0];
+        c.g[RA][0] = sx(0x002372fc);
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x003e6448, 0x002372fc)?; // EA_MemSet (sample buffer)
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x4).lw(c);
+        let skip = (c.g[V0][0] as i64) <= 0;
+        c.g[V1][0] = 0;
+        if !skip {
+            c.cycles += 2;
+            c.g[A1][0] = 0x18;
+            c.g[A0][0] = 0;
+            loop {
+                c.cycles += 8;
+                c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                let sample = c.g[V0][0];
+                let buttons = c.g[A1][0];
+                Addr(sample as u32).sw(c, buttons); // NumButtons = 0x18
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x4).lw(c);
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x64));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x00237310);
+                }
+            }
+        }
+        c.cycles += 34;
+        Addr(c.g[S2][0] as u32).off(0x4).sw(c, 0); // readpos
+        c.g[A1][0] = 0x47_c088; // SyncedPad tag
+        c.g[A0][0] = 0x2a4; // sizeof(SyncedPad) = 676
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c); // sendlimit
+        c.g[A2][0] = 0;
+        Addr(c.g[S2][0] as u32).off(0xc).sw(c, 0); // sourcepad
+        c.g[A3][0] = 0;
+        c.g[RA][0] = sx(0x00237358);
+        let v0 = c.g[V0][0];
+        Addr(c.g[S2][0] as u32).off(0x8).sw(c, v0); // writepos = sendlimit
+        call_ptr(c, 0x00317d70, 0x00237358)?; // EA_MemAllocNamed
+        let v0 = c.g[V0][0];
+        Addr(c.g[S2][0] as u32).off(0x10).sw(c, v0); // destinationpad
+        c.g[A1][0] = 0x47_c098; // SyncedInput tag
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x8;
+        c.g[RA][0] = sx(0x00237378);
+        Addr(c.g[V0][0] as u32).sw(c, 0); // *destinationpad = 0
+        call_ptr(c, 0x00317d70, 0x00237378)?; // EA_MemAllocNamed
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = Addr(c.g[S2][0] as u32).off(0x10).lw(c);
+        c.g[RA][0] = sx(0x00237388);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x00244400, 0x00237388)?; // ValuePair_SetFirst
+        c.g[A1][0] = c.g[S3][0];
+        c.g[RA][0] = sx(0x00237394);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x00244408, 0x00237394)?; // ValuePair_SetSecond
+        let s0 = c.g[S0][0];
+        Addr(c.g[S2][0] as u32).off(0x14).sw(c, s0); // input
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void InputSync_EmptyHook(void)` (0x237948): a hook that does nothing.
+pub fn input_sync_empty_hook(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void InputSync_SendSample(InputSync* self (a0), const void* src (a1))`
+/// (0x237a98): packs `src` into a local buffer (`InputSync_PackSample`),
+/// unpacks it into `self` (`InputSync_UnpackSample`), then, when the link is
+/// up (`mSyncInput` set, `mError` 0, `mConnected` non-zero), sends the packed
+/// bytes with `cGameComm_SendPacket`. The game comm is at `gp-0x204`.
+/// Not installed: the test runs the real `cGameComm_SendPacket` away on fixture data.
+#[allow(dead_code)]
+pub fn input_sync_send_sample_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        c.g[A2][0] = c.g[SP][0];
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[RA][0] = sx(0x00237abc);
+        c.g[S1][0] = c.g[A1][0];
+        call_ptr(c, 0x00237b28, 0x00237abc)?; // InputSync_PackSample
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x00237ad0);
+        c.g[A2][0] = c.g[SP][0];
+        call_ptr(c, 0x00237be8, 0x00237ad0)?; // InputSync_UnpackSample
+                                              // The link state: mSyncInput (+0x40), mError (+0x4), mConnected (+0).
+        c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x204)).lw(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x40)).lw(c);
+        let no_sync = c.g[V0][0] == 0;
+        c.g[A0][0] = 0;
+        if !no_sync {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4)).lw(c);
+            let error = c.g[V0][0] != 0;
+            if !error {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                c.g[A0][0] = (0u64 < c.g[V0][0]) as u64; // mConnected != 0
+            }
+        }
+        c.cycles += 2;
+        let link_down = c.g[A0][0] == 0;
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x204)).lw(c);
+        if !link_down {
+            c.cycles += 4;
+            c.g[A3][0] = c.g[S2][0];
+            c.g[A1][0] = 0;
+            c.g[RA][0] = sx(0x00237b0c);
+            c.g[A2][0] = c.g[SP][0];
+            call_ptr(c, 0x00257e98, 0x00237b0c)?; // cGameComm_SendPacket
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6027,6 +7245,194 @@ pub(crate) mod tests {
                 c.g[A0][0] = OC444_OBJ as u64;
                 let n = r.next_u32() % 4;
                 c.bus.write32(OC444_NEWRACE + 0x30, n);
+            },
+        );
+    }
+
+    use ssx3_ee_rt::Cpu;
+
+    pub(crate) use crate::game::main::gamemode::tests::oc520_w;
+
+    pub(crate) const SEEDS_6: u32 = 300;
+
+    /// The `*_LoadState` fixture: `a1` is the state, whose vtable's slot
+    /// (`lh` at +0x10, function at +0x14) is a fake. `c.pc` is the entry.
+    pub(crate) fn load_state_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = machine(c, seed, salt, 1);
+        let state = ptr(&mut r);
+        c.g[A1][0] = state as u64;
+        let vt = vtable(c, &mut r, &[0x10]);
+        c.bus.write32(state, vt);
+        c.pc = entry;
+    }
+
+    #[test]
+    fn game_state_load_state_wrappers_match() {
+        let cases: [(fn(&mut Cpu), fn(&mut Cpu), u32); 8] = [
+            (
+                ssx3_ee::s06::f_00234e00__generated,
+                super::game_state_countdown_load_state,
+                0x0023_4e00,
+            ),
+            (
+                ssx3_ee::s06::f_00234ed8__generated,
+                super::game_state_race_load_state,
+                0x0023_4ed8,
+            ),
+            (
+                ssx3_ee::s06::f_002361e8__generated,
+                super::game_state_warp_to_event_load_state,
+                0x0023_61e8,
+            ),
+            (
+                ssx3_ee::s06::f_00236b18__generated,
+                super::game_state_event_switch_load_load_state,
+                0x0023_6b18,
+            ),
+            (
+                ssx3_ee::s06::f_00236b90__generated,
+                super::game_state_reset_ai_load_state,
+                0x0023_6b90,
+            ),
+            (
+                ssx3_ee::s06::f_00236d80__generated,
+                super::game_state_pre_race_menu_load_state,
+                0x0023_6d80,
+            ),
+            (
+                ssx3_ee::s06::f_00236ee8__generated,
+                super::game_state_results_load_state,
+                0x0023_6ee8,
+            ),
+            (
+                ssx3_ee::s06::f_00236fc8__generated,
+                super::game_state_finish_cinematic_load_state,
+                0x0023_6fc8,
+            ),
+        ];
+        for (salt, (gen, hand, entry)) in cases.into_iter().enumerate() {
+            covered(gen, hand, SEEDS_6, &|c, seed| {
+                load_state_setup(c, seed, 0x516 + salt as u64, entry)
+            });
+        }
+    }
+
+    /// The object `InputSync` (self), the GameComm, the SSXApp world and the
+    /// comm-system input-delay table, and the sample buffers.
+    pub(crate) const SELF: u32 = DATA + 0x2000;
+
+    pub(crate) const GC: u32 = DATA + 0x3000;
+
+    pub(crate) const SAMPLES: u32 = DATA + 0x4000;
+
+    pub(crate) const WORLD: u32 = DATA + 0x5000;
+
+    pub(crate) const DELAY_TABLE: u32 = DATA + 0x6000;
+
+    pub(crate) const DELAY_OBJ: u32 = DATA + 0x6100;
+
+    pub(crate) const DELAY_VT: u32 = DATA + 0x6200;
+
+    pub(crate) const LOCAL_PADS: u32 = DATA + 0x7000;
+
+    /// Both sides from the same state. Remote seeds keep `writepos` far enough
+    /// ahead that the network `while` loop never runs (its body calls
+    /// `cGameComm_PopPacket`, which is not faked here); the local seeds
+    /// keep `mSyncInput` at 0 so `SendSample` does not send.
+    #[test]
+    fn input_sync_update_matches() {
+        check(
+            ee::s06::f_002373b8__generated,
+            input_sync_update,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2373_b8, 0);
+                c.pc = UPDATE_ENTRY;
+                c.g[A0][0] = SELF as u64;
+                let local = seed % 3 == 0;
+                // The network branch: mSyncInput, no error, connected (see below).
+                let net = !local && seed % 4 != 1 && seed % 4 != 2 && seed % 5 != 3;
+                c.bus.write32(GAME_GP.wrapping_sub(0x204), GC);
+                c.bus
+                    .write32(GC + 0x70, if seed % 7 == 0 { 10 } else { 14 + seed % 2 });
+                c.bus
+                    .write32(GC + 0x40, if local || seed % 4 == 1 { 0 } else { 1 });
+                c.bus.write32(GC + 4, if seed % 4 == 2 { 1 } else { 0 });
+                c.bus.write32(GC, if seed % 5 == 3 { 0 } else { 1 });
+                c.bus.write32(GC + 0x6c, 0);
+                c.bus
+                    .write32(GC + 0x120, ((seed % 9) as f32 + 0.5).to_bits());
+                c.bus.write32(GAME_GP.wrapping_sub(0x238), DELAY_TABLE);
+                c.bus.write32(DELAY_TABLE, DELAY_OBJ);
+                c.bus.write32(DELAY_OBJ + 8, DELAY_VT);
+                c.bus.write32(DELAY_VT + 0x2c, FAKE);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), WORLD);
+                c.bus.write32(WORLD + 0x14, (1.0f32 / 60.0).to_bits());
+
+                let count = (seed / 3 % 4) as u32;
+                let latency = 4 + seed % 5;
+                let numsamples = 1 + seed % 3;
+                c.bus.write32(SELF, seed % 9);
+                c.bus.write32(SELF + 4, latency);
+                c.bus.write32(SELF + 8, numsamples);
+                c.bus.write32(SELF + 0xc, seed.wrapping_mul(7));
+                c.bus.write32(SELF + 0x10, count);
+                for i in 0..count {
+                    let pad = SELF + 0x14 + 0x18 * i;
+                    let buffer = SAMPLES + 0x200 * i;
+                    c.bus.write32(pad, buffer);
+                    if local {
+                        let read = (seed + i) % 3;
+                        c.bus.write32(pad + 4, read);
+                        c.bus.write32(pad + 8, read + (seed >> i) % 7);
+                        c.bus.write32(pad + 0xc, LOCAL_PADS + 0x100 * i);
+                        let source = LOCAL_PADS + 0x100 * i;
+                        c.bus.write32(source, (seed + i) % 4);
+                        for k in 0..4 {
+                            c.bus
+                                .write32(source + 4 + 4 * k, ((seed + k) as f32 * 0.25).to_bits());
+                        }
+                    } else {
+                        c.bus.write32(pad + 4, 0);
+                        c.bus
+                            .write32(pad + 8, if net { 16 } else { (seed >> i) % 7 });
+                        c.bus.write32(pad + 0xc, 0);
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn input_sync_add_remote_pad_matches() {
+        check(
+            ssx3_ee::s06::f_00237280__generated,
+            input_sync_add_remote_pad,
+            120,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x237280, 0);
+                crate::game::be::beintstat::tests::allocator(c);
+                c.pc = 0x0023_7280;
+                let obj = DATA + 0x100;
+                // latency -1..=3 (0 and below skip the sample loop), 0..=3 pads.
+                oc520_w(c, obj, seed * 7 + 3);
+                oc520_w(c, obj + 0x4, ((seed % 5) as i32 - 1) as u32);
+                oc520_w(c, obj + 0x10, seed % 4);
+                c.g[A0][0] = obj as u64;
+                c.g[A1][0] = (DATA + 0x800) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn input_sync_empty_hook_matches() {
+        check(
+            ssx3_ee::s06::f_00237948__generated,
+            input_sync_empty_hook,
+            8,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x237948, 0);
+                c.pc = 0x0023_7948;
             },
         );
     }

@@ -129,6 +129,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0023_0050, game_module_enter_2, "GameModule_Enter"),
     (0x0022_fa98, game_module_unload, "GameModule_Unload"),
+    (
+        0x0023_1280,
+        game_module_cancel_overlay_state,
+        "GameModule_CancelOverlayState",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5164,6 +5169,49 @@ pub fn game_module_unload(c: &mut Cpu) {
     })
 }
 
+/// `GameModule_CancelOverlayState(game)` (0x231280): clears the pending flag
+/// at `game+0x208`; then, if `game+0x20c` is set, calls the vtable slot
+/// (`lh` adjustment at +0x20, function at +0x24) of the object at
+/// `game+0x204` with `this = object + adjustment`, and clears `+0x204` and
+/// `+0x20c`.
+pub fn game_module_cancel_overlay_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let game = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(game.wrapping_add(0x208)).lw(c);
+        if c.g[V0][0] != 0u64 {
+            Addr(game.wrapping_add(0x208)).sw(c, 0);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = Addr(game.wrapping_add(0x20c)).lw(c);
+        if c.g[V0][0] != 0u64 {
+            c.cycles += 9;
+            c.g[A1][0] = Addr(game.wrapping_add(0x204)).lw(c);
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0xc)).lw(c);
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x20)).lh(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x24)).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_12c0)?;
+            // The callee keeps s0: the state is re-read from it.
+            let game = c.g[S0][0] as u32;
+            Addr(game.wrapping_add(0x204)).sw(c, 0);
+            Addr(game.wrapping_add(0x20c)).sw(c, 0);
+            frame.restore(c, S0, 0x10);
+        } else {
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6658,6 +6706,33 @@ pub(crate) mod tests {
                     c.bus.write32(obj + vt_at, vt);
                     c.bus.write32(this + field, obj);
                 }
+            },
+        );
+    }
+
+    use crate::difftest::fakes::*;
+
+    pub(crate) use crate::game::main::gamestate::tests::SEEDS_6;
+    use ssx3_ee_rt::Cpu;
+
+    #[test]
+    fn game_module_cancel_overlay_state_matches() {
+        covered(
+            ssx3_ee::s06::f_00231280__generated,
+            super::game_module_cancel_overlay_state,
+            SEEDS_6,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x516_1, 1);
+                let game = ptr(&mut r);
+                c.g[A0][0] = game as u64;
+                c.bus
+                    .write32(game + 0x208, if seed % 2 == 0 { 0 } else { r.next_u32() });
+                c.bus
+                    .write32(game + 0x20c, if seed % 3 == 0 { 0 } else { r.next_u32() });
+                let obj = ptr(&mut r);
+                c.bus.write32(game + 0x204, obj);
+                let vt = vtable(c, &mut r, &[0x20]);
+                c.bus.write32(obj + 0xc, vt);
             },
         );
     }
