@@ -9154,6 +9154,42 @@
 0x003592d0    AnimDelta_v15
 0x0035ba88    RailModifier_ctor_2
 0x003669f0    VramHeap_EvictRange
+# Phase 2 wave: oc1300, oc1301, oc1302, oc1303
+0x002c48c0    cPS2MemCard_SetState
+0x002c64f8    cPS2MemCard_v17
+0x002c6128    cPS2MemCard_GetStatusString
+0x002c4050    cPS2MemCard_Init
+0x002c53e0    cPS2MemCard_GetFreeSpaceString
+0x002d3840    cPS2MemCard_v54
+0x002c4410    cPS2MemCard_DoDeleteSave
+0x002c4368    cPS2MemCard_RequestFormat
+0x002c48a0    cPS2MemCard_v32
+0x002c4768    cPS2MemCard_v43
+0x002c6a08    cPS2MemCard_RequestClose
+0x002c6ae0    cPS2MemCard_RequestFlush
+0x002c4290    cPS2MemCard_v76
+0x002c43e0    cPS2MemCard_v10
+0x002c6bd0    cPS2MemCard_RequestWrite
+0x002c6b50    cPS2MemCard_RequestRead
+0x002c6a60    cPS2MemCard_RequestSeek
+0x002c67e8    cPS2MemCard_RequestGetInfoNow
+0x002c4858    cPS2MemCard_v30
+0x002c4720    cPS2MemCard_v41
+0x002d37e0    cPS2MemCard_v49
+0x002c67b0    cPS2MemCard_v51
+0x002d3810    cPS2MemCard_v53
+0x002d38f0    cPS2MemCard_v55
+0x002c6778    cPS2MemCard_v23
+0x002c6718    cPS2MemCard_v62
+0x002d3980    cPS2MemCard_v71
+0x002d3930    cPS2MemCard_v63
+0x002d3950    cPS2MemCard_v64
+0x002d39b8    cPS2MemCard_GetCurrentPortError
+0x002c5338    cPS2MemCard_GetFreeSpace
+0x002c54d0    cPS2MemCard_GetSaveName
+0x002c5500    cPS2MemCard_v45
+0x002c5230    cPS2MemCard_v73
+0x002d3788    cPS2MemCard_BaseDtor
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
