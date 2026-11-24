@@ -15,8 +15,8 @@ mistakes.
 ## When
 
 On a port PR or a new unit, for that PR's functions only, after the module is
-green (porting loop step 6). Not on a whole wave: a function costs a few
-minutes (below), so 80 functions take most of a day.
+green (porting loop step 6). A wave's functions fit too now: the script builds
+once for all of them (below), so their cost is mostly the tests.
 
 ## Running it
 
@@ -31,21 +31,61 @@ git diff origin/main... > /tmp/pr.diff && python3 tools/mutants.py --in-diff /tm
 The first form takes a unit and function names; the second, every mutant on
 the lines a diff adds (run it on the PR's branch, so the diff matches the
 tree). `--list` counts the mutants and runs nothing. The script lists the
-mutants once, leaves out the `c.cycles +=` lines (the tests compare cycles, so
-their `-=` and `*=` are caught, or equivalent when the count happens to match;
-they are more than half of all mutants), and runs the rest in place with only
-the touched units' tests. `.cargo/mutants.toml` adds the `game` profile,
-incremental builds and `SSX3_DIFF_STRICT=args`. It prints per function the
-caught, missed, unviable and timed-out mutants, then each survivor with its
-source line. Everything is under `target/mutants.out/` (`missed.txt`, a log
-per mutant).
+mutants once with cargo-mutants, leaves out the `c.cycles +=` lines (the tests
+compare cycles, so their `-=` and `*=` are caught, or equivalent when the count
+happens to match; they are more than half of all mutants), and runs the rest
+with only the touched units' tests. It prints per function the caught, missed,
+unviable and timed-out mutants, then each survivor with its source line.
+Everything is under `target/mutants.out/` (`missed.txt`, a log per mutant).
+The first run rebuilds once for incremental (about 4 minutes) and leaves about
+3.5 GB of incremental data in `target/`. Keep to one heavy process at a time,
+as for any build.
 
-One mutant is a rebuild of `ssx3-game` and a run of the unit's tests: 30-45 s
-on 8 cores (105 s without incremental builds). The first run rebuilds once for
-incremental (about 4 minutes) and leaves about 3.5 GB of incremental data in
-`target/`. Over the 323 functions it came to 29 s per mutant, about 12 mutants
-and 6 minutes per function. Keep to one heavy process at a time, as for any
-build.
+### Build once
+
+cargo-mutants rebuilds `ssx3-game` for every mutant (30-45 s on 8 cores; over
+323 functions, 29 s per mutant and 6 minutes per function). The script
+instead writes all the mutants into the source behind switches, builds once,
+and runs the tests once per mutant with only its switch on
+(`SSX3_MUTANT=<id>`):
+
+```rust
+// `a < b` with mutants 7 (`<=`) and 8 (`>`):
+(if crate::game::bx::bxstring::__mutant(7) { a <= b }
+ else if crate::game::bx::bxstring::__mutant(8) { a > b }
+ else { a < b })
+```
+
+The switch goes around the smallest expression that holds the mutant (the
+operator's binary expression, the `match` of a deleted arm), found by
+`tools/mutant-spans` (a small `syn` program). Each branch is the original
+text with one of cargo-mutants' replacements, from cargo-mutants' own list, so
+with its switch on a mutant runs the code cargo-mutants would have built. The
+build, tests and timeout are cargo-mutants' too (`.cargo/mutants.toml`; 5
+times the unmutated run, at least 20 s).
+
+A mutant that does not compile (`>>` to `<<` where `<<` parses as generic
+arguments, `*` to `/` on a type without `Div`) fails the switched build;
+rustc's errors name its lines, and the script builds again without it. Those
+mutants, and the few a switch cannot hold (in a `const`, a pattern or a macro
+call), are then built alone the cargo-mutants way: unviable if that fails,
+tested otherwise. The files are restored and checked at the end, also after
+an error or Ctrl-C.
+
+On `bxstring.rs` (23 mutants) and four `libc.rs` functions (105, 4 of them
+unviable) it agreed with `--cargo-mutants` on every mutant, in 89 s against
+1,206 s and 1,448 s against 6,648 s (13 and 4.6 times faster, with other
+builds on the machine). The build costs about as much as one or two
+cargo-mutants mutants (plus one more, and one per mutant, when a mutant does
+not compile); after that a mutant costs one run of the touched units' tests:
+1.4 s for `bxstring`, 11 s for the 132 `libc` tests. At those rates a wave's
+1,000 or so mutants would take from half an hour to three hours.
+
+The one difference: build-once builds the lib test target only, where
+cargo-mutants also builds the plain lib, so a mutant that compiles only under
+`cfg(test)` would be tested here and unviable there. `--cargo-mutants` runs
+cargo-mutants in place instead, one rebuild per mutant; use it to check a
+surprising result.
 
 ## Reading a survivor
 

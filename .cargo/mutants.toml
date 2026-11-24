@@ -1,6 +1,6 @@
 # cargo-mutants (docs/porting/mutation-testing.md). Run it through
-# tools/mutants.py, which adds --in-place, --package ssx3-game, the unit's
-# test filter and the cycle-charge exclusion.
+# tools/mutants.py, which adds --package ssx3-game, the unit's test filter and
+# the cycle-charge exclusion, and builds with these settings too.
 profile = "game"
 # The differential tests are unit tests; skip doc tests.
 additional_cargo_test_args = ["--lib"]

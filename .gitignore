@@ -11,6 +11,7 @@
 *.lock
 *.lock~
 !/Cargo.lock
+!/tools/mutant-spans/Cargo.lock
 
 # OS
 .DS_Store
