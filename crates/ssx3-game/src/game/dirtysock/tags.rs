@@ -7460,11 +7460,15 @@ pub(crate) mod tests {
     // 0x3ec3c0 TagFieldSetStructure.
     #[test]
     fn tag_field_set_structure_matches() {
-        // One digit per steering value: seed%7 template, seed/7%3 data size
-        // (21 seeds = the full 7x3 cross). The extra templates are a ':'
-        // after a count digit and a count-less trailing letter.
-        const SEEDS: u32 = 21;
-        assert_eq!(SEEDS, 7 * 3, "template x data size");
+        // One digit per steering value: seed%10 template, seed/10%5 data
+        // size, seed/50%3 data contents (150 seeds = the full 10x5x3 cross).
+        // The extra templates are a ':' after a count digit, a count-less
+        // trailing letter, a ':' at the start of an item, 'a' skips with and
+        // without a count, and a '*' repeat. Sizes 1 and 5 end the data
+        // exactly at the first 'b' and the first '4s' of "4b4s4"; "l*" ends
+        // exactly at every size.
+        const SEEDS: u32 = 150;
+        assert_eq!(SEEDS, 10 * 5 * 3, "template x data size x contents");
         check(
             ee::s14::f_003ec3c0__generated,
             tag_field_set_structure,
@@ -7477,22 +7481,40 @@ pub(crate) mod tests {
                 c.g[A1][0] = 0x200;
                 c.g[A2][0] = sx(DATA + 0x200);
                 c.g[A3][0] = sx(DATA + 0x400);
-                c.g[T0][0] = [0x40u64, 0x100, 0x200][(seed / 7) as usize % 3];
+                c.g[T0][0] = [0x40u64, 0x100, 0x200, 1, 5][(seed / 10) as usize % 5];
                 c.g[T1][0] = sx(DATA + 0x600);
                 put_str(c, DATA + 0x200, b"struct");
                 put_str(
                     c,
                     DATA + 0x600,
-                    match seed % 7 {
+                    match seed % 10 {
                         0 => b"#4b4s4",
                         1 => b"#2w2l4",
                         2 => b"#1s8",
                         3 => b"4b4s4",
                         4 => b"4b4s4:",
                         5 => b"4b4s4s",
-                        _ => b"4b4s4 ",
+                        6 => b"4b4s4 ",
+                        7 => b"b:3aw",
+                        8 => b"ab",
+                        _ => b"l*",
                     },
                 );
+                // The data repeats one 16-byte block: zeros; words of
+                // fewer digits than their width, a small negative, the
+                // 0xffff0000 edge and a large negative; or NUL-terminated
+                // strings with a byte that needs escaping.
+                let block: [u8; 16] = match (seed / 50) % 3 {
+                    0 => [0; 16],
+                    1 => [
+                        0x45, 0x23, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff,
+                        0xef, 0xcd, 0xab, 0x89,
+                    ],
+                    _ => *b"a b\0x y\0ok!\0z%q\0",
+                };
+                for i in 0..0x200u32 {
+                    wb(c, DATA + 0x400 + i, block[i as usize % 16]);
+                }
                 put_str(c, DATA, b"");
             },
         );
@@ -7649,10 +7671,12 @@ pub(crate) mod tests {
     // 0x3ecbd8 TagFieldPrintf.
     #[test]
     fn tag_field_printf_matches() {
-        // One digit per steering value: seed%5 length argument (0x400 is the
-        // base one), seed/5%6 format (30 seeds = the full 5x6 cross).
-        const SEEDS: u32 = 30;
-        assert_eq!(SEEDS, 5 * 6, "length x format");
+        // One digit per steering value: seed%6 length argument (0x400 is the
+        // base one; 3 leaves exactly 2 after the first character), seed/6%8
+        // format (48 seeds = the full 6x8 cross). The output buffer starts
+        // non-zero, so a terminator stored with no room left shows.
+        const SEEDS: u32 = 48;
+        assert_eq!(SEEDS, 6 * 8, "length x format");
         check(
             ee::s14::f_003ecbd8__generated,
             tag_field_printf,
@@ -7662,25 +7686,30 @@ pub(crate) mod tests {
                 tables(c);
                 c.pc = 0x003ecbd8;
                 c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = [0x400u64, 0, 2, 0x21, 0x22][seed as usize % 5];
+                c.g[A1][0] = [0x400u64, 0, 2, 0x21, 0x22, 3][seed as usize % 6];
                 // The format digit: 0x400 pairs with every format (base had
-                // "a b" at 0x400).
+                // "a b" at 0x400). '!' is the first byte above whitespace,
+                // right after one blank and at the end of a run of two.
                 c.g[A2][0] = sx(DATA + 0x200);
                 c.g[A3][0] = sx(DATA + 0x400);
                 put_str(
                     c,
                     DATA + 0x200,
-                    match (seed / 5) % 6 {
+                    match (seed / 6) % 8 {
                         0 => b"%s=%d",
                         1 => b"a b",
                         2 => b"x%sy",
                         3 => b"a!b",
                         4 => b"!",
-                        _ => b"%s",
+                        5 => b"%s",
+                        6 => b"a !b",
+                        _ => b"a  !b",
                     },
                 );
                 put_str(c, DATA + 0x400, b"v");
-                put_str(c, DATA, b"");
+                for i in 0..0x40u32 {
+                    wb(c, DATA + i, b'Z');
+                }
             },
         );
     }
@@ -7709,13 +7738,14 @@ pub(crate) mod tests {
                 }
                 // Whitespace head: a plain `a` first (its format-loop edge
                 // is skipped by the delay), then a 30-space run keeps the
-                // whitespace skip running when the event fires.
+                // whitespace skip running when the event fires; the run
+                // ends at '!', the first byte above whitespace.
                 1 => {
                     wb(c, fmt, b'a');
                     for i in 0..30u32 {
                         wb(c, fmt + 1 + i, b' ');
                     }
-                    put_str(c, fmt + 31, b"b");
+                    put_str(c, fmt + 31, b"!b");
                     put_str(c, DATA + 0x400, b"v");
                     c.g[A3][0] = sx(DATA + 0x400);
                     48
