@@ -231,6 +231,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "AIFwdDiffCacheEntry_ctor",
     ),
     (0x0034_15a8, oc436_boost_v01, "Boost_v01"),
+    (
+        0x0033_a3d8,
+        cell_gather_obj_inst_recursive,
+        "Cell_GatherObjInstRecursive",
+    ),
+    (
+        0x0033_dfd8,
+        cell_collide_objects_recursive,
+        "Cell_CollideObjectsRecursive",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -16981,6 +16991,2035 @@ pub fn oc436_boost_v01(c: &mut Cpu) {
     })
 }
 
+/// `Cell_GatherObjects(ctx, node)`: the node's own objects into the callback.
+pub(crate) const GATHER_OBJECTS: Callee = Callee {
+    addr: 0x0033_09d8,
+    f: ee::s11::f_003309d8,
+};
+
+/// `Cell_GatherObjInstSubtree(node, ctx)`: a whole subtree into the callback.
+pub(crate) const GATHER_SUBTREE: Callee = Callee {
+    addr: 0x0034_0c20,
+    f: ee::s11::f_00340c20,
+};
+
+/// This function again (through its override slot).
+pub(crate) const RECURSE: Callee = Callee {
+    addr: 0x0033_a3d8,
+    f: ee::s11::f_0033a3d8,
+};
+
+/// How a collected child's subtree chain ends. Seven octants reload `V0` from
+/// the stack and leave the child; the last one (child 4) restores `s0` and
+/// leaves the function.
+#[derive(Clone, Copy)]
+pub(crate) enum Trail {
+    Reload(u32),
+    Restore,
+}
+
+/// The frame of the function: `0xe0` bytes, `ra` at +0x40, callee-saved
+/// registers at +0x50..+0xd0.
+#[inline]
+pub(crate) fn frame() -> Frame {
+    Frame { size: 0xe0 }
+}
+
+/// `lw` from an absolute address.
+#[inline]
+pub(crate) fn lw_3(c: &mut Cpu, a: u32) -> u64 {
+    Addr(a).lw(c)
+}
+
+/// `lw` from `reg + off`.
+#[inline]
+pub(crate) fn lw_reg(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    Addr(a).lw(c)
+}
+
+/// `lw` from `sp + off`.
+#[inline]
+pub(crate) fn ld_sp(c: &mut Cpu, off: u32) -> u64 {
+    let a = sp(c).wrapping_add(off);
+    Addr(a).lw(c)
+}
+
+/// `sw` to `sp + off`.
+#[inline]
+pub(crate) fn st_sp(c: &mut Cpu, off: u32, v: u64) {
+    let a = sp(c).wrapping_add(off);
+    Addr(a).sw(c, v);
+}
+
+/// `lq s0, 0xd0(sp)`: every exit of the function restores `s0` this way.
+#[inline]
+pub(crate) fn restore_s0(c: &mut Cpu) {
+    frame().restore(c, S0, 0xd0);
+}
+
+/// The box pointer (`a3` on entry, kept in `s2`).
+#[inline]
+pub(crate) fn boxp(c: &Cpu) -> u32 {
+    c.g[S2][0] as u32
+}
+
+#[inline]
+pub(crate) fn fr(c: &Cpu, r: usize) -> FpuF32 {
+    FpuF32(c.f[r])
+}
+
+/// `sub.s fd, fs, ft`.
+#[inline]
+pub(crate) fn fsub(c: &mut Cpu, d: usize, a: usize, b: usize) {
+    let v = fr(c, a) - fr(c, b);
+    c.f[d] = v.0;
+}
+
+/// `add.s fd, fs, ft`.
+#[inline]
+pub(crate) fn fadd(c: &mut Cpu, d: usize, a: usize, b: usize) {
+    let v = fr(c, a) + fr(c, b);
+    c.f[d] = v.0;
+}
+
+/// `mul.s fd, fs, ft`.
+#[inline]
+pub(crate) fn fmul(c: &mut Cpu, d: usize, a: usize, b: usize) {
+    let v = fr(c, a) * fr(c, b);
+    c.f[d] = v.0;
+}
+
+/// `cvt.s.w fd, fs`.
+#[inline]
+pub(crate) fn cvt_w(c: &mut Cpu, d: usize, s: usize) {
+    let v = FpuF32::from_i32(c.f[s] as i32);
+    c.f[d] = v.0;
+}
+
+/// `c.lt.s fa, fb`, leaving the condition bit set to the result.
+#[inline]
+pub(crate) fn fcc_lt(c: &mut Cpu, a: usize, b: usize) -> bool {
+    let t = fr(c, a).lt(fr(c, b));
+    crate::abi::set_fcc(c, t);
+    t
+}
+
+/// `c.le.s fa, fb`, leaving the condition bit set to the result.
+#[inline]
+pub(crate) fn fcc_le(c: &mut Cpu, a: usize, b: usize) -> bool {
+    let t = fr(c, a).le(fr(c, b));
+    crate::abi::set_fcc(c, t);
+    t
+}
+
+/// A test on a register: `cy` cycles, branch on `reg == 0`, then `V0 =
+/// sp[reload]`. The branch reads `reg` before the reload.
+#[inline]
+pub(crate) fn zchk(c: &mut Cpu, cy: u64, reg: usize, reload: u32) -> bool {
+    let t = c.g[reg][0] == 0;
+    c.cycles += cy;
+    c.g[V0][0] = ld_sp(c, reload);
+    t
+}
+
+/// A test on `sp[src]` (loaded into `V0` first), then `V0 = sp[reload]`.
+#[inline]
+pub(crate) fn zload(c: &mut Cpu, cy: u64, src: u32, reload: u32) -> bool {
+    c.cycles += cy;
+    c.g[V0][0] = ld_sp(c, src);
+    let t = c.g[V0][0] == 0;
+    c.g[V0][0] = ld_sp(c, reload);
+    t
+}
+
+/// One slab test of the object loop: loads `f1` from `f1_addr` and `f0` from
+/// `f0_addr`, then `f0 <= f1` (or `f1 <= f0` when `swap`), setting the
+/// condition bit.
+pub(crate) fn slab_test(c: &mut Cpu, cy: u64, f1_addr: u32, f0_addr: u32, swap: bool) -> bool {
+    c.cycles += cy;
+    c.lwc1(1, f1_addr);
+    c.lwc1(0, f0_addr);
+    if swap {
+        fcc_le(c, 1, 0)
+    } else {
+        fcc_le(c, 0, 1)
+    }
+}
+
+/// Does the object at `obj` overlap the box at `bx`? Six slab tests against
+/// the object's bounds (min x/y/z at +0x158/+0x15c/+0x160, max at
+/// +0x164/+0x168/+0x16c); each stops at the first miss, as the loop does.
+pub(crate) fn overlaps_box(c: &mut Cpu, obj: u32, bx: u32) -> bool {
+    slab_test(c, 6, obj + 0x164, bx, false)
+        && slab_test(c, 5, bx + 0x10, obj + 0x158, false)
+        && slab_test(c, 5, bx + 0x4, obj + 0x168, true)
+        && slab_test(c, 5, bx + 0x14, obj + 0x15c, false)
+        && slab_test(c, 5, bx + 0x8, obj + 0x16c, true)
+        && slab_test(c, 6, bx + 0x18, obj + 0x160, false)
+}
+
+/// The object loop. `A2` walks the node's list (each object's first word is
+/// the next link), `V0` is the box, `A3` is the callback (`+0` array, `+4`
+/// count pointer). An overlapping object is appended to the callback's array.
+/// Returns when the list ends; a due event delivers at `head`.
+pub(crate) fn push_objects(c: &mut Cpu, head: u32) -> Flow {
+    loop {
+        let obj = c.g[A2][0] as u32;
+        let bx = c.g[V0][0] as u32;
+        let hit = overlaps_box(c, obj, bx);
+        c.g[V1][0] = hit as u64;
+        c.cycles += 2;
+        if c.g[V1][0] == 0 {
+            c.g[A2][0] = lw_3(c, obj);
+        } else {
+            c.cycles += 9;
+            let a3 = c.g[A3][0] as u32;
+            c.g[A1][0] = lw_3(c, a3.wrapping_add(4));
+            c.g[A0][0] = lw_3(c, a3);
+            let a1 = c.g[A1][0] as u32;
+            c.g[V1][0] = lw_3(c, a1);
+            c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+            let slot = c.g[V0][0] as u32;
+            let link = c.g[A2][0];
+            Addr(slot).sw(c, link);
+            let count = c.g[V1][0];
+            Addr(a1).sw(c, count);
+            c.g[A2][0] = lw_3(c, obj);
+        }
+        c.cycles += 2;
+        if c.g[A2][0] != 0 {
+            let a3 = c.g[A3][0] as u32;
+            c.g[V0][0] = lw_3(c, a3.wrapping_add(0xc));
+            if event_due(c) {
+                deliver_event_here(c, head);
+            }
+        } else {
+            return Ok(());
+        }
+    }
+}
+
+/// `Cell_GatherObjects(ctx, node)`, then the node's object list pushed into
+/// the callback (`ctx_reg`, `node_reg` name the registers holding them).
+/// `after_go` is the cycle charge before the list loop starts.
+pub(crate) fn gather_objects(
+    c: &mut Cpu,
+    ctx_reg: usize,
+    node_reg: usize,
+    go_ret: u32,
+    head: u32,
+    after_go: u64,
+) -> Flow {
+    c.g[A0][0] = c.g[ctx_reg][0];
+    c.g[A1][0] = c.g[node_reg][0];
+    GATHER_OBJECTS.call(c, go_ret)?;
+    let node = c.g[node_reg][0] as u32;
+    c.g[A2][0] = lw_3(c, node.wrapping_add(0x24));
+    let ctx = c.g[ctx_reg][0] as u32;
+    c.g[A3][0] = sx(ctx.wrapping_add(0x10));
+    if c.g[A2][0] == 0 {
+        return Ok(());
+    }
+    c.cycles += after_go;
+    let a3 = c.g[A3][0] as u32;
+    c.g[V0][0] = lw_3(c, a3.wrapping_add(0xc));
+    push_objects(c, head)
+}
+
+/// The eight child subtrees of the collected cell (`s0`), each gathered into
+/// the callback `s1`: child `j` is block `j` of the chain, whose return
+/// addresses step by 0x14 from `base`. Block 7 is the trailing block.
+pub(crate) fn gather_subtrees(c: &mut Cpu, base: u32, trail: Trail) -> Flow {
+    c.cycles += 3;
+    let s0 = c.g[S0][0] as u32;
+    c.g[A0][0] = lw_3(c, s0);
+    for j in 0..7u32 {
+        if j > 0 {
+            c.cycles += 2;
+        }
+        if c.g[A0][0] == 0 {
+            let s0 = c.g[S0][0] as u32;
+            c.g[A0][0] = lw_3(c, s0.wrapping_add(4 * (j + 1)));
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S1][0];
+            GATHER_SUBTREE.call(c, base + 0x14 * j)?;
+            let s0 = c.g[S0][0] as u32;
+            c.g[A0][0] = lw_3(c, s0.wrapping_add(4 * (j + 1)));
+        }
+    }
+    // Trailing block: child 7.
+    c.cycles += 2;
+    let t = c.g[A0][0] == 0;
+    match trail {
+        Trail::Reload(off) => {
+            c.g[V0][0] = ld_sp(c, off);
+            if t {
+                return Ok(());
+            }
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S1][0];
+            GATHER_SUBTREE.call(c, base + 0x14 * 7)?;
+            c.g[V0][0] = ld_sp(c, off);
+            Ok(())
+        }
+        Trail::Restore => {
+            restore_s0(c);
+            if t {
+                return Ok(());
+            }
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S1][0];
+            GATHER_SUBTREE.call(c, base + 0x14 * 7)?;
+            restore_s0(c);
+            Ok(())
+        }
+    }
+}
+
+/// `collect_33A3D8(subNode, ctx2)`: the sub-cell's own objects, then its
+/// eight children's whole subtrees. `go_ret`/`head`/`after_go` are the
+/// generated body's addresses and charge for this octant's copy.
+pub(crate) fn collect(
+    c: &mut Cpu,
+    go_ret: u32,
+    head: u32,
+    after_go: u64,
+    base: u32,
+    trail: Trail,
+) -> Flow {
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S1][0];
+    gather_objects(c, S1, S0, go_ret, head, after_go)?;
+    gather_subtrees(c, base, trail)
+}
+
+/// The recursive visit of an octant (`nash_privy_QueryHelper_helpX3` on the
+/// child, with the sub-key at `sp`).
+pub(crate) fn recurse(c: &mut Cpu, ret: u32) -> Flow {
+    c.cycles += 7;
+    c.g[T0][0] = c.g[S0][0];
+    c.g[A0][0] = c.g[S5][0];
+    c.g[A1][0] = c.g[S4][0];
+    c.g[A2][0] = c.g[S1][0];
+    c.g[A3][0] = c.g[S2][0];
+    c.g[T1][0] = c.g[SP][0];
+    RECURSE.call(c, ret)
+}
+
+/// The three containment tests of an octant (`cx` tests): `first` (a flag
+/// register or `V0`), then the two stack flags at `reloads`. Returns true when
+/// one fails (the octant recurses); otherwise sets `A0 = ctx2` for the
+/// collect.
+pub(crate) fn cx_chain(c: &mut Cpu, first: usize, reloads: [u32; 2]) -> bool {
+    if zchk(c, 2, first, reloads[0]) {
+        return true;
+    }
+    if zchk(c, 2, V0, reloads[1]) {
+        return true;
+    }
+    c.cycles += 2;
+    let t = c.g[V0][0] == 0;
+    c.g[A0][0] = c.g[S1][0];
+    t
+}
+
+/// Octant 0 (child `+0`, no sub-key change). `Ok(())` when the visit leaves
+/// by its outer exit.
+pub(crate) fn octant0(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    c.g[S0][0] = lw_reg(c, S3, 0);
+    let null = c.g[S0][0] == 0;
+    c.g[V0][0] = ld_sp(c, 0xc);
+    if null {
+        return Ok(());
+    }
+    if octant0_in(c)? {
+        c.cycles += 1;
+        c.g[V0][0] = ld_sp(c, 0xc);
+    }
+    Ok(())
+}
+
+/// The inner part of octant 0. `Ok(true)` leaves by the inner exit (the
+/// generated body's `+1` and reload), `Ok(false)` by the outer one.
+pub(crate) fn octant0_in(c: &mut Cpu) -> Result<bool, Unwound> {
+    if zchk(c, 2, S7, 0x14) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0x18) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0xc) {
+        return Ok(false);
+    }
+    if cx_chain(c, S6, [0x24, 0x2c]) {
+        recurse(c, 0x0033_aa30)?;
+        return Ok(true);
+    }
+    collect(
+        c,
+        0x0033_a8a8,
+        0x0033_a8b8,
+        1,
+        0x0033_a980,
+        Trail::Reload(0xc),
+    )?;
+    Ok(false)
+}
+
+/// Octant 1: child `+4`, sub-key z+1.
+pub(crate) fn octant1(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[S0][0] = lw_reg(c, S3, 4);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    let null = c.g[S0][0] == 0;
+    let v = c.g[V0][0];
+    st_sp(c, 0xc, v);
+    let inside = null || octant1_in(c)?;
+    if inside {
+        c.cycles += 1;
+        c.g[V0][0] = ld_sp(c, 8);
+    }
+    Ok(())
+}
+
+pub(crate) fn octant1_in(c: &mut Cpu) -> Result<bool, Unwound> {
+    if zchk(c, 2, S7, 0x14) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0x1c) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0x8) {
+        return Ok(false);
+    }
+    if cx_chain(c, S6, [0x24, 0x30]) {
+        recurse(c, 0x0033_ac08)?;
+        return Ok(true);
+    }
+    collect(
+        c,
+        0x0033_aa7c,
+        0x0033_aa90,
+        2,
+        0x0033_ab58,
+        Trail::Reload(0x8),
+    )?;
+    Ok(false)
+}
+
+/// Octant 3: child `+0xc`, sub-key y+1.
+pub(crate) fn octant3(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[S0][0] = lw_reg(c, S3, 0xc);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    let null = c.g[S0][0] == 0;
+    let v = c.g[V0][0];
+    st_sp(c, 8, v);
+    let inside = null || octant3_in(c)?;
+    if inside {
+        c.cycles += 1;
+        c.g[V0][0] = ld_sp(c, 0xc);
+    }
+    Ok(())
+}
+
+pub(crate) fn octant3_in(c: &mut Cpu) -> Result<bool, Unwound> {
+    if zchk(c, 2, S7, 0xc) {
+        return Ok(false);
+    }
+    if zchk(c, 2, FP, 0x1c) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0xc) {
+        return Ok(false);
+    }
+    if cx_chain(c, S6, [0x28, 0x30]) {
+        recurse(c, 0x0033_ade0)?;
+        return Ok(true);
+    }
+    collect(
+        c,
+        0x0033_ac54,
+        0x0033_ac68,
+        2,
+        0x0033_ad30,
+        Trail::Reload(0xc),
+    )?;
+    Ok(false)
+}
+
+/// Octant 2: child `+8`, sub-key z-1.
+pub(crate) fn octant2(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[S0][0] = lw_reg(c, S3, 8);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+    let null = c.g[S0][0] == 0;
+    let v = c.g[V0][0];
+    st_sp(c, 0xc, v);
+    let inside = null || octant2_in(c)?;
+    if inside {
+        c.cycles += 1;
+        c.g[V0][0] = ld_sp(c, 4);
+    }
+    Ok(())
+}
+
+pub(crate) fn octant2_in(c: &mut Cpu) -> Result<bool, Unwound> {
+    if zchk(c, 2, S7, 0x4) {
+        return Ok(false);
+    }
+    if zchk(c, 2, FP, 0x18) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0x4) {
+        return Ok(false);
+    }
+    if cx_chain(c, S6, [0x28, 0x2c]) {
+        recurse(c, 0x0033_afb8)?;
+        return Ok(true);
+    }
+    collect(
+        c,
+        0x0033_ae2c,
+        0x0033_ae40,
+        2,
+        0x0033_af08,
+        Trail::Reload(0x4),
+    )?;
+    Ok(false)
+}
+
+/// Octant 6: child `+0x18`, sub-key x+1.
+pub(crate) fn octant6(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[S0][0] = lw_reg(c, S3, 0x18);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    let null = c.g[S0][0] == 0;
+    let v = c.g[V0][0];
+    st_sp(c, 4, v);
+    let inside = null || octant6_in(c)?;
+    if inside {
+        c.cycles += 1;
+        c.g[V0][0] = ld_sp(c, 0xc);
+    }
+    Ok(())
+}
+
+pub(crate) fn octant6_in(c: &mut Cpu) -> Result<bool, Unwound> {
+    if zload(c, 3, 0x10, 0xc) {
+        return Ok(false);
+    }
+    if zchk(c, 2, FP, 0x18) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0x20) {
+        return Ok(true);
+    }
+    if cx_chain(c, V0, [0x28, 0x2c]) {
+        recurse(c, 0x0033_b190)?;
+        return Ok(true);
+    }
+    collect(
+        c,
+        0x0033_b008,
+        0x0033_b018,
+        1,
+        0x0033_b0e0,
+        Trail::Reload(0xc),
+    )?;
+    Ok(false)
+}
+
+/// Octant 7: child `+0x1c`, sub-key z+1.
+pub(crate) fn octant7(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[S0][0] = lw_reg(c, S3, 0x1c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    let null = c.g[S0][0] == 0;
+    let v = c.g[V0][0];
+    st_sp(c, 0xc, v);
+    let inside = null || octant7_in(c)?;
+    if inside {
+        c.cycles += 1;
+        c.g[V0][0] = ld_sp(c, 8);
+    }
+    Ok(())
+}
+
+pub(crate) fn octant7_in(c: &mut Cpu) -> Result<bool, Unwound> {
+    if zload(c, 3, 0x10, 0x8) {
+        return Ok(false);
+    }
+    if zchk(c, 2, FP, 0x1c) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0x20) {
+        return Ok(true);
+    }
+    if cx_chain(c, V0, [0x28, 0x30]) {
+        recurse(c, 0x0033_b368)?;
+        return Ok(true);
+    }
+    collect(
+        c,
+        0x0033_b1e0,
+        0x0033_b1f0,
+        1,
+        0x0033_b2b8,
+        Trail::Reload(0x8),
+    )?;
+    Ok(false)
+}
+
+/// Octant 5: child `+0x14`, sub-key y-1.
+pub(crate) fn octant5(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[S0][0] = lw_reg(c, S3, 0x14);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+    let null = c.g[S0][0] == 0;
+    let v = c.g[V0][0];
+    st_sp(c, 8, v);
+    let inside = null || octant5_in(c)?;
+    if inside {
+        c.cycles += 1;
+        c.g[V0][0] = ld_sp(c, 0xc);
+    }
+    Ok(())
+}
+
+pub(crate) fn octant5_in(c: &mut Cpu) -> Result<bool, Unwound> {
+    if zload(c, 3, 0x10, 0x14) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0x1c) {
+        return Ok(true);
+    }
+    if zchk(c, 2, V0, 0x20) {
+        return Ok(true);
+    }
+    if cx_chain(c, V0, [0x24, 0x30]) {
+        recurse(c, 0x0033_b540)?;
+        return Ok(true);
+    }
+    collect(
+        c,
+        0x0033_b3b8,
+        0x0033_b3c8,
+        1,
+        0x0033_b490,
+        Trail::Reload(0xc),
+    )?;
+    Ok(false)
+}
+
+/// The function's own exit after an inner visit: `+1`, restore `s0`.
+pub(crate) fn finish_inner(c: &mut Cpu) -> Flow {
+    c.cycles += 1;
+    restore_s0(c);
+    Ok(())
+}
+
+/// Octant 4: child `+0x10`, sub-key z-1. Its outer exits leave the function.
+pub(crate) fn octant4(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[S0][0] = lw_reg(c, S3, 0x10);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+    let null = c.g[S0][0] == 0;
+    let v = c.g[V0][0];
+    st_sp(c, 0xc, v);
+    if null {
+        return finish_inner(c);
+    }
+    if zload(c, 3, 0x10, 0x14) {
+        return finish_inner(c);
+    }
+    if zchk(c, 2, V0, 0x18) {
+        return finish_inner(c);
+    }
+    if zchk(c, 2, V0, 0x20) {
+        return finish_inner(c);
+    }
+    if cx_chain(c, V0, [0x24, 0x2c]) {
+        recurse(c, 0x0033_b718)?;
+        return finish_inner(c);
+    }
+    collect(c, 0x0033_b590, 0x0033_b5a0, 1, 0x0033_b668, Trail::Restore)
+}
+
+/// `'b_33a79c`..`'b_33a864`: one containment flag on a pair of edges. `slot`
+/// gets `box.min < edge_lo && edge_hi < box.max` (`bound` is the box max).
+pub(crate) fn range_flag(
+    c: &mut Cpu,
+    lo: usize,
+    edge_lo: usize,
+    bound: u32,
+    edge_hi: usize,
+    slot: u32,
+) {
+    c.cycles += 4;
+    let ok = fcc_lt(c, lo, edge_lo);
+    st_sp(c, slot, 0);
+    if ok {
+        c.cycles += 5;
+        let b = boxp(c).wrapping_add(bound);
+        c.lwc1(0, b);
+        c.g[V0][0] = 1;
+        if fcc_lt(c, edge_hi, 0) {
+            c.cycles += 1;
+            let v = c.g[V0][0];
+            st_sp(c, slot, v);
+        }
+    }
+}
+
+/// The octants of a cell above the leaves: the eight child visits with the
+/// per-axis overlap and containment flags in `sp+0x10..0x30` (ox1, oy0,
+/// oz0, oz1, cx1, cy0, cy1, cz0, cz1) and `s7`/`fp`/`s6` (ox0, oy1, cx0).
+pub(crate) fn octants(c: &mut Cpu) -> Flow {
+    // Edges of the sub-cells (`sub = 2 * cell`, size 2^(level-1)): f4 is the
+    // cell size, f2 the 0.2 margin, f0/f1 the low/high edge of x0.
+    c.cycles += 28;
+    c.g[A0][0] = lw_reg(c, S0, 4);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 23);
+    let margin = (c.g[GP][0] as u32).wrapping_sub(0x2d28);
+    c.lwc1(2, margin);
+    c.mtc1(2, 4);
+    c.g[A0][0] = sx((c.g[A0][0] as u32) << 1);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+    c.mtc1(4, 0);
+    cvt_w(c, 0, 0);
+    c.mtc1(2, 1);
+    cvt_w(c, 1, 1);
+    let bx = boxp(c);
+    c.lwc1(3, bx);
+    c.g[V1][0] = lw_reg(c, S0, 0xc);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+    c.g[V0][0] = lw_reg(c, S0, 8);
+    fsub(c, 0, 0, 2);
+    fadd(c, 1, 1, 2);
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+    let v = c.g[A1][0];
+    st_sp(c, 0, v);
+    c.g[S7][0] = 0;
+    fmul(c, 15, 0, 4);
+    fmul(c, 16, 1, 4);
+    let v = c.g[V0][0];
+    st_sp(c, 8, v);
+    let v = c.g[V1][0];
+    st_sp(c, 0xc, v);
+    let ok = fcc_lt(c, 3, 16);
+    let v = c.g[A0][0];
+    st_sp(c, 4, v);
+    if ok {
+        c.cycles += 5;
+        c.lwc1(0, bx.wrapping_add(0x10));
+        if fcc_lt(c, 15, 0) {
+            c.g[S7][0] = 1;
+        }
+    }
+    // ox1 (x1 pair, f2 = box min x)
+    c.cycles += 18;
+    c.g[V0][0] = ld_sp(c, 4);
+    c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2d24));
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(2));
+    st_sp(c, 0x10, 0);
+    c.mtc1(3, 1);
+    cvt_w(c, 1, 1);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.mtc1(2, 0);
+    cvt_w(c, 0, 0);
+    c.lwc1(2, bx);
+    fadd(c, 1, 1, 3);
+    c.f[13] = c.f[2];
+    fsub(c, 0, 0, 3);
+    fmul(c, 14, 1, 4);
+    let ok = fcc_lt(c, 2, 14);
+    fmul(c, 12, 0, 4);
+    if ok {
+        c.cycles += 5;
+        c.lwc1(0, bx.wrapping_add(0x10));
+        c.g[V0][0] = 1;
+        if fcc_lt(c, 12, 0) {
+            c.cycles += 1;
+            let v = c.g[V0][0];
+            st_sp(c, 0x10, v);
+        }
+    }
+    // ox early exit: no ox0 and no ox1 is the whole cell's miss.
+    c.cycles += 2;
+    let t = c.g[S7][0] != 0;
+    c.g[V1][0] = ld_sp(c, 8);
+    if !t {
+        c.cycles += 3;
+        c.g[V0][0] = ld_sp(c, 0x10);
+        let miss = c.g[V0][0] == 0;
+        restore_s0(c);
+        if miss {
+            return Ok(());
+        }
+    }
+    // oy0 (y0 pair, f2 = box min y)
+    c.cycles += 17;
+    c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2d20));
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+    st_sp(c, 0x14, 0);
+    c.mtc1(2, 1);
+    cvt_w(c, 1, 1);
+    c.g[A0][0] = c.g[V1][0];
+    c.mtc1(3, 0);
+    cvt_w(c, 0, 0);
+    c.lwc1(2, bx.wrapping_add(4));
+    fadd(c, 1, 1, 3);
+    c.f[6] = c.f[2];
+    fsub(c, 0, 0, 3);
+    fmul(c, 11, 1, 4);
+    let ok = fcc_lt(c, 2, 11);
+    fmul(c, 10, 0, 4);
+    if ok {
+        c.cycles += 5;
+        c.lwc1(0, bx.wrapping_add(0x14));
+        c.g[V0][0] = 1;
+        if fcc_lt(c, 10, 0) {
+            c.cycles += 1;
+            let v = c.g[V0][0];
+            st_sp(c, 0x14, v);
+        }
+    }
+    // oy1 (y1 pair)
+    c.cycles += 15;
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(2));
+    c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2d1c));
+    c.mtc1(3, 1);
+    cvt_w(c, 1, 1);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+    c.mtc1(2, 0);
+    cvt_w(c, 0, 0);
+    c.g[FP][0] = 0;
+    fadd(c, 1, 1, 2);
+    fsub(c, 0, 0, 2);
+    fmul(c, 9, 1, 4);
+    let ok = fcc_lt(c, 6, 9);
+    fmul(c, 8, 0, 4);
+    if ok {
+        c.cycles += 5;
+        c.lwc1(0, bx.wrapping_add(0x14));
+        if fcc_lt(c, 8, 0) {
+            c.g[FP][0] = 1;
+        }
+    }
+    // oy early exit.
+    c.cycles += 3;
+    c.g[V0][0] = ld_sp(c, 0x14);
+    let t = c.g[V0][0] != 0;
+    c.g[V1][0] = ld_sp(c, 0xc);
+    if !t {
+        c.cycles += 2;
+        let miss = c.g[FP][0] == 0;
+        restore_s0(c);
+        if miss {
+            return Ok(());
+        }
+    }
+    // oz0 (z0 pair, f2 = box min z)
+    c.cycles += 17;
+    c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2d18));
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+    st_sp(c, 0x18, 0);
+    c.mtc1(2, 1);
+    cvt_w(c, 1, 1);
+    c.g[A0][0] = c.g[V1][0];
+    c.mtc1(3, 0);
+    cvt_w(c, 0, 0);
+    c.lwc1(2, bx.wrapping_add(8));
+    fadd(c, 1, 1, 3);
+    c.f[5] = c.f[2];
+    fsub(c, 0, 0, 3);
+    fmul(c, 7, 1, 4);
+    let ok = fcc_lt(c, 2, 7);
+    fmul(c, 3, 0, 4);
+    if ok {
+        c.cycles += 5;
+        c.lwc1(0, bx.wrapping_add(0x18));
+        c.g[V0][0] = 1;
+        if fcc_lt(c, 3, 0) {
+            c.cycles += 1;
+            let v = c.g[V0][0];
+            st_sp(c, 0x18, v);
+        }
+    }
+    // oz1 (z1 pair)
+    c.cycles += 15;
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(2));
+    c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2d14));
+    c.mtc1(3, 1);
+    cvt_w(c, 1, 1);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+    c.mtc1(2, 0);
+    cvt_w(c, 0, 0);
+    st_sp(c, 0x1c, 0);
+    fadd(c, 1, 1, 2);
+    fsub(c, 0, 0, 2);
+    fmul(c, 1, 1, 4);
+    let ok = fcc_lt(c, 5, 1);
+    fmul(c, 2, 0, 4);
+    if ok {
+        c.cycles += 5;
+        c.lwc1(0, bx.wrapping_add(0x18));
+        c.g[V0][0] = 1;
+        if fcc_lt(c, 2, 0) {
+            c.cycles += 1;
+            let v = c.g[V0][0];
+            st_sp(c, 0x1c, v);
+        }
+    }
+    // oz early exit.
+    c.cycles += 3;
+    c.g[V0][0] = ld_sp(c, 0x18);
+    let t = c.g[V0][0] != 0;
+    c.g[V0][0] = ld_sp(c, 0x1c);
+    if !t {
+        c.cycles += 2;
+        let miss = c.g[V0][0] == 0;
+        restore_s0(c);
+        if miss {
+            return Ok(());
+        }
+    }
+    // cx0 (x0 containment, into s6)
+    c.cycles += 4;
+    let ok = fcc_lt(c, 13, 15);
+    c.g[S6][0] = 0;
+    if ok {
+        c.cycles += 5;
+        c.lwc1(0, bx.wrapping_add(0x10));
+        if fcc_lt(c, 16, 0) {
+            c.g[S6][0] = 1;
+        }
+    }
+    range_flag(c, 13, 12, 0x10, 14, 0x20); // cx1
+    range_flag(c, 6, 10, 0x14, 11, 0x24); // cy0
+    range_flag(c, 6, 8, 0x14, 9, 0x28); // cy1
+    range_flag(c, 5, 3, 0x18, 7, 0x2c); // cz0
+    range_flag(c, 5, 2, 0x18, 1, 0x30); // cz1
+
+    octant0(c)?;
+    octant1(c)?;
+    octant3(c)?;
+    octant2(c)?;
+    octant6(c)?;
+    octant7(c)?;
+    octant5(c)?;
+    octant4(c)
+}
+
+/// The body: the node's own objects, the leaf test at level 11, then the
+/// octants. `Err` when a callee unwinds (the caller returns at once).
+pub(crate) fn run(c: &mut Cpu) -> Flow {
+    let f = Frame::open(c, 0xe0);
+    c.cycles += 23;
+    f.save(c, S3, 0xa0);
+    f.save(c, S4, 0x90);
+    c.g[S3][0] = c.g[T0][0];
+    f.save(c, S5, 0x80);
+    c.g[S4][0] = c.g[A1][0];
+    f.save(c, S0, 0xd0);
+    c.g[S5][0] = c.g[A0][0];
+    f.save(c, S1, 0xc0);
+    c.g[S0][0] = c.g[T1][0];
+    f.save(c, S2, 0xb0);
+    c.g[S1][0] = c.g[A2][0];
+    c.g[S2][0] = c.g[A3][0];
+    f.save(c, S6, 0x70);
+    f.save(c, S7, 0x60);
+    c.g[A0][0] = c.g[S4][0];
+    f.save(c, FP, 0x50);
+    f.save_ra(c, 0x40);
+
+    gather_objects(c, S4, S3, 0x0033_a428, 0x0033_a438, 1)?;
+
+    // A cell one level above the leaves stops after its own objects.
+    c.cycles += 4;
+    c.g[A1][0] = lw_reg(c, S0, 0);
+    c.g[V0][0] = 0xb;
+    let leaf = c.g[A1][0] == c.g[V0][0];
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7e));
+    if leaf {
+        return finish_inner(c);
+    }
+    octants(c)
+}
+
+/// `epilogue`: restore the callee-saved registers, `ra`, and return.
+pub(crate) fn epilogue(c: &mut Cpu) {
+    let f = frame();
+    c.cycles += 11;
+    f.restore(c, S1, 0xc0);
+    f.restore(c, S2, 0xb0);
+    f.restore(c, S3, 0xa0);
+    f.restore(c, S4, 0x90);
+    f.restore(c, S5, 0x80);
+    f.restore(c, S6, 0x70);
+    f.restore(c, S7, 0x60);
+    f.restore(c, FP, 0x50);
+    f.restore_ra(c, 0x40);
+    f.close(c);
+}
+
+/// `Cell_GatherObjInstRecursive(flag, ctx, ctx2, box, node, cell)`
+/// (0x33a3d8, `nash_privy_QueryHelper_helpX3`): an octree walk for an
+/// overlap query. The node's own objects go into `ctx`. A cell above the
+/// leaves (level 11 stops) visits its eight children: a child whose cell lies
+/// entirely in the box gathers its whole subtree into `ctx2`; a child that
+/// only partly overlaps recurses with the child's key on the stack.
+pub fn cell_gather_obj_inst_recursive(c: &mut Cpu) {
+    guest(c, |c| {
+        run(c)?;
+        epilogue(c);
+        Ok(())
+    });
+}
+
+/// `Cell_CollideObjectEx` (0x336d40): report one static object to `ctx`.
+pub(crate) const COLLIDE_OBJECT_2: Callee = Callee {
+    addr: 0x0033_6d40,
+    f: ee::s11::Cell_CollideObjectEx,
+};
+
+/// `Cell_CollideObjectsSubtree` (0x3410c0): report a whole subtree to `ctx2`.
+pub(crate) const COLLIDE_SUBTREE: Callee = Callee {
+    addr: 0x0034_10c0,
+    f: ee::s11::Cell_CollideObjectsSubtree,
+};
+
+/// This function (0x33dfd8), called for the children that only partly overlap.
+pub(crate) const COLLIDE_RECURSIVE: Callee = Callee {
+    addr: 0x0033_dfd8,
+    f: ee::s11::Cell_CollideObjectsRecursive,
+};
+
+// Stack frame of the cell walk: the child's key `{ level, x, y, z }` at sp+0,
+// then one flag word per overlap test (1 when the sub-cell's expanded range
+// overlaps the box; `cx`/`cy`/`cz` when the sub-cell is fully inside it).
+pub(crate) const SUB_LEVEL: u32 = 0x00;
+
+pub(crate) const SUB_X: u32 = 0x04;
+
+pub(crate) const SUB_Y: u32 = 0x08;
+
+pub(crate) const SUB_Z: u32 = 0x0c;
+
+pub(crate) const F_OX1: u32 = 0x10;
+
+pub(crate) const F_OY0: u32 = 0x14;
+
+pub(crate) const F_OY1: u32 = 0x18;
+
+pub(crate) const F_OZ0: u32 = 0x1c;
+
+pub(crate) const F_OZ1: u32 = 0x20;
+
+pub(crate) const F_CX1: u32 = 0x24;
+
+pub(crate) const F_CY0: u32 = 0x28;
+
+pub(crate) const F_CY1: u32 = 0x2c;
+
+pub(crate) const F_CZ0: u32 = 0x30;
+
+pub(crate) const F_CZ1: u32 = 0x34;
+
+/// Node layout: eight child pointers at +0x00..+0x1c, the object list at +0x20.
+pub(crate) const NODE_OBJECTS: u32 = 0x20;
+
+/// Box layout: min x/y/z at +0/+4/+8, max x/y/z at +0x10/+0x14/+0x18.
+pub(crate) const BOX_MAX: u32 = 0x10;
+
+/// Where a child's test reads its flag: the s8 register (x0 overlap), the s7
+/// register (x0 fully inside), or a frame word.
+#[derive(Clone, Copy)]
+pub(crate) enum Flag {
+    Fp,
+    S7,
+    Slot(u32),
+}
+
+/// One child of the node, in the order the original visits them.
+pub(crate) struct Visit {
+    /// Offset of the child pointer in the node.
+    child: u32,
+    /// Frame word of the sub-cell coordinate this child steps (`sub.x++` ...).
+    coord: u32,
+    /// Step applied to that coordinate (0 for the first child).
+    step: i32,
+    /// Cycles charged on entry (3 for the first child, 4 for the rest).
+    enter: u64,
+    /// Cycles of the first overlap test.
+    first: u64,
+    /// Flags: ox, oy, oz, fully-inside x, y, z.
+    ox: Flag,
+    oy: u32,
+    oz: u32,
+    cx: Flag,
+    cy: u32,
+    cz: u32,
+    /// Frame word the oz test leaves in v0 (the next coordinate, or cx1).
+    after_oz: u32,
+    /// Leave without the tail when the child pointer is null.
+    s1_end: bool,
+    /// Leave without the tail when the oz test fails.
+    oz_end: bool,
+    /// Frame word the tail loads into v0 (None: the last child).
+    next: Option<u32>,
+    /// Cycles charged before the object loop (1 or 2).
+    pre_obj: u64,
+    /// Return address of the object loop's call (the loop head is 8 below).
+    obj_ret: u32,
+    /// Return addresses of the eight subtree calls.
+    sub_ret: [u32; 8],
+    /// Return address of the recursive call.
+    rec_ret: u32,
+}
+
+pub(crate) const VISITS: [Visit; 8] = [
+    // child 0: [0][0][0]; sub.z stays
+    Visit {
+        child: 0x00,
+        coord: SUB_Z,
+        step: 0,
+        enter: 3,
+        first: 2,
+        ox: Flag::Fp,
+        oy: F_OY0,
+        oz: F_OZ0,
+        cx: Flag::S7,
+        cy: F_CY0,
+        cz: F_CZ0,
+        after_oz: SUB_Z,
+        s1_end: true,
+        oz_end: true,
+        next: Some(SUB_Z),
+        pre_obj: 1,
+        obj_ret: 0x0033_e410,
+        sub_ret: [
+            0x0033_e430,
+            0x0033_e444,
+            0x0033_e458,
+            0x0033_e46c,
+            0x0033_e480,
+            0x0033_e494,
+            0x0033_e4a8,
+            0x0033_e4bc,
+        ],
+        rec_ret: 0x0033_e4e0,
+    },
+    // child 1: [0][0][1]; sub.z++
+    Visit {
+        child: 0x04,
+        coord: SUB_Z,
+        step: 1,
+        enter: 4,
+        first: 2,
+        ox: Flag::Fp,
+        oy: F_OY0,
+        oz: F_OZ1,
+        cx: Flag::S7,
+        cy: F_CY0,
+        cz: F_CZ1,
+        after_oz: SUB_Y,
+        s1_end: false,
+        oz_end: true,
+        next: Some(SUB_Y),
+        pre_obj: 2,
+        obj_ret: 0x0033_e540,
+        sub_ret: [
+            0x0033_e560,
+            0x0033_e574,
+            0x0033_e588,
+            0x0033_e59c,
+            0x0033_e5b0,
+            0x0033_e5c4,
+            0x0033_e5d8,
+            0x0033_e5ec,
+        ],
+        rec_ret: 0x0033_e610,
+    },
+    // child 3: [0][1][1]; sub.y++
+    Visit {
+        child: 0x0c,
+        coord: SUB_Y,
+        step: 1,
+        enter: 4,
+        first: 2,
+        ox: Flag::Fp,
+        oy: F_OY1,
+        oz: F_OZ1,
+        cx: Flag::S7,
+        cy: F_CY1,
+        cz: F_CZ1,
+        after_oz: SUB_Z,
+        s1_end: false,
+        oz_end: true,
+        next: Some(SUB_Z),
+        pre_obj: 2,
+        obj_ret: 0x0033_e670,
+        sub_ret: [
+            0x0033_e690,
+            0x0033_e6a4,
+            0x0033_e6b8,
+            0x0033_e6cc,
+            0x0033_e6e0,
+            0x0033_e6f4,
+            0x0033_e708,
+            0x0033_e71c,
+        ],
+        rec_ret: 0x0033_e740,
+    },
+    // child 2: [0][1][0]; sub.z--
+    Visit {
+        child: 0x08,
+        coord: SUB_Z,
+        step: -1,
+        enter: 4,
+        first: 2,
+        ox: Flag::Fp,
+        oy: F_OY1,
+        oz: F_OZ0,
+        cx: Flag::S7,
+        cy: F_CY1,
+        cz: F_CZ0,
+        after_oz: SUB_X,
+        s1_end: false,
+        oz_end: true,
+        next: Some(SUB_X),
+        pre_obj: 2,
+        obj_ret: 0x0033_e7a0,
+        sub_ret: [
+            0x0033_e7c0,
+            0x0033_e7d4,
+            0x0033_e7e8,
+            0x0033_e7fc,
+            0x0033_e810,
+            0x0033_e824,
+            0x0033_e838,
+            0x0033_e84c,
+        ],
+        rec_ret: 0x0033_e870,
+    },
+    // child 6: [1][1][0]; sub.x++
+    Visit {
+        child: 0x18,
+        coord: SUB_X,
+        step: 1,
+        enter: 4,
+        first: 3,
+        ox: Flag::Slot(F_OX1),
+        oy: F_OY1,
+        oz: F_OZ0,
+        cx: Flag::Slot(F_CX1),
+        cy: F_CY1,
+        cz: F_CZ0,
+        after_oz: F_CX1,
+        s1_end: false,
+        oz_end: false,
+        next: Some(SUB_Z),
+        pre_obj: 1,
+        obj_ret: 0x0033_e8d0,
+        sub_ret: [
+            0x0033_e8f0,
+            0x0033_e904,
+            0x0033_e918,
+            0x0033_e92c,
+            0x0033_e940,
+            0x0033_e954,
+            0x0033_e968,
+            0x0033_e97c,
+        ],
+        rec_ret: 0x0033_e9a0,
+    },
+    // child 7: [1][1][1]; sub.z++
+    Visit {
+        child: 0x1c,
+        coord: SUB_Z,
+        step: 1,
+        enter: 4,
+        first: 3,
+        ox: Flag::Slot(F_OX1),
+        oy: F_OY1,
+        oz: F_OZ1,
+        cx: Flag::Slot(F_CX1),
+        cy: F_CY1,
+        cz: F_CZ1,
+        after_oz: F_CX1,
+        s1_end: false,
+        oz_end: false,
+        next: Some(SUB_Y),
+        pre_obj: 1,
+        obj_ret: 0x0033_ea00,
+        sub_ret: [
+            0x0033_ea20,
+            0x0033_ea34,
+            0x0033_ea48,
+            0x0033_ea5c,
+            0x0033_ea70,
+            0x0033_ea84,
+            0x0033_ea98,
+            0x0033_eaac,
+        ],
+        rec_ret: 0x0033_ead0,
+    },
+    // child 5: [1][0][1]; sub.y--
+    Visit {
+        child: 0x14,
+        coord: SUB_Y,
+        step: -1,
+        enter: 4,
+        first: 3,
+        ox: Flag::Slot(F_OX1),
+        oy: F_OY0,
+        oz: F_OZ1,
+        cx: Flag::Slot(F_CX1),
+        cy: F_CY0,
+        cz: F_CZ1,
+        after_oz: F_CX1,
+        s1_end: false,
+        oz_end: false,
+        next: Some(SUB_Z),
+        pre_obj: 1,
+        obj_ret: 0x0033_eb30,
+        sub_ret: [
+            0x0033_eb50,
+            0x0033_eb64,
+            0x0033_eb78,
+            0x0033_eb8c,
+            0x0033_eba0,
+            0x0033_ebb4,
+            0x0033_ebc8,
+            0x0033_ebdc,
+        ],
+        rec_ret: 0x0033_ec00,
+    },
+    // child 4: [1][0][0]; sub.z--; the last child, so no tail load
+    Visit {
+        child: 0x10,
+        coord: SUB_Z,
+        step: -1,
+        enter: 4,
+        first: 3,
+        ox: Flag::Slot(F_OX1),
+        oy: F_OY0,
+        oz: F_OZ0,
+        cx: Flag::Slot(F_CX1),
+        cy: F_CY0,
+        cz: F_CZ0,
+        after_oz: F_CX1,
+        s1_end: false,
+        oz_end: false,
+        next: None,
+        pre_obj: 1,
+        obj_ret: 0x0033_ec60,
+        sub_ret: [
+            0x0033_ec80,
+            0x0033_ec94,
+            0x0033_eca8,
+            0x0033_ecbc,
+            0x0033_ecd0,
+            0x0033_ece4,
+            0x0033_ecf8,
+            0x0033_ed0c,
+        ],
+        rec_ret: 0x0033_ed30,
+    },
+];
+
+// ---------------------------------------------------------------------------
+// Small helpers: frame words, the flags, and the FPU (COP1) registers.
+
+pub(crate) fn slot(c: &mut Cpu, off: u32) -> u64 {
+    Addr(sp(c).wrapping_add(off)).lw(c)
+}
+
+pub(crate) fn set_slot(c: &mut Cpu, off: u32, v: u64) {
+    Addr(sp(c).wrapping_add(off)).sw(c, v)
+}
+
+pub(crate) fn load_v0(c: &mut Cpu, off: Option<u32>) {
+    if let Some(off) = off {
+        let v = slot(c, off);
+        c.g[V0][0] = v;
+    }
+}
+
+pub(crate) fn flag_is_clear(c: &mut Cpu, f: Flag) -> bool {
+    match f {
+        Flag::Fp => c.g[FP][0] == 0,
+        Flag::S7 => c.g[S7][0] == 0,
+        Flag::Slot(off) => slot(c, off) == 0,
+    }
+}
+
+pub(crate) fn fr_2(c: &Cpu, n: usize) -> FpuF32 {
+    FpuF32(c.f[n])
+}
+
+pub(crate) fn fw(c: &mut Cpu, n: usize, v: FpuF32) {
+    c.f[n] = v.0;
+}
+
+/// `cvt.s.w` in place.
+pub(crate) fn cvt_w_2(c: &mut Cpu, n: usize) {
+    c.f[n] = FpuF32::from_i32(c.f[n] as i32).0;
+}
+
+/// `lwc1 f, addr`.
+pub(crate) fn load_f(c: &mut Cpu, n: usize, addr: u32) {
+    c.f[n] = Addr(addr).read_u32(c);
+}
+
+/// `lwc1 f, GP - off` (the float constants the game keeps off gp).
+pub(crate) fn load_gp_f(c: &mut Cpu, n: usize, off: u32) {
+    let addr = (c.g[GP][0] as u32).wrapping_sub(off);
+    load_f(c, n, addr);
+}
+
+/// `c.lt.s`: sets the FPU condition bit and returns it.
+pub(crate) fn lt_fcc(c: &mut Cpu, a: usize, b: usize) -> bool {
+    let r = fr_2(c, a).lt(fr_2(c, b));
+    abi::set_fcc(c, r);
+    r
+}
+
+// ---------------------------------------------------------------------------
+// The overlap tests of the cell's eight children, in the original's order.
+// Each block returns the flags it stores in the frame; `false` from
+// `overlap_flags` is the original's early `return` (the cell is not in the box).
+
+/// x0 slab (ox0 in s8): the sub-cell's expanded x range against the box.
+pub(crate) fn x0_slab(c: &mut Cpu) {
+    let s1 = c.g[S1][0] as u32;
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 28;
+    c.g[A0][0] = Addr(s1.wrapping_add(4)).lw(c); // cell->x
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 23); // cell size: 2^(sub.level)
+    load_gp_f(c, 2, 0x2cdc); // 0.2
+    c.f[4] = c.g[V0][0] as u32;
+    let sub_x = (c.g[A0][0] as u32) << 1;
+    c.g[A0][0] = sx(sub_x);
+    c.g[V0][0] = sx(sub_x.wrapping_add(1));
+    c.f[0] = sub_x;
+    cvt_w_2(c, 0);
+    c.f[1] = c.g[V0][0] as u32;
+    cvt_w_2(c, 1);
+    load_f(c, 3, s3); // box min x
+    c.g[V1][0] = Addr(s1.wrapping_add(0xc)).lw(c); // cell->z
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1)); // sub.level
+    c.g[V0][0] = Addr(s1.wrapping_add(8)).lw(c); // cell->y
+    let lo = fr_2(c, 0) - fr_2(c, 2);
+    fw(c, 0, lo);
+    let hi = fr_2(c, 1) + fr_2(c, 2);
+    fw(c, 1, hi);
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 1); // sub.z
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1); // sub.y
+    let level = c.g[A1][0];
+    set_slot(c, SUB_LEVEL, level);
+    c.g[FP][0] = 0;
+    let x0lo = fr_2(c, 0) * fr_2(c, 4);
+    fw(c, 15, x0lo);
+    let x0hi = fr_2(c, 1) * fr_2(c, 4);
+    fw(c, 16, x0hi);
+    let sy = c.g[V0][0];
+    set_slot(c, SUB_Y, sy);
+    let sz = c.g[V1][0];
+    set_slot(c, SUB_Z, sz);
+    let t = !lt_fcc(c, 3, 16);
+    let sx_val = c.g[A0][0];
+    set_slot(c, SUB_X, sx_val);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX)); // box max x
+        if lt_fcc(c, 15, 0) {
+            c.g[FP][0] = 1;
+        }
+    }
+}
+
+/// x1 slab (ox1 in frame word 0x10).
+pub(crate) fn x1_slab(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 18;
+    c.g[V0][0] = slot(c, SUB_X);
+    load_gp_f(c, 3, 0x2cd8);
+    let v1 = (c.g[V0][0] as u32).wrapping_add(2);
+    c.g[V1][0] = sx(v1);
+    set_slot(c, F_OX1, 0);
+    c.f[1] = v1;
+    cvt_w_2(c, 1);
+    let v0 = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.g[V0][0] = v0;
+    c.f[0] = v0 as u32;
+    cvt_w_2(c, 0);
+    load_f(c, 2, s3); // box min x
+    let hi = fr_2(c, 1) + fr_2(c, 3);
+    fw(c, 1, hi);
+    c.f[13] = c.f[2];
+    let lo = fr_2(c, 0) - fr_2(c, 3);
+    fw(c, 0, lo);
+    let x1hi = fr_2(c, 1) * fr_2(c, 4);
+    fw(c, 14, x1hi);
+    let t = !lt_fcc(c, 2, 14);
+    let x1lo = fr_2(c, 0) * fr_2(c, 4);
+    fw(c, 12, x1lo);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX));
+        let t2 = !lt_fcc(c, 12, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_OX1, one);
+        }
+    }
+}
+
+/// y0 slab (oy0 in frame word 0x14).
+pub(crate) fn y0_slab(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 17;
+    load_gp_f(c, 3, 0x2cd4);
+    let v0 = sx((c.g[V1][0] as u32).wrapping_add(1));
+    c.g[V0][0] = v0;
+    set_slot(c, F_OY0, 0);
+    c.f[1] = v0 as u32;
+    cvt_w_2(c, 1);
+    c.g[A0][0] = c.g[V1][0];
+    c.f[0] = c.g[V1][0] as u32;
+    cvt_w_2(c, 0);
+    load_f(c, 2, s3.wrapping_add(4)); // box min y
+    let hi = fr_2(c, 1) + fr_2(c, 3);
+    fw(c, 1, hi);
+    c.f[6] = c.f[2];
+    let lo = fr_2(c, 0) - fr_2(c, 3);
+    fw(c, 0, lo);
+    let y0hi = fr_2(c, 1) * fr_2(c, 4);
+    fw(c, 11, y0hi);
+    let t = !lt_fcc(c, 2, 11);
+    let y0lo = fr_2(c, 0) * fr_2(c, 4);
+    fw(c, 10, y0lo);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX + 4));
+        let t2 = !lt_fcc(c, 10, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_OY0, one);
+        }
+    }
+}
+
+/// y1 slab (oy1 in frame word 0x18).
+pub(crate) fn y1_slab(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 15;
+    let v1 = sx((c.g[A0][0] as u32).wrapping_add(2));
+    c.g[V1][0] = v1;
+    load_gp_f(c, 2, 0x2cd0);
+    c.f[1] = v1 as u32;
+    cvt_w_2(c, 1);
+    let v0 = sx((c.g[A0][0] as u32).wrapping_add(1));
+    c.g[V0][0] = v0;
+    c.f[0] = v0 as u32;
+    cvt_w_2(c, 0);
+    set_slot(c, F_OY1, 0);
+    let hi = fr_2(c, 1) + fr_2(c, 2);
+    fw(c, 1, hi);
+    let lo = fr_2(c, 0) - fr_2(c, 2);
+    fw(c, 0, lo);
+    let y1hi = fr_2(c, 1) * fr_2(c, 4);
+    fw(c, 9, y1hi);
+    let t = !lt_fcc(c, 6, 9);
+    let y1lo = fr_2(c, 0) * fr_2(c, 4);
+    fw(c, 8, y1lo);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX + 4));
+        let t2 = !lt_fcc(c, 8, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_OY1, one);
+        }
+    }
+}
+
+/// z0 slab (oz0 in frame word 0x1c).
+pub(crate) fn z0_slab(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 17;
+    load_gp_f(c, 3, 0x2ccc);
+    let v0 = sx((c.g[V1][0] as u32).wrapping_add(1));
+    c.g[V0][0] = v0;
+    set_slot(c, F_OZ0, 0);
+    c.f[1] = v0 as u32;
+    cvt_w_2(c, 1);
+    c.g[A0][0] = c.g[V1][0];
+    c.f[0] = c.g[V1][0] as u32;
+    cvt_w_2(c, 0);
+    load_f(c, 2, s3.wrapping_add(8)); // box min z
+    let hi = fr_2(c, 1) + fr_2(c, 3);
+    fw(c, 1, hi);
+    c.f[5] = c.f[2];
+    let lo = fr_2(c, 0) - fr_2(c, 3);
+    fw(c, 0, lo);
+    let z0hi = fr_2(c, 1) * fr_2(c, 4);
+    fw(c, 7, z0hi);
+    let t = !lt_fcc(c, 2, 7);
+    let z0lo = fr_2(c, 0) * fr_2(c, 4);
+    fw(c, 3, z0lo);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX + 8));
+        let t2 = !lt_fcc(c, 3, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_OZ0, one);
+        }
+    }
+}
+
+/// z1 slab (oz1 in frame word 0x20).
+pub(crate) fn z1_slab(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 15;
+    let v1 = sx((c.g[A0][0] as u32).wrapping_add(2));
+    c.g[V1][0] = v1;
+    load_gp_f(c, 2, 0x2cc8);
+    c.f[1] = v1 as u32;
+    cvt_w_2(c, 1);
+    let v0 = sx((c.g[A0][0] as u32).wrapping_add(1));
+    c.g[V0][0] = v0;
+    c.f[0] = v0 as u32;
+    cvt_w_2(c, 0);
+    set_slot(c, F_OZ1, 0);
+    let hi = fr_2(c, 1) + fr_2(c, 2);
+    fw(c, 1, hi);
+    let lo = fr_2(c, 0) - fr_2(c, 2);
+    fw(c, 0, lo);
+    let z1hi = fr_2(c, 1) * fr_2(c, 4);
+    fw(c, 1, z1hi);
+    let t = !lt_fcc(c, 5, 1);
+    let z1lo = fr_2(c, 0) * fr_2(c, 4);
+    fw(c, 2, z1lo);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX + 8));
+        let t2 = !lt_fcc(c, 2, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_OZ1, one);
+        }
+    }
+}
+
+/// `cx0`: the x0 core inside the box (kept in s7).: the x0 core inside the box (s7).
+pub(crate) fn cx0_block(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 4;
+    let t = !lt_fcc(c, 13, 15);
+    c.g[S7][0] = 0;
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX));
+        if lt_fcc(c, 16, 0) {
+            c.g[S7][0] = 1;
+        }
+    }
+}
+
+/// `cx1`: the x1 core inside the box.
+pub(crate) fn cx1_block(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 4;
+    let t = !lt_fcc(c, 13, 12);
+    set_slot(c, F_CX1, 0);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX));
+        let t2 = !lt_fcc(c, 14, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_CX1, one);
+        }
+    }
+}
+
+/// `cy0`: the y0 core inside the box.
+pub(crate) fn cy0_block(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 4;
+    let t = !lt_fcc(c, 6, 10);
+    set_slot(c, F_CY0, 0);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX + 4));
+        let t2 = !lt_fcc(c, 11, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_CY0, one);
+        }
+    }
+}
+
+/// `cy1`: the y1 core inside the box.
+pub(crate) fn cy1_block(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 4;
+    let t = !lt_fcc(c, 6, 8);
+    set_slot(c, F_CY1, 0);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX + 4));
+        let t2 = !lt_fcc(c, 9, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_CY1, one);
+        }
+    }
+}
+
+/// `cz0`: the z0 core inside the box.
+pub(crate) fn cz0_block(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 4;
+    let t = !lt_fcc(c, 5, 3);
+    set_slot(c, F_CZ0, 0);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX + 8));
+        let t2 = !lt_fcc(c, 7, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_CZ0, one);
+        }
+    }
+}
+
+/// `cz1`: the z1 core inside the box.
+pub(crate) fn cz1_block(c: &mut Cpu) {
+    let s3 = c.g[S3][0] as u32;
+    c.cycles += 4;
+    let t = !lt_fcc(c, 5, 2);
+    set_slot(c, F_CZ1, 0);
+    if !t {
+        c.cycles += 5;
+        load_f(c, 0, s3.wrapping_add(BOX_MAX + 8));
+        let t2 = !lt_fcc(c, 1, 0);
+        c.g[V0][0] = 1;
+        if !t2 {
+            c.cycles += 1;
+            let one = c.g[V0][0];
+            set_slot(c, F_CZ1, one);
+        }
+    }
+}
+
+/// All the flag tests before the children. `false`: the box misses the cell
+/// on some axis (the original returns without visiting children).
+pub(crate) fn overlap_flags(c: &mut Cpu) -> bool {
+    x0_slab(c);
+    x1_slab(c);
+    c.cycles += 2;
+    let ox0 = c.g[FP][0] != 0;
+    c.g[V1][0] = slot(c, SUB_Y);
+    if !ox0 {
+        c.cycles += 3;
+        c.g[V0][0] = slot(c, F_OX1);
+        if c.g[V0][0] == 0 {
+            return false;
+        }
+    }
+    y0_slab(c);
+    y1_slab(c);
+    c.cycles += 3;
+    c.g[V0][0] = slot(c, F_OY0);
+    let oy0 = c.g[V0][0] != 0;
+    c.g[V1][0] = slot(c, SUB_Z);
+    if !oy0 {
+        c.cycles += 3;
+        c.g[V0][0] = slot(c, F_OY1);
+        if c.g[V0][0] == 0 {
+            return false;
+        }
+    }
+    z0_slab(c);
+    z1_slab(c);
+    c.cycles += 3;
+    c.g[V0][0] = slot(c, F_OZ0);
+    let oz0 = c.g[V0][0] != 0;
+    c.g[V0][0] = slot(c, F_OZ1);
+    if !oz0 {
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            return false;
+        }
+    }
+    cx0_block(c);
+    cx1_block(c);
+    cy0_block(c);
+    cy1_block(c);
+    cz0_block(c);
+    cz1_block(c);
+    true
+}
+
+// ---------------------------------------------------------------------------
+// The children.
+
+/// Leave a child's visit: the tail charges one cycle and loads the next
+/// coordinate into v0 (when the child has a successor).
+pub(crate) fn leave(c: &mut Cpu, v: &Visit, tail: bool) -> Flow {
+    if tail {
+        c.cycles += 1;
+        load_v0(c, v.next);
+    }
+    Ok(())
+}
+
+/// The recursion into a child that only partly overlaps the box.
+pub(crate) fn recurse_2(c: &mut Cpu, v: &Visit) -> Flow {
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S6][0];
+    c.g[A1][0] = c.g[S4][0];
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A3][0] = c.g[S3][0];
+    c.g[T1][0] = c.g[SP][0];
+    COLLIDE_RECURSIVE.call(c, v.rec_ret)?;
+    leave(c, v, true)
+}
+
+/// A child the box fully covers: report its objects to `ctx2` and then its
+/// whole subtree, child by child.
+pub(crate) fn collect_2(c: &mut Cpu, v: &Visit) -> Flow {
+    c.cycles += 3;
+    let head = Addr((c.g[S1][0] as u32).wrapping_add(NODE_OBJECTS)).lw(c);
+    c.g[S0][0] = head;
+    if head == 0 {
+        let first = Addr(c.g[S1][0] as u32).lw(c);
+        c.g[A0][0] = first;
+    } else {
+        c.cycles += v.pre_obj;
+        c.g[A1][0] = c.g[S0][0];
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S2][0];
+            COLLIDE_OBJECT_2.call(c, v.obj_ret)?;
+            let next = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[S0][0] = next;
+            c.g[A1][0] = next;
+            if next == 0 {
+                c.cycles += 1;
+                let first = Addr(c.g[S1][0] as u32).lw(c);
+                c.g[A0][0] = first;
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, v.obj_ret - 8);
+            }
+        }
+    }
+    // children 0..6: call on the pointer in a0, then load the next one
+    for k in 0..7u32 {
+        c.cycles += 2;
+        if c.g[A0][0] == 0 {
+            let next = Addr((c.g[S1][0] as u32).wrapping_add(4 * (k + 1))).lw(c);
+            c.g[A0][0] = next;
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S2][0];
+            COLLIDE_SUBTREE.call(c, v.sub_ret[k as usize])?;
+            let next = Addr((c.g[S1][0] as u32).wrapping_add(4 * (k + 1))).lw(c);
+            c.g[A0][0] = next;
+        }
+    }
+    // child 7
+    c.cycles += 2;
+    let null = c.g[A0][0] == 0;
+    load_v0(c, v.next);
+    if null {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[A1][0] = c.g[S2][0];
+    COLLIDE_SUBTREE.call(c, v.sub_ret[7])?;
+    load_v0(c, v.next);
+    Ok(())
+}
+
+/// One child: the overlap test of its eight-way position, then either
+/// collect, recurse, or nothing.
+pub(crate) fn visit(c: &mut Cpu, v: &Visit) -> Flow {
+    c.cycles += v.enter;
+    let child = Addr((c.g[S5][0] as u32).wrapping_add(v.child)).lw(c);
+    c.g[S1][0] = child;
+    if v.step == 0 {
+        c.g[V0][0] = slot(c, v.coord);
+    } else {
+        let stepped = sx((c.g[V0][0] as u32).wrapping_add(v.step as u32));
+        c.g[V0][0] = stepped;
+        set_slot(c, v.coord, stepped);
+    }
+    if child == 0 {
+        return leave(c, v, !v.s1_end);
+    }
+    // ox (x0 children read s8; x1 children read a frame word)
+    c.cycles += v.first;
+    let ox_clear = flag_is_clear(c, v.ox);
+    c.g[V0][0] = slot(c, v.oy);
+    if ox_clear {
+        return leave(c, v, true);
+    }
+    c.cycles += 2;
+    let oy_clear = slot(c, v.oy) == 0;
+    c.g[V0][0] = slot(c, v.oz);
+    if oy_clear {
+        return leave(c, v, true);
+    }
+    c.cycles += 2;
+    let oz_clear = slot(c, v.oz) == 0;
+    c.g[V0][0] = slot(c, v.after_oz);
+    if oz_clear {
+        return leave(c, v, !v.oz_end);
+    }
+    // cx, cy, cz: fully inside on every axis collects, else recurses
+    c.cycles += 2;
+    let cx_clear = flag_is_clear(c, v.cx);
+    c.g[V0][0] = slot(c, v.cy);
+    if !cx_clear {
+        c.cycles += 2;
+        let cy_clear = slot(c, v.cy) == 0;
+        c.g[V0][0] = slot(c, v.cz);
+        if !cy_clear {
+            c.cycles += 2;
+            let cz_clear = slot(c, v.cz) == 0;
+            c.g[T0][0] = c.g[S1][0];
+            if !cz_clear {
+                return collect_2(c, v);
+            }
+            return recurse_2(c, v);
+        }
+    }
+    c.cycles += 1;
+    c.g[T0][0] = c.g[S1][0];
+    recurse_2(c, v)
+}
+
+// ---------------------------------------------------------------------------
+// The body and the entry.
+
+/// The body after the prologue: the node's own objects, then the cell's
+/// eight children (unless the cell is at the leaf level, 11).
+pub(crate) fn cell_body(c: &mut Cpu) -> Flow {
+    if c.g[S0][0] != 0 {
+        c.cycles += 1;
+        c.g[A1][0] = c.g[S0][0];
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S4][0];
+            COLLIDE_OBJECT_2.call(c, 0x0033_e030)?;
+            let next = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[S0][0] = next;
+            c.g[A1][0] = next;
+            if next == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0033_e028);
+            }
+        }
+    }
+    c.cycles += 4;
+    c.g[A1][0] = Addr(c.g[S1][0] as u32).lw(c); // cell level
+    c.g[V0][0] = 0xb;
+    let leaf = c.g[A1][0] == c.g[V0][0];
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7e));
+    if leaf {
+        c.cycles += 1;
+        return Ok(());
+    }
+    if !overlap_flags(c) {
+        return Ok(());
+    }
+    for v in VISITS.iter() {
+        visit(c, v)?;
+    }
+    Ok(())
+}
+
+/// `void Cell_CollideObjectsRecursive(flag a0, ctx a1, ctx2 a2, box a3,
+/// node t0, cell key t1)` (0x33dfd8): report the static objects of one
+/// octree cell that a box touches to `ctx`, and the subtrees of its children
+/// that the box covers to `ctx2`; the partly covered children recurse.
+pub fn cell_collide_objects_recursive(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xe0);
+        frame.save(c, S1, 0xc0);
+        frame.save(c, S2, 0xb0);
+        frame.save(c, S3, 0xa0);
+        frame.save(c, S4, 0x90);
+        frame.save(c, S5, 0x80);
+        frame.save(c, S6, 0x70);
+        frame.save(c, S7, 0x60);
+        frame.save(c, FP, 0x50);
+        frame.save_ra(c, 0x40);
+        frame.save(c, S0, 0xd0);
+        c.g[S1][0] = c.g[T1][0];
+        c.g[S2][0] = c.g[A2][0];
+        c.g[S3][0] = c.g[A3][0];
+        c.g[S4][0] = c.g[A1][0];
+        c.g[S5][0] = c.g[T0][0];
+        let node_objects = Addr((c.g[S5][0] as u32).wrapping_add(NODE_OBJECTS)).lw(c);
+        c.g[S0][0] = node_objects;
+        c.g[S6][0] = c.g[A0][0];
+        cell_body(c)?;
+        // epilogue: every exit above falls through to here (the body's own
+        // exits charge their tail cycles before returning)
+        c.cycles += 11;
+        frame.restore(c, S0, 0xd0);
+        frame.restore(c, S1, 0xc0);
+        frame.restore(c, S2, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore(c, S4, 0x90);
+        frame.restore(c, S5, 0x80);
+        frame.restore(c, S6, 0x70);
+        frame.restore(c, S7, 0x60);
+        frame.restore(c, FP, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -19606,6 +21645,172 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(pos);
                 c.g[A2][0] = sx(DATA + 0x3000);
                 c.g[A3][0] = sx(DATA + 0x3040);
+            },
+        );
+    }
+
+    /// The query box (`tBoundBox`): min x/y/z at +0, max at +0x10.
+    pub(crate) const BOX: u32 = DATA;
+
+    /// Callback contexts: array pointer at +0x10, count pointer at +0x14,
+    /// box pointer at +0x1c.
+    pub(crate) const CTX1: u32 = DATA + 0x100;
+
+    pub(crate) const CTX2: u32 = DATA + 0x200;
+
+    pub(crate) const COUNT1: u32 = DATA + 0x300;
+
+    pub(crate) const COUNT2: u32 = DATA + 0x304;
+
+    pub(crate) const ARR1: u32 = DATA + 0x400;
+
+    pub(crate) const ARR2: u32 = DATA + 0x800;
+
+    /// The `flag` argument (never written by the body).
+    pub(crate) const FLAG: u32 = DATA + 0x180;
+
+    /// The query cell `(level, x, y, z)`.
+    pub(crate) const ROOT: u32 = DATA + 0xc00;
+
+    /// The node: children at +0..0x1c, its object list at +0x24.
+    pub(crate) const NODE: u32 = DATA + 0x1000;
+
+    /// Eight child cells, 0x40 apart, each with an object list at +0x24.
+    pub(crate) const CHILD: u32 = DATA + 0x1100;
+
+    /// Up to six objects, 0x200 apart: list link at +0, bounds at +0x158.
+    pub(crate) const OBJ_2: u32 = DATA + 0x2000;
+
+    pub(crate) fn unit(r: &mut Rng) -> f32 {
+        (r.next_u32() >> 8) as f32 / (1u32 << 24) as f32
+    }
+
+    pub(crate) fn put_f(c: &mut Cpu, a: u32, v: f32) {
+        c.bus.write32(a, v.to_bits());
+    }
+
+    pub(crate) fn setup_3(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ seed as u64);
+        scramble(c, &mut r);
+        // The query box, around the origin (cells are a few thousand wide).
+        for axis in 0..3u32 {
+            let lo = -9000.0 + 18000.0 * unit(&mut r);
+            put_f(c, BOX + 4 * axis, lo);
+            put_f(c, BOX + 0x10 + 4 * axis, lo + 6000.0 * unit(&mut r));
+        }
+        for (ctx, arr, cnt) in [(CTX1, ARR1, COUNT1), (CTX2, ARR2, COUNT2)] {
+            c.bus.write32(ctx + 0x10, arr);
+            c.bus.write32(ctx + 0x14, cnt);
+            c.bus.write32(ctx + 0x1c, BOX);
+            c.bus.write32(cnt, 0);
+        }
+        // Objects: a chain of up to six, bounds around the box.
+        let n = seed % 7;
+        for i in 0..n {
+            let o = OBJ_2 + 0x200 * i;
+            c.bus.write32(o, if i + 1 < n { o + 0x200 } else { 0 });
+            for axis in 0..3u32 {
+                let lo = -9000.0 + 18000.0 * unit(&mut r);
+                put_f(c, o + 0x158 + 4 * axis, lo);
+                put_f(c, o + 0x164 + 4 * axis, lo + 3000.0 * unit(&mut r));
+            }
+        }
+        // The query cell: level 12 (children are leaves), or 11 (stops).
+        let level = if seed % 5 == 0 { 11 } else { 12 };
+        c.bus.write32(ROOT, level);
+        for axis in 0..3u32 {
+            let v = (r.next_u32() % 3) as i32 - 1;
+            c.bus.write32(ROOT + 4 + 4 * axis, v as u32);
+        }
+        // The node and its children; which children exist varies per seed.
+        let mask = r.next_u32();
+        for k in 0..8u32 {
+            let child = CHILD + 0x40 * k;
+            let present = (mask >> k) & 1 != 0;
+            c.bus.write32(NODE + 4 * k, if present { child } else { 0 });
+            c.bus.write32(child, 0);
+            c.bus.write32(child + 0x24, if n > 0 { OBJ_2 } else { 0 });
+        }
+        c.bus.write32(NODE + 0x24, if n > 0 { OBJ_2 } else { 0 });
+
+        c.g[A0][0] = sx(FLAG);
+        c.g[A1][0] = sx(CTX1);
+        c.g[A2][0] = sx(CTX2);
+        c.g[A3][0] = sx(BOX);
+        c.g[T0][0] = sx(NODE);
+        c.g[T1][0] = sx(ROOT);
+        c.pc = 0x0033_a3d8;
+    }
+
+    #[test]
+    fn cell_gather_obj_inst_recursive_matches() {
+        check(
+            ee::s11::f_0033a3d8__generated,
+            cell_gather_obj_inst_recursive,
+            200,
+            &|c, seed| setup_3(c, seed),
+        );
+    }
+
+    pub(crate) const CHILD_2: u32 = DATA + 0x2000;
+
+    pub(crate) const CELL: u32 = DATA + 0x3000;
+
+    pub(crate) const BOX_2: u32 = DATA + 0x3100;
+
+    pub(crate) const OBJ_3: u32 = DATA + 0x3200;
+
+    pub(crate) const CTX: u32 = DATA + 0x3300;
+
+    pub(crate) const CTX2_2: u32 = DATA + 0x3400;
+
+    pub(crate) const FLAG_2: u32 = DATA + 0x3500;
+
+    /// The float constants the body loads off gp (0.2f each).
+    pub(crate) const GP_CONSTS: [u32; 6] = [0x2cdc, 0x2cd8, 0x2cd4, 0x2cd0, 0x2ccc, 0x2cc8];
+
+    #[test]
+    fn cell_collide_objects_recursive_matches() {
+        check(
+            ee::s11::f_0033dfd8__generated,
+            cell_collide_objects_recursive,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0471, 0);
+                for off in GP_CONSTS {
+                    c.bus.write32(GAME_GP.wrapping_sub(off), 0x3e4c_cccd);
+                }
+                // the cell: level 8..=11, a key of small coordinates
+                c.bus.write32(CELL, 8 + r.next_u32() % 4);
+                c.bus.write32(CELL + 4, r.next_u32() % 4);
+                c.bus.write32(CELL + 8, r.next_u32() % 4);
+                c.bus.write32(CELL + 0xc, r.next_u32() % 4);
+                // the box, some misses on some axes
+                for i in 0..3u32 {
+                    let min = (r.next_u32() % 8000) as f32 - 1000.0;
+                    let max = min + (r.next_u32() % 3000) as f32;
+                    c.bus.write32(BOX_2 + 4 * i, min.to_bits());
+                    c.bus.write32(BOX_2 + 0x10 + 4 * i, max.to_bits());
+                }
+                // the node: children (some null), empty zeroed children, and
+                // every fifth seed one object in the node's list
+                for k in 0..8u32 {
+                    let p = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        CHILD_2 + 0x40 * k
+                    };
+                    c.bus.write32(NODE + 4 * k, p);
+                }
+                c.bus
+                    .write32(NODE + NODE_OBJECTS, if seed % 5 == 0 { OBJ_3 } else { 0 });
+                c.g[A0][0] = sx(FLAG_2);
+                c.g[A1][0] = sx(CTX);
+                c.g[A2][0] = sx(CTX2_2);
+                c.g[A3][0] = sx(BOX_2);
+                c.g[T0][0] = sx(NODE);
+                c.g[T1][0] = sx(CELL);
+                c.pc = 0x0033_dfd8;
             },
         );
     }
