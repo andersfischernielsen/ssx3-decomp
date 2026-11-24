@@ -30461,10 +30461,16 @@ pub(crate) mod tests {
                 c.g[A3][0] = sx(modifier);
                 for i in 0..4u32 {
                     let chan = kb + i * CHANNEL_SIZE as u32;
-                    let read = match r.next_u32() % 4 {
-                        0 => (r.next_u32() % 200).wrapping_neg(),
-                        1 => r.next_u32() % 1000,
-                        _ => r.next_u32() % 64,
+                    // seed%10 == 9: every read counter at -1, the one
+                    // negative count whose remainder rounds the other way.
+                    let read = if seed % 10 == 9 {
+                        u32::MAX
+                    } else {
+                        match r.next_u32() % 4 {
+                            0 => (r.next_u32() % 200).wrapping_neg(),
+                            1 => r.next_u32() % 1000,
+                            _ => r.next_u32() % 64,
+                        }
                     };
                     let count = if r.next_u32() % 4 == 0 {
                         read
@@ -31090,11 +31096,30 @@ pub(crate) mod tests {
         ret(c);
     }
 
+    /// `Net_DisconnectAll` (0x2636f0) for the net tests: the real one runs
+    /// the whole lobby shutdown, so this logs a0/a1 at `NET_CTRL + 0x80` and
+    /// returns.
+    pub(crate) fn net_fake_disconnect_all(c: &mut Cpu) {
+        use crate::difftest::fakes::{fall_back, prev_cell};
+        if c.bus.read32(NET_CTRL) != NET_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(net_fake_disconnect_all),
+                ee::s07::f_002636f0__generated,
+            );
+        }
+        c.bus.write32(NET_CTRL + 0x80, c.g[A0][0] as u32);
+        c.bus.write32(NET_CTRL + 0x84, c.g[A1][0] as u32);
+        c.cycles += 7;
+        ret(c);
+    }
+
     /// Net_UpdateConnect: idle, connecting (the comm system up: the message
-    /// post through a fake allocator; or still waiting: the timer counts
-    /// down), connected (no failure) and unknown states. Not reached: the
-    /// three disconnect paths (comm failure, timeout): the real
-    /// Net_DisconnectAll runs the whole lobby shutdown.
+    /// post through a fake allocator; failed: the disconnect through a fake;
+    /// or still waiting: the timer counts down or has run out), connected
+    /// (no failure) and unknown states. One digit per steering value:
+    /// seed%6 the state, seed/6%6 the comm system's state, seed/36%2 a timer
+    /// already below zero (72 seeds, the full cross).
     #[test]
     fn net_update_connect_matches() {
         use crate::difftest::fakes::{hook, prev_cell};
@@ -31103,10 +31128,17 @@ pub(crate) mod tests {
             net_fake_mem_alloc,
             prev_cell(net_fake_mem_alloc),
         );
+        hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_002636F0),
+            net_fake_disconnect_all,
+            prev_cell(net_fake_disconnect_all),
+        );
+        const SEEDS: u32 = 72;
+        assert_eq!(SEEDS, 6 * 6 * 2, "state x comm state x timer");
         check(
             ee::s07::f_00263828__generated,
             net_update_connect,
-            200,
+            SEEDS,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x263828, 0);
                 c.pc = 0x0026_3828;
@@ -31122,16 +31154,13 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 let state = [0u32, 1, 1, 2, 3, 0xffff_ffff][(seed % 6) as usize];
                 c.bus.write32(this + NET_CONNECT_STATE, state);
+                let timer = 0.01 + (r.next_u32() % 100) as f32;
                 c.bus.write32(
                     this + NET_CONNECT_TIMER,
-                    (0.01 + (r.next_u32() % 100) as f32).to_bits(),
+                    if seed / 36 % 2 == 0 { timer } else { -timer }.to_bits(),
                 );
                 c.bus.write32(GAME_GP - NET_COMM_SYSTEM_GP, comm);
-                let comm_state = if seed % 3 == 0 {
-                    5
-                } else {
-                    [0u32, 2, 4, 7][(seed / 3 % 4) as usize]
-                };
+                let comm_state = [5u32, 0, 2, 4, 7, 6][(seed / 6 % 6) as usize];
                 c.bus.write32(comm + 0x20, comm_state);
                 c.bus.write32(comm + 0x28, r.next_u32());
                 c.bus.write32(GAME_GP - NET_LOBBY_MAN_GP, lobby);
