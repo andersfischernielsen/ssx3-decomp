@@ -19,6 +19,7 @@ pub(crate) use crate::game::be::bedbreward::POST_RACE_GP;
 pub(crate) use crate::game::be::bedbreward::PRE_RACE_GP;
 #[cfg(test)]
 pub(crate) use crate::game::be::bedbreward::RACE_GP;
+pub(crate) use crate::game::be::beintcharacter::BOLT_CALL_GET_RIDER_CHARACTER_DB;
 pub(crate) use crate::game::be::beintmission::lw;
 pub(crate) use crate::game::be::beintmission::BE_GET_RIDER_CHARACTER;
 pub(crate) use crate::game::be::beintmission::EA_MEM_ALLOC_NAMED;
@@ -106,6 +107,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_c250,
         be_network_int_destroy_instance,
         "BENetworkInt_DestroyInstance",
+    ),
+    (
+        0x0014_e2c0,
+        be_network_int_get_sync_data_size,
+        "BENetworkInt_GetSyncDataSize",
+    ),
+    (
+        0x0014_ef00,
+        be_get_rider_char_db_entry,
+        "BE_GetRiderCharDBEntry",
     ),
 ];
 
@@ -933,6 +944,35 @@ pub fn be_restore_player_setup(c: &mut Cpu) {
     }
 }
 
+/// `BENetworkInt_GetSyncDataSize` (0x14e2c0): the size of the network sync
+/// block, 0xc44 bytes.
+pub fn be_network_int_get_sync_data_size(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0xc44;
+    abi::ret(c);
+}
+
+/// `BE_GetRiderCharDBEntry(rider)` (0x14ef00): the rider's character record
+/// in the character table at 0x5309a0.
+pub fn be_get_rider_char_db_entry(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        BOLT_CALL_GET_RIDER_CHARACTER_DB.call(c, 0x0014_ef10)?;
+        c.g[A0][0] = 0x88;
+        c.g[V1][0] = 0x0053_0000;
+        let character = c.g[V0][0] as u32;
+        c.g[V0][0] = sx(abi::mult(c, character, 0x88));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x9a0));
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1324,5 +1364,49 @@ pub(crate) mod tests {
                 put_words(c, 0x0053_5b20, &[0, 0, 0, 0, 0, 0, 0, 0]);
             },
         );
+    }
+
+    use crate::difftest::fill;
+    pub(crate) use crate::game::be::beintcharacter::be_get_rider_char_db_field_1c;
+    pub(crate) use crate::game::be::beintcharacter::be_get_rider_char_db_flag_2c;
+
+    #[test]
+    fn be_network_int_get_sync_data_size_matches() {
+        check(
+            ssx3_ee::s01::f_0014e2c0__generated,
+            be_network_int_get_sync_data_size,
+            4,
+            &|c, seed| {
+                let mut r = Rng(0xe2c0_0000 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn be_get_rider_char_db_getters_match() {
+        for (gen, hand, salt) in [
+            (
+                ssx3_ee::s01::f_0014ef00__generated as fn(&mut Cpu),
+                be_get_rider_char_db_entry as fn(&mut Cpu),
+                0xef00,
+            ),
+            (
+                ssx3_ee::s01::f_0014f108__generated,
+                be_get_rider_char_db_field_1c,
+                0xf108,
+            ),
+            (
+                ssx3_ee::s01::f_0014f138__generated,
+                be_get_rider_char_db_flag_2c,
+                0xf138,
+            ),
+        ] {
+            check(gen, hand, 40, &|c, seed| {
+                let mut r = machine(c, seed, salt, 0);
+                c.g[A1][0] = (seed % 8) as u64;
+                fill(c, &mut r, 0x0053_0000, 0x800);
+            });
+        }
     }
 }

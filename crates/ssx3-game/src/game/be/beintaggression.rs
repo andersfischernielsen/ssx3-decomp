@@ -7,6 +7,8 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+use crate::game::be::beintmission::callee::BE_GET_RIDER_CHARACTER as BE_GET_RIDER_CHARACTER_m2;
+use crate::game::be::beintmission::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_m2;
 pub(crate) use crate::game::be::beintmission::lw;
 pub(crate) use crate::game::be::beintmission::BE_GET_RIDER_CHARACTER;
 pub(crate) use crate::game::be::beintmission::BE_GET_RIDER_PROFILE;
@@ -45,6 +47,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_5e58,
         be_aggression_int_decay_all,
         "BEAggressionInt_DecayAll",
+    ),
+    (
+        0x0015_61b0,
+        be_aggression_int_load_state,
+        "BEAggressionInt_LoadState",
+    ),
+    (
+        0x0015_62b8,
+        be_library_switch_phase,
+        "BELibrary_SwitchPhase",
     ),
 ];
 
@@ -693,6 +705,153 @@ pub fn be_aggression_int_decay_all(c: &mut Cpu) {
     })
 }
 
+/// `void BEAggressionInt_LoadState(void *self, void *stream)` (0x1561b0):
+/// for each rider, read the callee-reported counts (`func(stream, 4, &count)`
+/// through the stream vtable) and accumulate the per-character records.
+pub fn be_aggression_int_load_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0xb0);
+        'b: {
+            c.g[A2][0] = 0x4;
+            frame.save(c, S1, 0x90);
+            frame.save(c, S3, 0x70);
+            c.g[S1][0] = 0;
+            frame.save(c, S0, 0xa0);
+            c.g[S3][0] = c.g[A1][0];
+            frame.save(c, S2, 0x80);
+            c.g[A1][0] = c.g[SP][0];
+            frame.save(c, S4, 0x60);
+            frame.save(c, S5, 0x50);
+            frame.save(c, S6, 0x40);
+            frame.save(c, S7, 0x30);
+            frame.save(c, FP, 0x20);
+            frame.save_ra(c, 0x10);
+            c.g[V0][0] = Addr(c.g[S3][0] as u32).lw(c);
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x10)).lh(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x14)).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0015_6200)?;
+            c.g[V0][0] = Addr(frame.at(c, 0)).lw(c);
+            let none = (c.g[V0][0] as i64) <= 0;
+            c.g[V0][0] = 0x4a0000;
+            if none {
+                break 'b;
+            }
+            c.cycles += 5;
+            c.g[FP][0] = 0x9b50;
+            c.g[S7][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
+            c.g[S6][0] = 0xf88;
+            c.g[A0][0] = c.g[S1][0];
+            'outer: loop {
+                c.cycles += 6;
+                c.g[S5][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                c.g[A0][0] = c.g[S1][0];
+                BE_GET_RIDER_PROFILE_m2.call(c, 0x0015_6228)?;
+                c.g[S2][0] = 0xbc1;
+                c.mult(0, S4, V0, FP);
+                c.g[S0][0] = 0x9;
+                c.g[A0][0] = c.g[S1][0];
+                'inner: loop {
+                    c.cycles += 15;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[A0][0] = c.g[S1][0];
+                    BE_GET_RIDER_CHARACTER_m2.call(c, 0x0015_6240)?;
+                    c.mult(0, V1, V0, S6);
+                    c.g[A2][0] = 0x3;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                    c.g[V1][0] = Addr(c.g[S3][0] as u32).lw(c);
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x10)).lh(c);
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x3));
+                    c.g[A3][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x14)).lw(c);
+                    let target = c.g[A3][0] as u32;
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0015_626c)?;
+                    if (c.g[S0][0] as i64) >= 0 {
+                        c.g[A0][0] = c.g[S1][0];
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0015_6238);
+                        }
+                        continue 'inner;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(frame.at(c, 0)).lw(c);
+                    c.g[S1][0] = c.g[S5][0];
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A0][0] = c.g[S1][0];
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0015_6220);
+                        }
+                        continue 'outer;
+                    }
+                    break 'b;
+                }
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void BELibrary_SwitchPhase(int phase)` (0x1562b8): run the outgoing
+/// phase's exit hook (vtable slot +0x18/+0x1c through the table at
+/// 0x5308a8), store the new phase in the global at gp-0x1efc, then run the
+/// incoming phase's enter hook (slot +0x20/+0x24).
+pub fn be_library_switch_phase(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 31;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1efc)).lw(c);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = 0x530000;
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8a8));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.g[A1][0] = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x4)).lw(c);
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x18)).lh(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x1c)).lw(c);
+        let exit_hook = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, exit_hook, 0x0015_62f8)?;
+        c.g[V1][0] = Addr(c.g[S1][0] as u32).lw(c);
+        c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+        let phase = c.g[V1][0];
+        Addr((c.g[GP][0] as u32).wrapping_sub(0x1efc)).sw(c, phase);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.g[A1][0] = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x4)).lw(c);
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x20)).lh(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x24)).lw(c);
+        let enter_hook = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, enter_hook, 0x0015_6320)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -870,6 +1029,46 @@ pub(crate) mod tests {
                 c.bus.write32(OC430_CTRL, OC430_MAGIC);
                 c.pc = 0x0015_5e58;
                 oc430_aggression_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::vtable;
+
+    #[test]
+    fn be_aggression_int_load_state_matches() {
+        check(
+            ee::s01::f_001561b0__generated,
+            be_aggression_int_load_state,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x61b0, 0);
+                let obj = DATA + 0x2000;
+                let vt = vtable(c, &mut r, &[0x10, 0x14]);
+                c.bus.write32(obj, vt);
+                c.g[A1][0] = obj as u64;
+                fill(c, &mut r, DATA + 0x3000, 0x100);
+            },
+        );
+    }
+
+    #[test]
+    fn be_library_switch_phase_matches() {
+        check(
+            ee::s01::f_001562b8__generated,
+            be_library_switch_phase,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x62b8, 0);
+                let vt = vtable(c, &mut r, &[0x18, 0x1c, 0x20, 0x24]);
+                for k in 0..4u32 {
+                    let obj = DATA + 0x2000 + 0x40 * k;
+                    c.bus.write32(obj + 4, vt);
+                    c.bus.write32(0x0053_08a8 + 4 * k, obj);
+                }
+                c.bus.write32(GAME_GP.wrapping_sub(0x1efc), seed % 4);
+                c.g[A0][0] = DATA as u64 + 0x3000 + (seed % 4) as u64 * 4;
+                c.bus.write32(DATA + 0x3000 + (seed % 4) * 4, seed % 4);
             },
         );
     }

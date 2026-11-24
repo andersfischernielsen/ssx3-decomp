@@ -117,6 +117,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_apply_bolt_dependencies,
         "BE_ApplyBoltDependencies",
     ),
+    (
+        0x0015_2368,
+        be_test_char_profile_bolt_flags,
+        "BE_TestCharProfileBoltFlags",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2246,6 +2251,26 @@ pub fn be_init_char_profile_bolt_map(c: &mut Cpu) {
     })
 }
 
+/// `int BE_TestCharProfileBoltFlags(self, id, mask)` (0x152368): whether every
+/// bit of `mask` is set in the 16-bit flags of bolt map entry `id`. The map
+/// (at self+0x288) gives a halfword index per id, the flags sit at
+/// `self + 4 * index + 0x292`. Returns 1 when `(~flags & mask) == 0`.
+pub fn be_test_char_profile_bolt_flags(c: &mut Cpu) {
+    c.cycles += 11;
+    let this = c.g[A0][0] as u32;
+    c.g[V0][0] = Addr(this).off(0x288).lw(c);
+    c.g[A1][0] = sx((c.g[A1][0] as u32) << 1);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V1][0] = Addr(c.g[A1][0] as u32).lh(c);
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(this));
+    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x292)).lhu(c);
+    c.g[V0][0] = !c.g[V0][0];
+    c.g[V0][0] &= c.g[A2][0];
+    c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2818,6 +2843,36 @@ pub(crate) mod tests {
                 );
                 c.g[A0][0] = PROFILE as u64;
                 c.g[A1][0] = (seed % 4) as u64;
+            },
+        );
+    }
+
+    /// The map entry of a random id, its flags, and a mask that is either
+    /// empty (true) or random (mostly false).
+    #[test]
+    fn be_test_char_profile_bolt_flags_matches() {
+        check(
+            ee::s01::f_00152368__generated,
+            be_test_char_profile_bolt_flags,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0015_2368, 0);
+                c.pc = 0x0015_2368;
+                let this = DATA;
+                let map = DATA + 0x400;
+                let id = r.next_u32() % 32;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = id as u64;
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.bus.write32(this + 0x288, map);
+                c.bus.write16(map + 2 * id, (r.next_u32() % 64) as u16);
+                for k in 0..64 {
+                    c.bus.write16(this + 4 * k + 0x292, r.next_u32() as u16);
+                }
             },
         );
     }

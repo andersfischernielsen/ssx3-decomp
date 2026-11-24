@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -20,6 +21,28 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "BE_GetRiderCharDBWeight",
     ),
     (0x0014_efa8, be_get_rider_size_scale, "BE_GetRiderSizeScale"),
+    (
+        0x0014_f108,
+        be_get_rider_char_db_field_1c,
+        "BE_GetRiderCharDBField1C",
+    ),
+    (
+        0x0014_f138,
+        be_get_rider_char_db_flag_2c,
+        "BE_GetRiderCharDBFlag2C",
+    ),
+    (0x0014_f170, be_char_get_age, "BE_GetRiderCharDBField30"),
+    (0x0014_f1b0, be_char_get_height, "BE_GetRiderCharDBField34"),
+    (
+        0x0014_f1e0,
+        be_char_get_nationality,
+        "BE_GetRiderCharDBField44",
+    ),
+    (
+        0x0014_f210,
+        be_char_get_voice_id,
+        "BE_GetRiderCharDBField54",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -208,6 +231,137 @@ pub fn be_get_rider_size_scale(c: &mut Cpu) {
     })
 }
 
+/// `BE_GetRiderCharacter` (0x14a080).
+pub(crate) const BOLT_CALL_GET_RIDER_CHARACTER_DB: Callee = Callee {
+    addr: 0x0014_a080,
+    f: ee::s01::BE_GetRiderCharacter,
+};
+
+/// `BE_GetRiderCharDBField1C(rider)` (0x14f108): the character table's
+/// field at +0x1c of a rider's character, 0x5309bc.
+pub fn be_get_rider_char_db_field_1c(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        BOLT_CALL_GET_RIDER_CHARACTER_DB.call(c, 0x0014_f118)?;
+        c.g[A0][0] = 0x88;
+        c.g[V1][0] = 0x0053_0000;
+        let character = c.g[V0][0] as u32;
+        c.g[V0][0] = sx(abi::mult(c, character, 0x88));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x9bc));
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `BE_GetRiderCharDBFlag2C(rider)` (0x14f138): whether a rider's character
+/// has the flag at +0x5c of its 0x970 entry set (`0 < word`).
+pub fn be_get_rider_char_db_flag_2c(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        BOLT_CALL_GET_RIDER_CHARACTER_DB.call(c, 0x0014_f148)?;
+        c.g[A0][0] = 0x88;
+        c.g[V1][0] = 0x0053_0000;
+        let character = c.g[V0][0] as u32;
+        c.g[V0][0] = sx(abi::mult(c, character, 0x88));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x970));
+        frame.restore_ra(c, 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x5c)).lw(c);
+        c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `BE_GetRiderCharacter(int player)` (0x14a080).
+pub(crate) const CHAR_GETTER_RIDER_CHARACTER: Callee = Callee {
+    addr: 0x0014_a080,
+    f: ee::s01::BE_GetRiderCharacter,
+};
+
+/// The character database: 0x88-byte records (`cBECharacterInterface`).
+pub(crate) const CHAR_GETTER_DB: u32 = 0x0053_0970;
+
+/// Size of one character record.
+pub(crate) const CHAR_GETTER_RECORD: u32 = 0x88;
+
+/// The shared body of `getAge` and `getVoiceID` (0x14f170, 0x14f210): the
+/// word at `field` of the rider's character record. `BE_GetRiderCharacter(a1)`
+/// selects the record; its pointer is kept in s0 across the call (0x20-byte
+/// frame, s0 saved at +0x10, ra at +0).
+pub(crate) fn char_getter_record_word(c: &mut Cpu, call_ret: u32, field: u32) -> Flow {
+    c.cycles += 15;
+    let frame = Frame::open(c, 0x20);
+    c.g[A0][0] = c.g[A1][0];
+    frame.save(c, S0, 0x10);
+    c.g[S0][0] = sx(CHAR_GETTER_DB);
+    frame.save_ra(c, 0);
+    CHAR_GETTER_RIDER_CHARACTER.call(c, call_ret)?;
+    c.g[V1][0] = CHAR_GETTER_RECORD as u64;
+    frame.restore_ra(c, 0);
+    let character = c.g[V0][0] as u32;
+    let off = abi::mult(c, character, CHAR_GETTER_RECORD);
+    c.g[V0][0] = sx(off);
+    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(off));
+    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(field).lw(c);
+    frame.restore(c, S0, 0x10);
+    frame.close(c);
+    Ok(())
+}
+
+/// The shared body of `getHeight` and `getNationality` (0x14f1b0, 0x14f1e0):
+/// the address `0x530000 + table + character * 0x88` (a pointer, no memory
+/// read). The frame holds only ra.
+pub(crate) fn char_getter_table_address(c: &mut Cpu, call_ret: u32, table: u32) -> Flow {
+    c.cycles += 12;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[A0][0] = c.g[A1][0];
+    CHAR_GETTER_RIDER_CHARACTER.call(c, call_ret)?;
+    c.g[A0][0] = CHAR_GETTER_RECORD as u64;
+    let entry = 0x0053_0000u32.wrapping_add(table);
+    c.g[V1][0] = sx(entry);
+    let character = c.g[V0][0] as u32;
+    let off = abi::mult(c, character, CHAR_GETTER_RECORD);
+    c.g[V0][0] = sx(off);
+    frame.restore_ra(c, 0);
+    c.g[V0][0] = sx(off.wrapping_add(entry));
+    frame.close(c);
+    Ok(())
+}
+
+/// `cBECharacterInterface::getAge` (0x14f170): the rider character's age word
+/// (record +0x60).
+pub fn be_char_get_age(c: &mut Cpu) {
+    guest(c, |c| char_getter_record_word(c, 0x0014_f18c, 0x60));
+}
+
+/// `cBECharacterInterface::getHeight` (0x14f1b0): the address of the rider
+/// character's height entry in the table at 0x5309d4.
+pub fn be_char_get_height(c: &mut Cpu) {
+    guest(c, |c| char_getter_table_address(c, 0x0014_f1c0, 0x9d4));
+}
+
+/// `cBECharacterInterface::getNationality` (0x14f1e0): the address of the rider
+/// character's nationality entry in the table at 0x5309e4.
+pub fn be_char_get_nationality(c: &mut Cpu) {
+    guest(c, |c| char_getter_table_address(c, 0x0014_f1f0, 0x9e4));
+}
+
+/// `cBECharacterInterface::getVoiceID` (0x14f210): the rider character's voice
+/// id word (record +0x84).
+pub fn be_char_get_voice_id(c: &mut Cpu) {
+    guest(c, |c| char_getter_record_word(c, 0x0014_f22c, 0x84));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -297,6 +451,99 @@ pub(crate) mod tests {
                     .write32(0x0053_0970 + 0x88 * ch + 0x48, 80 + r.next_u32() % 40);
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = (r.next_u32() % 3) as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+    use crate::difftest::Rng;
+    use crate::state::race_setup::PLAYER_SLOTS as PLAYER_SLOTS_m2;
+    use crate::state::race_setup::REC_CHARACTER;
+    use crate::state::race_setup::REC_FLAGS;
+    use crate::state::race_setup::REC_PROFILE_ID;
+    use crate::state::race_setup::RIDER_RECORDS as RIDER_RECORDS_m2;
+    use crate::state::race_setup::RIDER_RECORD_SIZE;
+
+    /// Race setup for `rider` (a player index): its slot, the slot's record
+    /// (profile word, flags, character). Returns the profile index
+    /// `BE_GetRiderProfile` gives and the character.
+    pub(crate) fn rider_fixture(c: &mut Cpu, r: &mut Rng, rider: u32) -> (u32, u32) {
+        let slot = r.next_u32() % 16;
+        let profile_word = if r.next_u32() % 3 == 0 {
+            u32::MAX
+        } else {
+            r.next_u32() % 2
+        };
+        let flags = r.next_u32();
+        let ch = r.next_u32() % 16;
+        c.bus.write32(PLAYER_SLOTS_m2.0 + 4 * rider, slot);
+        let rec = RIDER_RECORDS_m2.0 + slot * RIDER_RECORD_SIZE;
+        c.bus.write32(rec + REC_PROFILE_ID, profile_word);
+        c.bus.write32(rec + REC_FLAGS, flags);
+        c.bus.write8(rec + REC_CHARACTER, ch as u8);
+        let profile = if profile_word == u32::MAX {
+            2
+        } else {
+            flags & 1
+        };
+        (profile, ch)
+    }
+
+    /// The `cBECharacterInterface` getters' setup: a rider's character (through
+    /// its race record) and random words in every character record.
+    pub(crate) fn character_getter_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        let mut r = machine(c, seed, entry as u64, 0);
+        c.pc = entry;
+        let rider = seed % 4;
+        let _ = rider_fixture(c, &mut r, rider);
+        c.g[A1][0] = rider as u64;
+        fill(c, &mut r, CHAR_GETTER_DB, 16 * CHAR_GETTER_RECORD / 4);
+    }
+
+    #[test]
+    fn be_char_get_age_matches() {
+        check(
+            ee::s01::f_0014f170__generated,
+            be_char_get_age,
+            200,
+            &|c, seed| {
+                character_getter_setup(c, seed, 0x0014_f170);
+            },
+        );
+    }
+
+    #[test]
+    fn be_char_get_height_matches() {
+        check(
+            ee::s01::f_0014f1b0__generated,
+            be_char_get_height,
+            200,
+            &|c, seed| {
+                character_getter_setup(c, seed, 0x0014_f1b0);
+            },
+        );
+    }
+
+    #[test]
+    fn be_char_get_nationality_matches() {
+        check(
+            ee::s01::f_0014f1e0__generated,
+            be_char_get_nationality,
+            200,
+            &|c, seed| {
+                character_getter_setup(c, seed, 0x0014_f1e0);
+            },
+        );
+    }
+
+    #[test]
+    fn be_char_get_voice_id_matches() {
+        check(
+            ee::s01::f_0014f210__generated,
+            be_char_get_voice_id,
+            200,
+            &|c, seed| {
+                character_getter_setup(c, seed, 0x0014_f210);
             },
         );
     }

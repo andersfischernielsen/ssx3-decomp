@@ -52,6 +52,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "BELibrary_ReadSaveData",
     ),
     (0x0014_df08, be_library_save_state, "BELibrary_SaveState"),
+    (
+        0x0014_dee8,
+        be_call_empty_stub_dee8,
+        "BE_CallEmptyStub_dee8",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -452,6 +457,27 @@ pub fn be_library_save_state(c: &mut Cpu) {
     })
 }
 
+/// `BE_EmptyStub_a078` (0x14a078).
+pub(crate) const BOLT_CALL_EMPTY_STUB: Callee = Callee {
+    addr: 0x0014_a078,
+    f: ee::s01::BE_EmptyStub_a078,
+};
+
+/// `BE_CallEmptyStub_dee8` (0x14dee8): calls the empty stub with the word at
+/// `gp-0x1ef8`.
+pub fn be_call_empty_stub_dee8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ef8)).lw(c);
+        frame.save_ra(c, 0);
+        BOLT_CALL_EMPTY_STUB.call(c, 0x0014_defc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -642,6 +668,19 @@ pub(crate) mod tests {
                 c.bus.write32(iface_vt + BEL_IFACE_SAVE + 4, FAKE + 0x20);
                 c.g[A0][0] = sx(lib);
                 c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    #[test]
+    fn be_call_empty_stub_dee8_matches() {
+        check(
+            ssx3_ee::s01::f_0014dee8__generated,
+            be_call_empty_stub_dee8,
+            20,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xdee8, 0);
+                c.bus.write32(GAME_GP - 0x1ef8, r.next_u32());
             },
         );
     }

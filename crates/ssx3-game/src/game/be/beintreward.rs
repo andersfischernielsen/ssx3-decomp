@@ -444,6 +444,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_reward_int_begin_reward_tracking,
         "BERewardInt_BeginRewardTracking",
     ),
+    (
+        0x0015_7350,
+        be_reward_int_get_audio_system_field504,
+        "BERewardInt_GetAudioSystemField504",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4093,6 +4098,40 @@ pub fn be_reward_int_begin_reward_tracking(c: &mut Cpu) {
     })
 }
 
+/// `void BERewardInt_LoadRewardsFile(void)` (0x156a10): load the rewards
+/// file (`RewardsFile_Load(0x4c3e98, 1)`). Not installed: the real loader
+/// runs away on test data, so there is no differential test.
+#[allow(dead_code)]
+pub fn be_reward_int_load_rewards_file_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x4c0000;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0x1;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3e98));
+        crate::game::be::beintmission::callee::REWARDS_FILE_LOAD.call(c, 0x0015_6a28)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int BERewardInt_GetAudioSystemField504(void)` (0x157350): the word at
+/// +0x504 of the object the table function at 0x28b180 returns.
+pub fn be_reward_int_get_audio_system_field504(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x0028_b180, 0x0015_7360)?;
+        c.g[V0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x504)).lw(c);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5604,6 +5643,22 @@ pub(crate) mod tests {
                 let _ = oc434_setup(c, seed, 0x158e30, 10, 0x0015_8e30);
                 c.g[A0][0] = (DATA + 0x100) as u64;
                 oc434_w(c, GAME_GP.wrapping_sub(0x1e8c), DATA + 0x800);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    #[test]
+    fn be_reward_int_get_audio_system_field504_matches() {
+        check(
+            ee::s01::f_00157350__generated,
+            be_reward_int_get_audio_system_field504,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x7350, 0);
+                fill(c, &mut r, DATA + 0x3000, 0x400);
+                c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x3000);
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -28,6 +29,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "BECharInt_IsTrickScoreAboveRating",
     ),
     (0x0014_99a8, belibrary_dtor, "BELibrary_dtor"),
+    (0x0014_a078, be_empty_stub_a078, "BE_EmptyStub_a078"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -516,6 +518,12 @@ pub fn be_library_ctor(c: &mut Cpu) {
     })
 }
 
+/// `BE_EmptyStub_a078` (0x14a078): does nothing, returns.
+pub fn be_empty_stub_a078(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -631,6 +639,22 @@ pub(crate) mod tests {
                 w(c, DATA + 0x808, 1);
                 w(c, DATA + 0x80c, 0);
                 w(c, DATA + 0x810, (seed % 7) as u32);
+            },
+        );
+    }
+
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+
+    #[test]
+    fn be_empty_stub_a078_matches() {
+        check(
+            ssx3_ee::s01::f_0014a078__generated,
+            be_empty_stub_a078,
+            10,
+            &|c, seed| {
+                let mut r = Rng(0x14a0_7800 ^ seed as u64);
+                scramble(c, &mut r);
             },
         );
     }

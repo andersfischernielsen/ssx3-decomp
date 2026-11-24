@@ -10,6 +10,8 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+use crate::game::be::beintmission::callee::BE_GET_RIDER_CHARACTER;
+use crate::game::be::beintmission::callee::BE_GET_RIDER_PROFILE;
 pub(crate) use crate::game::fe::debugfe::r32_2;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
@@ -18,6 +20,7 @@ pub(crate) use crate::game::fe::fereal::open;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::scripter::ssxscriptengine::p;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -91,6 +94,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_4ee8,
         be_score_int_submit_placement,
         "BEScoreInt_SubmitPlacement",
+    ),
+    (
+        0x0015_52b0,
+        be_score_int_get_record_level,
+        "BEScoreInt_GetRecordLevel",
+    ),
+    (
+        0x0015_5848,
+        be_score_int_get_event_podium_count,
+        "BEScoreInt_GetEventPodiumCount",
+    ),
+    (
+        0x0015_59a8,
+        be_score_int_record_event_result,
+        "BEScoreInt_RecordEventResult",
     ),
 ];
 
@@ -1420,6 +1438,175 @@ pub fn be_score_int_submit_placement(c: &mut Cpu) {
     })
 }
 
+/// `int BEScoreInt_GetRecordLevel(void *self, int rider)` (0x1552b0): the
+/// `level` byte (+0xbb8) of the rider's character record, indexed by the
+/// rider's character (the record stride is 0xf88; 0x4a6ca8 is the table).
+pub fn be_score_int_get_record_level(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A0][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        BE_GET_RIDER_CHARACTER.call(c, 0x0015_52c8)?;
+        c.g[A0][0] = 0xf88;
+        c.g[V1][0] = 0x4a0000;
+        c.mult(0, V0, V0, A0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6ca8));
+        frame.restore_ra(c, 0);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xbb8)).lb(c);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `BE_GetCharProfileEventRecord` (0x152398).
+pub(crate) const CALLEE_GET_CHAR_PROFILE_EVENT_RECORD: Callee = Callee {
+    addr: 0x0015_2398,
+    f: ee::s01::f_00152398,
+};
+
+/// `BE_RecordCharProfileEventPlace` (0x152528).
+pub(crate) const CALLEE_RECORD_CHAR_PROFILE_EVENT_PLACE: Callee = Callee {
+    addr: 0x0015_2528,
+    f: ee::s01::f_00152528,
+};
+
+/// `int BEScoreInt_GetEventPodiumCount(void *self, int rider, int event,
+/// int place)` (0x155848): 0 while the rider's record flag (+0x5f9) is set
+/// or the rider's profile index is not below 3; otherwise the record count
+/// (`lhu` at +2) of the character's event record for `event`/`place`.
+pub fn be_score_int_get_event_podium_count(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x530000;
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A2][0];
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x5f9)).lb(c);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S0, 0x40);
+        let flag_set = c.g[V1][0] != 0;
+        frame.save_ra(c, 0);
+        let mut lookup = false;
+        if !flag_set {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S1][0];
+            BE_GET_RIDER_PROFILE.call(c, 0x0015_5880)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V0][0] = (c.g[S0][0] < 0x3) as u64;
+            if c.g[V0][0] != 0 {
+                lookup = true;
+            }
+        }
+        if flag_set {
+            c.cycles += 1;
+        }
+        if lookup {
+            c.cycles += 15;
+            c.g[A0][0] = c.g[S1][0];
+            BE_GET_RIDER_CHARACTER.call(c, 0x0015_5898)?;
+            c.g[V1][0] = 0xf88;
+            c.g[A0][0] = 0x9b50;
+            c.mult(0, V0, V0, V1);
+            c.mult(0, A0, S0, A0);
+            c.g[V1][0] = 0x4a0000;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6ca8));
+            c.g[A2][0] = c.g[S3][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            CALLEE_GET_CHAR_PROFILE_EVENT_RECORD.call(c, 0x0015_58c4)?;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = 0;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x2)).lhu(c);
+            }
+        } else {
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void BEScoreInt_RecordEventResult(void *self, int rider, int event,
+/// int place, int extra)` (0x1559a8): record a placement for the rider's
+/// character unless the record flag (+0x5f9) is set or the profile index is
+/// not below 3. Mirrors `BEScoreInt_GetEventPodiumCount`'s lookup.
+pub fn be_score_int_record_event_result(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x60);
+        c.g[V0][0] = 0x530000;
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A3][0];
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x5f9)).lb(c);
+        c.g[S4][0] = c.g[T0][0];
+        frame.save(c, S0, 0x50);
+        let flag_set = c.g[V1][0] != 0;
+        frame.save_ra(c, 0);
+        let mut tail = true;
+        if !flag_set {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S1][0];
+            BE_GET_RIDER_PROFILE.call(c, 0x0015_59e8)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V0][0] = (c.g[S0][0] < 0x3) as u64;
+            if c.g[V0][0] != 0 {
+                c.cycles += 14;
+                c.g[A0][0] = c.g[S1][0];
+                BE_GET_RIDER_CHARACTER.call(c, 0x0015_5a00)?;
+                c.g[V1][0] = 0xf88;
+                c.g[A0][0] = 0x9b50;
+                c.mult(0, V0, V0, V1);
+                c.mult(0, A0, S0, A0);
+                c.g[V1][0] = 0x4a0000;
+                c.g[A1][0] = c.g[S2][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6ca8));
+                c.g[A2][0] = c.g[S3][0];
+                c.g[A3][0] = c.g[S4][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                CALLEE_RECORD_CHAR_PROFILE_EVENT_PLACE.call(c, 0x0015_5a30)?;
+            } else {
+                tail = false;
+            }
+        }
+        if tail {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x50);
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1757,6 +1944,61 @@ pub(crate) mod tests {
                 let results = [0u32, 1, 2, 3, u32::MAX, 5];
                 c.g[A2][0] = sx(results[seed as usize % 6]);
                 c.g[A3][0] = [0u32, 100, 6000, 7200][r.next_u32() as usize % 4] as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::be::beintmission::tests::be_setup;
+
+    #[test]
+    fn be_score_int_get_record_level_matches() {
+        check(
+            ee::s01::f_001552b0__generated,
+            be_score_int_get_record_level,
+            60,
+            &|c, seed| {
+                let mut r = be_setup(c, seed, 0x52b0);
+                c.g[A1][0] = (seed % 8) as u64;
+                fill(c, &mut r, 0x004a_6ca8, 0x1000);
+            },
+        );
+    }
+
+    #[test]
+    fn be_score_int_get_event_podium_count_matches() {
+        check(
+            ee::s01::f_00155848__generated,
+            be_score_int_get_event_podium_count,
+            60,
+            &|c, seed| {
+                let mut r = be_setup(c, seed, 0x5848);
+                c.g[A1][0] = (seed % 8) as u64;
+                c.g[A2][0] = (seed % 5) as u64;
+                c.g[A3][0] = (seed % 3) as u64;
+                if seed % 5 == 0 {
+                    c.bus.write8(0x0053_05f9, 1);
+                }
+                fill(c, &mut r, 0x004a_6ca8, 0x800);
+            },
+        );
+    }
+
+    #[test]
+    fn be_score_int_record_event_result_matches() {
+        check(
+            ee::s01::f_001559a8__generated,
+            be_score_int_record_event_result,
+            60,
+            &|c, seed| {
+                let mut r = be_setup(c, seed, 0x59a8);
+                c.g[A1][0] = (seed % 8) as u64;
+                c.g[A2][0] = (seed % 5) as u64;
+                c.g[A3][0] = (seed % 3) as u64;
+                c.g[T0][0] = r.next_u32() as u64;
+                if seed % 5 == 0 {
+                    c.bus.write8(0x0053_05f9, 1);
+                }
+                fill(c, &mut r, 0x004a_6ca8, 0x800);
             },
         );
     }

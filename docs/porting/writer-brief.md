@@ -259,6 +259,12 @@ every difference a parameter.
   60+ call sites (`Player_dtor`, `RiderBase_dtor`) is skipped by writers: give
   it a dedicated wave, split by segment.
 
+- Generated bodies close nested blocks with a bare `}` at column 0: a body
+  extractor must stop at a blank line, not at `^}$`.
+- `c.mult(0, rd, rs, rt)` writes `rd` too: `c.mult(0, 2, 2, 4)` is v0 = v0 * a0.
+- `Addr(x).sw(c, c.g[..])` double-borrows `c`: bind the value first.
+- A real file loader as callee runs away on test data: drop its entry and test.
+
 ## Report
 
 Per function: written (or skipped, and why), its test, and anything uncertain

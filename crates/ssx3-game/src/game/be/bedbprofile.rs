@@ -34,6 +34,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_get_char_profile_event_record,
         "BE_GetCharProfileEventRecord",
     ),
+    (
+        0x0015_2430,
+        be_set_char_profile_flag,
+        "BE_SetCharProfileFlag",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -431,6 +436,30 @@ pub fn be_get_char_profile_event_record(c: &mut Cpu) {
     })
 }
 
+/// `void BE_SetCharProfileFlag(self, bit, on)` (0x152430): sets (`on` != 0)
+/// or clears bit `bit & 31` of the word at self+0xacc.
+pub fn be_set_char_profile_flag(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 1;
+    c.g[V1][0] = sx(1u32 << ((c.g[A1][0] as u32) & 31));
+    let word = Addr(c.g[A0][0] as u32).off(0xacc);
+    if c.g[A2][0] == 0 {
+        c.cycles += 5;
+        c.g[V0][0] = word.lw(c);
+        c.g[V1][0] = !c.g[V1][0];
+        c.g[V0][0] &= c.g[V1][0];
+        let value = c.g[V0][0];
+        word.sw(c, value);
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = word.lw(c);
+        c.g[V0][0] |= c.g[V1][0];
+        let value = c.g[V0][0];
+        word.sw(c, value);
+    }
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -563,6 +592,27 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = r.next_u32() as u64;
                 c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn be_set_char_profile_flag_matches() {
+        check(
+            ee::s01::f_00152430__generated,
+            be_set_char_profile_flag,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0015_2430, 0);
+                c.pc = 0x0015_2430;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+                c.bus.write32(DATA + 0xacc, r.next_u32());
             },
         );
     }

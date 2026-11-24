@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
+use crate::abi::ret;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -15,6 +16,9 @@ use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::be::beintcharacter::CHAR_GETTER_RIDER_CHARACTER;
+use crate::game::be::beintmission::callee::BE_GET_RIDER_CHARACTER as BE_GET_RIDER_CHARACTER_m2;
+use crate::game::be::beintmission::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_m2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_2;
 pub(crate) use crate::game::dirtysock::tagsunk::p_2 as p;
 use crate::guest::Addr;
@@ -240,6 +244,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_3708,
         be_mission_int_count_collected_bits_on_peak,
         "BEMissionInt_CountCollectedBitsOnPeak",
+    ),
+    (
+        0x0015_33f8,
+        be_mission_int_get_peak_collected_count,
+        "BEMissionInt_GetPeakCollectedCount",
+    ),
+    (
+        0x0015_3b00,
+        be_mission_int_set_collected,
+        "BEMissionInt_SetCollected",
+    ),
+    (
+        0x0015_3f68,
+        be_mission_int_get_mission_value,
+        "BEMissionInt_GetMissionValue",
+    ),
+    (
+        0x0015_47d8,
+        be_mission_int_empty_stub_47d8,
+        "BEMissionInt_EmptyStub_47d8",
+    ),
+    (
+        0x0015_47e0,
+        be_mission_int_empty_stub_47e0,
+        "BEMissionInt_EmptyStub_47e0",
     ),
 ];
 
@@ -2262,6 +2291,241 @@ pub fn be_mission_int_count_collected_bits_on_peak(c: &mut Cpu) {
     })
 }
 
+/// `BE_GetRiderProfile(int player)` (0x14a0e0).
+pub(crate) const PEAK_RIDER_PROFILE: Callee = Callee {
+    addr: 0x0014_a0e0,
+    f: ee::s01::BE_GetRiderProfile,
+};
+
+/// `int BEMissionInt_GetPeakCollectedCount(self, rider, idx)` (0x1533f8): the
+/// sum of `cTotalCollected` (record +4, 12-byte records) over 17 collectible
+/// entries from `idx` of the rider's profile and character, in the profile
+/// library at 0x4a6ca8 (0x9b50 per profile, 0xf88 per character).
+pub fn be_mission_int_get_peak_collected_count(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S1][0];
+        PEAK_RIDER_PROFILE.call(c, 0x0015_341c)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        CHAR_GETTER_RIDER_CHARACTER.call(c, 0x0015_3428)?;
+        c.g[V1][0] = 0xc;
+        c.g[A0][0] = 0xf88;
+        let idx = c.g[S0][0] as u32;
+        let idx_off = sx(abi::mult(c, idx, 0xc));
+        c.g[S0][0] = idx_off;
+        let character = c.g[V0][0] as u32;
+        let char_off = sx(abi::mult(c, character, 0xf88));
+        c.g[V0][0] = char_off;
+        c.g[A1][0] = 0x9b50;
+        c.g[V1][0] = 0x4a_0000;
+        let profile = c.g[S2][0] as u32;
+        let profile_off = sx(abi::mult(c, profile, 0x9b50));
+        c.g[S2][0] = profile_off;
+        c.g[V1][0] = sx(0x4a_0000u32.wrapping_add(0x6ca8));
+        c.g[A1][0] = 0;
+        c.g[A0][0] = 0x10;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(4)).lb(c);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+            let more = (c.g[A0][0] as i64) >= 0;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0015_3460);
+            }
+        }
+        c.cycles += 7;
+        c.g[V0][0] = c.g[A1][0];
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void BEMissionInt_SetCollected(BEMissionInt *self, int rider, int bit,
+/// int idx)` (0x153b00): set bit `bit` of the collected mask of mission `idx`
+/// in `rider`'s profile/character record, then count the set bits of that
+/// mission's 64-bit mask into the character's collectible total for the
+/// mission (`cTotalCollected`, at mission slot `idx + track`).
+pub fn be_mission_int_set_collected(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 56;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S2, 0x30);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        BE_GET_RIDER_PROFILE_m2.call(c, 0x0015_3b30)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[S2][0] = c.g[V0][0];
+        BE_GET_RIDER_CHARACTER_m2.call(c, 0x0015_3b3c)?;
+        c.g[T1][0] = 0x530000;
+        c.g[V1][0] = 0x9b50;
+        c.g[S4][0] = c.g[T1][0];
+        c.g[T7][0] = c.g[V0][0];
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x5b0));
+        c.mult(0, V1, S2, V1);
+        c.g[T0][0] = Addr((c.g[T1][0] as u32).wrapping_add(0x40)).lw(c);
+        c.g[A0][0] = 0xf88;
+        c.mult(0, A0, T7, A0);
+        c.g[T2][0] = 0xc;
+        c.mult(0, T0, T0, T2);
+        c.g[A3][0] = 0xffff_ffff_ffff_ffff;
+        c.mult(0, A1, S3, T2);
+        c.g[T5][0] = c.g[V1][0];
+        c.g[A3][0] = ((c.g[A3][0] as i64) < (c.g[S1][0] as i64)) as u64;
+        c.g[A2][0] = 0x4a0000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1f));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x6cac));
+        c.g[T4][0] = c.g[A1][0];
+        if c.g[A3][0] != 0 {
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+        c.g[T6][0] = c.g[A0][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = 0x1;
+        c.g[A0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << ((c.g[S1][0] as u32) & 31));
+        c.g[T9][0] = 0xffff_ffff_ffff_ffff;
+        c.g[T8][0] = 0x1;
+        c.g[A0][0] = c.g[A0][0] | c.g[V1][0];
+        c.g[S0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+        let word = c.g[A0][0];
+        Addr(c.g[A1][0] as u32).sw(c, word);
+        c.g[T3][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        c.g[V0][0] = Addr((c.g[T1][0] as u32).wrapping_add(0x40)).lw(c);
+        c.mult(0, T0, V0, T2);
+        loop {
+            c.cycles += 18;
+            c.g[V1][0] = ((c.g[T9][0] as i64) < (c.g[A3][0] as i64)) as u64;
+            c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1f));
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = c.g[A3][0];
+            }
+            c.g[A2][0] = sx((c.g[T8][0] as u32) << ((c.g[A3][0] as u32) & 31));
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+            c.g[A1][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
+            c.g[A0][0] = ((c.g[A3][0] as i64) < 64i64) as u64;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T6][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T5][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            c.g[V1][0] &= c.g[A2][0];
+            let again = c.g[A0][0] != 0;
+            if c.g[V1][0] != 0 {
+                c.g[T3][0] = c.g[A1][0];
+            }
+            if again {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0015_3be0);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 23;
+        c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(0x5b0));
+        c.g[A2][0] = 0xc;
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x40)).lw(c);
+        c.g[A1][0] = 0xf88;
+        c.mult(0, A1, T7, A1);
+        c.g[A0][0] = 0x9b50;
+        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.mult(0, A0, S2, A0);
+        c.mult(0, V0, V0, A2);
+        c.g[V1][0] = 0x4a0000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6ca8));
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        frame.restore_ra(c, 0);
+        let count = c.g[T3][0];
+        Addr((c.g[V0][0] as u32).wrapping_add(0x4)).sb(c, count);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int BEMissionInt_GetMissionValue(BEMissionInt *self, int id)` (0x153f68):
+/// the `f14` word of the mission record found for `id` (the mission table
+/// at 0x43ee10, 0x24 bytes per entry, read through `FindMission`).
+pub fn be_mission_int_get_mission_value(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        crate::game::be::beintmission::callee::FIND_MISSION.call(c, 0x0015_3f78)?;
+        c.g[A0][0] = 0x24;
+        c.g[V1][0] = 0x440000;
+        c.mult(0, V0, V0, A0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x11f0));
+        frame.restore_ra(c, 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x14)).lw(c);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cBEMissionInterface_addStreamData(void*)` (0x1547d8): an empty stub.
+pub fn be_mission_int_empty_stub_47d8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 2;
+        ret(c);
+        Ok(())
+    })
+}
+
+/// `void cBEMissionInterface_remStreamData(void*)` (0x1547e0): an empty stub.
+pub fn be_mission_int_empty_stub_47e0(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 2;
+        ret(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2966,6 +3230,99 @@ pub(crate) mod tests {
                 c.g[A1][0] = (r.next_u32() % 3) as u64;
                 c.g[A2][0] = (r.next_u32() % 4) as u64;
                 c.g[A3][0] = (r.next_u32() % 3) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::be::beintcharacter::tests::rider_fixture;
+
+    /// A rider's profile and character, and the 17 collectible records from
+    /// `idx` in its profile-library entry (random).
+    #[test]
+    fn be_mission_int_get_peak_collected_count_matches() {
+        check(
+            ee::s01::f_001533f8__generated,
+            be_mission_int_get_peak_collected_count,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0015_33f8, 0);
+                c.pc = 0x0015_33f8;
+                let rider = seed % 8;
+                let (profile, ch) = rider_fixture(c, &mut r, rider);
+                let idx = r.next_u32() % 40;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = rider as u64;
+                c.g[A2][0] = idx as u64;
+                let base = 0x004a_6ca8 + profile * 0x9b50 + ch * 0xf88 + idx * 0xc;
+                fill(c, &mut r, base, 52);
+            },
+        );
+    }
+
+    /// The BELibrary dummy at gp-0x1f04 and the mission table at 0x43ee10.
+    pub(crate) fn be_setup(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = machine(c, seed, salt, 0);
+        c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x3000);
+        fill(c, &mut r, DATA + 0x3100, 0x200);
+        r
+    }
+
+    #[test]
+    fn be_mission_int_set_collected_matches() {
+        check(
+            ee::s01::f_00153b00__generated,
+            be_mission_int_set_collected,
+            120,
+            &|c, seed| {
+                let mut r = be_setup(c, seed, 0x3b00);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 8) as u64;
+                c.g[A2][0] = (r.next_u32() % 64) as u64;
+                c.g[A3][0] = (seed % 16) as u64;
+                fill(c, &mut r, 0x004a_6cac, 0x2000);
+            },
+        );
+    }
+
+    #[test]
+    fn be_mission_int_get_mission_value_matches() {
+        check(
+            ee::s01::f_00153f68__generated,
+            be_mission_int_get_mission_value,
+            60,
+            &|c, seed| {
+                let mut r = be_setup(c, seed, 0x3f68);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = if seed % 4 == 0 {
+                    0x9999
+                } else {
+                    (0x1000 + seed % 88) as u64
+                };
+                fill(c, &mut r, 0x0043_ee10, 88 * 9);
+                for k in 0..88u32 {
+                    let e = 0x0043_ee10 + 0x24 * k;
+                    c.bus.write32(e, 0x1000 + k);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn be_mission_int_empty_stubs_match() {
+        check(
+            ee::s01::f_001547d8__generated,
+            be_mission_int_empty_stub_47d8,
+            8,
+            &|c, seed| {
+                machine(c, seed, 0x47d8, 0);
+            },
+        );
+        check(
+            ee::s01::f_001547e0__generated,
+            be_mission_int_empty_stub_47e0,
+            8,
+            &|c, seed| {
+                machine(c, seed, 0x47e0, 0);
             },
         );
     }
