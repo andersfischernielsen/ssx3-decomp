@@ -10,6 +10,8 @@ use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::sd;
@@ -448,6 +450,38 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_7350,
         be_reward_int_get_audio_system_field504,
         "BERewardInt_GetAudioSystemField504",
+    ),
+    (
+        0x0015_7fd0,
+        reward_unlock_poster,
+        "BERewardInt_UnlockPoster",
+    ),
+    (
+        0x0015_80f8,
+        reward_unlock_trading_card,
+        "BERewardInt_UnlockTradingCard",
+    ),
+    (
+        0x0015_8220,
+        reward_unlock_concept_art,
+        "BERewardInt_UnlockConceptArt",
+    ),
+    (0x0015_8348, reward_unlock_toy, "BERewardInt_UnlockToy"),
+    (0x0015_8558, reward_unlock_song, "BERewardInt_UnlockSong"),
+    (
+        0x0015_88b0,
+        be_reward_int_get_points_threshold,
+        "BERewardInt_GetPointsThreshold",
+    ),
+    (
+        0x0015_9c68,
+        reward_grant_reward_for_rider,
+        "BERewardInt_GrantRewardForRider",
+    ),
+    (
+        0x0015_9cd0,
+        be_reward_int_grant_reward,
+        "BERewardInt_GrantReward",
     ),
 ];
 
@@ -4132,6 +4166,1262 @@ pub fn be_reward_int_get_audio_system_field504(c: &mut Cpu) {
     })
 }
 
+/// Entry of `BERewardInt_GrantReward` (0x159cd0) and its end (0x15a2b4 is the
+/// epilogue, 0x15a2e0 the next function).
+pub(crate) const GRANT_ENTRY: u32 = 0x0015_9cd0;
+
+pub(crate) const GRANT_END: u32 = 0x0015_a2e0;
+
+/// The awards-received bits of a character record
+/// (`cBELibrary_profileLib[profile][character]`, see the body).
+pub(crate) const GRANT_AWARDS_RECEIVED: u32 = 0xf28;
+
+/// Callees (the generated aliases; each goes through its override slot, so a
+/// replaced callee is reached too).
+pub(crate) const GRANT_IS_REWARD_GRANTED: Callee = Callee {
+    addr: 0x0015_a2e0,
+    f: ee::s01::f_0015a2e0,
+};
+
+pub(crate) const GRANT_PICK_LOCKED_REWARD: Callee = Callee {
+    addr: 0x0015_7080,
+    f: ee::s01::f_00157080,
+};
+
+pub(crate) const GRANT_UNLOCK_TRADING_CARD: Callee = Callee {
+    addr: 0x0015_80f8,
+    f: ee::s01::f_001580f8,
+};
+
+pub(crate) const GRANT_UNLOCK_POSTER: Callee = Callee {
+    addr: 0x0015_7fd0,
+    f: ee::s01::f_00157fd0,
+};
+
+pub(crate) const GRANT_UNLOCK_TOY: Callee = Callee {
+    addr: 0x0015_8348,
+    f: ee::s01::f_00158348,
+};
+
+pub(crate) const GRANT_UNLOCK_CONCEPT_ART: Callee = Callee {
+    addr: 0x0015_8220,
+    f: ee::s01::f_00158220,
+};
+
+pub(crate) const GRANT_UNLOCK_RIDER_ITEM: Callee = Callee {
+    addr: 0x0015_8618,
+    f: ee::s01::f_00158618,
+};
+
+pub(crate) const GRANT_ADD_NEW_REWARD: Callee = Callee {
+    addr: 0x0015_a628,
+    f: ee::s01::f_0015a628,
+};
+
+pub(crate) const GRANT_SET_GRANTED_BIT: Callee = Callee {
+    addr: 0x0015_a358,
+    f: ee::s01::f_0015a358,
+};
+
+pub(crate) const GRANT_RIVAL_REWARDS: Callee = Callee {
+    addr: 0x0015_8f60,
+    f: ee::s01::f_00158f60,
+};
+
+pub(crate) const GRANT_PICK_RANDOM_BOLT: Callee = Callee {
+    addr: 0x0015_6c70,
+    f: ee::s01::f_00156c70,
+};
+
+pub(crate) const GRANT_PICK_RANDOM_BOLT_800: Callee = Callee {
+    addr: 0x0015_6ee0,
+    f: ee::s01::f_00156ee0,
+};
+
+pub(crate) const GRANT_BE_LIBRARY_GET_INSTANCE: Callee = Callee {
+    addr: 0x0014_dc80,
+    f: ee::s01::f_0014dc80,
+};
+
+pub(crate) const GRANT_BE_LIBRARY_GET_INTERFACE: Callee = Callee {
+    addr: 0x0014_dd58,
+    f: ee::s01::f_0014dd58,
+};
+
+pub(crate) const GRANT_UNLOCK_BOLT: Callee = Callee {
+    addr: 0x0014_b560,
+    f: ee::s01::f_0014b560,
+};
+
+pub(crate) const GRANT_IS_PEAK_FULLY_COMPLETED: Callee = Callee {
+    addr: 0x0015_77e0,
+    f: ee::s01::f_001577e0,
+};
+
+pub(crate) const GRANT_REWARD: Callee = Callee {
+    addr: 0x0015_9cd0,
+    f: ee::s01::f_00159cd0,
+};
+
+pub(crate) const GRANT_ARE_ALL_PEAKS_COMPLETE: Callee = Callee {
+    addr: 0x0015_78a0,
+    f: ee::s01::f_001578a0,
+};
+
+pub(crate) const GRANT_IS_PEAK_COMPLETE: Callee = Callee {
+    addr: 0x0015_7a78,
+    f: ee::s01::f_00157a78,
+};
+
+pub(crate) const GRANT_MEDAL_REWARD_ID: Callee = Callee {
+    addr: 0x0015_9080,
+    f: ee::s01::f_00159080,
+};
+
+pub(crate) const GRANT_IS_PEAK_GOAL_COMPLETE: Callee = Callee {
+    addr: 0x0015_7bf0,
+    f: ee::s01::f_00157bf0,
+};
+
+pub(crate) const GRANT_MEDAL_REWARD: Callee = Callee {
+    addr: 0x0015_9170,
+    f: ee::s01::f_00159170,
+};
+
+/// `addiu`: 32-bit wrapping add of a constant, sign-extended to 64 bits.
+#[inline(always)]
+pub(crate) fn grant_addu(a: u64, k: u32) -> u64 {
+    sx((a as u32).wrapping_add(k))
+}
+
+/// `addu`: 32-bit wrapping add of two registers, sign-extended.
+#[inline(always)]
+pub(crate) fn grant_addr(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_add(b as u32))
+}
+
+/// `addiu` with a negative constant (`- k`), sign-extended.
+#[inline(always)]
+pub(crate) fn grant_subu(a: u64, k: u32) -> u64 {
+    sx((a as u32).wrapping_sub(k))
+}
+
+/// `BERewardInt_GrantReward(self, profile, character, bit)` (0x159cd0): grants
+/// reward `bit` to one character of a profile. The bit's own unlock runs
+/// first (a message for bits 0-4, a random poster, card or toy pick for the
+/// card, toy and poster bits, a concept art pick, a peak pass, a bolt or a
+/// rider item for the rest), then the granted bit is set and the reward is
+/// logged. Finally the mountain, peak and medal awards that the new state
+/// completes are granted, recursively, through this function.
+///
+/// The body is a resumable dispatcher in the generated code: a callee that
+/// unwinds the thread returns through the `?` of its call site, and the
+/// resume address is picked up by the generated body (the override wrapper
+/// sends any entry other than 0x159cd0 there).
+pub fn be_reward_int_grant_reward(c: &mut Cpu) {
+    guest(c, grant_reward_body)
+}
+
+pub(crate) fn grant_reward_body(c: &mut Cpu) -> Flow {
+    c.cycles += 47;
+    let frame = Frame::open(c, 0xd0);
+    c.g[V1][0] = 0x4a_0000;
+    frame.save(c, S5, 0x70);
+    c.g[V1][0] = grant_addu(c.g[V1][0], 0x6ca8); // V1 = cBELibrary_profileLib
+    frame.save(c, S3, 0x90);
+    c.g[S5][0] = c.g[A2][0]; // character
+    c.g[S3][0] = c.g[A1][0]; // profile
+    c.g[A2][0] = 0xf88;
+    c.mult(0, 6, 21, 6); // A2 = character * 0xf88
+    c.g[A1][0] = 0x9b50;
+    c.mult(0, 5, 19, 5); // A1 = profile * 0x9b50
+    frame.save(c, S6, 0x60);
+    frame.save(c, S0, 0xc0);
+    c.g[S6][0] = c.g[A3][0]; // bit
+    frame.save(c, S4, 0x80);
+    c.g[A3][0] = 0x46_0000;
+    c.g[A2][0] = grant_addr(c.g[A2][0], c.g[V1][0]);
+    frame.save(c, S7, 0x50);
+    frame.save(c, FP, 0x40);
+    c.g[V0][0] = 0x4c_0000;
+    frame.save(c, S1, 0xb0);
+    c.g[S0][0] = grant_addr(c.g[A1][0], c.g[A2][0]); // rec = &profileLib[profile][character]
+    frame.save(c, S2, 0xa0);
+    c.g[S4][0] = c.g[A0][0]; // self
+    frame.save_ra(c, 0x30);
+    c.g[FP][0] = grant_addu(c.g[V0][0], 0x3ef0); // the reward log
+    c.g[T1][0] = grant_subu(c.g[A3][0], 0x55d8); // GRANT_SLOTS4_SRC
+                                                 // Copy the two slot tables to the frame: v[4] at sp+0, v[2] at sp+0x10.
+    let slots4 = c.g[T1][0] as u32;
+    c.ldl(5, slots4.wrapping_add(0x7));
+    c.ldr(5, slots4);
+    c.ldl(6, slots4.wrapping_add(0xf));
+    c.ldr(6, slots4.wrapping_add(0x8));
+    let a = frame.at(c, 0x7);
+    c.sdl(5, a);
+    let a = frame.at(c, 0x0);
+    c.sdr(5, a);
+    let a = frame.at(c, 0xf);
+    c.sdl(6, a);
+    let a = frame.at(c, 0x8);
+    c.sdr(6, a);
+    c.g[A0][0] = 0xffff_ffff_ffff_ffff;
+    c.g[V1][0] = 0x4a_0000;
+    c.g[V0][0] = grant_subu(c.g[S6][0], 0x11); // bit - 17
+    let a = frame.at(c, 0x20);
+    c.sw(a, c.g[A0][0]); // item = -1
+    c.g[V0][0] = (c.g[V0][0] < 0x3u64) as u64; // bit in 17..=19: no granted check
+    c.g[T0][0] = grant_addu(c.g[V1][0], 0x1268); // GRANT_SLOTS2_SRC
+    let slots2 = c.g[T0][0] as u32;
+    c.ldl(5, slots2.wrapping_add(0x7));
+    c.ldr(5, slots2);
+    let a = frame.at(c, 0x17);
+    c.sdl(5, a);
+    let a = frame.at(c, 0x10);
+    c.sdr(5, a);
+    c.g[S7][0] = 0; // value (the cheat character, 0 for none)
+    if c.g[V0][0] == 0 {
+        // Not already granted: the bit's own granted check.
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S6][0];
+        GRANT_IS_REWARD_GRANTED.call(c, 0x0015_9da0)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0xc0);
+            return grant_epilogue(c, frame);
+        }
+    }
+    grant_bit_dispatch(c, frame)
+}
+
+/// The function's epilogue (0x15a2b4): restores the callee-saved registers
+/// and returns through the saved `ra`.
+pub(crate) fn grant_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 11;
+    frame.restore(c, S1, 0xb0);
+    frame.restore(c, S2, 0xa0);
+    frame.restore(c, S3, 0x90);
+    frame.restore(c, S4, 0x80);
+    frame.restore(c, S5, 0x70);
+    frame.restore(c, S6, 0x60);
+    frame.restore(c, S7, 0x50);
+    frame.restore(c, FP, 0x40);
+    frame.restore_ra(c, 0x30);
+    frame.close(c);
+    Ok(())
+}
+
+/// 0x159da8 and the reward switch (0x159db4): bits 0..31 go to their case,
+/// anything above has no unlock and goes straight to the granted bit.
+pub(crate) fn grant_bit_dispatch(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[S6][0] < 0x20u64) as u64;
+    c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED); // &rec->awards
+    if c.g[V0][0] == 0 {
+        return grant_from_a098(c, frame);
+    }
+    c.cycles += 7;
+    c.g[V0][0] = 0x46_0000;
+    c.g[V1][0] = sx((c.g[S6][0] as u32) << 2);
+    c.g[V0][0] = grant_subu(c.g[V0][0], 0x55c0); // GRANT_SWITCH_TABLE
+    c.g[V1][0] = grant_addr(c.g[V1][0], c.g[V0][0]);
+    let entry = c.g[V1][0] as u32;
+    c.g[A0][0] = c.lw(entry);
+    let target = c.g[A0][0] as u32;
+    match target {
+        // Bit 0: MessageCenter_PostOnce38 (value 29).
+        0x0015_9dd0 => {
+            c.cycles += 4;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            call_ptr(c, 0x001e_2578, 0x0015_9dd8)?;
+            c.g[S7][0] = 0x1d;
+        }
+        // Bit 1: MessageCenter_PostOnce3C (value 0x18).
+        0x0015_9de0 => {
+            c.cycles += 4;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            call_ptr(c, 0x001e_2518, 0x0015_9de8)?;
+            c.g[S7][0] = 0x18;
+        }
+        // Bits 2, 3, 4: MessageCenter_PostPeakUnlockMessage(0, 1, 2).
+        0x0015_9df0 => {
+            c.cycles += 5;
+            c.g[A0][0] = 0;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            call_ptr(c, 0x001e_2428, 0x0015_9dfc)?;
+            c.g[S7][0] = 0x12;
+        }
+        0x0015_9e04 => {
+            c.cycles += 5;
+            c.g[A0][0] = 1;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            call_ptr(c, 0x001e_2428, 0x0015_9e10)?;
+            c.g[S7][0] = 0x19;
+        }
+        0x0015_9e18 => {
+            c.cycles += 5;
+            c.g[A0][0] = 2;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            call_ptr(c, 0x001e_2428, 0x0015_9e24)?;
+            c.g[S7][0] = 0x1a;
+        }
+        // Bits 5, 8, 11, 14: trading cards, a poster, a peak pass.
+        0x0015_9e2c => return grant_card_bits(c, frame),
+        // Bits 6, 9, 12, 15: a toy, concept art, a peak pass.
+        0x0015_9f10 => return grant_toy_bits(c, frame),
+        // Bit 7: value 0x1b.
+        0x0015_9ffc => {
+            c.cycles += 3;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            c.g[S7][0] = 0x1b;
+        }
+        // Bit 10: value 0x17.
+        0x0015_a008 => {
+            c.cycles += 3;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            c.g[S7][0] = 0x17;
+        }
+        // Bit 13: value 0x1c.
+        0x0015_a014 => {
+            c.cycles += 3;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            c.g[S7][0] = 0x1c;
+        }
+        // Bit 16: value 0x15.
+        0x0015_a020 => {
+            c.cycles += 3;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            c.g[S7][0] = 0x15;
+        }
+        // Bits 17, 18, 19: a random bolt of kind 0, 1, 2 (the item).
+        0x0015_a02c | 0x0015_a048 | 0x0015_a064 => {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S5][0];
+            c.g[A3][0] = match target {
+                0x0015_a02c => 0,
+                0x0015_a048 => 1,
+                _ => 2,
+            };
+            let ret = match target {
+                0x0015_a02c => 0x0015_a040,
+                0x0015_a048 => 0x0015_a05c,
+                _ => 0x0015_a078,
+            };
+            GRANT_PICK_RANDOM_BOLT.call(c, ret)?;
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            return grant_store_item(c, frame);
+        }
+        // Bits 20..31: a random bolt flagged 0x800 (the item).
+        0x0015_a080 => {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S5][0];
+            c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+            GRANT_PICK_RANDOM_BOLT_800.call(c, 0x0015_a094)?;
+            return grant_store_item(c, frame);
+        }
+        _ => {
+            c.jump_out(target, GRANT_ENTRY, GRANT_END);
+            return Ok(());
+        }
+    }
+    grant_from_a098(c, frame)
+}
+
+/// 0x15a094: the bolt pick's result becomes the item (`sp+0x20`), then the
+/// granted bit (0x15a098).
+pub(crate) fn grant_store_item(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 1;
+    let a = frame.at(c, 0x20);
+    c.sw(a, c.g[V0][0]);
+    grant_from_a098(c, frame)
+}
+
+/// Bits 5, 8, 11, 14 (0x159e2c): up to four trading cards (each a random
+/// locked card, kept in `v[i]`), then one poster, then the peak pass for
+/// bit 11 (MessageCenter_CheckPeakMessages) and GrantRivalRewards.
+pub(crate) fn grant_card_bits(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 3;
+    c.g[S2][0] = 0;
+    c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+    loop {
+        // Loop test: i < 4.
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S2][0] as i64) < 4) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A3][0] = 4;
+        if !more {
+            break;
+        }
+        // v[i] = random locked card; the loop ends at the first -1.
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        GRANT_PICK_LOCKED_REWARD.call(c, 0x0015_9e80)?;
+        c.g[A3][0] = c.g[V0][0];
+        c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+        let slot = frame.at(c, 0);
+        c.g[S0][0] = sx(slot.wrapping_add(c.g[V0][0] as u32));
+        let found = (c.g[A3][0] as i64) >= 0;
+        let s0 = c.g[S0][0] as u32;
+        c.sw(s0, c.g[A3][0]);
+        if !found {
+            break;
+        }
+        if back_edge_unwinds(c, 0x0015_9e38) {
+            return Err(Unwound);
+        }
+        // Unlock the card, log it.
+        c.cycles += 11;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        c.g[T0][0] = 0;
+        GRANT_UNLOCK_TRADING_CARD.call(c, 0x0015_9e4c)?;
+        c.g[S2][0] = grant_addu(c.g[S2][0], 1);
+        let s0 = c.g[S0][0] as u32;
+        c.g[A3][0] = c.lw(s0);
+        c.g[A0][0] = c.g[FP][0];
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A2][0] = 4;
+        GRANT_ADD_NEW_REWARD.call(c, 0x0015_9e64)?;
+    }
+    // One poster (kind 3).
+    c.cycles += 8;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = 3;
+    GRANT_PICK_LOCKED_REWARD.call(c, 0x0015_9ea8)?;
+    c.g[S0][0] = c.g[V0][0];
+    let no_poster = (c.g[S0][0] as i64) < 0;
+    c.g[A0][0] = c.g[S4][0];
+    if !no_poster {
+        c.cycles += 10;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S0][0];
+        c.g[T0][0] = 0;
+        GRANT_UNLOCK_POSTER.call(c, 0x0015_9ec8)?;
+        c.g[A3][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[FP][0];
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A2][0] = 3;
+        GRANT_ADD_NEW_REWARD.call(c, 0x0015_9edc)?;
+    }
+    // Bit 11 also runs the peak messages.
+    c.cycles += 3;
+    c.g[V0][0] = 0xb;
+    let not_eleven = c.g[S6][0] != c.g[V0][0];
+    c.g[A0][0] = c.g[S4][0];
+    if !not_eleven {
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S3][0];
+        call_ptr(c, 0x001e_38b8, 0x0015_9ef0)?;
+        c.g[A0][0] = c.g[S4][0];
+    }
+    // GrantRivalRewards(self, profile, character, bit, 1).
+    c.cycles += 7;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = c.g[S6][0];
+    c.g[T0][0] = 1;
+    GRANT_RIVAL_REWARDS.call(c, 0x0015_9f08)?;
+    c.g[A2][0] = c.g[S1][0];
+    grant_from_a09c(c, frame)
+}
+
+/// Bits 6, 9, 12, 15 (0x159f10): one toy (kind 7), up to two concept art
+/// pieces (kind 5), the peak messages for bit 12, then GrantRivalRewards.
+pub(crate) fn grant_toy_bits(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 8;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = 7;
+    GRANT_PICK_LOCKED_REWARD.call(c, 0x0015_9f24)?;
+    c.g[S1][0] = c.g[V0][0];
+    let no_toy = (c.g[S1][0] as i64) < 0;
+    c.g[A0][0] = c.g[S4][0];
+    if !no_toy {
+        c.cycles += 10;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S1][0];
+        c.g[T0][0] = 0;
+        GRANT_UNLOCK_TOY.call(c, 0x0015_9f44)?;
+        c.g[A3][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[FP][0];
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A2][0] = 7;
+        GRANT_ADD_NEW_REWARD.call(c, 0x0015_9f58)?;
+    }
+    c.cycles += 3;
+    c.g[S2][0] = 0;
+    c.g[S1][0] = grant_addu(c.g[S0][0], GRANT_AWARDS_RECEIVED);
+    loop {
+        // Loop test: i < 2.
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S2][0] as i64) < 2) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A3][0] = 5;
+        if !more {
+            break;
+        }
+        // slots2[i] = random locked concept art; the loop ends at the first -1.
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        GRANT_PICK_LOCKED_REWARD.call(c, 0x0015_9fb0)?;
+        c.g[A3][0] = c.g[V0][0];
+        c.g[V1][0] = sx((c.g[S2][0] as u32) << 2);
+        c.g[V0][0] = grant_addu(c.g[SP][0], 0x10);
+        c.g[S0][0] = grant_addr(c.g[V0][0], c.g[V1][0]);
+        let found = (c.g[A3][0] as i64) >= 0;
+        let s0 = c.g[S0][0] as u32;
+        c.sw(s0, c.g[A3][0]);
+        if !found {
+            break;
+        }
+        if back_edge_unwinds(c, 0x0015_9f68) {
+            return Err(Unwound);
+        }
+        // Unlock the art, log it.
+        c.cycles += 11;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        c.g[T0][0] = 0;
+        GRANT_UNLOCK_CONCEPT_ART.call(c, 0x0015_9f7c)?;
+        c.g[S2][0] = grant_addu(c.g[S2][0], 1);
+        let s0 = c.g[S0][0] as u32;
+        c.g[A3][0] = c.lw(s0);
+        c.g[A0][0] = c.g[FP][0];
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A2][0] = 5;
+        GRANT_ADD_NEW_REWARD.call(c, 0x0015_9f94)?;
+    }
+    // Bit 12 also runs the peak messages.
+    c.cycles += 3;
+    c.g[V0][0] = 0xc;
+    let not_twelve = c.g[S6][0] != c.g[V0][0];
+    c.g[A0][0] = c.g[S4][0];
+    if !not_twelve {
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S3][0];
+        call_ptr(c, 0x001e_38b8, 0x0015_9fdc)?;
+        c.g[A0][0] = c.g[S4][0];
+    }
+    // GrantRivalRewards(self, profile, character, bit, 2).
+    c.cycles += 7;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = c.g[S6][0];
+    c.g[T0][0] = 2;
+    GRANT_RIVAL_REWARDS.call(c, 0x0015_9ff4)?;
+    c.g[A2][0] = c.g[S1][0];
+    grant_from_a09c(c, frame)
+}
+
+/// 0x15a098: the granted-bit call's argument is the awards pointer.
+pub(crate) fn grant_from_a098(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 1;
+    c.g[A2][0] = c.g[S1][0];
+    grant_from_a09c(c, frame)
+}
+
+/// 0x15a09c: sets the granted bit, logs the reward and the cheat character
+/// (or the item) when there is one, then the rest of the function.
+pub(crate) fn grant_from_a09c(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = c.g[S6][0];
+    GRANT_SET_GRANTED_BIT.call(c, 0x0015_a0a8)?;
+    c.g[A0][0] = c.g[FP][0];
+    if c.g[S7][0] != 0 {
+        c.cycles += 10;
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A2][0] = 8;
+        c.g[A3][0] = c.g[S7][0];
+        GRANT_ADD_NEW_REWARD.call(c, 0x0015_a0c0)?;
+        c.g[A3][0] = c.g[S7][0];
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        c.g[T0][0] = 0;
+        GRANT_UNLOCK_RIDER_ITEM.call(c, 0x0015_a0d8)?;
+    }
+    grant_item_tail(c, frame)
+}
+
+/// 0x15a0d8: when the switch picked an item (`sp+0x20` is not -1), logs it
+/// and unlocks the bolt through the library's stats interface.
+pub(crate) fn grant_item_tail(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 4;
+    let item_slot = frame.at(c, 0x20);
+    c.g[T1][0] = c.lw(item_slot);
+    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+    let no_item = c.g[T1][0] == c.g[V0][0];
+    c.g[A0][0] = c.g[S4][0];
+    if no_item {
+        return grant_no_item_tail(c, frame);
+    }
+    c.cycles += 18;
+    GRANT_BE_LIBRARY_GET_INSTANCE.call(c, 0x0015_a0f0)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 9;
+    GRANT_BE_LIBRARY_GET_INTERFACE.call(c, 0x0015_a0fc)?;
+    let item_slot = frame.at(c, 0x20);
+    c.g[A3][0] = c.lw(item_slot);
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[FP][0];
+    c.g[A1][0] = c.g[S6][0];
+    c.g[A2][0] = 9;
+    GRANT_ADD_NEW_REWARD.call(c, 0x0015_a114)?;
+    let item_slot = frame.at(c, 0x20);
+    c.g[A3][0] = c.lw(item_slot);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[T0][0] = 0;
+    GRANT_UNLOCK_BOLT.call(c, 0x0015_a12c)?;
+    c.g[A0][0] = c.g[S4][0];
+    grant_no_item_tail(c, frame)
+}
+
+/// 0x15a130: the peak-completion awards (the mountain, then the peaks).
+pub(crate) fn grant_no_item_tail(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 5;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    GRANT_IS_PEAK_FULLY_COMPLETED.call(c, 0x0015_a13c)?;
+    c.g[A0][0] = c.g[S4][0];
+    if c.g[V0][0] == 0 {
+        return grant_mountain_completed(c, frame);
+    }
+    // The mountain is conquered: grant bit 0 unless it is granted already.
+    c.cycles += 6;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = 0;
+    GRANT_IS_REWARD_GRANTED.call(c, 0x0015_a154)?;
+    c.g[A0][0] = c.g[S4][0];
+    if c.g[V0][0] != 0 {
+        return grant_all_peaks(c, frame);
+    }
+    c.cycles += 4;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = 0;
+    GRANT_REWARD.call(c, 0x0015_a16c)?;
+    grant_mountain_completed(c, frame)
+}
+
+/// 0x15a16c: the mountain-completed check (`ARE_ALL_PEAKS_COMPLETE`), grant
+/// bit 1 when it holds and bit 1 is not granted yet.
+pub(crate) fn grant_mountain_completed(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 1;
+    c.g[A0][0] = c.g[S4][0];
+    grant_all_peaks(c, frame)
+}
+
+/// 0x15a170: `AreAllPeaksComplete`: grant bit 1 when it holds and is not
+/// granted yet, then the per-peak awards.
+pub(crate) fn grant_all_peaks(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 5;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    GRANT_ARE_ALL_PEAKS_COMPLETE.call(c, 0x0015_a17c)?;
+    c.g[A0][0] = c.g[S4][0];
+    if c.g[V0][0] == 0 {
+        c.cycles += 2; // 0x15a1b0
+        c.g[S1][0] = 0;
+        return grant_after_peaks_loop(c, frame);
+    }
+    c.cycles += 6;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = 1;
+    GRANT_IS_REWARD_GRANTED.call(c, 0x0015_a194)?;
+    c.g[S1][0] = 0;
+    if c.g[V0][0] != 0 {
+        return grant_after_peaks_loop(c, frame);
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = 1;
+    GRANT_REWARD.call(c, 0x0015_a1b0)?;
+    c.cycles += 2; // 0x15a1b0
+    c.g[S1][0] = 0;
+    grant_after_peaks_loop(c, frame)
+}
+
+/// 0x15a1b8 and the three peaks (0x15a1bc): each completed peak grants its
+/// award (bit i + 2) when that is not granted yet; then the medal rewards.
+pub(crate) fn grant_after_peaks_loop(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 1;
+    c.g[A0][0] = c.g[S4][0];
+    loop {
+        c.cycles += 6;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S1][0];
+        GRANT_IS_PEAK_COMPLETE.call(c, 0x0015_a1cc)?;
+        c.g[S0][0] = grant_addu(c.g[S1][0], 2);
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            c.g[S1][0] = grant_addu(c.g[S1][0], 1);
+        } else {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S5][0];
+            c.g[A3][0] = c.g[S0][0];
+            GRANT_IS_REWARD_GRANTED.call(c, 0x0015_a1e8)?;
+            if c.g[V0][0] != 0 {
+                c.g[S1][0] = grant_addu(c.g[S1][0], 1);
+            } else {
+                c.cycles += 5;
+                c.g[A3][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = c.g[S3][0];
+                c.g[A2][0] = c.g[S5][0];
+                GRANT_REWARD.call(c, 0x0015_a204)?;
+                c.cycles += 1;
+                c.g[S1][0] = grant_addu(c.g[S1][0], 1);
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S1][0] as i64) < 3) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[S4][0];
+        if !more {
+            break;
+        }
+        if back_edge_unwinds(c, 0x0015_a1bc) {
+            return Err(Unwound);
+        }
+    }
+    grant_medal_loop(c, frame)
+}
+
+/// 0x15a214 .. 0x15a2b0: for each of the three medal kinds (S2) and each of
+/// its four tiers (S1), the medal reward (`GetMedalRewardId`) is granted
+/// when its peak goal is complete and the bit is not granted yet.
+pub(crate) fn grant_medal_loop(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 3;
+    c.g[S2][0] = 0;
+    c.g[S1][0] = 0;
+    loop {
+        // Kind loop head.
+        c.cycles += 2;
+        c.g[S6][0] = grant_addu(c.g[S2][0], 1);
+        c.g[A0][0] = c.g[S4][0];
+        loop {
+            // Tier loop body.
+            c.cycles += 14;
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S5][0];
+            c.g[A3][0] = c.g[S2][0];
+            c.g[T0][0] = c.g[S1][0];
+            GRANT_MEDAL_REWARD_ID.call(c, 0x0015_a23c)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S5][0];
+            c.g[A3][0] = c.g[S2][0];
+            c.g[T0][0] = c.g[S1][0];
+            GRANT_IS_PEAK_GOAL_COMPLETE.call(c, 0x0015_a258)?;
+            let goal_missing = c.g[V0][0] == 0;
+            c.g[A3][0] = c.g[S0][0];
+            if goal_missing {
+                c.cycles += 1;
+                c.g[S1][0] = grant_addu(c.g[S1][0], 1);
+            } else {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = c.g[S3][0];
+                c.g[A2][0] = c.g[S5][0];
+                GRANT_IS_REWARD_GRANTED.call(c, 0x0015_a270)?;
+                if c.g[V0][0] != 0 {
+                    c.g[S1][0] = grant_addu(c.g[S1][0], 1);
+                } else {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = c.g[S3][0];
+                    c.g[A2][0] = c.g[S5][0];
+                    c.g[A3][0] = c.g[S2][0];
+                    c.g[T0][0] = c.g[S1][0];
+                    GRANT_MEDAL_REWARD.call(c, 0x0015_a290)?;
+                    c.cycles += 1;
+                    c.g[S1][0] = grant_addu(c.g[S1][0], 1);
+                }
+            }
+            // Tier loop test: i < 4.
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 4) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S4][0];
+            if !more {
+                break;
+            }
+            if back_edge_unwinds(c, 0x0015_a228) {
+                return Err(Unwound);
+            }
+        }
+        // Kind loop test: S2 + 1 < 3 (S2 is the next kind).
+        c.cycles += 4;
+        c.g[S2][0] = c.g[S6][0];
+        c.g[V0][0] = ((c.g[S2][0] as i64) < 3) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S1][0] = 0;
+        if !more {
+            break;
+        }
+        if back_edge_unwinds(c, 0x0015_a220) {
+            return Err(Unwound);
+        }
+    }
+    // 0x15a2b0: restore the first callee-saved register, then the epilogue.
+    c.cycles += 1;
+    frame.restore(c, S0, 0xc0);
+    grant_epilogue(c, frame)
+}
+
+/// The rewards file (`BERewardInt` file block, `REWARDS_FILE + 0x3e98`).
+#[cfg(test)]
+pub(crate) const REWARDS_FILE_PTR: u32 = 0x004c_3e98;
+
+/// One reward unlock: the shape the seven `BERewardInt_Unlock*` bodies share.
+/// Posters, trading cards, concept art and toys also count the unlocked
+/// entries and grant the rider-item bonus when the counts agree; videos and
+/// rider items go straight from the award to the money query.
+#[derive(Clone, Copy)]
+pub(crate) struct RewardUnlock {
+    /// Rewards-file offset of the bit table (`lw` in the award branch).
+    table: u32,
+    /// Offset added to the bit index for `BERewardInt_SetBit`.
+    bit_off: u32,
+    /// Rider items: the index is `a3 - 10`.
+    index_adj: bool,
+    /// The count block, for the unlocks that have one.
+    count: Option<RewardCount>,
+    ret_inst: u32,
+    ret_iface: u32,
+    ret_setbit: u32,
+    ret_file: u32,
+    ret_spend: u32,
+    ret_money: u32,
+}
+
+/// The count block: the unlocked count against the total, then the
+/// rider-item unlock when they agree.
+#[derive(Clone, Copy)]
+pub(crate) struct RewardCount {
+    count_fn: u32,
+    ret_count: u32,
+    get_fn: u32,
+    ret_get: u32,
+    /// The `a3` of the rider-item unlock made when the counts agree.
+    rider_idx: u64,
+    ret_rider: u32,
+}
+
+pub(crate) const UNLOCK_POSTER: RewardUnlock = RewardUnlock {
+    table: 0x14,
+    bit_off: 0xf30,
+    index_adj: false,
+    count: Some(RewardCount {
+        count_fn: 0x0015_75c0,
+        ret_count: 0x0015_8094,
+        get_fn: 0x0015_72b0,
+        ret_get: 0x0015_80a0,
+        rider_idx: 0x14,
+        ret_rider: 0x0015_80c0,
+    }),
+    ret_inst: 0x0015_8008,
+    ret_iface: 0x0015_8014,
+    ret_setbit: 0x0015_8048,
+    ret_file: 0x0015_8058,
+    ret_spend: 0x0015_8084,
+    ret_money: 0x0015_80d0,
+};
+
+pub(crate) const UNLOCK_TRADING_CARD: RewardUnlock = RewardUnlock {
+    table: 0x18,
+    bit_off: 0xf36,
+    index_adj: false,
+    count: Some(RewardCount {
+        count_fn: 0x0015_7620,
+        ret_count: 0x0015_81bc,
+        get_fn: 0x0015_72d0,
+        ret_get: 0x0015_81c8,
+        rider_idx: 0x11,
+        ret_rider: 0x0015_81e8,
+    }),
+    ret_inst: 0x0015_8130,
+    ret_iface: 0x0015_813c,
+    ret_setbit: 0x0015_8170,
+    ret_file: 0x0015_8180,
+    ret_spend: 0x0015_81ac,
+    ret_money: 0x0015_81f8,
+};
+
+pub(crate) const UNLOCK_CONCEPT_ART: RewardUnlock = RewardUnlock {
+    table: 0x1c,
+    bit_off: 0xf45,
+    index_adj: false,
+    count: Some(RewardCount {
+        count_fn: 0x0015_7680,
+        ret_count: 0x0015_82e4,
+        get_fn: 0x0015_72f0,
+        ret_get: 0x0015_82f0,
+        rider_idx: 0x16,
+        ret_rider: 0x0015_8310,
+    }),
+    ret_inst: 0x0015_8258,
+    ret_iface: 0x0015_8264,
+    ret_setbit: 0x0015_8298,
+    ret_file: 0x0015_82a8,
+    ret_spend: 0x0015_82d4,
+    ret_money: 0x0015_8320,
+};
+
+pub(crate) const UNLOCK_TOY: RewardUnlock = RewardUnlock {
+    table: 0x20,
+    bit_off: 0xf53,
+    index_adj: false,
+    count: Some(RewardCount {
+        count_fn: 0x0015_76e0,
+        ret_count: 0x0015_840c,
+        get_fn: 0x0015_7310,
+        ret_get: 0x0015_8418,
+        rider_idx: 0x13,
+        ret_rider: 0x0015_8438,
+    }),
+    ret_inst: 0x0015_8380,
+    ret_iface: 0x0015_838c,
+    ret_setbit: 0x0015_83c0,
+    ret_file: 0x0015_83d0,
+    ret_spend: 0x0015_83fc,
+    ret_money: 0x0015_8448,
+};
+
+pub(crate) const UNLOCK_VIDEO: RewardUnlock = RewardUnlock {
+    table: 0x24,
+    bit_off: 0xf52,
+    index_adj: false,
+    count: None,
+    ret_inst: 0x0015_84a8,
+    ret_iface: 0x0015_84b4,
+    ret_setbit: 0x0015_84e8,
+    ret_file: 0x0015_84f8,
+    ret_spend: 0x0015_8524,
+    ret_money: 0x0015_8534,
+};
+
+pub(crate) const UNLOCK_RIDER_ITEM: RewardUnlock = RewardUnlock {
+    table: 0x28,
+    bit_off: 0xf57,
+    index_adj: true,
+    count: None,
+    ret_inst: 0x0015_8650,
+    ret_iface: 0x0015_865c,
+    ret_setbit: 0x0015_8690,
+    ret_file: 0x0015_86a0,
+    ret_spend: 0x0015_86cc,
+    ret_money: 0x0015_86dc,
+};
+
+/// `void BERewardInt_UnlockPoster(self, profile, c, idx, award)` (0x157fd0).
+pub fn reward_unlock_poster(c: &mut Cpu) {
+    guest(c, |c| reward_unlock_body(c, UNLOCK_POSTER))
+}
+
+/// `void BERewardInt_UnlockTradingCard(...)` (0x1580f8).
+pub fn reward_unlock_trading_card(c: &mut Cpu) {
+    guest(c, |c| reward_unlock_body(c, UNLOCK_TRADING_CARD))
+}
+
+/// `void BERewardInt_UnlockConceptArt(...)` (0x158220).
+pub fn reward_unlock_concept_art(c: &mut Cpu) {
+    guest(c, |c| reward_unlock_body(c, UNLOCK_CONCEPT_ART))
+}
+
+/// `void BERewardInt_UnlockToy(...)` (0x158348).
+pub fn reward_unlock_toy(c: &mut Cpu) {
+    guest(c, |c| reward_unlock_body(c, UNLOCK_TOY))
+}
+
+/// `void BERewardInt_UnlockVideo(...)` (0x158470).
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn reward_unlock_video(c: &mut Cpu) {
+    guest(c, |c| reward_unlock_body(c, UNLOCK_VIDEO))
+}
+
+/// `void BERewardInt_UnlockRiderItem(...)` (0x158618).
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn reward_unlock_rider_item(c: &mut Cpu) {
+    guest(c, |c| reward_unlock_body(c, UNLOCK_RIDER_ITEM))
+}
+
+/// The shared body of the unlocks. Register roles as the generated code
+/// reads them: `s0` = award flag (`t0`), `s1` = profile (`a1`), `s2` = self
+/// (`a0`), `s3` = entry index (`a2`), `s4` = bit index, `s5` = econ interface.
+pub(crate) fn reward_unlock_body(c: &mut Cpu, u: RewardUnlock) -> Flow {
+    c.cycles += 32;
+    let frame = Frame::open(c, 0x70);
+    frame.save(c, S0, 0x60);
+    frame.save(c, S1, 0x50);
+    frame.save(c, S2, 0x40);
+    frame.save(c, S3, 0x30);
+    frame.save(c, S4, 0x20);
+    frame.save(c, S5, 0x10);
+    frame.save_ra(c, 0);
+    let has_count = u.count.is_some();
+    c.g[S0][0] = c.g[T0][0];
+    c.g[S1][0] = c.g[A1][0];
+    c.g[S2][0] = c.g[A0][0];
+    c.g[S3][0] = c.g[A2][0];
+    c.g[S4][0] = if u.index_adj {
+        sx(r32(c, A3).wrapping_sub(0xa))
+    } else {
+        c.g[A3][0]
+    };
+
+    call_ptr(c, 0x0014_dc80, u.ret_inst)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0xb;
+    call_ptr(c, 0x0014_dd58, u.ret_iface)?;
+
+    // econ = interface; entry = 0x4a6ca8 + profile * 0x9b50 + index * 0xf88.
+    c.g[V1][0] = 0xf88;
+    c.g[A2][0] = 0x9b50;
+    c.mult(0, V1, S3, V1);
+    c.g[S5][0] = c.g[V0][0];
+    c.mult(0, A2, S1, A2);
+    c.g[V0][0] = 0x4a_0000;
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x6ca8));
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S4][0];
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, V1)));
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(u.bit_off));
+    call_ptr(c, 0x0015_73f0, u.ret_setbit)?;
+
+    let no_award = c.g[S0][0] == 0;
+    c.g[A0][0] = if has_count { c.g[S2][0] } else { c.g[S5][0] };
+    if !no_award {
+        c.cycles += 8;
+        call_ptr(c, 0x0015_a478, u.ret_file)?;
+        c.g[V1][0] = Addr(r32(c, V0)).off(u.table).lw(c);
+        c.g[V0][0] = sx(r32(c, S4) << 4);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        c.g[A3][0] = Addr(r32(c, V1)).off(0xc).lh(c);
+        let not_scored = (c.g[A3][0] as i64) <= 0;
+        c.g[V0][0] = 0xa;
+        if !not_scored {
+            c.cycles += 1;
+            c.mult(0, A3, A3, V0);
+        }
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S3][0];
+        call_ptr(c, 0x0015_0b48, u.ret_spend)?;
+        c.g[A0][0] = if has_count { c.g[S2][0] } else { c.g[S5][0] };
+    }
+
+    if let Some(cnt) = u.count {
+        c.cycles += 8;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S3][0];
+        call_ptr(c, cnt.count_fn, cnt.ret_count)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, cnt.get_fn, cnt.ret_get)?;
+        let differs = c.g[S0][0] != c.g[V0][0];
+        c.g[A0][0] = c.g[S5][0];
+        if !differs {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[S3][0];
+            c.g[A3][0] = cnt.rider_idx;
+            c.g[T0][0] = 0;
+            call_ptr(c, 0x0015_8618, cnt.ret_rider)?;
+            c.g[A0][0] = c.g[S5][0];
+        }
+    }
+
+    c.cycles += 12;
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = c.g[S3][0];
+    call_ptr(c, 0x0015_0928, u.ret_money)?;
+    frame.restore(c, S0, 0x60);
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore(c, S3, 0x30);
+    frame.restore(c, S4, 0x20);
+    frame.restore(c, S5, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void BERewardInt_UnlockSong(self, profile, c, bit, award)` (0x158558): set
+/// bit `a3` of the song word at the entry, and spend the award when `t0` is set.
+pub fn reward_unlock_song(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A3][0];
+        c.g[S1][0] = c.g[T0][0];
+        c.g[S2][0] = c.g[A1][0];
+        c.g[S3][0] = c.g[A2][0];
+        call_ptr(c, 0x0014_dc80, 0x0015_8588)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xb;
+        call_ptr(c, 0x0014_dd58, 0x0015_8594)?;
+        c.g[A1][0] = 0xf88;
+        c.g[A0][0] = 0x9b50;
+        c.mult(0, A1, S3, A1);
+        c.g[S4][0] = c.g[V0][0];
+        c.mult(0, A0, S2, A0);
+        c.g[V0][0] = 0x4a_0000;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x6ca8));
+        c.g[V1][0] = 1;
+        c.g[V1][0] = c.g[V1][0] << (c.g[S0][0] & 63);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+        c.g[V0][0] = Addr(r32(c, A0)).off(0xf70).ld(c);
+        c.g[V0][0] |= c.g[V1][0];
+        let no_award = c.g[S1][0] == 0;
+        let word = c.g[V0][0];
+        Addr(r32(c, A0)).off(0xf70).sd(c, word);
+        if !no_award {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S3][0];
+            c.g[A3][0] = 0x1388;
+            call_ptr(c, 0x0015_0b48, 0x0015_85e4)?;
+        }
+        c.cycles += 12;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[S3][0];
+        call_ptr(c, 0x0015_0928, 0x0015_85f4)?;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int BERewardInt_GetPointsThreshold(self, tier)` (0x1588b0): the word of
+/// the threshold table at `0x45b048 + tier * 4`.
+pub fn be_reward_int_get_points_threshold(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = 0x46_0000;
+    c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4fb8));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+    ret(c);
+}
+
+/// `void BERewardInt_AddPointsForRider(self, rider, points, ...)` (0x1597b0):
+/// look up the rider's profile and character, then `AddPoints` with them.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn reward_add_points_for_rider(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S3][0] = c.g[A2][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0014_a0e0, 0x0015_97dc)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0014_a080, 0x0015_97e8)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A3][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[V0][0];
+        call_ptr(c, 0x0015_9818, 0x0015_97fc)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void BERewardInt_GrantRewardForRider(self, rider, ...)` (0x159c68): as
+/// `AddPointsForRider`, but grants the reward.
+pub fn reward_grant_reward_for_rider(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S3][0] = c.g[A2][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0014_a0e0, 0x0015_9c94)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0014_a080, 0x0015_9ca0)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A3][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[V0][0];
+        call_ptr(c, 0x0015_9cd0, 0x0015_9cb4)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5659,6 +6949,186 @@ pub(crate) mod tests {
                 let mut r = machine(c, seed, 0x7350, 0);
                 fill(c, &mut r, DATA + 0x3000, 0x400);
                 c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x3000);
+            },
+        );
+    }
+
+    use crate::difftest::elf_image;
+
+    /// `cBELibrary_profileLib` (`[profile][character]`, 0x9b50 per profile,
+    /// 0xf88 per character).
+    pub(crate) const PROFILE_LIB: u32 = 0x004a_6ca8;
+
+    pub(crate) const PROFILE_STRIDE: u32 = 0x9b50;
+
+    pub(crate) const CHAR_STRIDE: u32 = 0xf88;
+
+    /// Fixture: the game image (jump table, slot tables, `.lit4`), the back
+    /// end singletons at gp-0x1f04 / gp-0x1f28 as zeroed objects, and a
+    /// character record whose award bits and owned-reward bits are random,
+    /// so the pickers scan real bit arrays.
+    pub(crate) fn grant_world(c: &mut Cpu, r: &mut Rng, profile: u32, character: u32) {
+        elf_image(c);
+        for off in [0x1f04, 0x1f28] {
+            c.bus.write32(GAME_GP - off, DATA + 0x20_0000 + off * 0x10);
+        }
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        let rec = PROFILE_LIB + profile * PROFILE_STRIDE + character * CHAR_STRIDE;
+        for i in 0..0x40u32 {
+            c.bus
+                .write8(rec + GRANT_AWARDS_RECEIVED + i, r.next_u32() as u8 & 0x0f);
+        }
+    }
+
+    /// `BERewardInt_GrantReward` against the generated body: every bit (the
+    /// per-bit switch cases, the 17..=19 skip, the >= 32 path), with the
+    /// picks, the unlocks and the medal and peak checks answered by the
+    /// fakes, which unwind at random call indices.
+    #[test]
+    fn be_reward_int_grant_reward_matches() {
+        check(
+            ee::s01::f_00159cd0__generated,
+            be_reward_int_grant_reward,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0159_cd0, 12);
+                let profile = seed % 3;
+                let character = (seed / 3) % 4;
+                let bit = match seed % 5 {
+                    0 => 17 + r.next_u32() % 3,
+                    1 => r.next_u32() % 40,
+                    _ => r.next_u32() % 20,
+                };
+                grant_world(c, &mut r, profile, character);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = profile as u64;
+                c.g[A2][0] = character as u64;
+                c.g[A3][0] = bit as u64;
+                c.pc = GRANT_ENTRY;
+            },
+        );
+    }
+
+    /// Scrambled machine, the BELibrary dummy at `gp-0x1f04` and a
+    /// rewards file whose bit table at `table` points at a record array.
+    pub(crate) fn unlock_fixture(c: &mut Cpu, seed: u32, salt: u64, table: u32) -> Rng {
+        let r = machine(c, seed, salt, 0);
+        c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x3_0000);
+        c.bus.write32(REWARDS_FILE_PTR + table, DATA + 0x5000);
+        for k in 0..0x40u32 {
+            c.bus.write16(
+                DATA + 0x5000 + 16 * k + 0xc,
+                ((k * 7 + seed) % 5) as u16 * 3,
+            );
+        }
+        r
+    }
+
+    /// Unlock inputs: `self` at DATA, small profile / entry / bit values and
+    /// the award flag from the seed.
+    pub(crate) fn unlock_inputs(c: &mut Cpu, seed: u32, entry: u32, idx_base: u64) {
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = (seed % 3) as u64;
+        c.g[A2][0] = (seed / 3 % 4) as u64;
+        c.g[A3][0] = idx_base + (seed % 0x10) as u64;
+        c.g[T0][0] = (seed % 2) as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn reward_unlock_poster_matches() {
+        check(
+            ee::s01::f_00157fd0__generated,
+            reward_unlock_poster,
+            120,
+            &|c, seed| {
+                let _ = unlock_fixture(c, seed, 0x157f_d0, 0x14);
+                unlock_inputs(c, seed, 0x0015_7fd0, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn reward_unlock_trading_card_matches() {
+        check(
+            ee::s01::f_001580f8__generated,
+            reward_unlock_trading_card,
+            120,
+            &|c, seed| {
+                let _ = unlock_fixture(c, seed, 0x1580_f8, 0x18);
+                unlock_inputs(c, seed, 0x0015_80f8, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn reward_unlock_concept_art_matches() {
+        check(
+            ee::s01::f_00158220__generated,
+            reward_unlock_concept_art,
+            120,
+            &|c, seed| {
+                let _ = unlock_fixture(c, seed, 0x158220, 0x1c);
+                unlock_inputs(c, seed, 0x0015_8220, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn reward_unlock_toy_matches() {
+        check(
+            ee::s01::f_00158348__generated,
+            reward_unlock_toy,
+            120,
+            &|c, seed| {
+                let _ = unlock_fixture(c, seed, 0x158348, 0x20);
+                unlock_inputs(c, seed, 0x0015_8348, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn reward_unlock_song_matches() {
+        check(
+            ee::s01::f_00158558__generated,
+            reward_unlock_song,
+            120,
+            &|c, seed| {
+                let _ = unlock_fixture(c, seed, 0x158558, 0x24);
+                unlock_inputs(c, seed, 0x0015_8558, 0);
+                // The bit index runs past 63 on some seeds (the shift masks it).
+                c.g[A3][0] = (seed as u64).wrapping_mul(7) % 70;
+            },
+        );
+    }
+
+    #[test]
+    fn be_reward_int_get_points_threshold_matches() {
+        check(
+            ee::s01::f_001588b0__generated,
+            be_reward_int_get_points_threshold,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1588b0, 0);
+                c.g[A1][0] = (seed % 64) as u64;
+                c.pc = 0x0015_88b0;
+            },
+        );
+    }
+
+    #[test]
+    fn reward_grant_reward_for_rider_matches() {
+        check(
+            ee::s01::f_00159c68__generated,
+            reward_grant_reward_for_rider,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x159c68, 0);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x1_0000);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x2000);
+                c.g[A2][0] = (seed % 7) as u64;
+                c.pc = 0x0015_9c68;
             },
         );
     }

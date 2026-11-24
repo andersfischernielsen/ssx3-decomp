@@ -4,9 +4,11 @@
 use crate::abi;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
 pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE_ADDR;
+pub(crate) use crate::game::camera::camera::delete_when_flagged;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -25,6 +27,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         active_camera_trigger_list_dtor,
         "ActiveCameraTriggerList_dtor",
     ),
+    (0x0016_c5a8, camera_trigger_dtor, "CameraTrigger_dtor"),
 ];
 
 /// `ActiveCameraTriggerList* ActiveCameraTriggerList_ctor(ActiveCameraTriggerList *self)`
@@ -65,6 +68,21 @@ pub fn active_camera_trigger_list_dtor(c: &mut Cpu) {
         }
         c.cycles += 4;
         frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `CameraTrigger::~CameraTrigger` (0x16c5a8): the flag-gated delete with no
+/// vtable store.
+pub fn camera_trigger_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        delete_when_flagged(c, 0x0016_c5c0)?;
+        c.cycles += 3;
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -137,6 +155,22 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 3) as u64;
                 build_list(c, &mut r, DATA, seed % 2);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::camera::camera::tests::oc492_dtor_setup;
+    pub(crate) use crate::game::camera::camera::tests::oc492_hooks;
+
+    #[test]
+    fn camera_trigger_dtor_matches() {
+        oc492_hooks();
+        check(
+            ee::s02::f_0016c5a8__generated,
+            camera_trigger_dtor,
+            200,
+            &|c, seed| {
+                oc492_dtor_setup(c, seed, 0x0016_c5a8);
             },
         );
     }

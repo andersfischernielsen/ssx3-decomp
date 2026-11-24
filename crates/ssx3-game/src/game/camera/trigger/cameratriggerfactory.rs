@@ -404,6 +404,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         target_script_camera_algo_dtor,
         "TargetScriptCameraAlgo_dtor",
     ),
+    (
+        0x0017_28f8,
+        camera_box_trigger_contains_point,
+        "CameraBoxTrigger_ContainsPoint",
+    ),
+    (
+        0x0017_32b8,
+        bounded_camera_algorithm_base_dtor,
+        "BoundedCameraAlgorithmBase_dtor",
+    ),
+    (
+        0x0017_36e0,
+        bounded_camera_algorithm_base_update,
+        "BoundedCameraAlgorithmBase_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6540,6 +6555,1253 @@ pub fn manual_script_camera_algo_dtor(c: &mut Cpu) {
     oc437_dtor_flag_delete(c, 0x46_0000, 0x4220, 0x10, 0x0017_638c)
 }
 
+/// `base + off` with `base` a register's low word (the generated
+/// `(c.g[R][0] as u32).wrapping_add(off)`).
+#[inline(always)]
+pub(crate) fn cvb_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    r32(c, reg).wrapping_add(off)
+}
+
+/// `base - back` with `base` a register's low word (the generated
+/// `wrapping_sub`).
+#[inline(always)]
+pub(crate) fn cvb_back(c: &Cpu, reg: usize, back: u32) -> u32 {
+    r32(c, reg).wrapping_sub(back)
+}
+
+/// `bool cCTVolumeBox_containsPoint(cCTVolumeBox* box, t4Vector* pt)`
+/// (0x1728f8), the `CameraBoxTrigger` containment test. The point is mapped
+/// into the box's local frame: the identity matrix is turned by `-rot[1]`
+/// about x and `-rot[0]` about z (`Math_SinCos` for each angle, the matrix
+/// products as VU0 operations on the stack copies) and translated by `-pos`.
+/// The box extends `size` either way along each axis; the point is inside
+/// when it is on the non-positive side of all six slab planes. The three axis
+/// vectors are copied into the static table at `0x4c5480` on the first call
+/// (the flag is `gp + 0x1cfc`). Returns 1 inside, 0 outside.
+///
+/// Transcribed op for op from the generated body: the VU0 and FPU steps and
+/// the stack spills stay as the original issues them.
+pub fn camera_box_trigger_contains_point(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_172d38: {
+            c.cycles += 260;
+            c.g[SP][0] = sx(cvb_back(c, SP, 0x130));
+            c.g[V0][0] = 0x500000;
+            c.sq(17, cvb_at(c, SP, 0x100));
+            c.g[V0][0] = sx(cvb_back(c, V0, 0xe60));
+            c.sq(20, cvb_at(c, SP, 0xd0));
+            c.g[S1][0] = c.g[A0][0];
+            c.g[S4][0] = c.g[A1][0];
+            c.sq(16, cvb_at(c, SP, 0x110));
+            c.sq(18, cvb_at(c, SP, 0xf0));
+            c.sq(19, cvb_at(c, SP, 0xe0));
+            c.sq(21, cvb_at(c, SP, 0xc0));
+            c.sq(22, cvb_at(c, SP, 0xb0));
+            c.sd(cvb_at(c, SP, 0xa0), c.g[RA][0]);
+            c.swc1(20, cvb_at(c, SP, 0x120));
+            c.lqc2(1, r32(c, V0));
+            c.lqc2(2, cvb_at(c, V0, 0x10));
+            c.lqc2(3, cvb_at(c, V0, 0x20));
+            c.lqc2(4, cvb_at(c, V0, 0x30));
+            c.sqc2(1, r32(c, SP));
+            c.sqc2(2, cvb_at(c, SP, 0x10));
+            c.sqc2(3, cvb_at(c, SP, 0x20));
+            c.sqc2(4, cvb_at(c, SP, 0x30));
+            c.lwc1(12, cvb_at(c, S1, 0x10));
+            c.g[S2][0] = c.g[SP][0];
+            c.g[A0][0] = sx(cvb_at(c, SP, 0x90));
+            c.g[A1][0] = sx(cvb_at(c, SP, 0x94));
+            c.neg_s(12, 12);
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 20);
+            c.g[S0][0] = 0x500000;
+            c.g[S6][0] = sx(cvb_back(c, S0, 0xec0));
+            call_ptr(c, 0x0031be50, 0x00172978)?;
+            c.lwc1(11, cvb_at(c, SP, 0x94));
+            c.g[S3][0] = sx(cvb_at(c, SP, 0x40));
+            c.lwc1(3, cvb_at(c, S6, 0x8));
+            c.sub_s(1, 20, 11);
+            c.lwc1(0, cvb_back(c, S0, 0xec0));
+            c.lwc1(6, cvb_at(c, S6, 0x4));
+            c.lwc1(8, cvb_at(c, SP, 0x90));
+            c.mul_s(2, 1, 3);
+            c.sw(cvb_at(c, SP, 0x70), 0u64);
+            c.mul_s(4, 1, 0);
+            c.sw(cvb_at(c, SP, 0x74), 0u64);
+            c.mul_s(1, 1, 6);
+            c.sw(cvb_at(c, SP, 0x78), 0u64);
+            c.mul_s(13, 8, 3);
+            c.sw(cvb_at(c, SP, 0x4c), 0u64);
+            c.mul_s(12, 8, 0);
+            c.sw(cvb_at(c, SP, 0x5c), 0u64);
+            c.mul_s(9, 2, 3);
+            c.sw(cvb_at(c, SP, 0x6c), 0u64);
+            c.mul_s(10, 4, 3);
+            c.swc1(20, cvb_at(c, SP, 0x7c));
+            c.mul_s(5, 2, 0);
+            c.mul_s(7, 4, 0);
+            c.mul_s(3, 1, 3);
+            c.mul_s(0, 1, 0);
+            c.mul_s(8, 8, 6);
+            c.mul_s(2, 2, 6);
+            c.mul_s(4, 4, 6);
+            c.mul_s(1, 1, 6);
+            c.add_s(5, 5, 8);
+            c.sub_s(0, 0, 13);
+            c.sub_s(2, 2, 12);
+            c.add_s(9, 9, 11);
+            c.swc1(5, cvb_at(c, SP, 0x48));
+            c.add_s(7, 7, 11);
+            c.swc1(0, cvb_at(c, SP, 0x44));
+            c.add_s(4, 4, 13);
+            c.swc1(2, cvb_at(c, SP, 0x58));
+            c.sub_s(10, 10, 8);
+            c.swc1(9, cvb_at(c, SP, 0x68));
+            c.add_s(1, 1, 11);
+            c.swc1(7, cvb_at(c, SP, 0x40));
+            c.add_s(3, 3, 12);
+            c.swc1(4, cvb_at(c, SP, 0x50));
+            c.swc1(10, cvb_at(c, SP, 0x60));
+            c.swc1(1, cvb_at(c, SP, 0x54));
+            c.swc1(3, cvb_at(c, SP, 0x64));
+            c.lqc2(4, r32(c, S2));
+            c.lqc2(5, cvb_at(c, S2, 0x10));
+            c.lqc2(6, cvb_at(c, S2, 0x20));
+            c.lqc2(7, cvb_at(c, S2, 0x30));
+            c.lqc2(8, r32(c, S3));
+            c.lqc2(9, cvb_at(c, S3, 0x10));
+            c.lqc2(10, cvb_at(c, S3, 0x20));
+            c.lqc2(11, cvb_at(c, S3, 0x30));
+            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+            c.vu0().mula(0b1111, 4, Src::Bc(9, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(9, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(9, Z));
+            c.vu0().madd(0b1111, 13, 7, Src::Bc(9, W));
+            c.vu0().mula(0b1111, 4, Src::Bc(10, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(10, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(10, Z));
+            c.vu0().madd(0b1111, 14, 7, Src::Bc(10, W));
+            c.vu0().mula(0b1111, 4, Src::Bc(11, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
+            c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
+            c.sqc2(12, r32(c, S2));
+            c.sqc2(13, cvb_at(c, S2, 0x10));
+            c.sqc2(14, cvb_at(c, S2, 0x20));
+            c.sqc2(15, cvb_at(c, S2, 0x30));
+            c.lwc1(12, cvb_at(c, S1, 0xc));
+            c.g[S2][0] = c.g[SP][0];
+            c.g[A0][0] = sx(cvb_at(c, SP, 0x98));
+            c.g[A1][0] = sx(cvb_at(c, SP, 0x9c));
+            c.neg_s(12, 12);
+            c.g[S0][0] = 0x500000;
+            c.g[S5][0] = sx(cvb_back(c, S0, 0xea0));
+            call_ptr(c, 0x0031be50, 0x00172ac4)?;
+            c.lwc1(11, cvb_at(c, SP, 0x9c));
+            c.lwc1(3, cvb_at(c, S5, 0x8));
+            c.sub_s(1, 20, 11);
+            c.lwc1(0, cvb_back(c, S0, 0xea0));
+            c.lwc1(6, cvb_at(c, S5, 0x4));
+            c.lwc1(8, cvb_at(c, SP, 0x98));
+            c.mul_s(2, 1, 3);
+            c.sw(cvb_at(c, SP, 0x70), 0u64);
+            c.mul_s(4, 1, 0);
+            c.sw(cvb_at(c, SP, 0x74), 0u64);
+            c.mul_s(1, 1, 6);
+            c.sw(cvb_at(c, SP, 0x78), 0u64);
+            c.mul_s(13, 8, 3);
+            c.sw(cvb_at(c, SP, 0x4c), 0u64);
+            c.mul_s(12, 8, 0);
+            c.sw(cvb_at(c, SP, 0x5c), 0u64);
+            c.mul_s(9, 2, 3);
+            c.sw(cvb_at(c, SP, 0x6c), 0u64);
+            c.mul_s(10, 4, 3);
+            c.swc1(20, cvb_at(c, SP, 0x7c));
+            c.mul_s(5, 2, 0);
+            c.mul_s(7, 4, 0);
+            c.mul_s(3, 1, 3);
+            c.mul_s(0, 1, 0);
+            c.mul_s(8, 8, 6);
+            c.mul_s(2, 2, 6);
+            c.mul_s(4, 4, 6);
+            c.mul_s(1, 1, 6);
+            c.add_s(5, 5, 8);
+            c.sub_s(0, 0, 13);
+            c.sub_s(2, 2, 12);
+            c.add_s(9, 9, 11);
+            c.swc1(5, cvb_at(c, SP, 0x48));
+            c.add_s(7, 7, 11);
+            c.swc1(0, cvb_at(c, SP, 0x44));
+            c.add_s(4, 4, 13);
+            c.swc1(2, cvb_at(c, SP, 0x58));
+            c.sub_s(10, 10, 8);
+            c.swc1(9, cvb_at(c, SP, 0x68));
+            c.add_s(1, 1, 11);
+            c.swc1(7, cvb_at(c, SP, 0x40));
+            c.add_s(3, 3, 12);
+            c.swc1(4, cvb_at(c, SP, 0x50));
+            c.swc1(10, cvb_at(c, SP, 0x60));
+            c.swc1(1, cvb_at(c, SP, 0x54));
+            c.swc1(3, cvb_at(c, SP, 0x64));
+            c.lqc2(4, r32(c, S2));
+            c.lqc2(5, cvb_at(c, S2, 0x10));
+            c.lqc2(6, cvb_at(c, S2, 0x20));
+            c.lqc2(7, cvb_at(c, S2, 0x30));
+            c.lqc2(8, r32(c, S3));
+            c.lqc2(9, cvb_at(c, S3, 0x10));
+            c.lqc2(10, cvb_at(c, S3, 0x20));
+            c.lqc2(11, cvb_at(c, S3, 0x30));
+            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+            c.vu0().mula(0b1111, 4, Src::Bc(9, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(9, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(9, Z));
+            c.vu0().madd(0b1111, 13, 7, Src::Bc(9, W));
+            c.vu0().mula(0b1111, 4, Src::Bc(10, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(10, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(10, Z));
+            c.vu0().madd(0b1111, 14, 7, Src::Bc(10, W));
+            c.vu0().mula(0b1111, 4, Src::Bc(11, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
+            c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
+            c.sqc2(12, r32(c, S2));
+            c.sqc2(13, cvb_at(c, S2, 0x10));
+            c.sqc2(14, cvb_at(c, S2, 0x20));
+            c.sqc2(15, cvb_at(c, S2, 0x30));
+            c.lwc1(0, r32(c, S1));
+            c.lwc1(1, cvb_at(c, S1, 0x4));
+            c.lwc1(2, cvb_at(c, S1, 0x8));
+            c.neg_s(0, 0);
+            c.neg_s(1, 1);
+            c.swc1(20, cvb_at(c, SP, 0x4c));
+            c.neg_s(2, 2);
+            c.swc1(0, cvb_at(c, SP, 0x40));
+            c.swc1(1, cvb_at(c, SP, 0x44));
+            c.swc1(2, cvb_at(c, SP, 0x48));
+            c.swc1(0, cvb_at(c, SP, 0x50));
+            c.swc1(1, cvb_at(c, SP, 0x54));
+            c.swc1(2, cvb_at(c, SP, 0x58));
+            c.lqc2(4, r32(c, SP));
+            c.lqc2(5, cvb_at(c, SP, 0x10));
+            c.lqc2(6, cvb_at(c, SP, 0x20));
+            c.lqc2(7, cvb_at(c, SP, 0x30));
+            c.lqc2(8, cvb_at(c, SP, 0x40));
+            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+            c.sqc2(12, cvb_at(c, SP, 0x30));
+            c.lqc2(8, r32(c, S4));
+            c.lqc2(4, r32(c, SP));
+            c.lqc2(5, cvb_at(c, SP, 0x10));
+            c.lqc2(6, cvb_at(c, SP, 0x20));
+            c.lqc2(7, cvb_at(c, SP, 0x30));
+            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+            c.sqc2(12, cvb_at(c, SP, 0x50));
+            c.lwc1(0, cvb_at(c, S1, 0x18));
+            c.lwc1(1, cvb_at(c, S1, 0x1c));
+            c.lwc1(2, cvb_at(c, S1, 0x20));
+            c.neg_s(0, 0);
+            c.lq(2, cvb_at(c, SP, 0x50));
+            c.neg_s(1, 1);
+            c.neg_s(2, 2);
+            c.swc1(20, cvb_at(c, SP, 0x6c));
+            c.sq(2, cvb_at(c, SP, 0x40));
+            c.swc1(0, cvb_at(c, SP, 0x70));
+            c.swc1(1, cvb_at(c, SP, 0x74));
+            c.swc1(2, cvb_at(c, SP, 0x78));
+            c.swc1(0, cvb_at(c, SP, 0x60));
+            c.swc1(1, cvb_at(c, SP, 0x64));
+            c.swc1(2, cvb_at(c, SP, 0x68));
+            c.swc1(20, cvb_at(c, SP, 0x4c));
+            c.lqc2(3, cvb_at(c, SP, 0x40));
+            c.lqc2(4, cvb_at(c, SP, 0x60));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, cvb_at(c, SP, 0x80));
+            c.lwc1(2, cvb_at(c, S1, 0x20));
+            c.lwc1(0, cvb_at(c, S1, 0x18));
+            c.lwc1(1, cvb_at(c, S1, 0x1c));
+            c.lq(2, cvb_at(c, SP, 0x80));
+            c.swc1(0, cvb_at(c, SP, 0x70));
+            c.sq(2, cvb_at(c, SP, 0x50));
+            c.swc1(1, cvb_at(c, SP, 0x74));
+            c.swc1(2, cvb_at(c, SP, 0x78));
+            c.swc1(20, cvb_at(c, SP, 0x7c));
+            c.lqc2(3, cvb_at(c, SP, 0x40));
+            c.lqc2(4, cvb_at(c, SP, 0x70));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, cvb_at(c, SP, 0x80));
+            c.lq(2, cvb_at(c, SP, 0x80));
+            c.sq(2, cvb_at(c, SP, 0x60));
+            c.g[V1][0] = c.lw(cvb_at(c, GP, 0x1cfc));
+            let t = c.g[V1][0] != 0u64;
+            c.g[V0][0] = 0x4c0000;
+            if t {
+                break 'b_172d38;
+            } else {
+                c.cycles += 12;
+                c.g[V1][0] = 0x500000;
+                c.lq(6, r32(c, S6));
+                c.g[V1][0] = sx(cvb_back(c, V1, 0xeb0));
+                c.lq(4, r32(c, S5));
+                c.lq(5, r32(c, V1));
+                c.g[V0][0] = sx(cvb_at(c, V0, 0x5480));
+                c.g[V1][0] = 0x1;
+                c.sq(4, cvb_at(c, V0, 0x20));
+                c.sq(6, r32(c, V0));
+                c.sq(5, cvb_at(c, V0, 0x10));
+                c.sw(cvb_at(c, GP, 0x1cfc), c.g[V1][0]);
+                c.g[V0][0] = 0x4c0000;
+                break 'b_172d38;
+            }
+        }
+        c.cycles += 6;
+        c.g[AT][0] = 0xffffffffbf800000;
+        c.mtc1(1, 2);
+        c.mtc1(0, 1);
+        c.g[A0][0] = sx(cvb_at(c, V0, 0x5480));
+        c.g[A1][0] = 0u64;
+        'l_172d50: loop {
+            'b_172de8: {
+                c.cycles += 20;
+                c.mfc1(2, 2);
+                c.lqc2(4, r32(c, A0));
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, cvb_at(c, SP, 0x80));
+                c.lq(3, cvb_at(c, SP, 0x80));
+                c.sq(3, cvb_at(c, SP, 0x70));
+                c.lqc2(3, cvb_at(c, SP, 0x70));
+                c.lqc2(5, cvb_at(c, SP, 0x50));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.qmfc2(2, 4);
+                c.mtc1(2, 0);
+                c.c_lt_s(1, 0);
+                let t = c.fcc();
+                c.g[V0][0] = 0u64;
+                if t {
+                    break 'b_172de8;
+                } else {
+                    c.cycles += 13;
+                    c.lqc2(3, r32(c, A0));
+                    c.lqc2(5, cvb_at(c, SP, 0x60));
+                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                    c.qmfc2(2, 4);
+                    c.mtc1(2, 0);
+                    c.c_lt_s(1, 0);
+                    let t = c.fcc();
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        break 'b_172de8;
+                    } else {
+                        c.cycles += 4;
+                        c.g[A1][0] = sx(cvb_at(c, A1, 0x1));
+                        c.g[V0][0] = ((c.g[A1][0] as i64) < 3i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A0][0] = sx(cvb_at(c, A0, 0x10));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0017_2d50);
+                            }
+                            continue 'l_172d50;
+                        } else {
+                            c.cycles += 1;
+                            c.g[V0][0] = 0x1;
+                            break 'b_172de8;
+                        }
+                    }
+                }
+            }
+            c.cycles += 11;
+            c.lq(16, cvb_at(c, SP, 0x110));
+            c.lq(17, cvb_at(c, SP, 0x100));
+            c.lq(18, cvb_at(c, SP, 0xf0));
+            c.lq(19, cvb_at(c, SP, 0xe0));
+            c.lq(20, cvb_at(c, SP, 0xd0));
+            c.lq(21, cvb_at(c, SP, 0xc0));
+            c.lq(22, cvb_at(c, SP, 0xb0));
+            c.g[RA][0] = c.ld(cvb_at(c, SP, 0xa0));
+            c.lwc1(20, cvb_at(c, SP, 0x120));
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx(cvb_at(c, SP, 0x130));
+            c.pc = t;
+            return Ok(());
+        }
+    });
+}
+
+/// `base + off` with `base` a register's low word (the generated
+/// `(c.g[R][0] as u32).wrapping_add(off)`).
+#[inline(always)]
+pub(crate) fn bcu_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    r32(c, reg).wrapping_add(off)
+}
+
+/// `base - back` with `base` a register's low word (the generated
+/// `wrapping_sub`), used for the gp-relative constants.
+#[inline(always)]
+pub(crate) fn bcu_back(c: &Cpu, reg: usize, back: u32) -> u32 {
+    r32(c, reg).wrapping_sub(back)
+}
+
+/// `void BoundedCameraAlgorithmBase_Update(self)` (0x1736e0; the reference
+/// names it `cTriggerAlgorithm_update`): the trigger camera's per-frame update.
+///
+/// The focus point is the rider's position (vtable slot 1) raised by
+/// `HeightOffset` (`+0x6c`) along z and pushed by `LeadDistance` (`+0x74`)
+/// along its front (slot 4); it becomes `CamTargetPos` (`+0x20`). Yaw and
+/// pitch of camera-to-focus turn towards the front's yaw and pitch (wrapped),
+/// the distance moves towards `IdealDist` (`+0x70`): at once when more than
+/// 5000 away, else by a third of the error, or by error * k / 60 with
+/// k = 0.0072 * |velocity| + 8 when k >= 20. `Position` (`+0x40`) is the focus
+/// pulled back along the new direction (two `Math_SinCos`). `Heading` (`+0x50`)
+/// and `Pitch` (`+0x54`) then turn towards that direction by
+/// `HeadingLookRate` (`+0x64`) and `PitchLookRate` (`+0x68`) per 1/60 s.
+///
+/// The arithmetic is the generated body's VU0 and FPU sequence, with its
+/// stack spills and cycle charges per block, so the port is exact at every
+/// branch.
+pub fn bounded_camera_algorithm_base_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 71;
+        c.g[SP][0] = sx(bcu_back(c, SP, 0xe0));
+        c.sq(16, bcu_at(c, SP, 0xa0));
+        c.swc1(22, bcu_at(c, SP, 0xc0));
+        c.g[S0][0] = c.g[A0][0];
+        c.swc1(21, bcu_at(c, SP, 0xb8));
+        c.g[A0][0] = c.g[SP][0];
+        c.swc1(20, bcu_at(c, SP, 0xb0));
+        c.sd(bcu_at(c, SP, 0x90), c.g[RA][0]);
+        c.swc1(25, bcu_at(c, SP, 0xd8));
+        c.swc1(24, bcu_at(c, SP, 0xd0));
+        c.swc1(23, bcu_at(c, SP, 0xc8));
+        c.mtc1(0, 22);
+
+        // The rider's position (slot 1, +8), velocity (slot 3, +0x18) and
+        // front (slot 4, +0x20) into the stack vectors at sp+0, +0x10, +0x20.
+        c.g[A2][0] = c.lw(bcu_at(c, S0, 0x30));
+        c.g[V0][0] = c.lw(r32(c, A2));
+        c.g[A1][0] = c.lh(bcu_at(c, V0, 0x8));
+        c.g[V1][0] = c.lw(bcu_at(c, V0, 0xc));
+        let t = c.g[V1][0] as u32;
+        c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
+        call_ptr(c, t, 0x0017_3728)?;
+
+        c.g[A2][0] = c.lw(bcu_at(c, S0, 0x30));
+        c.g[A0][0] = sx(bcu_at(c, SP, 0x10));
+        c.g[V0][0] = c.lw(r32(c, A2));
+        c.g[A1][0] = c.lh(bcu_at(c, V0, 0x18));
+        c.g[V1][0] = c.lw(bcu_at(c, V0, 0x1c));
+        let t = c.g[V1][0] as u32;
+        c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
+        call_ptr(c, t, 0x0017_3744)?;
+
+        c.g[A2][0] = c.lw(bcu_at(c, S0, 0x30));
+        c.g[A0][0] = sx(bcu_at(c, SP, 0x20));
+        c.g[V0][0] = c.lw(r32(c, A2));
+        c.g[A1][0] = c.lh(bcu_at(c, V0, 0x20));
+        c.g[V1][0] = c.lw(bcu_at(c, V0, 0x24));
+        let t = c.g[V1][0] as u32;
+        c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
+        call_ptr(c, t, 0x0017_3760)?;
+
+        // focus = position + HeightOffset * z (the t4vect_ZAxis constant at
+        // 0x4ff160), then focus += front * LeadDistance.
+        c.g[V0][0] = 0x500000;
+        c.lwc1(0, bcu_at(c, S0, 0x6c));
+        c.g[V0][0] = sx(bcu_back(c, V0, 0xea0));
+        c.mfc1(3, 0);
+        c.lqc2(4, r32(c, V0));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, bcu_at(c, SP, 0x40));
+        c.lq(2, bcu_at(c, SP, 0x40));
+        c.sq(2, bcu_at(c, SP, 0x30));
+        c.lqc2(3, r32(c, SP));
+        c.lqc2(4, bcu_at(c, SP, 0x30));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, r32(c, SP));
+        c.lwc1(0, bcu_at(c, S0, 0x74));
+        c.mfc1(3, 0);
+        c.lqc2(4, bcu_at(c, SP, 0x20));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, bcu_at(c, SP, 0x40));
+        c.lq(2, bcu_at(c, SP, 0x40));
+        c.sq(2, bcu_at(c, SP, 0x30));
+        c.lqc2(3, r32(c, SP));
+        c.lqc2(4, bcu_at(c, SP, 0x30));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, r32(c, SP));
+        // self->CamTargetPos = focus; toFocus = focus - Position (sp+0x30).
+        c.lq(2, r32(c, SP));
+        c.sq(2, bcu_at(c, S0, 0x20));
+        c.lqc2(3, r32(c, SP));
+        c.lqc2(4, bcu_at(c, S0, 0x40));
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, bcu_at(c, SP, 0x40));
+        c.lq(2, bcu_at(c, SP, 0x40));
+        c.sq(2, bcu_at(c, SP, 0x30));
+
+        // yawD = Atan2(toFocus.y, toFocus.x) (f23), with the x == 0 cases
+        // (+-pi/2 or 0) handled before the atan call.
+        'b_17386c: {
+            'b_173868: {
+                'b_173828: {
+                    c.lwc1(20, bcu_at(c, SP, 0x30));
+                    c.c_eq_s(20, 22);
+                    let t = !c.fcc();
+                    c.lwc1(21, bcu_at(c, SP, 0x34));
+                    if t {
+                        break 'b_173828;
+                    } else {
+                        c.cycles += 4;
+                        c.c_eq_s(21, 22);
+                        let t = c.fcc();
+                        c.mov_s(23, 21);
+                        if t {
+                            break 'b_173868;
+                        } else {
+                            c.cycles += 4;
+                            c.c_le_s(22, 21);
+                            c.lwc1(23, bcu_back(c, GP, 0x63f4));
+                            let t = !c.fcc();
+                            c.lwc1(20, bcu_at(c, SP, 0x20));
+                            if t {
+                                break 'b_173868;
+                            } else {
+                                c.cycles += 3;
+                                c.lwc1(23, bcu_back(c, GP, 0x63f0));
+                                break 'b_17386c;
+                            }
+                        }
+                    }
+                }
+                'b_173864: {
+                    c.cycles += 7;
+                    c.div_s(12, 21, 20);
+                    call_ptr(c, 0x0031_c228, 0x0017_3834)?;
+                    c.c_lt_s(20, 22);
+                    let t = !c.fcc();
+                    c.mov_s(12, 0);
+                    if t {
+                        break 'b_173864;
+                    } else {
+                        'b_17385c: {
+                            c.cycles += 3;
+                            c.c_lt_s(22, 21);
+                            let t = !c.fcc();
+                            if t {
+                                break 'b_17385c;
+                            } else {
+                                c.cycles += 3;
+                                c.lwc1(0, bcu_back(c, GP, 0x63ec));
+                                c.add_s(12, 12, 0);
+                                break 'b_173864;
+                            }
+                        }
+                        c.cycles += 2;
+                        c.lwc1(0, bcu_back(c, GP, 0x63e8));
+                        c.sub_s(12, 12, 0);
+                        break 'b_173864;
+                    }
+                }
+                c.cycles += 1;
+                c.mov_s(23, 12);
+                break 'b_173868;
+            }
+            c.cycles += 1;
+            c.lwc1(20, bcu_at(c, SP, 0x20));
+            break 'b_17386c;
+        }
+
+        // yawC = Atan2(riderFront.y, riderFront.x) (f12).
+        'b_1738e8: {
+            'b_1738ac: {
+                c.cycles += 5;
+                c.mtc1(0, 22);
+                c.c_eq_s(20, 22);
+                let t = !c.fcc();
+                c.lwc1(21, bcu_at(c, SP, 0x24));
+                if t {
+                    break 'b_1738ac;
+                } else {
+                    c.cycles += 4;
+                    c.c_eq_s(21, 22);
+                    let t = c.fcc();
+                    c.mov_s(12, 21);
+                    if t {
+                        break 'b_1738e8;
+                    } else {
+                        c.cycles += 4;
+                        c.c_le_s(22, 21);
+                        c.lwc1(12, bcu_back(c, GP, 0x63e4));
+                        let t = !c.fcc();
+                        if t {
+                            break 'b_1738e8;
+                        } else {
+                            c.cycles += 3;
+                            c.lwc1(12, bcu_back(c, GP, 0x63e0));
+                            break 'b_1738e8;
+                        }
+                    }
+                }
+            }
+            c.cycles += 7;
+            c.div_s(12, 21, 20);
+            call_ptr(c, 0x0031_c228, 0x0017_38b8)?;
+            c.c_lt_s(20, 22);
+            let t = !c.fcc();
+            c.mov_s(12, 0);
+            if t {
+                break 'b_1738e8;
+            } else {
+                'b_1738e0: {
+                    c.cycles += 3;
+                    c.c_lt_s(22, 21);
+                    let t = !c.fcc();
+                    if t {
+                        break 'b_1738e0;
+                    } else {
+                        c.cycles += 3;
+                        c.lwc1(0, bcu_back(c, GP, 0x63dc));
+                        c.add_s(12, 12, 0);
+                        break 'b_1738e8;
+                    }
+                }
+                c.cycles += 2;
+                c.lwc1(0, bcu_back(c, GP, 0x63d8));
+                c.sub_s(12, 12, 0);
+                break 'b_1738e8;
+            }
+        }
+
+        // f12 = diff = Wrap(yawC) - yawD (f23), with Wrap(v) = v - floor(v / 2pi
+        // + 1/2) * 2pi (the floor by cvt.w.s).
+        'b_17391c: {
+            c.cycles += 10;
+            c.lwc1(2, bcu_back(c, GP, 0x63d4));
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 4);
+            c.mul_s(0, 12, 2);
+            c.add_s(0, 0, 4);
+            c.cvt_w_s(1, 0);
+            c.cvt_s_w(1, 1);
+            c.c_lt_s(0, 1);
+            let t = !c.fcc();
+            if t {
+                break 'b_17391c;
+            } else {
+                c.cycles += 3;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.sub_s(1, 1, 0);
+                break 'b_17391c;
+            }
+        }
+        'b_17395c: {
+            c.cycles += 12;
+            c.lwc1(3, bcu_back(c, GP, 0x63d0));
+            c.mul_s(0, 1, 3);
+            c.sub_s(0, 12, 0);
+            c.sub_s(12, 0, 23);
+            c.mul_s(1, 12, 2);
+            c.add_s(1, 1, 4);
+            c.cvt_w_s(2, 1);
+            c.cvt_s_w(2, 2);
+            c.c_lt_s(1, 2);
+            if !c.fcc() {
+                c.mul_s(0, 2, 3);
+                break 'b_17395c;
+            } else {
+                c.cycles += 4;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.sub_s(2, 2, 0);
+                c.mul_s(0, 2, 3);
+                break 'b_17395c;
+            }
+        }
+
+        // f25 = yawN = yawD + Wrap(diff) * HeadingAdjustRate / 60. The distance
+        // f24 = len3 + dd when |dd| > 5000 (dd = IdealDist - len3); otherwise
+        // see the k branch below.
+        'b_173a24: {
+            'b_1739bc: {
+                c.cycles += 22;
+                c.lwc1(4, bcu_at(c, S0, 0x5c));
+                c.lwc1(3, bcu_at(c, S0, 0x70));
+                c.lqc2(3, bcu_at(c, SP, 0x30));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.vu0().sqrt(4, 0);
+                c.vu0().waitq();
+                c.cfc2(2, 22);
+                c.mtc1(2, 6);
+                c.lwc1(7, bcu_back(c, GP, 0x63cc));
+                c.sub_s(0, 12, 0);
+                c.lwc1(2, bcu_back(c, GP, 0x63c8));
+                c.sub_s(5, 3, 6);
+                c.abs_s(1, 5);
+                c.mul_s(0, 0, 4);
+                c.c_lt_s(2, 1);
+                c.mul_s(0, 0, 7);
+                let t = !c.fcc();
+                c.add_s(25, 23, 0);
+                if t {
+                    break 'b_1739bc;
+                } else {
+                    c.cycles += 2;
+                    c.add_s(24, 6, 5);
+                    break 'b_173a24;
+                }
+            }
+            // The k branch of the distance: k = |riderVel| * 0.0072 + 8, and
+            // x = dd * k / 60 when k >= 20, else dd / 3; f24 = len3 + x.
+            'b_173a20: {
+                'b_173a18: {
+                    c.cycles += 20;
+                    c.lwc1(2, bcu_back(c, GP, 0x63c4));
+                    c.lqc2(3, bcu_at(c, SP, 0x10));
+                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                    c.vu0().sqrt(4, 0);
+                    c.vu0().waitq();
+                    c.cfc2(2, 22);
+                    c.mtc1(2, 0);
+                    c.g[AT][0] = 0x4100_0000;
+                    c.mtc1(1, 3);
+                    c.mul_s(0, 0, 2);
+                    c.g[AT][0] = 0x41a0_0000;
+                    c.mtc1(1, 1);
+                    c.add_s(0, 0, 3);
+                    c.c_le_s(1, 0);
+                    let t = !c.fcc();
+                    if t {
+                        break 'b_173a18;
+                    } else {
+                        c.cycles += 3;
+                        c.mul_s(0, 5, 0);
+                        c.mul_s(0, 0, 7);
+                        break 'b_173a20;
+                    }
+                }
+                c.cycles += 2;
+                c.lwc1(0, bcu_back(c, GP, 0x63c0));
+                c.mul_s(0, 5, 0);
+                break 'b_173a20;
+            }
+            c.cycles += 1;
+            c.add_s(24, 6, 0);
+            break 'b_173a24;
+        }
+
+        // pitchD = Atan2(-toFocus.z, Len2(toFocus.x, toFocus.y)) (f23).
+        'b_173ad0: {
+            'b_173ac8: {
+                'b_173a88: {
+                    c.cycles += 14;
+                    c.lwc1(0, bcu_at(c, SP, 0x30));
+                    c.lwc1(1, bcu_at(c, SP, 0x34));
+                    c.mul_s(2, 0, 0);
+                    c.lwc1(3, bcu_at(c, SP, 0x38));
+                    c.mul_s(4, 1, 1);
+                    c.swc1(0, bcu_at(c, SP, 0x40));
+                    c.mtc1(0, 22);
+                    c.neg_s(21, 3);
+                    c.swc1(1, bcu_at(c, SP, 0x44));
+                    c.add_s(2, 2, 4);
+                    c.sqrt_s(20, 2);
+                    c.c_eq_s(20, 22);
+                    let t = !c.fcc();
+                    if t {
+                        break 'b_173a88;
+                    } else {
+                        c.cycles += 4;
+                        c.c_eq_s(21, 22);
+                        let t = c.fcc();
+                        c.mov_s(23, 21);
+                        if t {
+                            break 'b_173ac8;
+                        } else {
+                            c.cycles += 4;
+                            c.c_le_s(22, 21);
+                            c.lwc1(23, bcu_back(c, GP, 0x63bc));
+                            let t = !c.fcc();
+                            c.lwc1(0, bcu_at(c, SP, 0x20));
+                            if t {
+                                break 'b_173ac8;
+                            } else {
+                                c.cycles += 3;
+                                c.lwc1(23, bcu_back(c, GP, 0x63b8));
+                                c.lwc1(1, bcu_at(c, SP, 0x24));
+                                break 'b_173ad0;
+                            }
+                        }
+                    }
+                }
+                'b_173ac4: {
+                    c.cycles += 7;
+                    c.div_s(12, 21, 20);
+                    call_ptr(c, 0x0031_c228, 0x0017_3a94)?;
+                    c.c_lt_s(20, 22);
+                    let t = !c.fcc();
+                    c.mov_s(3, 0);
+                    if t {
+                        break 'b_173ac4;
+                    } else {
+                        'b_173abc: {
+                            c.cycles += 3;
+                            c.c_lt_s(22, 21);
+                            let t = !c.fcc();
+                            if t {
+                                break 'b_173abc;
+                            } else {
+                                c.cycles += 3;
+                                c.lwc1(0, bcu_back(c, GP, 0x63b4));
+                                c.add_s(3, 3, 0);
+                                break 'b_173ac4;
+                            }
+                        }
+                        c.cycles += 2;
+                        c.lwc1(0, bcu_back(c, GP, 0x63b0));
+                        c.sub_s(3, 3, 0);
+                        break 'b_173ac4;
+                    }
+                }
+                c.cycles += 1;
+                c.mov_s(23, 3);
+                break 'b_173ac8;
+            }
+            c.cycles += 2;
+            c.lwc1(0, bcu_at(c, SP, 0x20));
+            c.lwc1(1, bcu_at(c, SP, 0x24));
+            break 'b_173ad0;
+        }
+
+        // pitchC = Atan2(riderFront.z, Len2(riderFront.x, riderFront.y)) (f12).
+        'b_173b6c: {
+            'b_173b68: {
+                'b_173b28: {
+                    c.cycles += 11;
+                    c.mul_s(2, 0, 0);
+                    c.swc1(0, bcu_at(c, SP, 0x40));
+                    c.mul_s(3, 1, 1);
+                    c.swc1(1, bcu_at(c, SP, 0x44));
+                    c.mtc1(0, 22);
+                    c.lwc1(21, bcu_at(c, SP, 0x28));
+                    c.add_s(2, 2, 3);
+                    c.sqrt_s(20, 2);
+                    c.c_eq_s(20, 22);
+                    let t = !c.fcc();
+                    if t {
+                        break 'b_173b28;
+                    } else {
+                        c.cycles += 4;
+                        c.c_eq_s(21, 22);
+                        let t = c.fcc();
+                        c.mov_s(12, 21);
+                        if t {
+                            break 'b_173b68;
+                        } else {
+                            c.cycles += 4;
+                            c.c_le_s(22, 21);
+                            c.lwc1(12, bcu_back(c, GP, 0x63ac));
+                            let t = !c.fcc();
+                            c.lwc1(1, bcu_at(c, S0, 0x58));
+                            if t {
+                                break 'b_173b6c;
+                            } else {
+                                c.cycles += 3;
+                                c.lwc1(12, bcu_back(c, GP, 0x63a8));
+                                break 'b_173b6c;
+                            }
+                        }
+                    }
+                }
+                'b_173b64: {
+                    c.cycles += 7;
+                    c.div_s(12, 21, 20);
+                    call_ptr(c, 0x0031_c228, 0x0017_3b34)?;
+                    c.c_lt_s(20, 22);
+                    let t = !c.fcc();
+                    c.mov_s(1, 0);
+                    if t {
+                        break 'b_173b64;
+                    } else {
+                        'b_173b5c: {
+                            c.cycles += 3;
+                            c.c_lt_s(22, 21);
+                            let t = !c.fcc();
+                            if t {
+                                break 'b_173b5c;
+                            } else {
+                                c.cycles += 3;
+                                c.lwc1(0, bcu_back(c, GP, 0x63a4));
+                                c.add_s(1, 1, 0);
+                                break 'b_173b64;
+                            }
+                        }
+                        c.cycles += 2;
+                        c.lwc1(0, bcu_back(c, GP, 0x63a0));
+                        c.sub_s(1, 1, 0);
+                        break 'b_173b64;
+                    }
+                }
+                c.cycles += 1;
+                c.mov_s(12, 1);
+                break 'b_173b68;
+            }
+            c.cycles += 1;
+            c.lwc1(1, bcu_at(c, S0, 0x58));
+            break 'b_173b6c;
+        }
+
+        // tp = pitchC * -PitchMultiplier + PitchOffset / 60 (f2), wrapped
+        // (floor of the scaled value, as above).
+        'b_173bb8: {
+            c.cycles += 16;
+            c.lwc1(3, bcu_back(c, GP, 0x639c));
+            c.neg_s(1, 1);
+            c.lwc1(2, bcu_at(c, S0, 0x78));
+            c.lwc1(0, bcu_back(c, GP, 0x6398));
+            c.mul_s(2, 2, 3);
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 4);
+            c.mul_s(1, 12, 1);
+            c.add_s(3, 1, 2);
+            c.mul_s(0, 3, 0);
+            c.add_s(0, 0, 4);
+            c.cvt_w_s(2, 0);
+            c.cvt_s_w(2, 2);
+            c.c_lt_s(0, 2);
+            let t = !c.fcc();
+            if t {
+                break 'b_173bb8;
+            } else {
+                c.cycles += 3;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.sub_s(2, 2, 0);
+                break 'b_173bb8;
+            }
+        }
+
+        // pitchN from pitchC and pitchD; two Math_SinCos calls (yawN in f25,
+        // pitchN in f20) into the stack, then dir = (sc3 * sc1, sc3 * sc0,
+        // -sc2, 0), n = focus - dir * dist (f24), and Position (+0x40) = n.
+        'b_173cfc: {
+            'b_173cf8: {
+                'b_173cbc: {
+                    c.cycles += 54;
+                    c.lwc1(20, bcu_back(c, GP, 0x6394));
+                    c.g[A0][0] = sx(bcu_at(c, SP, 0x80));
+                    c.lwc1(1, bcu_at(c, S0, 0x60));
+                    c.g[A1][0] = sx(bcu_at(c, SP, 0x84));
+                    c.mul_s(20, 2, 20);
+                    c.lwc1(0, bcu_back(c, GP, 0x6390));
+                    c.mov_s(12, 25);
+                    c.mtc1(0, 22);
+                    c.sub_s(20, 3, 20);
+                    c.sub_s(20, 20, 23);
+                    c.mul_s(20, 20, 1);
+                    c.mul_s(20, 20, 0);
+                    c.add_s(20, 23, 20);
+                    call_ptr(c, 0x0031_be50, 0x0017_3bf0)?;
+                    c.g[A0][0] = sx(bcu_at(c, SP, 0x88));
+                    c.g[A1][0] = sx(bcu_at(c, SP, 0x8c));
+                    c.mov_s(12, 20);
+                    call_ptr(c, 0x0031_be50, 0x0017_3c00)?;
+                    c.lwc1(2, bcu_at(c, SP, 0x8c));
+                    c.lwc1(0, bcu_at(c, SP, 0x84));
+                    c.lwc1(3, bcu_at(c, SP, 0x80));
+                    c.lwc1(1, bcu_at(c, SP, 0x88));
+                    c.mul_s(0, 2, 0);
+                    c.mul_s(2, 2, 3);
+                    c.swc1(22, bcu_at(c, SP, 0x4c));
+                    c.neg_s(1, 1);
+                    c.swc1(0, bcu_at(c, SP, 0x40));
+                    c.swc1(2, bcu_at(c, SP, 0x44));
+                    c.swc1(1, bcu_at(c, SP, 0x48));
+                    c.mfc1(3, 24);
+                    c.lqc2(4, bcu_at(c, SP, 0x40));
+                    c.qmtc2(3, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, bcu_at(c, SP, 0x70));
+                    c.lq(2, bcu_at(c, SP, 0x70));
+                    c.sq(2, bcu_at(c, SP, 0x60));
+                    c.lqc2(3, r32(c, SP));
+                    c.lqc2(4, bcu_at(c, SP, 0x60));
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, bcu_at(c, SP, 0x70));
+                    c.lq(2, bcu_at(c, SP, 0x70));
+                    c.sq(2, bcu_at(c, S0, 0x40));
+                    c.sq(2, bcu_at(c, SP, 0x50));
+                    // n = focus - Position (sp+0x60), then n at sp+0x50.
+                    c.lqc2(3, r32(c, SP));
+                    c.lqc2(4, bcu_at(c, S0, 0x40));
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, bcu_at(c, SP, 0x60));
+                    c.lq(2, bcu_at(c, SP, 0x60));
+                    c.sq(2, bcu_at(c, SP, 0x50));
+                    // yawE = Atan2(n.y, n.x) (f12).
+                    c.lwc1(20, bcu_at(c, SP, 0x50));
+                    c.c_eq_s(20, 22);
+                    let t = !c.fcc();
+                    c.lwc1(21, bcu_at(c, SP, 0x54));
+                    if t {
+                        break 'b_173cbc;
+                    } else {
+                        c.cycles += 4;
+                        c.c_eq_s(21, 22);
+                        let t = c.fcc();
+                        c.mov_s(12, 21);
+                        if t {
+                            break 'b_173cf8;
+                        } else {
+                            c.cycles += 4;
+                            c.c_le_s(22, 21);
+                            c.lwc1(12, bcu_back(c, GP, 0x638c));
+                            let t = !c.fcc();
+                            c.lwc1(7, bcu_at(c, S0, 0x50));
+                            if t {
+                                break 'b_173cfc;
+                            } else {
+                                c.cycles += 3;
+                                c.lwc1(12, bcu_back(c, GP, 0x6388));
+                                break 'b_173cfc;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 7;
+                c.div_s(12, 21, 20);
+                call_ptr(c, 0x0031_c228, 0x0017_3cc8)?;
+                c.c_lt_s(20, 22);
+                let t = !c.fcc();
+                c.mov_s(12, 0);
+                if t {
+                    break 'b_173cf8;
+                } else {
+                    'b_173cf0: {
+                        c.cycles += 3;
+                        c.c_lt_s(22, 21);
+                        let t = !c.fcc();
+                        if t {
+                            break 'b_173cf0;
+                        } else {
+                            c.cycles += 3;
+                            c.lwc1(0, bcu_back(c, GP, 0x6384));
+                            c.add_s(12, 12, 0);
+                            break 'b_173cf8;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.lwc1(0, bcu_back(c, GP, 0x6380));
+                    c.sub_s(12, 12, 0);
+                    break 'b_173cf8;
+                }
+            }
+            c.cycles += 1;
+            c.lwc1(7, bcu_at(c, S0, 0x50));
+            break 'b_173cfc;
+        }
+
+        // Heading wrap: Wrap(yawE - Heading) (f1).
+        'b_173d34: {
+            c.cycles += 11;
+            c.lwc1(0, bcu_back(c, GP, 0x637c));
+            c.sub_s(12, 12, 7);
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 1);
+            c.mul_s(0, 12, 0);
+            c.add_s(0, 0, 1);
+            c.cvt_w_s(1, 0);
+            c.cvt_s_w(1, 1);
+            c.c_lt_s(0, 1);
+            let t = !c.fcc();
+            if t {
+                break 'b_173d34;
+            } else {
+                c.cycles += 3;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.sub_s(1, 1, 0);
+                break 'b_173d34;
+            }
+        }
+
+        // Heading (+0x50) += Wrap(yawE - Heading) * HeadingLookRate / 60, and
+        // pitchE = Atan2(n.z, Len2(n.x, n.y)) turns Pitch in the tail below.
+        'b_173dfc: {
+            'b_173df8: {
+                'b_173df4: {
+                    'b_173db4: {
+                        c.cycles += 21;
+                        c.lwc1(0, bcu_back(c, GP, 0x6378));
+                        c.lwc1(5, bcu_at(c, S0, 0x64));
+                        c.mul_s(0, 1, 0);
+                        c.lwc1(2, bcu_at(c, SP, 0x54));
+                        c.lwc1(1, bcu_at(c, SP, 0x50));
+                        c.lwc1(6, bcu_back(c, GP, 0x6374));
+                        c.mul_s(4, 2, 2);
+                        c.sub_s(0, 12, 0);
+                        c.swc1(1, bcu_at(c, SP, 0x60));
+                        c.mul_s(3, 1, 1);
+                        c.swc1(2, bcu_at(c, SP, 0x64));
+                        c.mtc1(0, 22);
+                        c.mul_s(0, 0, 5);
+                        c.lwc1(21, bcu_at(c, SP, 0x58));
+                        c.add_s(3, 3, 4);
+                        c.sqrt_s(20, 3);
+                        c.mul_s(0, 0, 6);
+                        c.c_eq_s(20, 22);
+                        c.add_s(0, 7, 0);
+                        let t = !c.fcc();
+                        c.swc1(0, bcu_at(c, S0, 0x50));
+                        if t {
+                            break 'b_173db4;
+                        } else {
+                            c.cycles += 4;
+                            c.c_eq_s(21, 22);
+                            let t = c.fcc();
+                            c.mov_s(0, 21);
+                            if t {
+                                break 'b_173df4;
+                            } else {
+                                c.cycles += 4;
+                                c.c_le_s(22, 21);
+                                c.lwc1(0, bcu_back(c, GP, 0x6370));
+                                let t = !c.fcc();
+                                c.lwc1(1, bcu_at(c, S0, 0x54));
+                                if t {
+                                    break 'b_173df8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.lwc1(0, bcu_back(c, GP, 0x636c));
+                                    c.lwc1(3, bcu_at(c, S0, 0x68));
+                                    break 'b_173dfc;
+                                }
+                            }
+                        }
+                    }
+                    'b_173df0: {
+                        c.cycles += 7;
+                        c.div_s(12, 21, 20);
+                        call_ptr(c, 0x0031_c228, 0x0017_3dc0)?;
+                        c.c_lt_s(20, 22);
+                        let t = !c.fcc();
+                        c.mov_s(12, 0);
+                        if t {
+                            break 'b_173df0;
+                        } else {
+                            'b_173de8: {
+                                c.cycles += 3;
+                                c.c_lt_s(22, 21);
+                                let t = !c.fcc();
+                                if t {
+                                    break 'b_173de8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.lwc1(0, bcu_back(c, GP, 0x6368));
+                                    c.add_s(12, 12, 0);
+                                    break 'b_173df0;
+                                }
+                            }
+                            c.cycles += 2;
+                            c.lwc1(0, bcu_back(c, GP, 0x6364));
+                            c.sub_s(12, 12, 0);
+                            break 'b_173df0;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.mov_s(0, 12);
+                    break 'b_173df4;
+                }
+                c.cycles += 1;
+                c.lwc1(1, bcu_at(c, S0, 0x54));
+                break 'b_173df8;
+            }
+            c.cycles += 1;
+            c.lwc1(3, bcu_at(c, S0, 0x68));
+            break 'b_173dfc;
+        }
+
+        // Pitch (+0x54) += (pitchE - Pitch) * PitchLookRate / 60.
+        c.cycles += 16;
+        c.sub_s(0, 0, 1);
+        c.lwc1(2, bcu_back(c, GP, 0x6360));
+        c.g[RA][0] = c.ld(bcu_at(c, SP, 0x90));
+        c.lwc1(25, bcu_at(c, SP, 0xd8));
+        c.mul_s(0, 0, 3);
+        c.lwc1(24, bcu_at(c, SP, 0xd0));
+        c.lwc1(23, bcu_at(c, SP, 0xc8));
+        c.lwc1(22, bcu_at(c, SP, 0xc0));
+        c.mul_s(0, 0, 2);
+        c.lwc1(21, bcu_at(c, SP, 0xb8));
+        c.lwc1(20, bcu_at(c, SP, 0xb0));
+        c.add_s(1, 1, 0);
+        c.swc1(1, bcu_at(c, S0, 0x54));
+        c.lq(16, bcu_at(c, SP, 0xa0));
+        c.g[SP][0] = sx(bcu_at(c, SP, 0xe0));
+        ret(c);
+        Ok(())
+    });
+}
+
+/// `BoundedCameraAlgorithmBase::~BoundedCameraAlgorithmBase(this, flags)`
+/// (0x1732b8): stores the base vtable word 0x45bde0 at `this+0x10`, then when
+/// bit 0 of `flags` is set frees `this` through `operator delete`
+/// (0x317e50, with `this` still in `a0`). Leaves `v0` = 0x45bde0 and
+/// `a1` = `flags & 1`, as the generated body does.
+pub fn bounded_camera_algorithm_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(0x0045_bde0);
+        c.g[A1][0] &= 0x1;
+        let this = Addr(c.g[A0][0] as u32);
+        let base = c.g[V0][0];
+        this.off(0x10).sw(c, base);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            Callee {
+                addr: 0x0031_7e50,
+                f: ee::s10::f_00317e50,
+            }
+            .call(c, 0x0017_32dc)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -8971,6 +10233,206 @@ pub(crate) mod tests {
             0x0017_6368,
             1,
             &oc437_dtor_flags,
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+
+    /// The box the function reads (position, rot[0..3], size).
+    pub(crate) const CVB_TEST_BOX: u32 = DATA;
+
+    /// The `Vec4` point.
+    pub(crate) const CVB_TEST_PT: u32 = DATA + 0x100;
+
+    #[test]
+    fn camera_box_trigger_contains_point_matches() {
+        check(
+            ee::s02::f_001728f8__generated,
+            camera_box_trigger_contains_point,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = Rng(0x0017_28f8 ^ (seed as u64) << 20 ^ 0x9e37_79b9);
+                scramble(c, &mut r);
+                c.pc = 0x0017_28f8;
+                fill(c, &mut r, crate::difftest::SP - 0x200, 0x80);
+                // A value in -m..m, as float bits.
+                let sym = |r: &mut Rng, m: f32| {
+                    (((r.next_u32() as f32 / u32::MAX as f32) * 2.0 - 1.0) * m).to_bits()
+                };
+                // Position in +-50, angles in +-7 rad, size in 0.5..3.5.
+                let pos: [f32; 3] = std::array::from_fn(|_| f32::from_bits(sym(&mut r, 50.0)));
+                for (k, p) in pos.iter().enumerate() {
+                    c.bus.write32(CVB_TEST_BOX + 4 * k as u32, p.to_bits());
+                }
+                for k in 0..3u32 {
+                    c.bus.write32(CVB_TEST_BOX + 0xc + 4 * k, sym(&mut r, 7.0));
+                }
+                for k in 0..3u32 {
+                    let s = 0.5 + (r.next_u32() as f32 / u32::MAX as f32) * 3.0;
+                    c.bus.write32(CVB_TEST_BOX + 0x18 + 4 * k, s.to_bits());
+                }
+                // Even seeds put the point near the box (usually inside), odd
+                // seeds far away (outside).
+                let spread = if seed % 2 == 0 { 0.3 } else { 20.0 };
+                let mut v = [0u32; 4];
+                for k in 0..3 {
+                    v[k] = (pos[k] + f32::from_bits(sym(&mut r, spread))).to_bits();
+                }
+                v[3] = r.next_u32();
+                put_vec(c, CVB_TEST_PT, v);
+                // The axis table's first-call flag: both states.
+                c.bus.write32(
+                    GAME_GP.wrapping_add(0x1cfc),
+                    if seed % 4 == 0 { 1 } else { 0 },
+                );
+                c.g[GP][0] = sx(GAME_GP);
+                c.g[A0][0] = sx(CVB_TEST_BOX);
+                c.g[A1][0] = sx(CVB_TEST_PT);
+            },
+        );
+    }
+
+    /// The trigger camera (`self`), its rider target object, and the target's
+    /// vtable (rider methods in slots 1, 3 and 4, at +8, +0x18 and +0x20).
+    pub(crate) const BCU_SELF: u32 = DATA + 0x1000;
+
+    pub(crate) const BCU_TARGET: u32 = DATA + 0x2000;
+
+    pub(crate) const BCU_VT: u32 = DATA + 0x3000;
+
+    /// A uniform value in -m..m, as float bits.
+    pub(crate) fn bcu_sym(r: &mut Rng, m: f32) -> u32 {
+        (((r.next_u32() as f32 / u32::MAX as f32) * 2.0 - 1.0) * m).to_bits()
+    }
+
+    #[test]
+    fn bounded_camera_algorithm_base_update_matches() {
+        fakes::covered(
+            ee::s02::f_001736e0__generated,
+            bounded_camera_algorithm_base_update,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = fakes::machine(c, seed, 0x0017_36e0, 3);
+                c.pc = 0x0017_36e0;
+                let unit = |r: &mut Rng| r.next_u32() as f32 / u32::MAX as f32;
+                // The rider's vtable: its three method slots call fakes.
+                c.bus.write32(BCU_TARGET, BCU_VT);
+                for (k, off) in [0x8u32, 0x18, 0x20].into_iter().enumerate() {
+                    c.bus.write16(BCU_VT + off, 0x10 * k as u16);
+                    c.bus
+                        .write32(BCU_VT + off + 4, fakes::FAKE + 0x10 * k as u32);
+                }
+                // The rider's position, velocity and front land in the
+                // stack vectors (the fake methods write nothing): focus at
+                // sp+0, velocity at +0x10, front at +0x20 of the new frame.
+                let frame = crate::difftest::SP - 0xe0;
+                let pos = [
+                    bcu_sym(&mut r, 50.0),
+                    bcu_sym(&mut r, 50.0),
+                    bcu_sym(&mut r, 50.0),
+                    0,
+                ];
+                let speed = if seed % 4 == 0 { 4000.0 } else { 30.0 };
+                let vel = [
+                    bcu_sym(&mut r, speed),
+                    bcu_sym(&mut r, speed),
+                    bcu_sym(&mut r, speed),
+                    0,
+                ];
+                let mut front = [
+                    bcu_sym(&mut r, 1.0),
+                    bcu_sym(&mut r, 1.0),
+                    bcu_sym(&mut r, 1.0),
+                    0,
+                ];
+                // Zero front components reach the x == 0 and y == 0 atan cases.
+                if seed % 6 == 0 {
+                    front[0] = 0;
+                }
+                if seed % 12 == 0 {
+                    front[1] = 0;
+                }
+                put_vec(c, frame, pos);
+                put_vec(c, frame + 0x10, vel);
+                put_vec(c, frame + 0x20, front);
+                // The camera: with front.x = 0, the focus x is the position's
+                // x, so Position.x equal to it makes toFocus.x zero.
+                let me = BCU_SELF;
+                c.bus.write32(me + 0x30, BCU_TARGET);
+                let position = if seed % 6 == 0 {
+                    [pos[0], bcu_sym(&mut r, 50.0), bcu_sym(&mut r, 50.0), 0]
+                } else {
+                    [
+                        bcu_sym(&mut r, 50.0),
+                        bcu_sym(&mut r, 50.0),
+                        bcu_sym(&mut r, 50.0),
+                        0,
+                    ]
+                };
+                put_vec(c, me + 0x40, position);
+                c.bus.write32(me + 0x50, bcu_sym(&mut r, 3.0)); // Heading
+                c.bus.write32(me + 0x54, bcu_sym(&mut r, 1.0)); // Pitch
+                c.bus.write32(me + 0x58, (unit(&mut r) * 2.0).to_bits()); // PitchMultiplier
+                c.bus.write32(me + 0x5c, (unit(&mut r) * 120.0).to_bits()); // HeadingAdjustRate
+                c.bus.write32(me + 0x60, (unit(&mut r) * 120.0).to_bits()); // PitchAdjustRate
+                c.bus.write32(me + 0x64, (unit(&mut r) * 120.0).to_bits()); // HeadingLookRate
+                c.bus.write32(me + 0x68, (unit(&mut r) * 120.0).to_bits()); // PitchLookRate
+                c.bus.write32(me + 0x6c, bcu_sym(&mut r, 5.0)); // HeightOffset
+                                                                // Distances far apart on a third of the seeds (the |dd| > 5000
+                                                                // branch), near otherwise (the k-scaled step).
+                let ideal = if seed % 3 == 0 {
+                    10000.0 * unit(&mut r)
+                } else {
+                    30.0 * unit(&mut r)
+                };
+                c.bus.write32(me + 0x70, ideal.to_bits()); // IdealDist
+                c.bus.write32(me + 0x74, bcu_sym(&mut r, 20.0)); // LeadDistance
+                c.bus.write32(me + 0x78, bcu_sym(&mut r, 30.0)); // PitchOffset
+                c.g[A0][0] = sx(me);
+            },
+        );
+    }
+
+    /// Gate word of this module's `operator delete` fake (in the machine's RAM).
+    pub(crate) const OC497_CTRL: u32 = DATA + 0xf_fd00;
+
+    pub(crate) const OC497_MAGIC: u32 = 0x4f43_4497;
+
+    pub(crate) static OC497_PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `operator delete` (0x317e50): logged, not run, while the gate is set.
+    pub(crate) fn oc497_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(OC497_CTRL) == OC497_MAGIC {
+            let ra = c.g[RA][0] as u32;
+            return fake(c, 0x0031_7e50, ra);
+        }
+        fall_back(c, &OC497_PREV_DELETE, ee::s10::f_00317e50__generated)
+    }
+
+    /// `BoundedCameraAlgorithmBase_dtor` with both flag values; the delete
+    /// call goes to the gated fake above.
+    #[test]
+    fn bounded_camera_algorithm_base_dtor_matches() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc497_fake_delete,
+            &OC497_PREV_DELETE,
+        );
+        check(
+            ee::s02::f_001732b8__generated,
+            bounded_camera_algorithm_base_dtor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x497_1732 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.bus.write32(OC497_CTRL, OC497_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.pc = 0x0017_32b8;
+            },
         );
     }
 }
