@@ -82,6 +82,36 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
+#[cfg(feature = "oc526")]
+pub mod oc526;
+#[cfg(feature = "oc527")]
+pub mod oc527;
+#[cfg(feature = "oc528")]
+pub mod oc528;
+#[cfg(feature = "oc529")]
+pub mod oc529;
+#[cfg(feature = "oc530")]
+pub mod oc530;
+#[cfg(feature = "oc531")]
+pub mod oc531;
+#[cfg(feature = "oc532")]
+pub mod oc532;
+#[cfg(feature = "oc534")]
+pub mod oc534;
+#[cfg(feature = "oc535")]
+pub mod oc535;
+#[cfg(feature = "oc536")]
+pub mod oc536;
+#[cfg(feature = "oc537")]
+pub mod oc537;
+#[cfg(feature = "oc538")]
+pub mod oc538;
+#[cfg(feature = "oc539")]
+pub mod oc539;
+#[cfg(feature = "oc541")]
+pub mod oc541;
+#[cfg(feature = "oc544")]
+pub mod oc544;
 pub mod plugin_host;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
@@ -108,6 +138,36 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
+    #[cfg(feature = "oc544")]
+    v.extend_from_slice(oc544::OVERRIDES);
+    #[cfg(feature = "oc541")]
+    v.extend_from_slice(oc541::OVERRIDES);
+    #[cfg(feature = "oc539")]
+    v.extend_from_slice(oc539::OVERRIDES);
+    #[cfg(feature = "oc538")]
+    v.extend_from_slice(oc538::OVERRIDES);
+    #[cfg(feature = "oc526")]
+    v.extend_from_slice(oc526::OVERRIDES);
+    #[cfg(feature = "oc527")]
+    v.extend_from_slice(oc527::OVERRIDES);
+    #[cfg(feature = "oc528")]
+    v.extend_from_slice(oc528::OVERRIDES);
+    #[cfg(feature = "oc529")]
+    v.extend_from_slice(oc529::OVERRIDES);
+    #[cfg(feature = "oc530")]
+    v.extend_from_slice(oc530::OVERRIDES);
+    #[cfg(feature = "oc531")]
+    v.extend_from_slice(oc531::OVERRIDES);
+    #[cfg(feature = "oc532")]
+    v.extend_from_slice(oc532::OVERRIDES);
+    #[cfg(feature = "oc534")]
+    v.extend_from_slice(oc534::OVERRIDES);
+    #[cfg(feature = "oc535")]
+    v.extend_from_slice(oc535::OVERRIDES);
+    #[cfg(feature = "oc536")]
+    v.extend_from_slice(oc536::OVERRIDES);
+    #[cfg(feature = "oc537")]
+    v.extend_from_slice(oc537::OVERRIDES);
     v.extend_from_slice(movie::overrides());
     #[cfg(feature = "math")]
     v.extend_from_slice(math::OVERRIDES);
