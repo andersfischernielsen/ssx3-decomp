@@ -8487,6 +8487,15 @@
 0x00277980    ScriptList_StartTransition
 0x00277c08    ScriptList_SetPaused
 0x00277de8    ScriptList_GetMovieInfo
+# Phase 2 wave: oc545, oc546, oc547, oc548, oc549, oc550, oc551
+# Phase 2 wave: oc545, oc546, oc547, oc548, oc549, oc550, oc551
+0x002718e8    Replay_StaticInitDestroy
+0x0026fe50    Replay_ProcessCommand
+0x002710a8    Replay_WriteSaveBlock
+0x0026ded8    WorldState_CreateObject
+0x00276198    ScriptList_TakeFrom
+0x0026caf8    PlaybackMan_LoadPlayback
+0x0027a9f0    ScriptEngine_SkipFinishScript
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

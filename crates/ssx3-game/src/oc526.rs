@@ -1030,17 +1030,29 @@ mod tests {
 
     #[test]
     fn plants_menu_on_activate_matches() {
-        thunk_case(ee::s06::f_0024f940__generated, plants_menu_on_activate, 0x0024f940);
+        thunk_case(
+            ee::s06::f_0024f940__generated,
+            plants_menu_on_activate,
+            0x0024f940,
+        );
     }
 
     #[test]
     fn plants_menu_on_deactivate_matches() {
-        thunk_case(ee::s06::f_0024f960__generated, plants_menu_on_deactivate, 0x0024f960);
+        thunk_case(
+            ee::s06::f_0024f960__generated,
+            plants_menu_on_deactivate,
+            0x0024f960,
+        );
     }
 
     #[test]
     fn light_glow_menu_on_activate_matches() {
-        thunk_case(ee::s06::f_0024f980__generated, light_glow_menu_on_activate, 0x0024f980);
+        thunk_case(
+            ee::s06::f_0024f980__generated,
+            light_glow_menu_on_activate,
+            0x0024f980,
+        );
     }
 
     #[test]
@@ -1054,7 +1066,11 @@ mod tests {
 
     #[test]
     fn depth_fog_menu_on_activate_matches() {
-        thunk_case(ee::s06::f_0024f9c0__generated, depth_fog_menu_on_activate, 0x0024f9c0);
+        thunk_case(
+            ee::s06::f_0024f9c0__generated,
+            depth_fog_menu_on_activate,
+            0x0024f9c0,
+        );
     }
 
     #[test]
@@ -1068,7 +1084,11 @@ mod tests {
 
     #[test]
     fn height_fog_menu_on_activate_matches() {
-        thunk_case(ee::s06::f_0024fa78__generated, height_fog_menu_on_activate, 0x0024fa78);
+        thunk_case(
+            ee::s06::f_0024fa78__generated,
+            height_fog_menu_on_activate,
+            0x0024fa78,
+        );
     }
 
     #[test]

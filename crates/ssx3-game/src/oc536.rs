@@ -801,10 +801,15 @@ mod tests {
 
     #[test]
     fn script_list_is_full_matches() {
-        check(ee::s07::f_002771a8__generated, script_list_is_full, 200, &|c, seed| {
-            let mut r = fixture(c, seed, 1);
-            fill(c, &mut r, DATA, 8);
-        });
+        check(
+            ee::s07::f_002771a8__generated,
+            script_list_is_full,
+            200,
+            &|c, seed| {
+                let mut r = fixture(c, seed, 1);
+                fill(c, &mut r, DATA, 8);
+            },
+        );
     }
 
     #[test]
@@ -990,38 +995,48 @@ mod tests {
     #[test]
     fn script_engine_v03_matches() {
         install();
-        check(ee::s07::f_00279da8__generated, script_engine_v03, 200, &|c, seed| {
-            fixture(c, seed, 15);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GATE, GATE_ON);
-            c.g[A1][0] = sx(DATA + 0x4000);
-            c.bus.write32(OBJ, seed % 3);
-            c.bus.write32(OBJ + 0x7c, seed % 4);
-            c.bus.write32(OBJ + 0xc, DATA + 0x5000);
-            c.bus.write16(DATA + 0x5048, 0x10);
-            c.bus.write32(DATA + 0x504c, 0x0014_06c0);
-        });
+        check(
+            ee::s07::f_00279da8__generated,
+            script_engine_v03,
+            200,
+            &|c, seed| {
+                fixture(c, seed, 15);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GATE, GATE_ON);
+                c.g[A1][0] = sx(DATA + 0x4000);
+                c.bus.write32(OBJ, seed % 3);
+                c.bus.write32(OBJ + 0x7c, seed % 4);
+                c.bus.write32(OBJ + 0xc, DATA + 0x5000);
+                c.bus.write16(DATA + 0x5048, 0x10);
+                c.bus.write32(DATA + 0x504c, 0x0014_06c0);
+            },
+        );
     }
 
     #[test]
     fn script_engine_purge_matches() {
         install();
-        check(ee::s07::f_00278590__generated, script_engine_purge, 200, &|c, seed| {
-            fixture(c, seed, 16);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GATE, GATE_ON);
-            let count = seed % 3;
-            if seed % 2 == 1 {
-                c.bus.write32(DATA + 0x54c, DATA + 0x3000);
-                c.bus.write32(DATA + 0x2ff0, count);
-            }
-            if seed % 4 == 0 {
-                c.bus.write32(DATA + 0x624, DATA + 0x4000);
-                c.bus.write32(DATA + 0x3ff0, count);
-            }
-            if seed % 5 == 0 {
-                c.bus.write32(DATA + 0x544, 0x0080_1000);
-            }
-        });
+        check(
+            ee::s07::f_00278590__generated,
+            script_engine_purge,
+            200,
+            &|c, seed| {
+                fixture(c, seed, 16);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GATE, GATE_ON);
+                let count = seed % 3;
+                if seed % 2 == 1 {
+                    c.bus.write32(DATA + 0x54c, DATA + 0x3000);
+                    c.bus.write32(DATA + 0x2ff0, count);
+                }
+                if seed % 4 == 0 {
+                    c.bus.write32(DATA + 0x624, DATA + 0x4000);
+                    c.bus.write32(DATA + 0x3ff0, count);
+                }
+                if seed % 5 == 0 {
+                    c.bus.write32(DATA + 0x544, 0x0080_1000);
+                }
+            },
+        );
     }
 }

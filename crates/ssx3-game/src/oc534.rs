@@ -741,12 +741,17 @@ mod tests {
 
     #[test]
     fn replay_global_ctors_matches() {
-        check(ee::s07::f_002722c0__generated, replay_global_ctors, 60, &|c, seed| {
-            let mut r = Rng(0x0027_22c0 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = 0x0027_22c0;
-        });
+        check(
+            ee::s07::f_002722c0__generated,
+            replay_global_ctors,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x0027_22c0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0027_22c0;
+            },
+        );
     }
 
     #[test]
@@ -819,36 +824,56 @@ mod tests {
     #[test]
     fn insseq_free_all_matches() {
         hook_fakes(&["free_sequence"]);
-        check(ee::s07::f_00272a50__generated, insseq_free_all, 200, &|c, seed| {
-            chain_setup(c, seed, 0x0027_2a50, 0x0027_2a50);
-        });
+        check(
+            ee::s07::f_00272a50__generated,
+            insseq_free_all,
+            200,
+            &|c, seed| {
+                chain_setup(c, seed, 0x0027_2a50, 0x0027_2a50);
+            },
+        );
     }
 
     #[test]
     fn insseq_play_all_matches() {
         hook_fakes(&["play"]);
-        check(ee::s07::f_00272b00__generated, insseq_play_all, 200, &|c, seed| {
-            chain_setup(c, seed, 0x0027_2b00, 0x0027_2b00);
-        });
+        check(
+            ee::s07::f_00272b00__generated,
+            insseq_play_all,
+            200,
+            &|c, seed| {
+                chain_setup(c, seed, 0x0027_2b00, 0x0027_2b00);
+            },
+        );
     }
 
     #[test]
     fn insseq_stop_all_matches() {
         hook_fakes(&["stop"]);
-        check(ee::s07::f_00272b80__generated, insseq_stop_all, 200, &|c, seed| {
-            chain_setup(c, seed, 0x0027_2b80, 0x0027_2b80);
-        });
+        check(
+            ee::s07::f_00272b80__generated,
+            insseq_stop_all,
+            200,
+            &|c, seed| {
+                chain_setup(c, seed, 0x0027_2b80, 0x0027_2b80);
+            },
+        );
     }
 
     #[test]
     fn insseq_pause_matches() {
         hook_fakes(&["get_instance", "instance_pause"]);
-        check(ee::s07::f_00272bd0__generated, insseq_pause, 200, &|c, seed| {
-            gate_on(c, seed, 0x0027_2bd0);
-            // The instance `InSeq_GetInstance` returns (fake call 0).
-            c.bus.write32(fakes::LOG_RESULTS, DATA + 0x3000);
-            c.pc = 0x0027_2bd0;
-        });
+        check(
+            ee::s07::f_00272bd0__generated,
+            insseq_pause,
+            200,
+            &|c, seed| {
+                gate_on(c, seed, 0x0027_2bd0);
+                // The instance `InSeq_GetInstance` returns (fake call 0).
+                c.bus.write32(fakes::LOG_RESULTS, DATA + 0x3000);
+                c.pc = 0x0027_2bd0;
+            },
+        );
     }
 
     #[test]
@@ -856,29 +881,44 @@ mod tests {
         // The generated `InSeq_Pause` runs for real (unported): both sides
         // call it, so the fakes below serve its two callees.
         hook_fakes(&["get_instance", "instance_pause"]);
-        check(ee::s07::f_00272bf8__generated, insseq_pause_all, 200, &|c, seed| {
-            chain_setup(c, seed, 0x0027_2bf8, 0x0027_2bf8);
-            c.bus.write32(fakes::LOG_RESULTS, DATA + 0x3000);
-        });
+        check(
+            ee::s07::f_00272bf8__generated,
+            insseq_pause_all,
+            200,
+            &|c, seed| {
+                chain_setup(c, seed, 0x0027_2bf8, 0x0027_2bf8);
+                c.bus.write32(fakes::LOG_RESULTS, DATA + 0x3000);
+            },
+        );
     }
 
     #[test]
     fn insseq_resume_matches() {
         hook_fakes(&["get_instance", "instance_resume"]);
-        check(ee::s07::f_00272c48__generated, insseq_resume, 200, &|c, seed| {
-            gate_on(c, seed, 0x0027_2c48);
-            c.bus.write32(fakes::LOG_RESULTS, DATA + 0x3000);
-            c.pc = 0x0027_2c48;
-        });
+        check(
+            ee::s07::f_00272c48__generated,
+            insseq_resume,
+            200,
+            &|c, seed| {
+                gate_on(c, seed, 0x0027_2c48);
+                c.bus.write32(fakes::LOG_RESULTS, DATA + 0x3000);
+                c.pc = 0x0027_2c48;
+            },
+        );
     }
 
     #[test]
     fn insseq_resume_all_matches() {
         hook_fakes(&["get_instance", "instance_resume"]);
-        check(ee::s07::f_00272c70__generated, insseq_resume_all, 200, &|c, seed| {
-            chain_setup(c, seed, 0x0027_2c70, 0x0027_2c70);
-            c.bus.write32(fakes::LOG_RESULTS, DATA + 0x3000);
-        });
+        check(
+            ee::s07::f_00272c70__generated,
+            insseq_resume_all,
+            200,
+            &|c, seed| {
+                chain_setup(c, seed, 0x0027_2c70, 0x0027_2c70);
+                c.bus.write32(fakes::LOG_RESULTS, DATA + 0x3000);
+            },
+        );
     }
 
     #[test]

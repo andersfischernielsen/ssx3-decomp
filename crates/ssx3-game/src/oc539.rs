@@ -501,18 +501,23 @@ mod tests {
     #[test]
     fn playback_man_init_matches() {
         hook_all();
-        check(ee::s07::f_0026c6e8__generated, playback_man_init, 200, &|c, seed| {
-            gate_on(c, seed, 0x539_0001);
-            let me = DATA + 0x1000;
-            // MaxPlaybackFiles (0 covers the skipped table), and the missions.
-            c.bus.write32(me + 0x54, seed % 4);
-            c.bus.write32(OC539_MISSIONS, seed % 5);
-            for i in 0..4 {
-                c.bus.write32(OC539_IDS + 4 * i, 0x100 + i + seed % 7);
-            }
-            c.bus.write32(OC539_ASYNC_RESULT, 0);
-            c.g[A0][0] = sx(me);
-            c.g[A1][0] = sx(DATA + 0x1800);
-        });
+        check(
+            ee::s07::f_0026c6e8__generated,
+            playback_man_init,
+            200,
+            &|c, seed| {
+                gate_on(c, seed, 0x539_0001);
+                let me = DATA + 0x1000;
+                // MaxPlaybackFiles (0 covers the skipped table), and the missions.
+                c.bus.write32(me + 0x54, seed % 4);
+                c.bus.write32(OC539_MISSIONS, seed % 5);
+                for i in 0..4 {
+                    c.bus.write32(OC539_IDS + 4 * i, 0x100 + i + seed % 7);
+                }
+                c.bus.write32(OC539_ASYNC_RESULT, 0);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(DATA + 0x1800);
+            },
+        );
     }
 }

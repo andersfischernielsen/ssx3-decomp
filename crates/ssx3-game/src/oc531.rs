@@ -601,14 +601,19 @@ mod tests {
             oc531_fake_menu,
             &OC531_PREV_MENU,
         );
-        check(ee::s06::f_00250ae0__generated, avalanche_menu_ctor, 200, &|c, seed| {
-            let mut r = Rng(0x0025_0ae0 ^ seed as u64);
-            scramble(c, &mut r);
-            c.bus.write32(AVALANCHE_MENU_GATE, 0x0531_0001);
-            c.g[A0][0] = sx(DATA + 0x1000 * (seed % 4));
-            c.g[A1][0] = r.next_u32() as u64;
-            c.pc = 0x0025_0ae0;
-        });
+        check(
+            ee::s06::f_00250ae0__generated,
+            avalanche_menu_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0025_0ae0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(AVALANCHE_MENU_GATE, 0x0531_0001);
+                c.g[A0][0] = sx(DATA + 0x1000 * (seed % 4));
+                c.g[A1][0] = r.next_u32() as u64;
+                c.pc = 0x0025_0ae0;
+            },
+        );
     }
 
     /// Gate word for the nearest-marker search's callee fakes.
@@ -906,19 +911,24 @@ mod tests {
             oc531_fake_dtor_data,
             &OC531_PREV_DTOR_DATA,
         );
-        check(ee::s07::f_0026c588__generated, playback_man_dtor, 200, &|c, seed| {
-            let mut r = Rng(0x0026_c588 ^ seed as u64);
-            scramble(c, &mut r);
-            c.bus.write32(PLAYBACK_DTOR_GATE, 0x0531_0004);
-            let this = DATA + 0x1000;
-            c.bus
-                .write32(this, if seed % 4 == 0 { 0 } else { DATA + 0x3000 });
-            c.bus.write32(this + 0x6c, r.next_u32());
-            c.bus.write32(this + 0x68, r.next_u32());
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = (r.next_u32() % 4) as u64;
-            c.pc = 0x0026_c588;
-        });
+        check(
+            ee::s07::f_0026c588__generated,
+            playback_man_dtor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0026_c588 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(PLAYBACK_DTOR_GATE, 0x0531_0004);
+                let this = DATA + 0x1000;
+                c.bus
+                    .write32(this, if seed % 4 == 0 { 0 } else { DATA + 0x3000 });
+                c.bus.write32(this + 0x6c, r.next_u32());
+                c.bus.write32(this + 0x68, r.next_u32());
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.pc = 0x0026_c588;
+            },
+        );
     }
 
     /// Gate word for the stream and record callee fakes of the file loaders.

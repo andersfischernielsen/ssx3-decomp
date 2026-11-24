@@ -5476,7 +5476,7 @@ s07	0026c898	0026c994	o	PlaybackMan_FreeData
 s07	0026c998	0026c9f0	-	PlaybackMan_IsFileLoaded
 s07	0026c9f0	0026ca90	-	PlaybackMan_StartFileLoad
 s07	0026ca90	0026caf8	o	PlaybackMan_Reset
-s07	0026caf8	0026cbb0	-	PlaybackMan_LoadPlayback
+s07	0026caf8	0026cbb0	o	PlaybackMan_LoadPlayback
 s07	0026cbb0	0026cbb8	o	PlaybackMan_ClearWorldStateSaved
 s07	0026cbb8	0026cc14	o	PlaybackMan_SaveWorldState
 s07	0026cc18	0026cc44	o	PlaybackMan_RestoreWorldState
@@ -5513,7 +5513,7 @@ s07	0026dbd0	0026dbec	-	WorldState_Restore
 s07	0026dbf0	0026ddc0	-	WorldState_Read
 s07	0026ddc0	0026de58	o	WorldState_ReadObjects
 s07	0026de58	0026ded4	o	WorldState_NotifyObjectsRestored
-s07	0026ded8	0026e33c	e	WorldState_CreateObject
+s07	0026ded8	0026e33c	oe	WorldState_CreateObject
 s07	0026e340	0026e444	o	WorldState_ReadDeadObjects
 s07	0026e448	0026e464	o	Replay_FindSnapshot
 s07	0026e468	0026e48c	o	Replay_FindNextSnapshot
@@ -5570,7 +5570,7 @@ s07	0026f980	0026fa4c	o	Replay_EndPlayback
 s07	0026fa50	0026fa74	o	Replay_StopRecording
 s07	0026fa78	0026fb88	-	Replay_UpdateCameraInput
 s07	0026fb88	0026fe50	o	Replay_HandleInput
-s07	0026fe50	00270070	e	Replay_ProcessCommand
+s07	0026fe50	00270070	oe	Replay_ProcessCommand
 s07	00270070	002700d8	o	Player_AllocReplayCache
 s07	002700d8	00270130	o	Player_FreeReplayCache
 s07	00270130	0027019c	o	Replay_AllocSnapshot
@@ -5610,7 +5610,7 @@ s07	00270f20	00270f78	o	Replay_AllocSaveBuffers
 s07	00270f78	00270fbc	o	Replay_FreeSaveBuffers
 s07	00270fc0	00271058	o	Replay_FlushSaveOutput
 s07	00271058	002710a4	o	Replay_SaveEmit
-s07	002710a8	00271224	e	Replay_WriteSaveBlock
+s07	002710a8	00271224	oe	Replay_WriteSaveBlock
 s07	00271228	002712c0	o	Replay_SaveBuildHeader
 s07	002712c0	002712f8	o	Replay_SaveWriteHeader
 s07	002712f8	00271344	o	Replay_CountSaveSnapshots
@@ -5624,7 +5624,7 @@ s07	002716f0	00271708	o	Replay_NextSaveBlock
 s07	00271708	00271754	o	Replay_SaveWriteFooter
 s07	00271758	002718a4	-	Replay_LoadSaved
 s07	002718a8	002718e4	o	Replay_DebugPrintfStub
-s07	002718e8	002721cc	-	Replay_StaticInitDestroy
+s07	002718e8	002721cc	o	Replay_StaticInitDestroy
 s07	002721d0	00272200	o	ReplayStream_dtor
 s07	00272258	00272288	o	WorldStateStream_dtor
 s07	00272288	002722bc	o	Replay_HighlightSlotInit
@@ -5773,7 +5773,7 @@ s07	00275d90	00275dd8	o	ScriptList_dtor
 s07	00275dd8	00275ecc	o	ScriptList_Add
 s07	00275ed0	00276048	oe	ScriptList_AddChoice
 s07	00276048	00276194	o	ScriptList_AddMovie
-s07	00276198	0027626c	-	ScriptList_TakeFrom
+s07	00276198	0027626c	o	ScriptList_TakeFrom
 s07	00276270	00276388	o	ScriptList_Prepare
 s07	00276388	002766b0	o	ScriptList_Start
 s07	002766b0	002766cc	o	ScriptList_SetPausedNested
@@ -5886,7 +5886,7 @@ s07	0027a720	0027a798	o	ScriptEngine_OnSeqAdvance
 s07	0027a798	0027a7f0	o	ScriptEngine_OnSeqEnd
 s07	0027a7f0	0027a860	o	ScriptEngine_OnSeqStopped
 s07	0027a860	0027a9f0	-	ScriptEngine_QueueFinishScripts
-s07	0027a9f0	0027aa7c	e	ScriptEngine_SkipFinishScript
+s07	0027a9f0	0027aa7c	oe	ScriptEngine_SkipFinishScript
 s07	0027aa80	0027aaf4	o	ScriptEngine_IsFinishScriptActive
 s07	0027aaf8	0027ac60	o	ScriptEngine_QueueIntroScripts
 s07	0027ac60	0027b0bc	o	ScriptEngine_QueueRaceCutscene

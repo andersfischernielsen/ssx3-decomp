@@ -1096,7 +1096,12 @@ mod tests {
 
     #[test]
     fn replay_dtor_matches() {
-        check(ee::s07::f_0026f088__generated, replay_dtor, 60, &replay_dtor_setup);
+        check(
+            ee::s07::f_0026f088__generated,
+            replay_dtor,
+            60,
+            &replay_dtor_setup,
+        );
     }
 
     // Begin-playback's callees are log-only gated fakes (the gate word in
@@ -1372,12 +1377,22 @@ mod tests {
 
     #[test]
     fn replay_end_save_matches() {
-        check(ee::s07::f_00270ed8__generated, replay_end_save, 20, &load_setup);
+        check(
+            ee::s07::f_00270ed8__generated,
+            replay_end_save,
+            20,
+            &load_setup,
+        );
     }
 
     #[test]
     fn replay_reset_on_load_matches() {
-        check(ee::s07::f_00270ef8__generated, replay_reset_on_load, 20, &load_setup);
+        check(
+            ee::s07::f_00270ef8__generated,
+            replay_reset_on_load,
+            20,
+            &load_setup,
+        );
     }
 
     #[test]

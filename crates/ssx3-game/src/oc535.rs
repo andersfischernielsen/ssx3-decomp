@@ -493,15 +493,20 @@ mod tests {
 
     #[test]
     fn script_list_count_matches() {
-        check(ee::s07::f_00276ca8__generated, script_list_count, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x276ca8, 0);
-            let list = DATA + 0x200;
-            let queue = list + 0xc;
-            c.g[A0][0] = sx(list);
-            c.bus
-                .write32(queue + 0x94, if seed % 4 == 0 { 1 } else { 0 });
-            c.bus.write32(queue + 0x8c, r.next_u32() % 6);
-            c.bus.write32(queue + 0x90, r.next_u32() % 6);
-        });
+        check(
+            ee::s07::f_00276ca8__generated,
+            script_list_count,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x276ca8, 0);
+                let list = DATA + 0x200;
+                let queue = list + 0xc;
+                c.g[A0][0] = sx(list);
+                c.bus
+                    .write32(queue + 0x94, if seed % 4 == 0 { 1 } else { 0 });
+                c.bus.write32(queue + 0x8c, r.next_u32() % 6);
+                c.bus.write32(queue + 0x90, r.next_u32() % 6);
+            },
+        );
     }
 }
