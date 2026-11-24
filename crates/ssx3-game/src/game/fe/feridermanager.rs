@@ -12,6 +12,7 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::dirtysock::tagsunk::arg;
+pub(crate) use crate::game::fe::debugfe::menu_sx_add;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
 pub(crate) use crate::game::fe::feasyncfile::gpr;
 pub(crate) use crate::game::fe::fepopup::at as at_3;
@@ -119,6 +120,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0019_f2d0,
         fe_module_rider_preview_apply_transform,
         "FEModule_RiderPreviewApplyTransform",
+    ),
+    (
+        0x001d_cb70,
+        fe_module_get_rider_preview_2_thunk,
+        "FEModule_GetRiderPreview_2_Thunk",
+    ),
+    (
+        0x001d_cb90,
+        fe_module_get_rider_preview_thunk,
+        "FEModule_GetRiderPreview_Thunk",
     ),
 ];
 
@@ -1761,6 +1772,36 @@ pub(crate) fn rider_preview_add_light(
     Ok(())
 }
 
+/// `FEModule_GetRiderPreview_2_Thunk` (0x1dcb70): `cFERiderManager_getHuman(this + 0xb0)`,
+/// tail-returning its result.
+pub fn fe_module_get_rider_preview_2_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = menu_sx_add(c.g[A0][0], 0xb0);
+        call_ptr(c, 0x001a_0538, 0x001d_cb80)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `FEModule_GetRiderPreview_Thunk` (0x1dcb90): `cFERiderManager_getHuman1(this + 0xb0)`,
+/// tail-returning its result.
+pub fn fe_module_get_rider_preview_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = menu_sx_add(c.g[A0][0], 0xb0);
+        call_ptr(c, 0x001a_0548, 0x001d_cba0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2389,6 +2430,39 @@ pub(crate) mod tests {
                 c.bus.write32(gr + 0xe84, DATA + 0x2200);
                 c.bus.write32(DATA + 0x2208, r.next_u32());
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::debugfe::tests::OC506_THIS;
+
+    pub(crate) use crate::game::fe::debugfe::tests::oc506_arm;
+    pub(crate) use crate::game::fe::debugfe::tests::oc506_hook_all;
+
+    #[test]
+    fn fe_module_get_rider_preview_2_thunk_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dcb70__generated,
+            fe_module_get_rider_preview_2_thunk,
+            200,
+            &|c, seed| {
+                oc506_arm(c, seed, 0x1dcb70, 2);
+                c.g[A0][0] = OC506_THIS as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn fe_module_get_rider_preview_thunk_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dcb90__generated,
+            fe_module_get_rider_preview_thunk,
+            200,
+            &|c, seed| {
+                oc506_arm(c, seed, 0x1dcb90, 2);
+                c.g[A0][0] = OC506_THIS as u64;
             },
         );
     }

@@ -74,6 +74,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFEStateAudioOptions_TransitionIn",
     ),
     (0x001d_cc40, fe_locale_init_flags, "FELocale_InitFlags"),
+    (0x001d_cbd8, felocale_dtor, "FELocale_dtor"),
+    (0x001d_cc08, felocale_v02, "FELocale_v02"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -873,6 +875,53 @@ pub fn fe_locale_init_flags(c: &mut Cpu) {
     ret(c);
 }
 
+/// `cUILocaleInterface::~cUILocaleInterface(this, delete_flag)` (0x1dcbd8): stores
+/// the locale vtable-ish word (0x46d848) at `+4`; with bit 0 of the flag set,
+/// frees `this` through `operator delete`.
+pub fn felocale_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x0047_0000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x27b8));
+        c.g[A1][0] &= 0x1;
+        let delete = c.g[A1][0] != 0;
+        let this = c.g[A0][0] as u32;
+        let value = c.g[V0][0];
+        Addr(this).off(0x4).sw(c, value);
+        if delete {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e50, 0x001d_cbfc)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUILocaleInterface::setDisplayMode(this, mode)` (0x1dcc08): stores the low byte
+/// of `mode` at `this`, then calls `FELocale_SetFlag27(this, mode ^ 2 < 1)`.
+pub fn felocale_v02(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 24);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 24) as u32);
+        c.g[V0][0] = c.g[A1][0] ^ 0x2;
+        let mode = c.g[A1][0];
+        Addr(c.g[V1][0] as u32).sb(c, mode);
+        c.g[A1][0] = (c.g[V0][0] < 0x1) as u64;
+        call_ptr(c, 0x001e_1090, 0x001d_cc2c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1197,6 +1246,43 @@ pub(crate) mod tests {
             ee::s04::f_001dcc40__generated,
             fe_locale_init_flags,
             0x001d_cc40,
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::fe::debugfe::tests::OC506_THIS;
+
+    pub(crate) use crate::game::fe::debugfe::tests::oc506_arm;
+    pub(crate) use crate::game::fe::debugfe::tests::oc506_hook_all;
+
+    #[test]
+    fn felocale_dtor_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dcbd8__generated,
+            felocale_dtor,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dcbd8, 2);
+                c.g[A0][0] = OC506_THIS as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn felocale_v02_matches() {
+        oc506_hook_all();
+        covered(
+            ee::s04::f_001dcc08__generated,
+            felocale_v02,
+            200,
+            &|c, seed| {
+                let mut r = oc506_arm(c, seed, 0x1dcc08, 2);
+                c.g[A0][0] = OC506_THIS as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
         );
     }
 }

@@ -7,6 +7,7 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -26,6 +27,7 @@ pub(crate) use crate::game::render::particle::p_2 as p;
 pub(crate) use crate::game::sound::bankmonitor::p as p_2;
 pub(crate) use crate::game::wscript::wscriptman::p as p_3;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::call_indirect;
@@ -179,6 +181,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0039_5f80,
         ps2_graphics_man_is_idle,
         "PS2GraphicsMan_IsIdle",
+    ),
+    (0x001d_c990, font_draw_text_varargs, "Font_DrawTextVarargs"),
+    (
+        0x001d_c9d0,
+        font_draw_text_scaled_varargs,
+        "Font_DrawTextScaledVarargs",
+    ),
+    (
+        0x001d_ca40,
+        font_draw_text_centered_varargs,
+        "Font_DrawTextCenteredVarargs",
+    ),
+    (
+        0x001d_ca80,
+        font_draw_text_right_varargs,
+        "Font_DrawTextRightVarargs",
     ),
 ];
 
@@ -2238,6 +2256,88 @@ pub fn font_find_line_break(c: &mut Cpu) {
     ret(c);
 }
 
+/// The gcc varargs forwarder of the font draw calls: spills `a2..t3` and
+/// `f14, f16, f18` to the caller's varargs area (the format string now at
+/// `sp + 0x40`) and tail-calls `draw`, returning to `ret`.
+pub(crate) fn draw_varargs(c: &mut Cpu, draw: u32, ret: u32) -> Flow {
+    c.cycles += 16;
+    let frame = Frame::open(c, 0x70);
+    let s = sp(c);
+    let a2 = c.g[A2][0];
+    c.sd(s.wrapping_add(0x40), a2);
+    frame.save_ra(c, 0);
+    c.g[A2][0] = sx(s.wrapping_add(0x40));
+    let spill = [c.g[A3][0], c.g[T0][0], c.g[T1][0], c.g[T2][0], c.g[T3][0]];
+    for (i, v) in spill.into_iter().enumerate() {
+        c.sd(s.wrapping_add(0x48 + 8 * i as u32), v);
+    }
+    c.swc1(14, s.wrapping_add(0x34));
+    c.swc1(16, s.wrapping_add(0x38));
+    c.swc1(18, s.wrapping_add(0x3c));
+    call_ptr(c, draw, ret)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `Font_DrawTextVarargs` (0x1dc990): forwards to `0x391c48`.
+pub fn font_draw_text_varargs(c: &mut Cpu) {
+    guest(c, |c| draw_varargs(c, 0x0039_1c48, 0x001d_c9c4));
+}
+
+/// `Font_DrawTextCenteredVarargs` (0x1dca40): forwards to `0x3929f8`.
+pub fn font_draw_text_centered_varargs(c: &mut Cpu) {
+    guest(c, |c| draw_varargs(c, 0x0039_29f8, 0x001d_ca74));
+}
+
+/// `Font_DrawTextRightVarargs` (0x1dca80): forwards to `0x392b40`.
+pub fn font_draw_text_right_varargs(c: &mut Cpu) {
+    guest(c, |c| draw_varargs(c, 0x0039_2b40, 0x001d_cab4));
+}
+
+/// `Font_DrawTextScaledVarargs` (0x1dc9d0): the object at `a0` holds the
+/// scale (f0 = +0x34 times f15, f1 = +0x30 times f14); both are stored back
+/// at +0x38/+0x3c, `0x391c48` draws, and the 8 bytes at +0x30 are copied to
+/// +0x38 through v0.
+pub fn font_draw_text_scaled_varargs(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let s = sp(c);
+        let a2 = c.g[A2][0];
+        c.sd(s.wrapping_add(0x40), a2);
+        c.g[A2][0] = sx(s.wrapping_add(0x40));
+        let obj = c.g[S0][0] as u32;
+        c.lwc1(1, obj.wrapping_add(0x30));
+        c.lwc1(0, obj.wrapping_add(0x34));
+        c.f[1] = (FpuF32(c.f[1]) * FpuF32(c.f[14])).0;
+        let a3 = c.g[A3][0];
+        c.sd(s.wrapping_add(0x48), a3);
+        c.f[0] = (FpuF32(c.f[0]) * FpuF32(c.f[15])).0;
+        let spill = [c.g[T0][0], c.g[T1][0], c.g[T2][0], c.g[T3][0]];
+        for (i, v) in spill.into_iter().enumerate() {
+            c.sd(s.wrapping_add(0x50 + 8 * i as u32), v);
+        }
+        c.swc1(16, s.wrapping_add(0x38));
+        c.swc1(18, s.wrapping_add(0x3c));
+        c.swc1(1, obj.wrapping_add(0x38));
+        c.swc1(0, obj.wrapping_add(0x3c));
+        call_ptr(c, 0x0039_1c48, 0x001d_ca20)?;
+        let obj = c.g[S0][0] as u32;
+        c.ldl(2, obj.wrapping_add(0x37));
+        c.ldr(2, obj.wrapping_add(0x30));
+        c.sdl(2, obj.wrapping_add(0x3f));
+        c.sdr(2, obj.wrapping_add(0x38));
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3408,6 +3508,68 @@ pub(crate) mod tests {
             font_find_line_break,
             300,
             &font_find_line_break_fixture,
+        );
+    }
+
+    pub(crate) use crate::game::fe::debugfe::tests::oc505_install_fakes;
+    pub(crate) use crate::game::fe::debugfe::tests::oc505_machine;
+
+    #[test]
+    fn font_draw_text_varargs_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dc990__generated,
+            font_draw_text_varargs,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dc9_90, 1);
+                c.pc = 0x001d_c990;
+            },
+        );
+    }
+
+    #[test]
+    fn font_draw_text_centered_varargs_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dca40__generated,
+            font_draw_text_centered_varargs,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dca_40, 1);
+                c.pc = 0x001d_ca40;
+            },
+        );
+    }
+
+    #[test]
+    fn font_draw_text_right_varargs_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dca80__generated,
+            font_draw_text_right_varargs,
+            60,
+            &|c, seed| {
+                let _ = oc505_machine(c, seed, 0x1dca_80, 1);
+                c.pc = 0x001d_ca80;
+            },
+        );
+    }
+
+    #[test]
+    fn font_draw_text_scaled_varargs_matches() {
+        oc505_install_fakes();
+        covered(
+            ee::s04::f_001dc9d0__generated,
+            font_draw_text_scaled_varargs,
+            60,
+            &|c, seed| {
+                let mut r = oc505_machine(c, seed, 0x1dc9_d0, 1);
+                c.pc = 0x001d_c9d0;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.bus.write32(DATA + 0x130, r.f32(100.0));
+                c.bus.write32(DATA + 0x134, r.edge_f32());
+            },
         );
     }
 }
