@@ -15,6 +15,7 @@ use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::control::handplantcontrol::HI;
 pub(crate) use crate::game::be::bedbreward::destroy_instance;
 pub(crate) use crate::game::be::beintnetwork::NEW_RACE_GP;
 pub(crate) use crate::game::fe::festateload::at;
@@ -180,6 +181,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0014_4af8,
         be_new_race_int_set_num_extra_riders,
         "BENewRaceInt_SetNumExtraRiders",
+    ),
+    (
+        0x0014_5870,
+        be_new_race_int_map_event_type,
+        "BENewRaceInt_MapEventType",
     ),
 ];
 
@@ -1643,6 +1649,45 @@ pub fn be_new_race_int_set_num_extra_riders(c: &mut Cpu) {
     ret(c);
 }
 
+/// `int BENewRaceInt_MapEventType(int kind)` (0x145870): kinds below 0x11
+/// index a table of jump targets at 0x45c150 (the case value 0..=3 or 0xc
+/// each); other kinds and unknown targets return 0xc or leave the function
+/// through `jump_out`.
+pub fn be_new_race_int_map_event_type(c: &mut Cpu) {
+    if c.pc != 0x0014_5870 {
+        return ee::s01::f_00145870__entries(c);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[A1][0] < 0x11) as u64;
+    let in_range = c.g[V0][0] != 0;
+    c.g[V0][0] = HI as u64;
+    if !in_range {
+        c.cycles += 2;
+        c.g[V0][0] = 0xc;
+        return ret(c);
+    }
+    c.cycles += 6;
+    c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[V0][0] = sx(HI.wrapping_sub(0x5eb0));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+    let target = c.g[A0][0] as u32;
+    let result = match target {
+        0x0014_5894 => 0xc,
+        0x0014_589c => 0x0,
+        0x0014_58a4 => 0x1,
+        0x0014_58ac => 0x3,
+        0x0014_58b4 => 0x2,
+        _ => {
+            c.jump_out(target, 0x0014_5870, 0x0014_58c4);
+            return;
+        }
+    };
+    c.cycles += 2;
+    c.g[V0][0] = result;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2401,6 +2446,37 @@ pub(crate) mod tests {
                 c.bus.write32(0x0053_5bc8 + 0x34, r.next_u32());
                 c.bus.write32(0x0053_5bc8 + 0x3c, r.next_u32());
                 c.bus.write32(0x0053_5bc8 + 0x30, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn be_new_race_int_map_event_type_matches() {
+        check(
+            ee::s01::f_00145870__generated,
+            be_new_race_int_map_event_type,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x454_0500, 0);
+                c.pc = 0x0014_5870;
+                c.g[A1][0] = if seed % 5 == 0 {
+                    0x11 + (seed as u64 % 7)
+                } else {
+                    (seed % 0x11) as u64
+                };
+                // The jump-target table: the five cases, and a stray target.
+                let cases = [
+                    0x0014_5894u32,
+                    0x0014_589c,
+                    0x0014_58a4,
+                    0x0014_58ac,
+                    0x0014_58b4,
+                    0x0014_5900,
+                ];
+                for i in 0..0x11u32 {
+                    let t = cases[((seed + i) % 6) as usize];
+                    c.bus.write32(0x0045_c150 + 4 * i, t);
+                }
             },
         );
     }

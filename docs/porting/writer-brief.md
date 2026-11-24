@@ -253,6 +253,12 @@ every difference a parameter.
   `GameModule_Load`); if even that fails, drop the entry and test and keep the
   port with a comment.
 
+- `machine` is `difftest::fakes::machine`, not `difftest::machine`; `sx` takes
+  a `u32` here (`sx(v)`, not `sx(v as u64)`).
+- A single function over about 5000 bytes that is a resumable dispatcher with
+  60+ call sites (`Player_dtor`, `RiderBase_dtor`) is skipped by writers: give
+  it a dedicated wave, split by segment.
+
 ## Report
 
 Per function: written (or skipped, and why), its test, and anything uncertain

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -240,6 +241,98 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0014_2388, rider_wipeout_sub_ctor, "RiderWipeoutSub_ctor"),
     (0x0014_4610, rider_anim_dtor, "RiderAnim_dtor"),
+    (
+        0x0013_8ba0,
+        rider_handplant_state_setup,
+        "RiderHandplantState_Setup",
+    ),
+    (
+        0x0013_9178,
+        rider_handplant_state_exit,
+        "RiderHandplantState_Exit",
+    ),
+    (
+        0x0013_fb20,
+        rider_tuning_static_init,
+        "RiderTuning_StaticInit",
+    ),
+    (0x0014_0680, rider_iface_dtor, "RiderIface_dtor"),
+    (0x0014_0968, rider_get_heading, "Rider_GetHeading"),
+    (0x0014_0cf0, rider_set_boost_mode, "Rider_SetBoostMode"),
+    (
+        0x0014_0d80,
+        rider_ground_state_dtor,
+        "RiderGroundState_dtor",
+    ),
+    (0x0014_0ee0, rider_air_state_dtor, "RiderAirState_dtor"),
+    (
+        0x0014_1040,
+        rider_railslide_state_dtor,
+        "RiderRailslideState_dtor",
+    ),
+    (
+        0x0014_11c0,
+        rider_static_state_dtor,
+        "RiderStaticState_dtor",
+    ),
+    (
+        0x0014_1320,
+        rider_handplant_state_dtor,
+        "RiderHandplantState_dtor",
+    ),
+    (0x0014_15c8, rider_cruise_sub_dtor, "RiderCruiseSub_dtor"),
+    (
+        0x0014_1728,
+        rider_board_press_sub_dtor,
+        "RiderBoardPressSub_dtor",
+    ),
+    (0x0014_1888, rider_prewind_sub_dtor, "RiderPrewindSub_dtor"),
+    (0x0014_19e8, rider_bump_sub_dtor, "RiderBumpSub_dtor"),
+    (
+        0x0014_1b48,
+        rider_natural_air_sub_dtor,
+        "RiderNaturalAirSub_dtor",
+    ),
+    (0x0014_1ca8, rider_spin_sub_dtor, "RiderSpinSub_dtor"),
+    (0x0014_1e08, rider_gate_sub_dtor, "RiderGateSub_dtor"),
+    (
+        0x0014_1f68,
+        rider_railslide_sub_dtor,
+        "RiderRailslideSub_dtor",
+    ),
+    (
+        0x0014_20c8,
+        rider_uber_grind_sub_dtor,
+        "RiderUberGrindSub_dtor",
+    ),
+    (0x0014_2228, rider_wipeout_sub_dtor, "RiderWipeoutSub_dtor"),
+    (
+        0x0014_24d0,
+        rider_finish_line_sub_dtor,
+        "RiderFinishLineSub_dtor",
+    ),
+    (0x0014_2630, rider_reset_sub_dtor, "RiderResetSub_dtor"),
+    (
+        0x0014_2790,
+        rider_derived_dtor_458928,
+        "Rider_DerivedDtor_458928",
+    ),
+    (
+        0x0014_28f0,
+        rider_handplant_sub_dtor,
+        "RiderHandplantSub_dtor",
+    ),
+    (
+        0x0014_41a0,
+        danger_man_release_danger,
+        "DangerMan_ReleaseDanger",
+    ),
+    (0x0014_4630, rider_anim_ctor, "RiderAnim_ctor"),
+    (
+        0x0014_48b8,
+        rider_tuning_static_init_thunk,
+        "RiderTuning_StaticInitThunk",
+    ),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -11381,6 +11474,2071 @@ pub fn rider_anim_dtor(c: &mut Cpu) {
     );
 }
 
+/// `RiderHandplantState` fields written by the setup (offsets from `this`).
+pub(crate) const SETUP_INIT_POS: u32 = 0x00;
+
+pub(crate) const SETUP_EXIT_VEL: u32 = 0x10;
+
+pub(crate) const SETUP_SPLINE_DIR: u32 = 0x20;
+
+pub(crate) const SETUP_SPLINE_POS: u32 = 0x30;
+
+pub(crate) const SETUP_APPROACH_DIR: u32 = 0x40;
+
+pub(crate) const SETUP_SNAP_AXIS: u32 = 0x70;
+
+pub(crate) const SETUP_SNAP_RATE: u32 = 0x80;
+
+pub(crate) const SETUP_ENTER_SEC: u32 = 0x84;
+
+pub(crate) const SETUP_ELAPSED_SEC: u32 = 0x88;
+
+pub(crate) const SETUP_INIT_TANGENT_SPEED: u32 = 0x8c;
+
+pub(crate) const SETUP_IS_RAIL_SPLINE: u32 = 0x90;
+
+pub(crate) const SETUP_IS_TOESIDE: u32 = 0x94;
+
+pub(crate) const SETUP_RIDER: u32 = 0xa0;
+
+/// The rider fields the setup reads (`RiderHandplantState::mRider` points here).
+pub(crate) const SETUP_RIDER_INIT_POS: u32 = 0x110;
+
+/// The orientation quaternion (x, y, z, w).
+pub(crate) const SETUP_RIDER_ORIENTATION: u32 = 0x120;
+
+/// The row that `up_8BA0(rider)` reads.
+pub(crate) const SETUP_RIDER_UP: u32 = 0x1c0;
+
+pub(crate) const SETUP_RIDER_VELOCITY: u32 = 0x1e0;
+
+pub(crate) const SETUP_RIDER_TOESIDE_FLIP: u32 = 0x320;
+
+pub(crate) const SETUP_RIDER_POSE: u32 = 0x780;
+
+pub(crate) const SETUP_RIDER_BONE_INDEX: u32 = 0x8a8;
+
+/// The pose's bone list and the spline hit's fields.
+pub(crate) const SETUP_MODEL_BONES: u32 = 0x2c;
+
+pub(crate) const SETUP_HIT_POS: u32 = 0x0;
+
+pub(crate) const SETUP_HIT_NORMAL: u32 = 0x10;
+
+pub(crate) const SETUP_HIT_OBJ: u32 = 0x58;
+
+pub(crate) const SETUP_OBJ_FLAGS: u32 = 0x1c;
+
+/// Game constants at fixed addresses: the exit velocity, the cross operand
+/// (`D_004FF160`) and the rider's X axis (`t4vect_XAxis`).
+pub(crate) const SETUP_EXIT_VEL_CONST: u32 = 0x004f_f120;
+
+pub(crate) const SETUP_CROSS_AXIS_CONST: u32 = 0x004f_f160;
+
+pub(crate) const SETUP_X_AXIS_CONST: u32 = 0x004f_f140;
+
+/// gp-relative literals: 0.001 (the axis length threshold), pi/2 and 1e-5 for
+/// the snap angle. The negative-w branch reads its own copies of the last two.
+pub(crate) const SETUP_GP_LEN_EPS: i32 = -0x7218;
+
+pub(crate) const SETUP_GP_HALF_PI: i32 = -0x7214;
+
+pub(crate) const SETUP_GP_ANGLE_EPS: i32 = -0x7210;
+
+pub(crate) const SETUP_GP_HALF_PI_NEG: i32 = -0x720c;
+
+pub(crate) const SETUP_GP_ANGLE_EPS_NEG: i32 = -0x7208;
+
+/// A gp-relative literal's address.
+#[inline(always)]
+pub(crate) fn setup_gp(c: &Cpu, off: i32) -> u32 {
+    r32(c, GP).wrapping_add(off as u32)
+}
+
+/// The cross product of the VU sequence: `vf6 = vf4 x vf5` (lanes x, y, z).
+#[inline(always)]
+pub(crate) fn setup_cross_vf6(c: &mut Cpu) {
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+}
+
+/// The quaternion product of the VU sequence: `out = a * b`, with `a` loaded
+/// into vf4 and `b` into vf5 (x, y, z, w), stored to `out`.
+#[inline(always)]
+pub(crate) fn setup_quat_mul(c: &mut Cpu, a: u32, b: u32, out: u32) {
+    c.lqc2(4, a);
+    c.lqc2(5, b);
+    c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+    c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+    c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+    c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+    c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+    c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+    c.sqc2(8, out);
+}
+
+/// The axis-angle quaternion: `out = (sin * axis, cos)`, with the sine and
+/// cosine that `Math_SinCos` wrote at `sin_at` and `cos_at`, and the axis
+/// (x, y, z) at `axis`.
+pub(crate) fn setup_axis_angle(c: &mut Cpu, axis: u32, sin_at: u32, cos_at: u32, out: u32) {
+    c.lwc1(0, sin_at);
+    c.lwc1(1, axis);
+    c.lwc1(2, axis + 4);
+    c.lwc1(4, axis + 8);
+    c.mul_s(1, 0, 1);
+    c.mul_s(2, 0, 2);
+    c.lwc1(3, cos_at);
+    c.mul_s(0, 0, 4);
+    c.swc1(3, out + 0xc);
+    c.swc1(1, out);
+    c.swc1(2, out + 4);
+    c.swc1(0, out + 8);
+}
+
+/// `void RiderHandplantState_Setup(RiderHandplantState* this, sHit* hit)`
+/// (`cHandplantMotion_init`, 0x138ba0). `f12` is the duration. Copies the
+/// rider's pose and the spline end points into the state, the approach
+/// direction, the tangent speed and rail flag, the toeside side from the
+/// forward vector and the spline normal, and the snap rotation (axis, angle
+/// and rate over the duration) from the rider's orientation to the ideal one.
+pub fn rider_handplant_state_setup(c: &mut Cpu) {
+    guest(c, setup_body)
+}
+
+pub(crate) fn setup_body(c: &mut Cpu) -> Flow {
+    // Prologue and the spline's copies (0x138c98).
+    c.cycles += 59;
+    let frame = Frame::open(c, 0xe0);
+    let s = sp(c);
+    c.g[A3][0] = 0;
+    frame.save(c, S0, 0xb0);
+    frame.save_ra(c, 0xa0);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save_fpr(c, 22, 0xd0);
+    c.g[A0][0] = sx(SETUP_EXIT_VEL_CONST);
+    frame.save_fpr(c, 21, 0xc8);
+    frame.save_fpr(c, 20, 0xc0);
+
+    c.g[A2][0] = Addr(r32(c, S0).wrapping_add(SETUP_RIDER)).lw(c);
+    let this = r32(c, S0);
+    let rider = r32(c, A2);
+    qcopy(
+        c,
+        V0,
+        rider.wrapping_add(SETUP_RIDER_INIT_POS),
+        this + SETUP_INIT_POS,
+    );
+    let exit_vel = r32(c, A0);
+    qcopy(c, V1, exit_vel, this + SETUP_EXIT_VEL);
+    let hit = r32(c, A1);
+    qcopy(c, V0, hit + SETUP_HIT_NORMAL, this + SETUP_SPLINE_DIR);
+    qcopy(c, V1, hit + SETUP_HIT_POS, this + SETUP_SPLINE_POS);
+
+    // ApproachDir = Normalize(SplinePos - bone), bone = pose bones[index].
+    c.g[A0][0] = Addr(rider.wrapping_add(SETUP_RIDER_POSE)).lw(c);
+    c.g[V0][0] = Addr(rider.wrapping_add(SETUP_RIDER_BONE_INDEX)).lw(c);
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(SETUP_MODEL_BONES)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 5);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    let bone = r32(c, V1);
+    v_sub(c, this + SETUP_SPLINE_POS, bone, s + 0x20);
+    qcopy(c, V0, s + 0x20, s + 0x10);
+    v_normalize(c, s + 0x10, s + 0x20);
+    c.lq(V0, s + 0x20);
+    let this = r32(c, S0);
+    c.swc1(12, this + SETUP_ENTER_SEC);
+    c.sq(V0, this + SETUP_APPROACH_DIR);
+    c.sw(this + SETUP_ELAPSED_SEC, 0);
+
+    // InitTangentSpeed = Dot(rider velocity, SplineDir).
+    c.g[A0][0] = Addr(r32(c, S0).wrapping_add(SETUP_RIDER)).lw(c);
+    c.sq(V0, s);
+    let rider_a0 = r32(c, A0);
+    let this = r32(c, S0);
+    dot_ab(
+        c,
+        rider_a0.wrapping_add(SETUP_RIDER_VELOCITY),
+        this + SETUP_SPLINE_DIR,
+    );
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    c.swc1(0, this + SETUP_INIT_TANGENT_SPEED);
+
+    // IsRailSpline = hit->obj ? hit->obj->flags & 1 : 0.
+    c.g[V0][0] = Addr(r32(c, A1).wrapping_add(SETUP_HIT_OBJ)).lw(c);
+    if c.g[V0][0] == 0 {
+        let this = r32(c, S0);
+        c.sw(this + SETUP_IS_RAIL_SPLINE, c.g[A3][0]);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, V0).wrapping_add(SETUP_OBJ_FLAGS)).lw(c);
+        c.g[A3][0] = c.g[V0][0] & 0x1;
+        let this = r32(c, S0);
+        c.sw(this + SETUP_IS_RAIL_SPLINE, c.g[A3][0]);
+    }
+
+    // Ideal orientation, and the first rotation about Cross(up, D_004FF160)
+    // when the axis is longer than 0.001 (0x138dcc).
+    c.cycles += 30;
+    let len_eps = setup_gp(c, SETUP_GP_LEN_EPS);
+    c.lwc1(22, len_eps);
+    let rider0 = r32(c, A0);
+    qcopy(c, V0, rider0.wrapping_add(SETUP_RIDER_ORIENTATION), s);
+    let up_row = r32(c, A0).wrapping_add(SETUP_RIDER_UP);
+    c.lq(V1, up_row);
+    c.g[V0][0] = sx(SETUP_CROSS_AXIS_CONST);
+    c.sq(V1, s + 0x40);
+    c.lqc2(4, s + 0x40);
+    let cross_axis = r32(c, V0);
+    c.lqc2(5, cross_axis);
+    setup_cross_vf6(c);
+    c.sqc2(6, s + 0x50);
+    qcopy(c, V0, s + 0x50, s + 0x20);
+    c.sq(V0, s + 0x30);
+    v_length(c, s + 0x20, V1, 0);
+    c.c_lt_s(22, 0);
+    let t = !c.fcc();
+    c.lwc1(3, s + 0x4);
+    if !t {
+        c.cycles += 47;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 12);
+        c.mfc1(2, 0);
+        c.qmtc2(2, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, s + 0x20);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 4, Src::Q);
+        c.sqc2(5, s + 0x20);
+        c.min_s(12, 0, 12);
+        call_ptr(c, 0x0031_c128, 0x0013_8d3c)?;
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(1, 12);
+        c.g[A0][0] = sx(s + 0x90);
+        c.g[A1][0] = sx(s + 0x94);
+        c.mul_s(12, 0, 12);
+        call_ptr(c, 0x0031_be50, 0x0013_8d54)?;
+        setup_axis_angle(c, s + 0x20, s + 0x90, s + 0x94, s + 0x30);
+        qcopy(c, V0, s + 0x30, s + 0x10);
+        setup_quat_mul(c, s + 0x10, s, s + 0x40);
+        qcopy(c, V0, s + 0x40, s);
+        c.sq(V0, s + 0x30);
+        c.lwc1(3, s + 0x4);
+    }
+
+    // fwd from the ideal orientation, the flat spline normal n, and
+    // IsToeside = Dot(n, fwd) < 0 (0x138e9c).
+    c.cycles += 52;
+    let this = r32(c, S0);
+    c.g[A0][0] = 1;
+    c.lwc1(4, s + 0x8);
+    c.lwc1(0, s);
+    c.mul_s(1, 3, 3);
+    c.lwc1(5, s + 0xc);
+    c.mul_s(6, 4, 4);
+    c.mul_s(2, 0, 4);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 20);
+    c.mul_s(7, 5, 3);
+    c.lq(V0, this + SETUP_SPLINE_DIR);
+    c.add_s(1, 1, 6);
+    c.sw(s + 0x3c, 0);
+    c.mul_s(0, 0, 3);
+    c.sq(V0, s + 0x40);
+    c.mul_s(5, 5, 4);
+    c.sw(s + 0x48, 0);
+    c.sub_s(2, 2, 7);
+    c.add_s(1, 1, 1);
+    c.add_s(0, 0, 5);
+    c.add_s(2, 2, 2);
+    c.sub_s(1, 20, 1);
+    c.add_s(0, 0, 0);
+    c.swc1(2, s + 0x38);
+    c.swc1(1, s + 0x30);
+    c.swc1(0, s + 0x34);
+    v_normalize(c, s + 0x40, s + 0x60);
+    c.mtc1(0, 21);
+    qcopy(c, V0, s + 0x60, s + 0x50);
+    dot_ab(c, s + 0x50, s + 0x30);
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    c.c_lt_s(0, 21);
+    if !c.fcc() {
+        c.g[A0][0] = 0;
+    }
+
+    // IsToeside, and the flip of n when toeside (0x138ec0).
+    c.cycles += 2;
+    let not_toeside = c.g[A0][0] == 0;
+    let this = r32(c, S0);
+    c.sw(this + SETUP_IS_TOESIDE, c.g[A0][0]);
+    if !not_toeside {
+        c.cycles += 7;
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 0);
+        c.mfc1(2, 0);
+        c.lqc2(4, s + 0x50);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s + 0x50);
+    }
+
+    // The rider's flag flips the toeside side (0x138edc).
+    c.cycles += 4;
+    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SETUP_RIDER)).lw(c);
+    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(SETUP_RIDER_TOESIDE_FLIP)).lw(c);
+    if c.g[V1][0] != 0 {
+        c.cycles += 3;
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(this.wrapping_add(SETUP_IS_TOESIDE)).lw(c);
+        c.g[V0][0] = c.g[V0][0] ^ 0x1;
+        let this = r32(c, S0);
+        c.sw(this + SETUP_IS_TOESIDE, c.g[V0][0]);
+    }
+
+    // axis = Cross(fwd, n); rotate fwd onto n when the axis is longer than
+    // 0.001 (0x138fec).
+    c.cycles += 23;
+    c.lqc2(4, s + 0x30);
+    c.lqc2(5, s + 0x50);
+    setup_cross_vf6(c);
+    c.sqc2(6, s + 0x70);
+    qcopy(c, V0, s + 0x70, s + 0x20);
+    c.sq(V0, s + 0x60);
+    v_length(c, s + 0x20, V1, 0);
+    c.c_lt_s(22, 0);
+    if !c.fcc() {
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SETUP_RIDER)).lw(c);
+    } else {
+        c.cycles += 45;
+        c.mfc1(2, 0);
+        c.qmtc2(2, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, s + 0x20);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 4, Src::Q);
+        c.sqc2(5, s + 0x20);
+        c.min_s(12, 0, 20);
+        call_ptr(c, 0x0031_c128, 0x0013_8f5c)?;
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(1, 12);
+        c.g[A0][0] = sx(s + 0x98);
+        c.g[A1][0] = sx(s + 0x9c);
+        c.mul_s(12, 0, 12);
+        call_ptr(c, 0x0031_be50, 0x0013_8f74)?;
+        setup_axis_angle(c, s + 0x20, s + 0x98, s + 0x9c, s + 0x60);
+        qcopy(c, V0, s + 0x60, s + 0x10);
+        setup_quat_mul(c, s + 0x10, s, s + 0x70);
+        qcopy(c, V0, s + 0x70, s);
+        c.sq(V0, s + 0x60);
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SETUP_RIDER)).lw(c);
+    }
+
+    // Snap rotation: deltaRot = ideal * Conj(rider orientation), its angle
+    // from w (0x139148 and 0x1390ac).
+    c.cycles += 34;
+    let rider = r32(c, V0);
+    c.lwc1(0, rider.wrapping_add(SETUP_RIDER_ORIENTATION + 0xc));
+    c.swc1(0, s + 0x8c);
+    c.lwc1(2, rider.wrapping_add(SETUP_RIDER_ORIENTATION));
+    c.swc1(2, s + 0x80);
+    c.neg_s(2, 2);
+    c.lwc1(1, rider.wrapping_add(SETUP_RIDER_ORIENTATION + 0x4));
+    c.swc1(1, s + 0x84);
+    c.neg_s(1, 1);
+    c.lwc1(0, rider.wrapping_add(SETUP_RIDER_ORIENTATION + 0x8));
+    c.swc1(2, s + 0x80);
+    c.neg_s(0, 0);
+    c.swc1(1, s + 0x84);
+    c.swc1(0, s + 0x88);
+    qcopy(c, V0, s + 0x80, s + 0x70);
+    setup_quat_mul(c, s, s + 0x70, s + 0x80);
+    qcopy(c, V0, s + 0x80, s + 0x10);
+    c.sq(V0, s + 0x60);
+    c.lwc1(0, s + 0x1c);
+    c.c_lt_s(21, 0);
+    let t = !c.fcc();
+
+    // true: the axis comes from Sin (MID); false: the X axis (XAXIS).
+    let to_mid = if !t {
+        // w > 0: ang = (pi/2 - Asin(min(w, 1))) * 2.
+        c.cycles += 10;
+        c.min_s(12, 0, 20);
+        call_ptr(c, 0x0031_c128, 0x0013_907c)?;
+        let half_pi = setup_gp(c, SETUP_GP_HALF_PI);
+        let eps = setup_gp(c, SETUP_GP_ANGLE_EPS);
+        c.lwc1(1, half_pi);
+        c.lwc1(2, eps);
+        c.sub_s(1, 1, 0);
+        c.add_s(1, 1, 1);
+        c.c_le_s(2, 1);
+        let t2 = !c.fcc();
+        let this = r32(c, S0);
+        c.swc1(1, this + SETUP_SNAP_RATE);
+        if t2 {
+            false
+        } else {
+            c.cycles += 4;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 12);
+            c.lwc1(2, s + 0x10);
+            true
+        }
+    } else {
+        // w <= 0: ang = (pi/2 - Asin(-max(w, -1))) * 2.
+        c.cycles += 13;
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 12);
+        c.max_s(12, 0, 12);
+        c.neg_s(12, 12);
+        call_ptr(c, 0x0031_c128, 0x0013_90c0)?;
+        let half_pi = setup_gp(c, SETUP_GP_HALF_PI_NEG);
+        let eps = setup_gp(c, SETUP_GP_ANGLE_EPS_NEG);
+        c.lwc1(1, half_pi);
+        c.lwc1(2, eps);
+        c.sub_s(1, 1, 0);
+        c.add_s(1, 1, 1);
+        c.c_le_s(2, 1);
+        let t3 = !c.fcc();
+        let this = r32(c, S0);
+        c.swc1(1, this + SETUP_SNAP_RATE);
+        if t3 {
+            false
+        } else {
+            c.cycles += 3;
+            c.g[AT][0] = 0xffff_ffff_bf00_0000;
+            c.mtc1(1, 12);
+            c.lwc1(2, s + 0x10);
+            true
+        }
+    };
+
+    if to_mid {
+        // SnapRotationAxis = deltaRot.xyz / Sin(ang * 0.5) (f12 = ang * +-0.5).
+        c.cycles += 19;
+        c.mul_s(12, 1, 12);
+        c.lwc1(0, s + 0x14);
+        c.lwc1(1, s + 0x18);
+        c.swc1(2, s + 0x70);
+        c.swc1(0, s + 0x74);
+        c.swc1(1, s + 0x78);
+        c.swc1(21, s + 0x7c);
+        call_ptr(c, 0x0031_bf60, 0x0013_910c)?;
+        c.mfc1(3, 0);
+        c.qmtc2(3, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, s + 0x70);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 4, 4, Src::Q);
+        c.sqc2(4, s + 0x80);
+        c.lq(V0, s + 0x80);
+        let this = r32(c, S0);
+        c.sq(V0, this + SETUP_SNAP_AXIS);
+        c.sq(V0, s + 0x60);
+    } else {
+        // SnapRotationAxis = t4vect_XAxis.
+        c.cycles += 4;
+        c.g[V0][0] = sx(SETUP_X_AXIS_CONST);
+        let x_axis = r32(c, V0);
+        c.lq(V1, x_axis);
+        let this = r32(c, S0);
+        c.sq(V1, this + SETUP_SNAP_AXIS);
+    }
+
+    // Epilogue: SnapRotationRate /= EnterSec (0x139148 tail).
+    c.cycles += 11;
+    let this = r32(c, S0);
+    c.lwc1(0, this + SETUP_SNAP_RATE);
+    c.lwc1(1, this + SETUP_ENTER_SEC);
+    frame.restore_ra(c, 0xa0);
+    c.div_s(0, 0, 1);
+    frame.restore_fpr(c, 22, 0xd0);
+    frame.restore_fpr(c, 21, 0xc8);
+    frame.restore_fpr(c, 20, 0xc0);
+    let this = r32(c, S0);
+    c.swc1(0, this + SETUP_SNAP_RATE);
+    frame.restore(c, S0, 0xb0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `base + off` as the 32-bit guest address the loads and stores use.
+#[inline(always)]
+pub(crate) fn tuning_ea(c: &Cpu, base: usize, off: u32) -> u32 {
+    (c.g[base][0] as u32).wrapping_add(off)
+}
+
+/// `base - off` as the 32-bit guest address (GP-relative globals below GP).
+#[inline(always)]
+pub(crate) fn tuning_ea_sub(c: &Cpu, base: usize, off: u32) -> u32 {
+    (c.g[base][0] as u32).wrapping_sub(off)
+}
+
+/// `void RiderTuning_StaticInit(int, int)` (0x13fb20, a static initialiser
+/// of the rider tuning tables): stores the tuning floats from the GP-relative
+/// constants into the 0x4a5e60..0x4a62f0 table rows, zeroes the row words,
+/// fills the 0x4a4c08.. byte-key table, and calls `InitTerminalVelocityTable`
+/// (0x11b2c0) when its arguments are set (a1 == 0xffff, a0 != 0). The
+/// statements keep the generated order, so every register the body leaves
+/// (scratch and callee-saved) and every memory write is the same.
+pub fn rider_tuning_static_init(c: &mut Cpu) {
+    if c.pc != 0x0013fb20 {
+        return ee::s01::f_0013fb20__entries(c);
+    }
+    'b_140644: {
+        c.cycles += 16;
+        c.g[SP][0] = sx(tuning_ea_sub(c, SP, 0xc0));
+        c.g[V0][0] = 0xffff;
+        c.sq(16, tuning_ea(c, SP, 0x90));
+        c.sq(17, tuning_ea(c, SP, 0x80));
+        c.sq(18, tuning_ea(c, SP, 0x70));
+        c.sq(19, tuning_ea(c, SP, 0x60));
+        c.sq(20, tuning_ea(c, SP, 0x50));
+        c.sq(21, tuning_ea(c, SP, 0x40));
+        c.sq(22, tuning_ea(c, SP, 0x30));
+        c.sq(23, tuning_ea(c, SP, 0x20));
+        c.sq(30, tuning_ea(c, SP, 0x10));
+        c.sd(tuning_ea(c, SP, 0), c.g[RA][0]);
+        c.swc1(22, tuning_ea(c, SP, 0xb0));
+        c.swc1(21, tuning_ea(c, SP, 0xa8));
+        let t = c.g[A1][0] != c.g[V0][0];
+        c.swc1(20, tuning_ea(c, SP, 0xa0));
+        if t {
+            break 'b_140644;
+        } else {
+            c.cycles += 2;
+            let t = c.g[A0][0] == 0u64;
+            c.g[T5][0] = 0x4a0000;
+            if t {
+                break 'b_140644;
+            } else {
+                c.cycles += 695;
+                c.lwc1(8, tuning_ea_sub(c, GP, 0x6f90));
+                c.lwc1(9, tuning_ea_sub(c, GP, 0x6f8c));
+                c.g[T6][0] = 0x4a0000;
+                c.lwc1(10, tuning_ea_sub(c, GP, 0x6f88));
+                c.g[T4][0] = 0x4a0000;
+                c.lwc1(6, tuning_ea_sub(c, GP, 0x6f84));
+                c.g[V0][0] = sx(tuning_ea(c, T6, 0x5e90));
+                c.swc1(8, tuning_ea(c, T4, 0x5e70));
+                c.g[S0][0] = 0x4a0000;
+                c.swc1(9, tuning_ea(c, T5, 0x5e80));
+                c.g[S1][0] = 0x4a0000;
+                c.swc1(10, tuning_ea(c, T6, 0x5e90));
+                c.g[S2][0] = 0x4a0000;
+                c.lwc1(7, tuning_ea_sub(c, GP, 0x6f80));
+                c.g[A0][0] = sx(tuning_ea(c, S2, 0x5ec0));
+                c.lwc1(3, tuning_ea_sub(c, GP, 0x6f7c));
+                c.g[S4][0] = 0x4a0000;
+                c.lwc1(4, tuning_ea_sub(c, GP, 0x6f78));
+                c.g[S3][0] = 0x4a0000;
+                c.swc1(6, tuning_ea(c, V0, 0xc));
+                c.g[T2][0] = 0x4a0000;
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6f74));
+                c.g[A1][0] = sx(tuning_ea(c, S4, 0x5e60));
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 20);
+                c.g[T0][0] = sx(tuning_ea(c, T5, 0x5e80));
+                c.swc1(7, tuning_ea(c, S0, 0x5ea0));
+                c.g[V1][0] = sx(tuning_ea(c, S0, 0x5ea0));
+                c.swc1(3, tuning_ea(c, S1, 0x5eb0));
+                c.g[A3][0] = sx(tuning_ea(c, S1, 0x5eb0));
+                c.swc1(4, tuning_ea(c, S2, 0x5ec0));
+                c.g[A2][0] = sx(tuning_ea(c, S3, 0x5ed0));
+                c.lwc1(2, tuning_ea_sub(c, GP, 0x6f70));
+                c.g[T3][0] = sx(tuning_ea(c, T2, 0x5ee0));
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6f6c));
+                c.g[T9][0] = 0x4a0000;
+                c.swc1(1, tuning_ea(c, A0, 0xc));
+                c.g[T1][0] = sx(tuning_ea(c, T9, 0x5ef0));
+                c.g[AT][0] = 0x3f000000;
+                c.mtc1(1, 5);
+                c.g[S6][0] = 0x4a0000;
+                c.swc1(2, tuning_ea(c, S3, 0x5ed0));
+                c.g[T6][0] = sx(tuning_ea(c, S6, 0x5f20));
+                c.swc1(0, tuning_ea(c, T2, 0x5ee0));
+                c.g[S1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S4, 0x5e60));
+                c.g[S0][0] = sx(tuning_ea(c, S1, 0x5f40));
+                c.swc1(5, tuning_ea(c, A1, 0xc));
+                c.g[S2][0] = 0x4a0000;
+                c.lwc1(16, tuning_ea_sub(c, GP, 0x6f68));
+                c.g[S1][0] = sx(tuning_ea(c, S2, 0x5f50));
+                c.lwc1(17, tuning_ea_sub(c, GP, 0x6f64));
+                c.g[T8][0] = 0x4a0000;
+                c.sw(tuning_ea(c, T0, 0xc), 0u64);
+                c.g[FP][0] = 0x4a0000;
+                c.lwc1(12, tuning_ea_sub(c, GP, 0x6f60));
+                c.g[S2][0] = sx(tuning_ea(c, FP, 0x5f60));
+                c.lwc1(13, tuning_ea_sub(c, GP, 0x6f5c));
+                c.g[T4][0] = sx(tuning_ea(c, T8, 0x5f00));
+                c.swc1(16, tuning_ea(c, V0, 0x4));
+                c.g[S7][0] = 0x4a0000;
+                c.swc1(17, tuning_ea(c, V0, 0x8));
+                c.g[FP][0] = 0x4a0000;
+                c.swc1(12, tuning_ea(c, V1, 0x4));
+                c.g[V0][0] = 0x4a0000;
+                c.swc1(13, tuning_ea(c, V1, 0x8));
+                c.g[S4][0] = sx(tuning_ea(c, V0, 0x5f70));
+                c.sw(tuning_ea(c, V1, 0xc), 0u64);
+                c.g[T5][0] = sx(tuning_ea(c, S7, 0x5f10));
+                c.lwc1(14, tuning_ea_sub(c, GP, 0x6f58));
+                c.g[V1][0] = 0x4a0000;
+                c.lwc1(15, tuning_ea_sub(c, GP, 0x6f54));
+                c.g[V0][0] = sx(tuning_ea(c, V1, 0x5fb0));
+                c.sw(tuning_ea(c, A3, 0xc), 0u64);
+                c.g[V1][0] = sx(tuning_ea(c, FP, 0x5fd0));
+                c.lwc1(11, tuning_ea_sub(c, GP, 0x6f50));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(14, tuning_ea(c, A0, 0x4));
+                c.g[T7][0] = sx(tuning_ea(c, S5, 0x5f30));
+                c.swc1(15, tuning_ea(c, A0, 0x8));
+                c.swc1(11, tuning_ea(c, A2, 0x4));
+                c.g[A0][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A2, 0xc));
+                c.g[S3][0] = sx(tuning_ea(c, A0, 0x5fc0));
+                c.swc1(20, tuning_ea(c, A1, 0x4));
+                c.g[A0][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A1, 0x8));
+                c.g[T2][0] = sx(tuning_ea(c, A0, 0x5fe0));
+                c.g[A1][0] = 0x4a0000;
+                c.lwc1(18, tuning_ea_sub(c, GP, 0x6f4c));
+                c.g[A1][0] = sx(tuning_ea(c, A1, 0x5e70));
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6f48));
+                c.swc1(20, tuning_ea(c, A1, 0x4));
+                c.g[A0][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A1, 0x8));
+                c.g[FP][0] = sx(tuning_ea(c, A0, 0x5ff0));
+                c.sw(tuning_ea(c, A1, 0xc), 0u64);
+                c.swc1(20, tuning_ea(c, T0, 0x4));
+                c.g[A1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, T0, 0x8));
+                c.g[A0][0] = sx(tuning_ea(c, A1, 0x6000));
+                c.swc1(20, tuning_ea(c, A3, 0x4));
+                c.swc1(20, tuning_ea(c, A3, 0x8));
+                c.swc1(20, tuning_ea(c, A2, 0x8));
+                c.g[A3][0] = 0x4a0000;
+                c.swc1(18, tuning_ea(c, T3, 0x4));
+                c.g[T0][0] = sx(tuning_ea(c, A3, 0x6030));
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6f44));
+                c.g[A2][0] = 0x4a0000;
+                c.swc1(1, tuning_ea(c, T9, 0x5ef0));
+                c.g[A1][0] = sx(tuning_ea(c, A2, 0x6010));
+                c.lwc1(7, tuning_ea_sub(c, GP, 0x6f40));
+                c.g[A3][0] = 0x4a0000;
+                c.swc1(0, tuning_ea(c, T1, 0xc));
+                c.g[A2][0] = sx(tuning_ea(c, A3, 0x6060));
+                c.lwc1(2, tuning_ea_sub(c, GP, 0x6f3c));
+                c.swc1(7, tuning_ea(c, T6, 0xc));
+                c.lwc1(3, tuning_ea_sub(c, GP, 0x6f38));
+                c.lwc1(4, tuning_ea_sub(c, GP, 0x6f34));
+                c.swc1(2, tuning_ea(c, T3, 0x8));
+                c.sw(tuning_ea(c, T3, 0xc), 0u64);
+                c.swc1(3, tuning_ea(c, T1, 0x4));
+                c.swc1(4, tuning_ea(c, T1, 0x8));
+                c.swc1(20, tuning_ea(c, T8, 0x5f00));
+                c.g[T1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, T4, 0xc));
+                c.g[A3][0] = sx(tuning_ea(c, T1, 0x60c0));
+                c.swc1(20, tuning_ea(c, S7, 0x5f10));
+                c.g[T1][0] = 0x4a0000;
+                c.sw(tuning_ea(c, T5, 0xc), 0u64);
+                c.g[T3][0] = sx(tuning_ea(c, T1, 0x60e0));
+                c.lwc1(6, tuning_ea_sub(c, GP, 0x6f30));
+                c.swc1(20, tuning_ea(c, S6, 0x5f20));
+                c.swc1(6, tuning_ea(c, T6, 0x8));
+                c.swc1(20, tuning_ea(c, S5, 0x5f30));
+                c.swc1(20, tuning_ea(c, T7, 0xc));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S5, 0x5f40));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S0, 0xc));
+                c.g[T1][0] = sx(tuning_ea(c, S5, 0x60f0));
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6f2c));
+                c.g[S5][0] = 0x4a0000;
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6f28));
+                c.swc1(20, tuning_ea(c, S5, 0x5f50));
+                c.sw(tuning_ea(c, S1, 0xc), 0u64);
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S5, 0x5f60));
+                c.swc1(20, tuning_ea(c, T4, 0x4));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, T4, 0x8));
+                c.sw(tuning_ea(c, T5, 0x4), 0u64);
+                c.g[T4][0] = 0x4a0000;
+                c.sw(tuning_ea(c, T5, 0x8), 0u64);
+                c.swc1(7, tuning_ea(c, T6, 0x4));
+                c.swc1(20, tuning_ea(c, T7, 0x4));
+                c.g[T6][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, T7, 0x8));
+                c.g[T5][0] = sx(tuning_ea(c, T6, 0x6170));
+                c.swc1(20, tuning_ea(c, S0, 0x4));
+                c.g[T7][0] = sx(tuning_ea(c, T4, 0x6160));
+                c.swc1(20, tuning_ea(c, S0, 0x8));
+                c.g[T6][0] = 0x4a0000;
+                c.sw(tuning_ea(c, S1, 0x4), 0u64);
+                c.g[S0][0] = 0xffffffffffff0000;
+                c.sw(tuning_ea(c, S1, 0x8), 0u64);
+                c.g[S0][0] = c.g[S0][0] | 0xff00;
+                c.sw(tuning_ea(c, S2, 0x4), 0u64);
+                c.g[S1][0] = 0x4a0000;
+                c.sw(tuning_ea(c, S2, 0x8), 0u64);
+                c.g[T4][0] = sx(tuning_ea(c, S1, 0x6180));
+                c.sw(tuning_ea(c, S2, 0xc), 0u64);
+                c.g[S1][0] = 0x4a0000;
+                c.g[S2][0] = 0x4a0000;
+                c.lwc1(2, tuning_ea_sub(c, GP, 0x6f24));
+                c.g[S2][0] = sx(tuning_ea(c, S2, 0x5fa0));
+                c.lwc1(3, tuning_ea_sub(c, GP, 0x6f20));
+                c.swc1(5, tuning_ea(c, S2, 0xc));
+                c.swc1(1, tuning_ea(c, V0, 0xc));
+                c.g[S2][0] = 0x4a0000;
+                c.swc1(0, tuning_ea(c, S5, 0x5fd0));
+                c.swc1(20, tuning_ea(c, T6, 0x5f70));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S4, 0xc));
+                c.g[T6][0] = sx(tuning_ea(c, S1, 0x6190));
+                c.swc1(20, tuning_ea(c, S5, 0x5f80));
+                c.g[S1][0] = sx(tuning_ea(c, S2, 0x61a0));
+                c.g[S5][0] = 0x4a0000;
+                c.lwc1(4, tuning_ea_sub(c, GP, 0x6f1c));
+                c.g[S2][0] = sx(tuning_ea(c, S5, 0x61b0));
+                c.lwc1(6, tuning_ea_sub(c, GP, 0x6f18));
+                c.g[S5][0] = 0x4a0000;
+                c.lwc1(7, tuning_ea_sub(c, GP, 0x6f14));
+                c.g[S5][0] = sx(tuning_ea(c, S5, 0x5f80));
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6f10));
+                c.swc1(5, tuning_ea(c, S5, 0xc));
+                c.g[S5][0] = 0x4a0000;
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6f0c));
+                c.swc1(20, tuning_ea(c, S5, 0x5f90));
+                c.g[S5][0] = sx(tuning_ea(c, S5, 0x5f90));
+                c.lwc1(8, tuning_ea_sub(c, GP, 0x6f08));
+                c.swc1(5, tuning_ea(c, S5, 0xc));
+                c.g[S5][0] = 0x4a0000;
+                c.lwc1(10, tuning_ea_sub(c, GP, 0x6f04));
+                c.swc1(20, tuning_ea(c, S5, 0x5fa0));
+                c.g[S5][0] = 0x4a0000;
+                c.lwc1(9, tuning_ea_sub(c, GP, 0x6f00));
+                c.swc1(20, tuning_ea(c, S5, 0x5fb0));
+                c.swc1(2, tuning_ea(c, V0, 0x4));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(3, tuning_ea(c, V0, 0x8));
+                c.g[V0][0] = 0x4a0000;
+                c.lwc1(2, tuning_ea_sub(c, GP, 0x6efc));
+                c.swc1(20, tuning_ea(c, V0, 0x5fc0));
+                c.swc1(4, tuning_ea(c, S3, 0x8));
+                c.g[V0][0] = 0x4a0000;
+                c.sw(tuning_ea(c, S3, 0xc), 0u64);
+                c.g[V0][0] = sx(tuning_ea(c, V0, 0x5f80));
+                c.swc1(6, tuning_ea(c, V1, 0x4));
+                c.swc1(7, tuning_ea(c, V1, 0x8));
+                c.sw(tuning_ea(c, V1, 0xc), 0u64);
+                c.g[V1][0] = 0x4a0000;
+                c.lwc1(3, tuning_ea_sub(c, GP, 0x6ef8));
+                c.swc1(20, tuning_ea(c, V1, 0x5fe0));
+                c.swc1(20, tuning_ea(c, T2, 0xc));
+                c.g[V1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S5, 0x5ff0));
+                c.g[V1][0] = sx(tuning_ea(c, V1, 0x5f90));
+                c.swc1(20, tuning_ea(c, S4, 0x4));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S4, 0x8));
+                c.g[S5][0] = sx(tuning_ea(c, S5, 0x5fa0));
+                c.swc1(5, tuning_ea(c, V0, 0x4));
+                c.swc1(20, tuning_ea(c, V0, 0x8));
+                c.swc1(5, tuning_ea(c, V1, 0x4));
+                c.g[V0][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, V1, 0x8));
+                c.swc1(5, tuning_ea(c, S5, 0x4));
+                c.g[V1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S5, 0x8));
+                c.swc1(20, tuning_ea(c, S3, 0x4));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, T2, 0x4));
+                c.swc1(20, tuning_ea(c, T2, 0x8));
+                c.swc1(20, tuning_ea(c, FP, 0x4));
+                c.swc1(1, tuning_ea(c, A1, 0xc));
+                c.swc1(0, tuning_ea(c, T0, 0xc));
+                c.swc1(2, tuning_ea(c, FP, 0x8));
+                c.sw(tuning_ea(c, FP, 0xc), 0u64);
+                c.lwc1(4, tuning_ea_sub(c, GP, 0x6ef4));
+                c.g[FP][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, FP, 0x6000));
+                c.swc1(4, tuning_ea(c, A0, 0x8));
+                c.g[FP][0] = c.g[S5][0];
+                c.swc1(3, tuning_ea(c, A0, 0x4));
+                c.g[FP][0] = sx(tuning_ea(c, FP, 0x6040));
+                c.sw(tuning_ea(c, A0, 0xc), 0u64);
+                c.lwc1(5, tuning_ea_sub(c, GP, 0x6ef0));
+                c.g[A0][0] = c.g[V1][0];
+                c.lwc1(6, tuning_ea_sub(c, GP, 0x6eec));
+                c.g[A0][0] = sx(tuning_ea(c, A0, 0x6020));
+                c.swc1(20, tuning_ea(c, V0, 0x6010));
+                c.swc1(5, tuning_ea(c, A1, 0x4));
+                c.g[V0][0] = 0x4a0000;
+                c.swc1(6, tuning_ea(c, A1, 0x8));
+                c.lwc1(7, tuning_ea_sub(c, GP, 0x6ee8));
+                c.g[A1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, V1, 0x6020));
+                c.swc1(7, tuning_ea(c, A0, 0x8));
+                c.g[V1][0] = c.g[V0][0];
+                c.swc1(20, tuning_ea(c, A0, 0xc));
+                c.g[V1][0] = sx(tuning_ea(c, V1, 0x6050));
+                c.swc1(20, tuning_ea(c, A1, 0x6030));
+                c.g[A0][0] = 0x4a0000;
+                c.swc1(8, tuning_ea(c, T0, 0x4));
+                c.g[A1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S5, 0x6040));
+                c.swc1(20, tuning_ea(c, FP, 0xc));
+                c.g[S5][0] = c.g[A1][0];
+                c.swc1(20, tuning_ea(c, V0, 0x6050));
+                c.g[S5][0] = sx(tuning_ea(c, S5, 0x6070));
+                c.swc1(20, tuning_ea(c, V1, 0xc));
+                c.g[V0][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A0, 0x6060));
+                c.g[V0][0] = sx(tuning_ea(c, V0, 0x60d0));
+                c.swc1(9, tuning_ea(c, A2, 0x4));
+                c.swc1(10, tuning_ea(c, A2, 0x8));
+                c.sw(tuning_ea(c, A2, 0xc), 0u64);
+                c.lwc1(22, tuning_ea_sub(c, GP, 0x6ee4));
+                c.g[A2][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A1, 0x6070));
+                c.g[A2][0] = sx(tuning_ea(c, A2, 0x6020));
+                c.swc1(22, tuning_ea(c, A2, 0x4));
+                c.g[A1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, T0, 0x8));
+                c.g[A2][0] = c.g[A1][0];
+                c.swc1(20, tuning_ea(c, FP, 0x4));
+                c.g[A2][0] = sx(tuning_ea(c, A2, 0x6090));
+                c.swc1(20, tuning_ea(c, FP, 0x8));
+                c.swc1(20, tuning_ea(c, V1, 0x4));
+                c.g[FP][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, V1, 0x8));
+                c.swc1(20, tuning_ea(c, S5, 0x4));
+                c.g[V1][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S5, 0x8));
+                c.g[A0][0] = c.g[V1][0];
+                c.lwc1(3, tuning_ea_sub(c, GP, 0x6ee0));
+                c.g[A0][0] = sx(tuning_ea(c, A0, 0x6080));
+                c.swc1(20, tuning_ea(c, S5, 0xc));
+                c.lwc1(2, tuning_ea_sub(c, GP, 0x6edc));
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(3, tuning_ea(c, FP, 0x60b0));
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6ed8));
+                c.g[FP][0] = c.g[S5][0];
+                c.swc1(2, tuning_ea(c, A3, 0xc));
+                c.g[FP][0] = sx(tuning_ea(c, FP, 0x60a0));
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6ed4));
+                c.swc1(1, tuning_ea(c, V0, 0xc));
+                c.swc1(0, tuning_ea(c, T1, 0xc));
+                c.g[V0][0] = 0x4a0000;
+                c.lwc1(4, tuning_ea_sub(c, GP, 0x6ed0));
+                c.g[V0][0] = sx(tuning_ea(c, V0, 0x60b0));
+                c.swc1(20, tuning_ea(c, V1, 0x6080));
+                c.swc1(4, tuning_ea(c, A0, 0x4));
+                c.g[V1][0] = 0x4a0000;
+                c.sw(tuning_ea(c, A0, 0xc), 0u64);
+                c.swc1(20, tuning_ea(c, A1, 0x6090));
+                c.g[A0][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A2, 0xc));
+                c.g[A1][0] = c.g[A0][0];
+                c.swc1(20, tuning_ea(c, S5, 0x60a0));
+                c.g[A1][0] = sx(tuning_ea(c, A1, 0x60d0));
+                c.sw(tuning_ea(c, FP, 0xc), 0u64);
+                c.g[A2][0] = 0x4a0000;
+                c.sw(tuning_ea(c, V0, 0xc), 0u64);
+                c.g[S5][0] = 0x4a0000;
+                c.lwc1(5, tuning_ea_sub(c, GP, 0x6ecc));
+                c.g[FP][0] = 0x4a0000;
+                c.lwc1(6, tuning_ea_sub(c, GP, 0x6ec8));
+                c.g[FP][0] = sx(tuning_ea(c, FP, 0x6080));
+                c.swc1(20, tuning_ea(c, V1, 0x60c0));
+                c.g[V0][0] = 0x4a0000;
+                c.swc1(5, tuning_ea(c, A3, 0x4));
+                c.g[V0][0] = sx(tuning_ea(c, V0, 0x6090));
+                c.swc1(6, tuning_ea(c, A3, 0x8));
+                c.g[V1][0] = 0x4a0000;
+                c.lwc1(7, tuning_ea_sub(c, GP, 0x6ec4));
+                c.g[A3][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A0, 0x60d0));
+                c.g[V1][0] = sx(tuning_ea(c, V1, 0x60a0));
+                c.swc1(7, tuning_ea(c, A1, 0x4));
+                c.g[A0][0] = 0x4a0000;
+                c.lwc1(8, tuning_ea_sub(c, GP, 0x6ec0));
+                c.g[A0][0] = sx(tuning_ea(c, A0, 0x60b0));
+                c.swc1(20, tuning_ea(c, A2, 0x60e0));
+                c.swc1(8, tuning_ea(c, T3, 0x8));
+                c.g[A2][0] = 0x4a0000;
+                c.sw(tuning_ea(c, T3, 0xc), 0u64);
+                c.g[A2][0] = sx(tuning_ea(c, A2, 0x6150));
+                c.lwc1(9, tuning_ea_sub(c, GP, 0x6ebc));
+                c.swc1(20, tuning_ea(c, A3, 0x60f0));
+                c.swc1(9, tuning_ea(c, T1, 0x4));
+                c.g[A3][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, S5, 0x6100));
+                c.swc1(20, tuning_ea(c, FP, 0x8));
+                c.swc1(20, tuning_ea(c, V0, 0x4));
+                c.swc1(20, tuning_ea(c, V0, 0x8));
+                c.swc1(20, tuning_ea(c, V1, 0x4));
+                c.g[V0][0] = 0x4a0000;
+                c.sw(tuning_ea(c, V1, 0x8), 0u64);
+                c.sw(tuning_ea(c, A0, 0x4), 0u64);
+                c.g[V1][0] = c.g[V0][0];
+                c.sw(tuning_ea(c, A0, 0x8), 0u64);
+                c.g[V1][0] = sx(tuning_ea(c, V1, 0x6130));
+                c.swc1(20, tuning_ea(c, A1, 0x8));
+                c.g[A0][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, T3, 0x4));
+                c.g[A1][0] = c.g[S5][0];
+                c.swc1(20, tuning_ea(c, T1, 0x8));
+                c.g[A1][0] = sx(tuning_ea(c, A1, 0x6100));
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6eb8));
+                c.g[T1][0] = c.g[A3][0];
+                c.swc1(20, tuning_ea(c, A1, 0x4));
+                c.g[S5][0] = 0x4a0000;
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6eb4));
+                c.g[T1][0] = sx(tuning_ea(c, T1, 0x6110));
+                c.swc1(1, tuning_ea(c, A2, 0xc));
+                c.g[FP][0] = c.g[S5][0];
+                c.swc1(0, tuning_ea(c, T7, 0xc));
+                c.g[FP][0] = sx(tuning_ea(c, FP, 0x6120));
+                c.swc1(20, tuning_ea(c, A1, 0xc));
+                c.g[A2][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A3, 0x6110));
+                c.g[A1][0] = c.g[A0][0];
+                c.swc1(22, tuning_ea(c, T1, 0xc));
+                c.g[A1][0] = sx(tuning_ea(c, A1, 0x6140));
+                c.swc1(20, tuning_ea(c, S5, 0x6120));
+                c.g[A3][0] = c.g[A2][0];
+                c.sw(tuning_ea(c, FP, 0xc), 0u64);
+                c.g[A3][0] = sx(tuning_ea(c, A3, 0x6150));
+                c.swc1(20, tuning_ea(c, V0, 0x6130));
+                c.g[T1][0] = 0x4a0000;
+                c.sw(tuning_ea(c, V1, 0xc), 0u64);
+                c.g[S5][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, A0, 0x6140));
+                c.g[FP][0] = 0x4a0000;
+                c.sw(tuning_ea(c, A1, 0xc), 0u64);
+                c.g[V0][0] = 0x4a0000;
+                c.lwc1(2, tuning_ea_sub(c, GP, 0x6eb0));
+                c.g[V0][0] = sx(tuning_ea(c, V0, 0x6100));
+                c.swc1(20, tuning_ea(c, A2, 0x6150));
+                c.g[V1][0] = 0x4a0000;
+                c.swc1(2, tuning_ea(c, A3, 0x4));
+                c.g[V1][0] = sx(tuning_ea(c, V1, 0x6110));
+                c.lwc1(3, tuning_ea_sub(c, GP, 0x6eac));
+                c.g[A0][0] = 0x4a0000;
+                c.swc1(20, tuning_ea(c, T1, 0x6160));
+                c.g[A0][0] = sx(tuning_ea(c, A0, 0x6120));
+                c.swc1(3, tuning_ea(c, T7, 0x8));
+                c.g[A1][0] = 0x4a0000;
+                c.lwc1(4, tuning_ea_sub(c, GP, 0x6ea8));
+                c.g[A1][0] = sx(tuning_ea(c, A1, 0x6130));
+                c.swc1(20, tuning_ea(c, S5, 0x6170));
+                c.g[A2][0] = 0x4a0000;
+                c.swc1(4, tuning_ea(c, T5, 0x8));
+                c.g[A2][0] = sx(tuning_ea(c, A2, 0x6140));
+                c.sw(tuning_ea(c, T5, 0xc), 0u64);
+                c.g[T1][0] = 0x4a0000;
+                c.lwc1(5, tuning_ea_sub(c, GP, 0x6ea4));
+                c.g[T1][0] = sx(tuning_ea(c, T1, 0x5e70));
+                c.lwc1(6, tuning_ea_sub(c, GP, 0x6ea0));
+                c.swc1(20, tuning_ea(c, FP, 0x6180));
+                c.swc1(5, tuning_ea(c, T4, 0x4));
+                c.g[FP][0] = 0x4a0000;
+                c.swc1(6, tuning_ea(c, T4, 0x8));
+                c.swc1(20, tuning_ea(c, V0, 0x8));
+                c.swc1(22, tuning_ea(c, V1, 0x4));
+                c.swc1(20, tuning_ea(c, V1, 0x8));
+                c.swc1(20, tuning_ea(c, A0, 0x4));
+                c.sw(tuning_ea(c, A0, 0x8), 0u64);
+                c.swc1(20, tuning_ea(c, A1, 0x4));
+                c.g[A0][0] = c.g[FP][0];
+                c.sw(tuning_ea(c, A1, 0x8), 0u64);
+                c.g[A0][0] = sx(tuning_ea(c, A0, 0x61d0));
+                c.swc1(20, tuning_ea(c, A2, 0x4));
+                c.g[A1][0] = 0x4a0000;
+                c.sw(tuning_ea(c, A2, 0x8), 0u64);
+                c.swc1(20, tuning_ea(c, A3, 0x8));
+                c.g[A2][0] = c.g[A1][0];
+                c.swc1(20, tuning_ea(c, T7, 0x4));
+                c.g[A3][0] = 0xffffffffffffffff;
+                c.swc1(20, tuning_ea(c, T5, 0x4));
+                c.g[A2][0] = sx(tuning_ea(c, A2, 0x61e0));
+                c.sw(tuning_ea(c, T4, 0xc), 0u64);
+                c.sb(tuning_ea(c, GP, 0x1b18), c.g[A3][0]);
+                c.g[T4][0] = 0x4a0000;
+                c.sb(tuning_ea(c, GP, 0x1b28), 0u64);
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6e9c));
+                c.g[V0][0] = c.g[A3][0] & 0xff;
+                c.lwc1(21, tuning_ea(c, T1, 0xc));
+                c.g[V0][0] = c.g[V0][0] | c.g[S0][0];
+                c.g[V1][0] = c.lbu(tuning_ea(c, GP, 0x1b28));
+                c.g[A3][0] = 0x1;
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6e98));
+                c.g[T1][0] = 0x2;
+                c.swc1(1, tuning_ea(c, S1, 0xc));
+                c.swc1(0, tuning_ea(c, S2, 0xc));
+                c.lwc1(3, tuning_ea_sub(c, GP, 0x6e94));
+                c.lwc1(4, tuning_ea_sub(c, GP, 0x6e90));
+                c.swc1(20, tuning_ea(c, T4, 0x6190));
+                c.swc1(3, tuning_ea(c, T6, 0x4));
+                c.g[T4][0] = 0x3;
+                c.swc1(4, tuning_ea(c, T6, 0x8));
+                c.sw(tuning_ea(c, T6, 0xc), 0u64);
+                c.lwc1(5, tuning_ea_sub(c, GP, 0x6e8c));
+                c.g[T6][0] = 0x4a0000;
+                c.lwc1(6, tuning_ea_sub(c, GP, 0x6e88));
+                c.swc1(20, tuning_ea(c, T6, 0x61a0));
+                c.swc1(5, tuning_ea(c, S1, 0x4));
+                c.g[T6][0] = 0x4;
+                c.swc1(6, tuning_ea(c, S1, 0x8));
+                c.lwc1(7, tuning_ea_sub(c, GP, 0x6e84));
+                c.g[S1][0] = 0x4a0000;
+                c.lwc1(8, tuning_ea_sub(c, GP, 0x6e80));
+                c.swc1(20, tuning_ea(c, S1, 0x61b0));
+                c.swc1(7, tuning_ea(c, S2, 0x4));
+                c.g[S1][0] = 0x5;
+                c.swc1(8, tuning_ea(c, S2, 0x8));
+                c.g[S2][0] = 0x4a0000;
+                c.lwc1(2, tuning_ea_sub(c, GP, 0x6e7c));
+                c.g[S5][0] = c.g[S2][0];
+                c.swc1(20, tuning_ea(c, S2, 0x61c0));
+                c.g[S5][0] = sx(tuning_ea(c, S5, 0x61c0));
+                c.g[S2][0] = 0x6;
+                c.sw(tuning_ea(c, S5, 0xc), 0u64);
+                c.swc1(20, tuning_ea(c, FP, 0x61d0));
+                c.sw(tuning_ea(c, A0, 0xc), 0u64);
+                c.g[FP][0] = 0x8;
+                c.swc1(2, tuning_ea(c, A1, 0x61e0));
+                c.swc1(2, tuning_ea(c, A2, 0x8));
+                c.g[A1][0] = 0xc;
+                c.swc1(21, tuning_ea(c, A2, 0xc));
+                c.sw(tuning_ea(c, GP, 0x1b18), c.g[V0][0]);
+                c.sw(tuning_ea(c, GP, 0x1b28), c.g[V1][0]);
+                c.g[V0][0] = 0x9;
+                c.sw(tuning_ea(c, S5, 0x4), 0u64);
+                c.g[V1][0] = 0xa;
+                c.swc1(20, tuning_ea(c, S5, 0x8));
+                c.swc1(20, tuning_ea(c, A0, 0x4));
+                c.g[S5][0] = 0x7;
+                c.sw(tuning_ea(c, A0, 0x8), 0u64);
+                c.swc1(2, tuning_ea(c, A2, 0x4));
+                c.g[A0][0] = 0xb;
+                c.sw(tuning_ea(c, GP, 0x1b24), 0u64);
+                c.sw(tuning_ea(c, GP, 0x1b20), 0u64);
+                c.sb(tuning_ea(c, GP, 0x1b30), c.g[A3][0]);
+                c.sb(tuning_ea(c, GP, 0x1b38), c.g[T1][0]);
+                c.g[T2][0] = c.g[A3][0] & 0xff;
+                c.sb(tuning_ea(c, GP, 0x1b78), c.g[V1][0]);
+                c.g[T2][0] = c.g[T2][0] | 0x100;
+                c.sb(tuning_ea(c, GP, 0x1b40), c.g[T4][0]);
+                c.g[T3][0] = c.g[T1][0] & 0xff;
+                c.sb(tuning_ea(c, GP, 0x1b70), c.g[V0][0]);
+                c.g[T3][0] = c.g[T3][0] | 0x200;
+                c.sb(tuning_ea(c, GP, 0x1b80), c.g[A0][0]);
+                c.g[T5][0] = c.g[T4][0] & 0xff;
+                c.sb(tuning_ea(c, GP, 0x1b48), c.g[T6][0]);
+                c.g[A0][0] = c.g[V1][0] & 0xff;
+                c.sb(tuning_ea(c, GP, 0x1b50), c.g[S1][0]);
+                c.g[T5][0] = c.g[T5][0] | 0x300;
+                c.sb(tuning_ea(c, GP, 0x1b58), c.g[S2][0]);
+                c.g[T4][0] = c.g[T6][0] & 0xff;
+                c.sb(tuning_ea(c, GP, 0x1b60), c.g[S5][0]);
+                c.g[T1][0] = c.g[S1][0] & 0xff;
+                c.sb(tuning_ea(c, GP, 0x1b68), c.g[FP][0]);
+                c.g[T0][0] = c.g[S2][0] & 0xff;
+                c.sb(tuning_ea(c, GP, 0x1b88), c.g[A1][0]);
+                c.g[A3][0] = c.g[S5][0] & 0xff;
+                c.g[A1][0] = c.g[V0][0] & 0xff;
+                c.g[V1][0] = c.lbu(tuning_ea(c, GP, 0x1b80));
+                c.g[A2][0] = c.g[FP][0] & 0xff;
+                c.g[V0][0] = c.lbu(tuning_ea(c, GP, 0x1b88));
+                c.g[T4][0] = c.g[T4][0] | 0x400;
+                c.g[T1][0] = c.g[T1][0] | 0x500;
+                c.g[T0][0] = c.g[T0][0] | 0x600;
+                c.g[A3][0] = c.g[A3][0] | 0x700;
+                c.g[A2][0] = c.g[A2][0] | 0x800;
+                c.g[A1][0] = c.g[A1][0] | 0x900;
+                c.g[A0][0] = c.g[A0][0] | 0xa00;
+                c.g[V1][0] = c.g[V1][0] | 0xb00;
+                c.sw(tuning_ea(c, GP, 0x1b30), c.g[T2][0]);
+                c.g[V0][0] = c.g[V0][0] | 0xc00;
+                c.sw(tuning_ea(c, GP, 0x1b38), c.g[T3][0]);
+                c.sw(tuning_ea(c, GP, 0x1b40), c.g[T5][0]);
+                c.sw(tuning_ea(c, GP, 0x1b48), c.g[T4][0]);
+                c.sw(tuning_ea(c, GP, 0x1b50), c.g[T1][0]);
+                c.sw(tuning_ea(c, GP, 0x1b58), c.g[T0][0]);
+                c.sw(tuning_ea(c, GP, 0x1b60), c.g[A3][0]);
+                c.sw(tuning_ea(c, GP, 0x1b68), c.g[A2][0]);
+                c.sw(tuning_ea(c, GP, 0x1b70), c.g[A1][0]);
+                c.g[A2][0] = 0xd;
+                c.sw(tuning_ea(c, GP, 0x1b78), c.g[A0][0]);
+                c.sw(tuning_ea(c, GP, 0x1b80), c.g[V1][0]);
+                c.sw(tuning_ea(c, GP, 0x1b88), c.g[V0][0]);
+                c.sb(tuning_ea(c, GP, 0x1b90), c.g[A2][0]);
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6e78));
+                c.g[V0][0] = c.g[A2][0] & 0xff;
+                c.g[V0][0] = c.g[V0][0] | 0xd00;
+                c.swc1(0, tuning_ea(c, GP, 0x1b94));
+                c.sw(tuning_ea(c, GP, 0x1b90), c.g[V0][0]);
+                if call_ptr(c, 0x0011b2c0, 0x0014_0454).is_err() {
+                    return;
+                }
+                c.g[T3][0] = 0x4a0000;
+                c.lwc1(13, tuning_ea_sub(c, GP, 0x6e74));
+                c.g[V1][0] = sx(tuning_ea(c, T3, 0x6210));
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6e70));
+                c.swc1(13, tuning_ea(c, V1, 0x1c));
+                c.g[T1][0] = 0x4a0000;
+                c.lwc1(7, tuning_ea_sub(c, GP, 0x6e6c));
+                c.g[V0][0] = sx(tuning_ea(c, T1, 0x61f0));
+                c.swc1(0, tuning_ea(c, GP, 0x1b9c));
+                c.g[T4][0] = 0x4a0000;
+                c.swc1(21, tuning_ea(c, T1, 0x61f0));
+                c.g[A0][0] = sx(tuning_ea(c, T4, 0x6230));
+                c.swc1(7, tuning_ea(c, V0, 0x1c));
+                c.g[T5][0] = 0x4a0000;
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6e68));
+                c.g[A1][0] = sx(tuning_ea(c, T5, 0x6250));
+                c.lwc1(10, tuning_ea_sub(c, GP, 0x6e64));
+                c.g[S1][0] = 0x4a0000;
+                c.lwc1(11, tuning_ea_sub(c, GP, 0x6e60));
+                c.g[T0][0] = sx(tuning_ea(c, S1, 0x62b0));
+                c.swc1(21, tuning_ea(c, T3, 0x6210));
+                c.g[T6][0] = 0x4a0000;
+                c.lwc1(12, tuning_ea_sub(c, GP, 0x6e5c));
+                c.g[A2][0] = sx(tuning_ea(c, T6, 0x6270));
+                c.lwc1(9, tuning_ea_sub(c, GP, 0x6e58));
+                c.g[T7][0] = 0x4a0000;
+                c.lwc1(8, tuning_ea_sub(c, GP, 0x6e54));
+                c.g[A3][0] = sx(tuning_ea(c, T7, 0x6290));
+                c.lwc1(2, tuning_ea_sub(c, GP, 0x6e50));
+                c.g[S0][0] = 0x4a0000;
+                c.lwc1(3, tuning_ea_sub(c, GP, 0x6e4c));
+                c.g[T2][0] = sx(tuning_ea(c, S0, 0x62d0));
+                c.swc1(1, tuning_ea(c, V1, 0x8));
+                c.g[S2][0] = 0x4a0000;
+                c.swc1(10, tuning_ea(c, V1, 0x10));
+                c.g[T1][0] = sx(tuning_ea(c, S2, 0x62f0));
+                c.swc1(11, tuning_ea(c, V1, 0x14));
+                c.g[AT][0] = 0x41800000;
+                c.mtc1(1, 6);
+                c.g[AT][0] = 0x42a00000;
+                c.mtc1(1, 5);
+                c.swc1(2, tuning_ea(c, GP, 0x1ba4));
+                c.swc1(3, tuning_ea(c, GP, 0x1bb0));
+                c.swc1(9, tuning_ea(c, GP, 0x1bac));
+                c.swc1(8, tuning_ea(c, GP, 0x1bb8));
+                c.swc1(12, tuning_ea(c, GP, 0x1bbc));
+                c.swc1(21, tuning_ea(c, T4, 0x6230));
+                c.swc1(6, tuning_ea(c, A0, 0x8));
+                c.swc1(5, tuning_ea(c, A0, 0x10));
+                c.swc1(20, tuning_ea(c, A0, 0x1c));
+                c.swc1(1, tuning_ea(c, V0, 0x8));
+                c.swc1(1, tuning_ea(c, V0, 0xc));
+                c.swc1(1, tuning_ea(c, V0, 0x14));
+                c.swc1(7, tuning_ea(c, V0, 0x4));
+                c.swc1(10, tuning_ea(c, V0, 0x10));
+                c.swc1(20, tuning_ea(c, V0, 0x18));
+                c.swc1(13, tuning_ea(c, V1, 0x4));
+                c.swc1(11, tuning_ea(c, V1, 0xc));
+                c.swc1(20, tuning_ea(c, V1, 0x18));
+                c.g[AT][0] = 0x42f00000;
+                c.mtc1(1, 4);
+                c.swc1(12, tuning_ea(c, GP, 0x1ba0));
+                c.swc1(9, tuning_ea(c, GP, 0x1ba8));
+                c.swc1(8, tuning_ea(c, GP, 0x1bb4));
+                c.lwc1(0, tuning_ea_sub(c, GP, 0x6e48));
+                c.swc1(7, tuning_ea(c, A0, 0x4));
+                c.swc1(7, tuning_ea(c, A0, 0xc));
+                c.swc1(20, tuning_ea(c, A0, 0x14));
+                c.swc1(4, tuning_ea(c, A0, 0x18));
+                c.swc1(21, tuning_ea(c, T5, 0x6250));
+                c.lwc1(5, tuning_ea_sub(c, GP, 0x6e44));
+                c.swc1(0, tuning_ea(c, A1, 0x1c));
+                c.swc1(5, tuning_ea(c, T0, 0x1c));
+                c.swc1(21, tuning_ea(c, T6, 0x6270));
+                c.swc1(20, tuning_ea(c, A2, 0x1c));
+                c.lwc1(1, tuning_ea_sub(c, GP, 0x6e40));
+                c.swc1(21, tuning_ea(c, T7, 0x6290));
+                c.swc1(7, tuning_ea(c, A3, 0x4));
+                c.swc1(1, tuning_ea(c, A3, 0xc));
+                c.swc1(22, tuning_ea(c, A3, 0x14));
+                c.swc1(20, tuning_ea(c, A3, 0x1c));
+                c.g[AT][0] = 0x41a00000;
+                c.mtc1(1, 2);
+                c.g[AT][0] = 0x42480000;
+                c.mtc1(1, 3);
+                c.swc1(21, tuning_ea(c, S1, 0x62b0));
+                c.swc1(21, tuning_ea(c, S0, 0x62d0));
+                c.swc1(0, tuning_ea(c, A1, 0x4));
+                c.swc1(2, tuning_ea(c, A1, 0x8));
+                c.swc1(0, tuning_ea(c, A1, 0xc));
+                c.swc1(3, tuning_ea(c, A1, 0x10));
+                c.swc1(0, tuning_ea(c, A1, 0x14));
+                c.swc1(4, tuning_ea(c, A1, 0x18));
+                c.swc1(20, tuning_ea(c, A2, 0x4));
+                c.swc1(2, tuning_ea(c, A2, 0x8));
+                c.swc1(20, tuning_ea(c, A2, 0xc));
+                c.swc1(3, tuning_ea(c, A2, 0x10));
+                c.swc1(20, tuning_ea(c, A2, 0x14));
+                c.swc1(4, tuning_ea(c, A2, 0x18));
+                c.swc1(2, tuning_ea(c, A3, 0x8));
+                c.swc1(3, tuning_ea(c, A3, 0x10));
+                c.swc1(4, tuning_ea(c, A3, 0x18));
+                c.lwc1(6, tuning_ea_sub(c, GP, 0x6e3c));
+                c.swc1(5, tuning_ea(c, T0, 0x4));
+                c.swc1(2, tuning_ea(c, T0, 0x8));
+                c.swc1(5, tuning_ea(c, T0, 0xc));
+                c.swc1(3, tuning_ea(c, T0, 0x10));
+                c.swc1(5, tuning_ea(c, T0, 0x14));
+                c.swc1(4, tuning_ea(c, T0, 0x18));
+                c.swc1(6, tuning_ea(c, T2, 0x4));
+                c.swc1(2, tuning_ea(c, T2, 0x8));
+                c.swc1(6, tuning_ea(c, T2, 0x1c));
+                c.swc1(21, tuning_ea(c, S2, 0x62f0));
+                c.swc1(20, tuning_ea(c, T1, 0x1c));
+                c.swc1(2, tuning_ea(c, T1, 0x8));
+                c.swc1(3, tuning_ea(c, T1, 0x10));
+                c.swc1(4, tuning_ea(c, T1, 0x18));
+                c.swc1(6, tuning_ea(c, T2, 0xc));
+                c.swc1(3, tuning_ea(c, T2, 0x10));
+                c.swc1(6, tuning_ea(c, T2, 0x14));
+                c.swc1(4, tuning_ea(c, T2, 0x18));
+                c.swc1(20, tuning_ea(c, T1, 0x4));
+                c.swc1(20, tuning_ea(c, T1, 0xc));
+                c.swc1(20, tuning_ea(c, T1, 0x14));
+                break 'b_140644;
+            }
+        }
+    }
+    c.cycles += 15;
+    c.lq(16, tuning_ea(c, SP, 0x90));
+    c.lq(17, tuning_ea(c, SP, 0x80));
+    c.lq(18, tuning_ea(c, SP, 0x70));
+    c.lq(19, tuning_ea(c, SP, 0x60));
+    c.lq(20, tuning_ea(c, SP, 0x50));
+    c.lq(21, tuning_ea(c, SP, 0x40));
+    c.lq(22, tuning_ea(c, SP, 0x30));
+    c.lq(23, tuning_ea(c, SP, 0x20));
+    c.lq(30, tuning_ea(c, SP, 0x10));
+    c.g[RA][0] = c.ld(tuning_ea(c, SP, 0));
+    c.lwc1(22, tuning_ea(c, SP, 0xb0));
+    c.lwc1(21, tuning_ea(c, SP, 0xa8));
+    c.lwc1(20, tuning_ea(c, SP, 0xa0));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(tuning_ea(c, SP, 0xc0));
+    c.pc = t;
+    return;
+}
+
+/// The data page the generated code builds its table addresses from
+/// (`lui 0x460000`, then `addiu` of a negative offset).
+pub(crate) const STATE_DTOR_DATA_PAGE: u32 = 0x0046_0000;
+
+/// `0x460000 - 0x6470`: the table the state's `+0x6d0` link points at.
+pub(crate) const STATE_DTOR_LINK_K: u32 = 0x6470;
+
+/// Callees of the state destructors (addresses and the generated shards'
+/// names are in `generated/ee`).
+pub(crate) const STATE_DTOR_SPHERE_TREE: u32 = 0x0032_9970;
+
+pub(crate) const STATE_DTOR_RIDER_CALL: u32 = 0x0011_b978;
+
+pub(crate) const STATE_DTOR_DELETE: u32 = 0x0031_7e50;
+
+/// The layout one rider state destructor is built from. The generated
+/// family (`RiderXState_dtor(this, flags)`) is one body: it copies a 0x40-byte
+/// table from the data page to the stack, points the rider at it, then runs
+/// the optional sphere-tree dtor and the rider and delete calls chosen by
+/// the `flags` bits (`0x2`: rider call, `0x1`: delete). The constants differ
+/// per state (checked against the generated bodies: only these numbers
+/// change, and the addresses that follow from the entry).
+#[derive(Clone, Copy)]
+pub(crate) struct StateDtorLayout {
+    /// Entry address of the generated function: the loops' event heads and
+    /// the call return addresses are offsets from it.
+    pub entry: u32,
+    /// Offset of the rider pointer in the state.
+    pub rider: u32,
+    /// `0x460000 - table`: the table the stack copy starts from (`A2`).
+    pub table: u32,
+    /// `0x460000 - vtab`: the value stored at the rider's `+0x6c0`, and the
+    /// base of the second table copy.
+    pub vtab: u32,
+    /// The `- stride` applied to the rider pointer for the stack word at +8.
+    pub stride: u32,
+    /// Offset of a sphere-tree pointer (wipeout only): dtor'd first, with 3.
+    pub sphere: Option<u32>,
+    pub ret_sphere: u32,
+    pub ret_rider: u32,
+    pub ret_delete: u32,
+}
+
+/// The common layout of the 348-byte family: the rider call returns at
+/// `entry + 0x134`, the delete at `entry + 0x148`.
+pub(crate) const fn state_dtor_layout(
+    entry: u32,
+    rider: u32,
+    table: u32,
+    vtab: u32,
+    stride: u32,
+) -> StateDtorLayout {
+    StateDtorLayout {
+        entry,
+        rider,
+        table,
+        vtab,
+        stride,
+        sphere: None,
+        ret_sphere: 0,
+        ret_rider: entry + 0x134,
+        ret_delete: entry + 0x148,
+    }
+}
+
+pub(crate) const RIDER_GROUND_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_0d80, 0x18, 0x6568, 0x6520, 0x20);
+
+pub(crate) const RIDER_AIR_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_0ee0, 0x4, 0x6660, 0x6618, 0x10);
+
+pub(crate) const RIDER_RAILSLIDE_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_1040, 0x50, 0x6758, 0x6710, 0x60);
+
+pub(crate) const RIDER_STATIC_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_11c0, 0, 0x6948, 0x6900, 0x10);
+
+pub(crate) const RIDER_HANDPLANT_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_1320, 0xa0, 0x6a40, 0x69f8, 0xb0);
+
+pub(crate) const RIDER_CRUISE_SUB_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_15c8, 0, 0x6b38, 0x6af0, 0x10);
+
+pub(crate) const RIDER_BOARD_PRESS_SUB_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_1728, 0x14, 0x6c30, 0x6be8, 0x20);
+
+pub(crate) const RIDER_PREWIND_SUB_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_1888, 0, 0x6d28, 0x6ce0, 0x10);
+
+pub(crate) const RIDER_BUMP_SUB_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_19e8, 0, 0x6e20, 0x6dd8, 0x10);
+
+pub(crate) const RIDER_NATURAL_AIR_SUB_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_1b48, 0x14, 0x6f18, 0x6ed0, 0x20);
+
+pub(crate) const RIDER_SPIN_SUB_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_1ca8, 0x58, 0x7010, 0x6fc8, 0x60);
+
+pub(crate) const RIDER_GATE_SUB_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_1e08, 0x14, 0x7108, 0x70c0, 0x20);
+
+pub(crate) const RIDER_RAILSLIDE_SUB_DTOR: StateDtorLayout =
+    state_dtor_layout(0x0014_1f68, 0x8, 0x7200, 0x71b8, 0x10);
+
+/// The state destructor body (generated: the 348-byte family and the wipeout
+/// one, which shares the copy and differs in the flag block).
+pub(crate) fn state_dtor_body(c: &mut Cpu, l: &StateDtorLayout) -> Flow {
+    c.cycles += 21;
+    let frame = Frame::open(c, 0x130);
+    c.g[V0][0] = STATE_DTOR_DATA_PAGE as u64;
+    frame.save(c, S0, 0x120);
+    c.g[A2][0] = sx(STATE_DTOR_DATA_PAGE.wrapping_sub(l.table));
+    frame.save(c, S1, 0x110);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save_ra(c, 0x100);
+    c.g[S1][0] = c.g[A1][0];
+    c.g[A0][0] = STATE_DTOR_DATA_PAGE as u64;
+    c.g[A3][0] = c.g[V0][0];
+    let this = c.g[S0][0] as u32;
+    c.g[V1][0] = Addr(this).off(l.rider).lw(c);
+    c.g[A0][0] = sx(STATE_DTOR_DATA_PAGE.wrapping_sub(STATE_DTOR_LINK_K));
+    Addr((c.g[V1][0] as u32).wrapping_add(0x6e8)).sw(c, c.g[A2][0]);
+    c.g[V1][0] = STATE_DTOR_DATA_PAGE as u64;
+    c.g[A1][0] = Addr(this).off(l.rider).lw(c);
+    c.g[T2][0] = c.g[V1][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(l.vtab));
+    Addr((c.g[A1][0] as u32).wrapping_add(0x6d0)).sw(c, c.g[A0][0]);
+    c.g[V0][0] = Addr(this).off(l.rider).lw(c);
+    let skip_copy = c.g[S1][0] != 0;
+    Addr((c.g[V0][0] as u32).wrapping_add(0x6c0)).sw(c, c.g[V1][0]);
+    if !skip_copy {
+        copy_state_table(c, &frame, this, l);
+    }
+    state_dtor_flags(c, &frame, this, l)?;
+    c.cycles += 4;
+    frame.restore(c, S1, 0x110);
+    frame.restore_ra(c, 0x100);
+    frame.close(c);
+    Ok(())
+}
+
+/// The table copies of a state destructor, run when the flags are zero:
+/// two loops of 0x20-byte blocks (the first copies the data-page table to the
+/// stack frame, the second the rider's table) with the event checks at their
+/// back edges.
+pub(crate) fn copy_state_table(c: &mut Cpu, frame: &Frame, this: u32, l: &StateDtorLayout) {
+    c.cycles += 4;
+    c.g[A1][0] = c.g[A2][0];
+    c.g[V1][0] = c.g[SP][0];
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+    c.g[T0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+    loop {
+        c.cycles += 11;
+        let src = c.g[A1][0] as u32;
+        let dst = c.g[V1][0] as u32;
+        c.g[A0][0] = c.ld(src);
+        c.g[A2][0] = c.ld(src.wrapping_add(0x8));
+        c.g[T1][0] = c.ld(src.wrapping_add(0x10));
+        c.g[T3][0] = c.ld(src.wrapping_add(0x18));
+        c.sd(dst, c.g[A0][0]);
+        c.sd(dst.wrapping_add(0x8), c.g[A2][0]);
+        c.sd(dst.wrapping_add(0x10), c.g[T1][0]);
+        c.sd(dst.wrapping_add(0x18), c.g[T3][0]);
+        c.g[A1][0] = sx(src.wrapping_add(0x20));
+        let again = c.g[A1][0] != c.g[V0][0];
+        c.g[V1][0] = sx(dst.wrapping_add(0x20));
+        if !again {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, l.entry + 0x64);
+        }
+    }
+    c.cycles += 14;
+    c.g[V0][0] = Addr(this).off(l.rider).lw(c);
+    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(l.table));
+    c.g[A2][0] = c.ld(c.g[A1][0] as u32);
+    c.sd(c.g[V1][0] as u32, c.g[A2][0]);
+    Addr((c.g[V0][0] as u32).wrapping_add(0x6e8)).sw(c, c.g[SP][0]);
+    c.g[A2][0] = sx((c.g[T2][0] as u32).wrapping_sub(l.vtab));
+    c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
+    c.g[V0][0] = Addr(this).off(l.rider).lw(c);
+    c.g[A1][0] = c.g[T0][0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(l.stride));
+    c.g[A3][0] = sx(this.wrapping_sub(c.g[V0][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    let word8 = frame.at(c, 0x8);
+    c.sh(word8, c.g[V1][0]);
+    loop {
+        c.cycles += 11;
+        let src = c.g[A2][0] as u32;
+        let dst = c.g[A1][0] as u32;
+        c.g[V0][0] = c.ld(src);
+        c.g[V1][0] = c.ld(src.wrapping_add(0x8));
+        c.g[A0][0] = c.ld(src.wrapping_add(0x10));
+        c.g[T3][0] = c.ld(src.wrapping_add(0x18));
+        c.sd(dst, c.g[V0][0]);
+        c.sd(dst.wrapping_add(0x8), c.g[V1][0]);
+        c.sd(dst.wrapping_add(0x10), c.g[A0][0]);
+        c.sd(dst.wrapping_add(0x18), c.g[T3][0]);
+        c.g[A2][0] = sx(src.wrapping_add(0x20));
+        let again = c.g[A2][0] != c.g[T1][0];
+        c.g[A1][0] = sx(dst.wrapping_add(0x20));
+        if !again {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, l.entry + 0xc8);
+        }
+    }
+    c.cycles += 10;
+    let src = c.g[A2][0] as u32;
+    let dst = c.g[A1][0] as u32;
+    c.g[V0][0] = c.ld(src);
+    c.g[V1][0] = c.ld(src.wrapping_add(0x8));
+    c.sd(dst, c.g[V0][0]);
+    c.sd(dst.wrapping_add(0x8), c.g[V1][0]);
+    c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_sub(l.vtab));
+    c.g[A0][0] = Addr(this).off(l.rider).lw(c);
+    c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x8));
+    Addr((c.g[A0][0] as u32).wrapping_add(0x6c0)).sw(c, c.g[T0][0]);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    let word58 = frame.at(c, 0x58);
+    c.sh(word58, c.g[V1][0]);
+}
+
+/// The flag block after the copy: the sphere-tree dtor (wipeout, when its
+/// pointer is set), then the rider call for `flags & 2`, then
+/// `__builtin_delete(this)` for `flags & 1`, each returning to its own
+/// address.
+pub(crate) fn state_dtor_flags(c: &mut Cpu, frame: &Frame, this: u32, l: &StateDtorLayout) -> Flow {
+    if let Some(sphere_off) = l.sphere {
+        c.cycles += 3;
+        c.g[A0][0] = Addr(this).off(sphere_off).lw(c);
+        let no_sphere = c.g[A0][0] == 0;
+        c.g[V0][0] = c.g[S1][0] & 0x2;
+        if !no_sphere {
+            c.cycles += 3;
+            c.g[A1][0] = 3;
+            call_ptr(c, STATE_DTOR_SPHERE_TREE, l.ret_sphere)?;
+            c.g[V0][0] = c.g[S1][0] & 0x2;
+        }
+        c.cycles += 2;
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S1][0] & 0x2;
+    }
+    let no_rider_call = c.g[V0][0] == 0;
+    c.g[V0][0] = c.g[S1][0] & 0x1;
+    if !no_rider_call {
+        c.cycles += 4;
+        c.g[A0][0] = Addr(this).off(l.rider).lw(c);
+        c.g[A1][0] = 0;
+        call_ptr(c, STATE_DTOR_RIDER_CALL, l.ret_rider)?;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+    }
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        frame.restore(c, S0, 0x120);
+    } else {
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, STATE_DTOR_DELETE, l.ret_delete)?;
+        frame.restore(c, S0, 0x120);
+    }
+    Ok(())
+}
+
+pub fn rider_ground_state_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_GROUND_DTOR))
+}
+
+pub fn rider_air_state_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_AIR_DTOR))
+}
+
+pub fn rider_railslide_state_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_RAILSLIDE_DTOR))
+}
+
+pub fn rider_static_state_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_STATIC_DTOR))
+}
+
+pub fn rider_handplant_state_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_HANDPLANT_DTOR))
+}
+
+pub fn rider_cruise_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_CRUISE_SUB_DTOR))
+}
+
+pub fn rider_board_press_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_BOARD_PRESS_SUB_DTOR))
+}
+
+pub fn rider_prewind_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_PREWIND_SUB_DTOR))
+}
+
+pub fn rider_bump_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_BUMP_SUB_DTOR))
+}
+
+pub fn rider_natural_air_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_NATURAL_AIR_SUB_DTOR))
+}
+
+pub fn rider_spin_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_SPIN_SUB_DTOR))
+}
+
+pub fn rider_gate_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_GATE_SUB_DTOR))
+}
+
+pub fn rider_railslide_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_RAILSLIDE_SUB_DTOR))
+}
+
+/// `void RiderHandplantState_Exit(RiderHandplantState *self)` (0x139178):
+/// runs `RiderHandplantState_UpdateVelocity` and stores the v1 quad it
+/// leaves in `this+0x10` to the rider's `+0x1e0`.
+pub fn rider_handplant_state_exit(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        RIDER_HANDPLANT_UPDATE_VELOCITY.call(c, 0x0013_918c)?;
+        let this = c.g[S0][0] as u32;
+        c.lq(V1, this.wrapping_add(0x10));
+        c.g[V0][0] = Addr(this).off(0xa0).lw(c);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        c.sq(V1, (c.g[V0][0] as u32).wrapping_add(0x1e0));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderHandplantState_UpdateVelocity` (0x139548), called by the Exit.
+pub(crate) const RIDER_HANDPLANT_UPDATE_VELOCITY: Callee = Callee {
+    addr: 0x0013_9548,
+    f: ee::s01::f_00139548,
+};
+
+/// `void RiderIface_dtor(RiderIface *self, int flags)` (0x140680): stores the
+/// interface's vtable word and deletes `self` for `flags & 1`.
+pub fn rider_iface_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx(STATE_DTOR_DATA_PAGE.wrapping_sub(0x6338));
+        frame.save_ra(c, 0);
+        c.g[A1][0] &= 0x1;
+        let no_delete = c.g[A1][0] == 0;
+        Addr(c.g[A0][0] as u32).sw(c, c.g[V0][0]);
+        if !no_delete {
+            c.cycles += 2;
+            call_ptr(c, STATE_DTOR_DELETE, 0x0014_06a4)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float Rider_GetHeading(Rider *r)` (0x140968): the heading of the
+/// rider's vector at `+0x1b0` (x, then y): `atan(y / x)` with the quadrant
+/// corrections from the constant table at gp, and the axis cases for `x == 0`
+/// (`0` for `y == 0`, else one of two constants). The arctangent is
+/// `Math_Atan` (0x31c228).
+pub fn rider_get_heading(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x50);
+        frame.save_fpr(c, 22, 0x40);
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_fpr(c, 20, 0x30);
+        frame.save_ra(c, 0x20);
+        c.mtc1(0, 22);
+        let rider = c.g[A0][0] as u32;
+        c.lq(V0, rider.wrapping_add(0x1b0));
+        let at10 = frame.at(c, 0x10);
+        c.sq(V0, at10);
+        let at0 = frame.at(c, 0);
+        c.sq(V0, at0);
+        let at10 = frame.at(c, 0x10);
+        c.lwc1(20, at10);
+        let x_zero = FpuF32(c.f[20]).eq_s(FpuF32(c.f[22]));
+        abi::set_fcc(c, x_zero);
+        let at4 = frame.at(c, 0x4);
+        c.lwc1(21, at4);
+        let to_exit_b = if !x_zero {
+            // x != 0: atan(y / x) with the quadrant correction.
+            c.cycles += 7;
+            c.f[12] = FpuF32(c.f[21]).div(FpuF32(c.f[20])).0;
+            call_ptr(c, HEADING_ATAN, 0x0014_09d8)?;
+            let x_neg = abi::c_lt_s(c, FpuF32(c.f[20]), FpuF32(c.f[22]));
+            c.f[12] = c.f[0];
+            if x_neg {
+                c.cycles += 3;
+                let y_pos = abi::c_lt_s(c, FpuF32(c.f[22]), FpuF32(c.f[21]));
+                if y_pos {
+                    c.cycles += 3;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x6e30));
+                    c.f[12] = (FpuF32(c.f[12]) + FpuF32(c.f[0])).0;
+                } else {
+                    c.cycles += 2;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x6e2c));
+                    c.f[12] = (FpuF32(c.f[12]) - FpuF32(c.f[0])).0;
+                }
+            }
+            c.cycles += 1;
+            c.f[0] = c.f[12];
+            true
+        } else {
+            // x == 0: 0 for y == 0, else one of the two axis constants.
+            c.cycles += 4;
+            let y_zero = FpuF32(c.f[21]).eq_s(FpuF32(c.f[22]));
+            abi::set_fcc(c, y_zero);
+            c.f[0] = c.f[21];
+            if y_zero {
+                true
+            } else {
+                c.cycles += 4;
+                let y_nonneg = FpuF32(c.f[22]).le(FpuF32(c.f[21]));
+                abi::set_fcc(c, y_nonneg);
+                c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x6e38));
+                frame.restore_ra(c, 0x20);
+                if !y_nonneg {
+                    true
+                } else {
+                    c.cycles += 3;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x6e34));
+                    frame.restore_fpr(c, 22, 0x40);
+                    false
+                }
+            }
+        };
+        if to_exit_b {
+            c.cycles += 2;
+            frame.restore_ra(c, 0x20);
+            frame.restore_fpr(c, 22, 0x40);
+        }
+        c.cycles += 4;
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Math_Atan` (0x31c228) for `Rider_GetHeading`.
+pub(crate) const HEADING_ATAN: u32 = 0x0031_c228;
+
+/// `void Rider_SetBoostMode(Rider *r, int mode)` (0x140cf0): stores the mode
+/// at `+0x304` and resets the boost meter (`Rider_ResetBoostMeter`).
+pub fn rider_set_boost_mode(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Addr((c.g[A0][0] as u32).wrapping_add(0x304)).sw(c, c.g[A1][0]);
+        call_ptr(c, BOOST_METER_RESET, 0x0014_0d00)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Rider_ResetBoostMeter` (0x120d58), called by `Rider_SetBoostMode`.
+pub(crate) const BOOST_METER_RESET: u32 = 0x0012_0d58;
+
+/// The table base the generated code builds with `lui 0x46` (`0x460000`):
+/// the `Rider*Sub_dtor` bodies copy their constants from `HI - k`.
+pub(crate) const HI: u32 = 0x0046_0000;
+
+/// The shape of one `Rider*Sub_dtor` body. The six bodies run the same code;
+/// they differ in the constants below, and their loop heads and return
+/// addresses sit at fixed offsets from their entry.
+#[derive(Clone, Copy)]
+pub(crate) struct RiderSubDtorShape {
+    /// The function's entry address.
+    pub(crate) entry: u32,
+    /// `HI - k1` is the first constant table (0x40 bytes); the second one
+    /// sits `0x48` above it (`HI - (k1 - 0x48)`, 0xa8 bytes).
+    pub(crate) k1: u32,
+    /// Offset in `this` of the sub-object pointer the body writes into.
+    pub(crate) field: u32,
+    /// The `- kc` applied to that pointer before the frame offset is taken.
+    pub(crate) kc: u32,
+}
+
+pub(crate) const RIDER_UBER_GRIND_SUB_DTOR: RiderSubDtorShape = RiderSubDtorShape {
+    entry: 0x0014_20c8,
+    k1: 0x72f8,
+    field: 0x8,
+    kc: 0x10,
+};
+
+pub(crate) const RIDER_WIPEOUT_SUB_DTOR: RiderSubDtorShape = RiderSubDtorShape {
+    entry: 0x0014_2228,
+    k1: 0x73f0,
+    field: 0x80,
+    kc: 0x90,
+};
+
+pub(crate) const RIDER_FINISH_LINE_SUB_DTOR: RiderSubDtorShape = RiderSubDtorShape {
+    entry: 0x0014_24d0,
+    k1: 0x74e8,
+    field: 0x4,
+    kc: 0x10,
+};
+
+pub(crate) const RIDER_RESET_SUB_DTOR: RiderSubDtorShape = RiderSubDtorShape {
+    entry: 0x0014_2630,
+    k1: 0x75e0,
+    field: 0x8,
+    kc: 0x10,
+};
+
+pub(crate) const RIDER_DERIVED_DTOR_458928: RiderSubDtorShape = RiderSubDtorShape {
+    entry: 0x0014_2790,
+    k1: 0x76d8,
+    field: 0x0,
+    kc: 0x10,
+};
+
+pub(crate) const RIDER_HANDPLANT_SUB_DTOR: RiderSubDtorShape = RiderSubDtorShape {
+    entry: 0x0014_28f0,
+    k1: 0x77d0,
+    field: 0x14,
+    kc: 0x20,
+};
+
+/// `lw this+field`: the sub-object pointer the body reads (re-read at the
+/// points the generated code reads it).
+pub(crate) fn rider_sub_ptr(c: &mut Cpu, s: RiderSubDtorShape) -> u64 {
+    let a = (c.g[S0][0] as u32).wrapping_add(s.field);
+    Addr(a).lw(c)
+}
+
+/// The shared `Rider*Sub_dtor` body (`this` in a0, flags in a1: bit 1 calls
+/// the base `Rider_dtor`, bit 0 frees `this`). With a1 == 0 it first copies the
+/// two constant tables into the frame and points the sub-object at the copy.
+pub(crate) fn rider_sub_dtor_body(c: &mut Cpu, s: RiderSubDtorShape) -> Flow {
+    let tab_a = HI.wrapping_sub(s.k1);
+    let k2 = s.k1 - 0x48;
+    let tab_b = HI.wrapping_sub(k2);
+    let head_copy = s.entry + 0x64;
+    let head_tail = s.entry + 0xc8;
+    let ret_dtor = s.entry + 0x134;
+    let ret_free = s.entry + 0x148;
+
+    c.cycles += 21;
+    let frame = Frame::open(c, 0x130);
+    c.g[V0][0] = HI as u64;
+    frame.save(c, S0, 0x120);
+    c.g[A2][0] = sx(tab_a);
+    frame.save(c, S1, 0x110);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save_ra(c, 0x100);
+    c.g[S1][0] = c.g[A1][0];
+    c.g[A0][0] = HI as u64;
+    c.g[A3][0] = c.g[V0][0];
+    c.g[V1][0] = rider_sub_ptr(c, s);
+    c.g[A0][0] = sx(HI.wrapping_sub(0x6470));
+    let sub = c.g[V1][0] as u32;
+    let table_a_ptr = c.g[A2][0];
+    Addr(sub.wrapping_add(0x6e8)).sw(c, table_a_ptr);
+    c.g[V1][0] = HI as u64;
+    c.g[A1][0] = rider_sub_ptr(c, s);
+    c.g[T2][0] = c.g[V1][0];
+    c.g[V1][0] = sx(HI.wrapping_sub(k2));
+    let sub = c.g[A1][0] as u32;
+    let vtable = c.g[A0][0];
+    Addr(sub.wrapping_add(0x6d0)).sw(c, vtable);
+    c.g[V0][0] = rider_sub_ptr(c, s);
+    let copy = c.g[S1][0] == 0;
+    let sub = c.g[V0][0] as u32;
+    let table_b_ptr = c.g[V1][0];
+    Addr(sub.wrapping_add(0x6c0)).sw(c, table_b_ptr);
+
+    if copy {
+        c.cycles += 4;
+        c.g[A1][0] = c.g[A2][0];
+        c.g[V1][0] = c.g[SP][0];
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+        c.g[T0][0] = sx(sp(c).wrapping_add(0x50));
+        // Table A (0x40 bytes) into the frame at sp+0.
+        loop {
+            c.cycles += 11;
+            let src = c.g[A1][0] as u32;
+            c.g[A0][0] = Addr(src).ld(c);
+            c.g[A2][0] = Addr(src.wrapping_add(0x8)).ld(c);
+            c.g[T1][0] = Addr(src.wrapping_add(0x10)).ld(c);
+            c.g[T3][0] = Addr(src.wrapping_add(0x18)).ld(c);
+            let dst = c.g[V1][0] as u32;
+            let (w0, w1, w2, w3) = (c.g[A0][0], c.g[A2][0], c.g[T1][0], c.g[T3][0]);
+            Addr(dst).sd(c, w0);
+            Addr(dst.wrapping_add(0x8)).sd(c, w1);
+            Addr(dst.wrapping_add(0x10)).sd(c, w2);
+            Addr(dst.wrapping_add(0x18)).sd(c, w3);
+            c.g[A1][0] = sx(src.wrapping_add(0x20));
+            let more = c.g[A1][0] != c.g[V0][0];
+            c.g[V1][0] = sx(dst.wrapping_add(0x20));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, head_copy);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 14;
+        c.g[V0][0] = rider_sub_ptr(c, s);
+        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(s.k1));
+        let src = c.g[A1][0] as u32;
+        c.g[A2][0] = Addr(src).ld(c);
+        let dst = c.g[V1][0] as u32;
+        let w = c.g[A2][0];
+        Addr(dst).sd(c, w);
+        let sub = c.g[V0][0] as u32;
+        let frame_ptr = c.g[SP][0];
+        Addr(sub.wrapping_add(0x6e8)).sw(c, frame_ptr);
+        c.g[A2][0] = sx((c.g[T2][0] as u32).wrapping_sub(k2));
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x8)).lhu(c);
+        c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
+        c.g[V0][0] = rider_sub_ptr(c, s);
+        c.g[A1][0] = c.g[T0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(s.kc));
+        c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        let half = c.g[V1][0];
+        Addr(sp(c).wrapping_add(0x8)).sh(c, half);
+        // Table B (0xa0 bytes plus one doubleword) into the frame after A.
+        loop {
+            c.cycles += 11;
+            let src = c.g[A2][0] as u32;
+            c.g[V0][0] = Addr(src).ld(c);
+            c.g[V1][0] = Addr(src.wrapping_add(0x8)).ld(c);
+            c.g[A0][0] = Addr(src.wrapping_add(0x10)).ld(c);
+            c.g[T3][0] = Addr(src.wrapping_add(0x18)).ld(c);
+            let dst = c.g[A1][0] as u32;
+            let (w0, w1, w2, w3) = (c.g[V0][0], c.g[V1][0], c.g[A0][0], c.g[T3][0]);
+            Addr(dst).sd(c, w0);
+            Addr(dst.wrapping_add(0x8)).sd(c, w1);
+            Addr(dst.wrapping_add(0x10)).sd(c, w2);
+            Addr(dst.wrapping_add(0x18)).sd(c, w3);
+            c.g[A2][0] = sx(src.wrapping_add(0x20));
+            let more = c.g[A2][0] != c.g[T1][0];
+            c.g[A1][0] = sx(dst.wrapping_add(0x20));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, head_tail);
+                }
+                continue;
+            }
+            c.cycles += 10;
+            let src = c.g[A2][0] as u32;
+            c.g[V0][0] = Addr(src).ld(c);
+            c.g[V1][0] = Addr(src.wrapping_add(0x8)).ld(c);
+            let dst = c.g[A1][0] as u32;
+            let (w0, w1) = (c.g[V0][0], c.g[V1][0]);
+            Addr(dst).sd(c, w0);
+            Addr(dst.wrapping_add(0x8)).sd(c, w1);
+            c.g[V0][0] = sx(tab_b);
+            c.g[A0][0] = rider_sub_ptr(c, s);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x8)).lhu(c);
+            let frame_slot = c.g[T0][0];
+            let sub = c.g[A0][0] as u32;
+            Addr(sub.wrapping_add(0x6c0)).sw(c, frame_slot);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            let half = c.g[V1][0];
+            Addr(sp(c).wrapping_add(0x58)).sh(c, half);
+            break;
+        }
+    }
+
+    // Flags: bit 1 runs the base destructor, bit 0 frees the object.
+    c.cycles += 3;
+    let flags = c.g[S1][0];
+    let no_base = (flags & 0x2) == 0;
+    c.g[V0][0] = flags & 0x1;
+    if !no_base {
+        c.cycles += 4;
+        c.g[A0][0] = rider_sub_ptr(c, s);
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0011_b978, ret_dtor)?;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+    }
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        frame.restore(c, S0, 0x120);
+    } else {
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0031_7e50, ret_free)?;
+        frame.restore(c, S0, 0x120);
+    }
+    c.cycles += 4;
+    frame.restore(c, S1, 0x110);
+    frame.restore_ra(c, 0x100);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void RiderUberGrindSub_dtor(Rider* this, int flags)` (0x1420c8).
+pub fn rider_uber_grind_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| rider_sub_dtor_body(c, RIDER_UBER_GRIND_SUB_DTOR));
+}
+
+/// `void RiderWipeoutSub_dtor(Rider* this, int flags)` (0x142228).
+pub fn rider_wipeout_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| rider_sub_dtor_body(c, RIDER_WIPEOUT_SUB_DTOR));
+}
+
+/// `void RiderFinishLineSub_dtor(Rider* this, int flags)` (0x1424d0).
+pub fn rider_finish_line_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| rider_sub_dtor_body(c, RIDER_FINISH_LINE_SUB_DTOR));
+}
+
+/// `void RiderResetSub_dtor(Rider* this, int flags)` (0x142630).
+pub fn rider_reset_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| rider_sub_dtor_body(c, RIDER_RESET_SUB_DTOR));
+}
+
+/// `void Rider_DerivedDtor_458928(Rider* this, int flags)` (0x142790).
+pub fn rider_derived_dtor_458928(c: &mut Cpu) {
+    guest(c, |c| rider_sub_dtor_body(c, RIDER_DERIVED_DTOR_458928));
+}
+
+/// `void RiderHandplantSub_dtor(Rider* this, int flags)` (0x1428f0).
+pub fn rider_handplant_sub_dtor(c: &mut Cpu) {
+    guest(c, |c| rider_sub_dtor_body(c, RIDER_HANDPLANT_SUB_DTOR));
+}
+
+/// `void DangerMan_ReleaseDanger(DangerMan* m, Danger* d)` (0x1441a0): the
+/// danger's state word (+8) becomes 2, and the manager's count (+0x704)
+/// goes down by one.
+pub fn danger_man_release_danger(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = 0x2;
+    let state = c.g[V0][0];
+    Addr((c.g[A1][0] as u32).wrapping_add(0x8)).sw(c, state);
+    c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x704)).lw(c);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+    let count = c.g[V1][0];
+    Addr((c.g[A0][0] as u32).wrapping_add(0x704)).sw(c, count);
+    ret(c);
+}
+
+/// `void RiderAnim_ctor(RiderAnim* this)` (0x144630): the base
+/// `AnimController_ctor`, then the vtable word at +0x58 (0x458458) and two
+/// cleared words (+0x60, +0x64).
+pub fn rider_anim_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0031_18d0, 0x0014_4644)?;
+        c.g[V1][0] = sx(HI.wrapping_sub(0x7ba8));
+        c.g[V0][0] = c.g[S0][0];
+        let this = c.g[S0][0] as u32;
+        Addr(this.wrapping_add(0x60)).sw(c, 0);
+        let vtable = c.g[V1][0];
+        Addr(this.wrapping_add(0x58)).sw(c, vtable);
+        Addr(this.wrapping_add(0x64)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void RiderTuning_StaticInitThunk(void)` (0x1448b8): `RiderTuning_StaticInit(1, 0xffff)`.
+pub fn rider_tuning_static_init_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x1;
+        c.g[A1][0] = 0xffff;
+        Callee {
+            addr: 0x0013_fb20,
+            f: ee::s01::f_0013fb20,
+        }
+        .call(c, 0x0014_48cc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::abi::ret;
@@ -14915,6 +17073,638 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = oc438_machine(c, seed, 0x0014_4610, 1);
                 c.g[A0][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    use crate::difftest::SP as STACK_TOP;
+
+    /// The fixture's objects, all inside the test data window.
+    pub(crate) const SELF: u32 = DATA + 0x4000;
+
+    pub(crate) const RIDER_4: u32 = DATA + 0x5000;
+
+    pub(crate) const MODEL_3: u32 = DATA + 0x6000;
+
+    pub(crate) const BONES: u32 = DATA + 0x7000;
+
+    pub(crate) const HIT: u32 = DATA + 0x8000;
+
+    pub(crate) const OBJ_2: u32 = DATA + 0x9000;
+
+    pub(crate) fn rand_vec(r: &mut Rng) -> [u32; 4] {
+        [r.f32(4.0), r.f32(4.0), r.f32(4.0), r.f32(4.0)]
+    }
+
+    pub(crate) fn rand_quat(r: &mut Rng) -> [u32; 4] {
+        [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)]
+    }
+
+    /// Twice the game's cross operand (its cross product with it is zero).
+    pub(crate) fn cross_axis_doubled(c: &mut Cpu) -> [u32; 4] {
+        let mut v = [0u32; 4];
+        for (i, lane) in v.iter_mut().take(3).enumerate() {
+            let d = f32::from_bits(c.bus.read32(SETUP_CROSS_AXIS_CONST + 4 * i as u32));
+            *lane = (d * 2.0).to_bits();
+        }
+        v
+    }
+
+    #[test]
+    fn rider_handplant_state_setup_matches() {
+        check(
+            ee::s01::f_00138ba0__generated,
+            rider_handplant_state_setup,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x138b_a0 ^ seed as u64);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0013_8ba0;
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(HIT);
+                c.f[12] = (0.25f32 + (seed % 8) as f32 * 0.5).to_bits();
+
+                // Mode 1 keeps the first rotation off (up parallel to the
+                // cross operand); mode 2 is the identity orientation with
+                // the spline normal along X, so both rotations stay off and
+                // the snap angle is zero.
+                let mode = seed % 6;
+                let orientation = if mode == 2 {
+                    [0, 0, 0, 0x3f80_0000]
+                } else {
+                    rand_quat(&mut r)
+                };
+                put_vec(c, RIDER_4 + SETUP_RIDER_ORIENTATION, orientation);
+                put_vec(c, RIDER_4 + SETUP_RIDER_INIT_POS, rand_vec(&mut r));
+                put_vec(c, RIDER_4 + SETUP_RIDER_VELOCITY, rand_vec(&mut r));
+                let up = if mode == 1 || mode == 2 {
+                    cross_axis_doubled(c)
+                } else {
+                    rand_vec(&mut r)
+                };
+                put_vec(c, RIDER_4 + SETUP_RIDER_UP, up);
+                c.bus
+                    .write32(RIDER_4 + SETUP_RIDER_TOESIDE_FLIP, u32::from(seed % 3 == 0));
+                c.bus.write32(RIDER_4 + SETUP_RIDER_POSE, MODEL_3);
+                c.bus
+                    .write32(RIDER_4 + SETUP_RIDER_BONE_INDEX, r.next_u32() % 3);
+                c.bus.write32(MODEL_3 + SETUP_MODEL_BONES, BONES);
+                for i in 0..0x40 {
+                    c.bus.write32(BONES + 4 * i, r.f32(4.0));
+                }
+                c.bus.write32(SELF + SETUP_RIDER, RIDER_4);
+
+                let normal = if mode == 2 {
+                    let sign = if seed % 2 == 0 {
+                        0x3f80_0000
+                    } else {
+                        0xbf80_0000
+                    };
+                    [sign, 0, 0, 0]
+                } else {
+                    rand_vec(&mut r)
+                };
+                put_vec(c, HIT + SETUP_HIT_POS, rand_vec(&mut r));
+                put_vec(c, HIT + SETUP_HIT_NORMAL, normal);
+                let obj = if seed % 4 == 0 { 0 } else { OBJ_2 };
+                c.bus.write32(HIT + SETUP_HIT_OBJ, obj);
+                c.bus.write32(OBJ_2 + SETUP_OBJ_FLAGS, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn rider_tuning_static_init_matches() {
+        check(
+            ee::s01::f_0013fb20__generated,
+            rider_tuning_static_init,
+            48,
+            &|c, seed| {
+                let mut r = Rng(0x0013_fb20 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0013fb20;
+                // The GP-relative float constants the body loads (0x6f50..=0x6f90).
+                let consts = GAME_GP - 0x6f90;
+                for k in (0..=0x40u32).step_by(4) {
+                    c.bus.write32(consts + k, r.next_u32());
+                }
+                c.g[A1][0] = if seed % 5 == 0 { 0x1234 } else { 0xffff };
+                c.g[A0][0] = if seed % 7 == 0 { 0 } else { DATA as u64 };
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_4: u32 = 120;
+
+    /// The gate word of the callee fakes, in the test's own machine.
+    pub(crate) const CTRL: u32 = DATA + 0xf_f000;
+
+    pub(crate) const MAGIC: u32 = 0x4f43_3435;
+
+    pub(crate) const THIS: u32 = DATA + 0x400;
+
+    pub(crate) const RIDER_5: u32 = DATA + 0x8000;
+
+    pub(crate) const SPHERE: u32 = DATA + 0xa000;
+
+    pub(crate) static PREV_RIDER_CALL: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_SPHERE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_BOOST: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gated fakes: with the gate off they run the generated body they
+    /// replaced (the callees are real game code and would walk the fixture).
+    pub(crate) fn fake_rider_call(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &PREV_RIDER_CALL, ee::s00::f_0011b978__generated);
+        }
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, STATE_DTOR_RIDER_CALL, ret);
+    }
+
+    pub(crate) fn fake_delete(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &PREV_DELETE, ee::s10::f_00317e50__generated);
+        }
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, STATE_DTOR_DELETE, ret);
+    }
+
+    pub(crate) fn fake_sphere(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &PREV_SPHERE, ee::s10::f_00329970__generated);
+        }
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, STATE_DTOR_SPHERE_TREE, ret);
+    }
+
+    pub(crate) fn fake_boost(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &PREV_BOOST, ee::s00::f_00120d58__generated);
+        }
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, BOOST_METER_RESET, ret);
+    }
+
+    pub(crate) fn install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0011B978),
+            fake_rider_call,
+            &PREV_RIDER_CALL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            fake_delete,
+            &PREV_DELETE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00329970),
+            fake_sphere,
+            &PREV_SPHERE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00120D58),
+            fake_boost,
+            &PREV_BOOST,
+        );
+    }
+
+    /// The machine of a state destructor: the object at `THIS` with its
+    /// rider (and sphere) pointers, flags covering all four combinations.
+    pub(crate) fn dtor_setup(
+        c: &mut Cpu,
+        seed: u32,
+        entry: u32,
+        rider_off: u32,
+        sphere: Option<u32>,
+    ) {
+        let mut r = machine(c, seed, entry as u64, 2);
+        c.g[ssx3_ee_rt::cpu::reg::SP][0] = STACK_TOP as u64;
+        c.pc = entry;
+        c.bus.write32(CTRL, MAGIC);
+        fill(c, &mut r, THIS, 0x40);
+        c.bus.write32(THIS + rider_off, RIDER_5);
+        if let Some(off) = sphere {
+            c.bus
+                .write32(THIS + off, if seed % 3 == 0 { 0 } else { SPHERE });
+        }
+        fill(c, &mut r, RIDER_5, 0x200);
+        c.g[A0][0] = THIS as u64;
+        c.g[A1][0] = (seed % 4) as u64;
+    }
+
+    /// `RiderXState_dtor(this, flags)` against the generated body.
+    pub(crate) fn check_dtor(
+        f: GuestFn,
+        hand: GuestFn,
+        entry: u32,
+        rider_off: u32,
+        sphere: Option<u32>,
+    ) {
+        install_fakes();
+        check(f, hand, SEEDS_4, &|c, seed| {
+            dtor_setup(c, seed, entry, rider_off, sphere);
+        });
+    }
+
+    #[test]
+    fn rider_ground_state_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00140d80__generated,
+            rider_ground_state_dtor,
+            0x0014_0d80,
+            0x18,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_air_state_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00140ee0__generated,
+            rider_air_state_dtor,
+            0x0014_0ee0,
+            0x4,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_railslide_state_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00141040__generated,
+            rider_railslide_state_dtor,
+            0x0014_1040,
+            0x50,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_static_state_dtor_matches() {
+        check_dtor(
+            ee::s01::f_001411c0__generated,
+            rider_static_state_dtor,
+            0x0014_11c0,
+            0,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_handplant_state_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00141320__generated,
+            rider_handplant_state_dtor,
+            0x0014_1320,
+            0xa0,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_cruise_sub_dtor_matches() {
+        check_dtor(
+            ee::s01::f_001415c8__generated,
+            rider_cruise_sub_dtor,
+            0x0014_15c8,
+            0,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_board_press_sub_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00141728__generated,
+            rider_board_press_sub_dtor,
+            0x0014_1728,
+            0x14,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_prewind_sub_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00141888__generated,
+            rider_prewind_sub_dtor,
+            0x0014_1888,
+            0,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_bump_sub_dtor_matches() {
+        check_dtor(
+            ee::s01::f_001419e8__generated,
+            rider_bump_sub_dtor,
+            0x0014_19e8,
+            0,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_natural_air_sub_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00141b48__generated,
+            rider_natural_air_sub_dtor,
+            0x0014_1b48,
+            0x14,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_spin_sub_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00141ca8__generated,
+            rider_spin_sub_dtor,
+            0x0014_1ca8,
+            0x58,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_gate_sub_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00141e08__generated,
+            rider_gate_sub_dtor,
+            0x0014_1e08,
+            0x14,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_railslide_sub_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00141f68__generated,
+            rider_railslide_sub_dtor,
+            0x0014_1f68,
+            0x8,
+            None,
+        );
+    }
+
+    #[test]
+    fn rider_handplant_state_exit_matches() {
+        install_fakes();
+        check(
+            ee::s01::f_00139178__generated,
+            rider_handplant_state_exit,
+            SEEDS_4,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x139178, 2);
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = STACK_TOP as u64;
+                c.pc = 0x0013_9178;
+                c.bus.write32(CTRL, MAGIC);
+                c.g[A0][0] = THIS as u64;
+                fill(c, &mut r, THIS, 0x40);
+                c.bus.write32(THIS + 0xa0, RIDER_5);
+                fill(c, &mut r, RIDER_5, 0x200);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_iface_dtor_matches() {
+        install_fakes();
+        check(
+            ee::s01::f_00140680__generated,
+            rider_iface_dtor,
+            SEEDS_4,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x140680, 2);
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = STACK_TOP as u64;
+                c.pc = 0x0014_0680;
+                c.bus.write32(CTRL, MAGIC);
+                c.g[A0][0] = THIS as u64;
+                c.g[A1][0] = (seed % 2) as u64 | (r.next_u32() as u64) << 8;
+                fill(c, &mut r, THIS, 0x10);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_set_boost_mode_matches() {
+        install_fakes();
+        check(
+            ee::s01::f_00140cf0__generated,
+            rider_set_boost_mode,
+            SEEDS_4,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x140cf0, 2);
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = STACK_TOP as u64;
+                c.pc = 0x0014_0cf0;
+                c.bus.write32(CTRL, MAGIC);
+                c.g[A0][0] = THIS as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn rider_get_heading_matches() {
+        check(
+            ee::s01::f_00140968__generated,
+            rider_get_heading,
+            SEEDS_4,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x140968, 0);
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = STACK_TOP as u64;
+                c.pc = 0x0014_0968;
+                c.g[A0][0] = THIS as u64;
+                // The vector: x, then y. Axis cases and the quadrants by seed.
+                let (x, y) = match seed % 6 {
+                    0 => (0, r.f32(3.0)),
+                    1 => (0, 0),
+                    2 => (r.f32(3.0), 0),
+                    _ => (r.f32(3.0), r.f32(3.0)),
+                };
+                c.bus.write32(THIS + 0x1b0, x);
+                c.bus.write32(THIS + 0x1b4, y);
+                c.bus.write32(GAME_GP - 0x6e38, r.next_u32());
+                c.bus.write32(GAME_GP - 0x6e34, r.next_u32());
+                c.bus.write32(GAME_GP - 0x6e30, r.next_u32());
+                c.bus.write32(GAME_GP - 0x6e2c, r.next_u32());
+            },
+        );
+    }
+
+    /// Gate word for the callee fakes (in the fixture area above the
+    /// shared test data): the fakes run only while it holds the magic.
+    pub(crate) const DTOR_GATE: u32 = DATA + 0x20_0000;
+
+    pub(crate) const DTOR_MAGIC: u32 = 0x5353_3343;
+
+    /// The fixture's inner sub-object (the one the body writes into).
+    pub(crate) const INNER: u32 = DATA + 0x1000;
+
+    pub(crate) static OC454_PREV_RIDER_DTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC454_PREV_FREE: AtomicUsize = AtomicUsize::new(0);
+
+    /// The base `Rider_dtor` (gated): records its argument, returns.
+    pub(crate) fn oc454_fake_rider_dtor(c: &mut Cpu) {
+        if c.bus.read32(DTOR_GATE) != DTOR_MAGIC {
+            return fall_back(c, &OC454_PREV_RIDER_DTOR, ee::s00::f_0011b978__generated);
+        }
+        let this = c.g[A0][0] as u32;
+        let flags = c.g[A1][0] as u32;
+        c.bus.write32(DTOR_GATE + 4, this);
+        c.bus.write32(DTOR_GATE + 8, flags);
+        c.cycles += 5;
+        c.g[V0][0] = 0;
+        ret(c);
+    }
+
+    /// `__builtin_delete` (gated): records its argument, returns.
+    pub(crate) fn oc454_fake_free(c: &mut Cpu) {
+        if c.bus.read32(DTOR_GATE) != DTOR_MAGIC {
+            return fall_back(c, &OC454_PREV_FREE, ee::s10::f_00317e50__generated);
+        }
+        let this = c.g[A0][0] as u32;
+        c.bus.write32(DTOR_GATE + 12, this);
+        c.cycles += 5;
+        ret(c);
+    }
+
+    /// Hooks the two callee fakes into their override slots (once per process).
+    pub(crate) fn oc454_install_fakes() {
+        use std::ptr::addr_of_mut;
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0011B978),
+            oc454_fake_rider_dtor,
+            &OC454_PREV_RIDER_DTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc454_fake_free,
+            &OC454_PREV_FREE,
+        );
+    }
+
+    /// The `Rider*Sub_dtor` fixture: random junk in the constant tables, the
+    /// object's sub-object pointer at `INNER`, and flags 0..=3 by seed (flags
+    /// 0 copies the tables; the others run the callees).
+    pub(crate) fn sub_dtor_setup(c: &mut Cpu, seed: u32, s: RiderSubDtorShape) {
+        oc454_install_fakes();
+        let mut r = machine(c, seed, 0x454_0100 + s.entry as u64, 0);
+        fill(c, &mut r, HI.wrapping_sub(s.k1) - 0x20, 0x60);
+        c.bus.write32(DTOR_GATE, DTOR_MAGIC);
+        c.bus.write32(DATA + s.field, INNER);
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = (seed % 4) as u64;
+    }
+
+    #[test]
+    fn rider_uber_grind_sub_dtor_matches() {
+        check(
+            ee::s01::f_001420c8__generated,
+            rider_uber_grind_sub_dtor,
+            60,
+            &|c, seed| sub_dtor_setup(c, seed, RIDER_UBER_GRIND_SUB_DTOR),
+        );
+    }
+
+    #[test]
+    fn rider_wipeout_sub_dtor_matches() {
+        check(
+            ee::s01::f_00142228__generated,
+            rider_wipeout_sub_dtor,
+            60,
+            &|c, seed| sub_dtor_setup(c, seed, RIDER_WIPEOUT_SUB_DTOR),
+        );
+    }
+
+    #[test]
+    fn rider_finish_line_sub_dtor_matches() {
+        check(
+            ee::s01::f_001424d0__generated,
+            rider_finish_line_sub_dtor,
+            60,
+            &|c, seed| sub_dtor_setup(c, seed, RIDER_FINISH_LINE_SUB_DTOR),
+        );
+    }
+
+    #[test]
+    fn rider_reset_sub_dtor_matches() {
+        check(
+            ee::s01::f_00142630__generated,
+            rider_reset_sub_dtor,
+            60,
+            &|c, seed| sub_dtor_setup(c, seed, RIDER_RESET_SUB_DTOR),
+        );
+    }
+
+    #[test]
+    fn rider_derived_dtor_458928_matches() {
+        check(
+            ee::s01::f_00142790__generated,
+            rider_derived_dtor_458928,
+            60,
+            &|c, seed| sub_dtor_setup(c, seed, RIDER_DERIVED_DTOR_458928),
+        );
+    }
+
+    #[test]
+    fn rider_handplant_sub_dtor_matches() {
+        check(
+            ee::s01::f_001428f0__generated,
+            rider_handplant_sub_dtor,
+            60,
+            &|c, seed| sub_dtor_setup(c, seed, RIDER_HANDPLANT_SUB_DTOR),
+        );
+    }
+
+    #[test]
+    fn danger_man_release_danger_matches() {
+        check(
+            ee::s01::f_001441a0__generated,
+            danger_man_release_danger,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x454_0200, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                let count = if seed % 3 == 0 { 0 } else { r.next_u32() };
+                c.bus.write32(DATA + 0x704, count);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_anim_ctor_matches() {
+        check(
+            ee::s01::f_00144630__generated,
+            rider_anim_ctor,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x454_0300, 0);
+                c.g[A0][0] = sx(DATA + 0x2000);
+                fill(c, &mut r, DATA + 0x2000, 0x20);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_tuning_static_init_thunk_matches() {
+        check(
+            ee::s01::f_001448b8__generated,
+            rider_tuning_static_init_thunk,
+            8,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x454_0400, 0);
             },
         );
     }

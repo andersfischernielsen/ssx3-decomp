@@ -22,7 +22,9 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::control::handplantcontrol::rider_ctor_vtables;
+pub(crate) use crate::game::ai::control::handplantcontrol::state_dtor_body;
 pub(crate) use crate::game::ai::control::handplantcontrol::RiderCtorLayout;
+pub(crate) use crate::game::ai::control::handplantcontrol::StateDtorLayout;
 pub(crate) use crate::game::ai::rider::rate_step_60;
 pub(crate) use crate::game::camera::camera::gp;
 pub(crate) use crate::game::camera::camera::gp_at;
@@ -604,6 +606,37 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0012_89f0,
         oc436_ai_reset_riders_default,
         "AI_ResetRidersDefault",
+    ),
+    (
+        0x0012_aa78,
+        ai_listed_riders_have_render_slots,
+        "AI_ListedRidersHaveRenderSlots",
+    ),
+    (
+        0x0012_adc0,
+        ai_mission_riders_have_render_slots,
+        "AI_MissionRidersHaveRenderSlots",
+    ),
+    (0x0012_b948, ai_load_state, "AI_LoadState"),
+    (
+        0x0012_de80,
+        rider_wipeout_sub_play_end_anim_b,
+        "RiderWipeoutSub_PlayEndAnimB",
+    ),
+    (
+        0x0013_2a30,
+        rider_handplant_sub_handle_input,
+        "RiderHandplantSub_HandleInput",
+    ),
+    (
+        0x0013_6168,
+        rider_spin_sub_get_flip_hud_blend_2,
+        "RiderSpinSub_GetFlipHUDBlend",
+    ),
+    (
+        0x0013_6ad0,
+        rider_wipeout_state_dtor,
+        "RiderWipeoutState_dtor",
     ),
 ];
 
@@ -20760,6 +20793,1069 @@ pub fn oc436_ai_reset_riders_default(c: &mut Cpu) {
     })
 }
 
+// The handplant sub-state (`self`) fields.
+
+/// Seconds spent in the handplant (float, `EnterSec`).
+pub(crate) const HPI_ENTER_SEC: u32 = 0x00;
+
+/// The balance the rider leans to (float, `CurBalance`).
+pub(crate) const HPI_BALANCE: u32 = 0x04;
+
+/// `IsMissedHandplant`: a missed handplant gets no boost.
+pub(crate) const HPI_MISSED: u32 = 0x08;
+
+/// `IsRailSpline`: the handplant started on a rail spline.
+pub(crate) const HPI_RAIL_SPLINE: u32 = 0x0c;
+
+/// `HandplantType`: type 1 mirrors the balance sign.
+pub(crate) const HPI_TYPE: u32 = 0x10;
+
+/// `mRider`.
+pub(crate) const HPI_RIDER: u32 = 0x14;
+
+// The rider's fields.
+
+/// `mRiderAnim`.
+pub(crate) const HPI_R_ANIM: u32 = 0x784;
+
+/// `mAirPredictor`.
+pub(crate) const HPI_R_AIR: u32 = 0x788;
+
+/// `mMetrix`.
+pub(crate) const HPI_R_METRIX: u32 = 0x790;
+
+/// `HandplantMode`: 1 landing, 2 boosted, 3 plain, 4..6 exit poses.
+pub(crate) const HPI_R_MODE: u32 = 0x32c;
+
+/// `mTimeScale` (float).
+pub(crate) const HPI_R_TIME_SCALE: u32 = 0x300;
+
+/// `IsRidingFakie`.
+pub(crate) const HPI_R_FAKIE: u32 = 0x320;
+
+/// `mPosition`.
+pub(crate) const HPI_R_POSITION: u32 = 0x110;
+
+/// Slewed value `k` is three words (current, rate, target) at `0x1f0 + 12k`:
+/// slot 0 at 0x1f0, slot 2 at 0x208, slot 7 at 0x244, slot 8 at 0x250.
+pub(crate) const fn hpi_slew(k: u32) -> u32 {
+    0x1f0 + 0xc * k
+}
+
+/// Slewed value 7: the balance (its rate and target are written here).
+pub(crate) const HPI_SLEW7_RATE: u32 = hpi_slew(7) + 4;
+
+pub(crate) const HPI_SLEW7_TARGET: u32 = hpi_slew(7) + 8;
+
+/// Slewed value 8: the lean (current, rate and target).
+pub(crate) const HPI_SLEW8_CUR: u32 = hpi_slew(8);
+
+pub(crate) const HPI_SLEW8_RATE: u32 = hpi_slew(8) + 4;
+
+pub(crate) const HPI_SLEW8_TARGET: u32 = hpi_slew(8) + 8;
+
+#[inline]
+pub(crate) fn hpi_self(c: &Cpu) -> u32 {
+    c.g[S0][0] as u32
+}
+
+/// `self->mRider`, read from the sub-state as the generated code does.
+#[inline]
+pub(crate) fn hpi_rider(c: &mut Cpu) -> u64 {
+    let at = hpi_self(c).wrapping_add(HPI_RIDER);
+    Addr(at).lw(c)
+}
+
+#[inline]
+pub(crate) fn hpi_f(c: &Cpu, r: usize) -> FpuF32 {
+    FpuF32(c.f[r])
+}
+
+#[inline]
+pub(crate) fn hpi_set(c: &mut Cpu, r: usize, v: FpuF32) {
+    c.f[r] = v.0;
+}
+
+/// `void RiderHandplantSub_HandleInput(RiderHandplantSub* self, const Input* in)`
+/// (0x132a30): the per-frame update of the handplant sub-state. A reset in
+/// progress ends it. Landing mode (1) waits for the landing animation, then
+/// starts the boosted (2) or the plain (3) handplant. Boosted mode (2) steers
+/// the balance toward the stick and then picks an exit pose (4, 5 or 6). In
+/// the other modes the handplant ends when the rider is back on the ground or
+/// the animation has finished.
+pub fn rider_handplant_sub_handle_input(c: &mut Cpu) {
+    guest(c, hpi_body)
+}
+
+pub(crate) fn hpi_body(c: &mut Cpu) -> Flow {
+    c.cycles += 16;
+    let frame = Frame::open(c, 0x50);
+    c.g[A2][0] = 0;
+    frame.save(c, S0, 0x30);
+    frame.save(c, S1, 0x20);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save(c, S2, 0x10);
+    c.g[S1][0] = c.g[A1][0];
+    frame.save_ra(c, 0);
+    frame.save_fpr(c, 20, 0x40);
+    // `if (cRider_checkForReset(rider, (flags >> 12) & 1, 0)) return;`
+    c.g[A1][0] = Addr(c.g[S1][0] as u32).lw(c);
+    c.g[A0][0] = hpi_rider(c);
+    c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 12) as u32);
+    c.g[A1][0] &= 0x1;
+    call_ptr(c, 0x0011_6120, 0x0013_2a68)?;
+
+    // Exits that restore s0 (`lq 16`) leave through the epilogue.
+    'b_132f7c: {
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x30);
+            break 'b_132f7c;
+        }
+        'b_132f78: {
+            // Landing mode (1): wait for the landing animation, then start.
+            'b_132b28: {
+                c.cycles += 5;
+                c.g[A0][0] = hpi_rider(c);
+                c.g[S2][0] = 1;
+                c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(HPI_R_MODE)).lw(c);
+                let t = c.g[V1][0] != c.g[S2][0];
+                c.g[V0][0] = 2;
+                if t {
+                    break 'b_132b28;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = Addr((c.g[A0][0] as u32).wrapping_add(HPI_R_ANIM)).lw(c);
+                c.g[A1][0] = 2;
+                call_ptr(c, 0x0031_2ae8, 0x0013_2a90)?;
+                if c.g[V0][0] == 0 {
+                    frame.restore(c, S0, 0x30);
+                    break 'b_132f7c;
+                }
+                'b_132b10: {
+                    'b_132ae4: {
+                        c.cycles += 4;
+                        c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c) & 0x2000;
+                        let t = c.g[V0][0] == 0;
+                        c.g[A0][0] = hpi_rider(c);
+                        if t {
+                            break 'b_132ae4;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(hpi_self(c).wrapping_add(HPI_MISSED)).lw(c);
+                        let t = c.g[V0][0] != 0;
+                        if t {
+                            break 'b_132ae4;
+                        }
+                        // Boosted handplant: mode 2, start event 1.
+                        c.cycles += 12;
+                        c.g[V1][0] = 2;
+                        c.g[A1][0] = 1;
+                        let v = c.g[V1][0];
+                        Addr((c.g[A0][0] as u32).wrapping_add(HPI_R_MODE)).sw(c, v);
+                        c.g[V0][0] = hpi_rider(c);
+                        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_METRIX)).lw(c);
+                        call_ptr(c, 0x0011_9bf0, 0x0013_2acc)?;
+                        c.g[A0][0] = hpi_rider(c);
+                        c.f[12] = c.f[0];
+                        c.g[A1][0] = 1;
+                        call_ptr(c, 0x0010_e098, 0x0013_2adc)?;
+                        c.g[V0][0] = hpi_rider(c);
+                        break 'b_132b10;
+                    }
+                    // Plain handplant: mode 3, start event 2.
+                    c.cycles += 11;
+                    c.g[V1][0] = 3;
+                    c.g[A1][0] = 2;
+                    let v = c.g[V1][0];
+                    Addr((c.g[A0][0] as u32).wrapping_add(HPI_R_MODE)).sw(c, v);
+                    c.g[V0][0] = hpi_rider(c);
+                    c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_METRIX)).lw(c);
+                    call_ptr(c, 0x0011_9bf0, 0x0013_2afc)?;
+                    c.g[A0][0] = hpi_rider(c);
+                    c.f[12] = c.f[0];
+                    c.g[A1][0] = 1;
+                    call_ptr(c, 0x0010_e098, 0x0013_2b0c)?;
+                    c.g[V0][0] = hpi_rider(c);
+                }
+                // HandplantPlayAnim(self, mode, type), then the balance is zeroed.
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A2][0] = Addr(hpi_self(c).wrapping_add(HPI_TYPE)).lw(c);
+                c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_MODE)).lw(c);
+                Callee {
+                    addr: 0x0013_2fb8,
+                    f: ee::s01::f_00132fb8,
+                }
+                .call(c, 0x0013_2b20)?;
+                Addr(hpi_self(c)).sw(c, 0);
+                break 'b_132f78;
+            }
+
+            // Boosted mode (2): steer the balance, then pick the exit pose.
+            'b_132da8: {
+                c.cycles += 2;
+                let t = c.g[V1][0] != c.g[V0][0];
+                if t {
+                    break 'b_132da8;
+                }
+                'b_132d00: {
+                    c.cycles += 10;
+                    c.lwc1(2, (c.g[A0][0] as u32).wrapping_add(HPI_R_TIME_SCALE));
+                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7560));
+                    c.lwc1(0, hpi_self(c));
+                    let dt = hpi_f(c, 2) * hpi_f(c, 1);
+                    hpi_set(c, 8, dt);
+                    let enter = hpi_f(c, 0) + hpi_f(c, 8);
+                    hpi_set(c, 0, enter);
+                    c.swc1(0, hpi_self(c));
+                    c.g[A1][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    c.g[V0][0] = c.g[A1][0] & 0x2000;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = Addr(hpi_self(c).wrapping_add(HPI_RAIL_SPLINE)).lw(c);
+                        break 'b_132d00;
+                    }
+                    'b_132cfc: {
+                        c.cycles += 8;
+                        c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(HPI_SLEW8_CUR));
+                        c.g[AT][0] = 0x3f80_0000;
+                        c.mtc1(1, 1);
+                        c.abs_s(0, 0);
+                        c.c_lt_s(0, 1);
+                        let t = !c.fcc();
+                        c.g[V0][0] = sx((c.g[A1][0] as u32) << 12);
+                        if t {
+                            break 'b_132cfc;
+                        }
+                        // The stick's balance target (flags bits 14..19).
+                        c.cycles += 7;
+                        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x755c));
+                        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+                        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(HPI_R_FAKIE)).lw(c);
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        let t = c.g[V1][0] == 0;
+                        let des = hpi_f(c, 0) * hpi_f(c, 1);
+                        hpi_set(c, 2, des);
+                        if !t {
+                            c.cycles += 1;
+                            let neg = -hpi_f(c, 2);
+                            hpi_set(c, 2, neg);
+                        }
+                        // Balance type 1 mirrors the target.
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(hpi_self(c).wrapping_add(HPI_TYPE)).lw(c);
+                        if c.g[V0][0] == c.g[S2][0] {
+                            let neg = -hpi_f(c, 2);
+                            hpi_set(c, 2, neg);
+                        }
+                        // Slew the balance toward the target, then the next balance.
+                        c.cycles += 14;
+                        c.g[AT][0] = 0x40a0_0000;
+                        c.mtc1(1, 0);
+                        c.g[AT][0] = 0x4040_0000;
+                        c.mtc1(1, 1);
+                        let v = hpi_f(c, 8) * hpi_f(c, 0);
+                        hpi_set(c, 0, v);
+                        c.swc1(2, (c.g[A0][0] as u32).wrapping_add(HPI_SLEW7_TARGET));
+                        let v = hpi_f(c, 8) * hpi_f(c, 1);
+                        hpi_set(c, 4, v);
+                        c.swc1(0, (c.g[A0][0] as u32).wrapping_add(HPI_SLEW7_RATE));
+                        let v = hpi_f(c, 2) + hpi_f(c, 4);
+                        hpi_set(c, 1, v);
+                        c.lwc1(3, hpi_self(c).wrapping_add(HPI_BALANCE));
+                        c.c_lt_s(1, 3);
+                        if c.fcc() {
+                            c.cycles += 2;
+                            let v = hpi_f(c, 3) - hpi_f(c, 4);
+                            hpi_set(c, 1, v);
+                        } else {
+                            let v = hpi_f(c, 2) - hpi_f(c, 4);
+                            hpi_set(c, 0, v);
+                            c.cycles += 4;
+                            c.c_lt_s(3, 0);
+                            let t = !c.fcc();
+                            c.mov_s(1, 2);
+                            if !t {
+                                c.cycles += 1;
+                                let v = hpi_f(c, 3) + hpi_f(c, 4);
+                                hpi_set(c, 1, v);
+                            }
+                        }
+                        // The lean target follows the sign of the new balance (f1).
+                        'b_132c90: {
+                            'b_132c24: {
+                                c.cycles += 6;
+                                c.mtc1(0, 3);
+                                c.mov_s(7, 1);
+                                c.c_lt_s(7, 3);
+                                let t = !c.fcc();
+                                c.swc1(1, hpi_self(c).wrapping_add(HPI_BALANCE));
+                                if t {
+                                    break 'b_132c24;
+                                }
+                                c.cycles += 5;
+                                c.lwc1(2, hpi_self(c).wrapping_add(HPI_ENTER_SEC));
+                                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                                c.mtc1(1, 7);
+                                c.g[A0][0] = hpi_rider(c);
+                                break 'b_132c90;
+                            }
+                            'b_132c48: {
+                                c.cycles += 4;
+                                c.c_lt_s(3, 7);
+                                if !c.fcc() {
+                                    c.lwc1(0, hpi_self(c).wrapping_add(HPI_ENTER_SEC));
+                                    break 'b_132c48;
+                                }
+                                c.cycles += 5;
+                                c.lwc1(2, hpi_self(c).wrapping_add(HPI_ENTER_SEC));
+                                c.g[AT][0] = 0x3f80_0000;
+                                c.mtc1(1, 7);
+                                c.g[A0][0] = hpi_rider(c);
+                                break 'b_132c90;
+                            }
+                            // Balance exactly zero: the lean decides the sign.
+                            c.cycles += 6;
+                            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7558));
+                            c.g[A0][0] = hpi_rider(c);
+                            c.c_lt_s(1, 0);
+                            let t = c.fcc();
+                            c.mov_s(2, 0);
+                            if !t {
+                                c.cycles += 4;
+                                c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(HPI_SLEW8_CUR));
+                                c.c_eq_s(0, 3);
+                                if c.fcc() {
+                                    break 'b_132c90;
+                                }
+                            }
+                            c.cycles += 6;
+                            c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(HPI_SLEW8_CUR));
+                            c.g[AT][0] = 0x3f80_0000;
+                            c.mtc1(1, 7);
+                            c.c_lt_s(0, 3);
+                            if c.fcc() {
+                                c.cycles += 2;
+                                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                                c.mtc1(1, 7);
+                            }
+                        }
+                        // The lean target and rate from the balance and the lean.
+                        c.cycles += 27;
+                        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7554));
+                        c.g[AT][0] = 0x3f80_0000;
+                        c.mtc1(1, 3);
+                        let v = hpi_f(c, 2) * hpi_f(c, 0);
+                        hpi_set(c, 0, v);
+                        c.g[AT][0] = 0x40b0_0000;
+                        c.mtc1(1, 1);
+                        c.g[AT][0] = 0x4080_0000;
+                        c.mtc1(1, 6);
+                        c.g[AT][0] = 0x3fc0_0000;
+                        c.mtc1(1, 4);
+                        let v = hpi_f(c, 0).min(hpi_f(c, 3));
+                        hpi_set(c, 0, v);
+                        c.lwc1(2, (c.g[A0][0] as u32).wrapping_add(HPI_SLEW8_CUR));
+                        let v = hpi_f(c, 3) - hpi_f(c, 0);
+                        hpi_set(c, 5, v);
+                        let v = hpi_f(c, 2).abs();
+                        hpi_set(c, 2, v);
+                        let v = hpi_f(c, 0) * hpi_f(c, 1);
+                        hpi_set(c, 1, v);
+                        c.swc1(7, (c.g[A0][0] as u32).wrapping_add(HPI_SLEW8_TARGET));
+                        let v = hpi_f(c, 0) * hpi_f(c, 6);
+                        hpi_set(c, 0, v);
+                        let v = hpi_f(c, 5) * hpi_f(c, 4);
+                        hpi_set(c, 4, v);
+                        let v = hpi_f(c, 3) - hpi_f(c, 2);
+                        hpi_set(c, 3, v);
+                        let v = hpi_f(c, 0) + hpi_f(c, 5);
+                        hpi_set(c, 0, v);
+                        let v = hpi_f(c, 1) + hpi_f(c, 4);
+                        hpi_set(c, 1, v);
+                        let v = hpi_f(c, 0) * hpi_f(c, 3);
+                        hpi_set(c, 0, v);
+                        let v = hpi_f(c, 1) * hpi_f(c, 2);
+                        hpi_set(c, 1, v);
+                        let v = hpi_f(c, 1) + hpi_f(c, 0);
+                        hpi_set(c, 1, v);
+                        let v = hpi_f(c, 1) * hpi_f(c, 8);
+                        hpi_set(c, 1, v);
+                        c.swc1(1, (c.g[A0][0] as u32).wrapping_add(HPI_SLEW8_RATE));
+                        break 'b_132f78;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(hpi_self(c).wrapping_add(HPI_RAIL_SPLINE)).lw(c);
+                }
+                // Exit pose: 6 on a rail spline near level, 4 when leaning
+                // far left, else 5.
+                'b_132d44: {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0;
+                    c.g[V1][0] = hpi_rider(c);
+                    if !t {
+                        c.cycles += 8;
+                        c.g[AT][0] = 0x3e80_0000;
+                        c.mtc1(1, 1);
+                        c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(HPI_SLEW8_CUR));
+                        c.abs_s(0, 0);
+                        c.c_lt_s(0, 1);
+                        let t = c.fcc();
+                        c.g[V0][0] = 6;
+                        if t {
+                            break 'b_132d44;
+                        }
+                    }
+                    c.cycles += 6;
+                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7550));
+                    c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(HPI_SLEW8_CUR));
+                    c.c_lt_s(0, 1);
+                    c.g[V0][0] = 5;
+                    if c.fcc() {
+                        c.cycles += 1;
+                        c.g[V0][0] = 4;
+                    }
+                }
+                c.cycles += 25;
+                let mode = c.g[V0][0];
+                Addr((c.g[V1][0] as u32).wrapping_add(HPI_R_MODE)).sw(c, mode);
+                c.g[A0][0] = hpi_rider(c);
+                c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_add(HPI_R_POSITION));
+                call_ptr(c, 0x0011_fa10, 0x0013_2d54)?;
+                c.g[A0][0] = hpi_rider(c);
+                call_ptr(c, 0x0011_e098, 0x0013_2d5c)?;
+                // Zero the slewed values 0, 2 and 8 of the rider.
+                c.g[V1][0] = hpi_rider(c);
+                c.g[A0][0] = c.g[S0][0];
+                Addr((c.g[V1][0] as u32).wrapping_add(hpi_slew(0) + 4)).sw(c, 0);
+                Addr((c.g[V1][0] as u32).wrapping_add(hpi_slew(0) + 8)).sw(c, 0);
+                Addr((c.g[V1][0] as u32).wrapping_add(hpi_slew(0))).sw(c, 0);
+                c.g[V0][0] = hpi_rider(c);
+                Addr((c.g[V0][0] as u32).wrapping_add(hpi_slew(2) + 4)).sw(c, 0);
+                Addr((c.g[V0][0] as u32).wrapping_add(hpi_slew(2) + 8)).sw(c, 0);
+                Addr((c.g[V0][0] as u32).wrapping_add(hpi_slew(2))).sw(c, 0);
+                c.g[V1][0] = hpi_rider(c);
+                Addr((c.g[V1][0] as u32).wrapping_add(HPI_SLEW8_RATE)).sw(c, 0);
+                Addr((c.g[V1][0] as u32).wrapping_add(HPI_SLEW8_TARGET)).sw(c, 0);
+                Addr((c.g[V1][0] as u32).wrapping_add(HPI_SLEW8_CUR)).sw(c, 0);
+                c.g[V0][0] = hpi_rider(c);
+                c.g[A2][0] = Addr((c.g[A0][0] as u32).wrapping_add(HPI_TYPE)).lw(c);
+                c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_MODE)).lw(c);
+                Callee {
+                    addr: 0x0013_2fb8,
+                    f: ee::s01::f_00132fb8,
+                }
+                .call(c, 0x0013_2da0)?;
+                frame.restore(c, S0, 0x30);
+                break 'b_132f7c;
+            }
+
+            // Not landing and not boosted: leave when grounded, else wait.
+            'b_132de4: {
+                c.cycles += 5;
+                c.g[A0][0] = hpi_rider(c);
+                call_ptr(c, 0x0011_fe98, 0x0013_2db0)?;
+                c.g[V1][0] = 5;
+                let t = c.g[V0][0] != c.g[V1][0];
+                c.g[V0][0] = hpi_rider(c);
+                if t {
+                    break 'b_132de4;
+                }
+                c.cycles += 10;
+                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_METRIX)).lw(c);
+                call_ptr(c, 0x0011_9c38, 0x0013_2dc4)?;
+                c.g[A0][0] = hpi_rider(c);
+                c.g[A1][0] = 1;
+                c.f[12] = c.f[0];
+                call_ptr(c, 0x0010_e098, 0x0013_2dd4)?;
+                c.g[A0][0] = hpi_rider(c);
+                c.g[A1][0] = 1;
+                call_ptr(c, 0x0011_fe78, 0x0013_2de0)?;
+                c.g[V0][0] = hpi_rider(c);
+            }
+
+            // Ground check and the air predictor's landing-rate clamp.
+            'b_132f00: {
+                'b_132e50: {
+                    c.cycles += 8;
+                    c.g[A1][0] = 2;
+                    c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_ANIM)).lw(c);
+                    call_ptr(c, 0x0031_1b20, 0x0013_2df0)?;
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xb0));
+                    c.g[A1][0] = 1;
+                    Callee {
+                        addr: 0x0014_46a0,
+                        f: ee::s01::f_001446a0,
+                    }
+                    .call(c, 0x0013_2dfc)?;
+                    if c.g[V0][0] == 0 {
+                        break 'b_132e50;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = hpi_rider(c);
+                    call_ptr(c, 0x0010_6848, 0x0013_2e0c)?;
+                    if c.g[V0][0] != 0 {
+                        frame.restore(c, S0, 0x30);
+                        break 'b_132f7c;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = hpi_rider(c);
+                    call_ptr(c, 0x0011_fe98, 0x0013_2e1c)?;
+                    let t = c.g[V0][0] != 0;
+                    c.g[V0][0] = hpi_rider(c);
+                    if t {
+                        break 'b_132f00;
+                    }
+                    c.cycles += 11;
+                    c.g[A1][0] = 0x3d;
+                    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                    c.mtc1(1, 12);
+                    c.g[A2][0] = 0;
+                    c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_ANIM)).lw(c);
+                    call_ptr(c, 0x0031_28e8, 0x0013_2e3c)?;
+                    c.g[A0][0] = hpi_rider(c);
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x0011_fec8, 0x0013_2e48)?;
+                    frame.restore(c, S0, 0x30);
+                    break 'b_132f7c;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = hpi_rider(c);
+                call_ptr(c, 0x0011_fe98, 0x0013_2e58)?;
+                c.g[A0][0] = c.g[V0][0];
+                if c.g[A0][0] != c.g[S2][0] {
+                    c.g[V0][0] = hpi_rider(c);
+                    break 'b_132f00;
+                }
+                'b_132e88: {
+                    c.cycles += 5;
+                    c.g[V1][0] = hpi_rider(c);
+                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(HPI_R_AIR)).lw(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xac)).lw(c);
+                    let t = c.g[V1][0] == c.g[A0][0];
+                    c.g[A1][0] = 0;
+                    if !t {
+                        c.cycles += 3;
+                        c.g[V0][0] = 3;
+                        let t = c.g[V1][0] != c.g[V0][0];
+                        if t {
+                            break 'b_132e88;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[A1][0] = 1;
+                }
+                c.cycles += 2;
+                if c.g[A1][0] == 0 {
+                    c.g[V0][0] = hpi_rider(c);
+                    break 'b_132f00;
+                }
+                c.cycles += 10;
+                c.g[V1][0] = hpi_rider(c);
+                c.mtc1(0, 2);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(HPI_R_AIR)).lw(c);
+                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0xa0));
+                c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x98));
+                let v = hpi_f(c, 0) - hpi_f(c, 1);
+                hpi_set(c, 20, v);
+                c.c_lt_s(2, 20);
+                if !c.fcc() {
+                    c.g[V0][0] = hpi_rider(c);
+                    break 'b_132f00;
+                }
+                c.cycles += 15;
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(HPI_R_ANIM)).lw(c);
+                c.g[A1][0] = 2;
+                call_ptr(c, 0x0031_1b20, 0x0013_2ec4)?;
+                c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x10));
+                c.g[AT][0] = 0x3f00_0000;
+                c.mtc1(1, 2);
+                let v = hpi_f(c, 0) - hpi_f(c, 1);
+                hpi_set(c, 0, v);
+                c.g[AT][0] = 0x4000_0000;
+                c.mtc1(1, 3);
+                let v = hpi_f(c, 0).div(hpi_f(c, 20));
+                hpi_set(c, 0, v);
+                c.c_le_s(2, 0);
+                let t = !c.fcc();
+                c.mov_s(1, 2);
+                if !t {
+                    c.cycles += 1;
+                    let v = hpi_f(c, 0).min(hpi_f(c, 3));
+                    hpi_set(c, 1, v);
+                }
+                c.cycles += 2;
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x90));
+                c.g[V0][0] = hpi_rider(c);
+            }
+
+            // Grounded or the animation has ended: leave the handplant.
+            c.cycles += 5;
+            c.g[A1][0] = 2;
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_ANIM)).lw(c);
+            call_ptr(c, 0x0031_2ae8, 0x0013_2f0c)?;
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x30);
+                break 'b_132f7c;
+            }
+            'b_132f54: {
+                c.cycles += 5;
+                c.g[A0][0] = hpi_rider(c);
+                call_ptr(c, 0x0011_fe98, 0x0013_2f1c)?;
+                c.g[V1][0] = 1;
+                let t = c.g[V0][0] != c.g[V1][0];
+                c.g[V0][0] = hpi_rider(c);
+                if t {
+                    break 'b_132f54;
+                }
+                c.cycles += 11;
+                c.g[A1][0] = 0x11f;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.mtc1(1, 12);
+                c.g[A2][0] = 0;
+                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_ANIM)).lw(c);
+                call_ptr(c, 0x0031_28e8, 0x0013_2f40)?;
+                c.g[A0][0] = hpi_rider(c);
+                c.g[A1][0] = 4;
+                call_ptr(c, 0x0011_fec8, 0x0013_2f4c)?;
+                frame.restore(c, S0, 0x30);
+                break 'b_132f7c;
+            }
+            c.cycles += 9;
+            c.g[A1][0] = 0x3d;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 12);
+            c.g[A2][0] = 0;
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(HPI_R_ANIM)).lw(c);
+            call_ptr(c, 0x0031_28e8, 0x0013_2f6c)?;
+            c.g[A0][0] = hpi_rider(c);
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0011_fec8, 0x0013_2f78)?;
+            break 'b_132f78;
+        }
+        // Falls through from every exit that is not a plain return.
+        c.cycles += 1;
+        frame.restore(c, S0, 0x30);
+    }
+    // Epilogue: `lq` of s1, s2 and f20, `ld ra`, `jr ra`.
+    c.cycles += 6;
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S2, 0x10);
+    frame.restore_ra(c, 0);
+    frame.restore_fpr(c, 20, 0x40);
+    frame.close(c);
+    Ok(())
+}
+
+/// `base + off` as a 32-bit guest address (the `(reg as u32).wrapping_add(off)`
+/// the generated code computes for every load and store).
+#[inline]
+pub(crate) fn oc449_at(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// `int AI_ListedRidersHaveRenderSlots(cAI* self)` (0x12aa78): 1 unless a
+/// listed rider (the `count` entries at `self+0x48`, count at `+0x80`; each
+/// entry holds its rider at `+0x18`) is not safe to delete and its AI index
+/// (`vt[getAIIndex]` of the rider object at `+0x6c0`) is in the special list
+/// (`AI_IsRiderInSpecialList`, 0x12a1f0). 8 cycles on the exit path.
+pub fn ai_listed_riders_have_render_slots(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(oc449_at(c.g[S2][0], 0x80));
+        c.g[S3][0] = 1;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 1;
+            c.g[S0][0] = sx(oc449_at(c.g[S2][0], 0x48));
+            loop {
+                c.cycles += 5;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                c.g[A0][0] = c.lw(oc449_at(c.g[V0][0], 0x18));
+                call_ptr(c, 0x0011_c0e0, 0x0012_aab4)?;
+                if c.g[V0][0] != 0 {
+                    c.g[V0][0] = c.lw(oc449_at(c.g[S2][0], 0x80));
+                } else {
+                    c.cycles += 13;
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[A0][0] = c.lw(oc449_at(c.g[V0][0], 0x18));
+                    c.g[V1][0] = c.lw(oc449_at(c.g[A0][0], 0x6c0));
+                    c.g[A0][0] = sx(oc449_at(c.g[A0][0], 0x6c0));
+                    c.g[A1][0] = c.lh(oc449_at(c.g[V1][0], 0x38));
+                    c.g[V0][0] = c.lw(oc449_at(c.g[V1][0], 0x3c));
+                    let target = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx(oc449_at(c.g[A0][0], c.g[A1][0] as u32));
+                    call_ptr(c, target, 0x0012_aadc)?;
+                    c.g[A1][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S2][0];
+                    call_ptr(c, 0x0012_a1f0, 0x0012_aae8)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[S3][0] = 0;
+                    }
+                    c.g[V0][0] = c.lw(oc449_at(c.g[S2][0], 0x80));
+                }
+                c.cycles += 4;
+                c.g[S1][0] = sx(oc449_at(c.g[S1][0], 1));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx(oc449_at(c.g[S0][0], 4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0012_aaa8);
+                }
+            }
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[S3][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `int AI_MissionRidersHaveRenderSlots(cAI* self)` (0x12adc0): 1 unless a
+/// mission rider is not safe to delete. The `NumberOfMissionRidersLoaded`
+/// count (`+0x88`) indexes the array at `self+0x70`; each entry holds its
+/// rider at `+0x18` (`cRider_isSafeToDelete`, 0x11c0e0).
+pub fn ai_mission_riders_have_render_slots(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(oc449_at(c.g[S2][0], 0x88));
+        c.g[S3][0] = 1;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 1;
+            c.g[S0][0] = sx(oc449_at(c.g[S2][0], 0x70));
+            loop {
+                c.cycles += 9;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                c.g[S1][0] = sx(oc449_at(c.g[S1][0], 1));
+                c.g[S0][0] = sx(oc449_at(c.g[S0][0], 4));
+                c.g[A0][0] = c.lw(oc449_at(c.g[V0][0], 0x18));
+                call_ptr(c, 0x0011_c0e0, 0x0012_ae04)?;
+                c.g[V1][0] = c.lw(oc449_at(c.g[S2][0], 0x88));
+                c.g[V1][0] = ((c.g[S1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                let more = c.g[V1][0] != 0;
+                if c.g[V0][0] == 0 {
+                    c.g[S3][0] = 0;
+                }
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0012_adf0);
+                }
+            }
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[S3][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// One element of a replay-read list (`cAI_readFromReplayFrame`'s loops):
+/// `obj = elem->+0x18`, `vt = obj->+0x77c->+0xde8`, then `vt[slot 0x1c]`
+/// with `a0 = that field + delta` (`a1 = frame`, `a2 = fn`).
+pub(crate) fn oc449_read_obj(c: &mut Cpu, elem: u64, ret_to: u32) -> Flow {
+    c.g[V0][0] = c.lw(oc449_at(elem, 0x18));
+    c.g[A3][0] = c.lw(oc449_at(c.g[V0][0], 0x77c));
+    c.g[V1][0] = c.lw(oc449_at(c.g[A3][0], 0xde8));
+    c.g[A0][0] = c.lh(oc449_at(c.g[V1][0], 0x18));
+    c.g[A2][0] = c.lw(oc449_at(c.g[V1][0], 0x1c));
+    let target = c.g[A2][0] as u32;
+    c.g[A0][0] = sx(oc449_at(c.g[A3][0], c.g[A0][0] as u32));
+    call_ptr(c, target, ret_to)
+}
+
+/// The shared element loop of `cAI_readFromReplayFrame`: each pass reads one
+/// element (`a1 = frame`), then loops while `++i < self->count` (count at
+/// `count_off`). Entered with `s0` at the first element slot and `v1` holding
+/// its value. Returns when the loop exits (`v0` is the compare result).
+pub(crate) fn oc449_read_loop(c: &mut Cpu, count_off: u32, ret_to: u32, head: u32) -> Flow {
+    loop {
+        c.cycles += 14;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[S2][0] = sx(oc449_at(c.g[S2][0], 1));
+        c.g[S0][0] = sx(oc449_at(c.g[S0][0], 4));
+        let elem = c.g[V1][0];
+        oc449_read_obj(c, elem, ret_to)?;
+        let count = c.lw(oc449_at(c.g[S1][0], count_off));
+        c.g[V0][0] = ((c.g[S2][0] as i64) < (count as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            return Ok(());
+        }
+        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `void cAI_readFromReplayFrame(cAI* self, ReplayFrame* frame)` (0x12b948):
+/// read the AI state back from a replay frame. The frame's vtable slot 2
+/// (`+0x14`, delta `+0x10`) reads the header (size 0x28); the state is then
+/// re-forced (`cAI_forceAIState`, 0x113b48) after copying the current state
+/// handler into `PreviousAIStateHandler` (`+0x9c`); the players (`+0x40`,
+/// count `+0x7c`), computers (`+0x48`, `+0x80`) and actors (`+0x5c`, `+0x84`)
+/// are each read through `oc449_read_obj`; finally the render state is read
+/// (`cRenderStateMan_readFromReplayFrame`, 0x2ef2d8).
+pub fn ai_load_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x50);
+        c.g[A2][0] = 0x28;
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A1][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[V1][0] = c.lw(c.g[S3][0] as u32);
+        c.g[A0][0] = c.lh(oc449_at(c.g[V1][0], 0x10));
+        c.g[V0][0] = c.lw(oc449_at(c.g[V1][0], 0x14));
+        let header = c.g[V0][0] as u32;
+        c.g[A0][0] = sx(oc449_at(c.g[S3][0], c.g[A0][0] as u32));
+        call_ptr(c, header, 0x0012_b988)?;
+        c.g[A1][0] = c.lw(oc449_at(c.g[S1][0], 4));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[S0][0] = c.lw(c.g[S1][0] as u32);
+        call_ptr(c, 0x0011_3b48, 0x0012_b998)?;
+        c.g[V0][0] = c.lw(oc449_at(c.g[S1][0], 0x98));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.sw(oc449_at(c.g[S1][0], 0x9c), c.g[V0][0]);
+        call_ptr(c, 0x0011_3b48, 0x0012_b9ac)?;
+
+        // Players: array at +0x40, count +0x7c.
+        c.g[V0][0] = c.lw(oc449_at(c.g[S1][0], 0x7c));
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[S0][0] = sx(oc449_at(c.g[S1][0], 0x40));
+            c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+            oc449_read_loop(c, 0x7c, 0x0012_b9e8, 0x0012_b9c0)?;
+            c.cycles += 1;
+        }
+        c.g[V0][0] = c.lw(oc449_at(c.g[S1][0], 0x80));
+
+        // Computers: array at +0x48, count +0x80.
+        c.cycles += 2;
+        let no_computers = (c.g[V0][0] as i64) <= 0;
+        c.g[S2][0] = 0;
+        if !no_computers {
+            c.cycles += 3;
+            c.g[S0][0] = sx(oc449_at(c.g[S1][0], 0x48));
+            c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+            oc449_read_loop(c, 0x80, 0x0012_ba38, 0x0012_ba10)?;
+        }
+
+        // Actors: array at +0x5c, count +0x84.
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(oc449_at(c.g[S1][0], 0x84));
+        let no_actors = (c.g[V0][0] as i64) <= 0;
+        c.g[S2][0] = 0;
+        if !no_actors {
+            c.cycles += 3;
+            c.g[S0][0] = sx(oc449_at(c.g[S1][0], 0x5c));
+            c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+            oc449_read_loop(c, 0x84, 0x0012_ba88, 0x0012_ba60)?;
+        }
+
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S3][0];
+        call_ptr(c, 0x002e_f2d8, 0x0012_baa0)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void RiderWipeoutSub_PlayEndAnimB(RiderWipeoutSub* self)` (0x12de80):
+/// the wipeout's end animation. The current anim ID of `self->mRider`'s anim
+/// base (layer 2) is mapped through a jump table to its end variant: 373..=382
+/// become 399..=408, and when that changes the anim, `cRiderAnimBase_play`
+/// (0x3128e8) plays the new one with blend 0 and speed -1.0. Other IDs stay.
+pub fn rider_wipeout_sub_play_end_anim_b(c: &mut Cpu) {
+    if c.pc != 0x0012_de80 {
+        return ee::s00::f_0012de80__entries(c);
+    }
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 2;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw(oc449_at(c.g[S0][0], 0x80));
+        c.g[A0][0] = c.lw(oc449_at(c.g[V0][0], 0x784));
+        call_ptr(c, 0x0031_2aa0, 0x0012_dea0)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V1][0] = sx(oc449_at(c.g[A1][0], 0u32.wrapping_sub(0x175)));
+        c.g[V0][0] = (c.g[V1][0] < 0xa) as u64;
+        let in_range = c.g[V0][0] != 0;
+        c.g[A2][0] = c.g[A1][0];
+        if in_range {
+            c.cycles += 7;
+            c.g[V0][0] = 0x0046_0000;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7f20));
+            c.g[V1][0] = sx(oc449_at(c.g[V1][0], c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            let target = c.g[A0][0] as u32;
+            // The jump table's cases: entry k is 0x12ded0 + 8k, next anim 399 + k.
+            let slot = match target {
+                0x0012_ded0 => 0,
+                0x0012_ded8 => 1,
+                0x0012_dee0 => 2,
+                0x0012_dee8 => 3,
+                0x0012_def0 => 4,
+                0x0012_def8 => 5,
+                0x0012_df00 => 6,
+                0x0012_df08 => 7,
+                0x0012_df10 => 8,
+                0x0012_df18 => 9,
+                _ => {
+                    c.jump_out(target, 0x0012_de80, 0x0012_df48);
+                    return Ok(());
+                }
+            };
+            c.cycles += if slot == 9 { 1 } else { 2 };
+            c.g[A1][0] = 0x18f + slot as u64;
+        }
+        c.cycles += 2;
+        let changed = c.g[A1][0] != c.g[A2][0];
+        c.g[A2][0] = 0;
+        if changed {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw(oc449_at(c.g[S0][0], 0x80));
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 12);
+            c.g[A0][0] = c.lw(oc449_at(c.g[V0][0], 0x784));
+            call_ptr(c, 0x0031_28e8, 0x0012_df38)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `gp - off` as a 32-bit address (the gp-relative globals).
+#[inline]
+pub(crate) fn oc449_gp(c: &Cpu, off: u32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_sub(off)
+}
+
+/// `float RiderSpinSub_GetFlipHUDBlend(RiderSpinSub* self)` (0x136168): the
+/// HUD blend of the flip indicator, from the spin value at `+0x1c`. The spin
+/// is wrapped to a fraction (`x*k + 0.5`, truncated, minus one when that
+/// rounded down), its distance from 0.5 is scaled by the globals at
+/// `gp-0x72f4` and `gp-0x72f0`, mirrored past 1.0 (`2 - x`), offset by 0.25,
+/// clamped at 0 and scaled by `gp-0x72ec` (4/3). Leaf; the result is in `f0`.
+pub fn rider_spin_sub_get_flip_hud_blend_2(c: &mut Cpu) {
+    let spin = Addr(oc449_at(c.g[A0][0], 0x1c)).read_fpu(c);
+    c.cycles += 11;
+    let k_wrap = Addr(oc449_gp(c, 0x72f8)).read_fpu(c);
+    let half = FpuF32(0x3f00_0000);
+    let one = FpuF32(0x3f80_0000);
+    c.g[AT][0] = 0x3f00_0000;
+    let shifted = spin * k_wrap + half;
+    let trunc = FpuF32::from_i32(shifted.to_i32());
+    let lt = shifted.lt(trunc);
+    crate::abi::set_fcc(c, lt);
+    let mut f1 = trunc;
+    if lt {
+        c.cycles += 3;
+        c.g[AT][0] = 0x3f80_0000;
+        f1 = trunc - one;
+    }
+
+    c.cycles += 11;
+    let k_b = Addr(oc449_gp(c, 0x72f4)).read_fpu(c);
+    let k_c = Addr(oc449_gp(c, 0x72f0)).read_fpu(c);
+    let mut f0 = f1 * k_b;
+    c.g[AT][0] = 0x3f80_0000;
+    f1 = one;
+    f0 = spin - f0;
+    f0 = f0.abs();
+    let mut f2 = f0 * k_c;
+    let lt2 = f1.lt(f2);
+    crate::abi::set_fcc(c, lt2);
+    if lt2 {
+        c.cycles += 3;
+        c.g[AT][0] = 0x4000_0000;
+        f0 = FpuF32(0x4000_0000);
+        f2 = f0 - f2;
+    }
+
+    c.cycles += 8;
+    c.g[AT][0] = 0x3e80_0000;
+    let quarter = FpuF32(0x3e80_0000);
+    f1 = FpuF32(0);
+    f2 = f2 - quarter;
+    let k_d = Addr(oc449_gp(c, 0x72ec)).read_fpu(c);
+    f2 = f2.max(f1);
+    let result = f2 * k_d;
+    c.f[1] = f1.0;
+    c.f[2] = f2.0;
+    c.f[3] = spin.0;
+    crate::abi::set_fret(c, result);
+    ret(c);
+}
+
+/// `RiderWipeoutState_dtor` (0x136ad0): the state family with the sphere-tree
+/// dtor (`this+0x44`, flags 3) before the rider call; its returns sit 0x18
+/// further on because of that extra call.
+pub(crate) const RIDER_WIPEOUT_DTOR: StateDtorLayout = StateDtorLayout {
+    entry: 0x0013_6ad0,
+    rider: 0x40,
+    table: 0x6850,
+    vtab: 0x6808,
+    stride: 0x70,
+    sphere: Some(0x44),
+    ret_sphere: 0x0013_6c00,
+    ret_rider: 0x0013_6c18,
+    ret_delete: 0x0013_6c2c,
+};
+
+pub fn rider_wipeout_state_dtor(c: &mut Cpu) {
+    guest(c, |c| state_dtor_body(c, &RIDER_WIPEOUT_DTOR))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -26962,6 +28058,334 @@ pub(crate) mod tests {
                     oc434_w(c, WIPEOUT_SET_B_TABLE + 4 * idx, target);
                 }
             },
+        );
+    }
+
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::check_dtor;
+
+    /// Fixture layout: the sub-state, the input, the rider and its objects.
+    pub(crate) const OC448_SELF: u32 = DATA + 0x100;
+
+    pub(crate) const OC448_IN: u32 = DATA + 0x200;
+
+    pub(crate) const OC448_RIDER: u32 = DATA + 0x1000;
+
+    pub(crate) const OC448_ANIM: u32 = DATA + 0x5000;
+
+    pub(crate) const OC448_METRIX: u32 = DATA + 0x6000;
+
+    pub(crate) const OC448_AIR: u32 = DATA + 0x7000;
+
+    pub(crate) const OC448_SEQ: u32 = DATA + 0x8000;
+
+    /// The gate word and the scripted fake results (outside the fakes' log).
+    pub(crate) const OC448_CTRL: u32 = DATA + 0x0020_0000;
+
+    pub(crate) const OC448_MAGIC: u32 = 0x0448_0a30;
+
+    /// The next scripted result of fake `idx` (the last one repeats).
+    pub(crate) fn oc448_script(c: &mut Cpu, idx: u32) -> u32 {
+        let count = OC448_CTRL + 0x80 + 4 * idx;
+        let n = c.bus.read32(count);
+        c.bus.write32(count, n + 1);
+        c.bus.read32(OC448_CTRL + 0x100 + 0x20 * idx + 4 * n.min(7))
+    }
+
+    pub(crate) fn oc448_put_script(c: &mut Cpu, idx: u32, vals: [u32; 8]) {
+        for (k, v) in vals.iter().enumerate() {
+            c.bus
+                .write32(OC448_CTRL + 0x100 + 0x20 * idx + 4 * k as u32, *v);
+        }
+    }
+
+    /// Gated fakes for the callees with override slots. With the gate off
+    /// they run what the slot held before.
+    macro_rules! oc448_fakes {
+        ($($fake:ident = $idx:expr, $shard:ident :: $slot:ident / $gen:ident, $set:expr;)*) => {
+            $(
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC448_CTRL) != OC448_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($fake), ee::$shard::$gen);
+                    }
+                    let v = oc448_script(c, $idx);
+                    let set: fn(&mut Cpu, u32) = $set;
+                    set(c, v);
+                    ret(c);
+                }
+            )*
+            fn oc448_install() {
+                $(
+                    fakes::hook(
+                        std::ptr::addr_of_mut!(ee::$shard::$slot),
+                        $fake,
+                        fakes::prev_cell($fake),
+                    );
+                )*
+            }
+        };
+    }
+
+    oc448_fakes! {
+        oc448_fake_check_reset = 0, s00::OVERRIDE_00116120 / f_00116120__generated, |c: &mut Cpu, v: u32| { c.g[V0][0] = sx(v); };
+        oc448_fake_layer_finished = 1, s10::OVERRIDE_00312AE8 / f_00312ae8__generated, |c: &mut Cpu, v: u32| { c.g[V0][0] = sx(v); };
+        oc448_fake_start = 2, s00::OVERRIDE_00119BF0 / f_00119bf0__generated, |c: &mut Cpu, v: u32| { c.f[0] = v; };
+        oc448_fake_boost = 3, s00::OVERRIDE_0010E098 / f_0010e098__generated, |_c: &mut Cpu, _v: u32| {};
+        oc448_fake_lean = 4, s00::OVERRIDE_0011FA10 / f_0011fa10__generated, |_c: &mut Cpu, _v: u32| {};
+        oc448_fake_orient = 5, s00::OVERRIDE_0011E098 / f_0011e098__generated, |_c: &mut Cpu, _v: u32| {};
+        oc448_fake_end = 6, s00::OVERRIDE_00119C38 / f_00119c38__generated, |c: &mut Cpu, v: u32| { c.f[0] = v; };
+        oc448_fake_flags64 = 7, s01::OVERRIDE_001446A0 / f_001446a0__generated, |c: &mut Cpu, v: u32| { c.g[V0][0] = sx(v); };
+        oc448_fake_rail = 8, s00::OVERRIDE_00106848 / f_00106848__generated, |c: &mut Cpu, v: u32| { c.g[V0][0] = sx(v); };
+        oc448_fake_seq = 9, s10::OVERRIDE_00311B20 / f_00311b20__generated, |c: &mut Cpu, v: u32| { c.g[V0][0] = sx(v); };
+        oc448_fake_main_state = 10, s00::OVERRIDE_0011FE98 / f_0011fe98__generated, |c: &mut Cpu, v: u32| { c.g[V0][0] = sx(v); };
+        oc448_fake_play_anim = 11, s10::OVERRIDE_003128E8 / f_003128e8__generated, |_c: &mut Cpu, _v: u32| {};
+        oc448_fake_sub_state = 12, s00::OVERRIDE_0011FEC8 / f_0011fec8__generated, |_c: &mut Cpu, _v: u32| {};
+        oc448_fake_motion = 13, s00::OVERRIDE_0011FE78 / f_0011fe78__generated, |_c: &mut Cpu, _v: u32| {};
+        oc448_fake_anim_table = 14, s10::OVERRIDE_00311B48 / f_00311b48__generated, |_c: &mut Cpu, _v: u32| {};
+    }
+
+    pub(crate) fn oc448_unit(r: &mut Rng) -> f32 {
+        (r.next_u32() % 1000) as f32 / 1000.0
+    }
+
+    /// One seed: random registers, the sub-state, the input flags, the
+    /// rider's fields, the game's float constants and the scripted results
+    /// of the callees (reset, animation end, boost, ground, air, state).
+    pub(crate) fn oc448_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0448_0a30_0000_0001 ^ ((seed as u64) << 20));
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.g[A0][0] = OC448_SELF as u64;
+        c.g[A1][0] = OC448_IN as u64;
+
+        // The game's float constants next to gp.
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x7560), 0.016_666_668f32.to_bits());
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x755c), 0.032_258_064f32.to_bits());
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x7558), 0.501_338_4f32.to_bits());
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x7554), 0.199_991_3f32.to_bits());
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x7550), (-0.050_000_0f32).to_bits());
+
+        // The sub-state.
+        c.bus.write32(
+            OC448_SELF + HPI_ENTER_SEC,
+            (oc448_unit(&mut r) * 1.2).to_bits(),
+        );
+        c.bus.write32(OC448_SELF + HPI_BALANCE, r.f32(0.6));
+        c.bus
+            .write32(OC448_SELF + HPI_MISSED, u32::from(seed % 3 != 0));
+        c.bus.write32(OC448_SELF + HPI_RAIL_SPLINE, (seed / 3) % 2);
+        c.bus.write32(OC448_SELF + HPI_TYPE, (seed / 6) % 2);
+        c.bus.write32(OC448_SELF + HPI_RIDER, OC448_RIDER);
+
+        // The input flags: bit 13 (boost) on every other seed.
+        let flags = if seed % 2 == 0 {
+            r.next_u32() | 0x2000
+        } else {
+            r.next_u32() & !0x2000
+        };
+        c.bus.write32(OC448_IN, flags);
+
+        // The rider.
+        const MODES: [u32; 6] = [1, 2, 4, 5, 6, 3];
+        c.bus
+            .write32(OC448_RIDER + HPI_R_MODE, MODES[(seed % 6) as usize]);
+        c.bus.write32(
+            OC448_RIDER + HPI_R_TIME_SCALE,
+            (0.5 + oc448_unit(&mut r) * 1.5).to_bits(),
+        );
+        c.bus.write32(OC448_RIDER + HPI_R_FAKIE, (seed / 2) % 2);
+        c.bus.write32(OC448_RIDER + HPI_SLEW8_CUR, r.f32(1.6));
+        c.bus.write32(OC448_RIDER + HPI_R_ANIM, OC448_ANIM);
+        c.bus.write32(OC448_RIDER + HPI_R_AIR, OC448_AIR);
+        c.bus.write32(OC448_RIDER + HPI_R_METRIX, OC448_METRIX);
+        c.bus.write32(OC448_AIR + 0xac, (seed / 4) % 4);
+        c.bus.write32(OC448_AIR + 0x98, r.f32(2.0));
+        c.bus.write32(OC448_AIR + 0xa0, r.f32(2.0));
+        c.bus.write32(OC448_SEQ + 0x8, oc448_unit(&mut r).to_bits());
+        c.bus
+            .write32(OC448_SEQ + 0x10, (1.0 + oc448_unit(&mut r)).to_bits());
+
+        // The scripted callees.
+        c.bus.write32(OC448_CTRL, OC448_MAGIC);
+        oc448_put_script(c, 0, [u32::from(seed % 5 == 0), 0, 0, 0, 0, 0, 0, 0]);
+        let bits: [u32; 8] = std::array::from_fn(|_| r.next_u32() & 1);
+        oc448_put_script(c, 1, bits);
+        let bits: [u32; 8] = std::array::from_fn(|_| r.next_u32() & 1);
+        oc448_put_script(c, 7, bits);
+        let starts: [u32; 8] = std::array::from_fn(|_| r.f32(2.0));
+        oc448_put_script(c, 2, starts);
+        let ends: [u32; 8] = std::array::from_fn(|_| r.f32(2.0));
+        oc448_put_script(c, 6, ends);
+        oc448_put_script(c, 8, [u32::from(seed % 4 == 0), 0, 0, 0, 0, 0, 0, 0]);
+        oc448_put_script(c, 9, [OC448_SEQ; 8]);
+        const STATES: [u32; 6] = [0, 1, 5, 3, 4, 2];
+        let states: [u32; 8] = std::array::from_fn(|_| STATES[(r.next_u32() % 6) as usize]);
+        oc448_put_script(c, 10, states);
+    }
+
+    #[test]
+    fn rider_handplant_sub_handle_input_matches() {
+        oc448_install();
+        check(
+            ee::s01::f_00132a30__generated,
+            rider_handplant_sub_handle_input,
+            300,
+            &oc448_setup,
+        );
+    }
+
+    /// Self with `count` (`+off_count`) entries at `+off_list`; each entry
+    /// holds a rider at `+0x18`. The rider's object (`+0x6c0`) has a vtable
+    /// with a `getAIIndex` slot at `+0x38`.
+    pub(crate) fn listed_setup(
+        c: &mut Cpu,
+        seed: u32,
+        off_list: u32,
+        off_count: u32,
+        with_vt: bool,
+    ) {
+        let mut r = Rng(0x12aa_78 ^ seed as u64 ^ (off_list as u64) << 20);
+        scramble(c, &mut r);
+        c.g[A0][0] = DATA as u64;
+        let count = seed % 4;
+        c.bus.write32(DATA + off_count, count);
+        for i in 0..count {
+            let entry = DATA + 0x1000 + i * 0x100;
+            let rider = DATA + 0x3000 + i * 0x1000;
+            c.bus.write32(DATA + off_list + 4 * i, entry);
+            c.bus.write32(entry + 0x18, rider);
+            if with_vt {
+                let vt = vtable(c, &mut r, &[0x38]);
+                c.bus.write32(rider + 0x6c0, vt);
+            }
+        }
+    }
+
+    #[test]
+    fn ai_listed_riders_have_render_slots_matches() {
+        check(
+            ssx3_ee::s00::f_0012aa78__generated,
+            ai_listed_riders_have_render_slots,
+            200,
+            &|c, seed| {
+                c.pc = 0x0012_aa78;
+                listed_setup(c, seed, 0x48, 0x80, true);
+            },
+        );
+    }
+
+    /// The replay frame (vtable slot 2 is the header reader), self with its
+    /// three lists (players, computers, actors) of 0..2 objects each; every
+    /// object's `+0x77c` block has a vtable whose slot `+0x1c` is a fake.
+    pub(crate) fn load_state_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x12b9_48 ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[A0][0] = DATA as u64;
+        let frame = DATA + 0x8000;
+        c.g[A1][0] = frame as u64;
+        let fvt = vtable(c, &mut r, &[0x10]);
+        c.bus.write32(frame, fvt);
+        let counts = [seed % 3, (seed / 3) % 3, (seed / 9) % 3];
+        c.bus.write32(DATA + 0x7c, counts[0]);
+        c.bus.write32(DATA + 0x80, counts[1]);
+        c.bus.write32(DATA + 0x84, counts[2]);
+        let arrays = [0x40u32, 0x48, 0x5c];
+        let mut idx = 0;
+        for (l, &array_off) in arrays.iter().enumerate() {
+            for i in 0..counts[l] {
+                let elem = DATA + 0x10000 + idx * 0x100;
+                let obj = DATA + 0x20000 + idx * 0x100;
+                let p = DATA + 0x30000 + idx * 0x100;
+                c.bus.write32(DATA + array_off + 4 * i, elem);
+                c.bus.write32(elem + 0x18, obj);
+                c.bus.write32(obj + 0x77c, p);
+                let vt = vtable(c, &mut r, &[0x18]);
+                c.bus.write32(p + 0xde8, vt);
+                idx += 1;
+            }
+        }
+    }
+
+    #[test]
+    fn ai_load_state_matches() {
+        check(
+            ssx3_ee::s00::f_0012b948__generated,
+            ai_load_state,
+            200,
+            &|c, seed| {
+                c.pc = 0x0012_b948;
+                load_state_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_wipeout_sub_play_end_anim_b_matches() {
+        check(
+            ssx3_ee::s00::f_0012de80__generated,
+            rider_wipeout_sub_play_end_anim_b,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x12de_80 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0012_de80;
+                c.g[A0][0] = DATA as u64;
+                let rider = DATA + 0x4000;
+                let anim = DATA + 0x6000;
+                c.bus.write32(DATA + 0x80, rider);
+                c.bus.write32(rider + 0x784, anim);
+                // getCurrentAnimID(anim, 2) reads the word at anim + 8:
+                // below the table, each of its ten IDs, and above it.
+                c.bus.write32(anim + 8, 370 + seed % 16);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_spin_sub_get_flip_hud_blend_matches() {
+        check(
+            ssx3_ee::s01::f_00136168__generated,
+            rider_spin_sub_get_flip_hud_blend_2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x1361_68 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let spin = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(4.0)
+                };
+                c.bus.write32(DATA + 0x1c, spin);
+            },
+        );
+    }
+
+    #[test]
+    fn ai_mission_riders_have_render_slots_matches() {
+        check(
+            ssx3_ee::s00::f_0012adc0__generated,
+            ai_mission_riders_have_render_slots,
+            200,
+            &|c, seed| {
+                c.pc = 0x0012_adc0;
+                listed_setup(c, seed, 0x70, 0x88, false);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_wipeout_state_dtor_matches() {
+        check_dtor(
+            ee::s01::f_00136ad0__generated,
+            rider_wipeout_state_dtor,
+            0x0013_6ad0,
+            0x40,
+            Some(0x44),
         );
     }
 }
