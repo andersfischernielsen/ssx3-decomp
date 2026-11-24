@@ -7922,6 +7922,13 @@
 0x001561b0    BEAggressionInt_LoadState
 0x001562b8    BELibrary_SwitchPhase
 0x00157350    BERewardInt_GetAudioSystemField504
+# Phase 2 wave: oc463, oc469, oc471, oc472, oc474, oc475
+0x0033a3d8    Cell_GatherObjInstRecursive
+0x00315a20    AnimTables_StaticInitDestroy
+0x0033dfd8    Cell_CollideObjectsRecursive
+0x0024bf60    CameraSplashMenu_ctor
+0x0016f068    CameraBoxBoundObj_ClampPoint
+0x00247e60    RenderTogglesMenu_ctor
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

@@ -1632,7 +1632,7 @@ s02	0016d260	0016d31c	o	CameraTriggerMan_PopTriggerStack
 s02	0016d320	0016e1d4	o	CameraTriggerMan_UpdateForRider
 s02	0016e1d8	0016e55c	-	CameraTrigger_ApplyAction
 s02	0016e560	0016f068	-	CameraEllipseBoundObj_ClampPoint
-s02	0016f068	0016fbb4	-	CameraBoxBoundObj_ClampPoint
+s02	0016f068	0016fbb4	o	CameraBoxBoundObj_ClampPoint
 s02	0016fbb8	0017023c	-	CameraLineBoundObj_ClampPoint
 s02	00170240	001707b0	o	CameraLineBoundObj_GetWorldStart
 s02	001707b0	00170d20	o	CameraLineBoundObj_GetWorldEnd
@@ -4783,7 +4783,7 @@ s06	002472c0	00247ab0	-	cFELoadState_ShowMPPlayerStats
 s06	00247ab0	00247e20	-	cFELoadState_SetupResultWidget
 s06	00247e20	00247e40	-	SSXApp_GlobalCtors
 s06	00247e40	00247e60	-	SSXApp_GlobalDtors
-s06	00247e60	00248970	-	RenderTogglesMenu_ctor
+s06	00247e60	00248970	o	RenderTogglesMenu_ctor
 s06	00248970	00248dc8	-	VisualEffectsTestMenu_ctor
 s06	00248dc8	00249144	-	PlantsMenu_ctor
 s06	00249148	002498a0	-	LightGlowMenu_ctor
@@ -4798,7 +4798,7 @@ s06	0024b0e8	0024b6cc	-	BoardTrailMenu_ctor
 s06	0024b6d0	0024b7d0	-	FlagsMenu_ctor
 s06	0024b7d0	0024bbe8	-	PowerUpFXTogglesMenu_ctor
 s06	0024bbe8	0024bf60	-	SnowfallTogglesMenu_ctor
-s06	0024bf60	0024cca0	-	CameraSplashMenu_ctor
+s06	0024bf60	0024cca0	o	CameraSplashMenu_ctor
 s06	0024cca0	0024ceac	-	TubeMenu_ctor
 s06	0024ceb0	0024d2f0	-	PathArrowMenu_ctor
 s06	0024d2f0	0024d690	-	VisualEffectsMainMenu_ctor
@@ -8510,7 +8510,7 @@ s10	003150b8	003150f4	-	AnimData_Identity
 s10	003150f8	003158b8	e	AnimMath_StaticInitDestroy
 s10	003158e8	00315984	-	XForm_SetRotationZ
 s10	00315a00	00315a20	-	AnimMath_GlobalCtors
-s10	00315a20	00316878	e	AnimTables_StaticInitDestroy
+s10	00315a20	00316878	oe	AnimTables_StaticInitDestroy
 s10	00316878	00316898	-	AnimTables_GlobalCtors
 s10	00316898	003168ac	o	BigFile_ctor
 s10	003168b0	003168e4	-	BigFile_ctor_2
@@ -8977,11 +8977,11 @@ s11	00337a48	003388e0	-	Nash_FindNearestRail
 s11	003388e0	0033891c	-	Nash_ReturnSelf
 s11	00338920	00339594	-	Cell_GatherObjectsRecursive
 s11	00339598	0033a3d4	o	Cell_GatherType2Recursive
-s11	0033a3d8	0033b748	-	Cell_GatherObjInstRecursive
+s11	0033a3d8	0033b748	o	Cell_GatherObjInstRecursive
 s11	0033b748	0033ccf4	o	Cell_GatherAllRecursive
 s11	0033ccf8	0033dbe8	o	Cell_CollideVolumeRecursive
 s11	0033dbe8	0033dfd8	o	Cell_CollideColumnRecursive
-s11	0033dfd8	0033ed60	-	Cell_CollideObjectsRecursive
+s11	0033dfd8	0033ed60	o	Cell_CollideObjectsRecursive
 s11	0033ed60	003400d8	e	Cell_FindRailRecursive
 s11	003400d8	0034096c	-	Collision_StaticInit
 s11	00340970	00340a08	o	AIFwdDiffCacheEntry_ctor
