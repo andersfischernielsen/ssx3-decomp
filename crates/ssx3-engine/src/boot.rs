@@ -113,6 +113,11 @@ pub(crate) fn boot(
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
     let mut c = ssx3_ps2::new_cpu();
     ssx3_ps2::m!(c).kernel.host_threads = ssx3_ee::HOST_THREADS;
+    if ssx3_core::config::var("SSX3_NATIVE_THREADS").as_deref() != Some("0") {
+        for &entry in ssx3_game::NATIVE_THREAD_ENTRIES {
+            ssx3_ps2::kernel::register_native_entry(entry);
+        }
+    }
     // The GPU rasterizer is the default for the game (falls back to the CPU
     // when no adapter is usable); SSX3_GS=cpu forces the software path.
     // (The browser: no GS rasterizer at all, see `install_renderer`.)

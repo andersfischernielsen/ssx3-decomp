@@ -177,6 +177,7 @@ library, `ssx_*` boot) are one writer wave, `oc688`-`oc699`. Thread entries
 | Worktree on `main` with #78/#79 | ✅ |
 | Trace tool + inventory | ✅ (`thread-inventory.md`, `tools/thread_inventory.py`) |
 | Port the thread paths | 🟡 wave 237 (`oc688`-`oc699`) |
+| Native-thread mechanism in the kernel (nested run, unwind at the wait) | ✅ gate identical with the VSync thread native (`SSX3_NATIVE_THREADS=0` turns it off) |
 | Convert workers | ⬜ |
-| Convert ISR-driven threads | ⬜ |
+| Convert ISR-driven threads | 🟡 VSync (6) done; SND (8) next |
 | Convert main + the rest, delete `threads.rs` | ⬜ |

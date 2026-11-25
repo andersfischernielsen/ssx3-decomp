@@ -173,6 +173,13 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
 /// `SSX3_OVERRIDES=addr,addr` installs only the listed ones,
 /// `SSX3_SKIP_OVERRIDES=addr,addr` all but the listed ones.
 /// Returns how many were installed.
+/// Thread entries that run natively on the kernel scheduler (see
+/// `docs/plans/guest-thread-removal.md`): bodies that unwind at their wait and
+/// accept the wait's return address as a resume point.
+pub const NATIVE_THREAD_ENTRIES: &[u32] = &[
+    0x0031_ac08, // PS2ExecMan_VSyncThread
+];
+
 pub fn install() -> usize {
     if ssx3_core::config::var_os("SSX3_NO_OVERRIDES").is_some() {
         return 0;

@@ -776,6 +776,11 @@ pub fn ps2_exec_man_vsync_thread(c: &mut Cpu) {
                 if call_ptr(c, table::WAIT_SEMA, 0x0031_ac30).is_err() {
                     return;
                 }
+                c.pc = 0x0031_ac30;
+            }
+            // After the wait returns: also the resume address of a native thread
+            // (see `ssx3_ps2::kernel::register_native_entry`).
+            0x0031_ac30 => {
                 c.g[V1][0] = Addr(p(c, S0, 0x20)).lw(c);
                 if c.g[V1][0] == 0 {
                     if back_edge_unwinds(c, 0x0031_ac20) {
