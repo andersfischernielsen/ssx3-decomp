@@ -1,0 +1,13 @@
+# Expression spans for tools/mutants.py (docs/porting/mutation-testing.md).
+# Not a workspace member; the script builds it into target/mutant-spans.
+[package]
+name = "mutant-spans"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
