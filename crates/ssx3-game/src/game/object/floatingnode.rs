@@ -1061,6 +1061,95 @@ pub fn floating_node_update_intersect_info(c: &mut Cpu) {
     guest(c, floating_update_intersect_info_body)
 }
 
+/// `Floating_v50` (0x34ef40): the floating node's per-frame update. When the
+/// node has a second part (`self + 0x78`), it blends two of its sub-objects'
+/// matrices' rows with VU0 (`sub`, then `add`) into the part's rows, then
+/// calls the part's virtual at `0x2d1be0` and `0x3291e0`. Otherwise it calls
+/// `ModObj_v50` on the node.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn floating_v50(c: &mut Cpu) {
+    const MOD_OBJ_V50: Callee = Callee {
+        addr: 0x0035_68b0,
+        f: ee::s11::ModObj_v50,
+    };
+    guest(c, |c| -> Flow {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0xa0);
+        let s = sp(c);
+        let at = |off: u32| s.wrapping_add(off);
+        frame.save(c, S0, 0x90);
+        frame.save_ra(c, 0x80);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x78)).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 52;
+            c.lq(3, r32(c, A0));
+            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(0xc)).lw(c);
+            c.sq(3, at(0x20));
+            c.lq(2, r32(c, A0).wrapping_add(0x10));
+            c.sq(2, at(0x30));
+            c.lwc1(0, r32(c, A0).wrapping_add(0x20));
+            Addr(at(0x4c)).sw(c, 0);
+            c.swc1(0, at(0x48));
+            c.swc1(0, at(0x40));
+            c.swc1(0, at(0x44));
+            c.g[A0][0] = Addr(r32(c, A1).wrapping_add(0xc0)).lh(c);
+            c.g[V0][0] = Addr(r32(c, A1).wrapping_add(0xc4)).lw(c);
+            let part = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+            call_ptr(c, part, 0x0034_ef94)?;
+            c.lq(3, r32(c, V0).wrapping_add(0x30));
+            c.sq(3, at(0x60));
+            c.lqc2(3, at(0x60));
+            c.lqc2(4, at(0x40));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, at(0x70));
+            c.lq(2, at(0x70));
+            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0xc)).lw(c);
+            c.sq(2, s);
+            c.sq(2, at(0x50));
+            c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0xc0)).lh(c);
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0xc4)).lw(c);
+            let part = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+            call_ptr(c, part, 0x0034_efcc)?;
+            c.lq(3, r32(c, V0).wrapping_add(0x30));
+            c.sq(3, at(0x60));
+            c.lqc2(3, at(0x60));
+            c.lqc2(4, at(0x40));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, at(0x70));
+            c.lq(2, at(0x70));
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x78)).lw(c);
+            c.lq(3, s);
+            c.sq(2, at(0x10));
+            c.sq(2, at(0x50));
+            c.sq(3, r32(c, A0));
+            c.lq(2, at(0x10));
+            c.sq(2, r32(c, A0).wrapping_add(0x10));
+            c.g[S0][0] = Addr(r32(c, S0).wrapping_add(0x18)).lw(c);
+            call_ptr(c, 0x002d_1be0, 0x0034_f00c)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            c.g[A3][0] = c.g[SP][0];
+            c.g[T0][0] = sx(at(0x20));
+            call_ptr(c, 0x0032_91e0, 0x0034_f024)?;
+            frame.restore(c, S0, 0x90);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            MOD_OBJ_V50.call(c, 0x0034_f034)?;
+            frame.restore(c, S0, 0x90);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

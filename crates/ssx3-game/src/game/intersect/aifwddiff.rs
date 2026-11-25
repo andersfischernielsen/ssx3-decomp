@@ -107,6 +107,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_sphere_tree_collide_sphere_tree,
         "RiderSphereTree_CollideSphereTree",
     ),
+    (
+        0x0032_8170,
+        sphere_tree_walk_levels,
+        "SphereTree_WalkLevels",
+    ),
+    (
+        0x0032_81d0,
+        sphere_tree_walk_levels_recursive,
+        "SphereTree_WalkLevelsRecursive",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3683,6 +3693,184 @@ pub fn rider_sphere_tree_collide_sphere_tree(c: &mut Cpu) {
     });
 }
 
+/// `SphereTree_WalkLevels(octree)` (0x328170; the reference calls it
+/// `bxSphereTree_Draw`): for a compressed sphere tree, allocates the bit-tree
+/// buffer (`SphereTreeCache_GetMasks`, 0x32df28) into `treeInfo->bitTree`
+/// (+0x28), then walks the levels from the tree's depth (+0xc) with
+/// `SphereTree_WalkLevelsRecursive` (0x3281d0). `treeInfo` is at +0x98.
+pub fn sphere_tree_walk_levels(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).off(0x98).lw(c);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x8).lw(c);
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x98).lw(c);
+        } else {
+            c.cycles += 5;
+            call_ptr(c, 0x0032_df28, 0x0032_8198)?;
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x98).lw(c);
+            let masks = c.g[V0][0];
+            Addr(c.g[V1][0] as u32).off(0x28).sw(c, masks);
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x98).lw(c);
+        }
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x80));
+        c.g[A3][0] = 0u64;
+        c.g[A1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+        c.g[T0][0] = 0u64;
+        Callee {
+            addr: 0x0032_81d0,
+            f: ee::s10::f_003281d0,
+        }
+        .call(c, 0x0032_81bc)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SphereTree_WalkLevelsRecursive(SphereTree* tree, int maxLevel, Vec4* pos,
+/// int level, int maskOff)` (0x3281d0). While `level < maxLevel`, every child slot
+/// whose bit is set in the tree's mask byte (`bitTree + maskOff`, shifted by the
+/// slot) gets `pos` moved by the slot's centre (scaled by the level's scale) and
+/// the walk recurses one level deeper; the mask offset advances by the level's
+/// index offset times the slot. Below `maxLevel` the body makes one call through
+/// the table at GP+0x2a90 (`+0x10d8`, then `+0x2bc`) and returns.
+pub fn sphere_tree_walk_levels_recursive(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xc0);
+        let stack = sp(c);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S6, 0x40);
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 20, 0xb0);
+        c.g[S2][0] = c.g[A3][0];
+        c.g[S4][0] = c.g[A1][0];
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S3][0] = c.g[T0][0];
+        c.g[S5][0] = c.g[A2][0];
+        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S4][0] as i64)) as u64;
+        if c.g[V0][0] != 0 {
+            c.cycles += 9;
+            c.g[V0][0] = 0xc;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x98));
+            c.mult(0, V0, S2, V0);
+            c.g[A1][0] = 0;
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x20));
+            c.g[S6][0] = c.g[V0][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.lwc1(20, (c.g[V0][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x98));
+            loop {
+                c.cycles += 7;
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                c.g[V0][0] = c.lbu(c.g[V1][0] as u32);
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> ((c.g[A1][0] as u32) & 31)) as u32);
+                c.g[V0][0] = c.g[V0][0] & 0x1;
+                let bit_set = c.g[V0][0] != 0;
+                c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                if bit_set {
+                    c.cycles += 26;
+                    c.g[V0][0] = sx((c.g[A1][0] as u32) << 4);
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[A1][0] = c.g[S4][0];
+                    c.mfc1(3, 20);
+                    c.lqc2(4, c.g[V0][0] as u32);
+                    c.qmtc2(3, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, stack + 0x20);
+                    c.g[A2][0] = c.g[SP][0];
+                    c.lq(2, stack + 0x20);
+                    c.g[A3][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    c.sq(2, stack + 0x10);
+                    c.lqc2(3, c.g[S5][0] as u32);
+                    c.lqc2(4, stack + 0x10);
+                    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, stack + 0x20);
+                    c.lq(3, stack + 0x20);
+                    c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x98));
+                    c.sq(3, stack);
+                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x20));
+                    c.g[V0][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[T0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+                    c.mult(0, V0, S1, T0);
+                    c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                    Callee {
+                        addr: 0x0032_81d0,
+                        f: ee::s10::SphereTree_WalkLevelsRecursive,
+                    }
+                    .call(c, 0x0032_82bc)?;
+                }
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[V0][0] = ((c.g[A1][0] as i64) < 8) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x98));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_8238);
+                    }
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S0, 0xa0);
+                    break;
+                }
+            }
+        } else {
+            c.cycles += 24;
+            c.g[V0][0] = 0xc;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x98));
+            c.mult(0, V0, S2, V0);
+            c.g[T0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+            c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = c.g[S5][0];
+            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10d8));
+            c.g[A2][0] = c.g[SP][0];
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 1);
+            c.g[A3][0] = 0x4;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x90));
+            c.lwc1(12, c.g[V0][0] as u32);
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x2b8));
+            c.swc1(1, stack + 0x8);
+            c.mul_s(12, 12, 0);
+            c.swc1(1, stack);
+            c.sw(stack + 0x4, 0);
+            c.sw(stack + 0xc, 0);
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2bc));
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0032_8330)?;
+            frame.restore(c, S0, 0xa0);
+        }
+        c.cycles += 10;
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4710,6 +4898,126 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x00327f18;
+            },
+        );
+    }
+
+    /// Gate of the bit-tree fake: `SphereTreeCache_GetMasks` returns the word
+    /// at `SPH_CTRL + 4` only while `SPH_CTRL` holds `SPH_MAGIC`.
+    pub(crate) const SPH_OCTREE: u32 = DATA + 0x3000;
+
+    pub(crate) const SPH_INFO: u32 = DATA + 0x3100;
+
+    pub(crate) const SPH_CTRL: u32 = DATA + 0xe_2000;
+
+    pub(crate) const SPH_MAGIC: u32 = 0x5350_4831;
+
+    pub(crate) static SPH_PREV_MASKS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn sph_fake_masks(c: &mut Cpu) {
+        if c.bus.read32(SPH_CTRL) != SPH_MAGIC {
+            return fakes::fall_back(c, &SPH_PREV_MASKS, ee::s11::f_0032df28__generated);
+        }
+        c.g[V0][0] = sx(c.bus.read32(SPH_CTRL + 4));
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn sph_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0032DF28),
+            sph_fake_masks,
+            &SPH_PREV_MASKS,
+        );
+    }
+
+    #[test]
+    fn sphere_tree_walk_levels_matches() {
+        sph_install_fakes();
+        check(
+            ee::s10::f_00328170__generated,
+            sphere_tree_walk_levels,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x5350_4800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0032_8170;
+                c.g[A0][0] = sx(SPH_OCTREE);
+                c.bus.write32(SPH_OCTREE + 0x98, SPH_INFO);
+                // isCompressed: 0 skips the buffer, anything else allocates it.
+                let compressed = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(SPH_INFO + 0x8, compressed);
+                // Depth <= 0: the recursive walk returns at once.
+                let depth = [0u32, 0xffff_ffff, 0xffff_fffb][(seed / 2 % 3) as usize];
+                c.bus.write32(SPH_INFO + 0xc, depth);
+                c.bus.write32(SPH_INFO + 0x28, r.next_u32());
+                c.bus.write32(SPH_CTRL, SPH_MAGIC);
+                c.bus.write32(SPH_CTRL + 4, r.next_u32());
+            },
+        );
+    }
+
+    /// Scramble the machine, then the register file the body reads: GP as in
+    /// the game, the stack and return address at the test frame.
+    pub(crate) fn walk_levels_base(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = Rng(0x3281_d000_0000_0001 ^ ((seed as u64) << 8));
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.g[SP][0] = sx(crate::difftest::SP);
+        c.g[RA][0] = sx(crate::difftest::RA);
+        r
+    }
+
+    /// A tree at DATA+0x1000 (child centres at +0..0x90, the tree at +0x98),
+    /// its info at DATA+0x1100, levels (12-byte records, index offsets at +8)
+    /// at DATA+0x1200, mask bytes at DATA+0x1300. The table walker sits at
+    /// DATA+0x20_0000 and calls a real leaf that returns 0.
+    pub(crate) fn walk_levels_fixture(c: &mut Cpu, seed: u32, r: &mut Rng) {
+        let this = DATA + 0x1000;
+        let info = DATA + 0x1100;
+        let levels = DATA + 0x1200;
+        let masks = DATA + 0x1300;
+        let pos = DATA + 0x1400;
+        let table = DATA + 0x20_0000;
+        let vtable = DATA + 0x20_2000;
+        for i in 0..0x24u32 {
+            c.bus.write32(this + 4 * i, r.f32(4.0));
+        }
+        c.bus.write32(this + 0x98, info);
+        c.bus.write32(info + 0x20, levels);
+        c.bus.write32(info + 0x28, masks);
+        for d in 0..4u32 {
+            let at = levels + 12 * d;
+            c.bus.write32(at, r.f32(2.0));
+            c.bus.write32(at + 4, r.f32(1.0));
+            c.bus.write32(at + 8, 0x40 * (d + 1));
+        }
+        for i in 0..0x200u32 {
+            let byte = if seed % 5 == 0 { 0 } else { r.next_u32() as u8 };
+            c.bus.write8(masks + i, byte);
+        }
+        for i in 0..4u32 {
+            c.bus.write32(pos + 4 * i, r.f32(2.0));
+        }
+        c.bus.write32(GAME_GP + 0x2a90, table);
+        c.bus.write32(table + 0x10d8, vtable);
+        c.bus.write32(vtable + 0x2bc, 0x0014_06c0);
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = sx(1 + seed % 3);
+        c.g[A2][0] = sx(pos);
+        c.g[A3][0] = sx(seed % 4);
+        c.g[T0][0] = sx((seed % 2) * 0x10);
+        c.pc = 0x0032_81d0;
+    }
+
+    #[test]
+    fn sphere_tree_walk_levels_recursive_matches() {
+        check(
+            ee::s10::f_003281d0__generated,
+            sphere_tree_walk_levels_recursive,
+            200,
+            &|c, seed| {
+                let mut r = walk_levels_base(c, seed);
+                walk_levels_fixture(c, seed, &mut r);
             },
         );
     }

@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -151,6 +152,38 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "GMHandler0_OnRiderFinished",
     ),
     (0x0023_b170, gm_handler2_reset, "GMHandler2_Reset"),
+    (
+        0x0023_9aa0,
+        gm_handler0_init_standings,
+        "GMHandler0_InitStandings",
+    ),
+    (
+        0x0023_9ec8,
+        gm_handler9_on_rider_finished,
+        "GMHandler9_OnRiderFinished",
+    ),
+    (0x0023_ac88, gm_handler8_reset_port, "GMHandler8_Reset"),
+    (0x0023_b6c0, gm_handler5_reset_port, "GMHandler5_Reset"),
+    (
+        0x0023_b8c8,
+        gm_handler5_on_rider_finished_port,
+        "GMHandler5_OnRiderFinished",
+    ),
+    (
+        0x0023_bdb8,
+        gm_handler6_on_rider_finished_port,
+        "GMHandler6_OnRiderFinished",
+    ),
+    (
+        0x0023_c2d8,
+        gm_handler7_on_rider_finished,
+        "GMHandler7_OnRiderFinished",
+    ),
+    (
+        0x0023_c618,
+        gm_handler_unused_reset,
+        "GMHandlerUnused_Reset",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5586,6 +5619,1819 @@ pub fn gm_handler2_reset(c: &mut Cpu) {
     })
 }
 
+/// `gp-0x480`: the game-mode manager pointer (`cGameModeHandler_pManager`).
+pub(crate) const GM_MANAGER_GP: u32 = 0x480;
+
+/// `gp-0x848`: the world pointer; its `+0x84` word is the race.
+pub(crate) const WORLD_GP: u32 = 0x848;
+
+/// The race-path byte of `cBENewRaceInterface_newRace` (0x535c11).
+pub(crate) const NEW_RACE_PATH_BYTE: u32 = 0x0053_5c11;
+
+/// `cGMBigAirHandler_fillScoreTable` (0x00239aa0, `GMHandler0_InitStandings`):
+/// fills the standings table of the big-air event. The non-simulated riders
+/// (`iNumberAI - iSimAI`, plus the human) take rows 0.. with rank `5 - i` and
+/// zero scores in all three heats. Each simulated rider then gets its three
+/// heat thresholds (heat 1 is repeated when the race path asks for it). The
+/// score table is sorted with `GameModeMan_SortByScore` at the end.
+pub fn gm_handler0_init_standings(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+
+        c.g[S0][0] = c.g[A0][0]; // self
+                                 // race = BE interface 0, player = BE interface 1
+        call_ptr(c, 0x0014_dc80, 0x0023_9ad4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0023_9ae0)?;
+        let s = sp(c);
+        let race = c.g[V0][0];
+        c.sw(s, race);
+        call_ptr(c, 0x0014_dc80, 0x0023_9ae8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0014_dd58, 0x0023_9af4)?;
+
+        // nB = iSimAI simulated riders; numNonSimulated = iNumberAI - nB.
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(GM_MANAGER_GP));
+        c.g[T0][0] = 0; // i of the ranking loop
+        let s = sp(c);
+        let player = c.g[V0][0];
+        c.sw(s.wrapping_add(4), player);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14)); // iSimAI
+        let s = sp(c);
+        let sim = c.g[V0][0];
+        c.sw(s.wrapping_add(8), sim);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10)); // iNumberAI
+        let s = sp(c);
+        c.g[V1][0] = c.lw(s.wrapping_add(8));
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(1)); // rows of the first loop
+        c.g[A3][0] = 0; // k: the next free row
+
+        // The human and non-simulated rows: rank 5 - i, zero scores.
+        if (c.g[A0][0] as i64) > 0 {
+            c.cycles += 8;
+            c.g[V0][0] = 0x53_0000;
+            c.g[V1][0] = 0x53_0000;
+            c.g[T4][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6730));
+            c.g[T3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6640));
+            c.g[T1][0] = c.g[A0][0];
+            c.g[T2][0] = 5;
+            c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(4)); // &self->t[0][0]
+            'rows: loop {
+                c.cycles += 10;
+                c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+                c.g[A2][0] = c.g[V0][0];
+                c.g[S5][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                let rank = c.g[V1][0];
+                let rank_slot = c.g[V0][0] as u32;
+                c.sw(rank_slot, rank);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x50));
+                c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+                c.g[V0][0] = 2;
+                // Heats 2, 1, 0 of this row: zero.
+                'heats0: loop {
+                    c.cycles += 7;
+                    let cell = c.g[A0][0] as u32;
+                    c.sw(cell, 0);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                    let more = (c.g[V0][0] as i64) >= 0;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x28));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0023_9b68);
+                        }
+                        continue 'heats0;
+                    }
+                    break;
+                }
+                c.cycles += 8;
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                c.g[T0][0] = c.g[V1][0];
+                c.g[A0][0] = c.lw(c.g[V0][0] as u32); // self->t[0][i]
+                c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[T3][0] as u32));
+                c.g[A3][0] = c.g[S5][0];
+                c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[T1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                let score_slot = c.g[V1][0] as u32;
+                c.sw(score_slot, c.g[A0][0]);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0023_9b40);
+                    }
+                    continue 'rows;
+                }
+                break;
+            }
+        }
+
+        // The simulated riders: three heat thresholds each.
+        c.cycles += 5;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1)); // nA = numNonSimulated + 1
+        c.g[A0][0] = c.lw(sp(c).wrapping_add(8)); // nB
+        let s = sp(c);
+        let n_a = c.g[A1][0];
+        c.sw(s.wrapping_add(0xc), n_a);
+        c.g[S4][0] = 0; // simRider
+        if (c.g[A0][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+            'sim: loop {
+                c.cycles += 8;
+                c.g[S2][0] = sx((c.g[A3][0] as u32) << 2); // k * 4
+                c.g[S1][0] = 0; // heat
+                c.g[S7][0] = c.g[S2][0];
+                c.g[S6][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[S5][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                c.g[FP][0] = sx((c.g[S4][0] as u32).wrapping_add(1));
+                c.g[V0][0] = 0x53_0000;
+                'heat: loop {
+                    // Heat 0 and heats with the path byte clear: a fresh
+                    // threshold. Else: a repeat of heat 0's score.
+                    c.cycles += 7;
+                    c.g[V0][0] = 0x53_5bc8;
+                    c.g[V1][0] = c.lb(NEW_RACE_PATH_BYTE);
+                    c.g[V0][0] = 1;
+                    if c.g[S1][0] == 0 {
+                        c.g[V0][0] = 0;
+                    }
+                    if c.g[V1][0] == 0 {
+                        c.g[V0][0] = 0;
+                    }
+                    let fresh = c.g[V0][0] == 0;
+                    c.g[V1][0] = 0x28;
+                    if fresh {
+                        c.cycles += 14;
+                        let s = sp(c);
+                        c.g[A0][0] = c.lw(s.wrapping_add(4)); // player
+                        c.g[A1][0] = 0;
+                        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                        call_ptr(c, 0x0014_7cb8, 0x0023_9c28)?;
+                        let s = sp(c);
+                        c.g[A0][0] = c.lw(s); // race
+                        c.g[A3][0] = c.g[V0][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S4][0];
+                        call_ptr(c, 0x0014_53d0, 0x0023_9c3c)?;
+                        c.g[A0][0] = 0x28;
+                        c.mult(0, 4, 17, 4);
+                        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                        c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        let slot = c.g[V1][0] as u32;
+                        c.sw(slot, c.g[V0][0]);
+                    } else {
+                        c.cycles += 7;
+                        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                        c.mult(0, 3, 17, 3);
+                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                        c.g[V1][0] = c.lw(c.g[S6][0] as u32);
+                        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        let slot = c.g[V0][0] as u32;
+                        c.sw(slot, c.g[V1][0]);
+                    }
+
+                    c.cycles += 4;
+                    c.g[S1][0] = c.g[S0][0];
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < 3) as u64;
+                    let more_heats = c.g[V0][0] != 0;
+                    c.g[V0][0] = 0x53_0000;
+                    if more_heats {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0023_9be0);
+                        }
+                        continue 'heat;
+                    }
+
+                    // The rider's score slot: the heat-0 score goes to the
+                    // table and the simRider ranking is stored.
+                    c.cycles += 15;
+                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[A0][0] = 0x53_0000;
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6730));
+                    c.g[V0][0] = 0x53_0000;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6640));
+                    let rank_slot = c.g[V1][0] as u32;
+                    c.sw(rank_slot, c.g[S4][0]);
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[S4][0] = c.g[FP][0];
+                    let score_slot = c.g[A0][0] as u32;
+                    c.sw(score_slot, c.g[A1][0]);
+                    c.g[V1][0] = c.lw(sp(c).wrapping_add(8));
+                    c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let more_sims = c.g[V0][0] != 0;
+                    c.g[A3][0] = c.g[S5][0];
+                    if more_sims {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0023_9bc0);
+                        }
+                        continue 'sim;
+                    }
+                    break 'sim;
+                }
+            }
+        }
+
+        // Sort the score table: (nA + nB) rows.
+        c.cycles += 17;
+        c.g[V0][0] = c.lw(sp(c).wrapping_add(0xc));
+        c.g[V1][0] = c.lw(sp(c).wrapping_add(8));
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(GM_MANAGER_GP));
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        call_ptr(c, 0x0023_8b70, 0x0023_9cb0)?;
+
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cGMMPSlopeHandler_raceFinish` (0x00239ec8, `GMHandler9_OnRiderFinished`):
+/// a rider (`idx`) has finished. Copies the rider's totals (0xa8 bytes at
+/// `rider->metrix + 0xfc`) to the frame, records its score (0 when it did
+/// not finish, which also sets its did-not-finish flag) and, once the race is
+/// over, locks the event and sorts the table.
+pub fn gm_handler9_on_rider_finished(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S0, 0xc0);
+        frame.save_ra(c, 0xb0);
+
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(WORLD_GP));
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2); // idx * 4
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84)); // race
+        c.g[T0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc)); // riders
+        c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28)); // rider
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x790)); // metrix
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xfc)); // totals source
+        c.g[V0][0] = c.g[V1][0] & 0x7;
+        let aligned = c.g[V0][0] == 0;
+        c.g[A2][0] = c.g[SP][0]; // the copy's destination cursor
+
+        // Both copy loops share this set-up.
+        c.cycles += 4;
+        c.g[S0][0] = c.g[A1][0];
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x19c)); // copy end
+        c.g[A1][0] = 0x53_0000;
+        c.g[A3][0] = 0x53_0000;
+        if aligned {
+            'copy8: loop {
+                c.cycles += 11;
+                c.g[A0][0] = c.ld(c.g[V1][0] as u32);
+                c.g[T1][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
+                c.g[T2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
+                c.g[T3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
+                c.sd(c.g[A2][0] as u32, c.g[A0][0]);
+                c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[T1][0]);
+                c.sd((c.g[A2][0] as u32).wrapping_add(0x10), c.g[T2][0]);
+                c.sd((c.g[A2][0] as u32).wrapping_add(0x18), c.g[T3][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                let more = c.g[V1][0] != c.g[V0][0];
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0023_9f74);
+                    }
+                    continue 'copy8;
+                }
+                c.cycles += 1;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(WORLD_GP));
+                break;
+            }
+        } else {
+            'copy_unaligned: loop {
+                c.cycles += 19;
+                c.ldl(4, (c.g[V1][0] as u32).wrapping_add(0x7));
+                c.ldr(4, c.g[V1][0] as u32);
+                c.ldl(9, (c.g[V1][0] as u32).wrapping_add(0xf));
+                c.ldr(9, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.ldl(10, (c.g[V1][0] as u32).wrapping_add(0x17));
+                c.ldr(10, (c.g[V1][0] as u32).wrapping_add(0x10));
+                c.ldl(11, (c.g[V1][0] as u32).wrapping_add(0x1f));
+                c.ldr(11, (c.g[V1][0] as u32).wrapping_add(0x18));
+                c.sdl(4, (c.g[A2][0] as u32).wrapping_add(0x7));
+                c.sdr(4, c.g[A2][0] as u32);
+                c.sdl(9, (c.g[A2][0] as u32).wrapping_add(0xf));
+                c.sdr(9, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.sdl(10, (c.g[A2][0] as u32).wrapping_add(0x17));
+                c.sdr(10, (c.g[A2][0] as u32).wrapping_add(0x10));
+                c.sdl(11, (c.g[A2][0] as u32).wrapping_add(0x1f));
+                c.sdr(11, (c.g[A2][0] as u32).wrapping_add(0x18));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                let more = c.g[V1][0] != c.g[V0][0];
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0023_9f10);
+                    }
+                    continue 'copy_unaligned;
+                }
+                c.cycles += 2;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(WORLD_GP));
+                break;
+            }
+        }
+
+        // The copy's tail: 8 more bytes at the end of the frame copy.
+        c.cycles += 13;
+        c.ldl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
+        c.ldr(2, c.g[V1][0] as u32);
+        c.g[T1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.sdl(2, (c.g[A2][0] as u32).wrapping_add(0x7));
+        c.sdr(2, c.g[A2][0] as u32);
+        c.sw((c.g[A2][0] as u32).wrapping_add(0x8), c.g[T1][0]);
+        c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84)); // race
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28)); // rider
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x480)); // did not finish
+        let finished = c.g[A0][0] == 0;
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6640)); // D_00536640
+        if finished {
+            c.cycles += 6;
+            let s = sp(c);
+            c.g[A0][0] = c.lw(s.wrapping_add(0x9c)); // st.TotalPoints
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x66a8));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            let score_slot = c.g[V0][0] as u32;
+            c.sw(score_slot, c.g[A0][0]);
+            let dnf_slot = c.g[V1][0] as u32;
+            c.sw(dnf_slot, 0);
+        } else {
+            c.cycles += 7;
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x66a8));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A0][0] = 1;
+            let score_slot = c.g[V0][0] as u32;
+            c.sw(score_slot, 0);
+            let dnf_slot = c.g[V1][0] as u32;
+            c.sw(dnf_slot, c.g[A0][0]);
+        }
+
+        // The race is over when cAI_isRaceFinished says so: lock the event
+        // and sort the table; the rider that ranks first keeps no flag.
+        c.cycles += 4;
+        c.g[A0][0] = c.g[T0][0];
+        call_ptr(c, 0x0012_a250, 0x0023_a014)?;
+        let over = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(GM_MANAGER_GP));
+        if over {
+            c.cycles += 12;
+            c.g[V1][0] = 1;
+            c.g[A1][0] = 2;
+            let flag_slot = (c.g[V0][0] as u32).wrapping_add(0x9c);
+            c.sw(flag_slot, c.g[V1][0]); // bIsEventDone
+            c.g[A0][0] = c.g[V0][0];
+            let locked_slot = (c.g[V0][0] as u32).wrapping_add(0x84);
+            c.sw(locked_slot, c.g[V1][0]); // bAreResultsLocked
+            call_ptr(c, 0x0023_8b70, 0x0023_a034)?;
+            c.g[V0][0] = 0x53_0000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6730));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32); // iRanking[idx]
+            let ranked = (c.g[V1][0] as i64) > 0;
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(WORLD_GP));
+            if ranked {
+                c.cycles += 5;
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                let unk_slot = (c.g[V1][0] as u32).wrapping_add(0x100);
+                c.sw(unk_slot, 0);
+            }
+        }
+
+        c.cycles += 4;
+        frame.restore(c, S0, 0xc0);
+        frame.restore_ra(c, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// Callees of the game-mode handlers (generated addresses).
+/// `cBE_getBE()`.
+pub(crate) const BE_GET_BE: u32 = 0x0014_dc80;
+
+/// `cBE_getInterface(be, n)`: 0 race, 1 player, 8 score.
+pub(crate) const BE_GET_INTERFACE: u32 = 0x0014_dd58;
+
+/// `cBENewPlayerInterface_getHumanRider(player, n)`.
+pub(crate) const BE_GET_HUMAN_RIDER: u32 = 0x0014_6e98;
+
+/// `cBENewRaceInterface_getRival(race, n)`.
+pub(crate) const BE_GET_RIVAL: u32 = 0x0014_5750;
+
+/// Player character id (`GET_CHAR_ID`): `(player, alt)`.
+pub(crate) const BE_GET_CHAR_ID: u32 = 0x0014_7488;
+
+/// Player alternate character id (`GET_ALT_CHAR`): `(player, alt)`.
+pub(crate) const BE_GET_ALT_CHAR: u32 = 0x0014_74c8;
+
+/// `cBENewPlayerInterface_getRiderCheatCharID(player, n)`.
+pub(crate) const BE_GET_RIDER_CHEAT_ID: u32 = 0x0014_7410;
+
+/// The player's rider-slot call with `(player, n)` (generated `0x147398`).
+pub(crate) const BE_PLAYER_SLOT: u32 = 0x0014_7398;
+
+/// `cAI_isRaceFinished(ai)`.
+pub(crate) const AI_IS_RACE_FINISHED: u32 = 0x0012_a250;
+
+/// `cRider_estimateFinishTick(rider)`.
+pub(crate) const RIDER_ESTIMATE_TICK: u32 = 0x0012_2d78;
+
+/// `cRider_estimateFinishScore(rider)`.
+pub(crate) const RIDER_ESTIMATE_SCORE: u32 = 0x0012_2e50;
+
+/// `GameModeMan_SortByTime(handler, n)`.
+pub(crate) const SORT_BY_TIME: u32 = 0x0023_8bf8;
+
+/// `GameModeMan_SortByScore(handler, n)`.
+pub(crate) const SORT_BY_SCORE_2: u32 = 0x0023_8b70;
+
+/// `GMHandler8_PickOpponents(self)`.
+pub(crate) const PICK_OPPONENTS_2: u32 = 0x0023_b0a8;
+
+/// `gp-0x480`: the game-mode handler (the current GM object).
+#[cfg(test)]
+pub(crate) const GP_GM: u32 = 0x480;
+
+/// `void GMHandler8_Reset(GMHandler8* self)` (0x23ac88): reset the GM
+/// handler's screen fields, clear the 5*8-byte table at `self+4`, run its
+/// vtable's slot 5, copy the player's character ids and alt-character ids
+/// into the handler, and pick opponents when the mode word was 1.
+pub fn gm_handler8_reset_port(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 17, 0x20);
+        frame.save(c, 16, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, 18, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = 1;
+
+        // player = cBE_getInterface(cBE_getBE(), 1)
+        call_ptr(c, BE_GET_BE, 0x0023_aca8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, BE_GET_INTERFACE, 0x0023_acb4)?;
+        c.g[S0][0] = c.g[V0][0];
+
+        c.g[V1][0] = 4;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        c.g[A0][0] = 3;
+        c.g[A2][0] = 2;
+        c.g[A3][0] = u64::MAX;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+        c.g[A1][0] = 7;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[A2][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x74), c.g[A0][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x6c), c.g[A3][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x94), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x90), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x9c), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x98), c.g[S2][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x88), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0);
+        c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x70), c.g[A0][0]);
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x78));
+        call_ptr(c, BE_GET_INTERFACE, 0x0023_ad0c)?;
+
+        // A profile word in the BE library's static data selects the copy.
+        c.g[V1][0] = 0x0053_0000;
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4b30));
+        let no_profile = c.g[V0][0] == 0;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        if !no_profile {
+            c.cycles += 10;
+            call_ptr(c, BE_GET_BE, 0x0023_ad24)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, BE_GET_INTERFACE, 0x0023_ad30)?;
+            c.g[V1][0] = 0x0053_0000;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c04));
+            c.sw((c.g[A0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        }
+
+        // memset(self + 4, 0, 0x28), then zero the handler's timers.
+        c.cycles += 36;
+        c.g[A2][0] = 0x28;
+        c.g[A1][0] = 9;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(4));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x8c), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x14), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x80), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x78), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x7c), 0);
+        call_ptr(c, MEMSET, 0x0023_ad68)?;
+
+        // self's vtable slot 5: {int16 delta; fn}, called with self + delta.
+        c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+        let slot = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, slot, 0x0023_ad7c)?;
+
+        // The character ids (+0x18, +0x1c) and alt ids (+0x40, +0x44).
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, BE_GET_CHAR_ID, 0x0023_ad88)?;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+        call_ptr(c, BE_GET_CHAR_ID, 0x0023_ad9c)?;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+        call_ptr(c, BE_GET_ALT_CHAR, 0x0023_adb0)?;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+        call_ptr(c, BE_GET_ALT_CHAR, 0x0023_adc4)?;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+        let mode_not_one = c.g[A0][0] != c.g[S2][0];
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x44), c.g[V0][0]);
+        if !mode_not_one {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: PICK_OPPONENTS_2,
+                f: ee::s06::GMHandler8_PickOpponents,
+            }
+            .call(c, 0x0023_addc)?;
+        }
+
+        c.cycles += 8;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x84), 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void GMHandler5_Reset(GMHandler5* self)` (0x23b6c0): the rival time
+/// handler's reset. The byte at `0x535c11` picks the branch: when it is 2 the
+/// player's per-rider tables are filled from the riders and the function
+/// returns; otherwise the rival tables are cleared and filled from the race.
+pub fn gm_handler5_reset_port(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        'b_23b8a8: {
+            'b_23b814: {
+                c.cycles += 48;
+                let frame = Frame::open(c, 0x60);
+                frame.save(c, 16, 0x50);
+                frame.save(c, 17, 0x40);
+                frame.save(c, 20, 0x10);
+                frame.save(c, 18, 0x30);
+                frame.save(c, 19, 0x20);
+                frame.save_ra(c, 0);
+                c.g[S0][0] = c.g[A0][0];
+                call_ptr(c, BE_GET_BE, 0x0023_b6e4)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 1;
+                call_ptr(c, BE_GET_INTERFACE, 0x0023_b6f0)?;
+                c.g[S4][0] = c.g[V0][0];
+                call_ptr(c, BE_GET_BE, 0x0023_b6f8)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0;
+                call_ptr(c, BE_GET_INTERFACE, 0x0023_b704)?;
+                c.g[S1][0] = c.g[V0][0];
+
+                c.g[V1][0] = 1;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                c.g[A0][0] = u64::MAX;
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x6c), c.g[A0][0]);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x98), c.g[V1][0]);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x9c), 0);
+                c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x14), 0);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x68), c.g[A0][0]);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x70), c.g[V1][0]);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x74), c.g[V1][0]);
+                for off in [0x78u32, 0x7c, 0x80, 0x84, 0x88, 0x8c, 0x90, 0x94] {
+                    c.sw((c.g[V0][0] as u32).wrapping_add(off), 0);
+                }
+
+                // self's vtable slot 5 (delta + fn), called with self + delta.
+                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+                let slot = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, slot, 0x0023_b76c)?;
+
+                c.g[V1][0] = 0x0053_0000;
+                c.g[A0][0] = 2;
+                c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x5c11));
+                let flag_not_two = c.g[V0][0] != c.g[A0][0];
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                if flag_not_two {
+                    break 'b_23b814;
+                }
+
+                // Flag == 2: one table per rider from the player's riders.
+                c.cycles += 37;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = 0;
+                c.g[RA][0] = sx(0x0023_b794);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x10), 0);
+                call_ptr(c, BE_GET_HUMAN_RIDER, 0x0023_b794)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = 1;
+                c.g[S2][0] = sx((c.g[S0][0] as u32) << 2);
+                call_ptr(c, BE_GET_HUMAN_RIDER, 0x0023_b7a8)?;
+                c.g[S1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = c.g[S0][0];
+                c.g[S3][0] = sx((c.g[S1][0] as u32) << 2);
+                call_ptr(c, BE_PLAYER_SLOT, 0x0023_b7bc)?;
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[S4][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+                call_ptr(c, BE_GET_RIDER_CHEAT_ID, 0x0023_b7d4)?;
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+                call_ptr(c, BE_PLAYER_SLOT, 0x0023_b7ec)?;
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+                call_ptr(c, BE_GET_RIDER_CHEAT_ID, 0x0023_b804)?;
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+                break 'b_23b8a8;
+            }
+
+            // Flag != 2: the rival tables.
+            c.cycles += 37;
+            c.g[A2][0] = 0x28;
+            c.g[A1][0] = u64::MAX;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+            call_ptr(c, MEMSET, 0x0023_b824)?;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, BE_GET_HUMAN_RIDER, 0x0023_b830)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, BE_GET_HUMAN_RIDER, 0x0023_b840)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S4][0];
+            call_ptr(c, BE_PLAYER_SLOT, 0x0023_b84c)?;
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+            c.g[S0][0] = sx((c.g[S0][0] as u32) << 2);
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+            call_ptr(c, BE_GET_HUMAN_RIDER, 0x0023_b868)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, BE_GET_RIVAL, 0x0023_b874)?;
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            c.g[S0][0] = sx((c.g[S0][0] as u32) << 2);
+            c.g[A0][0] = c.g[S4][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.g[A1][0] = 0;
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+            call_ptr(c, BE_GET_HUMAN_RIDER, 0x0023_b894)?;
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x40), 0);
+        }
+
+        c.cycles += 8;
+        frame_epilogue_b6c0(c);
+        Ok(())
+    })
+}
+
+/// The epilogue of `GMHandler5_Reset` (0x23b6c0): reload s0.. and `ra`
+/// from its frame, pop it and return.
+pub(crate) fn frame_epilogue_b6c0(c: &mut Cpu) {
+    let frame = Frame { size: 0x60 };
+    frame.restore(c, 16, 0x50);
+    frame.restore(c, 17, 0x40);
+    frame.restore(c, 18, 0x30);
+    frame.restore(c, 19, 0x20);
+    frame.restore(c, 20, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+}
+
+/// `void GMHandler5_OnRiderFinished(GMHandler5* self, int idx)` (0x23b8c8):
+/// the rival time handler's rider-finish step. When the race is finished and
+/// the rider `idx` has finished (its state at +0x6c0), it stores the rider's
+/// finish tick in the rival table and sorts the times; the player's own
+/// entry is recorded at the end.
+pub fn gm_handler5_on_rider_finished_port(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x50);
+        'b_23b9b0: {
+            'b_23b934: {
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                frame.save(c, 16, 0x30);
+                frame.save(c, 17, 0x20);
+                c.g[S0][0] = c.g[A1][0];
+                frame.save(c, 18, 0x10);
+                frame.save_ra(c, 0);
+                frame.save_fpr(c, 20, 0x40);
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                call_ptr(c, AI_IS_RACE_FINISHED, 0x0023_b8f4)?;
+                let not_finished = c.g[V0][0] == 0;
+                c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                if not_finished {
+                    break 'b_23b934;
+                }
+                c.cycles += 14;
+                c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
+                c.g[S2][0] = c.g[A0][0];
+                c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x48));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4c));
+                let vfn = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                call_ptr(c, vfn, 0x0023_b92c)?;
+                let entry_done = c.g[V0][0] != 0;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                if entry_done {
+                    break 'b_23b9b0;
+                }
+                break 'b_23b934;
+            }
+
+            'b_23b9ac: {
+                'b_23b988: {
+                    c.cycles += 10;
+                    c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
+                    c.g[S2][0] = c.g[A0][0];
+                    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x480));
+                    let no_rider_block = c.g[V1][0] == 0;
+                    c.g[V1][0] = 0x0053_0000;
+                    if no_rider_block {
+                        break 'b_23b988;
+                    }
+                    // The rider has a block: store its finish flag in the
+                    // rival table and the point table.
+                    c.cycles += 11;
+                    c.g[A0][0] = 0x0053_0000;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6640));
+                    c.g[V0][0] = 0x0005_0000;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x66a8));
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] |= 0x7e40;
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A1][0] = 1;
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                    c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+                    break 'b_23b9ac;
+                }
+                c.cycles += 9;
+                c.g[V0][0] = 0x0053_0000;
+                c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x478));
+                c.g[V1][0] = 0x0053_0000;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6640));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x66a8));
+                c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+                c.sw(c.g[V1][0] as u32, 0);
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        }
+
+        // 'b_23bb7c: the player's own time, once the race is finished.
+        'b_23bb7c: {
+            'b_23bb78: {
+                c.cycles += 5;
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                call_ptr(c, AI_IS_RACE_FINISHED, 0x0023_b9bc)?;
+                let not_finished = c.g[V0][0] == 0;
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                if not_finished {
+                    break 'b_23bb78;
+                }
+                c.cycles += 12;
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x40));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
+                let vfn = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                call_ptr(c, vfn, 0x0023_b9ec)?;
+                if c.g[V0][0] == 0 {
+                    frame.restore(c, 16, 0x30);
+                    break 'b_23bb7c;
+                }
+
+                'b_23bb68: {
+                    'b_23ba5c: {
+                        c.cycles += 10;
+                        call_ptr(c, BE_GET_BE, 0x0023_b9fc)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0;
+                        call_ptr(c, BE_GET_INTERFACE, 0x0023_ba08)?;
+                        c.g[V1][0] = 0x0053_0000;
+                        c.g[A0][0] = 2;
+                        c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x5c11));
+                        let flag_not_two = c.g[V0][0] != c.g[A0][0];
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        if flag_not_two {
+                            break 'b_23ba5c;
+                        }
+                        c.cycles += 14;
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        c.g[A1][0] = 0xa;
+                        call_ptr(c, SORT_BY_TIME, 0x0023_ba28)?;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        c.g[A0][0] = 1;
+                        c.g[A1][0] = 0x0053_0000;
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x9c), c.g[A0][0]);
+                        c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6640));
+                        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x6640));
+                        c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+                        if c.g[V0][0] != 0 {
+                            c.g[A0][0] = 0;
+                        }
+                        let is_player = c.g[S0][0] == c.g[A0][0];
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        if is_player {
+                            break 'b_23bb78;
+                        }
+                        c.cycles += 2;
+                        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                        break 'b_23bb68;
+                    }
+
+                    'b_23bad8: {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                        let none = (c.g[V0][0] as i64) <= 0;
+                        c.g[S0][0] = 0;
+                        if none {
+                            break 'b_23bad8;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x0053_0000;
+                        c.mtc1(0, 20);
+                        c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6640));
+                        'l_23ba78: loop {
+                            'b_23baa8: {
+                                c.cycles += 11;
+                                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                                c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
+                                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
+                                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                                c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x470));
+                                c.c_le_s(20, 0);
+                                let finish_le = c.fcc();
+                                c.g[A2][0] = 1;
+                                if finish_le {
+                                    break 'b_23baa8;
+                                }
+                                c.cycles += 1;
+                                c.g[A2][0] = 0;
+                            }
+                            'b_23bac0: {
+                                c.cycles += 2;
+                                let not_done = c.g[A2][0] != 0;
+                                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                                if not_done {
+                                    break 'b_23bac0;
+                                }
+                                c.cycles += 4;
+                                call_ptr(c, RIDER_ESTIMATE_TICK, 0x0023_bab8)?;
+                                c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                            }
+                            c.cycles += 6;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            let more = c.g[V0][0] != 0;
+                            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(4));
+                            if more {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0023_ba78);
+                                }
+                                continue 'l_23ba78;
+                            }
+                            break 'b_23bad8;
+                        }
+                    }
+
+                    'b_23bb64: {
+                        c.cycles += 21;
+                        c.g[RA][0] = sx(0x0023_bae0);
+                        c.g[S1][0] = 1;
+                        call_ptr(c, BE_GET_BE, 0x0023_bae0)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 1;
+                        call_ptr(c, BE_GET_INTERFACE, 0x0023_baec)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0;
+                        call_ptr(c, BE_GET_HUMAN_RIDER, 0x0023_baf8)?;
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0xa;
+                        c.g[A0][0] = c.g[V1][0];
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x9c), c.g[S1][0]);
+                        call_ptr(c, SORT_BY_TIME, 0x0023_bb10)?;
+                        c.g[V0][0] = 0x0053_0000;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6730));
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                        let slot_taken = c.g[V1][0] != 0;
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        if slot_taken {
+                            break 'b_23bb64;
+                        }
+                        c.cycles += 7;
+                        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                        c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x480));
+                        let rider_taken = c.g[V1][0] != 0;
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        if rider_taken {
+                            break 'b_23bb64;
+                        }
+                        c.cycles += 7;
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x100), c.g[S1][0]);
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x70));
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x84), c.g[S1][0]);
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x74), c.g[V1][0]);
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x70), 0);
+                        break 'b_23bb78;
+                    }
+                    c.cycles += 1;
+                    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                }
+                c.cycles += 4;
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x100), 0);
+                break 'b_23bb78;
+            }
+            c.cycles += 1;
+            frame.restore(c, 16, 0x30);
+            break 'b_23bb7c;
+        }
+
+        c.cycles += 6;
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void GMHandler6_OnRiderFinished(GMHandler6* self, int idx)` (0x23bdb8):
+/// the point-score handler's rider-finish step. Copies a 0xa0-byte block of
+/// the rider's data into the frame (`ldl`/`ldr` when the source is unaligned),
+/// then the rider's point entry is recorded; when the race is finished the
+/// scores are sorted and the player's own entry is recorded.
+pub fn gm_handler6_on_rider_finished_port(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x100);
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        frame.save(c, 16, 0xe0);
+        frame.save(c, 17, 0xd0);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, 18, 0xc0);
+        c.g[A2][0] = sx((c.g[S0][0] as u32) << 2);
+        frame.save_ra(c, 0xb0);
+        frame.save_fpr(c, 20, 0xf0);
+        'b_23bf08: {
+            'b_23be20: {
+                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x480));
+                let has_block = c.g[V1][0] == 0;
+                c.g[V1][0] = 0x0053_0000;
+                if has_block {
+                    break 'b_23be20;
+                }
+                c.cycles += 10;
+                c.g[A1][0] = 0x0053_0000;
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6640));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x66a8));
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A0][0] = 1;
+                c.sw(c.g[V0][0] as u32, 0);
+                c.sw(c.g[V1][0] as u32, c.g[A0][0]);
+                c.g[S1][0] = c.g[A1][0];
+                break 'b_23bf08;
+            }
+
+            // The copy of the 32-byte result block into the stack frame.
+            'b_23bed4: {
+                'b_23be98: {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x790));
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xfc));
+                    c.g[V0][0] = c.g[V1][0] & 7;
+                    let aligned = c.g[V0][0] == 0;
+                    c.g[A1][0] = c.g[SP][0];
+                    if aligned {
+                        break 'b_23be98;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x19c));
+                    c.g[S2][0] = c.g[A2][0];
+                    c.g[S1][0] = 0x0053_0000;
+                    c.g[V0][0] = 0x0053_0000;
+                    'l_23be44: loop {
+                        c.cycles += 19;
+                        c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0x7));
+                        c.ldr(6, c.g[V1][0] as u32);
+                        c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0xf));
+                        c.ldr(7, (c.g[V1][0] as u32).wrapping_add(0x8));
+                        c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0x17));
+                        c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.ldl(9, (c.g[V1][0] as u32).wrapping_add(0x1f));
+                        c.ldr(9, (c.g[V1][0] as u32).wrapping_add(0x18));
+                        c.sdl(6, (c.g[A1][0] as u32).wrapping_add(0x7));
+                        c.sdr(6, c.g[A1][0] as u32);
+                        c.sdl(7, (c.g[A1][0] as u32).wrapping_add(0xf));
+                        c.sdr(7, (c.g[A1][0] as u32).wrapping_add(0x8));
+                        c.sdl(8, (c.g[A1][0] as u32).wrapping_add(0x17));
+                        c.sdr(8, (c.g[A1][0] as u32).wrapping_add(0x10));
+                        c.sdl(9, (c.g[A1][0] as u32).wrapping_add(0x1f));
+                        c.sdr(9, (c.g[A1][0] as u32).wrapping_add(0x18));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                        let more = c.g[V1][0] != c.g[A0][0];
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+                        if more {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0023_be44);
+                            }
+                            continue 'l_23be44;
+                        }
+                        c.cycles += 2;
+                        break 'b_23bed4;
+                    }
+                }
+                c.cycles += 4;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x19c));
+                c.g[S2][0] = c.g[A2][0];
+                c.g[S1][0] = 0x0053_0000;
+                c.g[V0][0] = 0x0053_0000;
+                'l_23bea8: loop {
+                    c.cycles += 11;
+                    c.g[A2][0] = c.ld(c.g[V1][0] as u32);
+                    c.g[A3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.g[T0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.g[T1][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
+                    c.sd(c.g[A1][0] as u32, c.g[A2][0]);
+                    c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A3][0]);
+                    c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T0][0]);
+                    c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                    let more = c.g[V1][0] != c.g[A0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0023_bea8);
+                        }
+                        continue 'l_23bea8;
+                    }
+                    break 'b_23bed4;
+                }
+            }
+
+            c.cycles += 13;
+            c.ldl(4, (c.g[V1][0] as u32).wrapping_add(0x7));
+            c.ldr(4, c.g[V1][0] as u32);
+            c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+            c.sdl(4, (c.g[A1][0] as u32).wrapping_add(0x7));
+            c.sdr(4, c.g[A1][0] as u32);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x66a8));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x9c));
+            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x6640));
+            c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V0][0] as u32, 0);
+            c.sw(c.g[V1][0] as u32, c.g[A0][0]);
+            break 'b_23bf08;
+        }
+
+        // 'b_23c0b4: the player's score once the race is finished.
+        'b_23c0b4: {
+            c.cycles += 6;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+            c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+            call_ptr(c, AI_IS_RACE_FINISHED, 0x0023_bf18)?;
+            if c.g[V0][0] == 0 {
+                frame.restore(c, 16, 0xe0);
+                break 'b_23c0b4;
+            }
+
+            'b_23c0b0: {
+                'b_23c0a8: {
+                    'b_23bf90: {
+                        c.cycles += 10;
+                        call_ptr(c, BE_GET_BE, 0x0023_bf28)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0;
+                        call_ptr(c, BE_GET_INTERFACE, 0x0023_bf34)?;
+                        c.g[V1][0] = 0x0053_0000;
+                        c.g[A0][0] = 2;
+                        c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x5c11));
+                        let flag_not_two = c.g[V0][0] != c.g[A0][0];
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        if flag_not_two {
+                            break 'b_23bf90;
+                        }
+                        c.cycles += 13;
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        c.g[A1][0] = 2;
+                        call_ptr(c, SORT_BY_SCORE_2, 0x0023_bf54)?;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        c.g[V1][0] = 1;
+                        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x6640));
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x9c), c.g[V1][0]);
+                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6640));
+                        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = (c.g[V0][0] < c.g[A0][0]) as u64;
+                        if c.g[V0][0] != 0 {
+                            c.g[V1][0] = 0;
+                        }
+                        let is_player = c.g[S0][0] == c.g[V1][0];
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        if is_player {
+                            break 'b_23c0b0;
+                        }
+                        c.cycles += 5;
+                        c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
+                        c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                        break 'b_23c0a8;
+                    }
+
+                    // The rider slot is free: the score table (+0x1..) walk.
+                    'b_23c010: {
+                        c.cycles += 5;
+                        c.g[S2][0] = sx((c.g[S0][0] as u32) << 2);
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                        let none = (c.g[V0][0] as i64) <= 0;
+                        c.g[S0][0] = 0;
+                        if none {
+                            break 'b_23c010;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x0053_0000;
+                        c.mtc1(0, 20);
+                        c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6640));
+                        'l_23bfb0: loop {
+                            'b_23bfe0: {
+                                c.cycles += 11;
+                                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                                c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
+                                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
+                                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                                c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x470));
+                                c.c_le_s(20, 0);
+                                let finish_le = c.fcc();
+                                c.g[A2][0] = 1;
+                                if finish_le {
+                                    break 'b_23bfe0;
+                                }
+                                c.cycles += 1;
+                                c.g[A2][0] = 0;
+                            }
+                            'b_23bff8: {
+                                c.cycles += 2;
+                                let not_done = c.g[A2][0] != 0;
+                                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                                if not_done {
+                                    break 'b_23bff8;
+                                }
+                                c.cycles += 4;
+                                call_ptr(c, RIDER_ESTIMATE_SCORE, 0x0023_bff0)?;
+                                c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                            }
+                            c.cycles += 6;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            let more = c.g[V0][0] != 0;
+                            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(4));
+                            if more {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0023_bfb0);
+                                }
+                                continue 'l_23bfb0;
+                            }
+                            break 'b_23c010;
+                        }
+                    }
+
+                    // 'b_23c09c: the race finished: sort the scores, record.
+                    'b_23c09c: {
+                        c.cycles += 21;
+                        c.g[S1][0] = 1;
+                        call_ptr(c, BE_GET_BE, 0x0023_c018)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 1;
+                        call_ptr(c, BE_GET_INTERFACE, 0x0023_c024)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0;
+                        call_ptr(c, BE_GET_HUMAN_RIDER, 0x0023_c030)?;
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[A1][0] = 2;
+                        c.g[A0][0] = c.g[V1][0];
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x9c), c.g[S1][0]);
+                        call_ptr(c, SORT_BY_SCORE_2, 0x0023_c048)?;
+                        c.g[V0][0] = 0x0053_0000;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6730));
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                        let slot_taken = c.g[V1][0] != 0;
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        if slot_taken {
+                            break 'b_23c09c;
+                        }
+                        c.cycles += 7;
+                        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                        c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x480));
+                        let rider_taken = c.g[V1][0] != 0;
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        if rider_taken {
+                            break 'b_23c09c;
+                        }
+                        c.cycles += 7;
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x100), c.g[S1][0]);
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x70));
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x84), c.g[S1][0]);
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x74), c.g[V1][0]);
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x70), 0);
+                        break 'b_23c0b0;
+                    }
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    break 'b_23c0a8;
+                }
+                c.cycles += 2;
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x100), 0);
+            }
+            c.cycles += 1;
+            frame.restore(c, 16, 0xe0);
+        }
+
+        c.cycles += 6;
+        frame.restore(c, 17, 0xd0);
+        frame.restore(c, 18, 0xc0);
+        frame.restore_ra(c, 0xb0);
+        frame.restore_fpr(c, 20, 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `GMHandler7_OnRiderFinished(game, idx)` (0x23c2d8): rider `idx` (a1) has
+/// finished the race. The rider's 0xac-byte results block (the rider's
+/// `+0x790` pointer plus `0xfc`) is copied to the stack first (8-byte
+/// copies, or ldl/ldr pairs when the block is misaligned), then:
+/// - a DNF clears the rider's point entry, sets the next heat and flags the
+///   rider as not finished;
+/// - a total below the point target stores the points and the next heat;
+/// - otherwise the rider is ranked 0, 1 or 2 by the two peak goals, and the
+///   results are locked.
+pub fn gm_handler7_on_rider_finished(c: &mut Cpu) {
+    guest(c, rider_finished)
+}
+
+pub(crate) fn rider_finished(c: &mut Cpu) -> Flow {
+    c.cycles += 18;
+    let frame = Frame::open(c, 0x110);
+    c.g[A0][0] = c.lw(r32(c, GP).wrapping_sub(0x848));
+    c.g[A1][0] = sx(r32(c, A1) << 2);
+    frame.save(c, S0, 0x100);
+    frame.save(c, S1, 0xf0);
+    frame.save(c, S2, 0xe0);
+    frame.save(c, S3, 0xd0);
+    frame.save(c, S4, 0xc0);
+    frame.save_ra(c, 0xb0);
+    let game = r32(c, A0);
+    c.g[V1][0] = c.lw(game.wrapping_add(0x84));
+    let ai = r32(c, V1);
+    c.g[V0][0] = c.lw(ai.wrapping_add(0xc));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x28));
+    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x790));
+    c.g[V1][0] = sx(r32(c, A0).wrapping_add(0xfc));
+    c.g[V0][0] = c.g[V1][0] & 0x7;
+    let aligned = c.g[V0][0] == 0;
+    c.g[A2][0] = c.g[SP][0];
+    c.cycles += 3;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x19c));
+    c.g[S2][0] = c.g[A1][0];
+    c.g[S4][0] = 0x53_0000;
+    if aligned {
+        rider_copy_aligned(c);
+    } else {
+        rider_copy_unaligned(c);
+    }
+
+    // The copy's last 12 bytes (8 by ldl/ldr, a word) end the stack block.
+    c.cycles += 19;
+    let src = r32(c, V1);
+    c.ldl(2, src.wrapping_add(0x7));
+    c.ldr(2, src);
+    c.g[A0][0] = c.lw(src.wrapping_add(0x8));
+    let dst = r32(c, A2);
+    c.sdl(2, dst.wrapping_add(0x7));
+    c.sdr(2, dst);
+    let word = c.g[A0][0];
+    c.sw(dst.wrapping_add(0x8), word);
+
+    call_ptr(c, 0x0014_dc80, 0x0023_c3d4)?; // cBE_getBE()
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, 0x0014_dd58, 0x0023_c3e0)?; // cBE_getInterface_Fv(be, 0): the race
+    c.g[A2][0] = c.lw(r32(c, GP).wrapping_sub(0x848));
+    c.g[S3][0] = c.g[V0][0];
+    c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x84));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, S2)));
+    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x28)); // the rider
+    c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x480)); // mDidNotFinish
+    let dnf = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(r32(c, S4).wrapping_add(0x6640));
+    if dnf {
+        rider_dnf(c);
+    } else {
+        rider_ranked(c)?;
+    }
+
+    c.cycles += 11;
+    c.g[V1][0] = c.lw(r32(c, GP).wrapping_sub(0x480));
+    c.g[V0][0] = 1;
+    frame.restore(c, S0, 0x100);
+    frame.restore(c, S1, 0xf0);
+    frame.restore(c, S2, 0xe0);
+    frame.restore(c, S3, 0xd0);
+    frame.restore(c, S4, 0xc0);
+    frame.restore_ra(c, 0xb0);
+    let gm = r32(c, V1).wrapping_add(0x9c);
+    let locked = c.g[V0][0];
+    c.sw(gm, locked);
+    frame.close(c);
+    Ok(())
+}
+
+/// The aligned pass of the results copy: 32 bytes (four doublewords) a pass
+/// from `V1` to `A2`, until `V1` reaches `V0`.
+pub(crate) fn rider_copy_aligned(c: &mut Cpu) {
+    loop {
+        c.cycles += 11;
+        let src = r32(c, V1);
+        let dst = r32(c, A2);
+        c.g[A0][0] = c.ld(src);
+        c.g[A1][0] = c.ld(src.wrapping_add(0x8));
+        c.g[A3][0] = c.ld(src.wrapping_add(0x10));
+        c.g[T0][0] = c.ld(src.wrapping_add(0x18));
+        let (a0, a1, a3, t0) = (c.g[A0][0], c.g[A1][0], c.g[A3][0], c.g[T0][0]);
+        c.sd(dst, a0);
+        c.sd(dst.wrapping_add(0x8), a1);
+        c.sd(dst.wrapping_add(0x10), a3);
+        c.sd(dst.wrapping_add(0x18), t0);
+        c.g[V1][0] = sx(src.wrapping_add(0x20));
+        let more = c.g[V1][0] != c.g[V0][0];
+        c.g[A2][0] = sx(dst.wrapping_add(0x20));
+        if !more {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0023_c38c);
+        }
+    }
+}
+
+/// The misaligned pass of the results copy: the same 32 bytes a pass, moved
+/// with ldl/ldr and sdl/sdr pairs (registers a0, a1, a3, t0 carry the
+/// halves the generated loop leaves behind).
+pub(crate) fn rider_copy_unaligned(c: &mut Cpu) {
+    loop {
+        c.cycles += 19;
+        let src = r32(c, V1);
+        c.ldl(4, src.wrapping_add(0x7));
+        c.ldr(4, src);
+        c.ldl(5, src.wrapping_add(0xf));
+        c.ldr(5, src.wrapping_add(0x8));
+        c.ldl(7, src.wrapping_add(0x17));
+        c.ldr(7, src.wrapping_add(0x10));
+        c.ldl(8, src.wrapping_add(0x1f));
+        c.ldr(8, src.wrapping_add(0x18));
+        let dst = r32(c, A2);
+        c.sdl(4, dst.wrapping_add(0x7));
+        c.sdr(4, dst);
+        c.sdl(5, dst.wrapping_add(0xf));
+        c.sdr(5, dst.wrapping_add(0x8));
+        c.sdl(7, dst.wrapping_add(0x17));
+        c.sdr(7, dst.wrapping_add(0x10));
+        c.sdl(8, dst.wrapping_add(0x1f));
+        c.sdr(8, dst.wrapping_add(0x18));
+        c.g[V1][0] = sx(src.wrapping_add(0x20));
+        let more = c.g[V1][0] != c.g[V0][0];
+        c.g[A2][0] = sx(dst.wrapping_add(0x20));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x0023_c32c);
+            }
+            continue;
+        }
+        c.cycles += 2;
+        return;
+    }
+}
+
+/// The DNF branch of [`gm_handler7_on_rider_finished`] (no calls): the
+/// rider's point entry is cleared, the next heat is set and the rider's
+/// `+0x100` finish flag is zeroed.
+pub(crate) fn rider_dnf(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[V1][0] = c.lw(r32(c, GP).wrapping_sub(0x480));
+    c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+    c.g[A1][0] = 1;
+    let points = r32(c, V0);
+    c.sw(points, 0);
+    c.g[A0][0] = 0x53_0000;
+    let manager = r32(c, V1);
+    let one = c.g[A1][0];
+    c.sw(manager.wrapping_add(0x70), one);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x66a8));
+    c.g[A0][0] = sx(r32(c, S2).wrapping_add(r32(c, A0)));
+    c.g[V1][0] = c.lw(r32(c, A2).wrapping_add(0x84));
+    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0xc));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x28));
+    let rider = r32(c, V1);
+    c.sw(rider.wrapping_add(0x100), 0);
+    let finished = r32(c, A0);
+    let one = c.g[A1][0];
+    c.sw(finished, one);
+}
+
+/// The not-DNF branch: below the point target the points are kept; at or
+/// above it the rider goes on to the tier ranking.
+pub(crate) fn rider_ranked(c: &mut Cpu) -> Flow {
+    c.cycles += 6;
+    c.g[A2][0] = c.lw(r32(c, GP).wrapping_sub(0x480));
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(0x9c));
+    c.g[V1][0] = c.lw(r32(c, A2).wrapping_add(0x7c));
+    let below = (c.g[V0][0] as i64) < (c.g[V1][0] as i64);
+    c.g[V0][0] = below as u64;
+    c.g[V1][0] = sx(r32(c, S4).wrapping_add(0x6640));
+    if below {
+        c.cycles += 11;
+        let rider_flag = r32(c, A0).wrapping_add(0x100);
+        c.sw(rider_flag, 0);
+        c.g[V1][0] = sx(r32(c, S2).wrapping_add(r32(c, V1)));
+        c.g[V0][0] = 0x53_0000;
+        c.g[A1][0] = c.lw(sp(c).wrapping_add(0x9c));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x66a8));
+        c.g[A0][0] = 1;
+        c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+        let points = r32(c, V1);
+        let total = c.g[A1][0];
+        c.sw(points, total);
+        let heat = r32(c, A2).wrapping_add(0x70);
+        let one = c.g[A0][0];
+        c.sw(heat, one);
+        let not_done = r32(c, V0);
+        c.sw(not_done, 0);
+        return Ok(());
+    }
+    rider_tiers(c)
+}
+
+/// The tier ranking: the two peak goals of the event times 100 are the tier
+/// targets; the total at or above the second tier is rank 0.
+pub(crate) fn rider_tiers(c: &mut Cpu) -> Flow {
+    c.cycles += 29;
+    c.g[A1][0] = c.lw(r32(c, A2).wrapping_add(0x8));
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A2][0] = 2;
+    c.g[S1][0] = 0x64;
+    call_ptr(c, 0x0014_55d0, 0x0023_c498)?; // getPeakGoal(race, event, 2)
+    c.g[V1][0] = c.lw(r32(c, GP).wrapping_sub(0x480));
+    c.mult(0, 16, 2, 17); // s0 = tier 2 target
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A2][0] = 1;
+    c.g[A1][0] = c.lw(r32(c, V1).wrapping_add(0x8));
+    call_ptr(c, 0x0014_55d0, 0x0023_c4b0)?; // getPeakGoal(race, event, 1)
+    c.g[A1][0] = c.lw(r32(c, GP).wrapping_sub(0x848));
+    c.mult(0, 8, 2, 17); // t0 = tier 1 target
+    c.g[A2][0] = c.lw(r32(c, GP).wrapping_sub(0x480));
+    c.g[A3][0] = 1;
+    c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(0x84));
+    c.g[A0][0] = sx(r32(c, S4).wrapping_add(0x6640));
+    c.g[A0][0] = sx(r32(c, S2).wrapping_add(r32(c, A0)));
+    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0xc));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x28));
+    let rider_flag = r32(c, V1).wrapping_add(0x100);
+    let one = c.g[A3][0];
+    c.sw(rider_flag, one);
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(0x9c));
+    let points = r32(c, A0);
+    let total = c.g[V0][0];
+    c.sw(points, total);
+    let done = r32(c, A2).wrapping_add(0x84);
+    c.sw(done, one);
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(0x9c));
+    c.g[S0][0] = ((c.g[V0][0] as i64) < (c.g[S0][0] as i64)) as u64;
+    let below_t2 = c.g[S0][0] != 0;
+    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[T0][0] as i64)) as u64;
+    if below_t2 {
+        rider_rank_low(c);
+        return Ok(());
+    }
+    c.cycles += 5;
+    c.g[V0][0] = 0x53_0000;
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x6730));
+    c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+    let rank = r32(c, V0);
+    c.sw(rank, 0);
+    Ok(())
+}
+
+/// Rank 1 or 2 (below the second tier): 2 when the total is also below the
+/// first tier (`v0` from the compare), else 1 (`a3`).
+pub(crate) fn rider_rank_low(c: &mut Cpu) {
+    c.cycles += 2;
+    let below_t1 = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x53_0000;
+    if below_t1 {
+        c.cycles += 4;
+        c.g[V1][0] = 2;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x6730));
+        c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+        let rank = r32(c, V0);
+        let two = c.g[V1][0];
+        c.sw(rank, two);
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x6730));
+        c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+        let rank = r32(c, V0);
+        let one = c.g[A3][0];
+        c.sw(rank, one);
+    }
+}
+
+/// `cGMDebugHandler_init(self)` (0x23c618, GMHandlerUnused_Reset): the debug
+/// game mode's reset. One heat (the last), the AI count from the new race,
+/// the ten seats filled from a shuffled list of the riders with the human's
+/// character kept in the human's seat, the cleared flags, and the handler's
+/// virtual `cleanRiderRanksPoints` at the end.
+pub fn gm_handler_unused_reset(c: &mut Cpu) {
+    guest(c, unused_reset)
+}
+
+pub(crate) fn unused_reset(c: &mut Cpu) -> Flow {
+    c.cycles += 34;
+    let frame = Frame::open(c, 0x70);
+    frame.save(c, S2, 0x40);
+    frame.save(c, S0, 0x60);
+    frame.save(c, S1, 0x50);
+    frame.save_ra(c, 0x30);
+    c.g[S2][0] = c.g[A0][0];
+    call_ptr(c, 0x0014_dc80, 0x0023_c634)?; // cBE_getBE()
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, 0x0014_dd58, 0x0023_c640)?; // cBE_getInterface_Fv(be, 0)
+    call_ptr(c, 0x0014_dc80, 0x0023_c648)?; // cBE_getBE() again
+    c.g[A1][0] = 1;
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, 0x0014_dd58, 0x0023_c654)?; // cBE_getInterface_Fv(be, 1): the player
+    c.g[V1][0] = c.lw(r32(c, GP).wrapping_sub(0x480));
+    c.g[A1][0] = 1;
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A2][0] = 0x53_0000;
+    let manager = r32(c, V1);
+    let one = c.g[A1][0];
+    c.sw(manager.wrapping_add(0x98), one);
+    c.g[A0][0] = c.g[S0][0];
+    c.sw(manager, one);
+    c.g[A1][0] = 0;
+    c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x5c04));
+    c.sw(manager.wrapping_add(0x14), 0);
+    let ai = c.g[V0][0];
+    c.sw(manager.wrapping_add(0x10), ai);
+    call_ptr(c, 0x0014_6e98, 0x0023_c684)?; // getHumanRider(player, 0)
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[S1][0];
+    call_ptr(c, 0x0014_7398, 0x0023_c694)?; // getRiderCharID(player, human)
+    c.g[S0][0] = c.g[V0][0];
+
+    // The rider ids 9..0 into the stack array (arr[i] = i).
+    c.g[V1][0] = 9;
+    c.g[V0][0] = sx(sp(c).wrapping_add(0x24));
+    loop {
+        c.cycles += 7;
+        let at = r32(c, V0);
+        let id = c.g[V1][0];
+        c.sw(at, id);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0023_c6a0);
+        }
+    }
+    c.cycles += 7;
+    c.g[A0][0] = c.g[SP][0];
+    c.g[A1][0] = 0xa;
+    call_ptr(c, 0x0023_c770, 0x0023_c6c8)?; // GameRand_Shuffle(arr, 10)
+
+    // Seat the riders: iCharacters[j] from the shuffled list, skipping the
+    // human's character wherever it comes up.
+    c.g[V0][0] = c.lw(r32(c, GP).wrapping_sub(0x480));
+    c.g[A1][0] = 0;
+    c.g[V1][0] = c.g[SP][0];
+    c.g[A0][0] = sx(r32(c, V0).wrapping_add(0x18));
+    loop {
+        c.cycles += 2;
+        if c.g[A1][0] == c.g[S1][0] {
+            let seat = r32(c, A0);
+            let ch = c.g[S0][0];
+            c.sw(seat, ch);
+        } else {
+            c.cycles += 3;
+            let src = r32(c, V1);
+            c.g[V0][0] = c.lw(src);
+            if c.g[V0][0] != c.g[S0][0] {
+                let seat = r32(c, A0);
+                let id = c.g[V0][0];
+                c.sw(seat, id);
+            } else {
+                c.cycles += 3;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                c.g[V0][0] = c.lw(r32(c, V1));
+                let seat = r32(c, A0);
+                let id = c.g[V0][0];
+                c.sw(seat, id);
+            }
+            c.cycles += 1;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+        }
+        c.cycles += 4;
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+        c.g[V0][0] = ((c.g[A1][0] as i64) < 10) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0023_c6d8);
+        }
+    }
+
+    c.cycles += 25;
+    c.g[V0][0] = c.lw(r32(c, S2));
+    c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x20));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x24));
+    let method = c.g[V1][0] as u32;
+    c.g[A0][0] = sx(r32(c, S2).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, 0x0023_c720)?; // self->cleanRiderRanksPoints()
+    c.g[V0][0] = c.lw(r32(c, GP).wrapping_sub(0x480));
+    c.g[A0][0] = 1;
+    c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+    frame.restore(c, S0, 0x60);
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore_ra(c, 0x30);
+    let gm = r32(c, V0);
+    let neg = c.g[V1][0];
+    c.sw(gm.wrapping_add(0x6c), neg);
+    let one = c.g[A0][0];
+    c.sw(gm.wrapping_add(0x74), one);
+    c.sw(gm.wrapping_add(0x94), 0);
+    c.sw(gm.wrapping_add(0x70), one);
+    for off in [0x78u32, 0x7c, 0x80, 0x84, 0x88, 0x8c, 0x90] {
+        c.sw(gm.wrapping_add(off), 0);
+    }
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::main::game::tests::fake_get_be;
@@ -7090,6 +8936,519 @@ pub(crate) mod tests {
                 c.g[A0][0] = me as u64;
                 c.pc = 0x0023_b170;
             },
+        );
+    }
+
+    use crate::difftest::scramble;
+
+    /// The BE library singleton (`gp-0x1f04`), its interface table at
+    /// `0x5308a8`, the interface and its method (returns 0).
+    pub(crate) const STANDINGS_BE_LIB: u32 = DATA + 0x3000;
+
+    pub(crate) const STANDINGS_IFACE: u32 = DATA + 0x3100;
+
+    pub(crate) const STANDINGS_IFACE_VT: u32 = DATA + 0x3200;
+
+    pub(crate) const STANDINGS_BE_IFACES: u32 = 0x0053_08a8;
+
+    pub(crate) const STANDINGS_RETURN_ZERO: u32 = 0x003a_5ab0;
+
+    /// The game-mode manager.
+    pub(crate) const STANDINGS_MANAGER: u32 = DATA + 0x1_0000;
+
+    /// Game state for `gm_handler0_init_standings`: the BE singleton and
+    /// interfaces (race and player read as 0), the manager's counts, and the
+    /// race-path byte.
+    pub(crate) fn standings_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0023_9aa0 ^ (seed as u64) << 20 | 1);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(GAME_GP - 0x1f04, STANDINGS_BE_LIB);
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        c.bus.write32(STANDINGS_BE_IFACES, STANDINGS_IFACE);
+        c.bus.write32(STANDINGS_IFACE + 4, STANDINGS_IFACE_VT);
+        c.bus.write16(STANDINGS_IFACE_VT + 8, 0);
+        c.bus
+            .write32(STANDINGS_IFACE_VT + 0xc, STANDINGS_RETURN_ZERO);
+        c.bus.write32(GAME_GP - GM_MANAGER_GP, STANDINGS_MANAGER);
+        // iNumberAI 0..5, iSimAI 0..3: numNonSimulated can be negative.
+        c.bus.write32(STANDINGS_MANAGER + 0x10, seed % 6);
+        c.bus.write32(STANDINGS_MANAGER + 0x14, (seed / 6) % 4);
+        // The race path: repeats of heat 1 or fresh thresholds.
+        c.bus
+            .write8(NEW_RACE_PATH_BYTE, ((seed / 3) % 3 != 0) as u8);
+    }
+
+    #[test]
+    fn gm_handler0_init_standings_matches() {
+        check(
+            ee::s06::f_00239aa0__generated,
+            gm_handler0_init_standings,
+            240,
+            &|c, seed| {
+                standings_fixture(c, seed);
+                c.pc = 0x0023_9aa0;
+            },
+        );
+    }
+
+    /// Rider-finished fixture: the world, race, riders table and one rider
+    /// per slot (did-not-finish flag by seed), each with a metrix whose
+    /// totals sit at an aligned or unaligned address by seed.
+    pub(crate) const FINISH_WORLD: u32 = DATA + 0x4000;
+
+    pub(crate) const FINISH_RACE: u32 = DATA + 0x4100;
+
+    pub(crate) const FINISH_RIDERS: u32 = DATA + 0x4200;
+
+    pub(crate) const FINISH_RIDER0: u32 = DATA + 0x4400;
+
+    pub(crate) const FINISH_METRIX0: u32 = DATA + 0x2_0000;
+
+    pub(crate) const FINISH_MANAGER: u32 = DATA + 0x1_0000;
+
+    pub(crate) fn finish_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0023_9ec8 ^ (seed as u64) << 20 | 1);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        let idx = seed % 4;
+        c.g[A1][0] = idx as u64;
+        c.bus.write32(GAME_GP - WORLD_GP, FINISH_WORLD);
+        c.bus.write32(FINISH_WORLD + 0x84, FINISH_RACE);
+        c.bus.write32(FINISH_RACE + 0xc, FINISH_RIDERS);
+        for i in 0..4u32 {
+            let rider = FINISH_RIDER0 + i * 0x800;
+            let metrix = FINISH_METRIX0 + i * 0x200 + (seed % 2) * 4;
+            c.bus.write32(FINISH_RIDERS + 4 * i + 0x28, rider);
+            c.bus.write32(rider + 0x790, metrix);
+            c.bus.write32(rider + 0x480, (seed >> i) & 1);
+            for k in 0..0x2c {
+                c.bus.write32(metrix + 0xfc + 4 * k, r.next_u32());
+            }
+        }
+        c.bus.write32(GAME_GP - GM_MANAGER_GP, FINISH_MANAGER);
+        c.bus.write32(FINISH_MANAGER + 0x10, 3);
+        c.bus.write32(FINISH_MANAGER + 0x14, 2);
+        // Rank of this rider: first, second, or out of the points.
+        // cGameModeMan_iRanking (0x536730)
+        c.bus
+            .write32(0x0053_6730 + 4 * idx, (seed % 3).wrapping_sub(1));
+    }
+
+    #[test]
+    fn gm_handler9_on_rider_finished_matches() {
+        check(
+            ee::s06::f_00239ec8__generated,
+            gm_handler9_on_rider_finished,
+            240,
+            &|c, seed| {
+                finish_fixture(c, seed);
+                c.pc = 0x0023_9ec8;
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_3: u32 = 40;
+
+    /// The game-mode handler object (`gp-0x480`).
+    pub(crate) const GM_2: u32 = DATA + 0x2_2000;
+
+    /// The `self` of the reset functions and its vtable (slot 0x28/0x2c).
+    pub(crate) const SELF_2: u32 = DATA + 0x2_3000;
+
+    pub(crate) const SELF_VT: u32 = DATA + 0x2_3800;
+
+    /// Four riders, each 0x800 bytes apart; the state pointer at +0x6c0.
+    pub(crate) const RIDERS_2: u32 = DATA + 0x2_8000;
+
+    /// The copy source of a rider's result block (aligned or not, by seed).
+    pub(crate) const SRC: u32 = DATA + 0x3_0000;
+
+    /// A rider block that the point and time tables read.
+    pub(crate) const BLOCK: u32 = DATA + 0x2_f000;
+
+    /// The AI's rider table is at `ai + 0x28`.
+    pub(crate) const AI_2: u32 = WORLD_4 + 0x2000;
+
+    /// The BE library's interfaces: the real `cBE_getInterface` lands in a
+    /// fake that returns `IFACE`, as in the gamemode tests.
+    pub(crate) fn oc648_be(c: &mut Cpu) {
+        const IFACE: u32 = DATA + 0x6_0000;
+        const BE_STATE: u32 = DATA + 0x6_1000;
+        const BE_VT: u32 = DATA + 0x6_1100;
+        c.hooks.miss = fakes::fake_call;
+        c.hooks.jump_out = fakes::fake_jump_out;
+        c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+        for n in 0..8u32 {
+            c.bus.write32(fakes::LOG_RESULTS + 4 * n, IFACE);
+        }
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        c.bus.write32(0x0053_08a8, BE_STATE);
+        c.bus.write32(BE_STATE + 4, BE_VT);
+        c.bus.write16(BE_VT + 8, 0);
+        c.bus.write32(BE_VT + 0xc, fakes::FAKE);
+    }
+
+    /// Scrambled machine with the world chain (world -> game -> AI) and the
+    /// game-mode handler at `gp-0x480`.
+    pub(crate) fn oc648_world(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = base_14(c, seed, salt);
+        oc648_be(c);
+        let game = WORLD_4 + 0x1000;
+        c.bus.write32(WORLD_4 + 0x84, game);
+        c.bus.write32(game + 0xc, AI_2);
+        c.bus.write32(AI_2 + 0x8, r.next_u32() % 4000);
+        c.bus.write32(GAME_GP - GP_GM, GM_2);
+        for i in 0..0x40u32 {
+            c.bus.write32(GM_2 + 4 * i, 0);
+        }
+        c.bus.write32(GM_2 + 0x84, (seed % 2) as u32);
+        r
+    }
+
+    /// The four riders of the AI's table, with their state objects (a leaf
+    /// method) and the copy sources and blocks the handlers read.
+    pub(crate) fn oc648_riders(c: &mut Cpu, seed: u32) {
+        for i in 0..4u32 {
+            let rider = RIDERS_2 + 0x800 * i;
+            let state = rider + 0x400;
+            c.bus.write32(AI_2 + 0x28 + 4 * i, rider);
+            c.bus.write32(rider + 0x6c0, state);
+            c.bus.write32(state + 0x4c, LEAF);
+            c.bus.write16(state + 0x48, 0);
+            let aligned = (seed + i) % 2 == 0;
+            c.bus
+                .write32(rider + 0x790, if aligned { SRC } else { SRC + 4 });
+            c.bus
+                .write32(rider + 0x480, if (seed + i) % 3 == 0 { 0 } else { BLOCK });
+        }
+    }
+
+    /// `self` for the reset functions: a vtable whose slot 5 is the leaf.
+    pub(crate) fn oc648_self(c: &mut Cpu) {
+        c.bus.write32(SELF_2, SELF_VT);
+        c.bus.write16(SELF_VT + 0x28, 0);
+        c.bus.write32(SELF_VT + 0x2c, LEAF);
+    }
+
+    #[test]
+    fn gm_handler8_reset_port_matches() {
+        check3(
+            ee::s06::f_0023ac88__generated,
+            gm_handler8_reset_port,
+            SEEDS_3,
+            &|c, seed| {
+                let _ = oc648_world(c, seed, 0x23ac88);
+                oc648_self(c);
+                oc648_riders(c, seed);
+                c.g[A0][0] = sx(SELF_2);
+                c.pc = 0x0023_ac88;
+            },
+        );
+    }
+
+    #[test]
+    fn gm_handler5_reset_port_matches() {
+        check3(
+            ee::s06::f_0023b6c0__generated,
+            gm_handler5_reset_port,
+            SEEDS_3,
+            &|c, seed| {
+                let _ = oc648_world(c, seed, 0x23b6c0);
+                oc648_self(c);
+                oc648_riders(c, seed);
+                // The flag byte at 0x535c11 picks the early-out (2) or the
+                // rival tables.
+                c.bus.write8(0x0053_5c11, if seed % 2 == 0 { 2 } else { 0 });
+                c.g[A0][0] = sx(SELF_2);
+                c.pc = 0x0023_b6c0;
+            },
+        );
+    }
+
+    #[test]
+    fn gm_handler5_on_rider_finished_port_matches() {
+        check3(
+            ee::s06::f_0023b8c8__generated,
+            gm_handler5_on_rider_finished_port,
+            SEEDS_3,
+            &|c, seed| {
+                let _ = oc648_world(c, seed, 0x23b8c8);
+                oc648_riders(c, seed);
+                c.g[A0][0] = sx(GM_2);
+                c.g[A1][0] = (seed % 4) as u64;
+                c.pc = 0x0023_b8c8;
+            },
+        );
+    }
+
+    #[test]
+    fn gm_handler6_on_rider_finished_port_matches() {
+        check3(
+            ee::s06::f_0023bdb8__generated,
+            gm_handler6_on_rider_finished_port,
+            SEEDS_3,
+            &|c, seed| {
+                let _ = oc648_world(c, seed, 0x23bdb8);
+                oc648_riders(c, seed);
+                c.g[A0][0] = sx(GM_2);
+                c.g[A1][0] = (seed % 4) as u64;
+                c.pc = 0x0023_bdb8;
+            },
+        );
+    }
+
+    /// Gate word in the machine's own RAM: the fakes below log only when it
+    /// is set, so other tests keep the generated callees.
+    pub(crate) const CTRL: u32 = DATA + 0x20_f000;
+
+    pub(crate) const MAGIC: u32 = 0x6f63_3634;
+
+    /// Scratch area of the fixtures (the machine is fresh per run).
+    pub(crate) const BASE: u32 = DATA + 0x20_0000;
+
+    macro_rules! gated {
+        ($fake:ident, $prev:ident, $target:literal, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(CTRL) != MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $target, ra);
+            }
+        };
+    }
+
+    gated!(
+        oc649_fake_be,
+        OC649_PREV_BE,
+        0x0014_dc80,
+        ee::s01::f_0014dc80__generated
+    );
+
+    gated!(
+        oc649_fake_iface,
+        OC649_PREV_IFACE,
+        0x0014_dd58,
+        ee::s01::f_0014dd58__generated
+    );
+
+    gated!(
+        oc649_fake_peak,
+        OC649_PREV_PEAK,
+        0x0014_55d0,
+        ee::s01::f_001455d0__generated
+    );
+
+    gated!(
+        oc649_fake_human,
+        OC649_PREV_HUMAN,
+        0x0014_6e98,
+        ee::s01::f_00146e98__generated
+    );
+
+    gated!(
+        oc649_fake_char,
+        OC649_PREV_CHAR,
+        0x0014_7398,
+        ee::s01::f_00147398__generated
+    );
+
+    gated!(
+        oc649_fake_all_view,
+        OC649_PREV_ALL_VIEW,
+        0x0022_e840,
+        ee::s05::f_0022e840__generated
+    );
+
+    gated!(
+        oc649_fake_sm_update,
+        OC649_PREV_SM_UPDATE,
+        0x0022_d8d8,
+        ee::s05::f_0022d8d8__generated
+    );
+
+    gated!(
+        oc649_fake_focus,
+        OC649_PREV_FOCUS,
+        0x0022_e8b8,
+        ee::s05::f_0022e8b8__generated
+    );
+
+    gated!(
+        oc649_fake_update_state,
+        OC649_PREV_UPDATE_STATE,
+        0x0023_0f40,
+        ee::s06::f_00230f40__generated
+    );
+
+    gated!(
+        oc649_fake_world_update,
+        OC649_PREV_WORLD_UPDATE,
+        0x003a_6928,
+        ee::s13::f_003a6928__generated
+    );
+
+    gated!(
+        oc649_fake_flush,
+        OC649_PREV_FLUSH,
+        0x003a_88a8,
+        ee::s13::f_003a88a8__generated
+    );
+
+    pub(crate) static OC649_PREV_READY: AtomicUsize = AtomicUsize::new(0);
+
+    /// `cGameViewMan_isStreamReady`: the answer is the gate's word 4.
+    pub(crate) fn oc649_fake_ready(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &OC649_PREV_READY, ee::s05::f_0022e920__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0022_e920, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(CTRL + 4) as u64;
+        }
+    }
+
+    pub(crate) fn oc649_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            oc649_fake_be,
+            &OC649_PREV_BE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            oc649_fake_iface,
+            &OC649_PREV_IFACE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_001455D0),
+            oc649_fake_peak,
+            &OC649_PREV_PEAK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00146E98),
+            oc649_fake_human,
+            &OC649_PREV_HUMAN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00147398),
+            oc649_fake_char,
+            &OC649_PREV_CHAR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_0022E840),
+            oc649_fake_all_view,
+            &OC649_PREV_ALL_VIEW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_0022D8D8),
+            oc649_fake_sm_update,
+            &OC649_PREV_SM_UPDATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_0022E8B8),
+            oc649_fake_focus,
+            &OC649_PREV_FOCUS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_0022E920),
+            oc649_fake_ready,
+            &OC649_PREV_READY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00230F40),
+            oc649_fake_update_state,
+            &OC649_PREV_UPDATE_STATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A6928),
+            oc649_fake_world_update,
+            &OC649_PREV_WORLD_UPDATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A88A8),
+            oc649_fake_flush,
+            &OC649_PREV_FLUSH,
+        );
+    }
+
+    /// A rider finishing: the rider `idx = seed % 4`, its DNF flag on every
+    /// fifth seed, the point total below or above the target, the peak goals
+    /// (fake calls 2 and 3) and both copy alignments (the stats block at
+    /// `rider + 0x800`, shifted by `seed & 4`).
+    pub(crate) fn oc649_rider_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0023_c2d8, 0);
+        c.pc = 0x0023_c2d8;
+        c.bus.write32(CTRL, MAGIC);
+        let idx = seed % 4;
+        c.g[A1][0] = idx as u64;
+        let game = BASE;
+        let ai = BASE + 0x1000;
+        let riders = BASE + 0x2000;
+        let gm = BASE + 0x1_0000;
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), game);
+        c.bus.write32(GAME_GP.wrapping_sub(0x480), gm);
+        c.bus.write32(game + 0x84, ai);
+        c.bus.write32(ai + 0xc, riders);
+        for k in 0..4u32 {
+            let rider = BASE + 0x3000 + k * 0x1000;
+            let stats = rider + 0x800 + (seed & 4);
+            c.bus.write32(riders + 0x28 + 4 * k, rider);
+            c.bus.write32(rider + 0x790, stats);
+            c.bus
+                .write32(rider + 0x480, (k == idx && seed % 5 == 0) as u32);
+            fill(c, &mut r, stats, 0x1b0 / 4);
+        }
+        let rider = BASE + 0x3000 + idx * 0x1000;
+        let stats = rider + 0x800 + (seed & 4);
+        c.bus.write32(stats + 0x198, r.next_u32() % 700);
+        c.bus.write32(gm + 0x8, seed % 3);
+        c.bus.write32(gm + 0x7c, 200 + 100 * (seed % 3));
+        c.bus.write32(fakes::LOG_RESULTS + 8, 1 + r.next_u32() % 6);
+        c.bus.write32(fakes::LOG_RESULTS + 12, 1 + r.next_u32() % 6);
+    }
+
+    /// `GMHandlerUnused_Reset`: the human's seat and the character are chosen
+    /// by the fixture (fake calls 4 and 5), the vtable's cleanup is a fake.
+    pub(crate) fn oc649_seat_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0023_c618, 0);
+        c.pc = 0x0023_c618;
+        c.bus.write32(CTRL, MAGIC);
+        let this = BASE + 0x7000;
+        let vt = BASE + 0x7100;
+        let gm = BASE + 0x1_0000;
+        c.g[A0][0] = this as u64;
+        c.bus.write32(this, vt);
+        c.bus.write16(vt + 0x20, (0x10 * (seed % 2)) as u16);
+        c.bus.write32(vt + 0x24, fakes::FAKE);
+        c.bus.write32(GAME_GP.wrapping_sub(0x480), gm);
+        c.bus.write32(0x0053_5c04, 3 + seed % 5);
+        fill(c, &mut r, gm, 0x40);
+        c.bus.write32(fakes::LOG_RESULTS + 16, 1 + seed % 9);
+        c.bus.write32(fakes::LOG_RESULTS + 20, 1 + (seed / 9) % 9);
+    }
+
+    #[test]
+    fn gm_handler7_on_rider_finished_matches() {
+        oc649_install();
+        check(
+            ee::s06::f_0023c2d8__generated,
+            gm_handler7_on_rider_finished,
+            300,
+            &|c, seed| oc649_rider_setup(c, seed),
+        );
+    }
+
+    #[test]
+    fn gm_handler_unused_reset_matches() {
+        oc649_install();
+        check(
+            ee::s06::f_0023c618__generated,
+            gm_handler_unused_reset,
+            300,
+            &|c, seed| oc649_seat_setup(c, seed),
         );
     }
 }

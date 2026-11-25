@@ -47,6 +47,7 @@ pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p_3;
 pub(crate) use crate::game::main::ssxappdtor::p as p_7;
+pub(crate) use crate::game::object::modifierblock::oc664_stream_read;
 pub(crate) use crate::game::object::movenode::MP_COUNT;
 pub(crate) use crate::game::object::movenode::MP_EMITTER;
 pub(crate) use crate::game::object::movenode::MP_STREAM_WRITE;
@@ -132,6 +133,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_8c80, anim_combo_ctor, "AnimCombo_ctor"),
     (0x0035_8eb8, anim_combo_v15, "AnimCombo_v15"),
+    (0x0035_9270, anim_delta_ctor_2_3, "AnimDelta_ctor_2"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3030,6 +3032,179 @@ pub fn rail_man_disable_rail(c: &mut Cpu) {
     });
 }
 
+pub(crate) const ANIMD_OBJECT_CTOR: Callee = Callee {
+    addr: 0x0034_1c80,
+    f: ee::s11::f_00341c80,
+};
+
+pub(crate) const ANIMD_OBJECT_V15: Callee = Callee {
+    addr: 0x0034_1d48,
+    f: ee::s11::f_00341d48,
+};
+
+/// `cAnimDeltaNode *cAnimDeltaNode_cAnimDeltaNode(self, int bucket, Stream *stream)`
+/// (0x359270): the anim object base, the delta-node vtable, then the float
+/// delta (+0x6c) read from the stream. Frame 0x30. Returns self.
+pub fn anim_delta_ctor_2_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        ANIMD_OBJECT_CTOR.call(c, 0x0035_928c)?;
+
+        let this = c.g[S0][0] as u32;
+        let stream = c.g[S1][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A1][0] = sx(this.wrapping_add(0x6c));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1590));
+        c.g[A2][0] = 4;
+        let vtable = c.g[V1][0];
+        Addr(this + 0x3c).sw(c, vtable);
+        oc664_stream_read(c, stream, V0, V1, 0x0035_92b4)?;
+
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, 17, 0x10);
+        frame.restore(c, 16, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Flags path of the update: `flags |= 1`, then return 1 (the tail's `+1`).
+pub(crate) fn oc664_set_flag_return(c: &mut Cpu, this: u32) -> u64 {
+    c.cycles += 2;
+    let flags = Addr(this + 0x42).lhu(c) | 1;
+    Addr(this + 0x42).sh(c, flags);
+    c.cycles += 1;
+    1
+}
+
+/// The update of a node that is not complete (`AnimComplete == 0`): returns
+/// v0 for the epilogue and charges the cycles of the path it takes.
+pub(crate) fn oc664_anim_update(c: &mut Cpu, this: u32) -> Result<u64, Unwound> {
+    // Frame-end marker is already stored. f1 = Delta, f2 = 0.0, fcc = 0 < Delta.
+    c.cycles += 6;
+    let delta = Addr(this + 0x6c).read_fpu(c);
+    abi::set_fpr(c, 1, delta);
+    abi::set_fpr(c, 2, FpuF32(0));
+    let positive = abi::c_lt_s(c, FpuF32(0), delta);
+    c.g[V0][0] = Addr(this + 0xc).lw(c);
+    if !positive {
+        // Idle node: the countdown steps down, then the flag path.
+        c.cycles += 2;
+        let delay = c.g[V0][0] as i64;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        if delay > 0 {
+            c.cycles += 1;
+            let left = c.g[V0][0];
+            Addr(this + 0xc).sw(c, left);
+        }
+        c.cycles += 3;
+        c.g[A2][0] = sx(this.wrapping_add(0x30));
+        c.g[V0][0] = Addr(this + 8).lw(c);
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(this + 0x42).lhu(c);
+            return Ok(oc664_set_flag_return(c, this));
+        }
+        // AnimComplete changed (unreachable here: nothing wrote it): the vtable call.
+        c.cycles += 8;
+        c.g[V1][0] = Addr(this + 0x3c).lw(c);
+        c.g[A1][0] = 1;
+        let table = c.g[V1][0] as u32;
+        c.g[A0][0] = Addr(table + 0x110).lh(c);
+        c.g[V0][0] = Addr(table + 0x114).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0035_93a4)?;
+        return Ok(0);
+    }
+
+    // Moving node: countdown >= 0 is required for an update.
+    let delay = c.g[V0][0] as i64;
+    c.cycles += 2;
+    if delay < 0 {
+        // Countdown negative: the flag path.
+        return Ok(oc664_set_flag_return(c, this));
+    }
+    if delay == 0 {
+        c.cycles += 2;
+        if c.fcc() {
+            // Delta still running: step it by the speed (never below zero).
+            c.cycles += 7;
+            let speed = Addr(this + 0x10).read_fpu(c);
+            abi::set_fpr(c, 0, speed.abs());
+            let stepped = FpuF32(c.f[1]) - FpuF32(c.f[0]);
+            abi::set_fpr(c, 0, stepped);
+            let below_zero = abi::c_lt_s(c, stepped, FpuF32(c.f[2]));
+            Addr(this + 0x6c).write_fpu(c, stepped);
+            if below_zero {
+                c.cycles += 1;
+                Addr(this + 0x6c).write_fpu(c, FpuF32(c.f[2]));
+            }
+        }
+    }
+
+    // The update: the object's per-frame method, then AnimActive from the new Delta.
+    c.cycles += 8;
+    c.g[A0][0] = c.g[S0][0];
+    ANIMD_OBJECT_V15.call(c, 0x0035_934c)?;
+    let after = Addr(this + 0x6c).read_fpu(c);
+    abi::set_fpr(c, 1, after);
+    abi::set_fpr(c, 0, FpuF32(0));
+    let moving = abi::c_lt_s(c, FpuF32(0), after);
+    c.g[V0][0] = 1;
+    let one = c.g[V0][0];
+    if moving {
+        c.cycles += 2;
+        Addr(this + 4).sw(c, one);
+        return Ok(1);
+    }
+    c.cycles += 2;
+    Addr(this + 4).sw(c, 0);
+    c.cycles += 1;
+    Ok(1)
+}
+
+/// `void cAnimDeltaNode_updateNode(cAnimDeltaNode *self)` (0x3592d0), returns
+/// int: a complete node returns 1 at once; otherwise the frame ends are set to
+/// 1e10, the countdown and delta step, and the object updates. Frame 0x20.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn anim_delta_v15_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        let no_frame = Addr((c.g[GP][0] as u32).wrapping_sub(0x2a6c)).read_fpu(c);
+        abi::set_fpr(c, 0, no_frame);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        Addr(this + 0x28).write_fpu(c, no_frame);
+        c.g[V0][0] = Addr(this + 8).lw(c);
+        let live = c.g[V0][0] == 0;
+        Addr(this + 0x24).write_fpu(c, no_frame);
+        let v0 = if live {
+            oc664_anim_update(c, this)?
+        } else {
+            c.cycles += 1;
+            1
+        };
+        c.g[V0][0] = v0;
+        c.cycles += 4;
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4015,6 +4190,102 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x00358780;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::prev_cell;
+    use crate::game::object::modifierblock::tests::oc664_install_slots;
+    pub(crate) use crate::game::object::modifierblock::tests::OC664_CTRL;
+    pub(crate) use crate::game::object::modifierblock::tests::OC664_MAGIC;
+    use std::ptr::addr_of_mut;
+
+    /// The stream's read method: outside the function table, so it reaches
+    /// the machine's miss hook (`oc664_miss`).
+    pub(crate) const OC664_READ: u32 = FAKE + 0x800;
+
+    /// The read cursor, the stream object (its vtable at +0) and its vtable.
+    pub(crate) const OC664_CURSOR: u32 = DATA + 0x3f40;
+
+    pub(crate) const OC664_STREAM: u32 = DATA + 0x3f80;
+
+    pub(crate) const OC664_VT: u32 = DATA + 0x3fc0;
+
+    /// The bytes the reads consume.
+    pub(crate) const OC664_BYTES: u32 = DATA + 0x3400;
+
+    /// The block the gated `addModifierBlock` fake hands to a move node.
+    pub(crate) const OC664_BLOCK: u32 = DATA + 0x3800;
+
+    pub(crate) const OC664_ANIM: u32 = DATA + 0x3c00;
+
+    /// The stream's read: copies the next `a2` bytes of the stream to `a1`.
+    /// Other misses are plain fake calls.
+    pub(crate) fn oc664_miss(c: &mut Cpu, target: u32) {
+        if target != OC664_READ {
+            return fake_call(c, target);
+        }
+        let dst = c.g[A1][0] as u32;
+        let len = c.g[A2][0] as u32;
+        let at = c.bus.read32(OC664_CURSOR);
+        for i in 0..len {
+            let b = c.bus.read8(OC664_BYTES + at + i);
+            c.bus.write8(dst + i, b);
+        }
+        c.bus.write32(OC664_CURSOR, at + len);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Gate on, the miss hook, and the stream object with its read vtable.
+    pub(crate) fn oc664_gate(c: &mut Cpu) {
+        c.hooks.miss = oc664_miss;
+        c.bus.write32(OC664_CTRL, OC664_MAGIC);
+        c.bus.write32(OC664_CURSOR, 0);
+        c.bus.write32(OC664_STREAM, OC664_VT);
+        c.bus.write16(OC664_VT + 0x10, 0);
+        c.bus.write32(OC664_VT + 0x14, OC664_READ);
+    }
+
+    /// `addModifierBlock`: the node's block pointer (+0x1c) is set, then the call is logged.
+    pub(crate) fn oc664_fake_block(c: &mut Cpu) {
+        if c.bus.read32(OC664_CTRL) != OC664_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(oc664_fake_block),
+                ee::s11::f_00355468__generated,
+            );
+        }
+        let node = c.g[A0][0] as u32;
+        c.bus.write32(node + 0x1c, OC664_BLOCK);
+        fake_call(c, 0x0035_5468);
+    }
+
+    pub(crate) fn oc664_install() {
+        oc664_install_slots();
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00355468),
+            oc664_fake_block,
+            prev_cell(oc664_fake_block),
+        );
+    }
+
+    #[test]
+    fn anim_delta_ctor_2_matches() {
+        oc664_install();
+        check(
+            ee::s11::f_00359270__generated,
+            anim_delta_ctor_2_3,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3592_70, 2);
+                oc664_gate(c);
+                c.bus.write32(OC664_BYTES, r.next_u32());
+                c.g[A0][0] = OC664_ANIM as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = OC664_STREAM as u64;
             },
         );
     }

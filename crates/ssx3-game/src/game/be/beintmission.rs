@@ -270,6 +270,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_mission_int_empty_stub_47e0,
         "BEMissionInt_EmptyStub_47e0",
     ),
+    (
+        0x0015_39a8,
+        be_mission_int_set_collected_mask,
+        "BEMissionInt_SetCollectedMask",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2526,6 +2531,138 @@ pub fn be_mission_int_empty_stub_47e0(c: &mut Cpu) {
     })
 }
 
+/// `BE_GetRiderProfile` (0x14a0e0): the rider's profile index.
+pub(crate) const OC631_RIDER_PROFILE: Callee = Callee {
+    addr: 0x0014_a0e0,
+    f: ee::s01::f_0014a0e0,
+};
+
+/// `BE_GetRiderCharacter` (0x14a080): the rider's character index.
+pub(crate) const OC631_RIDER_CHARACTER: Callee = Callee {
+    addr: 0x0014_a080,
+    f: ee::s01::f_0014a080,
+};
+
+/// `void BEMissionInt_SetCollectedMask(rider, idx, src)` (0x1539a8): copies the
+/// 8-byte collectible mask at `src` into the rider's profile slot for location
+/// `idx`, then counts its set bits into `profileLib[profile][character]
+/// .mCollectibles[idx + iLocationIdx].cTotalCollected`.
+pub fn be_mission_int_set_collected_mask(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 46;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A3][0];
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+
+        c.g[A0][0] = c.g[S0][0];
+        OC631_RIDER_PROFILE.call(c, 0x0015_39d4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[S2][0] = c.g[V0][0];
+        OC631_RIDER_CHARACTER.call(c, 0x0015_39e0)?;
+        c.g[T5][0] = c.g[V0][0];
+
+        // Destination: profileLib-sized slot of the profile and character,
+        // then the location's 12-byte block; A1 = the mask table base.
+        c.g[V1][0] = 0x9b50;
+        c.g[V0][0] = 0x0053_0000;
+        c.mult(0, V1, S2, V1);
+        c.g[T8][0] = c.g[V0][0];
+        c.g[A0][0] = 0xf88;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5b0));
+        c.mult(0, A0, T5, A0);
+        c.g[A2][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x40)).lw(c);
+        c.g[A1][0] = 0x004a_0000;
+        c.g[V0][0] = 0xc;
+        c.g[T3][0] = c.g[V1][0];
+        c.mult(0, A2, A2, V0);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6cb0));
+        c.mult(0, V0, S3, V0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[T4][0] = c.g[A0][0];
+        c.g[T6][0] = c.g[A1][0];
+        c.g[S0][0] = u64::MAX;
+        c.g[T7][0] = 1;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        c.g[T2][0] = c.g[A2][0];
+        c.g[T0][0] = c.g[V0][0];
+        c.g[T1][0] = 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[A3][0] = 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+
+        // Copy the 8-byte mask (unaligned pair, as the generated code does).
+        c.ldl(3, (c.g[S1][0] as u32).wrapping_add(0x7));
+        c.ldr(3, c.g[S1][0] as u32);
+        c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x7));
+        c.sdr(3, c.g[V0][0] as u32);
+
+        // Count the set bits, one mask bit per iteration.
+        loop {
+            c.cycles += 18;
+            c.g[V1][0] = ((c.g[S0][0] as i64) < (c.g[A3][0] as i64)) as u64;
+            c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1f));
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = c.g[A3][0];
+            }
+            c.g[A2][0] = sx((c.g[T7][0] as u32) << ((c.g[A3][0] as u32) & 31));
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+            c.g[A1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+            c.g[A0][0] = ((c.g[A3][0] as i64) < 64) as u64;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T3][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T6][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            c.g[V1][0] = c.g[V1][0] & c.g[A2][0];
+            let more = c.g[A0][0] != 0;
+            if c.g[V1][0] != 0 {
+                c.g[T1][0] = c.g[A1][0];
+            }
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0015_3a60);
+                }
+                continue;
+            }
+            break;
+        }
+
+        c.cycles += 22;
+        c.g[V1][0] = sx((c.g[T8][0] as u32).wrapping_add(0x5b0));
+        c.g[A2][0] = 0xc;
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x40)).lw(c);
+        c.g[A1][0] = 0xf88;
+        c.mult(0, A1, T5, A1);
+        c.g[A0][0] = 0x9b50;
+        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.mult(0, A0, S2, A0);
+        c.mult(0, V0, V0, A2);
+        c.g[V1][0] = 0x004a_0000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6ca8));
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        frame.restore(c, S3, 0x10);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        let count = c.g[T1][0];
+        Addr((c.g[V0][0] as u32).wrapping_add(0x4)).sb(c, count);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3323,6 +3460,47 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 machine(c, seed, 0x47e0, 0);
+            },
+        );
+    }
+
+    use crate::difftest::scramble;
+    use crate::game::fe::feasyncfile::tests::base_17 as base_m2;
+
+    #[test]
+    fn be_mission_int_set_collected_mask_matches() {
+        check(
+            ee::s01::f_001539a8__generated,
+            be_mission_int_set_collected_mask,
+            150,
+            &|c, seed| {
+                let mut r = base_m2(c, seed, 0x1539);
+                scramble(c, &mut r);
+                let src = DATA + 0x100;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 4) as u64; // rider
+                c.g[A2][0] = (seed % 8) as u64; // location index
+                c.g[A3][0] = src as u64; // the 8-byte mask
+                c.bus.write32(src, r.next_u32());
+                c.bus.write32(src + 4, r.next_u32());
+
+                // The rider's record slot, then the record fields the two
+                // rider callees read (profile word at +0xc, character byte
+                // at +0x11).
+                for rider in 0..4u32 {
+                    c.bus.write32(0x0053_05b0 + 4 * rider, (seed + rider) % 3);
+                }
+                for k in 0..3u32 {
+                    let rec = 0x0053_5b20 + 0x1c * k;
+                    let profile = if (seed + k) % 5 == 0 {
+                        u32::MAX
+                    } else {
+                        (seed + k) % 7
+                    };
+                    c.bus.write32(rec + 0xc, profile);
+                    c.bus.write32(rec + 0x10, ((seed + k) % 4) << 8);
+                }
+                c.bus.write32(0x0053_05f0, seed % 5); // raceDB.iLocationIdx
             },
         );
     }

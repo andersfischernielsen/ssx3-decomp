@@ -145,6 +145,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_model_get_part_point_world,
         "RiderModel_GetPartPointWorld",
     ),
+    (0x0031_1250, adf_data_source_ctor_3, "AdfDataSource_ctor"),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -7393,6 +7394,37 @@ pub fn rider_model_get_part_point_world(c: &mut Cpu) {
     frame.close(c);
 }
 
+/// `AdfDataSource_ctor(self, src)` (0x311250): loads the ADF pack `src`
+/// through `FILE_loadpack` (`EAFile_LoadDecompressedThunk`, 0x3e22f0), stores
+/// the pack pointer at `*self`, and fills the data source from it with
+/// `AdfDataSource_SetData` (0x311290). Returns `self`.
+pub fn adf_data_source_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        c.g[A1][0] = 0u64;
+        call_ptr(c, 0x003e_22f0, 0x0031_126c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        let pack = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).sw(c, pack);
+        Callee {
+            addr: 0x0031_1290,
+            f: ee::s10::f_00311290,
+        }
+        .call(c, 0x0031_127c)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8932,6 +8964,58 @@ pub(crate) mod tests {
                     (5 + 2 * (seed % 3)) as u64
                 };
                 c.g[A3][0] = (seed % 4) as u64;
+            },
+        );
+    }
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// Gate of the ADF fake: `FILE_loadpack` returns `ADF_PACK` only while
+    /// this word holds `ADF_MAGIC` (the real loader would read a disc).
+    pub(crate) const ADF_CTRL: u32 = DATA + 0xe_0000;
+
+    pub(crate) const ADF_MAGIC: u32 = 0x4144_4631;
+
+    pub(crate) const ADF_PACK: u32 = DATA + 0xe_1000;
+
+    pub(crate) const ADF_SELF: u32 = DATA + 0x3000;
+
+    pub(crate) const ADF_SRC: u32 = DATA + 0x3800;
+
+    pub(crate) static ADF_PREV_LOAD: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn adf_fake_load(c: &mut Cpu) {
+        if c.bus.read32(ADF_CTRL) != ADF_MAGIC {
+            return fakes::fall_back(c, &ADF_PREV_LOAD, ee::s14::f_003e22f0__generated);
+        }
+        c.g[V0][0] = sx(ADF_PACK);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn adf_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E22F0),
+            adf_fake_load,
+            &ADF_PREV_LOAD,
+        );
+    }
+
+    #[test]
+    fn adf_data_source_ctor_matches() {
+        adf_install_fakes();
+        check(
+            ee::s10::f_00311250__generated,
+            adf_data_source_ctor_3,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0adf_0001 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_1250;
+                c.g[A0][0] = sx(ADF_SELF);
+                c.g[A1][0] = sx(ADF_SRC);
+                c.bus.write32(ADF_CTRL, ADF_MAGIC);
+                // SetData reads the pack's word at +4 and adds it to the pack.
+                c.bus.write32(ADF_PACK + 4, r.next_u32() & 0xffff);
             },
         );
     }

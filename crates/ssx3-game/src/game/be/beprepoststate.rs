@@ -7,6 +7,8 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::be::bedbreward::POST_RACE_GP;
 pub(crate) use crate::game::be::bedbreward::PRE_RACE_GP;
 pub(crate) use crate::game::be::beintmission::event_check;
@@ -52,6 +54,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_65c8,
         be_pre_race_get_interface,
         "BEPreRace_GetInterface",
+    ),
+    (
+        0x0015_6858,
+        be_copy_profile_characters,
+        "BE_CopyProfileCharacters",
     ),
 ];
 
@@ -271,6 +278,115 @@ pub fn be_pre_race_get_interface(c: &mut Cpu) {
     })
 }
 
+/// `void cBEProfileLib_copy(sBEPlayerData* dst, sBEPlayerData* src)`
+/// (0x156858): copy the ten 0xf88-byte rider records from `src` to `dst`
+/// and rewrite each record's 16-bit tables (the entry count is gp-0x1f08).
+pub fn be_copy_profile_characters(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = 0;
+        frame.save(c, S4, 0x20);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S5, 0x10);
+        c.g[S4][0] = 0xf88;
+        frame.save(c, S0, 0x60);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S1, 0x50);
+        frame.save_ra(c, 0);
+        c.mult(0, 5, 18, 20);
+        'profile: loop {
+            'record: {
+                c.cycles += 11;
+                c.g[A2][0] = 0xf88;
+                c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x288));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                call_ptr(c, 0x003e_6574, 0x0015_68a8)?;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1f08));
+                c.g[A2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x288), c.g[S1][0]);
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[A0][0] = 0;
+                if t {
+                    break 'record;
+                }
+                c.cycles += 3;
+                c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+                c.g[V1][0] = c.g[S1][0];
+                loop {
+                    c.cycles += 7;
+                    c.sh(c.g[V1][0] as u32, c.g[A1][0]);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1f08));
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2));
+                    if !t {
+                        break 'record;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0015_68c8);
+                    }
+                }
+            }
+            c.cycles += 5;
+            c.mult(0, 3, 18, 20);
+            c.g[A0][0] = 0;
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S3][0] as u32));
+            c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x290));
+            c.g[V0][0] = c.lh(c.g[A1][0] as u32);
+            'scan: loop {
+                'store: {
+                    c.cycles += 3;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+                    let t = (c.g[V0][0] as i64) < 0;
+                    c.g[V1][0] = sx((c.g[V0][0] as u32) << 1);
+                    if t {
+                        break 'store;
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.sh(c.g[V0][0] as u32, c.g[A0][0]);
+                }
+                c.cycles += 4;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = ((c.g[A0][0] as i64) < 525) as u64;
+                if c.g[V0][0] == 0 {
+                    break 'scan;
+                }
+                c.g[V0][0] = c.lh(c.g[A1][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0015_68f8);
+                }
+            }
+            c.cycles += 4;
+            c.g[S2][0] = c.g[A2][0];
+            c.g[V0][0] = ((c.g[S2][0] as i64) < 10) as u64;
+            if c.g[V0][0] == 0 {
+                break 'profile;
+            }
+            c.mult(0, 5, 18, 20);
+            if event_due(c) {
+                deliver_event_here(c, 0x0015_6890);
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -434,6 +550,42 @@ pub(crate) mod tests {
                     15 => u64::MAX,
                     k => k as u64,
                 };
+            },
+        );
+    }
+
+    use crate::difftest::Rng;
+
+    #[test]
+    fn be_copy_profile_characters_matches() {
+        check(
+            ssx3_ee::s01::f_00156858__generated,
+            be_copy_profile_characters,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x6858_0000 ^ seed as u64);
+                machine(c, seed, 0x156858, 0);
+                let dst = DATA + 0x20_0000;
+                let src = DATA + 0x30_0000;
+                c.g[A0][0] = dst as u64;
+                c.g[A1][0] = src as u64;
+                c.bus.write32(GAME_GP.wrapping_sub(0x1f08), seed % 4);
+                for i in 0..10u32 {
+                    let s = src + i * 0xf88;
+                    fill(c, &mut r, s, 0xf88 / 4);
+                    c.bus.write32(s + 0x288, DATA + 0x40_0000 + i * 0x100);
+                    c.bus
+                        .write32(dst + i * 0xf88 + 0x288, DATA + 0x40_0000 + i * 0x100);
+                    for k in 0..0x200u32 {
+                        let v = if r.next_u32() & 1 == 0 {
+                            0x8000 | (r.next_u32() as u16)
+                        } else {
+                            (r.next_u32() % 0x100) as u16
+                        };
+                        c.bus.write16(s + 0x290 + 4 * k, v);
+                    }
+                }
+                fill(c, &mut r, DATA + 0x40_0000, 0x1000);
             },
         );
     }

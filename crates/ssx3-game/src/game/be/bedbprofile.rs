@@ -6,7 +6,9 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::game::be::bedbprofile::callee::BE_GET_EVENT_RECORD_INDEX;
 pub(crate) use crate::game::object::flexrailnode::at_3 as at;
 pub(crate) use crate::game::object::flexrailnode::r32v;
 pub(crate) use crate::game::object::flexrailnode::spa;
@@ -38,6 +40,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_2430,
         be_set_char_profile_flag,
         "BE_SetCharProfileFlag",
+    ),
+    (
+        0x0015_2528,
+        be_record_char_profile_event_place_medals,
+        "BE_RecordCharProfileEventPlace",
     ),
 ];
 
@@ -460,6 +467,169 @@ pub fn be_set_char_profile_flag(c: &mut Cpu) {
     abi::ret(c);
 }
 
+/// Per-event stat records in the character profile: `profile + 0xad0 + 8 *
+/// event_type`. Byte 0 is `hasPlayed`, byte 1 `BestMedal` (-1 = no place yet),
+/// bytes 2..3 `iNumGoldOrPlat`.
+pub(crate) const OC631_STAT_RECORDS: u32 = 0xad0;
+
+/// The medal counters: `profile + 0xba0 + 8 * category`, with `a` (race mode)
+/// at +0 and `b` (other modes) at +4.
+pub(crate) const OC631_MEDALS: u32 = 0xba0;
+
+/// `cBELibrary_locationDB`: 100-byte event records, the medal category at +0x54.
+#[allow(dead_code)]
+pub(crate) const OC631_LOCATION_DB: u32 = 0x0043_d950;
+
+/// `BE_GetEventRecordIndex` returns this for an event type it does not know.
+pub(crate) const OC631_UNKNOWN_TYPE: u64 = 0x1a;
+
+/// `void cBECharProfileDB_updateMedalStats(profile, event, mode, place)`
+/// (0x152528, `BE_RecordCharProfileEventPlace`): records a finishing `place`
+/// (-1 records nothing) for `event` in the profile's stat record for that
+/// event's type. Places 0 and 1 count a gold/platinum. The stat keeps the best
+/// (smallest) place. The first place of an event also counts its medal
+/// category: `a` for race mode 0, `b` for modes 1..3. Returns 1 when the place
+/// became the new best, else 0.
+pub fn be_record_char_profile_event_place_medals(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        c.g[S0][0] = c.g[A2][0]; // mode
+        c.g[S1][0] = c.g[A0][0]; // profile
+        c.g[S2][0] = c.g[A3][0]; // place
+        c.g[S3][0] = c.g[A1][0]; // event
+        c.g[S4][0] = u64::MAX;
+        let no_place = c.g[S2][0] == c.g[S4][0];
+        frame.save_ra(c, 0);
+        if no_place {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            be_record_event_place_body(c)?;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The part of [`be_record_char_profile_event_place_medals`] after the `-1`
+/// check. Leaves the return value in v0.
+pub(crate) fn be_record_event_place_body(c: &mut Cpu) -> Flow {
+    c.cycles += 7;
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A1][0] = c.g[S0][0];
+    BE_GET_EVENT_RECORD_INDEX.call(c, 0x0015_2568)?;
+    c.g[V1][0] = c.g[V0][0];
+    c.g[V0][0] = OC631_UNKNOWN_TYPE;
+    let unknown = c.g[V1][0] == c.g[V0][0];
+    c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+    if unknown {
+        c.cycles += 1;
+        c.g[V0][0] = 0;
+        return Ok(());
+    }
+
+    // The stat record of this event's type: hasPlayed = 1, and a place below
+    // two also counts a gold/platinum.
+    c.cycles += 6;
+    c.g[A0][0] = 1;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(OC631_STAT_RECORDS));
+    c.g[V1][0] = (c.g[S2][0] < 2) as u64;
+    c.g[A2][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    let stat = c.g[A2][0] as u32;
+    let counts_gold = c.g[V1][0] != 0;
+    let played = c.g[A0][0];
+    Addr(stat).sb(c, played);
+    if counts_gold {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(stat).off(2).lhu(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        let gold = c.g[V0][0];
+        Addr(stat).off(2).sh(c, gold);
+    }
+
+    // BestMedal: -1 means no place yet.
+    c.cycles += 3;
+    c.g[V0][0] = Addr(stat).off(1).lb(c);
+    let unset = c.g[V0][0] == c.g[S4][0];
+    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    if !unset {
+        c.cycles += 2;
+        let better = c.g[V0][0] != 0;
+        c.g[V0][0] = 0;
+        if !better {
+            // A place at or after the best one: nothing changes.
+            return Ok(());
+        }
+        c.cycles += 2;
+        let place = c.g[S2][0];
+        Addr(stat).off(1).sb(c, place);
+        c.cycles += 2;
+        c.g[V0][0] = 1;
+        return Ok(());
+    }
+
+    // The event's first place: count its medal category.
+    c.cycles += 7;
+    c.g[V1][0] = 0x64;
+    c.g[V0][0] = 0x0044_0000;
+    c.mult(0, V1, S3, V1);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x26b0));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    let race_mode = c.g[S0][0] == 0;
+    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x54)).lw(c);
+    if race_mode {
+        c.cycles += 3;
+        c.g[A0][0] = sx((c.g[V1][0] as u32) << 3);
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(OC631_MEDALS));
+        count_medal(c);
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+        c.g[V0][0] = (c.g[V0][0] < 3) as u64;
+        let in_b_modes = c.g[V0][0] != 0;
+        c.g[A0][0] = sx((c.g[V1][0] as u32) << 3);
+        if in_b_modes {
+            // Modes 1..3 count `b`; other modes count nothing.
+            c.cycles += 1;
+            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(OC631_MEDALS + 4));
+            count_medal(c);
+        }
+    }
+
+    // Record the place as the event's best.
+    c.cycles += 1;
+    let place = c.g[S2][0];
+    Addr(stat).off(1).sb(c, place);
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    Ok(())
+}
+
+/// The medal counter at `V1 + A0`: its word goes up by one (the generated
+/// `addu`, `lw`, `addiu`, `sw` block).
+pub(crate) fn count_medal(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    let medal = c.g[V1][0] as u32;
+    c.g[V0][0] = Addr(medal).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    let count = c.g[V0][0];
+    Addr(medal).sw(c, count);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -613,6 +783,57 @@ pub(crate) mod tests {
                     r.next_u32() as u64 | 1
                 };
                 c.bus.write32(DATA + 0xacc, r.next_u32());
+            },
+        );
+    }
+
+    /// The event-type table `BE_GetEventRecordIndex` searches for events 0..16:
+    /// two `(key, value)` pairs of 4 bytes each, 16 bytes per event.
+    pub(crate) const OC631_TYPE_TABLE: u32 = 0x0045_a2f8;
+
+    #[test]
+    fn be_record_char_profile_event_place_medals_matches() {
+        check(
+            ee::s01::f_00152528__generated,
+            be_record_char_profile_event_place_medals,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x1525);
+                scramble(c, &mut r);
+                let ev = seed % 20;
+                let mode = seed % 6;
+                let place: u64 = if seed % 9 == 0 {
+                    u64::MAX
+                } else {
+                    (seed % 6) as u64
+                };
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = ev as u64;
+                c.g[A2][0] = mode as u64;
+                c.g[A3][0] = place;
+
+                // Event lookup: the medal category of the event's location.
+                c.bus
+                    .write32(OC631_LOCATION_DB + 100 * ev + 0x54, (seed as u32 + 3) % 8);
+                // Event-type table: found for some modes, not for others
+                // (then the lookup returns the unknown type).
+                let base_entry = OC631_TYPE_TABLE + 16 * ev;
+                c.bus
+                    .write32(base_entry, if seed % 2 == 0 { mode as u32 } else { 7 });
+                c.bus.write32(base_entry + 4, seed as u32 % 4);
+                c.bus
+                    .write32(base_entry + 8, if seed % 3 == 0 { mode as u32 } else { 99 });
+                c.bus.write32(base_entry + 12, 4 + seed as u32 % 20);
+
+                // Stat records: unset (-1) or with a best place, some with
+                // gold counts.
+                for t in 0..27u32 {
+                    let rec = DATA + OC631_STAT_RECORDS + 8 * t;
+                    let best = if seed % 3 == 0 { 0xff } else { seed as u32 % 5 };
+                    let gold = seed as u32 % 4;
+                    let played = seed as u32 % 2;
+                    c.bus.write32(rec, played | (best << 8) | (gold << 16));
+                }
             },
         );
     }

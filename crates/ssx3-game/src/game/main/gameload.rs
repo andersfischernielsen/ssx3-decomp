@@ -134,6 +134,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_module_cancel_overlay_state,
         "GameModule_CancelOverlayState",
     ),
+    (
+        0x0023_1b50,
+        c_load_screen_draw_splash,
+        "cLoadScreen_drawSplash",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5212,6 +5217,235 @@ pub fn game_module_cancel_overlay_state(c: &mut Cpu) {
     })
 }
 
+/// `void cGame::partialRestart(cGame* self)` (0x230180), `GameModule_ResetRace`:
+/// resets the race state: the playback, the wscript missions, the buckets, the
+/// AI (virtual slot 5 with mode 3), avalanche, the view, the world map, the
+/// replay, the script engine, the camera, both crowds, the particles, the HUD
+/// state (handle event 7) and the audio.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn c_game_partial_restart(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 55;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2898)); // gBucketMan_bm
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
+        call_ptr(c, 0x0026_ca90, 0x0023_01a0)?; // cPlaybackMan_restart
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x30));
+        call_ptr(c, 0x0030_9030, 0x0023_01a8)?; // cWScriptMan_initMissions
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x0035_4c98, 0x0023_01b4)?; // cBucketMan_mergeBucket(bm, 1)
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x0035_5118, 0x0023_01c0)?; // cBucketMan_purgeBucket(bm, 1)
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0x8;
+        call_ptr(c, 0x0035_5118, 0x0023_01cc)?; // cBucketMan_purgeBucket(bm, 8)
+                                                // The AI's virtual slot 5 with mode 3.
+        c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+        c.g[A1][0] = 0x3;
+        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xcc));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x28));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
+        let slot = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, slot, 0x0023_01e8)?;
+        call_ptr(c, 0x002d_9b40, 0x0023_01f0)?; // cAvalanche_reset
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
+        call_ptr(c, 0x0022_e7c8, 0x0023_01f8)?; // cGameViewMan_snapAll
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+        call_ptr(c, 0x003a_6800, 0x0023_0200)?; // cWorld_resetMap
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+        call_ptr(c, 0x0026_f228, 0x0023_0208)?; // cReplay_reset
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
+        call_ptr(c, 0x0027_89e0, 0x0023_0210)?; // cSSXScriptEngine_Restart
+        call_ptr(c, 0x0015_db58, 0x0023_0218)?; // cCamera_onRestart
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
+        call_ptr(c, 0x0022_9498, 0x0023_0220)?; // crowd 2d reset
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
+        call_ptr(c, 0x0034_3bc0, 0x0023_0228)?; // crowd 3d reset
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
+        call_ptr(c, 0x0035_7b38, 0x0023_0230)?; // cMultiParticleMan_reset
+                                                // The HUD state (its hash of "hud" in the UI state stack).
+        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x48));
+        c.g[A0][0] = 0x4a0000;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2ab0)); // str_hud_c
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18)); // &mStateStack
+        call_ptr(c, 0x0031_7670, 0x0023_0244)?; // GetHashValue32
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_f9d8, 0x0023_0250)?; // cUIStateStack_findState
+        c.g[A3][0] = c.g[V0][0];
+        c.g[A1][0] = 0x7;
+        if c.g[A3][0] != 0u64 {
+            c.cycles += 6;
+            c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x8));
+            c.g[A2][0] = 0u64;
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xc0));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
+            let handle_event = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, handle_event, 0x0023_0274)?; // hudState->handleEvent(7, 0)
+        }
+        c.cycles += 13;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xce8)); // cWScriptMan_TheWScriptMan
+        call_ptr(c, 0x0030_9f18, 0x0023_027c)?; // cWScriptMan_runGlobalScripts
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x30));
+        call_ptr(c, 0x0030_8c60, 0x0023_0284)?; // cWScriptMan_setupMissions
+        call_ptr(c, 0x0028_b180, 0x0023_028c)?; // cAudioInterface_bxAudio
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0028_7108, 0x0023_0294)?; // cSSXAudio_PartialRestart
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cGame::startReplay(cGame* self, int)` (0x230558),
+/// `GameModule_BeginReplayPlayback`: counts the replay up (gp-0x69c), records
+/// it in the replay table at 0x5366e8, sets the replay pointer (gp-0x6a0) from
+/// 0x442910, then starts the playback and the replay from the game object.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn c_game_start_replay(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        c.g[T0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x69c));
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[V1][0] = 0x530000;
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x66e8));
+        c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
+        c.g[A1][0] = 0x440000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x2910));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[A2][0] = 0x8;
+        c.g[A1][0] = 0u64;
+        c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x6a0), c.g[A0][0]);
+        c.g[A2][0] = 0u64;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[T0][0]);
+        call_ptr(c, 0x0026_f8a0, 0x0023_05ac)?; // cPlaybackMan_startReplay
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+        c.g[A1][0] = 0u64;
+        call_ptr(c, 0x002c_c0b8, 0x0023_05b8)?; // replay start
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cLoadScreen::drawSplash(void)` (0x231b50), `GameModule_DrawFullscreenQuad`:
+/// builds a 4-pass fullscreen-quad vertex block on the stack (zeroed, with a
+/// 1.0 in f0), stores its colour words into the draw context at gp-0x854, and
+/// draws it through the context's virtual method (slot at +0x23c, this at +0x238).
+pub fn c_load_screen_draw_splash(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0xe0);
+        c.g[T0][0] = c.g[A1][0];
+        frame.save_ra(c, 0xd0);
+        c.g[V0][0] = 0x3;
+        c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+        // Four passes: v0 counts 3, 2, 1, 0.
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            let more = c.g[V0][0] != c.g[V1][0];
+            c.g[A0][0] = 0x80;
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0023_1b68);
+            }
+        }
+        c.cycles += 5;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0); // f0 = 1.0
+        c.g[V1][0] = c.g[SP][0];
+        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x1c), c.g[A0][0]);
+        loop {
+            c.cycles += 8;
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A0][0]);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x14), c.g[A0][0]);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x18), c.g[A0][0]);
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            if c.g[V0][0] == 0u64 {
+                break;
+            }
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x1c), c.g[A0][0]);
+            if event_due(c) {
+                deliver_event_here(c, 0x0023_1b98);
+            }
+        }
+        c.cycles += 45;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0);
+        c.g[A1][0] = 0x4;
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xc0), 0u64);
+        c.g[A2][0] = c.g[SP][0];
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xc8), 0u64);
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xc4), 0u64);
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xcc));
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x94));
+        c.lq(2, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xc8), 0u64);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xc4), 0u64);
+        c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(3, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xc0), 0u64);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xc8), 0u64);
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc4));
+        c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(4, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xc8), 0u64);
+        c.sq(4, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(2, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.sw(c.g[SP][0] as u32, 0u64);
+        c.sq(2, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x34), 0u64);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x60), 0u64);
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x64));
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x90));
+        // Store the pass count into the draw context and draw.
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xe84));
+        c.sh((c.g[V1][0] as u32).wrapping_add(0x10), c.g[T0][0]);
+        c.g[T0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+        c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10d8));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x238));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x23c));
+        let draw = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, draw, 0x0023_1c60)?;
+        frame.restore_ra(c, 0xd0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6733,6 +6967,35 @@ pub(crate) mod tests {
                 c.bus.write32(game + 0x204, obj);
                 let vt = vtable(c, &mut r, &[0x20]);
                 c.bus.write32(obj + 0xc, vt);
+            },
+        );
+    }
+
+    /// cSectionMan: the location (`idx`) and mode (7 = the table's mode)
+    /// across the seeds, on the game's own location tables.
+
+    /// cGame::partialRestart: the AI's virtual slot 5 is a fake (the mode-3
+    /// call goes to it); every other callee sees the zeroed game object.
+
+    /// cGame::startReplay: the replay counter in gp-0x69c steps up from
+    /// seed-dependent values; the replay pointer slot is seeded.
+
+    /// cLoadScreen::drawSplash: the draw context at gp-0x854 has its virtual
+    /// draw method at a fake, so the call is logged and returns.
+    #[test]
+    fn c_load_screen_draw_splash_matches() {
+        check(
+            ssx3_ee::s06::f_00231b50__generated,
+            c_load_screen_draw_splash,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x0023_1b50, 0);
+                c.g[A1][0] = (seed % 0x1000) as u64;
+                c.bus.write32(GAME_GP - 0x854, DATA);
+                c.bus.write32(DATA + 0xe84, DATA + 0x1000);
+                c.bus.write32(DATA + 0x10d8, DATA + 0x2000);
+                c.bus.write16(DATA + 0x2238, ((seed % 3) * 0x10) as u16);
+                c.bus.write32(DATA + 0x223c, FAKE);
             },
         );
     }

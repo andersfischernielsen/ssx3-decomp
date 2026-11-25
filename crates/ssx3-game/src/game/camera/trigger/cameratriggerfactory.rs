@@ -575,6 +575,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "CameraConsts_GlobalCtor_9fa8",
     ),
     (0x001d_cd00, debug_menu_v01, "DebugMenu_v01"),
+    (
+        0x0017_1a20,
+        camera_ellipse_bound_obj_read,
+        "CameraEllipseBoundObj_Read",
+    ),
+    (
+        0x0017_1b10,
+        camera_box_bound_obj_read_2,
+        "CameraBoxBoundObj_Read",
+    ),
+    (
+        0x0017_1c00,
+        camera_line_bound_obj_read,
+        "CameraLineBoundObj_Read",
+    ),
+    (
+        0x0017_1d58,
+        camera_trigger_read_spline,
+        "CameraTrigger_ReadSpline",
+    ),
+    (
+        0x0017_a830,
+        debug_menu_add_world_if_missing,
+        "DebugMenu_AddWorldIfMissing",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -11749,6 +11774,586 @@ pub fn debug_menu_v01(c: &mut Cpu) {
     })
 }
 
+#[allow(unused_labels, unreachable_code, unused_assignments)]
+/// `int get_cCTBoundObjEllipse(reader, obj)` (0x171a20): reads an ellipse trigger
+/// bound (position, scale, heading, pitch, roll) through the object's field
+/// accessors and returns the sum of the reads. Sets `obj->Type = 0`.
+pub fn camera_ellipse_bound_obj_read(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 59;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = c.g[A1][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S2][0] = c.g[A0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), 0u64);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171a54);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171a54)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171a60);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d25a0, 0x00171a60)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171a78);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171a78)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171a84);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d25a0, 0x00171a84)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171a9c);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171a9c)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171aa8);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171aa8)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x18));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171ac0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171ac0)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171acc);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171acc)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171ae4);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171ae4)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171af0);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171af0)?;
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+#[allow(unused_labels, unreachable_code, unused_assignments)]
+/// `int get_cCTBoundObjBox(reader, obj)` (0x171b10): reads a box trigger bound
+/// (the same five fields as the ellipse). Sets `obj->Type = 1`.
+pub fn camera_box_bound_obj_read_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 60;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.g[V0][0] = 0x1;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = c.g[A1][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S2][0] = c.g[A0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171b48);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171b48)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171b54);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d25a0, 0x00171b54)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171b6c);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171b6c)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171b78);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d25a0, 0x00171b78)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171b90);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171b90)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171b9c);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171b9c)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x18));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171bb4);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171bb4)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171bc0);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171bc0)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171bd8);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171bd8)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171be4);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171be4)?;
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+#[allow(unused_labels, unreachable_code, unused_assignments)]
+/// `int get_cCTBoundObjLine(reader, obj)` (0x171c00): reads a line trigger bound
+/// (the five fields, then the two end points). Sets `obj->Type = 2`.
+pub fn camera_line_bound_obj_read(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 68;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.g[V0][0] = 0x2;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S1][0] = c.g[A1][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S2][0] = c.g[A0][0];
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171c38);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171c38)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171c44);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d25a0, 0x00171c44)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171c5c);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171c5c)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171c68);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d25a0, 0x00171c68)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171c80);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171c80)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171c8c);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171c8c)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x18));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171ca4);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171ca4)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171cb0);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171cb0)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171cc8);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171cc8)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171cd4);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00171cd4)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2c));
+        c.g[RA][0] = sx(0x00171ce4);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        call_ptr(c, 0x002d25a0, 0x00171ce4)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171cf4);
+        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x38));
+        call_ptr(c, 0x002d25a0, 0x00171cf4)?;
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+#[allow(unused_labels, unreachable_code, unused_assignments)]
+/// `void get_camspline(reader, out)` (0x171d58): allocates a spline trigger
+/// (`str_Camera_Trigger_Spline`, 0x58 bytes), copies its template, stores it in
+/// `*out` and reads the five object fields plus the four control points.
+pub fn camera_trigger_read_spline(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 148;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+        c.g[A2][0] = 0u64;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[A3][0] = 0u64;
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        c.g[A1][0] = 0x460000;
+        c.g[A0][0] = 0x58;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        c.g[RA][0] = sx(0x00171d8c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x3e90));
+        call_ptr(c, 0x00317d70, 0x00171d8c)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 0);
+        c.g[V0][0] = 0x460000;
+        c.g[V1][0] = 0x500000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x3c10));
+        c.g[A3][0] = c.g[V1][0];
+        c.sw((c.g[A1][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+        c.g[T0][0] = 0xffffffffffffffff;
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
+        c.g[A2][0] = c.g[A1][0];
+        c.swc1(0, c.g[SP][0] as u32);
+        c.g[A0][0] = 0x3;
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
+        c.g[T4][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xf28));
+        c.ldl(9, (c.g[T4][0] as u32).wrapping_add(0x7));
+        c.ldr(9, c.g[T4][0] as u32);
+        c.g[T2][0] = c.lw((c.g[T4][0] as u32).wrapping_add(0x8));
+        c.sdl(9, (c.g[A1][0] as u32).wrapping_add(0x7));
+        c.sdr(9, c.g[A1][0] as u32);
+        c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T2][0]);
+        c.sw((c.g[A1][0] as u32).wrapping_add(0xc), 0u64);
+        c.sw((c.g[A1][0] as u32).wrapping_add(0x10), 0u64);
+        c.sw((c.g[A1][0] as u32).wrapping_add(0x14), 0u64);
+        c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
+        c.ldr(3, c.g[SP][0] as u32);
+        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+        c.sdl(3, (c.g[A1][0] as u32).wrapping_add(0x1f));
+        c.sdr(3, (c.g[A1][0] as u32).wrapping_add(0x18));
+        c.sw((c.g[A1][0] as u32).wrapping_add(0x20), c.g[T1][0]);
+        c.sw((c.g[A1][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0xf28));
+        c.ldl(12, (c.g[A0][0] as u32).wrapping_add(0x7));
+        c.ldr(12, c.g[A0][0] as u32);
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.sdl(12, (c.g[A2][0] as u32).wrapping_add(0x2f));
+        c.sdr(12, (c.g[A2][0] as u32).wrapping_add(0x28));
+        c.sw((c.g[A2][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+        c.g[T3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0xf28));
+        c.ldl(8, (c.g[T3][0] as u32).wrapping_add(0x7));
+        c.ldr(8, c.g[T3][0] as u32);
+        c.g[T1][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x8));
+        c.sdl(8, (c.g[A2][0] as u32).wrapping_add(0x3b));
+        c.sdr(8, (c.g[A2][0] as u32).wrapping_add(0x34));
+        c.sw((c.g[A2][0] as u32).wrapping_add(0x3c), c.g[T1][0]);
+        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0xf28));
+        c.ldl(12, (c.g[A0][0] as u32).wrapping_add(0x7));
+        c.ldr(12, c.g[A0][0] as u32);
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.sdl(12, (c.g[A2][0] as u32).wrapping_add(0x47));
+        c.sdr(12, (c.g[A2][0] as u32).wrapping_add(0x40));
+        c.sw((c.g[A2][0] as u32).wrapping_add(0x48), c.g[V0][0]);
+        c.g[T3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0xf28));
+        c.ldl(8, (c.g[T3][0] as u32).wrapping_add(0x7));
+        c.ldr(8, c.g[T3][0] as u32);
+        c.g[T1][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x8));
+        c.sdl(8, (c.g[A2][0] as u32).wrapping_add(0x53));
+        c.sdr(8, (c.g[A2][0] as u32).wrapping_add(0x4c));
+        c.sw((c.g[A2][0] as u32).wrapping_add(0x54), c.g[T1][0]);
+        c.sw(c.g[S1][0] as u32, c.g[A1][0]);
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171e90);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171e90)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x00171e9c);
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x002d25a0, 0x00171e9c)?;
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[S0][0] = c.g[V0][0];
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171eb8);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171eb8)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x00171ec4);
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x002d25a0, 0x00171ec4)?;
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171ee0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171ee0)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x00171eec);
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x002d2510, 0x00171eec)?;
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x18));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171f08);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171f08)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x00171f14);
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x002d2510, 0x00171f14)?;
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00171f30);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00171f30)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x00171f3c);
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x002d2510, 0x00171f3c)?;
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[RA][0] = sx(0x00171f50);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x28));
+        call_ptr(c, 0x002d25a0, 0x00171f50)?;
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[RA][0] = sx(0x00171f64);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x34));
+        call_ptr(c, 0x002d25a0, 0x00171f64)?;
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[RA][0] = sx(0x00171f78);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+        call_ptr(c, 0x002d25a0, 0x00171f78)?;
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.g[S2][0];
+        c.g[RA][0] = sx(0x00171f8c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4c));
+        call_ptr(c, 0x002d25a0, 0x00171f8c)?;
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `DebugMenu_AddWorldIfMissing` (0x17a830): `int f(self, name, tag)`. The
+/// reference calls it `cTrackFileMan_checkLocation`. Returns 0 when a row of
+/// the location table already has file `name` and big file `tag` (rows are
+/// 0x8c bytes: `File` at +4, `BigFile` at +0x44). Otherwise it opens the
+/// world's big file (the BigFile ctor on `worlds/<tag>`), asks
+/// `World_SdbHasSections` whether a section `name` exists and returns the
+/// `bFound` flag it sets (0 when that gives no map).
+pub fn debug_menu_add_world_if_missing(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        frame.save_ra(c, 0x40);
+        c.g[S2][0] = 0;
+        c.g[S3][0] = c.g[A0][0];
+        c.g[S4][0] = c.g[A2][0];
+        let this = c.g[S3][0] as u32;
+        c.g[V0][0] = Addr(this).lw(c);
+        let no_rows = (c.g[V0][0] as i64) <= 0;
+        c.g[S5][0] = c.g[A1][0];
+
+        let mut listed = false;
+        if !no_rows {
+            c.cycles += 2;
+            c.g[S1][0] = sx(this.wrapping_add(0x44));
+            c.g[S0][0] = sx(this.wrapping_add(0x4));
+            loop {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S5][0];
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, 0x0041_aa88, 0x0017_a87c)?;
+                if c.g[V0][0] != 0 {
+                    c.g[V0][0] = Addr(this).lw(c);
+                } else {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x0041_aa88, 0x0017_a890)?;
+                    if c.g[V0][0] == 0 {
+                        // Both names match: the location is listed already.
+                        c.cycles += 2;
+                        listed = true;
+                        break;
+                    }
+                    c.g[V0][0] = Addr(this).lw(c);
+                }
+                c.cycles += 5;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8c));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8c));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0017_a870);
+                }
+            }
+        }
+
+        if listed {
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 40;
+            c.g[S1][0] = sx(frame.at(c, 0x10));
+            c.g[S0][0] = sx(0x0046_0000u32.wrapping_sub(0x31e0));
+            // workStr = BXString(tag) ; base = "data/worlds" + workStr
+            c.g[A1][0] = c.g[S4][0];
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_82d8, 0x0017_a8cc)?;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, 0x0031_86d0, 0x0017_a8dc)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 2;
+            call_ptr(c, 0x0031_8260, 0x0017_a8e8)?;
+            // workStr = base + "big" ; BigFile(pbf) opened on workStr.
+            c.g[S2][0] = sx(frame.at(c, 0x20));
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A2][0] = sx(0x004a_1298);
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_8630, 0x0017_a900)?;
+            let work_str = Addr(frame.at(c, 0x10)).lw(c);
+            c.g[A1][0] = work_str;
+            c.g[A2][0] = 0x100;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0031_68b0, 0x0017_a910)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 2;
+            call_ptr(c, 0x0031_8260, 0x0017_a91c)?;
+            // nm.sectionName = name; bFound = isValidMap(base, 1, &nm)
+            let base_str = Addr(sp(c)).lw(c);
+            c.g[A0][0] = base_str;
+            c.g[A2][0] = sx(frame.at(c, 0x30));
+            let name = c.g[S5][0];
+            Addr(frame.at(c, 0x30)).sw(c, name);
+            c.g[A1][0] = 1;
+            call_ptr(c, 0x003a_6948, 0x0017_a930)?;
+            let found = Addr(frame.at(c, 0x34)).lw(c);
+            c.g[S0][0] = found;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = 2;
+            if c.g[V0][0] == 0 {
+                c.g[S0][0] = 0;
+            }
+            call_ptr(c, 0x0031_68e8, 0x0017_a944)?;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = 2;
+            call_ptr(c, 0x0031_8260, 0x0017_a950)?;
+            c.g[V0][0] = c.g[S0][0];
+        }
+
+        c.cycles += 9;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -15162,6 +15767,301 @@ pub(crate) mod tests {
                 let mut r = oc506_arm(c, seed, 0x1dcd00, 3);
                 c.g[A0][0] = OC506_THIS as u64;
                 c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// The bound readers' object (the reader's stream cursor at `READER`).
+    pub(crate) const OC637_OBJ: u32 = DATA + 0x6000;
+
+    pub(crate) const OC637_READER: u32 = DATA + 0x6100;
+
+    pub(crate) const OC637_STREAM: u32 = DATA + 0x6200;
+
+    pub(crate) const OC637_VT: u32 = DATA + 0x6400;
+
+    /// The spline's `*out` cell.
+    pub(crate) const OC637_OUT: u32 = DATA + 0x6800;
+
+    /// The block `EA_MemAllocNamed` returns to the spline (gate on).
+    pub(crate) const OC637_NEW_BLOCK: u32 = DATA + 0x21_0000;
+
+    /// The fake allocator runs only when `OC637_GATE` holds `OC637_GATE_MAGIC`.
+    pub(crate) const OC637_GATE: u32 = DATA + 0x20_5000;
+
+    pub(crate) const OC637_GATE_MAGIC: u32 = 0x0637_c0de;
+
+    /// The vtable the spline stores into its object (`0x45c3f0`, in the game image).
+    pub(crate) const OC637_SPLINE_VT: u32 = 0x0045_c3f0;
+
+    pub(crate) static OC637_NEW_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// Five accessor slots (the offsets the readers and the spline call), each a
+    /// fake callee: the `miss` hook logs the call and returns a pointer.
+    pub(crate) fn oc637_vtable(c: &mut Cpu, r: &mut crate::difftest::Rng, vt: u32) {
+        for (i, off) in [0x08u32, 0x28, 0x10, 0x18, 0x20].into_iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + off, delta as u16);
+            c.bus.write32(vt + off + 4, fakes::FAKE + 0x10 * i as u32);
+        }
+    }
+
+    /// The readers' fixture: the object with its accessor vtable, the reader whose
+    /// first word is the stream cursor (the float and vec3 reads are real guest
+    /// code), and random words in the stream.
+    pub(crate) fn oc637_reader_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        let mut r = fakes::machine(c, seed, 0x637_0001, 5);
+        c.pc = entry;
+        c.g[A0][0] = OC637_READER as u64;
+        c.g[A1][0] = OC637_OBJ as u64;
+        fill(c, &mut r, OC637_OBJ, 0x40);
+        oc637_vtable(c, &mut r, OC637_VT);
+        c.bus.write32(OC637_OBJ + 0x24, OC637_VT);
+        c.bus.write32(OC637_READER, OC637_STREAM);
+        fill(c, &mut r, OC637_STREAM, 0x40);
+    }
+
+    #[test]
+    fn camera_ellipse_bound_obj_read_matches() {
+        fakes::covered(
+            ssx3_ee::s02::f_00171a20__generated,
+            camera_ellipse_bound_obj_read,
+            200,
+            &|c, seed| oc637_reader_fixture(c, seed, 0x0017_1a20),
+        );
+    }
+
+    #[test]
+    fn camera_box_bound_obj_read_matches() {
+        fakes::covered(
+            ssx3_ee::s02::f_00171b10__generated,
+            camera_box_bound_obj_read_2,
+            200,
+            &|c, seed| oc637_reader_fixture(c, seed, 0x0017_1b10),
+        );
+    }
+
+    #[test]
+    fn camera_line_bound_obj_read_matches() {
+        fakes::covered(
+            ssx3_ee::s02::f_00171c00__generated,
+            camera_line_bound_obj_read,
+            200,
+            &|c, seed| oc637_reader_fixture(c, seed, 0x0017_1c00),
+        );
+    }
+
+    /// The fake `EA_MemAllocNamed` for the spline's `new` (gate on: the block).
+    pub(crate) fn oc637_fake_new(c: &mut Cpu) {
+        if c.bus.read32(OC637_GATE) != OC637_GATE_MAGIC {
+            return fakes::fall_back(c, &OC637_NEW_PREV, ssx3_ee::s10::f_00317d70__generated);
+        }
+        c.g[V0][0] = OC637_NEW_BLOCK as u64;
+        ret(c);
+    }
+
+    pub(crate) fn oc637_install_new() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ssx3_ee::s10::OVERRIDE_00317D70),
+            oc637_fake_new,
+            &OC637_NEW_PREV,
+        );
+    }
+
+    /// The spline fixture: the reader stream, the `*out` cell, and the vtable at
+    /// the address the body stores (its slots are the fake accessors).
+    pub(crate) fn oc637_spline_fixture(c: &mut Cpu, seed: u32) {
+        oc637_install_new();
+        let mut r = fakes::machine(c, seed, 0x637_0002, 5);
+        c.pc = 0x0017_1d58;
+        c.bus.write32(OC637_GATE, OC637_GATE_MAGIC);
+        c.g[A0][0] = OC637_READER as u64;
+        c.g[A1][0] = OC637_OUT as u64;
+        c.bus.write32(OC637_OUT, r.next_u32());
+        c.bus.write32(OC637_READER, OC637_STREAM);
+        fill(c, &mut r, OC637_STREAM, 0x40);
+        fill(c, &mut r, OC637_NEW_BLOCK, 0x20);
+        oc637_vtable(c, &mut r, OC637_SPLINE_VT);
+    }
+
+    #[test]
+    fn camera_trigger_read_spline_matches() {
+        fakes::covered(
+            ssx3_ee::s02::f_00171d58__generated,
+            camera_trigger_read_spline,
+            200,
+            &|c, seed| oc637_spline_fixture(c, seed),
+        );
+    }
+
+    /// Gate word of the fakes (`DATA+0x1f000`, clear of the fixture): the
+    /// magic enables them, +4 is the `bFound` the map reports, +8 makes the
+    /// map come back missing (`isValidMap` returns 0).
+    pub(crate) const OC639_CTRL: u32 = DATA + 0x1_f000;
+
+    pub(crate) const OC639_MAGIC: u32 = 0x6f63_3633;
+
+    /// A gated fake for a callee the body calls through the table: with the
+    /// gate on it logs the call and returns (`fakes::fake`), with it off it
+    /// runs what the slot held before the hook.
+    macro_rules! oc639_gated_fake {
+        ($fake:ident, $prev:ident, $target:literal, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC639_CTRL) != OC639_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $target, ra);
+            }
+        };
+    }
+
+    oc639_gated_fake!(
+        oc639_fake_3182d8,
+        OC639_PREV_3182D8,
+        0x0031_82d8,
+        ee::s10::f_003182d8__generated
+    );
+
+    oc639_gated_fake!(
+        oc639_fake_3186d0,
+        OC639_PREV_3186D0,
+        0x0031_86d0,
+        ee::s10::f_003186d0__generated
+    );
+
+    oc639_gated_fake!(
+        oc639_fake_318260,
+        OC639_PREV_318260,
+        0x0031_8260,
+        ee::s10::f_00318260__generated
+    );
+
+    oc639_gated_fake!(
+        oc639_fake_318630,
+        OC639_PREV_318630,
+        0x0031_8630,
+        ee::s10::f_00318630__generated
+    );
+
+    oc639_gated_fake!(
+        oc639_fake_3168b0,
+        OC639_PREV_3168B0,
+        0x0031_68b0,
+        ee::s10::f_003168b0__generated
+    );
+
+    oc639_gated_fake!(
+        oc639_fake_3168e8,
+        OC639_PREV_3168E8,
+        0x0031_68e8,
+        ee::s10::f_003168e8__generated
+    );
+
+    pub(crate) static OC639_PREV_3A6948: AtomicUsize = AtomicUsize::new(0);
+
+    /// `World_SdbHasSections(name, flags, nm)`: with the gate on, it sets the
+    /// `bFound` word of `nm` (a2+4) from the fixture and may come back 0.
+    pub(crate) fn oc639_fake_3a6948(c: &mut Cpu) {
+        if c.bus.read32(OC639_CTRL) != OC639_MAGIC {
+            return fakes::fall_back(c, &OC639_PREV_3A6948, ee::s13::f_003a6948__generated);
+        }
+        let nm = c.g[A2][0] as u32;
+        let found = c.bus.read32(OC639_CTRL + 4);
+        c.bus.write32(nm + 4, found);
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x003a_6948, ra);
+        if c.pc == ra && c.bus.read32(OC639_CTRL + 8) != 0 {
+            c.g[V0][0] = 0;
+        }
+    }
+
+    pub(crate) fn oc639_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003182D8),
+            oc639_fake_3182d8,
+            &OC639_PREV_3182D8,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003186D0),
+            oc639_fake_3186d0,
+            &OC639_PREV_3186D0,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00318260),
+            oc639_fake_318260,
+            &OC639_PREV_318260,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00318630),
+            oc639_fake_318630,
+            &OC639_PREV_318630,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003168B0),
+            oc639_fake_3168b0,
+            &OC639_PREV_3168B0,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003168E8),
+            oc639_fake_3168e8,
+            &OC639_PREV_3168E8,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A6948),
+            oc639_fake_3a6948,
+            &OC639_PREV_3A6948,
+        );
+    }
+
+    /// A NUL-terminated string in RAM.
+    pub(crate) fn put_cstr(c: &mut Cpu, at: u32, s: &str) {
+        for (i, b) in s.bytes().enumerate() {
+            c.bus.write8(at + i as u32, b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// `DebugMenu_AddWorldIfMissing` against the generated body: zero to
+    /// three location rows whose names match the wanted file and big file
+    /// in different ways (case-insensitively for some), so the scan lists
+    /// the location on some seeds and runs off the end on the others. The
+    /// big file, the section lookup (bFound 0/1, and no map on every fifth
+    /// seed) and every callee run as fakes; strcasecmp runs for real.
+    #[test]
+    fn debug_menu_add_world_if_missing_matches() {
+        const SELF: u32 = DATA;
+        const NAME: u32 = DATA + 0x2000;
+        const TAG: u32 = DATA + 0x2100;
+        oc639_install_fakes();
+        covered(
+            ee::s02::f_0017a830__generated,
+            debug_menu_add_world_if_missing,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x17a830, 9);
+                c.bus.write32(OC639_CTRL, OC639_MAGIC);
+                c.bus.write32(OC639_CTRL + 4, r.next_u32() & 1);
+                c.bus.write32(OC639_CTRL + 8, (seed % 5 == 0) as u32);
+                let rows = seed % 4;
+                c.bus.write32(SELF, rows);
+                put_cstr(c, NAME, "snow");
+                put_cstr(c, TAG, "big");
+                for i in 0..rows {
+                    let (file, big) = match (seed / 3 + i) % 4 {
+                        0 => ("SNOW", "big"),
+                        1 => ("snow", "Other"),
+                        2 => ("other", "BIG"),
+                        _ => ("other", "other"),
+                    };
+                    put_cstr(c, SELF + 4 + 0x8c * i, file);
+                    put_cstr(c, SELF + 0x44 + 0x8c * i, big);
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(NAME);
+                c.g[A2][0] = sx(TAG);
+                c.pc = 0x0017_a830;
             },
         );
     }

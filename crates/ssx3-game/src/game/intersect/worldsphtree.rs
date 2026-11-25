@@ -294,6 +294,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_1388, boost_node_ctor, "cBoostNode_cBoostNode1"),
     (0x0034_1818, boost_node_apply_boost, "cBoostNode_applyBoost"),
     (0x0034_2a88, boost_modifier_v07, "BoostModifier_v07"),
+    (
+        0x0034_0b18,
+        cell_gather_type2_subtree_2,
+        "Cell_GatherType2Subtree",
+    ),
+    (
+        0x0034_0dc0,
+        cell_gather_all_subtree_2,
+        "Cell_GatherAllSubtree",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -33828,6 +33838,250 @@ fn nash_collide_objects_body(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// The eight child slots of a cell (+0x0 .. +0x1c), each descended into when
+/// non-null with the output in A1. `self_reg` holds the cell, `out_reg` the
+/// output; `rets` are the return addresses of the eight call sites. The
+/// slot loads, the per-slot cycle charges and the final `lq s0` match the
+/// generated blocks one for one.
+pub(crate) fn gather_children(
+    c: &mut Cpu,
+    frame: Frame,
+    self_reg: usize,
+    out_reg: usize,
+    callee: Callee,
+    rets: [u32; 8],
+) -> Flow {
+    for k in 0..8u32 {
+        if k == 0 {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(c.g[self_reg][0] as u32).lw(c);
+        } else {
+            c.cycles += 2;
+        }
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[out_reg][0];
+            callee.call(c, rets[k as usize])?;
+        }
+        if k < 7 {
+            let next = (c.g[self_reg][0] as u32).wrapping_add(4 * (k + 1));
+            c.g[A0][0] = Addr(next).lw(c);
+        } else {
+            frame.restore(c, 16, 0x20);
+        }
+    }
+    Ok(())
+}
+
+/// Return addresses of the child call sites of `nash_Cell_descend1`
+/// (0x340b18), from its `RA = sx(...)` lines.
+pub(crate) const TYPE2_CHILD_RETS: [u32; 8] = [
+    0x0034_0b7c,
+    0x0034_0b90,
+    0x0034_0ba4,
+    0x0034_0bb8,
+    0x0034_0bcc,
+    0x0034_0be0,
+    0x0034_0bf4,
+    0x0034_0c08,
+];
+
+/// Return addresses of the child call sites of `nash_Cell_descend3`
+/// (0x340dc0).
+pub(crate) const ALL_CHILD_RETS: [u32; 8] = [
+    0x0034_0efc,
+    0x0034_0f10,
+    0x0034_0f24,
+    0x0034_0f38,
+    0x0034_0f4c,
+    0x0034_0f60,
+    0x0034_0f74,
+    0x0034_0f88,
+];
+
+/// `void nash_Cell_descend1(nash_Cell* self, sOctCollect* out)` (0x340b18):
+/// appends the cell's own list (head at +0x28, each node's first word the
+/// next node) to `out` (items array at +0, count word address at +4), then
+/// descends into the eight child cells with the same `out`.
+pub fn cell_gather_type2_subtree_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A2][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x28)).lw(c);
+        let empty = c.g[A2][0] == 0;
+        c.g[S0][0] = c.g[A1][0];
+        if !empty {
+            c.cycles += 2;
+            c.g[A1][0] = Addr((c.g[S0][0] as u32).wrapping_add(4)).lw(c);
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                let item = c.g[A2][0];
+                Addr(c.g[V0][0] as u32).sw(c, item);
+                let count = c.g[V1][0];
+                Addr(c.g[A1][0] as u32).sw(c, count);
+                c.g[A2][0] = Addr(c.g[A2][0] as u32).lw(c);
+                if c.g[A2][0] == 0 {
+                    break;
+                }
+                c.g[A1][0] = Addr((c.g[S0][0] as u32).wrapping_add(4)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_0b40);
+                }
+            }
+        }
+        let callee = Callee {
+            addr: 0x0034_0b18,
+            f: ee::s11::f_00340b18,
+        };
+        gather_children(c, frame, S1, S0, callee, TYPE2_CHILD_RETS)?;
+        c.cycles += 4;
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `T box_test` of `nash_Cell_descend3` (the block at 0x340e78): six plane
+/// tests of the cell's box at +0x158..+0x16c against the object's box at
+/// `obj` (+0, +4, +8, +0x10, +0x14, +0x18). Each step loads two floats into
+/// f1 then f0 (leaving them there), compares and latches the FCC bit; the
+/// first failing step stops the chain. Returns true when all six passed.
+pub(crate) fn gather_box_test(c: &mut Cpu, node: u32, obj: u32) -> bool {
+    // (cycles, f1 at (is_obj, offset), f0 at (is_obj, offset), swapped compare)
+    const STEPS: [(u64, (bool, u32), (bool, u32), bool); 6] = [
+        (6, (false, 0x164), (true, 0x0), false),
+        (5, (true, 0x10), (false, 0x158), false),
+        (5, (true, 0x4), (false, 0x168), true),
+        (5, (true, 0x14), (false, 0x15c), false),
+        (5, (true, 0x8), (false, 0x16c), true),
+        (6, (true, 0x18), (false, 0x160), false),
+    ];
+    for (cycles, f1, f0, swapped) in STEPS {
+        c.cycles += cycles;
+        let base1 = if f1.0 { obj } else { node };
+        let v1 = Addr(base1.wrapping_add(f1.1)).read_fpu(c);
+        abi::set_fpr(c, 1, v1);
+        let base0 = if f0.0 { obj } else { node };
+        let a0 = base0.wrapping_add(f0.1);
+        let v0 = Addr(a0).read_fpu(c);
+        abi::set_fpr(c, 0, v0);
+        let pass = if swapped { v1.le(v0) } else { v0.le(v1) };
+        abi::set_fcc(c, pass);
+        if !pass {
+            return false;
+        }
+    }
+    true
+}
+
+/// `void nash_Cell_descend3(nash_Cell* self, OverlapEverythingCallback* ctx)`
+/// (0x340dc0): hands the cell's own objects (the list at +0x24, filtered by
+/// the box test, items at ctx+0x10) and its list at +0x28 (items at
+/// ctx+0x20) to the callback collector, then descends into the children.
+pub fn cell_gather_all_subtree_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0033_09d8,
+            f: ee::s11::f_003309d8,
+        }
+        .call(c, 0x0034_0de4)?;
+        c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x24)).lw(c);
+        let empty = c.g[A2][0] == 0;
+        c.g[A3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x10));
+        if !empty {
+            c.cycles += 2;
+            c.g[V0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0xc)).lw(c);
+            loop {
+                let (node, obj) = (c.g[A2][0] as u32, c.g[V0][0] as u32);
+                let pass = gather_box_test(c, node, obj);
+                c.g[V1][0] = pass as u64;
+                c.cycles += 2;
+                if c.g[V1][0] == 0 {
+                    c.g[A2][0] = Addr(c.g[A2][0] as u32).lw(c);
+                } else {
+                    c.cycles += 9;
+                    c.g[A1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x4)).lw(c);
+                    c.g[A0][0] = Addr(c.g[A3][0] as u32).lw(c);
+                    c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                    let item = c.g[A2][0];
+                    Addr(c.g[V0][0] as u32).sw(c, item);
+                    let count = c.g[V1][0];
+                    Addr(c.g[A1][0] as u32).sw(c, count);
+                    c.g[A2][0] = Addr(c.g[A2][0] as u32).lw(c);
+                }
+                c.cycles += 2;
+                if c.g[A2][0] == 0 {
+                    break;
+                }
+                c.g[V0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0xc)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_0df8);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x28)).lw(c);
+        let empty2 = c.g[A2][0] == 0;
+        c.g[A3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x20));
+        if !empty2 {
+            c.cycles += 2;
+            c.g[A1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x4)).lw(c);
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = Addr(c.g[A3][0] as u32).lw(c);
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                let item = c.g[A2][0];
+                Addr(c.g[V0][0] as u32).sw(c, item);
+                let count = c.g[V1][0];
+                Addr(c.g[A1][0] as u32).sw(c, count);
+                c.g[A2][0] = Addr(c.g[A2][0] as u32).lw(c);
+                if c.g[A2][0] == 0 {
+                    break;
+                }
+                c.g[A1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x4)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_0ec0);
+                }
+            }
+        }
+        let callee = Callee {
+            addr: 0x0034_0dc0,
+            f: ee::s11::f_00340dc0,
+        };
+        gather_children(c, frame, S0, S1, callee, ALL_CHILD_RETS)?;
+        c.cycles += 4;
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -37682,6 +37936,166 @@ pub(crate) mod tests {
                 c.bus.write32(vtbl + VT_GET_VELOCITY + 4, FAKE);
                 c.bus.write16(vtbl + VT_APPLY_BOOST, 8);
                 c.bus.write32(vtbl + VT_APPLY_BOOST + 4, FAKE + 0x40);
+            },
+        );
+    }
+
+    // Gather fixtures.
+    pub(crate) const OUT: u32 = DATA + 0x3_0000;
+
+    pub(crate) const ITEMS_A: u32 = DATA + 0x3_1000;
+
+    pub(crate) const ITEMS_B: u32 = DATA + 0x3_2000;
+
+    pub(crate) const CNT_A: u32 = DATA + 0x3_3000;
+
+    pub(crate) const CNT_B: u32 = DATA + 0x3_3010;
+
+    pub(crate) const OBJ_4: u32 = DATA + 0x3_8000;
+
+    pub(crate) const CELL_5: u32 = DATA + 0x4_0000;
+
+    pub(crate) const LIST: u32 = DATA + 0x6_0000;
+
+    pub(crate) const GATHER_CTRL: u32 = DATA + 0x3_4000;
+
+    pub(crate) const GATHER_MAGIC: u32 = 0x4741_5448;
+
+    pub(crate) static GATHER_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gate of the object gatherer fake: `Cell_GatherObjects` only records
+    /// nothing while `GATHER_CTRL` holds the magic word.
+    pub(crate) fn gather_fake_objects(c: &mut Cpu) {
+        if c.bus.read32(GATHER_CTRL) != GATHER_MAGIC {
+            return fakes::fall_back(c, &GATHER_PREV, ee::s11::f_003309d8__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn gather_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003309D8),
+            gather_fake_objects,
+            &GATHER_PREV,
+        );
+    }
+
+    /// Writes a list of `n` nodes at `base` (each node's first word is the
+    /// next node). Returns the head.
+    pub(crate) fn write_list(c: &mut Cpu, base: u32, n: u32) -> u32 {
+        for j in 0..n {
+            let next = if j + 1 < n { base + 0x40 * (j + 1) } else { 0 };
+            c.bus.write32(base + 0x40 * j, next);
+        }
+        if n == 0 {
+            0
+        } else {
+            base
+        }
+    }
+
+    /// One cell: eight child words, two lists (+0x24, +0x28) and the six
+    /// box floats at +0x158..+0x16c. With `seed % 3 == 0` the box of the
+    /// object passes every plane test.
+    pub(crate) fn write_cell(
+        c: &mut Cpu,
+        r: &mut Rng,
+        seed: u32,
+        addr: u32,
+        kids: &[u32; 8],
+        lists: u32,
+    ) {
+        for k in 0..8u32 {
+            c.bus.write32(addr + 4 * k, kids[k as usize]);
+        }
+        let head1 = write_list(c, lists, (seed + addr) % 4);
+        let head2 = write_list(c, lists + 0x200, (seed / 4) % 3);
+        c.bus.write32(addr + 0x24, head1);
+        c.bus.write32(addr + 0x28, head2);
+        for k in 0..6u32 {
+            let bits = if seed % 3 == 0 {
+                [0, 0, 0, 0x42c8_0000, 0x42c8_0000, 0x42c8_0000][k as usize]
+            } else {
+                r.f32(4.0)
+            };
+            c.bus.write32(addr + 0x158 + 4 * k, bits);
+        }
+    }
+
+    /// The object box at `OBJ` (passing values when `seed % 3 == 0`).
+    pub(crate) fn write_object(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let offs = [0u32, 4, 8, 0x10, 0x14, 0x18];
+        for (k, off) in offs.iter().enumerate() {
+            let pass = [0, 0, 0, 0x42c8_0000u32, 0x42c8_0000, 0x42c8_0000];
+            let bits = if seed % 3 == 0 { pass[k] } else { r.f32(4.0) };
+            c.bus.write32(OBJ_4 + off, bits);
+        }
+    }
+
+    /// A cell tree below `CELL` (up to four children, each with an optional
+    /// leaf below) and the output record `OUT`.
+    pub(crate) fn gather_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let mut root = [0u32; 8];
+        for k in 0..4u32 {
+            if (seed >> k) & 1 == 1 {
+                root[k as usize] = CELL_5 + 0x200 * (k + 1);
+            }
+        }
+        write_cell(c, r, seed, CELL_5, &root, LIST);
+        for k in 0..4u32 {
+            if root[k as usize] != 0 {
+                let mut kids = [0u32; 8];
+                if (seed >> (k + 4)) & 1 == 1 {
+                    kids[0] = CELL_5 + 0x2000;
+                }
+                write_cell(c, r, seed, root[k as usize], &kids, LIST + 0x400 * (k + 1));
+            }
+        }
+        write_cell(c, r, seed, CELL_5 + 0x2000, &[0; 8], LIST + 0x2000);
+        write_object(c, r, seed);
+        c.bus.write32(OUT, ITEMS_A);
+        c.bus.write32(OUT + 4, CNT_A);
+        c.bus.write32(OUT + 0x10, ITEMS_A);
+        c.bus.write32(OUT + 0x14, CNT_A);
+        c.bus.write32(OUT + 0x1c, OBJ_4);
+        c.bus.write32(OUT + 0x20, ITEMS_B);
+        c.bus.write32(OUT + 0x24, CNT_B);
+        c.bus.write32(CNT_A, seed % 4);
+        c.bus.write32(CNT_B, (seed / 4) % 3);
+    }
+
+    #[test]
+    fn cell_gather_type2_subtree_matches() {
+        check(
+            ee::s11::f_00340b18__generated,
+            cell_gather_type2_subtree_2,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x340b_1800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0034_0b18;
+                gather_fixture(c, &mut r, seed);
+                c.g[A0][0] = sx(CELL_5);
+                c.g[A1][0] = sx(OUT);
+            },
+        );
+    }
+
+    #[test]
+    fn cell_gather_all_subtree_matches() {
+        gather_install_fakes();
+        check(
+            ee::s11::f_00340dc0__generated,
+            cell_gather_all_subtree_2,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x340d_c000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0034_0dc0;
+                c.bus.write32(GATHER_CTRL, GATHER_MAGIC);
+                gather_fixture(c, &mut r, seed);
+                c.g[A0][0] = sx(CELL_5);
+                c.g[A1][0] = sx(OUT);
             },
         );
     }

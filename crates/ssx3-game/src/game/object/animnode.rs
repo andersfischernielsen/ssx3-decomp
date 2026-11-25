@@ -7,6 +7,7 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
@@ -55,6 +56,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         anim_object_compute_node_velocities,
         "AnimObject_ComputeNodeVelocities",
     ),
+    (0x0034_ec58, floating_ctor, "Floating_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -896,6 +898,202 @@ pub fn anim_object_v42(c: &mut Cpu) {
     });
 }
 
+/// `cFloatingNode_cFloatingNode(self, bucket, instRecord, info)` (0x34ec58):
+/// the moving-node constructor for floating (spring-mounted) nodes. Builds
+/// the ModObj (kind 0xe), sets the vtable, copies the spring and damping
+/// constants from `info` (torque scaled by 1e-6), zeroes the motion state,
+/// takes the root position from the instance transform, allocates one frame
+/// per mesh and sets the instance's flag bit 2 (bit 1 off).
+pub fn floating_ctor(c: &mut Cpu) {
+    const MOD_OBJ_CTOR: Callee = Callee {
+        addr: 0x0035_5280,
+        f: ee::s11::ModObj_ctor,
+    };
+    const ALLOC_BOUND_BOX: Callee = Callee {
+        addr: 0x0034_eeb8,
+        f: ee::s11::Floating_AllocBoundBox,
+    };
+    guest(c, |c| -> Flow {
+        c.cycles += 56;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A3][0];
+        frame.save(c, S1, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A3][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[A2][0] = 0xe;
+        MOD_OBJ_CTOR.call(c, 0x0034_ec80)?;
+
+        let me = r32(c, S1);
+        let info = r32(c, S0);
+        c.g[S2][0] = sx(me.wrapping_add(0x74));
+        c.g[V1][0] = 0x490000;
+        c.lwc1(3, r32(c, GP).wrapping_sub(0x2a9c)); // f3 = 1e-6
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(0x7a8));
+        c.g[A1][0] = Addr(me.wrapping_add(0x18)).lw(c);
+        Addr(me.wrapping_add(0xc)).sw(c, c.g[V1][0]);
+        c.g[A0][0] = c.g[S1][0];
+        c.lwc1(0, info.wrapping_add(4));
+        c.swc1(0, me.wrapping_add(0x2c));
+        c.lwc1(1, info.wrapping_add(8));
+        c.swc1(1, me.wrapping_add(0x30));
+        c.lwc1(0, info.wrapping_add(0x14));
+        c.swc1(0, me.wrapping_add(0x34));
+        c.lwc1(1, info.wrapping_add(0xc));
+        c.swc1(1, me.wrapping_add(0x38));
+        c.lwc1(2, info.wrapping_add(0x10));
+        c.swc1(2, me.wrapping_add(0x3c));
+        c.lwc1(0, info.wrapping_add(0x18));
+        c.mul_s(0, 0, 3);
+        c.swc1(0, me.wrapping_add(0x40));
+        // The root position: the instance transform's translation quad.
+        c.lq(2, r32(c, A1).wrapping_add(0x40));
+        Addr(me.wrapping_add(0x54)).sw(c, 0);
+        c.sq(2, sp(c));
+        Addr(me.wrapping_add(0x5c)).sw(c, 0);
+        c.lwc1(0, sp(c).wrapping_add(8));
+        Addr(me.wrapping_add(0x60)).sw(c, 0);
+        Addr(me.wrapping_add(0x64)).sw(c, 0);
+        Addr(me.wrapping_add(0x6c)).sw(c, 0);
+        Addr(me.wrapping_add(0x70)).sw(c, 0);
+        Addr(me.wrapping_add(0x48)).sw(c, 0);
+        Addr(me.wrapping_add(0x44)).sw(c, 0);
+        Addr(me.wrapping_add(0x78)).sw(c, 0);
+        c.swc1(0, me.wrapping_add(0x50));
+        c.swc1(0, me.wrapping_add(0x4c));
+        ALLOC_BOUND_BOX.call(c, 0x0034_ed0c)?;
+
+        // One frame per mesh of the instance's model.
+        c.g[V1][0] = Addr(r32(c, S1).wrapping_add(0x18)).lw(c);
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x1780));
+        c.g[A2][0] = 0x2000_0000;
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x80)).lw(c);
+        c.g[A3][0] = 0;
+        c.g[S0][0] = Addr(r32(c, V0).wrapping_add(4)).lw(c);
+        c.g[A0][0] = sx(r32(c, S0) << 6);
+        call_ptr(c, 0x0031_7e30, 0x0034_ed30)?;
+        let none = c.g[S0][0] == 0;
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if !none {
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 18;
+        let frames = c.g[V0][0];
+        Addr(r32(c, S2)).sw(c, frames);
+        c.g[A1][0] = 0xffff_ffff_ffff_fffd;
+        c.g[V0][0] = c.g[S1][0];
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x12)).lhu(c);
+        c.g[A2][0] = Addr(r32(c, S1).wrapping_add(0x18)).lw(c);
+        c.g[A0][0] |= 1;
+        frame.restore(c, S0, 0x40);
+        Addr(r32(c, S1).wrapping_add(0x12)).sh(c, c.g[A0][0]);
+        frame.restore(c, S1, 0x30);
+        c.g[V1][0] = Addr(r32(c, A2).wrapping_add(8)).lw(c);
+        frame.restore(c, S2, 0x20);
+        c.g[V1][0] &= c.g[A1][0];
+        frame.restore_ra(c, 0x10);
+        c.g[V1][0] |= 4;
+        let fl = c.g[V1][0];
+        Addr(r32(c, A2).wrapping_add(8)).sw(c, fl);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `Floating_ctor_2` (0x34ed88): the second floating-node constructor, the
+/// same node without the spring setup. Builds the ModObj (`ModObj_ctor_2`),
+/// sets the vtable and zeroes the motion slot, runs the node's virtual
+/// update on `info` and bounds the node only when that reports a result
+/// (`AllocBoundBox`), then the per-mesh frames and the flag bit 0 (`|= 1`).
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn floating_ctor_2(c: &mut Cpu) {
+    const MOD_OBJ_CTOR_2: Callee = Callee {
+        addr: 0x0035_52d8,
+        f: ee::s11::ModObj_ctor_2,
+    };
+    const ALLOC_BOUND_BOX: Callee = Callee {
+        addr: 0x0034_eeb8,
+        f: ee::s11::Floating_AllocBoundBox,
+    };
+    guest(c, |c| -> Flow {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        MOD_OBJ_CTOR_2.call(c, 0x0034_eda8)?;
+
+        let me = r32(c, S1);
+        c.g[V1][0] = 0x490000;
+        Addr(me.wrapping_add(0x78)).sw(c, 0);
+        c.g[V1][0] = sx(0x490000u32.wrapping_sub(0x7a8));
+        c.g[A1][0] = c.g[SP][0];
+        Addr(me.wrapping_add(0xc)).sw(c, c.g[V1][0]);
+        c.g[A2][0] = 4;
+        c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x10)).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x14)).lw(c);
+        let update = r32(c, V1);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        call_ptr(c, update, 0x0034_edd4)?;
+        c.g[V0][0] = Addr(sp(c)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            ALLOC_BOUND_BOX.call(c, 0x0034_ede8)?;
+            c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+        }
+
+        // The per-mesh frames (vtable slot 0x10/0x14 of the second argument).
+        c.cycles += 18;
+        c.g[A1][0] = sx(me.wrapping_add(0x2c));
+        c.g[A2][0] = 0x48;
+        c.g[S2][0] = sx(me.wrapping_add(0x74));
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x10)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x14)).lw(c);
+        let bind = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        call_ptr(c, bind, 0x0034_ee08)?;
+        c.g[V1][0] = Addr(r32(c, S1).wrapping_add(0x18)).lw(c);
+        c.g[A1][0] = sx(0x490000u32.wrapping_sub(0x1780));
+        c.g[A2][0] = 0x2000_0000;
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x80)).lw(c);
+        c.g[A3][0] = 0;
+        c.g[S0][0] = Addr(r32(c, V0).wrapping_add(4)).lw(c);
+        c.g[A0][0] = sx(r32(c, S0) << 6);
+        call_ptr(c, 0x0031_7e30, 0x0034_ee2c)?;
+        let none = c.g[S0][0] == 0;
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if !none {
+            c.cycles += 1;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 11;
+        let frames = c.g[V0][0];
+        Addr(r32(c, S2)).sw(c, frames);
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x40);
+        c.g[V1][0] = Addr(r32(c, S1).wrapping_add(0x12)).lhu(c);
+        frame.restore(c, S2, 0x20);
+        c.g[V1][0] |= 1;
+        frame.restore_ra(c, 0x10);
+        let flags = c.g[V1][0];
+        Addr(r32(c, S1).wrapping_add(0x12)).sh(c, flags);
+        frame.restore(c, S1, 0x30);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1192,6 +1390,71 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(body);
+            },
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use crate::difftest::fill;
+
+    /// The `ModObj_ctor` fixture of `anim_object_base_ctor_matches`: process
+    /// lists, world -> focus, the node's model with `defs` definitions.
+    pub(crate) fn mod_obj_fixture(c: &mut Cpu, r: &mut crate::difftest::Rng, node: u32, defs: u32) {
+        const PROCS: u32 = DATA + 0x1000;
+        const TAILS: u32 = DATA + 0x1400;
+        const WORLD: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        const DEF: u32 = DATA + 0x400;
+        c.bus.write32(GAME_GP + 0x2898 + 4, PROCS);
+        for i in 0..4 {
+            c.bus.write32(PROCS + 0x44 * i, r.next_u32());
+            c.bus.write32(PROCS + 0x44 * i + 8, TAILS + 0x40 * i);
+            c.bus
+                .write32(PROCS + 0x44 * i + 0x28, TAILS + 0x40 * i + 0x20);
+        }
+        fill(c, r, 0x0044_aff0, 0x20);
+        c.bus.write32(GAME_GP - 0x848, WORLD);
+        c.bus.write32(WORLD + 0x84, WORLD + 0x100);
+        c.bus.write32(WORLD + 0x100 + 0xc, WORLD + 0x200);
+        c.bus.write32(WORLD + 0x200 + 0xa4, FOCUS);
+        c.bus.write32(FOCUS + 0xd4, r.next_u32());
+        c.bus.write32(FOCUS + 0xd8, r.next_u32() % 8);
+        c.bus.write32(node + 0x80, DEF);
+        c.bus.write32(DEF + 4, defs);
+        c.bus.write32(DEF + 8, DEF + 0x100);
+        for i in 0..defs {
+            c.bus.write32(DEF + 0x100 + 0x10 * i + 8, 0);
+        }
+    }
+
+    /// `cAnimNode_cAnimNode1`: the ModObj fixture, the stream's two reads
+    /// (fake virtuals), a model of 1..3 meshes for the array and the cache.
+
+    /// `cFloatingNode_cFloatingNode`: the ModObj fixture (kind 0xe), the
+    /// info record's constants, one or two meshes for the frame array.
+    #[test]
+    fn floating_ctor_matches() {
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        const SELF: u32 = DATA + 0x100;
+        const NODE: u32 = DATA + 0x200;
+        const INFO: u32 = DATA + 0x700;
+        check(
+            ee::s11::f_0034ec58__generated,
+            floating_ctor,
+            120,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = alloc_machine(c, seed, 0x34_ec58);
+                c.pc = 0x0034_ec58;
+                fill(c, &mut r, NODE, 0x20);
+                fill(c, &mut r, NODE + 0x40, 4);
+                fill(c, &mut r, INFO, 0x10);
+                mod_obj_fixture(c, &mut r, NODE, 1 + seed % 2);
+                c.bus.write32(SELF + 0x18, NODE);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(seed % 4);
+                c.g[A2][0] = sx(NODE);
+                c.g[A3][0] = sx(INFO);
             },
         );
     }

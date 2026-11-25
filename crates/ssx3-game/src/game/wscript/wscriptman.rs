@@ -487,6 +487,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscriptman_global_ctors,
         "WScriptMan_GlobalCtors",
     ),
+    (
+        0x0030_94c8,
+        wscript_man_create_process_2,
+        "WScriptMan_CreateProcess",
+    ),
+    (
+        0x0030_9618,
+        wscript_man_delete_process_by_id,
+        "WScriptMan_DeleteProcessById",
+    ),
+    (
+        0x0030_b590,
+        wscript_man_request_mission_playback_2,
+        "WScriptMan_RequestMissionPlayback",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7127,6 +7142,234 @@ pub fn wscriptman_global_ctors(c: &mut Cpu) {
     static_ctor_stub(c, init, 0x0030_d4ac);
 }
 
+/// `EA_MemAllocNamed` (0x317d70).
+pub(crate) const WSM_EA_ALLOC: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::f_00317d70,
+};
+
+/// `WScriptProcess_ctor` (0x307598).
+pub(crate) const WSM_PROCESS_CTOR: Callee = Callee {
+    addr: 0x0030_7598,
+    f: ee::s10::f_00307598,
+};
+
+/// `WScriptProcessList_PushFront` (0x30b260).
+pub(crate) const WSM_PUSH_FRONT: Callee = Callee {
+    addr: 0x0030_b260,
+    f: ee::s10::f_0030b260,
+};
+
+/// `WScriptProcessList_FindById` (0x30b320).
+pub(crate) const WSM_FIND_BY_ID: Callee = Callee {
+    addr: 0x0030_b320,
+    f: ee::s10::f_0030b320,
+};
+
+/// `WScriptProcessList_Remove` (0x30b2d0).
+pub(crate) const WSM_LIST_REMOVE: Callee = Callee {
+    addr: 0x0030_b2d0,
+    f: ee::s10::f_0030b2d0,
+};
+
+/// `void* WScriptMan_CreateProcess(man, sectionId, data, front)` (0x3094c8):
+/// allocates a 0x60-byte process, constructs it, and pushes it on the add
+/// list (`front` set) or the idle list. Returns the process. Frame 0x50.
+pub fn wscript_man_create_process_2(c: &mut Cpu) {
+    guest(c, wsm_create_body)
+}
+
+pub(crate) fn wsm_create_body(c: &mut Cpu) -> Flow {
+    c.cycles += 23;
+    let frame = Frame::open(c, 0x50);
+    frame.save(c, 16, 0x40);
+    c.g[S0][0] = c.g[A1][0];
+    frame.save(c, 17, 0x30);
+    frame.save(c, 18, 0x20);
+    c.g[S1][0] = c.g[A2][0];
+    frame.save(c, 19, 0x10);
+    c.g[S2][0] = c.g[A3][0];
+    c.g[S3][0] = c.g[A0][0];
+    c.g[A1][0] = 0x0049_0000;
+    frame.save_ra(c, 0);
+
+    c.g[A0][0] = 0x60;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x66f8));
+    c.g[A2][0] = 0x2000_0000;
+    c.g[A3][0] = 0u64;
+    WSM_EA_ALLOC.call(c, 0x0030_9508)?;
+    c.g[A2][0] = c.g[S0][0];
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A3][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S3][0];
+    WSM_PROCESS_CTOR.call(c, 0x0030_951c)?;
+    let t = c.g[S2][0] == 0u64;
+    c.g[S0][0] = c.g[V0][0];
+    if !t {
+        c.cycles += 5;
+        c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x2bc));
+        c.g[A1][0] = c.g[S0][0];
+        WSM_PUSH_FRONT.call(c, 0x0030_9530)?;
+    } else {
+        c.cycles += 4;
+        c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x2b4));
+        c.g[A1][0] = c.g[S0][0];
+        WSM_PUSH_FRONT.call(c, 0x0030_9544)?;
+    }
+    c.g[V0][0] = c.g[S0][0];
+
+    c.cycles += 7;
+    frame.restore(c, 17, 0x30);
+    frame.restore(c, 16, 0x40);
+    frame.restore(c, 18, 0x20);
+    frame.restore(c, 19, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `int WScriptMan_DeleteProcessById(man, id)` (0x309618): finds the process
+/// with `id` on the active list, else the add list, else the idle list,
+/// removes it, and calls its virtual destructor with flag 3 (`vt[+0x0c]`).
+/// Frame 0x50.
+pub fn wscript_man_delete_process_by_id(c: &mut Cpu) {
+    guest(c, wsm_delete_body)
+}
+
+pub(crate) fn wsm_delete_body(c: &mut Cpu) -> Flow {
+    c.cycles += 14;
+    let frame = Frame::open(c, 0x50);
+    frame.save(c, 17, 0x30);
+    frame.save(c, 18, 0x20);
+    c.g[S1][0] = c.g[A0][0];
+    frame.save(c, 19, 0x10);
+    c.g[S2][0] = c.g[A1][0];
+    c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2b8));
+    frame.save(c, 16, 0x40);
+    frame.save_ra(c, 0);
+
+    'b_3096d8: {
+        'b_309694: {
+            'b_30966c: {
+                c.g[A0][0] = c.g[S3][0];
+                WSM_FIND_BY_ID.call(c, 0x0030_9644)?;
+                c.g[S0][0] = c.g[V0][0];
+                let t = c.g[S0][0] != 0u64;
+                c.g[A0][0] = c.g[S3][0];
+                if t {
+                    break 'b_30966c;
+                }
+                c.cycles += 7;
+                c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2bc));
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A0][0] = c.g[S3][0];
+                WSM_FIND_BY_ID.call(c, 0x0030_9660)?;
+                c.g[S0][0] = c.g[V0][0];
+                let t = c.g[S0][0] == 0u64;
+                c.g[A0][0] = c.g[S3][0];
+                if t {
+                    break 'b_309694;
+                }
+            }
+            // Found on the active or the add list: remove it and destroy it.
+            c.cycles += 10;
+            c.g[A1][0] = c.g[S0][0];
+            WSM_LIST_REMOVE.call(c, 0x0030_9674)?;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5c));
+            c.g[A1][0] = 0x3;
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+            let destroy = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, destroy, 0x0030_968c)?;
+            frame.restore(c, 16, 0x40);
+            break 'b_3096d8;
+        }
+        // Not on the active or add list: the idle list.
+        c.cycles += 7;
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2b4));
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S1][0];
+        WSM_FIND_BY_ID.call(c, 0x0030_96a4)?;
+        c.g[S0][0] = c.g[V0][0];
+        if c.g[S0][0] == 0u64 {
+            frame.restore(c, 16, 0x40);
+            break 'b_3096d8;
+        }
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        WSM_LIST_REMOVE.call(c, 0x0030_96bc)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5c));
+        c.g[A1][0] = 0x3;
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let destroy = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, destroy, 0x0030_96d4)?;
+        frame.restore(c, 16, 0x40);
+    }
+
+    c.cycles += 6;
+    frame.restore(c, 17, 0x30);
+    frame.restore(c, 18, 0x20);
+    frame.restore(c, 19, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `int WScriptMan_RequestMissionPlayback(man)` (0x30b590): stops the
+/// playback, resets the replay, and sets up the preview of the local mission
+/// (`LocalMissionId`). On success it queues command 5 for that mission and
+/// returns 1; otherwise 0. Frame 0x20: saves ra and s0.
+pub fn wscript_man_request_mission_playback_2(c: &mut Cpu) {
+    guest(c, wsm_preview_body)
+}
+
+pub(crate) fn wsm_preview_body(c: &mut Cpu) -> Flow {
+    c.cycles += 19;
+    let frame = Frame::open(c, 0x20);
+    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+    frame.save(c, 16, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S0][0] = c.g[A0][0];
+
+    // SSXApp->Game->PlaybackMan->Stop(); SSXApp->Game->Replay->Reset().
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
+    call_ptr(c, 0x0026_cdf8, 0x0030_b5b0)?;
+    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+    call_ptr(c, 0x0026_f228, 0x0030_b5c0)?;
+
+    // PlaybackMan->setupPreview(LocalMissionId).
+    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2a0));
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
+    call_ptr(c, 0x0026_caf8, 0x0030_b5d4)?;
+
+    if c.g[V0][0] != 0u64 {
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2a0));
+        c.cycles += 4;
+        c.g[V0][0] = 0x5;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2ac), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2b0), c.g[V1][0]);
+        c.g[V0][0] = 0x1;
+    } else {
+        c.cycles += 2;
+        c.g[V0][0] = 0u64;
+    }
+
+    c.cycles += 4;
+    frame.restore(c, 16, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10436,6 +10679,522 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 c.pc = 0x0030_d498;
                 c.g[GP][0] = GAME_GP as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    /// Gate word: the fakes below act only while it holds `OC655_MAGIC`.
+    pub(crate) const OC655_CTRL: u32 = DATA + 0x4_f000;
+
+    pub(crate) const OC655_MAGIC: u32 = 0x6f63_0655;
+
+    /// Bit `n` set: the fake with bit `n` returns 0 (instead of its random value).
+    pub(crate) const OC655_ZERO: u32 = DATA + 0x4_f008;
+
+    /// The FindById hits: bit `k` set, the list at slot `k` (idle, active,
+    /// add) holds the process.
+    pub(crate) const OC655_HITS: u32 = DATA + 0x4_f020;
+
+    /// The process manager, and the process object a FindById hit returns.
+    pub(crate) const OC655_MAN: u32 = DATA + 0x5_0000;
+
+    pub(crate) const OC655_OBJ: u32 = DATA + 0x5_3000;
+
+    pub(crate) const OC655_OBJ_VT: u32 = DATA + 0x5_3100;
+
+    /// A gated fake of a callee: with the gate set it logs the call and
+    /// returns (`fake_call`), with bit `$bit` of the zero word set it returns
+    /// 0; with the gate off it runs the body it replaced.
+    macro_rules! gated_fake {
+        ($fake:ident, $prev:ident, $target:expr, $generated:path, $bit:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC655_CTRL) != OC655_MAGIC {
+                    return fall_back(c, &$prev, $generated);
+                }
+                fake_call(c, $target);
+                if (c.bus.read32(OC655_ZERO) >> $bit) & 1 != 0 {
+                    c.g[V0][0] = 0;
+                }
+            }
+        };
+    }
+
+    gated_fake!(
+        oc655_get_instance,
+        OC655_PREV_GET_INSTANCE,
+        0x0027_2cc0,
+        ee::s07::f_00272cc0__generated,
+        0
+    );
+
+    gated_fake!(
+        oc655_run_to_end,
+        OC655_PREV_RUN_TO_END,
+        0x0027_4868,
+        ee::s07::f_00274868__generated,
+        1
+    );
+
+    gated_fake!(
+        oc655_cmdq_count,
+        OC655_PREV_CMDQ_COUNT,
+        0x0028_3d28,
+        ee::s07::f_00283d28__generated,
+        2
+    );
+
+    gated_fake!(
+        oc655_pop_entries,
+        OC655_PREV_POP_ENTRIES,
+        0x0027_7598,
+        ee::s07::f_00277598__generated,
+        3
+    );
+
+    gated_fake!(
+        oc655_list_prepare,
+        OC655_PREV_LIST_PREPARE,
+        0x0027_6270,
+        ee::s07::f_00276270__generated,
+        4
+    );
+
+    gated_fake!(
+        oc655_cmdq_at,
+        OC655_PREV_CMDQ_AT,
+        0x0028_3d70,
+        ee::s07::f_00283d70__generated,
+        5
+    );
+
+    gated_fake!(
+        oc655_is_movie,
+        OC655_PREV_IS_MOVIE,
+        0x0027_7dd8,
+        ee::s07::f_00277dd8__generated,
+        6
+    );
+
+    gated_fake!(
+        oc655_kill_process,
+        OC655_PREV_KILL_PROCESS,
+        0x0028_2540,
+        ee::s07::f_00282540__generated,
+        7
+    );
+
+    gated_fake!(
+        oc655_movie_stop,
+        OC655_PREV_MOVIE_STOP,
+        0x0028_3818,
+        ee::s07::f_00283818__generated,
+        8
+    );
+
+    gated_fake!(
+        oc655_set_paused,
+        OC655_PREV_SET_PAUSED,
+        0x0027_7c08,
+        ee::s07::f_00277c08__generated,
+        9
+    );
+
+    gated_fake!(
+        oc655_prepare_entry,
+        OC655_PREV_PREPARE_ENTRY,
+        0x0027_7450,
+        ee::s07::f_00277450__generated,
+        10
+    );
+
+    gated_fake!(
+        oc655_list_stop,
+        OC655_PREV_LIST_STOP,
+        0x0027_6868,
+        ee::s07::f_00276868__generated,
+        11
+    );
+
+    gated_fake!(
+        oc655_start_transition,
+        OC655_PREV_START_TRANSITION,
+        0x0027_7980,
+        ee::s07::f_00277980__generated,
+        12
+    );
+
+    gated_fake!(
+        oc655_try_advance,
+        OC655_PREV_TRY_ADVANCE,
+        0x0027_7800,
+        ee::s07::f_00277800__generated,
+        13
+    );
+
+    gated_fake!(
+        oc655_add_choice,
+        OC655_PREV_ADD_CHOICE,
+        0x0027_8e50,
+        ee::s07::f_00278e50__generated,
+        14
+    );
+
+    gated_fake!(
+        oc655_nis_prepare,
+        OC655_PREV_NIS_PREPARE,
+        0x0027_8f38,
+        ee::s07::f_00278f38__generated,
+        15
+    );
+
+    gated_fake!(
+        oc655_nis_start,
+        OC655_PREV_NIS_START,
+        0x0027_8f68,
+        ee::s07::f_00278f68__generated,
+        16
+    );
+
+    gated_fake!(
+        oc655_audio_get,
+        OC655_PREV_AUDIO_GET,
+        0x0028_b180,
+        ee::s07::f_0028b180__generated,
+        17
+    );
+
+    gated_fake!(
+        oc655_playback_stop,
+        OC655_PREV_PLAYBACK_STOP,
+        0x0026_cdf8,
+        ee::s07::f_0026cdf8__generated,
+        18
+    );
+
+    gated_fake!(
+        oc655_replay_reset,
+        OC655_PREV_REPLAY_RESET,
+        0x0026_f228,
+        ee::s07::f_0026f228__generated,
+        19
+    );
+
+    gated_fake!(
+        oc655_load_playback,
+        OC655_PREV_LOAD_PLAYBACK,
+        0x0026_caf8,
+        ee::s07::f_0026caf8__generated,
+        20
+    );
+
+    gated_fake!(
+        oc655_task_load,
+        OC655_PREV_TASK_LOAD,
+        0x0030_8798,
+        ee::s10::f_00308798__generated,
+        21
+    );
+
+    gated_fake!(
+        oc655_process_ctor,
+        OC655_PREV_PROCESS_CTOR,
+        0x0030_7598,
+        ee::s10::f_00307598__generated,
+        22
+    );
+
+    gated_fake!(
+        oc655_ea_alloc,
+        OC655_PREV_EA_ALLOC,
+        0x0031_7d70,
+        ee::s10::f_00317d70__generated,
+        23
+    );
+
+    gated_fake!(
+        oc655_push_front,
+        OC655_PREV_PUSH_FRONT,
+        0x0030_b260,
+        ee::s10::f_0030b260__generated,
+        24
+    );
+
+    gated_fake!(
+        oc655_list_remove,
+        OC655_PREV_LIST_REMOVE,
+        0x0030_b2d0,
+        ee::s10::f_0030b2d0__generated,
+        25
+    );
+
+    gated_fake!(
+        oc655_cache_get,
+        OC655_PREV_CACHE_GET,
+        0x003a_ca38,
+        ee::s13::f_003aca38__generated,
+        26
+    );
+
+    gated_fake!(
+        oc655_luno_dtor,
+        OC655_PREV_LUNO_DTOR,
+        0x0022_4df0,
+        ee::s05::f_00224df0__generated,
+        27
+    );
+
+    gated_fake!(
+        oc655_luno_ctor,
+        OC655_PREV_LUNO_CTOR,
+        0x0022_4da0,
+        ee::s05::f_00224da0__generated,
+        28
+    );
+
+    pub(crate) static OC655_PREV_FIND_BY_ID: AtomicUsize = AtomicUsize::new(0);
+
+    /// FindById: the process is found on the list whose slot bit is set in
+    /// `OC655_HITS` (slots: idle +0x2b4, active +0x2b8, add +0x2bc).
+    pub(crate) fn oc655_find_by_id(c: &mut Cpu) {
+        if c.bus.read32(OC655_CTRL) != OC655_MAGIC {
+            return fall_back(c, &OC655_PREV_FIND_BY_ID, ee::s10::f_0030b320__generated);
+        }
+        let list = c.g[A0][0] as u32;
+        let slot = list.wrapping_sub(OC655_MAN + 0x2b4) / 4;
+        let hit = (c.bus.read32(OC655_HITS) >> (slot & 31)) & 1 != 0;
+        fake_call(c, 0x0030_b320);
+        c.g[V0][0] = if hit { OC655_OBJ as u64 } else { 0 };
+    }
+
+    /// Puts the gated fakes of this module in their override slots (once per
+    /// process; with the gate off each runs the body it replaced).
+    pub(crate) fn oc655_hook_all() {
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00272CC0),
+            oc655_get_instance,
+            &OC655_PREV_GET_INSTANCE,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00274868),
+            oc655_run_to_end,
+            &OC655_PREV_RUN_TO_END,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00283D28),
+            oc655_cmdq_count,
+            &OC655_PREV_CMDQ_COUNT,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277598),
+            oc655_pop_entries,
+            &OC655_PREV_POP_ENTRIES,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00276270),
+            oc655_list_prepare,
+            &OC655_PREV_LIST_PREPARE,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00283D70),
+            oc655_cmdq_at,
+            &OC655_PREV_CMDQ_AT,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277DD8),
+            oc655_is_movie,
+            &OC655_PREV_IS_MOVIE,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00282540),
+            oc655_kill_process,
+            &OC655_PREV_KILL_PROCESS,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00283818),
+            oc655_movie_stop,
+            &OC655_PREV_MOVIE_STOP,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277C08),
+            oc655_set_paused,
+            &OC655_PREV_SET_PAUSED,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277450),
+            oc655_prepare_entry,
+            &OC655_PREV_PREPARE_ENTRY,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00276868),
+            oc655_list_stop,
+            &OC655_PREV_LIST_STOP,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277980),
+            oc655_start_transition,
+            &OC655_PREV_START_TRANSITION,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277800),
+            oc655_try_advance,
+            &OC655_PREV_TRY_ADVANCE,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00278E50),
+            oc655_add_choice,
+            &OC655_PREV_ADD_CHOICE,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00278F38),
+            oc655_nis_prepare,
+            &OC655_PREV_NIS_PREPARE,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00278F68),
+            oc655_nis_start,
+            &OC655_PREV_NIS_START,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0028B180),
+            oc655_audio_get,
+            &OC655_PREV_AUDIO_GET,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026CDF8),
+            oc655_playback_stop,
+            &OC655_PREV_PLAYBACK_STOP,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026F228),
+            oc655_replay_reset,
+            &OC655_PREV_REPLAY_RESET,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026CAF8),
+            oc655_load_playback,
+            &OC655_PREV_LOAD_PLAYBACK,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00308798),
+            oc655_task_load,
+            &OC655_PREV_TASK_LOAD,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00307598),
+            oc655_process_ctor,
+            &OC655_PREV_PROCESS_CTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc655_ea_alloc,
+            &OC655_PREV_EA_ALLOC,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0030B260),
+            oc655_push_front,
+            &OC655_PREV_PUSH_FRONT,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0030B2D0),
+            oc655_list_remove,
+            &OC655_PREV_LIST_REMOVE,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0030B320),
+            oc655_find_by_id,
+            &OC655_PREV_FIND_BY_ID,
+        );
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003ACA38),
+            oc655_cache_get,
+            &OC655_PREV_CACHE_GET,
+        );
+        hook(
+            addr_of_mut!(ee::s05::OVERRIDE_00224DF0),
+            oc655_luno_dtor,
+            &OC655_PREV_LUNO_DTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s05::OVERRIDE_00224DA0),
+            oc655_luno_ctor,
+            &OC655_PREV_LUNO_CTOR,
+        );
+    }
+
+    /// The gate on, and random zero/hit words for this machine.
+    pub(crate) fn oc655_gates(c: &mut Cpu, r: &mut Rng) {
+        c.bus.write32(OC655_CTRL, OC655_MAGIC);
+        c.bus.write32(OC655_ZERO, r.next_u32());
+        c.bus.write32(OC655_HITS, r.next_u32() & 7);
+    }
+
+    /// The rider-independent vtable slot `{delta, fn}` at `off` of `vt`.
+    pub(crate) fn oc655_slot(c: &mut Cpu, r: &mut Rng, vt: u32, off: u32, func: u32) {
+        c.bus.write16(vt + off, ((r.next_u32() as i16) & !3) as u16);
+        c.bus.write32(vt + off + 4, func);
+    }
+
+    #[test]
+    fn wscript_man_create_process_matches() {
+        oc655_hook_all();
+        covered(
+            ee::s10::f_003094c8__generated,
+            wscript_man_create_process_2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_94c8, 3);
+                oc655_gates(c, &mut r);
+                c.g[A0][0] = OC655_MAN as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn wscript_man_delete_process_by_id_matches() {
+        oc655_hook_all();
+        covered(
+            ee::s10::f_00309618__generated,
+            wscript_man_delete_process_by_id,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_9618, 4);
+                oc655_gates(c, &mut r);
+                // The found process: its vtable's destructor slot (+0x0c, delta +8).
+                c.bus.write32(OC655_OBJ + 0x5c, OC655_OBJ_VT);
+                oc655_slot(c, &mut r, OC655_OBJ_VT, 0x8, FAKE);
+                c.g[A0][0] = OC655_MAN as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn wscript_man_request_mission_playback_matches() {
+        oc655_hook_all();
+        covered(
+            ee::s10::f_0030b590__generated,
+            wscript_man_request_mission_playback_2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_b590, 3);
+                oc655_gates(c, &mut r);
+                let world = OC655_MAN + 0x1000;
+                let game = OC655_MAN + 0x1100;
+                let pm = OC655_MAN + 0x1200;
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0x34, pm);
+                c.bus.write32(game + 0x28, OC655_MAN + 0x1300);
+                c.bus.write32(OC655_MAN + 0x2a0, r.next_u32());
+                c.g[A0][0] = OC655_MAN as u64;
             },
         );
     }

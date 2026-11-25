@@ -230,6 +230,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_list_get_movie_info,
         "ScriptList_GetMovieInfo",
     ),
+    (0x0027_66d0, script_list_skip_2, "ScriptList_Skip"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6023,6 +6024,278 @@ pub fn script_list_take_from(c: &mut Cpu) {
     });
 }
 
+/// `ScriptCmdQueue_Count` (0x283d28).
+pub(crate) const SLK_CMDQ_COUNT: Callee = Callee {
+    addr: 0x0028_3d28,
+    f: ee::s07::f_00283d28,
+};
+
+/// `ScriptList_PopEntries` (0x277598).
+pub(crate) const SLK_POP_ENTRIES: Callee = Callee {
+    addr: 0x0027_7598,
+    f: ee::s07::f_00277598,
+};
+
+/// `ScriptList_Prepare` (0x276270).
+pub(crate) const SLK_LIST_PREPARE: Callee = Callee {
+    addr: 0x0027_6270,
+    f: ee::s07::f_00276270,
+};
+
+/// `ScriptCmdQueue_At` (0x283d70).
+pub(crate) const SLK_CMDQ_AT: Callee = Callee {
+    addr: 0x0028_3d70,
+    f: ee::s07::f_00283d70,
+};
+
+/// `ScriptList_IsMovieEntry` (0x277dd8).
+pub(crate) const SLK_IS_MOVIE: Callee = Callee {
+    addr: 0x0027_7dd8,
+    f: ee::s07::f_00277dd8,
+};
+
+/// `ScriptEngine_KillProcess` (0x282540).
+pub(crate) const SLK_KILL_PROCESS: Callee = Callee {
+    addr: 0x0028_2540,
+    f: ee::s07::f_00282540,
+};
+
+/// `ScriptMovie_Stop` (0x283818).
+pub(crate) const SLK_MOVIE_STOP: Callee = Callee {
+    addr: 0x0028_3818,
+    f: ee::s07::f_00283818,
+};
+
+/// `ScriptList_SetPaused` (0x277c08).
+pub(crate) const SLK_SET_PAUSED: Callee = Callee {
+    addr: 0x0027_7c08,
+    f: ee::s07::f_00277c08,
+};
+
+/// `ScriptList_PrepareEntry` (0x277450).
+pub(crate) const SLK_PREPARE_ENTRY: Callee = Callee {
+    addr: 0x0027_7450,
+    f: ee::s07::f_00277450,
+};
+
+/// `ScriptList_Stop` (0x276868).
+pub(crate) const SLK_LIST_STOP: Callee = Callee {
+    addr: 0x0027_6868,
+    f: ee::s07::f_00276868,
+};
+
+/// `ScriptList_StartTransition` (0x277980).
+pub(crate) const SLK_START_TRANSITION: Callee = Callee {
+    addr: 0x0027_7980,
+    f: ee::s07::f_00277980,
+};
+
+/// `ScriptList_TryAdvance` (0x277800).
+pub(crate) const SLK_TRY_ADVANCE: Callee = Callee {
+    addr: 0x0027_7800,
+    f: ee::s07::f_00277800,
+};
+
+/// `void ScriptList_Skip(list, delta, force)` (0x2766d0): moves the list's
+/// skip position by `delta` and advances the list to the new position: the
+/// queue entries before it are removed, the next pending script is set up,
+/// and the transition or the play-on-available path runs. Returns the state.
+/// Frame 0x50: saves ra and s0-s3.
+pub fn script_list_skip_2(c: &mut Cpu) {
+    guest(c, slk_body)
+}
+
+pub(crate) fn slk_body(c: &mut Cpu) -> Flow {
+    c.cycles += 11;
+    let frame = Frame::open(c, 0x50);
+    frame.save(c, 16, 0x40);
+    frame.save(c, 17, 0x30);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save(c, 19, 0x10);
+    frame.save(c, 18, 0x20);
+    frame.save_ra(c, 0);
+    'b_27684c: {
+        'b_276848: {
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc0));
+            c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            let t = c.g[S1][0] == c.g[V0][0];
+            c.g[S3][0] = c.g[A2][0];
+            if t {
+                break 'b_276848;
+            }
+            'b_276840: {
+                'b_27683c: {
+                    'b_276764: {
+                        c.cycles += 11;
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xbc));
+                        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                        if c.g[V0][0] != 0 {
+                            c.g[S1][0] = c.g[V1][0];
+                        }
+                        SLK_CMDQ_COUNT.call(c, 0x0027_6714)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                        c.g[V0][0] = 0x3;
+                        let t = c.g[V1][0] == c.g[V0][0];
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                        if t {
+                            break 'b_276764;
+                        }
+                        c.cycles += 2;
+                        let t = c.g[V0][0] == 0u64;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xc0), 0u64);
+                        if t {
+                            break 'b_27683c;
+                        }
+                        c.cycles += 8;
+                        c.g[A1][0] = c.g[S1][0];
+                        c.g[A0][0] = c.g[S0][0];
+                        SLK_POP_ENTRIES.call(c, 0x0027_673c)?;
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), c.g[V0][0]);
+                        let t = c.g[V1][0] == 0u64;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xa4), 0u64);
+                        if t {
+                            break 'b_276848;
+                        }
+                        c.cycles += 5;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xb4));
+                        c.g[A0][0] = c.g[S0][0];
+                        SLK_LIST_PREPARE.call(c, 0x0027_675c)?;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                        break 'b_27684c;
+                    }
+                    'b_276800: {
+                        'b_2767fc: {
+                            c.cycles += 3;
+                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xbc));
+                            let t = (c.g[A1][0] as i64) <= 0;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0xc0), c.g[S1][0]);
+                            if t {
+                                break 'b_2767fc;
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                            if c.g[V0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa8));
+                                break 'b_276800;
+                            }
+                            'b_2767c8: {
+                                'b_2767b0: {
+                                    c.cycles += 8;
+                                    c.g[A0][0] = c.g[S2][0];
+                                    SLK_CMDQ_AT.call(c, 0x0027_6784)?;
+                                    c.g[S2][0] = c.g[V0][0];
+                                    c.g[A0][0] = c.g[S0][0];
+                                    c.g[A1][0] = c.g[S2][0];
+                                    SLK_IS_MOVIE.call(c, 0x0027_6794)?;
+                                    if c.g[V0][0] != 0u64 {
+                                        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                                        break 'b_2767b0;
+                                    }
+                                    c.cycles += 5;
+                                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                                    c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                                    SLK_KILL_PROCESS.call(c, 0x0027_67a8)?;
+                                    c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+                                    break 'b_2767c8;
+                                }
+                                c.cycles += 2;
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+                                if t {
+                                    break 'b_2767c8;
+                                }
+                                c.cycles += 4;
+                                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x500));
+                                SLK_MOVIE_STOP.call(c, 0x0027_67c4)?;
+                                c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+                            }
+                            'b_2767e8: {
+                                c.cycles += 5;
+                                c.sw((c.g[S2][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), c.g[V1][0]);
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa8));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[A0][0] = c.g[S0][0];
+                                if t {
+                                    break 'b_2767e8;
+                                }
+                                c.cycles += 3;
+                                c.g[A1][0] = 0u64;
+                                c.g[A2][0] = 0x1;
+                                SLK_SET_PAUSED.call(c, 0x0027_67e8)?;
+                            }
+                            c.cycles += 5;
+                            c.g[A1][0] = c.g[S1][0];
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A2][0] = 0u64;
+                            SLK_PREPARE_ENTRY.call(c, 0x0027_67f8)?;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), c.g[V0][0]);
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa8));
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                        break 'b_27684c;
+                    }
+                    'b_276824: {
+                        c.cycles += 2;
+                        if c.g[S3][0] == 0u64 {
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xbc));
+                            break 'b_276824;
+                        }
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S0][0];
+                        SLK_START_TRANSITION.call(c, 0x0027_6818)?;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                            break 'b_27684c;
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xbc));
+                    }
+                    c.cycles += 2;
+                    let t = (c.g[V0][0] as i64) < 0;
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        break 'b_276840;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    SLK_TRY_ADVANCE.call(c, 0x0027_6834)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                    break 'b_27684c;
+                }
+                c.cycles += 1;
+                c.g[A0][0] = c.g[S0][0];
+                break 'b_276840;
+            }
+            c.cycles += 2;
+            c.g[A1][0] = 0x1;
+            SLK_LIST_STOP.call(c, 0x0027_6848)?;
+            break 'b_276848;
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+        break 'b_27684c;
+    }
+    c.cycles += 7;
+    frame.restore(c, 16, 0x40);
+    frame.restore(c, 17, 0x30);
+    frame.restore(c, 18, 0x20);
+    frame.restore(c, 19, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::main::gamestate::tests::{fake_script_list_stop, PREV_SCRIPT_LIST_STOP};
@@ -8434,6 +8707,35 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x00276198;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::wscript::wscriptman::tests::OC655_MAN;
+
+    pub(crate) use crate::game::wscript::wscriptman::tests::oc655_gates;
+    pub(crate) use crate::game::wscript::wscriptman::tests::oc655_hook_all;
+
+    #[test]
+    fn script_list_skip_matches() {
+        oc655_hook_all();
+        covered(
+            ee::s07::f_002766d0__generated,
+            script_list_skip_2,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_66d0, 3);
+                oc655_gates(c, &mut r);
+                let list = OC655_MAN;
+                c.bus.write32(list + 0xc0, r.next_u32() % 4);
+                c.bus
+                    .write32(list + 0xbc, (r.next_u32() % 6).wrapping_sub(1));
+                c.bus.write32(list + 0xa4, r.next_u32() % 4);
+                c.bus.write32(list + 0xa8, r.next_u32() % 2);
+                c.bus.write32(list + 0xb4, r.next_u32() % 2);
+                c.g[A0][0] = list as u64;
+                c.g[A1][0] = (((r.next_u32() % 5) as i32) - 2) as u32 as u64;
+                c.g[A2][0] = (r.next_u32() % 2) as u64;
             },
         );
     }

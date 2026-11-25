@@ -34,6 +34,7 @@ pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::sound::bankmonitor::p as p_2;
 pub(crate) use crate::game::sound::bankmonitor::p as p_3;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -149,6 +150,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Replay_SetControllerIndex",
     ),
     (0x0026_fe50, replay_process_command, "Replay_ProcessCommand"),
+    (
+        0x0026_fa78,
+        replay_update_camera_input_2,
+        "Replay_UpdateCameraInput",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3195,6 +3201,339 @@ pub fn replay_process_command(c: &mut Cpu) {
     });
 }
 
+/// `int ReplayStream_Decompress(ReplayStream* self, u8** pp, u8* src)`
+/// (0x26eab8): decode one compressed frame: header, body, then rewind the
+/// read pointer.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn replay_stream_decompress_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 35;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = 4;
+        call_ptr(c, 0x003e_6574, 0x0026_eae0)?;
+        c.g[A1][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A0][0] = c.g[SP][0] | 4;
+        c.g[A2][0] = 4;
+        call_ptr(c, 0x003e_6574, 0x0026_eaf0)?;
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A1][0] = 0;
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+        let v = c.g[A0][0];
+        Addr(r32(c, S0)).sw(c, v);
+        c.g[A2][0] = Addr(r32(c, S1).wrapping_add(4)).lw(c);
+        call_ptr(c, 0x002c_85a0, 0x0026_eb08)?;
+        c.g[V1][0] = Addr(sp(c).wrapping_add(4)).lw(c);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+        let v = c.g[A1][0];
+        Addr(r32(c, S0)).sw(c, v);
+        c.g[V1][0] = Addr(r32(c, S1).wrapping_add(4)).lw(c);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        let v = c.g[V1][0];
+        Addr(r32(c, S1).wrapping_add(8)).sw(c, v);
+        Callee {
+            addr: 0x0026_e9b0,
+            f: ee::s07::f_0026e9b0,
+        }
+        .call(c, 0x0026_eb2c)?;
+        frame.restore(c, S0, 0x30);
+        c.g[V0][0] = 1;
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void Replay_RestoreResumeSnapshot(Replay* self)` (0x26f850): restore the
+/// resume snapshot (`+0x3d0`), then free it and clear the pointer.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn replay_restore_resume_snapshot_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(0x3d0)).lw(c);
+        if c.g[A1][0] == 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 7;
+            Callee {
+                addr: 0x0026_db88,
+                f: ee::s07::f_0026db88,
+            }
+            .call(c, 0x0026_f874)?;
+            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(0x3d0)).lw(c);
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0027_0238,
+                f: ee::s07::f_00270238,
+            }
+            .call(c, 0x0026_f880)?;
+            Addr(r32(c, S0).wrapping_add(0x3d0)).sw(c, 0);
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void Replay_BeginPlayback(Replay* self, int resume, int instant, int
+/// camera)` (0x26f8a0): start a playback from the state it is in: save a
+/// resume snapshot if needed, seek to the start, step one frame and enable
+/// the replay cameras (the instant-replay ones when `instant`).
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn replay_begin_playback_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe));
+        c.g[V0][0] = ((c.g[V0][0] < 2) as u64) ^ 1;
+        let skip = c.g[V0][0] == 0;
+        c.g[S3][0] = c.g[A3][0];
+        'b_26f968: {
+            'b_26f964: {
+                'b_26f960: {
+                    if skip {
+                        break 'b_26f960;
+                    }
+                    'b_26f8f4: {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x608)).lw(c);
+                        if c.g[V0][0] != 0 {
+                            c.g[A0][0] = c.g[S0][0];
+                            break 'b_26f8f4;
+                        }
+                        c.cycles += 3;
+                        Callee {
+                            addr: 0x0026_f7f8,
+                            f: ee::s07::f_0026f7f8,
+                        }
+                        .call(c, 0x0026_f8f0)?;
+                        c.g[A0][0] = c.g[S0][0];
+                    }
+                    'b_26f940: {
+                        'b_26f938: {
+                            c.cycles += 13;
+                            c.g[A1][0] = 7;
+                            Callee {
+                                addr: 0x0026_f4a0,
+                                f: ee::s07::f_0026f4a0,
+                            }
+                            .call(c, 0x0026_f8fc)?;
+                            Addr(r32(c, S0).wrapping_add(0x618)).sw(c, 0);
+                            c.g[A1][0] = c.g[S2][0];
+                            Addr(r32(c, S0).wrapping_add(0x61c)).sw(c, 0);
+                            c.g[A0][0] = c.g[S0][0];
+                            let v = c.g[S1][0];
+                            Addr(r32(c, S0).wrapping_add(0x620)).sw(c, v);
+                            Callee {
+                                addr: 0x0027_02f8,
+                                f: ee::s07::f_002702f8,
+                            }
+                            .call(c, 0x0026_f914)?;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A1][0] = 1;
+                            Callee {
+                                addr: 0x0027_03f0,
+                                f: ee::s07::f_002703f0,
+                            }
+                            .call(c, 0x0026_f920)?;
+                            if c.g[S1][0] == 0 {
+                                break 'b_26f938;
+                            }
+                            c.cycles += 4;
+                            c.g[A0][0] = c.g[S0][0];
+                            Callee {
+                                addr: 0x0026_ef30,
+                                f: ee::s07::f_0026ef30,
+                            }
+                            .call(c, 0x0026_f930)?;
+                            break 'b_26f940;
+                        }
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S0][0];
+                        Callee {
+                            addr: 0x0026_ee68,
+                            f: ee::s07::f_0026ee68,
+                        }
+                        .call(c, 0x0026_f940)?;
+                    }
+                    c.cycles += 2;
+                    let s1_set = c.g[S1][0] != 0;
+                    frame.restore(c, S0, 0x40);
+                    if s1_set {
+                        break 'b_26f964;
+                    }
+                    c.cycles += 2;
+                    let s3_set = c.g[S3][0] != 0;
+                    frame.restore(c, S1, 0x30);
+                    if s3_set {
+                        break 'b_26f968;
+                    }
+                    c.cycles += 4;
+                    Callee {
+                        addr: 0x0028_b180,
+                        f: ee::s07::f_0028b180,
+                    }
+                    .call(c, 0x0026_f958)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    Callee {
+                        addr: 0x0028_f200,
+                        f: ee::s07::f_0028f200,
+                    }
+                    .call(c, 0x0026_f960)?;
+                    break 'b_26f960;
+                }
+                c.cycles += 1;
+                frame.restore(c, S0, 0x40);
+            }
+            c.cycles += 1;
+            frame.restore(c, S1, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void Replay_UpdateCameraInput(Replay* self)` (0x26fa78): while the
+/// replay is in state 3, poll the camera controller at index `+0x28` and
+/// reset it on the button presses of the replay pad.
+pub fn replay_update_camera_input_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x30);
+        c.g[V0][0] = Addr(r32(c, S0)).lw(c) ^ 3;
+        'b_26fb74: {
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x20);
+                break 'b_26fb74;
+            }
+            'b_26fad4: {
+                c.cycles += 10;
+                c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0x28)).lw(c);
+                c.g[A1][0] = 0x6c;
+                c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[S1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xb0)).lw(c);
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x0032_0c48, 0x0026_fac0)?;
+                let none = c.g[V0][0] == 0;
+                c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+                if none {
+                    break 'b_26fad4;
+                }
+                c.cycles += 3;
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x84)).lw(c);
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x84)).lw(c);
+                call_ptr(c, 0x0022_e840, 0x0026_fad4)?;
+            }
+            c.cycles += 9;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x630)).lw(c);
+            c.g[V1][0] = 0x44_0000;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5438));
+            c.g[A1][0] = 0xb;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+            if c.g[A0][0] != c.g[A1][0] {
+                frame.restore(c, S0, 0x20);
+                break 'b_26fb74;
+            }
+            'b_26fb60: {
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S1][0];
+                abi::set_fpr(c, 20, FpuF32::ZERO);
+                c.g[A1][0] = 0x31;
+                call_ptr(c, 0x0032_0bf0, 0x0026_fb08)?;
+                let eq = c_eq_f0_f20(c);
+                c.g[A0][0] = c.g[S1][0];
+                if !eq {
+                    break 'b_26fb60;
+                }
+                c.cycles += 6;
+                c.g[A1][0] = 0x30;
+                call_ptr(c, 0x0032_0bf0, 0x0026_fb20)?;
+                let eq = c_eq_f0_f20(c);
+                c.g[A0][0] = c.g[S1][0];
+                if !eq {
+                    break 'b_26fb60;
+                }
+                c.cycles += 6;
+                c.g[A1][0] = 0x32;
+                call_ptr(c, 0x0032_0bf0, 0x0026_fb38)?;
+                let eq = c_eq_f0_f20(c);
+                c.g[A0][0] = c.g[S1][0];
+                if !eq {
+                    break 'b_26fb60;
+                }
+                c.cycles += 6;
+                c.g[A1][0] = 0x33;
+                call_ptr(c, 0x0032_0bf0, 0x0026_fb50)?;
+                let eq = c_eq_f0_f20(c);
+                frame.restore(c, S0, 0x20);
+                if eq {
+                    break 'b_26fb74;
+                }
+                break 'b_26fb60;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x84)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+            call_ptr(c, 0x0022_e840, 0x0026_fb70)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x10);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `c.c.eq.s f0, f20` followed by the FCC latch: the compare result.
+pub(crate) fn c_eq_f0_f20(c: &mut Cpu) -> bool {
+    let eq = FpuF32(c.f[0]).eq_s(FpuF32(c.f[20]));
+    abi::set_fcc(c, eq);
+    eq
+}
+
 #[cfg(test)]
 // The fixtures of the dropped (uninstalled) replay ports stay with their ports.
 #[allow(dead_code)]
@@ -4551,4 +4890,41 @@ pub(crate) mod tests {
             },
         );
     }
+
+    /// The entry return address the fixtures give every call.
+    pub(crate) const RET: u64 = crate::difftest::RA as u64;
+
+    #[test]
+    fn replay_update_camera_input_matches() {
+        const THIS: u32 = DATA + 0x30_4000;
+        const WORLD: u32 = DATA + 0x30_5000;
+        const CAM: u32 = DATA + 0x30_5800;
+        const OBJ: u32 = DATA + 0x30_6000;
+        check(
+            ee::s07::f_0026fa78__generated,
+            replay_update_camera_input_2,
+            40,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x26_fa78, 0);
+                c.pc = 0x0026_fa78;
+                c.g[RA][0] = RET;
+                c.bus.write32(THIS, if seed % 4 == 0 { 2 } else { 3 });
+                c.bus.write32(THIS + 0x28, seed % 4);
+                c.bus.write32(THIS + 0x630, seed % 2);
+                c.bus.write32(GAME_GP_848, WORLD);
+                c.bus.write32(WORLD + 0x84, CAM);
+                c.bus.write32(CAM + 0x84, OBJ);
+                c.bus.write32(WORLD + 4 * (seed % 4) + 0xb0, OBJ);
+                c.bus.write32(
+                    0x0044_5438 + 4 * (seed % 2),
+                    if seed % 3 == 0 { 0xb } else { 0 },
+                );
+                c.bus.write32(OBJ + 0x84, r.next_u32());
+                c.g[A0][0] = THIS as u64;
+            },
+        );
+    }
+
+    /// The gp-relative world pointer (`GAME_GP - 0x848`).
+    pub(crate) const GAME_GP_848: u32 = crate::difftest::GAME_GP - 0x848;
 }

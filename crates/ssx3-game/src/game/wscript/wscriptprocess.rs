@@ -33,6 +33,7 @@ pub(crate) use crate::game::movie::movieplayer::at;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::wscript::wscriptman::p;
+pub(crate) use crate::game::wscript::wscriptman::WSM_EA_ALLOC;
 use crate::guest::Addr;
 use callee::*;
 use ssx3_ee as ee;
@@ -198,6 +199,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0030_86f0,
         wscript_task_run_update_handler,
         "WScriptTask_RunUpdateHandler",
+    ),
+    (
+        0x0030_8118,
+        wscript_process_load_state,
+        "WScriptProcess_LoadState",
     ),
 ];
 
@@ -3785,6 +3791,130 @@ pub fn wscript_task_handle_event(c: &mut Cpu) {
     });
 }
 
+/// `WScriptTask_LoadState` (0x308798).
+pub(crate) const WPS_TASK_LOAD: Callee = Callee {
+    addr: 0x0030_8798,
+    f: ee::s10::f_00308798,
+};
+
+/// `int WScriptProcess_LoadState(proc, stream)` (0x308118): reads the
+/// process header (16 bytes) from the replay stream, reloads its local Luno
+/// table (dropping the old one), reads the task count, and loads each task
+/// (`WScriptTask_LoadState`). Frame 0x60: saves ra and s0-s3.
+pub fn wscript_process_load_state(c: &mut Cpu) {
+    guest(c, wps_body)
+}
+
+pub(crate) fn wps_body(c: &mut Cpu) -> Flow {
+    c.cycles += 22;
+    let frame = Frame::open(c, 0x60);
+    c.g[A2][0] = 0x10;
+    frame.save(c, 16, 0x50);
+    frame.save(c, 18, 0x30);
+    frame.save(c, 19, 0x20);
+    c.g[S2][0] = c.g[A0][0];
+    frame.save(c, 17, 0x40);
+    c.g[S3][0] = c.g[A1][0];
+    frame.save_ra(c, 0x10);
+
+    // stream->read(proc, 0x10)
+    c.g[A1][0] = c.g[S2][0];
+    c.g[V1][0] = c.lw(c.g[S3][0] as u32);
+    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+    let read = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, read, 0x0030_8154)?;
+
+    // The Luno table of the section's script cache: the old one goes.
+    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x16c8));
+    c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x24));
+    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+    call_ptr(c, 0x003a_ca38, 0x0030_8164)?; // cWScriptCache_GetData
+    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1c));
+    let t = c.g[A0][0] == 0u64;
+    c.g[S0][0] = c.g[V0][0];
+    if !t {
+        c.cycles += 2;
+        c.g[A1][0] = 0x3;
+        call_ptr(c, 0x0022_4df0, 0x0030_8178)?; // Luno table dtor
+    }
+
+    'b_3081d8: {
+        c.cycles += 11;
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x1c), 0u64);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x4;
+        c.g[V0][0] = c.lw(c.g[S3][0] as u32);
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+        let read_has = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, read_has, 0x0030_8198)?; // stream->read(&has, 4)
+        c.g[V0][0] = c.lw(sp(c));
+        let t = c.g[V0][0] == 0u64;
+        c.g[A2][0] = 0x2000_0000;
+        if t {
+            break 'b_3081d8;
+        }
+        // A process with a local table: a fresh one, read from the stream.
+        c.cycles += 13;
+        c.g[A1][0] = 0x0049_0000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6778));
+        c.g[A0][0] = 0x4;
+        c.g[A3][0] = 0u64;
+        WSM_EA_ALLOC.call(c, 0x0030_81b8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x8;
+        call_ptr(c, 0x0022_4da0, 0x0030_81c4)?; // Luno table ctor
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+        c.g[A1][0] = c.g[S3][0];
+        call_ptr(c, 0x0022_59a8, 0x0030_81d8)?; // Luno table readFromReplayFrame
+    }
+
+    'b_30820c: {
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+        let t = (c.g[V0][0] as i64) <= 0;
+        c.g[S0][0] = 0u64;
+        if t {
+            break 'b_30820c;
+        }
+        c.cycles += 1;
+        c.g[S1][0] = 0u64;
+        loop {
+            c.cycles += 9;
+            c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x14));
+            c.g[A1][0] = c.g[S3][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+            WPS_TASK_LOAD.call(c, 0x0030_81fc)?;
+            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0u64;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x44));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_81e8);
+                }
+                continue;
+            }
+            break 'b_30820c;
+        }
+    }
+
+    c.cycles += 7;
+    frame.restore(c, 16, 0x50);
+    frame.restore(c, 17, 0x40);
+    frame.restore(c, 18, 0x30);
+    frame.restore(c, 19, 0x20);
+    frame.restore_ra(c, 0x10);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5446,6 +5576,48 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x003083a0;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::wscript::wscriptman::tests::OC655_MAN;
+
+    pub(crate) use crate::game::wscript::wscriptman::tests::oc655_gates;
+    pub(crate) use crate::game::wscript::wscriptman::tests::oc655_hook_all;
+    pub(crate) use crate::game::wscript::wscriptman::tests::oc655_slot;
+
+    #[test]
+    fn wscript_process_load_state_matches() {
+        oc655_hook_all();
+        covered(
+            ee::s10::f_00308118__generated,
+            wscript_process_load_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_8118, 6);
+                oc655_gates(c, &mut r);
+                let proc_ = OC655_MAN;
+                let stream = OC655_MAN + 0x1000;
+                let stream_vt = OC655_MAN + 0x1100;
+                let holder = OC655_MAN + 0x1200;
+                let tasks = OC655_MAN + 0x1400;
+                // stream->read is slot 0 of its vtable (+0x10 / +0x14).
+                c.bus.write32(stream, stream_vt);
+                oc655_slot(c, &mut r, stream_vt, 0x10, FAKE);
+                c.bus.write32(GAME_GP.wrapping_add(0x16c8), holder);
+                c.bus.write32(holder + 4, OC655_MAN + 0x1500);
+                // The `has` word stays 0: the Luno table reader of the stream has no
+                // override slot, so the non-zero branch is left out of the fixture.
+                c.bus.write32(crate::difftest::SP.wrapping_sub(0x60), 0);
+                c.bus.write32(
+                    proc_ + 0x1c,
+                    if seed % 3 == 0 { 0 } else { OC655_MAN + 0x1600 },
+                );
+                c.bus.write32(proc_ + 0x24, r.next_u32() % 8);
+                c.bus.write32(proc_ + 4, seed % 4);
+                c.bus.write32(proc_ + 0x14, tasks);
+                c.g[A0][0] = proc_ as u64;
+                c.g[A1][0] = stream as u64;
             },
         );
     }

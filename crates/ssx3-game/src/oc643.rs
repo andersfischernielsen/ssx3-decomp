@@ -436,7 +436,13 @@ fn ssxapp_boot_load_body(c: &mut Cpu) -> Flow {
     c.g[A0][0] = c.g[V0][0];
 
     // Cfg_82D0().sfxVol: copy A, its tail, then func_00287410.
-    boot_cfg_copy(c, 18, [5, 6, 7, 8], [9, 5, 6, 7], (0x0022_8660, 0x0022_86b8));
+    boot_cfg_copy(
+        c,
+        18,
+        [5, 6, 7, 8],
+        [9, 5, 6, 7],
+        (0x0022_8660, 0x0022_86b8),
+    );
     c.cycles += 14;
     boot_cfg_tail(c, 18, 8);
     c.g[A1][0] = c.lw(sp(c)) & 0xf;
@@ -478,7 +484,13 @@ fn ssxapp_boot_load_body(c: &mut Cpu) -> Flow {
     c.g[S2][0] = sx(HI_BEOPT.wrapping_add(BEOPT_OFF));
     call_ptr(c, 0x0028_b180, 0x0022_8950)?; // cAudioInterface_bxAudio
     c.g[A0][0] = c.g[V0][0];
-    boot_cfg_copy(c, 18, [7, 8, 9, 5], [6, 7, 8, 9], (0x0022_8964, 0x0022_89bc));
+    boot_cfg_copy(
+        c,
+        18,
+        [7, 8, 9, 5],
+        [6, 7, 8, 9],
+        (0x0022_8964, 0x0022_89bc),
+    );
     c.cycles += 15;
     boot_cfg_tail(c, 18, 2);
     c.g[A1][0] = c.lh(sp(c).wrapping_add(0x2));

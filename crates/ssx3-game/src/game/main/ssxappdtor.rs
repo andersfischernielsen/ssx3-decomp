@@ -8,6 +8,7 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
@@ -217,6 +218,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0024_5228,
         cfe_state_progressive_dtor,
         "cFEStateProgressive_dtor",
+    ),
+    (
+        0x0024_4a40,
+        game_module_update_sections,
+        "GameModule_UpdateSections",
+    ),
+    (
+        0x0024_52d8,
+        fe_state_progressive_on_widget_action,
+        "cFEStateProgressive_OnWidgetAction",
     ),
 ];
 
@@ -1403,6 +1414,251 @@ pub fn cfe_state_progressive_dtor(c: &mut Cpu) {
     })
 }
 
+/// `cGame_updateStreamLoading(self)` (0x244a40): the per-frame stream
+/// update. When the view and the section manager are both ready the world
+/// and sections run and the stream is marked unpaused; otherwise the world
+/// and the view update, the sections update if they are not ready, the stream
+/// pauses and, on the first pause with the view still loading, the flush flag
+/// is set. A set flush flag flushes the streamer's focus and the world cache.
+/// Returns 1 when the stream is ready, 0 otherwise.
+pub fn game_module_update_sections(c: &mut Cpu) {
+    guest(c, update_sections)
+}
+
+pub(crate) fn update_sections(c: &mut Cpu) -> Flow {
+    c.cycles += 8;
+    let frame = Frame::open(c, 0x20);
+    frame.save(c, S0, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S0][0] = c.g[A0][0];
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x84));
+    call_ptr(c, 0x0022_e920, 0x0024_4a58)?; // cGameViewMan_isStreamReady(view)
+    let ready = if c.g[V0][0] == 0 {
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+        false
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x78));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x1d0));
+        let sections_ready = c.g[V1][0] != 0;
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+        sections_ready
+    };
+    let value = if ready {
+        stream_ready(c)?;
+        1
+    } else {
+        stream_not_ready(c)?;
+        0
+    };
+    c.g[V0][0] = value;
+    c.cycles += 4;
+    frame.restore(c, S0, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// The stream and the sections are ready: run the world and the sections
+/// with the stream unpaused (the tail that returns 1).
+pub(crate) fn stream_ready(c: &mut Cpu) -> Flow {
+    c.cycles += 10;
+    c.g[A0][0] = 1;
+    c.g[V1][0] = c.lw(r32(c, V0));
+    let world = r32(c, V1).wrapping_add(0x3d4);
+    let one = c.g[A0][0];
+    c.sw(world, one);
+    c.sw(r32(c, S0).wrapping_add(0x9c), 0);
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+    c.sw(r32(c, S0).wrapping_add(0xa0), 0);
+    call_ptr(c, 0x003a_6928, 0x0024_4b2c)?; // cWorld_update(world)
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x78));
+    call_ptr(c, 0x0022_d8d8, 0x0024_4b34)?; // cSectionMan_update(sections)
+    Ok(())
+}
+
+/// The stream is not ready: the world and the view update, the sections
+/// update when they are not ready (with the state update first), the pause
+/// and the flush flag are set, and a flush runs when the flag was set. Returns
+/// 0.
+pub(crate) fn stream_not_ready(c: &mut Cpu) -> Flow {
+    c.cycles += 10;
+    c.g[V1][0] = c.lw(r32(c, V0));
+    let world = r32(c, V1).wrapping_add(0x3d4);
+    c.sw(world, 0);
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+    call_ptr(c, 0x003a_6928, 0x0024_4a80)?; // cWorld_update(world)
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x84));
+    call_ptr(c, 0x0022_e840, 0x0024_4a88)?; // cGameViewMan_updateAll(view)
+    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x78));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x1d0));
+    if c.g[V1][0] != 0 {
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x9c));
+    } else {
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0023_0f40, 0x0024_4aa0)?; // cGame_updateState(self)
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x78));
+        call_ptr(c, 0x0022_d8d8, 0x0024_4aa8)?; // cSectionMan_update(sections)
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x9c));
+    }
+
+    // The stream was paused already? Otherwise pause it and, if the view
+    // still is not ready, set the flush flag.
+    c.cycles += 2;
+    let paused = c.g[V0][0] != 0;
+    c.g[V0][0] = 1;
+    if !paused {
+        c.cycles += 4;
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x84));
+        call_ptr(c, 0x0022_e920, 0x0024_4abc)?; // cGameViewMan_isStreamReady(view)
+        let view_ready = c.g[V0][0] != 0;
+        c.g[V0][0] = 1;
+        if !view_ready {
+            c.cycles += 2;
+            let flush = r32(c, S0).wrapping_add(0xa0);
+            let one = c.g[V0][0];
+            c.sw(flush, one);
+            c.g[V0][0] = 1;
+        }
+    }
+
+    c.cycles += 3;
+    c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0xa0));
+    let no_flush = c.g[V1][0] == 0;
+    let pause = r32(c, S0).wrapping_add(0x9c);
+    let one = c.g[V0][0];
+    c.sw(pause, one);
+    if !no_flush {
+        stream_flush(c)?;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    Ok(())
+}
+
+/// The flush: the graphics manager's virtual call, the view's stream focus,
+/// the world cache's active pages, and the flush flag cleared.
+pub(crate) fn stream_flush(c: &mut Cpu) -> Flow {
+    c.cycles += 12;
+    c.g[A1][0] = c.lw(r32(c, GP).wrapping_sub(0x854));
+    c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0x10d8));
+    c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x98));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x9c));
+    let method = c.g[V1][0] as u32;
+    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, 0x0024_4af0)?; // GrMan->vt[0x9c]()
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x84));
+    call_ptr(c, 0x0022_e8b8, 0x0024_4af8)?; // cGameViewMan_updateStreamFocus(view)
+    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+    c.g[A0][0] = c.lw(r32(c, V0));
+    call_ptr(c, 0x003a_88a8, 0x0024_4b04)?; // cWorldCache_flushInActivePages(world)
+    c.sw(r32(c, S0).wrapping_add(0xa0), 0);
+    Ok(())
+}
+
+/// `StrHash(const char*)` (0x317670).
+pub(crate) const OC650_STR_HASH: u32 = 0x0031_7670;
+
+/// `EA_MemAllocNamed(size, name, ..)` (0x317d70).
+pub(crate) const OC650_MEM_ALLOC: u32 = 0x0031_7d70;
+
+/// `UIState_ctor(state, engine)` (0x39e2a0).
+pub(crate) const OC650_UISTATE_CTOR: u32 = 0x0039_e2a0;
+
+/// `UIStateMgr_SwitchState(stack, state)` (0x39f400).
+pub(crate) const OC650_SWITCH_STATE: u32 = 0x0039_f400;
+
+/// Pushes a UI state built from the engine's `mStateStack` (the dossier's
+/// `newUIObj` + `cUIStateStack_push`): allocates 0x50 bytes, constructs the
+/// state with `self->mpEngine`, stores the vtable at +8 and `flag` at +0x48,
+/// then pushes it. `rets` are the generated body's return addresses for the
+/// allocation, the constructor and the push. Returns the state in s0.
+pub(crate) fn oc650_push_state(c: &mut Cpu, flag: u64, rets: [u32; 3]) -> Flow {
+    c.g[A0][0] = 0x50;
+    c.g[A1][0] = sx(0x0048_0000u32.wrapping_sub(0x4640));
+    c.g[A2][0] = 0;
+    c.g[A3][0] = 0;
+    call_ptr(c, OC650_MEM_ALLOC, rets[0])?;
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A1][0] = Addr(c.g[S2][0] as u32).off(0x10).lw(c);
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, OC650_UISTATE_CTOR, rets[1])?;
+    c.g[A0][0] = Addr(c.g[S2][0] as u32).off(0x10).lw(c);
+    c.g[V0][0] = sx(0x0048_0000u32.wrapping_sub(0x25a8));
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+    c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+    c.sb((c.g[S0][0] as u32).wrapping_add(0x48), flag);
+    call_ptr(c, OC650_SWITCH_STATE, rets[2])?;
+    Ok(())
+}
+
+/// The type-5 branch of `cFEStateProgressive_OnWidgetAction`: `StrHash` of
+/// the message's `+0x38` word against the string "yes" (at 0x4a2ac8). A
+/// match pushes the yes state and plays frame 1 on `cGraphicsMan`; otherwise
+/// the no state is pushed (flag 1, and s1 is left at 1, as the generated
+/// body leaves it).
+pub(crate) fn oc650_widget_type5(c: &mut Cpu) -> Flow {
+    c.cycles += 6;
+    c.g[A0][0] = 0x004a_0000;
+    c.g[S0][0] = Addr(c.g[A1][0] as u32).off(0x38).lw(c);
+    c.g[A0][0] = sx(0x004a_0000u32.wrapping_add(0x2ac8));
+    call_ptr(c, OC650_STR_HASH, 0x0024_5310)?;
+    let is_yes = c.g[S0][0] == c.g[V0][0];
+    c.g[A1][0] = 0x0048_0000;
+    if is_yes {
+        c.cycles += 26;
+        oc650_push_state(c, 0, [0x0024_532c, 0x0024_533c, 0x0024_535c])?;
+        // cGraphicsMan_TheGraphicsMan: vtable slot 8 (+0x40), frame 1.
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+        c.g[A1][0] = 0x1;
+        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x10d8));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x40));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0024_5378)?;
+    } else {
+        c.cycles += 18;
+        c.g[S1][0] = 1;
+        oc650_push_state(c, 1, [0x0024_5398, 0x0024_53a8, 0x0024_53c8])?;
+        c.cycles += 1;
+    }
+    Ok(())
+}
+
+/// `void cFEStateProgressive_OnWidgetAction(self a0, msg a1, type a2)`
+/// (0x2452d8): ignores a null message, and handles only type 5 (see
+/// [`oc650_widget_type5`]). Saves s0-s2 and ra in a 0x40-byte frame.
+pub fn fe_state_progressive_on_widget_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 18, 0x10);
+        frame.save(c, 16, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, 17, 0x20);
+        frame.save_ra(c, 0);
+        if c.g[A1][0] == 0 {
+            c.cycles += 1;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 5;
+            if c.g[A2][0] == c.g[V0][0] {
+                oc650_widget_type5(c)?;
+            }
+        }
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        c.cycles += 5;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2231,7 +2487,7 @@ pub(crate) mod tests {
                     if c.bus.read32(CTRL) != MAGIC {
                         return fakes::fall_back(c, &$prev, ee::$shard::$gen);
                     }
-                    let ra = c.g[RA][0] as u32;
+                    let ra = c.g[ssx3_ee_rt::cpu::reg::RA as usize][0] as u32;
                     fakes::fake(c, $addr, ra);
                     if c.pc == ra {
                         let v = c.bus.read32(RESULTS + 4 * $k);
@@ -2414,6 +2670,94 @@ pub(crate) mod tests {
             &|c, seed| {
                 gated(c, seed, 0x245228, &[0, 0, 0, 0, 0, 0, 0]);
                 c.g[A0][0] = sx(DATA + 0x100);
+            },
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use crate::difftest::RA;
+    pub(crate) use crate::game::main::gamemode::tests::BASE;
+    pub(crate) use crate::game::main::gamemode::tests::CTRL as CTRL_2;
+    pub(crate) use crate::game::main::gamemode::tests::MAGIC as MAGIC_2;
+
+    pub(crate) use crate::game::main::gamemode::tests::oc649_install;
+
+    /// `GameModule_UpdateSections`: the flags of the stream (ready, sections
+    /// ready, paused, flush pending) come from the seed; the view's answer is
+    /// the gate's word 4.
+    pub(crate) fn oc649_stream_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x0024_4a40, 0);
+        c.pc = 0x0024_4a40;
+        c.bus.write32(CTRL_2, MAGIC_2);
+        c.bus.write32(CTRL_2 + 4, seed & 1);
+        let this = BASE + 0x9000;
+        let view = BASE + 0x9800;
+        let world = BASE + 0xa000;
+        let world_obj = BASE + 0xa100;
+        let sections = BASE + 0xb000;
+        let grman = BASE + 0xc000;
+        let vt = BASE + 0xc100;
+        c.g[A0][0] = this as u64;
+        c.bus.write32(this + 0x84, view);
+        c.bus.write32(this + 0x10, world);
+        c.bus.write32(world, world_obj);
+        c.bus.write32(this + 0x78, sections);
+        c.bus.write32(sections + 0x1d0, (seed >> 1) & 1);
+        c.bus.write32(this + 0x9c, (seed >> 2) & 1);
+        c.bus.write32(this + 0xa0, (seed >> 3) & 1);
+        c.bus.write32(GAME_GP.wrapping_sub(0x854), grman);
+        c.bus.write32(grman + 0x10d8, vt);
+        c.bus.write16(vt + 0x98, 0x20);
+        c.bus.write32(vt + 0x9c, fakes::FAKE);
+    }
+
+    #[test]
+    fn game_module_update_sections_matches() {
+        oc649_install();
+        check(
+            ee::s06::f_00244a40__generated,
+            game_module_update_sections,
+            300,
+            &|c, seed| oc649_stream_setup(c, seed),
+        );
+    }
+
+    /// Each seed: a message whose `+0x38` word is or is not the hash of
+    /// "yes", a null or non-null message, type 5 or not, and a graphics
+    /// manager whose slot 8 is a fake method.
+    #[test]
+    fn fe_state_progressive_on_widget_action_matches() {
+        check(
+            ee::s06::f_002452d8__generated,
+            fe_state_progressive_on_widget_action,
+            300,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x0024_52d8, 1);
+                elf_image(c);
+                let this = DATA + 0x1_0000;
+                let engine = DATA + 0x1_0100;
+                let msg = DATA + 0x1_0200;
+                let gfx = DATA + 0x1_0300;
+                let vt = DATA + 0x1_0400;
+                // The hash of "yes" as the real StrHash computes it.
+                let str_hash = ssx3_ee_rt::funcs::lookup(OC650_STR_HASH).expect("StrHash");
+                c.g[A0][0] = 0x004a_2ac8;
+                c.g[ssx3_ee_rt::cpu::reg::RA as usize][0] = sx(RA);
+                c.pc = OC650_STR_HASH;
+                str_hash(c);
+                let yes = c.g[V0][0] as u32;
+                c.bus
+                    .write32(msg + 0x38, if seed % 3 == 0 { yes ^ 1 } else { yes });
+                c.bus.write32(this + 0x10, engine);
+                c.bus.write32(GAME_GP + 0x2a90, gfx);
+                c.bus.write32(gfx + 0x10d8, vt);
+                c.bus.write16(vt + 0x40, 0);
+                c.bus.write32(vt + 0x44, FAKE);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 7 == 0 { 0 } else { sx(msg) };
+                c.g[A2][0] = if seed % 5 == 0 { 4 } else { 5 };
+                c.g[ssx3_ee_rt::cpu::reg::RA as usize][0] = sx(RA);
+                c.pc = 0x0024_52d8;
             },
         );
     }

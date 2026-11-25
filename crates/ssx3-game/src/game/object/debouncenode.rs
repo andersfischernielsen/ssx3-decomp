@@ -11,6 +11,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
+use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -146,6 +147,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0034_5320,
         spline_modifier_is_path_visible,
         "SplineModifier_IsPathVisible",
+    ),
+    (
+        0x0034_4898,
+        crowd_man3d_group_remove_section,
+        "CrowdMan3d_GroupRemoveSection",
+    ),
+    (
+        0x0034_4e18,
+        crowd_man3d_group_render,
+        "CrowdMan3d_GroupRender",
     ),
 ];
 
@@ -3849,6 +3860,373 @@ pub fn crowd_man3d_group_create_meshes(c: &mut Cpu) {
     });
 }
 
+/// The loop over the group's entries in `crowd_man3d_group_remove_section`
+/// once an entry of the wanted section is found (the block at 0x3448b8 +
+/// the inner search at 0x344910). Returns true when the generated body
+/// leaves through `break 'b_3449b8` (one extra cycle), false when it leaves
+/// through `break 'b_3449bc` (after the group reset).
+pub(crate) fn remove_section_entries(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.g[S3][0] = 0xffff_ffff_ffff_0000;
+    c.g[S4][0] = 0xffff_ffff_ffff_0000;
+    c.g[S0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lw(c);
+    c.g[A0][0] = 0;
+    c.g[S3][0] |= 0xfffb;
+    c.g[S4][0] |= 0xffff;
+    c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
+    loop {
+        c.cycles += 4;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+        let t = c.g[V0][0] != c.g[S0][0];
+        c.g[V1][0] = ((c.g[A0][0] as i64) < 32) as u64;
+        if !t {
+            // 'b_344974: the lookup of this section's record.
+            c.cycles += 10;
+            call_ptr(c, 0x002d_1bd8, 0x0034_4928)?;
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            c.g[V0][0] = c.g[S0][0] & 0xff;
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(8)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+            let found = c.g[A0][0] != 0;
+            c.g[V0][0] = sx((c.g[S0][0] as u32) >> 8);
+            if found {
+                // 'b_344970
+                c.cycles += 7;
+                c.g[A0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x1c)).lw(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                let nonzero = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                if !nonzero {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                }
+                c.cycles += 1;
+                c.g[V1][0] = c.g[V0][0];
+            } else {
+                c.cycles += 2;
+                c.g[V1][0] = 0;
+            }
+            // The count of the group's entries, and the entry's flag word.
+            c.cycles += 9;
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x8)).lw(c);
+            c.g[V0][0] &= c.g[S3][0];
+            c.g[V0][0] |= 0x2;
+            let flags = c.g[V0][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, flags);
+            let slot_value = c.g[S4][0];
+            Addr(c.g[S1][0] as u32).sw(c, slot_value);
+            c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            let left = (c.g[V0][0] as i64) > 0;
+            let remaining = c.g[V0][0];
+            Addr(c.g[S2][0] as u32).sw(c, remaining);
+            if left {
+                return Ok(true);
+            }
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S2][0];
+            Callee {
+                addr: 0x0034_4800,
+                f: ee::s11::f_00344800,
+            }
+            .call(c, 0x0034_49a0)?;
+            c.g[A0][0] = c.g[S2][0];
+            Callee {
+                addr: 0x0034_42e0,
+                f: ee::s11::f_003442e0,
+            }
+            .call(c, 0x0034_49a8)?;
+            return Ok(false);
+        }
+        // 'b_3449b0 tail: no match in this slot, keep searching while A0 < 32.
+        c.cycles += 2;
+        let more = c.g[V1][0] != 0;
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(8));
+        if !more {
+            return Ok(true);
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0034_4910);
+        }
+    }
+}
+
+/// `void CrowdMan3d_GroupRemoveSection(CrowdGroup* g, u8 section)`
+/// (0x344898): removes every entry of `section` from the group's entry
+/// table (32 entries of 8 bytes, the word at +0xc of each is the entry's
+/// key), dropping each one's flags in the shared record. When the count at
+/// the group's +0 falls to zero, the group frees its meshes and resets.
+pub fn crowd_man3d_group_remove_section(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        c.g[V1][0] = 0;
+        frame.save(c, 18, 0x50);
+        frame.save(c, 22, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, 16, 0x70);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, 17, 0x60);
+        frame.save(c, 19, 0x40);
+        frame.save(c, 20, 0x30);
+        frame.save(c, 21, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[V1][0] as u32) << 3);
+        loop {
+            c.cycles += 6;
+            c.g[S5][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lw(c);
+            c.g[V0][0] = !c.g[V0][0];
+            let free_slot = c.g[V0][0] == 0;
+            c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            if free_slot {
+                c.cycles += 1;
+                c.g[V1][0] = c.g[S5][0];
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lbu(c);
+                if c.g[V0][0] != c.g[S6][0] {
+                    c.g[V1][0] = c.g[S5][0];
+                } else {
+                    c.cycles += 7;
+                    let plus_one = remove_section_entries(c)?;
+                    if plus_one {
+                        c.cycles += 1;
+                    }
+                    c.g[V1][0] = c.g[S5][0];
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 32) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            c.g[A0][0] = sx((c.g[V1][0] as u32) << 3);
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_48d0);
+            }
+        }
+        c.cycles += 10;
+        frame.restore(c, 16, 0x70);
+        frame.restore(c, 17, 0x60);
+        frame.restore(c, 18, 0x50);
+        frame.restore(c, 19, 0x40);
+        frame.restore(c, 20, 0x30);
+        frame.restore(c, 21, 0x20);
+        frame.restore(c, 22, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `base + off` as a 32-bit guest address (the `(reg as u32).wrapping_add`
+/// the generated code spells out).
+pub(crate) fn field_addr(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// The group's `(ref, +8)` slot array starts at `self + 0xc`.
+pub(crate) const GROUP_REFS: u32 = 0xc;
+
+/// Number of instances in the group (`< 2`: the single-draw path).
+pub(crate) const GROUP_INSTANCES: u32 = 0x114;
+
+/// The group's material block (`CrowdMan3d_GroupSetMeshFrame` target).
+pub(crate) const GROUP_MATERIALS: u32 = 0x118;
+
+/// The group's matrix block (passed to the draw call).
+pub(crate) const GROUP_MATRICES: u32 = 0x1e8;
+
+/// `gp + 0x2a90`: the crowd table whose `+0x10d8` holds the graphics object.
+pub(crate) const GP_CROWD_TABLE: u32 = 0x2a90;
+
+/// Offset of the graphics object inside the crowd table.
+pub(crate) const CROWD_TABLE_GRAPHICS: u32 = 0x10d8;
+
+/// `gp + 0x16c8`: the world object (`World_GetInstance` returns it).
+pub(crate) const GP_WORLD: u32 = 0x16c8;
+
+pub(crate) const CROWD_GROUP_SET_MESH_FRAME: Callee = Callee {
+    addr: 0x0034_4730,
+    f: ee::s11::f_00344730,
+};
+
+/// `void CrowdMan3d_GroupRender(CrowdGroup* self)` (0x344e18): draw the
+/// group's 32 `(ref, +8)` slots. A `ref` of -1 is empty. Each slot's model is
+/// looked up through the world's two tables and drawn only when it is loaded.
+/// A group with two or more instances first advances the per-instance mesh
+/// frames (`CrowdMan3d_GroupSetMeshFrame`) and draws through the graphics
+/// object's `+0x2f8/+0x2fc` slot with a factor of 1.0; a smaller group draws
+/// through the `+0x300/+0x304` slot.
+pub fn crowd_man3d_group_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S3, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        frame.save(c, S4, 0x20);
+        c.g[S2][0] = sx(field_addr(c.g[S1][0], GROUP_REFS));
+        frame.save(c, S5, 0x10);
+        c.g[S4][0] = 0x1f;
+        frame.save(c, S0, 0x60);
+        c.g[S5][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S3][0] = Addr(field_addr(c.g[GP][0], GP_CROWD_TABLE)).lw(c);
+        loop {
+            'slot: {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+                c.g[V0][0] = !c.g[V0][0];
+                if c.g[V0][0] == 0 {
+                    c.g[S2][0] = sx(field_addr(c.g[S2][0], 8));
+                    break 'slot;
+                }
+                // The model: the world's first table by the low byte of
+                // `ref`, then the second table by its next byte.
+                'model: {
+                    c.cycles += 11;
+                    call_ptr(c, 0x002d_1bd8, 0x0034_4e68)?;
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    c.g[A1][0] = Addr(c.g[S2][0] as u32).lw(c);
+                    c.g[A0][0] = Addr(field_addr(c.g[V1][0], 8)).lw(c);
+                    c.g[V0][0] = c.g[A1][0] & 0xff;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx(field_addr(c.g[V0][0], c.g[A0][0] as u32));
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    if c.g[V1][0] == 0 {
+                        c.cycles += 2;
+                        c.g[S0][0] = 0;
+                        break 'model;
+                    }
+                    c.g[A0][0] = Addr(field_addr(c.g[V1][0], 0x1c)).lw(c);
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[A1][0] as u32) >> 8);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx(field_addr(c.g[V0][0], c.g[A0][0] as u32));
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                    c.g[A1][0] = 0;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 1;
+                        c.g[A1][0] = sx((c.g[V0][0] as u32) << 2);
+                    }
+                    c.cycles += 1;
+                    c.g[S0][0] = c.g[A1][0];
+                }
+                // Loaded? The model's flag byte at +0x7d (0xff: empty) and
+                // the world's type entry must match.
+                {
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(field_addr(c.g[GP][0], GP_WORLD)).lw(c);
+                    c.g[A0][0] = 0xff;
+                    c.g[V1][0] = Addr(field_addr(c.g[S0][0], 0x7d)).lbu(c);
+                    c.g[A1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    let empty_byte = c.g[V1][0] == c.g[A0][0];
+                    c.g[V0][0] = 1;
+                    if !empty_byte {
+                        c.cycles += 7;
+                        c.g[V0][0] = Addr(field_addr(c.g[S0][0], 0x7d)).lbu(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                        c.g[V0][0] = sx(field_addr(c.g[A1][0], c.g[V0][0] as u32));
+                        c.g[V1][0] = Addr(field_addr(c.g[V0][0], 0x24)).lw(c);
+                        c.g[V1][0] ^= 0x6;
+                        if c.g[V1][0] != 0 {
+                            c.g[V0][0] = 0;
+                        } else {
+                            c.cycles += 7;
+                            c.g[V0][0] = Addr(field_addr(c.g[S0][0], 0x7e)).lh(c);
+                            c.g[A0][0] = 0x18;
+                            c.mult(0, 3, 2, 4);
+                            c.g[V0][0] = sx(field_addr(c.g[V1][0], c.g[A1][0] as u32));
+                            c.g[V1][0] = Addr(field_addr(c.g[V0][0], 0x3f0)).lw(c);
+                            c.g[V1][0] ^= 0x3;
+                            c.g[V0][0] = (c.g[V1][0] < 0x1) as u64;
+                        }
+                    }
+                }
+                c.cycles += 2;
+                if c.g[V0][0] == 0 {
+                    c.g[S2][0] = sx(field_addr(c.g[S2][0], 8));
+                    break 'slot;
+                }
+                'draw: {
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(field_addr(c.g[S1][0], GROUP_INSTANCES)).lw(c);
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < 2) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = Addr(field_addr(c.g[S3][0], CROWD_TABLE_GRAPHICS)).lw(c);
+                        break 'draw;
+                    }
+                    // Two or more instances: advance this slot's mesh frame,
+                    // then draw with the factor 1.0 (f12, from AT).
+                    c.cycles += 19;
+                    c.g[V0][0] = sx(field_addr(c.g[S1][0], c.g[S5][0] as u32));
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = Addr(field_addr(c.g[V0][0], 0x10)).lw(c);
+                    CROWD_GROUP_SET_MESH_FRAME.call(c, 0x0034_4f30)?;
+                    c.g[V0][0] = Addr(field_addr(c.g[S3][0], CROWD_TABLE_GRAPHICS)).lw(c);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(1, 12);
+                    c.g[A2][0] = sx(field_addr(c.g[S1][0], GROUP_MATERIALS));
+                    c.g[A0][0] = Addr(field_addr(c.g[V0][0], 0x2f8)).lh(c);
+                    c.g[A3][0] = sx(field_addr(c.g[A1][0], 0x10));
+                    c.g[V1][0] = Addr(field_addr(c.g[V0][0], 0x2fc)).lw(c);
+                    c.g[T1][0] = 0;
+                    c.g[T0][0] = Addr(field_addr(c.g[S1][0], GROUP_MATRICES)).lw(c);
+                    c.g[A0][0] = sx(field_addr(c.g[S3][0], c.g[A0][0] as u32));
+                    c.g[T2][0] = 0;
+                    let draw_fn = c.g[V1][0] as u32;
+                    call_ptr(c, draw_fn, 0x0034_4f64)?;
+                    c.g[S2][0] = sx(field_addr(c.g[S2][0], 8));
+                    break 'slot;
+                }
+                // One instance: draw through the second graphics slot.
+                c.cycles += 9;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = Addr(field_addr(c.g[S1][0], GROUP_MATRICES)).lw(c);
+                c.g[A3][0] = 0;
+                c.g[A0][0] = Addr(field_addr(c.g[V1][0], 0x300)).lh(c);
+                c.g[T0][0] = 0;
+                c.g[V0][0] = Addr(field_addr(c.g[V1][0], 0x304)).lw(c);
+                let draw_fn = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(field_addr(c.g[S3][0], c.g[A0][0] as u32));
+                call_ptr(c, draw_fn, 0x0034_4f8c)?;
+                c.g[S2][0] = sx(field_addr(c.g[S2][0], 8));
+            }
+            c.cycles += 3;
+            c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(1));
+            let more = (c.g[S4][0] as i64) >= 0;
+            c.g[S5][0] = sx(field_addr(c.g[S5][0], 8));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_4e50);
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5153,6 +5531,171 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x003443a8;
+            },
+        );
+    }
+
+    use std::ptr::addr_of_mut;
+
+    // Group-removal fixtures.
+    pub(crate) const GROUP: u32 = DATA + 0x2_0000;
+
+    pub(crate) const WORLD: u32 = DATA + 0x2_1000;
+
+    pub(crate) const BE: u32 = DATA + 0x2_1100;
+
+    pub(crate) const TBL: u32 = DATA + 0x2_2000;
+
+    pub(crate) const ELEM: u32 = DATA + 0x2_3000;
+
+    pub(crate) const TBL2: u32 = DATA + 0x2_4000;
+
+    pub(crate) const FREE_CTRL: u32 = DATA + 0x2_5000;
+
+    pub(crate) const RESET_CTRL: u32 = DATA + 0x2_5010;
+
+    pub(crate) const GROUP_MAGIC: u32 = 0x4752_4f50;
+
+    pub(crate) static FREE_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static RESET_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gated fakes of the mesh free and the reset: they only return while
+    /// their control words hold the magic, otherwise the real body runs.
+    pub(crate) fn group_fake_free(c: &mut Cpu) {
+        if c.bus.read32(FREE_CTRL) != GROUP_MAGIC {
+            return fakes::fall_back(c, &FREE_PREV, ee::s11::f_00344800__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn group_fake_reset(c: &mut Cpu) {
+        if c.bus.read32(RESET_CTRL) != GROUP_MAGIC {
+            return fakes::fall_back(c, &RESET_PREV, ee::s11::f_003442e0__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn group_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00344800),
+            group_fake_free,
+            &FREE_PREV,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003442E0),
+            group_fake_reset,
+            &RESET_PREV,
+        );
+    }
+
+    #[test]
+    fn crowd_man3d_group_remove_section_matches() {
+        group_install_fakes();
+        check(
+            ee::s11::f_00344898__generated,
+            crowd_man3d_group_remove_section,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3448_9800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0034_4898;
+                let sec = (seed % 3) as u32 + 1;
+                c.bus.write32(FREE_CTRL, GROUP_MAGIC);
+                c.bus.write32(RESET_CTRL, GROUP_MAGIC);
+                // Group: count at +0, entries of 8 bytes with the key word at +0xc.
+                c.bus.write32(GROUP, seed % 4);
+                for i in 0..32u32 {
+                    let key = match r.next_u32() % 4 {
+                        0 => 0xffff_ffff,
+                        1 => sec,
+                        _ => sec | ((r.next_u32() % 8) << 8),
+                    };
+                    c.bus.write32(GROUP + 8 * i + 0xc, key);
+                }
+                // World -> BE record -> section tables.
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), WORLD);
+                c.bus.write32(WORLD, BE);
+                c.bus.write32(BE + 8, TBL);
+                for k in 0..256u32 {
+                    let elem = if (seed + k) % 3 == 0 {
+                        0
+                    } else {
+                        ELEM + 0x40 * (k % 4)
+                    };
+                    c.bus.write32(TBL + 4 * k, elem);
+                }
+                for e in 0..4u32 {
+                    c.bus.write32(ELEM + 0x40 * e + 0x1c, TBL2);
+                }
+                for j in 0..256u32 {
+                    let v = if (seed + j) % 2 == 0 { 0 } else { (j % 8) << 8 };
+                    c.bus.write32(TBL2 + 4 * j, v);
+                }
+                c.g[A0][0] = sx(GROUP);
+                c.g[A1][0] = sx(sec);
+            },
+        );
+    }
+
+    /// A game-globals address (`gp + off`) in the fixture.
+    pub(crate) fn game_gp_at(off: u32) -> u32 {
+        GAME_GP.wrapping_add(off)
+    }
+
+    #[test]
+    fn crowd_man3d_group_render_matches() {
+        check(
+            ee::s11::f_00344e18__generated,
+            crowd_man3d_group_render,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x344e, 0);
+                let this = DATA + 0x1000;
+                let gobj = DATA + 0x5000;
+                let world = DATA + 0x6000;
+                let world_obj = DATA + 0x6100;
+                let tab = DATA + 0x6200;
+                let base2 = DATA + 0x14000;
+                c.pc = 0x0034_4e18;
+                c.g[A0][0] = this as u64;
+                c.bus.write32(game_gp_at(GP_CROWD_TABLE), DATA + 0x4000);
+                c.bus.write32(DATA + 0x4000 + CROWD_TABLE_GRAPHICS, gobj);
+                // Graphics object: the two draw slots (delta, function).
+                c.bus.write16(gobj + 0x2f8, 0x40);
+                c.bus.write32(gobj + 0x2fc, FAKE);
+                c.bus.write16(gobj + 0x300, 0x80);
+                c.bus.write32(gobj + 0x304, FAKE + 0x10);
+                // World: its object, the instance table and the model tables.
+                c.bus.write32(game_gp_at(GP_WORLD), world);
+                c.bus.write32(world, world_obj);
+                c.bus.write32(world_obj + 8, tab);
+                c.bus
+                    .write32(world_obj + 0x24, if seed % 2 == 0 { 6 } else { 7 });
+                c.bus
+                    .write32(world_obj + 0x3f0, if seed % 3 == 0 { 0 } else { 3 });
+                for k in 0..256u32 {
+                    let e = DATA + 0x10000 + 0x40 * k;
+                    c.bus.write32(tab + 4 * k, if k % 3 == 0 { 0 } else { e });
+                    c.bus.write32(e + 0x1c, base2);
+                    c.bus.write32(base2 + 4 * k, (k % 4) << 8);
+                }
+                if seed % 7 == 0 {
+                    c.bus.write8(0x7d, 0xff);
+                }
+                c.bus.write32(this + 4, 0);
+                c.bus.write32(this + 0x110, 0);
+                c.bus.write32(this + 0x114, seed % 4);
+                c.bus.write32(this + GROUP_MATRICES, DATA + 0x7000);
+                for i in 0..32u32 {
+                    let rf = if (i + seed) % 5 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() & 0xffff
+                    };
+                    c.bus.write32(this + GROUP_REFS + 8 * i, rf);
+                    c.bus.write32(this + 0x10 + 8 * i, r.next_u32() & 0xff);
+                }
             },
         );
     }

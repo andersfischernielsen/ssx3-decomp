@@ -58,6 +58,7 @@ pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::object::deadfadenode::ctor_with_vtable;
 pub(crate) use crate::game::object::debouncenode::lw32;
 pub(crate) use crate::game::object::instancenode::ui_vector_lw;
+pub(crate) use crate::game::object::modifierblock::oc664_stream_read;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::render::particle::p as p_2;
@@ -5613,6 +5614,95 @@ pub fn ava_spline_modifier_ctor_2_2(c: &mut Cpu) {
         frame.restore(c, S1, 0x20);
         frame.restore(c, S2, 0x10);
         frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const MOBJ_WORLD_CTOR: Callee = Callee {
+    addr: 0x0034_fb90,
+    f: ee::s11::f_0034fb90,
+};
+
+pub(crate) const MOBJ_CREATE_BLOCK: Callee = Callee {
+    addr: 0x0035_5468,
+    f: ee::s11::f_00355468,
+};
+
+pub(crate) const MOBJ_MODIFIER_BLOCK_LOAD: Callee = Callee {
+    addr: 0x0035_36d8,
+    f: ee::s11::f_003536d8,
+};
+
+pub(crate) const MOBJ_SETUP_OVERLAP: Callee = Callee {
+    addr: 0x0035_6780,
+    f: ee::s11::f_00356780,
+};
+
+/// `cMoveNode *cMoveNode_cMoveNode(cMoveNode *self, int bucket, Stream *stream)`
+/// (0x3552d8): the instance node base, the move-node vtable, four stream reads
+/// (debounce, fade, transfer hack, and the has-block flag at SP+0), then the
+/// modifier block when the flag is set, the overlap system setup, and
+/// `Flags |= 1`. Frame 0x40. Returns self. Each read uses its own vtable
+/// registers, as the generated code does.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn mod_obj_ctor_2_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 42;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 16, 0x30);
+        frame.save(c, 17, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[S1][0] = c.g[A2][0];
+        MOBJ_WORLD_CTOR.call(c, 0x0035_52f4)?;
+
+        let this = c.g[S0][0] as u32;
+        let stream = c.g[S1][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        Addr(this + 0x1c).sw(c, 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1028));
+        c.g[A1][0] = sx(this.wrapping_add(0x20));
+        let vtable = c.g[V1][0];
+        Addr(this + 0xc).sw(c, vtable);
+        c.g[A2][0] = 4;
+        oc664_stream_read(c, stream, V0, V1, 0x0035_5320)?;
+
+        c.g[A1][0] = sx(this.wrapping_add(0x24));
+        c.g[A2][0] = 4;
+        oc664_stream_read(c, stream, A3, V0, 0x0035_533c)?;
+
+        c.g[A1][0] = sx(this.wrapping_add(0x28));
+        c.g[A2][0] = 4;
+        oc664_stream_read(c, stream, V1, V0, 0x0035_5358)?;
+
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 4;
+        oc664_stream_read(c, stream, A3, V1, 0x0035_5374)?;
+
+        c.g[V0][0] = Addr(sp(c)).lw(c);
+        let has_block = c.g[V0][0] != 0;
+        if has_block {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            MOBJ_CREATE_BLOCK.call(c, 0x0035_5388)?;
+            c.g[A0][0] = Addr(this + 0x1c).lw(c);
+            c.g[A1][0] = c.g[S1][0];
+            MOBJ_MODIFIER_BLOCK_LOAD.call(c, 0x0035_5394)?;
+        }
+
+        c.cycles += 11;
+        c.g[A0][0] = c.g[S0][0];
+        MOBJ_SETUP_OVERLAP.call(c, 0x0035_539c)?;
+        c.g[V1][0] = Addr(this + 0x12).lhu(c);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, 17, 0x20);
+        c.g[V1][0] |= 1;
+        frame.restore_ra(c, 0x10);
+        let flags = c.g[V1][0];
+        Addr(this + 0x12).sh(c, flags);
+        frame.restore(c, 16, 0x30);
         frame.close(c);
         Ok(())
     })

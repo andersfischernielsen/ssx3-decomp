@@ -335,6 +335,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderTuning_StaticInitThunk",
     ),
     (0x0014_2a50, rider_base_dtor, "RiderBase_dtor"),
+    (
+        0x0013_9548,
+        rider_handplant_state_update_velocity,
+        "RiderHandplantState_UpdateVelocity",
+    ),
+    (
+        0x0014_41b8,
+        danger_man_get_rider_danger_level,
+        "DangerMan_GetRiderDangerLevel",
+    ),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -15692,6 +15702,576 @@ pub fn rider_base_dtor(c: &mut Cpu) {
     });
 }
 
+/// `RiderHandplantState_UpdateVelocity(state)` (0x139548): the exit velocity
+/// of a handplant. Returns 1 when the state's exit-velocity seed vector
+/// (+0x10..+0x1c) differs from the zero vector (nothing to do), else 0. For
+/// the handplant modes 3..6 it then builds the exit velocity from the spline
+/// direction and the approach direction (VU0), stores it at the state's
+/// +0x20 and returns 1; other modes return 0. A leaf: VU0 and FPU only.
+pub fn rider_handplant_state_update_velocity(c: &mut Cpu) {
+    'b_1395b4: {
+        'b_1395b0: {
+            c.cycles += 9;
+            c.g[V0][0] = 0x0050_0000;
+            c.lwc1(0, r32(c, A0).wrapping_add(0x10));
+            c.lwc1(1, r32(c, V0).wrapping_sub(0xee0));
+            c.g[V1][0] = sx(r32(c, V0).wrapping_sub(0xee0));
+            c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x50));
+            c.c_eq_s(0, 1);
+            let t = !c.fcc();
+            c.g[V0][0] = 0;
+            if t {
+                break 'b_1395b0;
+            }
+            c.cycles += 6;
+            c.lwc1(1, r32(c, A0).wrapping_add(0x14));
+            c.lwc1(0, r32(c, V1).wrapping_add(0x4));
+            c.c_eq_s(1, 0);
+            if !c.fcc() {
+                c.g[V0][0] = 1;
+                break 'b_1395b4;
+            }
+            c.cycles += 6;
+            c.lwc1(1, r32(c, A0).wrapping_add(0x18));
+            c.lwc1(0, r32(c, V1).wrapping_add(0x8));
+            c.c_eq_s(1, 0);
+            if !c.fcc() {
+                c.g[V0][0] = 1;
+                break 'b_1395b4;
+            }
+            c.cycles += 5;
+            c.lwc1(1, r32(c, V1).wrapping_add(0xc));
+            c.lwc1(0, r32(c, A0).wrapping_add(0x1c));
+            c.c_eq_s(0, 1);
+            if c.fcc() {
+                break 'b_1395b4;
+            }
+            break 'b_1395b0;
+        }
+        c.cycles += 1;
+        c.g[V0][0] = 1;
+        break 'b_1395b4;
+    }
+
+    'b_139968: {
+        c.cycles += 2;
+        let t = c.g[V0][0] != 0;
+        c.g[V0][0] = 1;
+        if t {
+            break 'b_139968;
+        }
+        'b_139964: {
+            // Mode 3: the sideways exit velocity along the spline.
+            c.cycles += 5;
+            c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0xa0)).lw(c);
+            c.g[V1][0] = 3;
+            c.g[A1][0] = Addr(r32(c, V0).wrapping_add(0x32c)).lw(c);
+            let t = c.g[A1][0] != c.g[V1][0];
+            c.g[V0][0] = 4;
+            if !t {
+                uv_mode3(c);
+                c.cycles += 3;
+                c.mul_s(0, 0, 5);
+                c.g[V0][0] = 1;
+                break 'b_139964;
+            }
+            // Mode 4: the spline-normal exit velocity (5 units, 15 on rails).
+            c.cycles += 2;
+            let t = c.g[A1][0] != c.g[V0][0];
+            c.g[V0][0] = 5;
+            if !t {
+                uv_sign_probe(c, false);
+                uv_sign_branch(c);
+                uv_speed_scale(c, 0x71e8);
+                c.cycles += 3;
+                c.mul_s(0, 1, 2);
+                c.g[V0][0] = 1;
+                break 'b_139964;
+            }
+            // Mode 5: the same shape as mode 4 with the mirrored sign probe.
+            c.cycles += 2;
+            let t = c.g[A1][0] != c.g[V0][0];
+            c.g[V0][0] = 6;
+            if !t {
+                uv_sign_probe(c, true);
+                uv_sign_branch(c);
+                uv_speed_scale(c, 0x71e4);
+                c.cycles += 3;
+                c.mul_s(0, 1, 2);
+                c.g[V0][0] = 1;
+                break 'b_139964;
+            }
+            // Mode 6: the along-spline velocity at 833.3 per tick.
+            c.cycles += 2;
+            let t = c.g[A1][0] != c.g[V0][0];
+            c.g[V0][0] = 0;
+            if t {
+                break 'b_139968;
+            }
+            c.cycles += 13;
+            c.lwc1(0, r32(c, GP).wrapping_sub(0x71e0));
+            c.g[V0][0] = 1;
+            c.mfc1(3, 0);
+            c.lqc2(4, r32(c, A0).wrapping_add(0x20));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            let spill = uv_sp(c, 0x10);
+            c.sqc2(5, spill);
+            c.lwc1(1, r32(c, GP).wrapping_sub(0x71dc));
+            c.lq(3, spill);
+            let state_seed = r32(c, A0).wrapping_add(0x10);
+            c.sq(3, state_seed);
+            let frame_seed = uv_sp(c, 0);
+            c.sq(3, frame_seed);
+            c.lwc1(0, r32(c, A0).wrapping_add(0x18));
+            c.add_s(0, 0, 1);
+            break 'b_139964;
+        }
+        c.cycles += 1;
+        let z = r32(c, A0).wrapping_add(0x18);
+        c.swc1(0, z);
+        break 'b_139968;
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(r32(c, SP).wrapping_add(0x50));
+    ret(c);
+}
+
+/// `sp + off` (the 0x50-byte frame of the velocity function, read at each use).
+pub(crate) fn uv_sp(c: &Cpu, off: u32) -> u32 {
+    r32(c, SP).wrapping_add(off)
+}
+
+/// Mode 3 of `RiderHandplantState_UpdateVelocity`: the exit velocity along
+/// the spline direction (VU0 cross and normalise with the approach
+/// direction), the sideways part from the spline's rail flag (2 or 15 units),
+/// stored at the state's +0x20 (x, y, z) with the z speed from the
+/// vertical constant.
+pub(crate) fn uv_mode3(c: &mut Cpu) {
+    c.cycles += 29;
+    c.g[V0][0] = 0x0050_0000;
+    c.lwc1(1, r32(c, GP).wrapping_sub(0x71f0));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xea0));
+    c.g[AT][0] = 0x4000_0000;
+    c.mtc1(AT, 4);
+    c.lqc2(4, r32(c, V0));
+    c.lqc2(5, r32(c, A0).wrapping_add(0x20));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+    let s20 = uv_sp(c, 0x20);
+    c.sqc2(6, s20);
+    c.lq(2, s20);
+    let s10 = uv_sp(c, 0x10);
+    c.sq(2, s10);
+    c.lqc2(3, s10);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().rsqrt(0, 3, 4, 0);
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 5, 3, Src::Q);
+    c.sqc2(5, s20);
+    c.lq(2, s20);
+    c.lwc1(0, r32(c, A0).wrapping_add(0x8c));
+    let s0 = uv_sp(c, 0);
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(0x90)).lw(c);
+    c.mul_s(2, 0, 1);
+    let t = c.g[V1][0] == 0;
+    c.sq(2, s0);
+    if !t {
+        c.cycles += 2;
+        c.g[AT][0] = 0x4170_0000;
+        c.mtc1(AT, 4);
+    }
+    // The sideways part: the spline's direction, scaled, to the state.
+    c.cycles += 15;
+    c.mtc1(0, 3);
+    c.lqc2(3, r32(c, A0).wrapping_add(0x40));
+    let s0_again = uv_sp(c, 0);
+    c.lqc2(5, s0_again);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(2, 4);
+    c.mtc1(2, 0);
+    c.lwc1(5, r32(c, GP).wrapping_sub(0x71ec));
+    c.c_lt_s(0, 3);
+    c.mul_s(1, 4, 5);
+    if c.fcc() {
+        c.cycles += 1;
+        c.neg_s(1, 1);
+    }
+    c.cycles += 24;
+    c.mfc1(2, 2);
+    c.lqc2(4, r32(c, A0).wrapping_add(0x20));
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let s30 = uv_sp(c, 0x30);
+    c.sqc2(5, s30);
+    c.mov_s(0, 3);
+    c.lq(2, s30);
+    let s20b = uv_sp(c, 0x20);
+    c.sq(2, s20b);
+    c.mfc1(3, 1);
+    let s0c = uv_sp(c, 0);
+    c.lqc2(4, s0c);
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let s40 = uv_sp(c, 0x40);
+    c.sqc2(5, s40);
+    c.lq(2, s40);
+    let s30b = uv_sp(c, 0x30);
+    c.sq(2, s30b);
+    let s20c = uv_sp(c, 0x20);
+    c.lqc2(3, s20c);
+    c.lqc2(4, s30b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s40);
+    c.lq(2, s40);
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(0x90)).lw(c);
+    let state_scratch = r32(c, A0).wrapping_add(0x10);
+    c.sq(2, state_scratch);
+    let t = c.g[V1][0] == 0;
+    let s10b = uv_sp(c, 0x10);
+    c.sq(2, s10b);
+    if !t {
+        c.cycles += 2;
+        c.g[AT][0] = 0x4120_0000;
+        c.mtc1(1, 0);
+    }
+}
+
+/// The sign probe of modes 4 and 5: the exit direction against the approach
+/// (VU0 dot product with the z axis, 36 cycles). `swapped` flips the compare
+/// order (mode 5). Leaves the sign bit in the FPU condition and the
+/// approach-scaled vector in the state's +0x10 quad.
+pub(crate) fn uv_sign_probe(c: &mut Cpu, swapped: bool) {
+    c.cycles += 36;
+    c.g[V0][0] = 0x0050_0000;
+    c.mtc1(0, 1);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xea0));
+    let approach = r32(c, A0).wrapping_add(0x20);
+    c.lqc2(4, approach);
+    let z_axis = r32(c, V0);
+    c.lqc2(5, z_axis);
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+    let s20 = uv_sp(c, 0x20);
+    c.sqc2(6, s20);
+    c.lq(2, s20);
+    let s10 = uv_sp(c, 0x10);
+    c.sq(2, s10);
+    c.lqc2(3, s10);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().rsqrt(0, 3, 4, 0);
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 5, 3, Src::Q);
+    c.sqc2(5, s20);
+    c.lq(2, s20);
+    let s0 = uv_sp(c, 0);
+    c.sq(2, s0);
+    c.lqc2(3, s0);
+    let spline_side = r32(c, A0).wrapping_add(0x40);
+    c.lqc2(5, spline_side);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(3, 4);
+    c.mtc1(3, 0);
+    if swapped {
+        c.c_lt_s(1, 0);
+    } else {
+        c.c_lt_s(0, 1);
+    }
+    if !c.fcc() {
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x90)).lw(c);
+    } else {
+        c.cycles += 8;
+        c.g[AT][0] = sx(0xbf80_0000);
+        c.mtc1(1, 0);
+        c.mfc1(2, 0);
+        let s0b = uv_sp(c, 0);
+        c.lqc2(4, s0b);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        let s0c = uv_sp(c, 0);
+        c.sqc2(5, s0c);
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x90)).lw(c);
+    }
+}
+
+/// The zero-or-one branch that follows the sign probe in modes 4 and 5: the
+/// speed sign (-1 or +1 scale), 4 cycles, 2 more for the positive case.
+pub(crate) fn uv_sign_branch(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[AT][0] = 0x40a0_0000;
+    c.mtc1(1, 0);
+    let t = c.g[V0][0] == 0;
+    if !t {
+        c.cycles += 2;
+        c.g[AT][0] = 0x4170_0000;
+        c.mtc1(1, 0);
+    }
+}
+
+/// The speed scale that ends modes 4 and 5: f0 times the gp speed constant
+/// (`speed_gp`), spilled to the state's vector and the frame; the state's
+/// +0x90 selects a 5-unit or 15-unit lateral scale for the next tick.
+pub(crate) fn uv_speed_scale(c: &mut Cpu, speed_gp: u32) {
+    c.cycles += 12;
+    c.lwc1(2, r32(c, GP).wrapping_sub(speed_gp));
+    c.mul_s(0, 0, 2);
+    c.mfc1(3, 0);
+    let s0 = uv_sp(c, 0);
+    c.lqc2(4, s0);
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let s20 = uv_sp(c, 0x20);
+    c.sqc2(5, s20);
+    c.lq(2, s20);
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(0x90)).lw(c);
+    let state_vec = r32(c, A0).wrapping_add(0x10);
+    c.sq(2, state_vec);
+    let t = c.g[V1][0] == 0;
+    let s10 = uv_sp(c, 0x10);
+    c.sq(2, s10);
+    if !t {
+        c.cycles += 2;
+        c.g[AT][0] = 0x40a0_0000;
+        c.mtc1(1, 1);
+    }
+}
+
+/// `DangerMan_GetRiderDangerLevel(this, pl)` (0x1441b8, `cDangerMan::
+/// CalcAppliedDangerLevel`): the danger level applied to rider `pl`. It starts
+/// from the rider's base level (`mRiderDangerTrack[pl].baseLevel`), raised to
+/// an avalanche band when one is active near the rider, or to 1 for a
+/// tracked, unsafe zone element around it.
+pub fn danger_man_get_rider_danger_level(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x70);
+        c.g[V1][0] = 0xc;
+        frame.save(c, S1, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x60);
+        c.mult(0, A0, A1, V1); // pl * 12: the track entry stride
+        frame.save(c, S2, 0x40);
+        frame.save_ra(c, 0x30);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2); // pl * 4: Riders[pl]
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c); // mpAI
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[S2][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x70c)).lw(c); // lvl
+        c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x28)).lw(c); // rider
+        if c.g[S2][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            danger_level_search(c)?;
+        }
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        c.cycles += 6;
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The part of `DangerMan_GetRiderDangerLevel` after the base level is known
+/// to be non-zero. Sets `V0` to the result and returns (the caller runs the
+/// epilogue); an unwinding callee propagates.
+pub(crate) fn danger_level_search(c: &mut Cpu) -> Flow {
+    // rider->getPosition(): a virtual call through the rider's vtable.
+    c.cycles += 10;
+    c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x6c0)).lw(c);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6c0)); // pos (this)
+    c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x28)).lh(c);
+    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x2c)).lw(c);
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0014_4214)?;
+    c.g[S0][0] = c.g[V0][0]; // S0 = pos
+    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x708)).lw(c); // mNumActiveAvalanche
+    c.g[A0][0] = c.g[SP][0];
+    if c.g[V0][0] != 0 {
+        // Avalanche band: 3 within 1200.446 of the ground, 2 within 2999.697,
+        // else 1. Raise to the band when the level is below it.
+        c.cycles += 14;
+        fpu_load(c, 1, S0, 0);
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x20));
+        fpu_store(c, 1, SP, 0x20);
+        fpu_load(c, 0, S0, 0x4);
+        fpu_store(c, 0, SP, 0x24);
+        fpu_load(c, 1, S0, 0x8);
+        fpu_store(c, 1, SP, 0x28);
+        call_ptr(c, 0x002d_a1c0, 0x0014_4244)?; // cAvalanche_getAvalancheDataByPosition
+        fpu_load(c, 1, SP, 0x14); // ground.m_distance
+        fpu_load(c, 0, GP, 0u32.wrapping_sub(0x6e24)); // 1200.446f
+        let near = fpu_lt(c, 1, 0);
+        c.g[V1][0] = 1;
+        if !near {
+            c.cycles += 5;
+            fpu_load(c, 0, GP, 0u32.wrapping_sub(0x6e20)); // 2999.697f
+            if fpu_lt(c, 1, 0) {
+                c.g[V1][0] = 2;
+            }
+        } else {
+            c.cycles += 2;
+            c.g[V1][0] = 3;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        let band_wins = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[V1][0];
+        if band_wins {
+            return Ok(());
+        }
+    }
+    // Base level below 2: 1.
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[S2][0] as i64) < 2) as u64;
+    let below_two = c.g[V0][0] != 0;
+    c.g[V0][0] = 1;
+    if below_two {
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x704)).lw(c); // tracked element count
+    let count_nonzero = c.g[V0][0] != 0;
+    c.g[V1][0] = c.g[V0][0];
+    if !count_nonzero {
+        c.cycles += 2;
+        c.g[V0][0] = 1;
+        return Ok(());
+    }
+    c.cycles += 5;
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4)); // mTrackedDangerElems[0]
+    c.g[A1][0] = 0; // i
+    c.g[A2][0] = 2; // state of a skipped element
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x8)).lw(c);
+    loop {
+        // 'b_144334
+        c.cycles += 2;
+        if c.g[V0][0] == c.g[A2][0] {
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+        } else if danger_element_step(c) {
+            return Ok(());
+        }
+        // 'b_144348: the next element, while i < 64 and elements remain
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[A1][0] as i64) < 64) as u64;
+        let in_range = c.g[V0][0] != 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c));
+        if in_range {
+            c.cycles += 2;
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x8)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0014_42b8);
+                }
+                continue;
+            }
+        }
+        break;
+    }
+    c.cycles += 1;
+    c.g[V0][0] = 1;
+    Ok(())
+}
+
+/// One tracked danger element (`A0` points at it): the loop body of
+/// `DangerMan_GetRiderDangerLevel`, testing the element's radius against the
+/// rider's position (pos in S0). Returns true when the element returns the
+/// level (`V0 = S2`); otherwise it advances the element index `A1`.
+pub(crate) fn danger_element_step(c: &mut Cpu) -> bool {
+    c.cycles += 10;
+    fpu_load(c, 2, A0, 0xc); // z->pos.x
+    fpu_load(c, 1, S0, 0); // pos.x
+    fpu_load(c, 0, A0, 0); // z->radius
+    let dx = FpuF32(c.f[2]) - FpuF32(c.f[1]);
+    abi::set_fpr(c, 2, dx);
+    let radius_sq = FpuF32(c.f[0]) * FpuF32(c.f[0]);
+    abi::set_fpr(c, 3, radius_sq);
+    let dist_sq = FpuF32(c.f[2]) * FpuF32(c.f[2]);
+    abi::set_fpr(c, 2, dist_sq);
+    let outside_x = fpu_lt(c, 3, 2);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1)); // one tracked element left
+    if outside_x {
+        c.cycles += 1;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+        return false;
+    }
+    c.cycles += 8;
+    fpu_load(c, 1, A0, 0x10); // z->pos.y
+    fpu_load(c, 0, S0, 0x4); // pos.y
+    let dy = FpuF32(c.f[1]) - FpuF32(c.f[0]);
+    abi::set_fpr(c, 1, dy);
+    let dy_sq = FpuF32(c.f[1]) * FpuF32(c.f[1]);
+    abi::set_fpr(c, 1, dy_sq);
+    if fpu_lt(c, 3, 1) {
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+        return false;
+    }
+    c.cycles += 10;
+    let sum_xy = FpuF32(c.f[2]) + FpuF32(c.f[1]);
+    abi::set_fpr(c, 2, sum_xy);
+    fpu_load(c, 0, A0, 0x14); // z->pos.z
+    fpu_load(c, 1, S0, 0x8); // pos.z
+    let dz = FpuF32(c.f[0]) - FpuF32(c.f[1]);
+    abi::set_fpr(c, 0, dz);
+    let dz_sq = FpuF32(c.f[0]) * FpuF32(c.f[0]);
+    abi::set_fpr(c, 0, dz_sq);
+    let dist_total = FpuF32(c.f[2]) + FpuF32(c.f[0]);
+    abi::set_fpr(c, 2, dist_total);
+    let inside = fpu_lt(c, 3, 2);
+    c.g[V0][0] = c.g[S2][0];
+    if !inside {
+        return true;
+    }
+    c.cycles += 1;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+    false
+}
+
+/// `f[ft] = *(float*)(gpr[base] + off)` (`lwc1`).
+#[inline]
+pub(crate) fn fpu_load(c: &mut Cpu, ft: usize, base: usize, off: u32) {
+    let a = (c.g[base][0] as u32).wrapping_add(off);
+    let v = Addr(a).read_fpu(c);
+    abi::set_fpr(c, ft, v);
+}
+
+/// `*(float*)(gpr[base] + off) = f[ft]` (`swc1`).
+#[inline]
+pub(crate) fn fpu_store(c: &mut Cpu, ft: usize, base: usize, off: u32) {
+    let a = (c.g[base][0] as u32).wrapping_add(off);
+    let v = FpuF32(c.f[ft]);
+    Addr(a).write_fpu(c, v);
+}
+
+/// `c.lt.s f[a], f[b]` (sets the condition bit).
+#[inline]
+pub(crate) fn fpu_lt(c: &mut Cpu, a: usize, b: usize) -> bool {
+    let x = FpuF32(c.f[a]);
+    let y = FpuF32(c.f[b]);
+    abi::c_lt_s(c, x, y)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::abi::ret;
@@ -19875,6 +20455,93 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x00142a50;
+            },
+        );
+    }
+
+    #[test]
+    fn rider_handplant_state_update_velocity_matches() {
+        check(
+            ee::s01::f_00139548__generated,
+            rider_handplant_state_update_velocity,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x139548, 0);
+                const STATE: u32 = DATA + 0x100;
+                const RIDER: u32 = DATA + 0x300;
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = STATE as u64;
+                c.pc = 0x0013_9548;
+                // The zero vector (the seed vector's compare) and the Z axis.
+                put_vec(c, 0x004f_f120, [0, 0, 0, 0]);
+                put_vec(c, 0x004f_f160, [0, 0, 1.0f32.to_bits(), 0]);
+                for off in [0x71f0, 0x71ec, 0x71e8, 0x71e4, 0x71e0, 0x71dc] {
+                    put_words(c, GAME_GP - off, &[r.edge_f32()]);
+                }
+                let mode = [3u32, 4, 5, 6, 7][(seed / 4 % 5) as usize];
+                c.bus.write32(STATE + 0xa0, RIDER);
+                c.bus.write32(RIDER + 0x32c, mode);
+                let seed_vec = if seed % 4 == 0 {
+                    [0, 0, 0, 0]
+                } else {
+                    [1.0f32.to_bits(), 0, 0, 0]
+                };
+                put_vec(c, STATE + 0x10, seed_vec);
+                put_vec(
+                    c,
+                    STATE + 0x20,
+                    [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()],
+                );
+                put_vec(
+                    c,
+                    STATE + 0x40,
+                    [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()],
+                );
+                c.bus.write32(STATE + 0x8c, r.edge_f32());
+                c.bus.write32(STATE + 0x90, (seed % 3 != 0) as u32);
+            },
+        );
+    }
+
+    #[test]
+    fn danger_man_get_rider_danger_level_matches() {
+        check(
+            ee::s01::f_001441b8__generated,
+            danger_man_get_rider_danger_level,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x7a11_41b8 ^ seed as u64);
+                scramble(c, &mut r);
+                let me = DATA; // cDangerMan
+                let ai = DATA + 0x1000; // mpAI
+                let rider = DATA + 0x2000;
+                let vt = DATA + 0x3000; // rider's virtual object
+                c.pc = 0x0014_41b8;
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(seed % 3);
+                c.bus.write32(me, ai);
+                for pl in 0..3 {
+                    c.bus.write32(ai + 0x28 + 4 * pl, rider);
+                    c.bus.write32(me + 0x70c + 12 * pl, (seed + pl) % 4); // base level
+                }
+                // getPosition(): the vtable entry is the identity leaf 0x140ce0,
+                // so pos = rider + 0x6c0 (the word there is the object pointer,
+                // whose bit pattern is pos.x).
+                c.bus.write32(rider + 0x6c0, vt);
+                c.bus.write32(vt + 0x28, 0);
+                c.bus.write32(vt + 0x2c, 0x0014_0ce0);
+                c.bus.write32(rider + 0x6c4, r.f32(60.0));
+                c.bus.write32(rider + 0x6c8, r.f32(60.0));
+                c.bus.write32(me + 0x704, 1 + seed % 5); // tracked elements
+                c.bus.write32(me + 0x708, (seed / 3) % 2); // active avalanches
+                for i in 0..8u32 {
+                    let e = me + 4 + 0x1c * i;
+                    c.bus.write32(e, r.f32(40.0)); // radius
+                    c.bus.write32(e + 0x8, r.next_u32() % 3); // state
+                    c.bus.write32(e + 0xc, r.f32(60.0));
+                    c.bus.write32(e + 0x10, r.f32(60.0));
+                    c.bus.write32(e + 0x14, r.f32(60.0));
+                }
             },
         );
     }

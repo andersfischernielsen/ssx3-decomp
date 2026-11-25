@@ -359,6 +359,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0012_34d0, rider_place_at_matrix, "Rider_PlaceAtMatrix"),
     (0x0012_5eb8, player_dtor, "Player_dtor"),
+    (0x0012_8680, oc620_player_load_state, "Player_LoadState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -24069,6 +24070,20 @@ pub fn player_dtor(c: &mut Cpu) {
     });
 }
 
+/// `void Player_LoadState(void)` (0x128680): forwards to
+/// `RiderBase_LoadState` (0x111d98) in a 16-byte frame that holds `ra`.
+pub fn oc620_player_load_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(Callee {
+            addr: 0x0011_1d98,
+            f: ee::s00::f_00111d98,
+        }),
+        0x0012_8690,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -31116,6 +31131,28 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x00125eb8;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::OC620_GATE;
+    pub(crate) use crate::game::ai::ai::tests::OC620_MAGIC;
+
+    pub(crate) use crate::game::ai::ai::tests::oc620_install_fakes;
+
+    #[test]
+    fn player_load_state_matches() {
+        oc620_install_fakes();
+        check(
+            ee::s00::f_00128680__generated,
+            oc620_player_load_state,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x6201_2868 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0012_8680;
+                c.bus.write32(OC620_GATE, OC620_MAGIC);
             },
         );
     }

@@ -396,6 +396,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_char_int_get_char_data,
         "BECharInt_GetCharData",
     ),
+    (
+        0x0014_6070,
+        bne_player_int_set_rider_state_flag,
+        "BENewPlayerInt_SetRiderStateFlag",
+    ),
+    (
+        0x0014_6150,
+        bne_player_int_get_peak_flag,
+        "BENewPlayerInt_GetPeakFlag",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3838,6 +3848,207 @@ pub fn be_new_player_int_get_difficulty_counter(c: &mut Cpu) {
     })
 }
 
+/// `cBENewPlayerInterface_tempPlayers` (0x1c-byte entries; character id at
+/// +0x11) and the slot table that `BENewPlayerInt_GetSlot` reads.
+#[cfg(test)]
+pub(crate) const BNE_TEMP_PLAYERS: u32 = 0x0053_4fe0;
+
+/// `BE_GetRiderProfile(index)` (0x14a0e0).
+pub(crate) const BE_GET_RIDER_PROFILE_2: Callee = Callee {
+    addr: 0x0014_a0e0,
+    f: ee::s01::BE_GetRiderProfile,
+};
+
+/// `BENewPlayerInt_GetSlot(index)` (0x147798).
+pub(crate) const BNE_GET_SLOT: Callee = Callee {
+    addr: 0x0014_7798,
+    f: ee::s01::BENewPlayerInt_GetSlot,
+};
+
+/// `(word << shift) >> 32 & 1`: bit `32 - shift` of the word's low half, as
+/// the generated code extracts the peak flags.
+#[inline]
+pub(crate) fn bne_shifted_bit(word: u64, shift: u32) -> u64 {
+    (((word << shift) as i64) >> 32) as u64 & 1
+}
+
+/// `void cBENewPlayerInterface::setPeakLocked(this, index, kind, value)`
+/// (0x146070, `BENewPlayerInt_SetRiderStateFlag`): stores `value & 1` into
+/// bit 12 (kind 1) or bit 13 (other kinds) of the profile-library word at
+/// +0x278 of the rider's profile and character.
+pub fn bne_player_int_set_rider_state_flag(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A1][0]; // index
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A2][0]; // kind
+        frame.save(c, S2, 0x20);
+        c.g[S3][0] = c.g[A3][0]; // value
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        BE_GET_RIDER_PROFILE_2.call(c, 0x0014_609c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[S2][0] = c.g[V0][0]; // profile
+        BNE_GET_SLOT.call(c, 0x0014_60a8)?;
+        c.g[A0][0] = 0x1c;
+        c.g[V1][0] = 0x53_0000;
+        c.mult(0, V0, V0, A0); // slot * 0x1c
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4fe0));
+        c.g[A0][0] = 0x1;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x11)).lb(c); // character
+        c.g[A2][0] = c.g[A1][0];
+        if c.g[S1][0] == c.g[A0][0] {
+            c.cycles += 10;
+            c.g[V1][0] = 0xf88;
+            c.g[V0][0] = 0x9b50;
+            c.mult(0, V1, A1, V1);
+            c.mult(0, V0, S2, V0);
+            c.g[A0][0] = 0x4a_0000;
+            c.g[A1][0] = c.g[S3][0] & 0x1;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6ca8));
+            c.g[A2][0] = 0xffff_ffff_ffff_efff;
+            c.g[A1][0] <<= 12;
+        } else {
+            c.cycles += 9;
+            c.g[V1][0] = 0xf88;
+            c.g[V0][0] = 0x9b50;
+            c.mult(0, V1, A2, V1);
+            c.mult(0, V0, S2, V0);
+            c.g[A0][0] = 0x4a_0000;
+            c.g[A1][0] = c.g[S3][0] & 0x1;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6ca8));
+            c.g[A2][0] = 0xffff_ffff_ffff_dfff;
+            c.g[A1][0] <<= 13;
+        }
+        c.cycles += 13;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        let entry = c.g[V1][0] as u32;
+        c.g[V0][0] = Addr(entry.wrapping_add(0x278)).ld(c);
+        c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
+        c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
+        c.sd(entry.wrapping_add(0x278), c.g[V0][0]);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool cBENewPlayerInterface::getPeakFlag(this, index, kind, flag)`
+/// (0x146150, `BENewPlayerInt_GetPeakFlag`): with `flag` set, the rival
+/// time-challenge played bit of peak `kind` (bits 3..5 of the word at +0x278,
+/// kinds 0..2); otherwise the rival points-challenge bit (bit 0 for kind 0,
+/// bits 1..2 for kinds 1..2). Other kinds read as 0.
+pub fn bne_player_int_get_peak_flag(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A1][0]; // index
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A3][0]; // flag
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A2][0]; // kind
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        BE_GET_RIDER_PROFILE_2.call(c, 0x0014_617c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[S3][0] = c.g[V0][0]; // profile
+        BNE_GET_SLOT.call(c, 0x0014_6188)?;
+        c.g[A0][0] = 0x1c;
+        c.g[V1][0] = 0x53_0000;
+        c.mult(0, V0, V0, A0); // slot * 0x1c
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4fe0));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x11)).lb(c); // character
+        c.g[A2][0] = c.g[A1][0];
+        if c.g[S1][0] != 0 {
+            c.cycles += 2;
+            if c.g[S2][0] == 0 {
+                c.cycles += 13;
+                let entry = bne_profile_entry(c, A1);
+                c.g[V0][0] = bne_shifted_bit(Addr(entry.wrapping_add(0x278)).ld(c), 29);
+            } else {
+                c.g[V0][0] = 1;
+                c.cycles += 2;
+                if c.g[S2][0] == c.g[V0][0] {
+                    c.cycles += 13;
+                    let entry = bne_profile_entry(c, A1);
+                    c.g[V0][0] = bne_shifted_bit(Addr(entry.wrapping_add(0x278)).ld(c), 28);
+                } else {
+                    c.g[V0][0] = 2;
+                    c.cycles += 2;
+                    if c.g[S2][0] == c.g[V0][0] {
+                        c.cycles += 13;
+                        let entry = bne_profile_entry(c, A1);
+                        c.g[V0][0] = bne_shifted_bit(Addr(entry.wrapping_add(0x278)).ld(c), 27);
+                    } else {
+                        c.g[V0][0] = 0;
+                    }
+                }
+            }
+        } else {
+            c.cycles += 2;
+            if c.g[S2][0] == 0 {
+                c.cycles += 11;
+                let entry = bne_profile_entry(c, A1);
+                c.g[V0][0] = Addr(entry.wrapping_add(0x278)).lw(c) & 1;
+            } else {
+                c.g[V0][0] = 1;
+                c.cycles += 2;
+                if c.g[S2][0] == c.g[V0][0] {
+                    c.cycles += 13;
+                    let entry = bne_profile_entry(c, A1);
+                    c.g[V0][0] = bne_shifted_bit(Addr(entry.wrapping_add(0x278)).ld(c), 31);
+                } else {
+                    c.g[V0][0] = 2;
+                    c.cycles += 2;
+                    if c.g[S2][0] == c.g[V0][0] {
+                        c.cycles += 12;
+                        let entry = bne_profile_entry(c, A2);
+                        c.g[V0][0] = bne_shifted_bit(Addr(entry.wrapping_add(0x278)).ld(c), 30);
+                    } else {
+                        c.g[V0][0] = 0;
+                    }
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The profile-library entry `cBELibrary_profileLib[profile][char]` of the
+/// rider in `S3`, the character in `char_reg`, as the generated code forms
+/// it: `char * 0xf88 + profile * 0x9b50 + 0x4a6ca8`. Leaves `A0 = profile *
+/// 0x9b50` and `V0 = 0x4a6ca8` as the original does.
+pub(crate) fn bne_profile_entry(c: &mut Cpu, char_reg: usize) -> u32 {
+    c.g[V1][0] = 0xf88;
+    c.g[A0][0] = 0x9b50;
+    c.mult(0, V1, char_reg, V1);
+    c.mult(0, A0, S3, A0);
+    c.g[V0][0] = 0x4a_0000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V1][0] as u32
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5566,6 +5777,53 @@ pub(crate) mod tests {
                     c.bus.write8(0x0053_08d8 + i, r.next_u32() as u8);
                 }
                 c.bus.write32(0x0053_08d8 + 15 * 2 + 0x10, r.next_u32());
+            },
+        );
+    }
+
+    /// The slot table, the player entries and the character ids: small
+    /// slot numbers and random entry words keep every lookup in RAM.
+    pub(crate) fn bne_fixture(c: &mut Cpu, r: &mut Rng) {
+        for i in 0..0x400u32 {
+            c.bus.write32(0x0053_0000 + 4 * i, r.next_u32() % 0x40);
+        }
+        for i in 0..0x400u32 {
+            c.bus.write32(BNE_TEMP_PLAYERS + 4 * i, r.next_u32());
+        }
+    }
+
+    #[test]
+    fn bne_player_int_set_rider_state_flag_matches() {
+        check(
+            ee::s01::f_00146070__generated,
+            bne_player_int_set_rider_state_flag,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x7a11_0070 ^ seed as u64);
+                scramble(c, &mut r);
+                bne_fixture(c, &mut r);
+                c.pc = 0x0014_6070;
+                c.g[A1][0] = sx(seed % 4); // index
+                c.g[A2][0] = sx(seed % 3); // kind: 0, 1 (bit 12), 2
+                c.g[A3][0] = sx(r.next_u32()); // value
+            },
+        );
+    }
+
+    #[test]
+    fn bne_player_int_get_peak_flag_matches() {
+        check(
+            ee::s01::f_00146150__generated,
+            bne_player_int_get_peak_flag,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x7a11_0150 ^ seed as u64);
+                scramble(c, &mut r);
+                bne_fixture(c, &mut r);
+                c.pc = 0x0014_6150;
+                c.g[A1][0] = sx(seed % 4); // index
+                c.g[A2][0] = sx((seed / 2) % 4); // kind 0..3
+                c.g[A3][0] = sx(seed % 2); // flag
             },
         );
     }

@@ -638,6 +638,77 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_wipeout_state_dtor,
         "RiderWipeoutState_dtor",
     ),
+    (0x0012_8818, oc620_ai_init, "AI_Init"),
+    (
+        0x0012_8ac0,
+        oc620_ai_setup_mission_rider,
+        "AI_SetupMissionRider",
+    ),
+    (
+        0x0012_a1f0,
+        oc620_ai_is_rider_in_special_list,
+        "AI_IsRiderInSpecialList",
+    ),
+    (
+        0x0012_a4d0,
+        oc621_path_data_update_wrapper,
+        "AI_PathDataUpdate_Wrapper",
+    ),
+    (
+        0x0012_a4f0,
+        oc621_init_all_track_paths,
+        "AI_InitAllTrackPaths",
+    ),
+    (
+        0x0012_a998,
+        oc621_reset_listed_rider_render_slots,
+        "AI_ResetListedRiderRenderSlots",
+    ),
+    (
+        0x0013_04e0,
+        rider_board_press_sub_update_end,
+        "RiderBoardPressSub_UpdateEnd",
+    ),
+    (
+        0x0013_06b0,
+        rider_board_press_sub_check_switch,
+        "RiderBoardPressSub_CheckSwitch",
+    ),
+    (
+        0x0013_07b8,
+        rider_board_press_sub_check_jump,
+        "RiderBoardPressSub_CheckJump",
+    ),
+    (
+        0x0013_08d8,
+        rider_board_press_sub_check_spin,
+        "RiderBoardPressSub_CheckSpin",
+    ),
+    (
+        0x0013_1428,
+        rider_board_press_sub_finish_press,
+        "RiderBoardPressSub_FinishPress",
+    ),
+    (
+        0x0013_28b0,
+        rider_handplant_sub_enter,
+        "RiderHandplantSub_Enter",
+    ),
+    (
+        0x0013_29b0,
+        rider_handplant_control_init,
+        "RiderHandplantSub_Init",
+    ),
+    (
+        0x0013_2fb8,
+        rider_handplant_sub_play_anim,
+        "RiderHandplantSub_PlayAnim",
+    ),
+    (
+        0x0013_6268,
+        rider_uber_grind_sub_enter,
+        "RiderUberGrindSub_Enter",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -21861,6 +21932,2591 @@ pub fn rider_wipeout_state_dtor(c: &mut Cpu) {
     guest(c, |c| state_dtor_body(c, &RIDER_WIPEOUT_DTOR))
 }
 
+/// `void AI_Init(cAI* self)` (0x128818): reset the focus and danger managers,
+/// clear the AI's counters and flags, set the race state to 1, zero the
+/// per-rider word tables (`self+0x20`..`+0x70`, `+0x3c`..`+0x28`), load the
+/// animation data sources, call the hook at `self->+0xcc` (table entry
+/// +0x34, argument `+0x30` of that block as an offset into `self`), and reset
+/// the riders.
+pub fn oc620_ai_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0xa4)).lw(c);
+        Callee {
+            addr: 0x0010_3358,
+            f: ee::s00::f_00103358,
+        }
+        .call(c, 0x0012_8834)?;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0xa8)).lw(c);
+        Callee {
+            addr: 0x0010_1688,
+            f: ee::s00::f_00101688,
+        }
+        .call(c, 0x0012_883c)?;
+
+        Addr(r32(c, S0).wrapping_add(0x10)).sw(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        Addr(r32(c, S0).wrapping_add(0x14)).sw(c, 0);
+        c.g[A1][0] = 1;
+        Addr(r32(c, S0).wrapping_add(0x90)).sw(c, 0);
+        Addr(r32(c, S0).wrapping_add(0x78)).sw(c, 0);
+        Addr(r32(c, S0).wrapping_add(0x7c)).sw(c, 0);
+        Addr(r32(c, S0).wrapping_add(0x80)).sw(c, 0);
+        Addr(r32(c, S0).wrapping_add(0x84)).sw(c, 0);
+        Addr(r32(c, S0).wrapping_add(0x88)).sw(c, 0);
+        Addr(r32(c, S0).wrapping_add(0x1c)).sw(c, 0);
+        Addr(r32(c, S0).wrapping_add(0x98)).sw(c, 0);
+        Addr(r32(c, S0)).sw(c, 0);
+        Callee {
+            addr: 0x0011_3b10,
+            f: ee::s00::f_00113b10,
+        }
+        .call(c, 0x0012_8874)?;
+
+        // Loop 1: six words at self+0x3c, walking down.
+        c.g[V1][0] = 5;
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(0x3c));
+        loop {
+            c.cycles += 7;
+            Addr(r32(c, V0)).sw(c, 0);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            let more = (c.g[V1][0] as i64) >= 0;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0012_8880);
+            }
+        }
+
+        c.cycles += 5;
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(0x48));
+        c.g[S1][0] = sx(r32(c, S0).wrapping_add(0x20));
+        c.g[V1][0] = 0;
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(0x70));
+        // Loop 2: one word at self+0x70 (the counter starts at 0).
+        loop {
+            c.cycles += 7;
+            Addr(r32(c, V0)).sw(c, 0);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            let more = (c.g[V1][0] as i64) >= 0;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0012_88b0);
+            }
+        }
+
+        // Loop 3: five words at (self+0x48)+0x10, walking down.
+        c.cycles += 3;
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x10));
+        c.g[V1][0] = 4;
+        loop {
+            c.cycles += 7;
+            Addr(r32(c, V0)).sw(c, 0);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            let more = (c.g[V1][0] as i64) >= 0;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0012_88d8);
+            }
+        }
+
+        c.cycles += 13;
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0012_b280,
+            f: ee::s00::f_0012b280,
+        }
+        .call(c, 0x0012_88fc)?;
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0xcc)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x30)).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x34)).lw(c);
+        let hook = r32(c, V1);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        call_ptr(c, hook, 0x0012_8910)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        Callee {
+            addr: 0x0012_97c8,
+            f: ee::s00::f_001297c8,
+        }
+        .call(c, 0x0012_891c)?;
+
+        // Loop 4: two words at self+0x24 and self+0x20.
+        c.g[V0][0] = sx(r32(c, S1).wrapping_add(4));
+        c.g[V1][0] = 1;
+        loop {
+            c.cycles += 7;
+            Addr(r32(c, V0)).sw(c, 0);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            let more = (c.g[V1][0] as i64) >= 0;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0012_8928);
+            }
+        }
+
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void AI_SetupMissionRider(cAI* self)` (0x128ac0), named
+/// `cAI_reinitMissionRiders` in the reference: creates the mission riders
+/// (`AI_CreateMissionRider`, a no-op once they are loaded), then resets the
+/// riders (`AI_ResetRiders`, 0x1297c8) for `self` with mode 0.
+pub fn oc620_ai_setup_mission_rider(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0012_9c00,
+            f: ee::s00::f_00129c00,
+        }
+        .call(c, 0x0012_8ad4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        Callee {
+            addr: 0x0012_97c8,
+            f: ee::s00::f_001297c8,
+        }
+        .call(c, 0x0012_8ae0)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `int func_0012A1F0(cAI* ai, int idx)` (0x12a1f0), named
+/// `AI_IsRiderInSpecialList` here: whether the character `iCharacters[idx]`
+/// of `SSXApp->GameModeMan` is one of the six ranked characters
+/// (`cGameModeMan_iCharRank`, six words at 0x536708). Returns 1 or 0 in v0.
+pub fn oc620_ai_is_rider_in_special_list(c: &mut Cpu) {
+    c.cycles += 10;
+    c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+    c.g[A1][0] = sx(r32(c, A1) << 2);
+    c.g[V1][0] = 0x0053_0000;
+    c.g[A2][0] = 0;
+    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0xc0)).lw(c);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x6708));
+    c.g[A3][0] = 1;
+    c.g[A0][0] = 5;
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+    c.g[A1][0] = Addr(r32(c, V0).wrapping_add(0x18)).lw(c);
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+        c.g[V0][0] = c.g[A1][0] ^ c.g[V0][0];
+        let more = (c.g[A0][0] as i64) >= 0;
+        if c.g[V0][0] == 0 {
+            c.g[A2][0] = c.g[A3][0];
+        }
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0012_a218);
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A2][0];
+    ret(c);
+}
+
+/// The AI's path data (`gPaths`, 0x4d33a0): the global at `0x4d0000 + 0x33a0`.
+pub(crate) const OC621_GPATHS: u32 = 0x004d_33a0;
+
+/// `Rider_InitTrackPaths` (0x112180).
+pub(crate) const OC621_RIDER_INIT_TRACK_PATHS: Callee = Callee {
+    addr: 0x0011_2180,
+    f: ee::s00::f_00112180,
+};
+
+/// `Rider_SetSubState` (0x11fec8).
+#[allow(dead_code)]
+pub(crate) const OC621_RIDER_SET_SUB_STATE: Callee = Callee {
+    addr: 0x0011_fec8,
+    f: ee::s00::f_0011fec8,
+};
+
+/// `Rider_SetMainState` (0x11fe78).
+#[allow(dead_code)]
+pub(crate) const OC621_RIDER_SET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe78,
+    f: ee::s00::f_0011fe78,
+};
+
+/// `Rider_Place` (0x11d660).
+#[allow(dead_code)]
+pub(crate) const OC621_RIDER_PLACE: Callee = Callee {
+    addr: 0x0011_d660,
+    f: ee::s00::f_0011d660,
+};
+
+/// The address `base + off` as a 32-bit guest pointer.
+#[inline(always)]
+pub(crate) fn oc621_at(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// `void AI_PathDataUpdate_Wrapper(void)` (0x12a4d0): forwards to the
+/// path-file loaded check with the global path data (`gPaths`). The 8 cycles
+/// are the wrapper's own, then the callee's.
+pub fn oc621_path_data_update_wrapper(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(OC621_GPATHS);
+        call_ptr(c, 0x0026_ade8, 0x0012_a4e4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AI_InitAllTrackPaths(AI* self)` (0x12a4f0): re-initialises the track
+/// paths of every allocated rider (`self->Riders[0..count]`, count at +0x78,
+/// array at +0x28), each through `Rider_InitTrackPaths(rider, 0)`.
+pub fn oc621_init_all_track_paths(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save(c, S0, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(oc621_at(c.g[S2][0], 0x78));
+        let none = (c.g[V0][0] as i64) <= 0;
+        c.g[S1][0] = 0;
+        if !none {
+            c.cycles += 3;
+            c.g[S0][0] = sx(oc621_at(c.g[S2][0], 0x28));
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            loop {
+                c.cycles += 8;
+                c.g[A1][0] = 0;
+                c.g[S1][0] = sx(oc621_at(c.g[S1][0], 1));
+                c.g[S0][0] = sx(oc621_at(c.g[S0][0], 4));
+                OC621_RIDER_INIT_TRACK_PATHS.call(c, 0x0012_a530)?;
+                c.g[V0][0] = c.lw(oc621_at(c.g[S2][0], 0x78));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0012_a520);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AI_ResetListedRiderRenderSlots(AI* self)` (0x12a998): for each listed
+/// computer (`count` entries at self+0x48, count at +0x80; the rider is at
+/// +0x18 of each entry), a rider that is not safe to render while its AI index
+/// is in the special list gets its render flag cleared and its safe-render tick
+/// set to the current frame count + 4.
+pub fn oc621_reset_listed_rider_render_slots(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S0, 0x50);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(oc621_at(c.g[S3][0], 0x80));
+        let none = (c.g[V0][0] as i64) <= 0;
+        c.g[S2][0] = 0;
+        if !none {
+            c.cycles += 3;
+            c.g[S4][0] = u64::MAX;
+            c.g[S1][0] = sx(oc621_at(c.g[S3][0], 0x48));
+            loop {
+                'entry: {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[A1][0] = c.lw(oc621_at(c.g[V0][0], 0x18));
+                    c.g[V1][0] = c.lw(oc621_at(c.g[A1][0], 0x884));
+                    if c.g[V1][0] == 0 {
+                        c.g[V0][0] = c.lw(oc621_at(c.g[S3][0], 0x80));
+                        break 'entry;
+                    }
+                    'hit: {
+                        c.cycles += 11;
+                        c.g[V1][0] = c.lw(oc621_at(c.g[A1][0], 0x6c0));
+                        c.g[A1][0] = sx(oc621_at(c.g[A1][0], 0x6c0));
+                        c.g[A0][0] = c.lh(oc621_at(c.g[V1][0], 0x38));
+                        c.g[V0][0] = c.lw(oc621_at(c.g[V1][0], 0x3c));
+                        let target = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx(oc621_at(c.g[A1][0], c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x0012_a9fc)?;
+                        c.g[A1][0] = c.g[V0][0];
+                        c.g[A0][0] = c.g[S3][0];
+                        call_ptr(c, 0x0012_a1f0, 0x0012_aa08)?;
+                        let not_special = c.g[V0][0] == 0;
+                        c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                        if not_special {
+                            break 'hit;
+                        }
+                        c.cycles += 13;
+                        c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+                        c.g[V0][0] = c.lw(oc621_at(c.g[V1][0], 0x18));
+                        c.sw(oc621_at(c.g[V0][0], 0x888), c.g[S4][0]);
+                        c.sw(oc621_at(c.g[V0][0], 0x884), 0);
+                        c.g[V1][0] = c.lw(oc621_at(c.g[A1][0], 0x10d8));
+                        c.g[S0][0] = c.lw(c.g[S1][0] as u32);
+                        c.g[A0][0] = c.lh(oc621_at(c.g[V1][0], 0x390));
+                        c.g[V0][0] = c.lw(oc621_at(c.g[V1][0], 0x394));
+                        let frames = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx(oc621_at(c.g[A1][0], c.g[A0][0] as u32));
+                        call_ptr(c, frames, 0x0012_aa38)?;
+                        c.g[V1][0] = c.lw(oc621_at(c.g[S0][0], 0x18));
+                        c.g[V0][0] = sx(oc621_at(c.g[V0][0], 4));
+                        c.sw(oc621_at(c.g[V1][0], 0x888), c.g[V0][0]);
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw(oc621_at(c.g[S3][0], 0x80));
+                }
+                c.cycles += 4;
+                c.g[S2][0] = sx(oc621_at(c.g[S2][0], 1));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S1][0] = sx(oc621_at(c.g[S1][0], 4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0012_a9d0);
+                }
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AI_LoadTrackPaths(AI* self, char* filename)` (0x12a2b0), the
+/// `cAI_swaploadPathFile` of the reference: purges the global path data, loads
+/// `filename` into it, then re-initialises each allocated rider's track paths.
+///
+/// Not in `OVERRIDES`: its callee `cPathSys_loadPaths` (0x26ada8) has no
+/// override slot, so the file loader cannot be faked in a test, and the port
+/// is left unverified until that loader is ported.
+#[allow(dead_code)]
+pub fn oc621_load_track_paths(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S3, 0x10);
+        c.g[S0][0] = sx(OC621_GPATHS);
+        frame.save(c, S1, 0x30);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[S2][0] = 0;
+        call_ptr(c, 0x0026_af00, 0x0012_a2e4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0026_ada8, 0x0012_a2f0)?;
+        c.g[V0][0] = c.lw(oc621_at(c.g[S3][0], 0x78));
+        let none = (c.g[V0][0] as i64) <= 0;
+        c.g[S0][0] = sx(oc621_at(c.g[S3][0], 0x28));
+        if !none {
+            c.cycles += 1;
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            loop {
+                c.cycles += 8;
+                c.g[A1][0] = 0;
+                c.g[S2][0] = sx(oc621_at(c.g[S2][0], 1));
+                c.g[S0][0] = sx(oc621_at(c.g[S0][0], 4));
+                OC621_RIDER_INIT_TRACK_PATHS.call(c, 0x0012_a310)?;
+                c.g[V0][0] = c.lw(oc621_at(c.g[S3][0], 0x78));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0012_a300);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AI_PlaceRidersAtPathStart(AI* self, int which)` (0x12a560): finds the
+/// first track path with a finish line marker (`cTrackPath_getFinishLineParam`
+/// != -1). The riders (`which` = -1 for all, else that index) are then stood
+/// one-by-one at the 1000-unit approach to the marker, facing along the
+/// path, and the search returns.
+///
+/// Not in `OVERRIDES`: the fixture only reaches the no-marker branch (the
+/// finish-line getter's list walk needs a populated path table), so the port
+/// is kept unverified for the placement branch.
+#[allow(dead_code)]
+pub fn oc621_place_riders_at_path_start(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xd0);
+        c.g[V0][0] = 0x004d_0000;
+        frame.save(c, S5, 0x60);
+        frame.save(c, S0, 0xb0);
+        c.g[S5][0] = c.g[V0][0];
+        frame.save(c, S3, 0x80);
+        c.g[V0][0] = sx(OC621_GPATHS);
+        frame.save(c, S4, 0x70);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0xa0);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S6, 0x50);
+        frame.save_ra(c, 0x40);
+        frame.save_fpr(c, 20, 0xc0);
+        frame.save(c, S2, 0x90);
+        c.g[S2][0] = c.lw(oc621_at(c.g[V0][0], 0x10));
+        let none = (c.g[S2][0] as i64) <= 0;
+        c.g[S0][0] = 0;
+        'outer: {
+            'inner: {
+                if none {
+                    break 'inner;
+                }
+                c.cycles += 2;
+                c.g[A0][0] = sx(oc621_at(c.g[S5][0], 0x33a0));
+                loop {
+                    'node: {
+                        c.cycles += 12;
+                        c.g[A1][0] = c.g[S0][0];
+                        call_ptr(c, 0x0026_af70, 0x0012_a5b8)?;
+                        c.g[S1][0] = c.g[V0][0];
+                        c.g[A0][0] = c.g[S1][0];
+                        call_ptr(c, 0x0026_a138, 0x0012_a5c4)?;
+                        c.mov_s(12, 0);
+                        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                        c.mtc1(1, 0);
+                        c.c_eq_s(12, 0);
+                        if c.fcc() {
+                            c.g[S0][0] = sx(oc621_at(c.g[S0][0], 1));
+                            break 'node;
+                        }
+                        // The marker is ahead: approach point 1000 units back.
+                        c.cycles += 8;
+                        c.g[AT][0] = 0x447a_0000;
+                        c.mtc1(1, 0);
+                        c.mtc1(0, 1);
+                        c.sub_s(20, 12, 0);
+                        c.c_lt_s(20, 1);
+                        if c.fcc() {
+                            c.mov_s(20, 1);
+                        }
+                        c.cycles += 13;
+                        c.g[A0][0] = sp(c) as u64;
+                        c.g[A1][0] = c.g[S1][0];
+                        c.g[A2][0] = 0;
+                        c.g[S2][0] = 0;
+                        call_ptr(c, 0x0026_ab20, 0x0012_a614)?;
+                        c.g[A1][0] = c.g[S1][0];
+                        c.mov_s(12, 20);
+                        c.g[A0][0] = sx(oc621_at(sp(c) as u64, 0x10));
+                        c.g[A2][0] = 0;
+                        call_ptr(c, 0x0026_ab20, 0x0012_a628)?;
+                        c.g[V0][0] = c.lw(oc621_at(c.g[S3][0], 0x78));
+                        let no_riders = (c.g[V0][0] as i64) <= 0;
+                        c.g[S6][0] = sx(oc621_at(sp(c) as u64, 0x10));
+                        if no_riders {
+                            break 'inner;
+                        }
+                        c.cycles += 5;
+                        c.g[AT][0] = 0x3f80_0000;
+                        c.mtc1(1, 20);
+                        c.g[S5][0] = u64::MAX;
+                        c.g[S1][0] = 0;
+                        c.g[S0][0] = sx(oc621_at(c.g[S3][0], 0x28));
+                        loop {
+                            'rider: {
+                                'pick: {
+                                    c.cycles += 2;
+                                    if c.g[S4][0] == c.g[S5][0] {
+                                        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                                        break 'pick;
+                                    }
+                                    c.cycles += 2;
+                                    if c.g[S4][0] != c.g[S2][0] {
+                                        c.g[V0][0] = c.lw(oc621_at(c.g[S3][0], 0x78));
+                                        break 'rider;
+                                    }
+                                    c.cycles += 1;
+                                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                                }
+                                'place: {
+                                    'set: {
+                                        c.cycles += 26;
+                                        c.g[A1][0] = 0;
+                                        OC621_RIDER_SET_SUB_STATE.call(c, 0x0012_a664)?;
+                                        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                                        c.g[A1][0] = 0;
+                                        OC621_RIDER_SET_MAIN_STATE.call(c, 0x0012_a670)?;
+                                        c.lqc2(3, sp(c));
+                                        c.lqc2(4, oc621_at(sp(c) as u64, 0x10));
+                                        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                                        c.sqc2(5, oc621_at(sp(c) as u64, 0x30));
+                                        c.g[A0][0] = sx(oc621_at(c.g[S3][0], 0x28));
+                                        c.lq(2, oc621_at(sp(c) as u64, 0x30));
+                                        c.sq(2, oc621_at(sp(c) as u64, 0x20));
+                                        c.lqc2(3, oc621_at(sp(c) as u64, 0x20));
+                                        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                                        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                        c.vu0().sqrt(4, 0);
+                                        c.vu0().waitq();
+                                        c.cfc2(3, 22);
+                                        c.mtc1(3, 0);
+                                        c.c_lt_s(20, 0);
+                                        if !c.fcc() {
+                                            c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                                            break 'set;
+                                        }
+                                        c.cycles += 9;
+                                        c.mfc1(2, 0);
+                                        c.qmtc2(2, 3);
+                                        c.vu0().div(0, 3, 3, 0);
+                                        c.lqc2(4, oc621_at(sp(c) as u64, 0x20));
+                                        c.vu0().waitq();
+                                        c.vu0().mul(0b1111, 5, 4, Src::Q);
+                                        c.sqc2(5, oc621_at(sp(c) as u64, 0x20));
+                                        c.g[V0][0] = sx(oc621_at(c.g[A0][0], c.g[S1][0] as u32));
+                                        break 'place;
+                                    }
+                                    c.cycles += 4;
+                                    c.lq(2, oc621_at(c.g[V1][0], 0x1b0));
+                                    c.sq(2, oc621_at(sp(c) as u64, 0x20));
+                                    c.sq(2, oc621_at(sp(c) as u64, 0x30));
+                                    c.g[V0][0] = sx(oc621_at(c.g[A0][0], c.g[S1][0] as u32));
+                                }
+                                c.cycles += 7;
+                                c.mtc1(0, 12);
+                                c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                                c.g[A1][0] = c.g[S6][0];
+                                c.g[A2][0] = sx(oc621_at(sp(c) as u64, 0x20));
+                                c.g[A3][0] = 5;
+                                OC621_RIDER_PLACE.call(c, 0x0012_a710)?;
+                                c.g[V0][0] = c.lw(oc621_at(c.g[S3][0], 0x78));
+                            }
+                            c.cycles += 5;
+                            c.g[S2][0] = sx(oc621_at(c.g[S2][0], 1));
+                            c.g[S1][0] = sx(oc621_at(c.g[S1][0], 4));
+                            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            let more = c.g[V0][0] != 0;
+                            c.g[S0][0] = sx(oc621_at(c.g[S0][0], 4));
+                            if !more {
+                                c.cycles += 2;
+                                frame.restore(c, S0, 0xb0);
+                                break 'outer;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0012_a648);
+                            }
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[A0][0] = sx(oc621_at(c.g[S5][0], 0x33a0));
+                    if !more {
+                        break 'inner;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0012_a5b0);
+                    }
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0xb0);
+        }
+        c.cycles += 10;
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.restore_fpr(c, 20, 0xc0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cBoardPressControl_handleExitState(self, in)` (0x1304e0): the board press's
+/// per-frame exit step. On the two press anims (33 and 25) with the slew past
+/// zero it plays the flip anim for a press beyond +-0.5 and resets the slew
+/// target; otherwise it ends a press that is still pending, leaves the
+/// railslide orientation and picks the control state from the motion state.
+#[allow(unreachable_code)]
+pub fn rider_board_press_sub_update_end(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_13069c: {
+            'b_130698: {
+                'b_130620: {
+                    'b_130520: {
+                        c.cycles += 14;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.g[S0][0] = c.g[A0][0];
+                        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                        c.g[S1][0] = c.g[A1][0];
+                        c.g[A1][0] = 0x2;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        c.g[RA][0] = sx(0x00130508);
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+                        call_ptr(c, 0x00312aa0, 0x00130508)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0x21;
+                        let t = c.g[A0][0] == c.g[A1][0];
+                        c.g[V0][0] = 0x19;
+                        if t {
+                            break 'b_130520;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[A0][0] != c.g[V0][0];
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                            if t {
+                                break 'b_130620;
+                            } else {
+                                break 'b_130520;
+                            }
+                        }
+                    }
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    c.mtc1(0, 1);
+                    c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x268));
+                    c.c_lt_s(1, 0);
+                    let t = !c.fcc();
+                    c.g[V1][0] = c.g[V0][0];
+                    if t {
+                        break 'b_130620;
+                    } else {
+                        'b_130594: {
+                            'b_130574: {
+                                c.cycles += 12;
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x76a4));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 26);
+                                c.g[AT][0] = 0xffffffffbf000000;
+                                c.mtc1(1, 1);
+                                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+                                c.mtc1(2, 0);
+                                c.cvt_s_w(0, 0);
+                                c.mul_s(2, 0, 2);
+                                c.c_lt_s(2, 1);
+                                let t = !c.fcc();
+
+                                if t {
+                                    break 'b_130574;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[A0][0] == c.g[A1][0];
+
+                                    if t {
+                                        break 'b_130594;
+                                    } else {
+                                        break 'b_130574;
+                                    }
+                                }
+                            }
+                            c.cycles += 6;
+                            c.g[AT][0] = 0x3f000000;
+                            c.mtc1(1, 0);
+                            c.c_lt_s(0, 2);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x19;
+                            if t {
+                                break 'b_130698;
+                            } else {
+                                c.cycles += 2;
+                                if c.g[A0][0] != c.g[V0][0] {
+                                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                    break 'b_13069c;
+                                } else {
+                                    break 'b_130594;
+                                }
+                            }
+                        }
+                        'b_1305f0: {
+                            'b_1305cc: {
+                                c.cycles += 5;
+                                c.mtc1(0, 0);
+                                c.c_lt_s(2, 0);
+                                let t = !c.fcc();
+                                c.g[A1][0] = 0x20;
+                                if t {
+                                    break 'b_1305cc;
+                                } else {
+                                    c.cycles += 9;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                    c.g[AT][0] = 0xffffffffbf800000;
+                                    c.mtc1(1, 12);
+                                    c.g[A2][0] = 0u64;
+                                    c.g[RA][0] = sx(0x001305c0);
+                                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+                                    call_ptr(c, 0x003128e8, 0x001305c0)?;
+                                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                    let t = true;
+                                    c.g[V0][0] = 0x2;
+                                    if t {
+                                        break 'b_1305f0;
+                                    } else {
+                                        break 'b_1305cc;
+                                    }
+                                }
+                            }
+                            c.cycles += 9;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                            c.g[A1][0] = 0x18;
+                            c.g[AT][0] = 0xffffffffbf800000;
+                            c.mtc1(1, 12);
+                            c.g[A2][0] = 0u64;
+                            c.g[RA][0] = sx(0x001305e8);
+                            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+                            call_ptr(c, 0x003128e8, 0x001305e8)?;
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                            c.g[V0][0] = 0x1;
+                            break 'b_1305f0;
+                        }
+                        c.cycles += 12;
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x330), c.g[V0][0]);
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x76a0));
+                        c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x300));
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 1);
+                        c.add_s(0, 0, 0);
+                        c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x270));
+                        c.mul_s(0, 0, 2);
+                        c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x26c));
+                        let t = true;
+                        c.sw(c.g[S0][0] as u32, 0u64);
+                        if t {
+                            break 'b_130698;
+                        } else {
+                            break 'b_130620;
+                        }
+                    }
+                }
+                'b_13064c: {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x330));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+
+                    if t {
+                        break 'b_13064c;
+                    } else {
+                        c.cycles += 6;
+                        c.g[RA][0] = sx(0x0013063c);
+                        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x790));
+                        Callee {
+                            addr: 0x00119a38,
+                            f: ee::s00::f_00119a38,
+                        }
+                        .call(c, 0x0013063c)?;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        c.mov_s(12, 0);
+                        c.g[RA][0] = sx(0x0013064c);
+                        c.g[A1][0] = 0x1;
+                        Callee {
+                            addr: 0x0010e098,
+                            f: ee::s00::f_0010e098,
+                        }
+                        .call(c, 0x0013064c)?;
+                        break 'b_13064c;
+                    }
+                }
+                'b_130684: {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x00130654);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    Callee {
+                        addr: 0x0011fe98,
+                        f: ee::s00::f_0011fe98,
+                    }
+                    .call(c, 0x00130654)?;
+                    c.g[V1][0] = 0x4;
+                    let t = c.g[V0][0] != c.g[V1][0];
+                    c.g[A1][0] = 0u64;
+                    if t {
+                        break 'b_130684;
+                    } else {
+                        c.cycles += 9;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x77c));
+                        c.g[RA][0] = sx(0x00130670);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2b0));
+                        call_ptr(c, 0x001326c8, 0x00130670)?;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        c.g[RA][0] = sx(0x0013067c);
+                        c.g[A1][0] = 0x7;
+                        Callee {
+                            addr: 0x0011fec8,
+                            f: ee::s00::f_0011fec8,
+                        }
+                        .call(c, 0x0013067c)?;
+                        let t = true;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        if t {
+                            break 'b_13069c;
+                        } else {
+                            break 'b_130684;
+                        }
+                    }
+                }
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x0013068c);
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                Callee {
+                    addr: 0x00115640,
+                    f: ee::s00::f_00115640,
+                }
+                .call(c, 0x0013068c)?;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                c.g[RA][0] = sx(0x00130698);
+                c.g[A1][0] = 0u64;
+                Callee {
+                    addr: 0x0011fec8,
+                    f: ee::s00::f_0011fec8,
+                }
+                .call(c, 0x00130698)?;
+                break 'b_130698;
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            break 'b_13069c;
+        }
+        c.cycles += 4;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `cBoardPressControl_checkForFakie(self)` (0x1306b0): the fakie check. Ends a
+/// press on a ground fakie switch, plays the matching anim and sets the press
+/// mode, or returns 0 when the rider's state does not allow it.
+#[allow(unreachable_code)]
+pub fn rider_board_press_sub_check_switch(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1307a8: {
+            'b_1307a4: {
+                'b_1307a0: {
+                    'b_130798: {
+                        c.cycles += 13;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                        c.g[A1][0] = 0x2;
+                        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.g[S0][0] = c.g[A0][0];
+                        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        c.g[RA][0] = sx(0x001306d4);
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+                        call_ptr(c, 0x00312aa0, 0x001306d4)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        c.g[V0][0] = 0x17;
+                        let t = c.g[V1][0] == c.g[V0][0];
+                        c.g[V0][0] = 0x1f;
+                        if t {
+                            break 'b_130798;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x25));
+                            if t {
+                                break 'b_130798;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[V0][0] = 0u64;
+                                if t {
+                                    break 'b_1307a4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = 0x1d;
+                                    let t = c.g[V1][0] == c.g[V0][0];
+                                    c.g[V0][0] = 0x1e;
+                                    if t {
+                                        break 'b_1307a0;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V1][0] == c.g[V0][0];
+                                        c.g[V0][0] = 0u64;
+                                        if t {
+                                            break 'b_1307a4;
+                                        } else {
+                                            c.cycles += 4;
+                                            c.g[RA][0] = sx(0x00130714);
+                                            c.g[A0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                            Callee {
+                                                addr: 0x0011fe98,
+                                                f: ee::s00::f_0011fe98,
+                                            }
+                                            .call(c, 0x00130714)?;
+                                            let t = c.g[V0][0] != 0u64;
+                                            c.g[V0][0] = 0u64;
+                                            if t {
+                                                break 'b_1307a4;
+                                            } else {
+                                                c.cycles += 7;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                                                c.mtc1(0, 1);
+                                                c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x2dc));
+                                                c.c_eq_s(0, 1);
+                                                if !c.fcc() {
+                                                    c.lq(
+                                                        16,
+                                                        (c.g[SP][0] as u32).wrapping_add(0x20),
+                                                    );
+                                                    break 'b_1307a8;
+                                                } else {
+                                                    c.cycles += 4;
+                                                    c.g[RA][0] = sx(0x00130740);
+                                                    Callee {
+                                                        addr: 0x00114cc0,
+                                                        f: ee::s00::f_00114cc0,
+                                                    }
+                                                    .call(c, 0x00130740)?;
+                                                    let t = c.g[V0][0] == 0u64;
+                                                    c.g[S1][0] = 0x1;
+                                                    if t {
+                                                        break 'b_1307a0;
+                                                    } else {
+                                                        'b_13077c: {
+                                                            c.cycles += 4;
+                                                            c.g[V1][0] = c.lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x14));
+                                                            c.g[V0][0] = c.lw((c.g[V1][0] as u32)
+                                                                .wrapping_add(0x330));
+                                                            let t = c.g[V0][0] != c.g[S1][0];
+                                                            c.g[A0][0] = c.lw((c.g[V1][0] as u32)
+                                                                .wrapping_add(0x784));
+                                                            if t {
+                                                                break 'b_13077c;
+                                                            } else {
+                                                                c.cycles += 9;
+                                                                c.g[A1][0] = 0x17;
+                                                                c.g[AT][0] = 0xffffffffbf800000;
+                                                                c.mtc1(1, 12);
+                                                                c.g[RA][0] = sx(0x0013076c);
+                                                                c.g[A2][0] = 0u64;
+                                                                call_ptr(
+                                                                    c, 0x003128e8, 0x0013076c,
+                                                                )?;
+                                                                c.g[V1][0] = c
+                                                                    .lw((c.g[S0][0] as u32)
+                                                                        .wrapping_add(0x14));
+                                                                c.g[V0][0] = 0x2;
+                                                                let t = true;
+                                                                c.sw(
+                                                                    (c.g[V1][0] as u32)
+                                                                        .wrapping_add(0x330),
+                                                                    c.g[V0][0],
+                                                                );
+                                                                if t {
+                                                                    break 'b_130798;
+                                                                } else {
+                                                                    break 'b_13077c;
+                                                                }
+                                                            }
+                                                        }
+                                                        c.cycles += 7;
+                                                        c.g[A1][0] = 0x1f;
+                                                        c.g[AT][0] = 0xffffffffbf800000;
+                                                        c.mtc1(1, 12);
+                                                        c.g[RA][0] = sx(0x00130790);
+                                                        c.g[A2][0] = 0u64;
+                                                        call_ptr(c, 0x003128e8, 0x00130790)?;
+                                                        c.g[V1][0] = c
+                                                            .lw((c.g[S0][0] as u32)
+                                                                .wrapping_add(0x14));
+                                                        c.sw(
+                                                            (c.g[V1][0] as u32).wrapping_add(0x330),
+                                                            c.g[S1][0],
+                                                        );
+                                                        break 'b_130798;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        break 'b_1307a4;
+                    } else {
+                        break 'b_1307a0;
+                    }
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0u64;
+                break 'b_1307a4;
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            break 'b_1307a8;
+        }
+        c.cycles += 4;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `cBoardPressControl_checkForOllie(self, cmd)` (0x1307b8): latch the ollie
+/// button (bit 0x20000 of the command word) and, when it is released while the
+/// press is held, end the press and launch the rider into the air.
+#[allow(unreachable_code)]
+pub fn rider_board_press_sub_check_jump(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1307e4: {
+            c.cycles += 9;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.g[A2][0] = 0x20000;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+            c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
+            let t = c.g[V0][0] == 0u64;
+            c.g[S0][0] = c.g[A0][0];
+            if t {
+                break 'b_1307e4;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0x1;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                break 'b_1307e4;
+            }
+        }
+        'b_1307fc: {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            let t = c.g[V0][0] == 0u64;
+            c.g[V1][0] = 0u64;
+            if t {
+                break 'b_1307fc;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
+                c.g[V1][0] = (c.g[V0][0] < 0x1u64) as u64;
+                break 'b_1307fc;
+            }
+        }
+        'b_1308c0: {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+            c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x280));
+            c.abs_s(20, 0);
+            let t = c.g[V1][0] == 0u64;
+            c.g[V0][0] = 0u64;
+            if t {
+                break 'b_1308c0;
+            } else {
+                'b_130870: {
+                    'b_130850: {
+                        c.cycles += 8;
+                        c.g[RA][0] = sx(0x00130818);
+                        c.g[A0][0] = c.g[S0][0];
+                        Callee {
+                            addr: 0x00131428,
+                            f: ee::s00::f_00131428,
+                        }
+                        .call(c, 0x00130818)?;
+                        c.g[AT][0] = 0x3f000000;
+                        c.mtc1(1, 0);
+                        c.c_lt_s(0, 20);
+                        let t = !c.fcc();
+                        c.g[A1][0] = 0x23;
+                        if t {
+                            break 'b_130850;
+                        } else {
+                            c.cycles += 8;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                            c.g[AT][0] = 0xffffffffbf800000;
+                            c.mtc1(1, 12);
+                            c.g[A2][0] = 0u64;
+                            c.g[RA][0] = sx(0x00130848);
+                            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+                            call_ptr(c, 0x003128e8, 0x00130848)?;
+                            let t = true;
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                            if t {
+                                break 'b_130870;
+                            } else {
+                                break 'b_130850;
+                            }
+                        }
+                    }
+                    c.cycles += 8;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    c.g[A1][0] = 0x1b;
+                    c.g[AT][0] = 0xffffffffbf800000;
+                    c.mtc1(1, 12);
+                    c.g[A2][0] = 0u64;
+                    c.g[RA][0] = sx(0x0013086c);
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+                    call_ptr(c, 0x003128e8, 0x0013086c)?;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    break 'b_130870;
+                }
+                'b_130888: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x328));
+                    let t = c.g[V0][0] == 0u64;
+
+                    if t {
+                        break 'b_130888;
+                    } else {
+                        c.cycles += 3;
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x328), 0u64);
+                        c.g[RA][0] = sx(0x00130888);
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        Callee {
+                            addr: 0x00116930,
+                            f: ee::s00::f_00116930,
+                        }
+                        .call(c, 0x00130888)?;
+                        break 'b_130888;
+                    }
+                }
+                c.cycles += 14;
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 12);
+                c.g[RA][0] = sx(0x00130898);
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                Callee {
+                    addr: 0x00114298,
+                    f: ee::s00::f_00114298,
+                }
+                .call(c, 0x00130898)?;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                c.g[RA][0] = sx(0x001308a4);
+                c.g[A1][0] = 0x1;
+                Callee {
+                    addr: 0x0011fe78,
+                    f: ee::s00::f_0011fe78,
+                }
+                .call(c, 0x001308a4)?;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                c.g[RA][0] = sx(0x001308b0);
+                c.g[A1][0] = 0x5;
+                Callee {
+                    addr: 0x0011fec8,
+                    f: ee::s00::f_0011fec8,
+                }
+                .call(c, 0x001308b0)?;
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                c.g[RA][0] = sx(0x001308bc);
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x410));
+                call_ptr(c, 0x00294170, 0x001308bc)?;
+                c.g[V0][0] = 0x1;
+                break 'b_1308c0;
+            }
+        }
+        c.cycles += 5;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `cBoardPressControl_checkForPivot(self, in)` (0x1308d8): the pivot check.
+/// Turns the stick into a board-press angle, slews it toward the pivot target
+/// and starts the pivot anim (or the spin, with the Q-register VU0 dot products)
+/// when the press passes the threshold.
+#[allow(unreachable_code)]
+pub fn rider_board_press_sub_check_spin(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_130948: {
+            c.cycles += 27;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x769c));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.swc1(23, (c.g[SP][0] as u32).wrapping_add(0x48));
+            c.g[S1][0] = c.g[A0][0];
+            c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x38));
+            c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = sx((c.g[V0][0] as u32) << 20);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 26);
+            c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 26) as u32);
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+            c.mtc1(3, 1);
+            c.cvt_s_w(1, 1);
+            c.mtc1(2, 0);
+            c.cvt_s_w(0, 0);
+            c.mul_s(20, 1, 2);
+            c.mul_s(21, 0, 2);
+            c.abs_s(0, 20);
+            c.abs_s(3, 21);
+            c.c_lt_s(0, 3);
+            let t = !c.fcc();
+            c.mov_s(23, 0);
+            if t {
+                break 'b_130948;
+            } else {
+                c.cycles += 1;
+                c.mov_s(23, 3);
+                break 'b_130948;
+            }
+        }
+        'b_130da8: {
+            'b_130d9c: {
+                'b_1309f4: {
+                    'b_13099c: {
+                        c.cycles += 4;
+                        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7698));
+                        c.c_lt_s(23, 0);
+                        let t = c.fcc();
+
+                        if t {
+                            break 'b_13099c;
+                        } else {
+                            c.cycles += 14;
+                            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                            c.mtc1(0, 22);
+                            c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x1e0));
+                            c.lqc2(5, (c.g[V1][0] as u32).wrapping_add(0x3a0));
+                            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                            c.qmfc2(2, 4);
+                            c.mtc1(2, 0);
+                            c.c_lt_s(0, 22);
+                            let t = c.fcc();
+
+                            if t {
+                                break 'b_13099c;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                                if c.g[V0][0] == 0u64 {
+                                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x320));
+                                    break 'b_1309f4;
+                                } else {
+                                    break 'b_13099c;
+                                }
+                            }
+                        }
+                    }
+                    'b_1309d4: {
+                        c.cycles += 9;
+                        c.g[RA][0] = sx(0x001309a4);
+                        c.g[A0][0] = c.g[S1][0];
+                        Callee {
+                            addr: 0x001313a8,
+                            f: ee::s00::f_001313a8,
+                        }
+                        .call(c, 0x001309a4)?;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7694));
+                        c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x280));
+                        c.abs_s(2, 0);
+                        c.c_le_s(2, 1);
+                        let t = c.fcc();
+
+                        if t {
+                            break 'b_1309d4;
+                        } else {
+                            c.cycles += 5;
+                            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7690));
+                            c.c_le_s(0, 2);
+                            let t = !c.fcc();
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_130da8;
+                            } else {
+                                break 'b_1309d4;
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x768c));
+                    c.c_lt_s(23, 0);
+                    let t = !c.fcc();
+
+                    if t {
+                        break 'b_130d9c;
+                    } else {
+                        c.cycles += 4;
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 0);
+                        let t = true;
+                        c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0xc));
+                        if t {
+                            break 'b_130d9c;
+                        } else {
+                            break 'b_1309f4;
+                        }
+                    }
+                }
+                'b_1309fc: {
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0u64 {
+                        c.neg_s(20, 20);
+                        break 'b_1309fc;
+                    } else {
+                        break 'b_1309fc;
+                    }
+                }
+                'b_130a78: {
+                    'b_130a74: {
+                        'b_130a34: {
+                            c.cycles += 3;
+                            c.c_eq_s(21, 22);
+                            let t = !c.fcc();
+
+                            if t {
+                                break 'b_130a34;
+                            } else {
+                                c.cycles += 4;
+                                c.c_eq_s(20, 22);
+                                let t = c.fcc();
+                                c.mov_s(12, 20);
+                                if t {
+                                    break 'b_130a74;
+                                } else {
+                                    c.cycles += 4;
+                                    c.c_le_s(22, 20);
+                                    c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x7688));
+                                    let t = !c.fcc();
+                                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    if t {
+                                        break 'b_130a78;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x7684));
+                                        let t = true;
+
+                                        if t {
+                                            break 'b_130a78;
+                                        } else {
+                                            break 'b_130a34;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        'b_130a70: {
+                            c.cycles += 7;
+                            c.div_s(12, 20, 21);
+                            c.g[RA][0] = sx(0x00130a40);
+                            call_ptr(c, 0x0031c228, 0x00130a40)?;
+                            c.c_lt_s(21, 22);
+                            let t = !c.fcc();
+                            c.mov_s(1, 0);
+                            if t {
+                                break 'b_130a70;
+                            } else {
+                                'b_130a68: {
+                                    c.cycles += 3;
+                                    c.c_lt_s(22, 20);
+                                    let t = !c.fcc();
+
+                                    if t {
+                                        break 'b_130a68;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7680));
+                                        let t = true;
+                                        c.add_s(1, 1, 0);
+                                        if t {
+                                            break 'b_130a70;
+                                        } else {
+                                            break 'b_130a68;
+                                        }
+                                    }
+                                }
+                                c.cycles += 2;
+                                c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x767c));
+                                c.sub_s(1, 1, 0);
+                                break 'b_130a70;
+                            }
+                        }
+                        c.cycles += 1;
+                        c.mov_s(12, 1);
+                        break 'b_130a74;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                    break 'b_130a78;
+                }
+                'b_130abc: {
+                    c.cycles += 14;
+                    c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x7678));
+                    c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x280));
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7674));
+                    c.mul_s(21, 1, 2);
+                    c.g[AT][0] = 0x3f000000;
+                    c.mtc1(1, 3);
+                    c.sub_s(1, 12, 21);
+                    c.mul_s(0, 1, 0);
+                    c.add_s(0, 0, 3);
+                    c.cvt_w_s(2, 0);
+                    c.cvt_s_w(2, 2);
+                    c.c_lt_s(0, 2);
+                    let t = !c.fcc();
+
+                    if t {
+                        break 'b_130abc;
+                    } else {
+                        c.cycles += 3;
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 0);
+                        c.sub_s(2, 2, 0);
+                        break 'b_130abc;
+                    }
+                }
+                'b_130b00: {
+                    'b_130afc: {
+                        c.cycles += 11;
+                        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7670));
+                        c.g[A1][0] = 0x2;
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+                        c.mul_s(0, 2, 0);
+                        c.g[RA][0] = sx(0x00130ad4);
+                        c.sub_s(20, 1, 0);
+                        call_ptr(c, 0x00312aa0, 0x00130ad4)?;
+                        c.g[A1][0] = c.g[V0][0];
+                        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x25));
+                        c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A2][0] = 0u64;
+                        if t {
+                            break 'b_130afc;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = 0x1d;
+                            let t = c.g[A1][0] == c.g[V0][0];
+                            c.g[V0][0] = 0x1e;
+                            if t {
+                                break 'b_130afc;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[A1][0] != c.g[V0][0];
+
+                                if t {
+                                    break 'b_130b00;
+                                } else {
+                                    break 'b_130afc;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[A2][0] = 0x1;
+                    break 'b_130b00;
+                }
+                'b_130cc8: {
+                    'b_130b8c: {
+                        c.cycles += 2;
+                        if c.g[A2][0] != 0u64 {
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                            break 'b_130b8c;
+                        } else {
+                            c.cycles += 6;
+                            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x766c));
+                            c.abs_s(0, 20);
+                            c.c_le_s(1, 0);
+                            let t = !c.fcc();
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                            if t {
+                                break 'b_130b8c;
+                            } else {
+                                'b_130b64: {
+                                    c.cycles += 7;
+                                    c.g[AT][0] = 0x3f000000;
+                                    c.mtc1(1, 1);
+                                    c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x280));
+                                    c.abs_s(0, 0);
+                                    c.c_lt_s(1, 0);
+                                    let t = !c.fcc();
+
+                                    if t {
+                                        break 'b_130b64;
+                                    } else {
+                                        'b_130b58: {
+                                            c.cycles += 4;
+                                            c.mtc1(0, 1);
+                                            c.c_lt_s(1, 20);
+                                            let t = !c.fcc();
+
+                                            if t {
+                                                break 'b_130b58;
+                                            } else {
+                                                c.cycles += 3;
+                                                c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7668));
+                                                let t = true;
+                                                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x284));
+                                                if t {
+                                                    break 'b_130cc8;
+                                                } else {
+                                                    break 'b_130b58;
+                                                }
+                                            }
+                                        }
+                                        c.cycles += 3;
+                                        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7664));
+                                        let t = true;
+                                        c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x284));
+                                        if t {
+                                            break 'b_130cc8;
+                                        } else {
+                                            break 'b_130b64;
+                                        }
+                                    }
+                                }
+                                'b_130b80: {
+                                    c.cycles += 4;
+                                    c.mtc1(0, 1);
+                                    c.c_lt_s(20, 1);
+                                    let t = !c.fcc();
+
+                                    if t {
+                                        break 'b_130b80;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7660));
+                                        let t = true;
+                                        c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x284));
+                                        if t {
+                                            break 'b_130cc8;
+                                        } else {
+                                            break 'b_130b80;
+                                        }
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x765c));
+                                let t = true;
+                                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x284));
+                                if t {
+                                    break 'b_130cc8;
+                                } else {
+                                    break 'b_130b8c;
+                                }
+                            }
+                        }
+                    }
+                    'b_130cb4: {
+                        'b_130c08: {
+                            c.cycles += 9;
+                            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7658));
+                            c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x300));
+                            c.mtc1(0, 2);
+                            c.mul_s(1, 20, 1);
+                            c.add_s(0, 0, 0);
+                            c.c_lt_s(21, 2);
+                            let t = !c.fcc();
+                            c.mul_s(0, 1, 0);
+                            if t {
+                                break 'b_130c08;
+                            } else {
+                                c.cycles += 3;
+                                c.c_lt_s(2, 0);
+                                let t = !c.fcc();
+
+                                if t {
+                                    break 'b_130c08;
+                                } else {
+                                    c.cycles += 14;
+                                    c.add_s(0, 21, 0);
+                                    c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x7654));
+                                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7650));
+                                    c.g[AT][0] = 0x3f000000;
+                                    c.mtc1(1, 2);
+                                    c.sub_s(12, 0, 3);
+                                    c.mul_s(1, 12, 1);
+                                    c.add_s(1, 1, 2);
+                                    c.cvt_w_s(2, 1);
+                                    c.cvt_s_w(2, 2);
+                                    c.c_lt_s(1, 2);
+                                    if !c.fcc() {
+                                        c.mul_s(0, 2, 3);
+                                        break 'b_130cb4;
+                                    } else {
+                                        c.cycles += 5;
+                                        c.g[AT][0] = 0x3f800000;
+                                        c.mtc1(1, 0);
+                                        c.sub_s(2, 2, 0);
+                                        let t = true;
+                                        c.mul_s(0, 2, 3);
+                                        if t {
+                                            break 'b_130cb4;
+                                        } else {
+                                            break 'b_130c08;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        'b_130c78: {
+                            c.cycles += 5;
+                            c.mtc1(0, 1);
+                            c.c_lt_s(1, 21);
+                            if !c.fcc() {
+                                c.add_s(12, 21, 0);
+                                break 'b_130c78;
+                            } else {
+                                c.cycles += 4;
+                                c.c_lt_s(0, 1);
+                                if !c.fcc() {
+                                    c.add_s(12, 21, 0);
+                                    break 'b_130c78;
+                                } else {
+                                    c.cycles += 14;
+                                    c.add_s(0, 21, 0);
+                                    c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x764c));
+                                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7648));
+                                    c.g[AT][0] = 0x3f000000;
+                                    c.mtc1(1, 2);
+                                    c.add_s(12, 0, 3);
+                                    c.mul_s(1, 12, 1);
+                                    c.add_s(1, 1, 2);
+                                    c.cvt_w_s(2, 1);
+                                    c.cvt_s_w(2, 2);
+                                    c.c_lt_s(1, 2);
+                                    if !c.fcc() {
+                                        c.mul_s(0, 2, 3);
+                                        break 'b_130cb4;
+                                    } else {
+                                        c.cycles += 5;
+                                        c.g[AT][0] = 0x3f800000;
+                                        c.mtc1(1, 0);
+                                        c.sub_s(2, 2, 0);
+                                        let t = true;
+                                        c.mul_s(0, 2, 3);
+                                        if t {
+                                            break 'b_130cb4;
+                                        } else {
+                                            break 'b_130c78;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        'b_130cac: {
+                            c.cycles += 10;
+                            c.g[AT][0] = 0x3f000000;
+                            c.mtc1(1, 1);
+                            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7644));
+                            c.mul_s(0, 12, 0);
+                            c.add_s(0, 0, 1);
+                            c.cvt_w_s(1, 0);
+                            c.cvt_s_w(1, 1);
+                            c.c_lt_s(0, 1);
+                            let t = !c.fcc();
+
+                            if t {
+                                break 'b_130cac;
+                            } else {
+                                c.cycles += 3;
+                                c.g[AT][0] = 0x3f800000;
+                                c.mtc1(1, 0);
+                                c.sub_s(1, 1, 0);
+                                break 'b_130cac;
+                            }
+                        }
+                        c.cycles += 2;
+                        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7640));
+                        c.mul_s(0, 1, 0);
+                        break 'b_130cb4;
+                    }
+                    c.cycles += 5;
+                    c.sub_s(1, 12, 0);
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x763c));
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                    c.mul_s(0, 1, 0);
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x284), 0u64);
+                    break 'b_130cc8;
+                }
+                c.cycles += 9;
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x280));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x288));
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7638));
+                c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x280));
+                c.abs_s(2, 0);
+                c.c_le_s(1, 2);
+                let t = !c.fcc();
+
+                if t {
+                    break 'b_130d9c;
+                } else {
+                    c.cycles += 5;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7634));
+                    c.c_le_s(2, 0);
+                    let t = !c.fcc();
+                    c.g[V1][0] = 0x1;
+                    if t {
+                        break 'b_130d9c;
+                    } else {
+                        'b_130d60: {
+                            'b_130d48: {
+                                c.cycles += 11;
+                                c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x300));
+                                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7630));
+                                c.g[AT][0] = 0x3f000000;
+                                c.mtc1(1, 2);
+                                c.mul_s(0, 0, 1);
+                                c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x27c));
+                                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x278));
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x330));
+                                let t = c.g[V0][0] != c.g[V1][0];
+                                c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x280));
+                                if t {
+                                    break 'b_130d48;
+                                } else {
+                                    c.cycles += 5;
+                                    c.mtc1(0, 0);
+                                    c.c_lt_s(0, 1);
+                                    let t = !c.fcc();
+                                    c.g[S0][0] = 0x1e;
+                                    if t {
+                                        break 'b_130d60;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = true;
+                                        c.g[S0][0] = 0x1d;
+                                        if t {
+                                            break 'b_130d60;
+                                        } else {
+                                            break 'b_130d48;
+                                        }
+                                    }
+                                }
+                            }
+                            c.cycles += 5;
+                            c.mtc1(0, 0);
+                            c.c_lt_s(0, 1);
+                            let t = !c.fcc();
+                            c.g[S0][0] = 0x26;
+                            if t {
+                                break 'b_130d60;
+                            } else {
+                                c.cycles += 1;
+                                c.g[S0][0] = 0x25;
+                                break 'b_130d60;
+                            }
+                        }
+                        c.cycles += 2;
+                        let t = c.g[A1][0] == c.g[S0][0];
+                        c.g[V0][0] = 0x1;
+                        if t {
+                            break 'b_130da8;
+                        } else {
+                            'b_130d7c: {
+                                c.cycles += 2;
+                                if c.g[A2][0] != 0u64 {
+                                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_130d7c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x00130d78);
+                                    c.g[A0][0] = c.g[S1][0];
+                                    Callee {
+                                        addr: 0x0012fec8,
+                                        f: ee::s00::f_0012fec8,
+                                    }
+                                    .call(c, 0x00130d78)?;
+                                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                                    break 'b_130d7c;
+                                }
+                            }
+                            c.cycles += 8;
+                            c.g[A1][0] = c.g[S0][0];
+                            c.g[AT][0] = 0xffffffffbf800000;
+                            c.mtc1(1, 12);
+                            c.g[A2][0] = 0u64;
+                            c.g[RA][0] = sx(0x00130d94);
+                            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+                            call_ptr(c, 0x003128e8, 0x00130d94)?;
+                            let t = true;
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                break 'b_130da8;
+                            } else {
+                                break 'b_130d9c;
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x00130da4);
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x00131428,
+                f: ee::s00::f_00131428,
+            }
+            .call(c, 0x00130da4)?;
+            c.g[V0][0] = 0u64;
+            break 'b_130da8;
+        }
+        c.cycles += 9;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.lwc1(23, (c.g[SP][0] as u32).wrapping_add(0x48));
+        c.lwc1(22, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `void RiderBoardPressSub_FinishPress(RiderBoardPressSub* self)` (0x131428):
+/// ends a board press from the rider's current animation. In the two
+/// board-press animations (37..38 and 29..30) the press either spins (when
+/// the board is held past the threshold: pivot metrics, one boost, and the
+/// pivot animation with `PressMode` set) or flips the stance and plays the
+/// matching animation. Any other animation leaves it alone.
+pub fn rider_board_press_sub_finish_press(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = 2;
+        c.g[V0][0] = Addr(r32(c, S0)).off(0x14).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0)).off(0x784).lw(c);
+        call_ptr(c, 0x0031_2aa0, 0x0013_1448)?;
+        c.g[V1][0] = c.g[V0][0];
+        let extra_cycle = finish_press_paths(c)?;
+        if extra_cycle {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The branches after the animation id is known (`V1`). Returns whether the
+/// path ends in the shared `+1` exit (the spin paths and the 29..30 flip).
+pub(crate) fn finish_press_paths(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
+    c.g[V0][0] = sx(r32(c, V1).wrapping_sub(0x25));
+    c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+    if c.g[V0][0] != 0 {
+        // Animations 37..38: the pivot is the press.
+        c.cycles += 8;
+        c.g[V0][0] = Addr(r32(c, S0)).off(0x14).lw(c);
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 1);
+        let slew = r32(c, V0).wrapping_add(0x280);
+        c.lwc1(0, slew);
+        c.abs_s(0, 0);
+        c.c_le_s(0, 1);
+        if c.fcc() {
+            c.cycles += 18;
+            finish_press_spin(c, 0x1c, 1, [0x0013_1488, 0x0013_1498, 0x0013_14b4])?;
+            return Ok(true);
+        }
+        c.cycles += 11;
+        finish_press_flip(c, 0x24, 0x0013_14cc, 0x0013_14e8)?;
+        return Ok(false);
+    }
+    // Animations 29..30: the mirrored press.
+    c.g[V0][0] = sx(r32(c, V1).wrapping_sub(0x1d));
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+    if c.g[V0][0] == 0 {
+        return Ok(false);
+    }
+    c.cycles += 8;
+    c.g[V0][0] = Addr(r32(c, S0)).off(0x14).lw(c);
+    c.g[AT][0] = 0x3f00_0000;
+    c.mtc1(AT, 1);
+    let slew = r32(c, V0).wrapping_add(0x280);
+    c.lwc1(0, slew);
+    c.abs_s(0, 0);
+    c.c_le_s(1, 0);
+    if c.fcc() {
+        c.cycles += 18;
+        finish_press_spin(c, 0x24, 2, [0x0013_1528, 0x0013_1538, 0x0013_1554])?;
+    } else {
+        c.cycles += 9;
+        finish_press_flip(c, 0x1c, 0x0013_156c, 0x0013_1588)?;
+    }
+    Ok(true)
+}
+
+/// The press spin. `V0` holds the rider. Calls `RiderMetrix_SetPressSpin`
+/// (metrix, PressMode), `Rider_AddBoost(rider, 1)` and the pivot animation
+/// `anim` with blend -1 and layer 0; then stores `mode` as PressMode.
+pub(crate) fn finish_press_spin(
+    c: &mut Cpu,
+    anim: u32,
+    mode: u64,
+    rets: [u32; 3],
+) -> Result<(), crate::call::Unwound> {
+    let rider = r32(c, V0);
+    c.g[A1][0] = Addr(rider).off(0x330).lw(c);
+    c.g[A0][0] = Addr(rider).off(0x790).lw(c);
+    call_ptr(c, 0x0011_9ad8, rets[0])?;
+    c.g[A0][0] = Addr(r32(c, S0)).off(0x14).lw(c);
+    c.mov_s(12, 0);
+    c.g[A1][0] = 1;
+    call_ptr(c, 0x0010_e098, rets[1])?;
+    c.g[V0][0] = Addr(r32(c, S0)).off(0x14).lw(c);
+    c.g[A1][0] = anim as u64;
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 12);
+    c.g[A2][0] = 0;
+    c.g[A0][0] = Addr(r32(c, V0)).off(0x784).lw(c);
+    call_ptr(c, 0x0031_28e8, rets[2])?;
+    c.g[V1][0] = Addr(r32(c, S0)).off(0x14).lw(c);
+    c.g[V0][0] = mode;
+    let v = c.g[V0][0];
+    Addr(r32(c, V1)).off(0x330).sw(c, v);
+    Ok(())
+}
+
+/// The stance flip (`RiderBoardPressSub_FlipStance(self)`) followed by the
+/// animation `anim` with blend -1 and layer 0.
+pub(crate) fn finish_press_flip(
+    c: &mut Cpu,
+    anim: u32,
+    ret_flip: u32,
+    ret_play: u32,
+) -> Result<(), crate::call::Unwound> {
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, 0x0012_fec8, ret_flip)?;
+    c.g[V0][0] = Addr(r32(c, S0)).off(0x14).lw(c);
+    c.g[A1][0] = anim as u64;
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 12);
+    c.g[A2][0] = 0;
+    c.g[A0][0] = Addr(r32(c, V0)).off(0x784).lw(c);
+    call_ptr(c, 0x0031_28e8, ret_play)?;
+    Ok(())
+}
+
+/// Shared callee addresses (generated bodies, reached through the table).
+pub(crate) const CALL_BX_AUDIO: u32 = 0x0028_b180;
+
+pub(crate) const CALL_HANDPLANT_SOUND: u32 = 0x0029_dc48;
+
+pub(crate) const CALL_ANIM_DURATION: u32 = 0x0031_2790;
+
+pub(crate) const CALL_ANIM_PLAY: u32 = 0x0031_28e8;
+
+pub(crate) const CALL_ANIM_BLEND_OUT_ALL: u32 = 0x0031_1e88;
+
+pub(crate) const CALL_ANIM_CHANGE_HEADING: u32 = 0x0031_1b48;
+
+pub(crate) const CALL_RIDER_UPDATE_ORIENTATION: u32 = 0x0011_e098;
+
+/// `void RiderHandplantSub_Enter(RiderHandplantSub *self, int a1)` (0x1328b0):
+/// the handplant's entry. Zero the slew targets of both rider slots (rates
+/// 0.05), set the rider's handplant mode to 1, play the hand-plant sound,
+/// set the entry animation's frame-rate factor from the animation duration
+/// over `self->EnterSec`, play the handplant animation, then blend the
+/// rider's animation out on both layers with blend 0.33 and clear
+/// `self->CurBalance`.
+pub fn rider_handplant_sub_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        // Offsets of the handplant controller, its rider and the rider animation.
+        const SELF_BALANCE: u32 = 0x4;
+        const SELF_TYPE: u32 = 0x10;
+        const SELF_RIDER: u32 = 0x14;
+        const RIDER_SLEW1_RATE: u32 = 0x200;
+        const RIDER_SLEW1_TARGET: u32 = 0x204;
+        const RIDER_SLEW0_RATE: u32 = 0x1f4;
+        const RIDER_SLEW0_TARGET: u32 = 0x1f8;
+        const RIDER_MODE: u32 = 0x32c;
+        const RIDER_ANIM: u32 = 0x784;
+        const ANIM_FRAME_RATE: u32 = 0x1c;
+        const SAVED_RA: u32 = 0x0;
+        const SAVED_S0: u32 = 0x10;
+        const SAVED_F20: u32 = 0x20;
+
+        c.cycles += 63;
+        let frame = Frame::open(c, 0x30);
+        // f0 = slew rate 0.05, f20 = blend 0.33 (both constants in gp).
+        c.lwc1(0, r32(c, GP).wrapping_sub(0x756c));
+        frame.save(c, S0, SAVED_S0);
+        frame.save_ra(c, SAVED_RA);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, SAVED_F20);
+        c.g[A0][0] = 1;
+        c.lwc1(20, r32(c, GP).wrapping_sub(0x7568));
+
+        // Both slew targets to zero at the slew rate; the mode becomes 1.
+        let rider = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[V0][0] = rider;
+        let a = r32(c, V0).wrapping_add(RIDER_SLEW1_RATE);
+        c.swc1(0, a);
+        let a = r32(c, V0).wrapping_add(RIDER_SLEW1_TARGET);
+        Addr(a).sw(c, 0);
+        let rider = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[V1][0] = rider;
+        let a = r32(c, V1).wrapping_add(RIDER_SLEW0_RATE);
+        c.swc1(0, a);
+        let a = r32(c, V1).wrapping_add(RIDER_SLEW0_TARGET);
+        Addr(a).sw(c, 0);
+        let rider = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[V0][0] = rider;
+        c.g[RA][0] = sx(0x0013_28f4);
+        let a = r32(c, V0).wrapping_add(RIDER_MODE);
+        let mode_one = c.g[A0][0];
+        Addr(a).sw(c, mode_one);
+        // The hand-plant sound (bxAudio returns the audio interface).
+        call_ptr(c, CALL_BX_AUDIO, 0x0013_28f4)?;
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, CALL_HANDPLANT_SOUND, 0x0013_2900)?;
+
+        // The entry animation's duration for this mode and type.
+        c.g[A2][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[A1][0] = 0x0046_0000;
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SELF_TYPE)).lw(c);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x6038));
+        c.g[V1][0] = Addr(r32(c, A2).wrapping_add(RIDER_MODE)).lw(c);
+        c.g[V0][0] = sx((r32(c, V0)) << 3);
+        c.g[A0][0] = Addr(r32(c, A2).wrapping_add(RIDER_ANIM)).lw(c);
+        c.g[V1][0] = sx((r32(c, V1)) << 4);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+        c.g[A1][0] = Addr(r32(c, V0)).lw(c);
+        call_ptr(c, CALL_ANIM_DURATION, 0x0013_2930)?;
+
+        // Frame-rate factor = duration / EnterSec.
+        c.lwc1(1, r32(c, S0));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V1][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.div_s(0, 0, 1);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(RIDER_ANIM)).lw(c);
+        let a = r32(c, V0).wrapping_add(ANIM_FRAME_RATE);
+        c.swc1(0, a);
+
+        // The handplant animation for this mode and type.
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[A2][0] = Addr(r32(c, S0).wrapping_add(SELF_TYPE)).lw(c);
+        c.g[A1][0] = Addr(r32(c, V0).wrapping_add(RIDER_MODE)).lw(c);
+        Callee {
+            addr: 0x0013_2fb8,
+            f: ee::s01::f_00132fb8,
+        }
+        .call(c, 0x0013_2958)?;
+
+        // Back to the rest: frame rate 1.0, balance 0, both layers blended out.
+        c.g[V1][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.mov_s(12, 20);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.g[A1][0] = 1;
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(RIDER_ANIM)).lw(c);
+        let a = r32(c, V0).wrapping_add(ANIM_FRAME_RATE);
+        c.swc1(0, a);
+        Addr(r32(c, S0).wrapping_add(SELF_BALANCE)).sw(c, 0);
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[RA][0] = sx(0x0013_2984);
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIDER_ANIM)).lw(c);
+        call_ptr(c, CALL_ANIM_BLEND_OUT_ALL, 0x0013_2984)?;
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.mov_s(12, 20);
+        c.g[A1][0] = 0;
+        c.g[RA][0] = sx(0x0013_2998);
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIDER_ANIM)).lw(c);
+        call_ptr(c, CALL_ANIM_BLEND_OUT_ALL, 0x0013_2998)?;
+
+        frame.restore(c, S0, SAVED_S0);
+        frame.restore_ra(c, SAVED_RA);
+        frame.restore_fpr(c, 20, SAVED_F20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderHandplantSub_Init(float enterSec, HandplantControl *self,
+/// tIntersectInfo *hit, int flag)` (0x1329b0): store the entry time and
+/// the handplant type (`flag` ? 1 : 0); flag a missed handplant when the
+/// rider's velocity is faster than 2222.2 (VU0 length); flag a rail when the
+/// hit spline has its rail bit (1) set.
+pub fn rider_handplant_control_init(c: &mut Cpu) {
+    const SELF_MISSED: u32 = 0x8;
+    const SELF_RAIL: u32 = 0xc;
+    const SELF_TYPE: u32 = 0x10;
+    const SELF_RIDER: u32 = 0x14;
+    const RIDER_VELOCITY: u32 = 0x1e0;
+    const HIT_SPLINE: u32 = 0x58;
+    const SPLINE_FLAGS: u32 = 0x1c;
+
+    c.cycles += 22;
+    c.g[A3][0] = 1;
+    c.g[V0][0] = 0;
+    if c.g[A2][0] != 0 {
+        c.g[V0][0] = c.g[A3][0];
+    }
+    let this = r32(c, A0);
+    c.swc1(12, this);
+    let on = c.g[V0][0];
+    Addr(this.wrapping_add(SELF_TYPE)).sw(c, on);
+    c.g[A2][0] = 1;
+    c.g[V0][0] = Addr(this.wrapping_add(SELF_RIDER)).lw(c);
+    c.lwc1(1, r32(c, GP).wrapping_sub(0x7564));
+    let velocity = r32(c, V0).wrapping_add(RIDER_VELOCITY);
+    c.lqc2(3, velocity);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(3, 22);
+    c.mtc1(3, 0);
+    c.c_lt_s(1, 0);
+    if !c.fcc() {
+        c.g[A2][0] = 0;
+    }
+    c.cycles += 4;
+    let missed = c.g[A2][0];
+    Addr(this.wrapping_add(SELF_MISSED)).sw(c, missed);
+    c.g[A1][0] = Addr(r32(c, A1).wrapping_add(HIT_SPLINE)).lw(c);
+    let no_spline = c.g[A1][0] == 0;
+    c.g[V1][0] = 0;
+    if !no_spline {
+        c.cycles += 4;
+        c.g[V0][0] = Addr(r32(c, A1).wrapping_add(SPLINE_FLAGS)).lw(c);
+        c.g[V1][0] = c.g[A3][0];
+        c.g[V0][0] &= 1;
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = 0;
+        }
+    }
+    c.cycles += 2;
+    let rail = c.g[V1][0];
+    Addr(this.wrapping_add(SELF_RAIL)).sw(c, rail);
+    ret(c);
+}
+
+/// `RiderHandplantSub_PlayAnim(self, mode, type)` (0x132fb8): play the
+/// handplant animation of `kHandplantAnim[mode][type]` on the rider. A table
+/// entry with the rotate-180 flag first turns the rider's orientation by
+/// half a turn about its own up axis (VU0 quaternion product with the
+/// rider's matrix row 2), then the animation plays at speed -1.
+pub fn rider_handplant_sub_play_anim(c: &mut Cpu) {
+    guest(c, |c| {
+        const SELF_RIDER: u32 = 0x14;
+        const RIDER_ANIM: u32 = 0x784;
+        const SAVED_RA: u32 = 0x50;
+        const SAVED_S0: u32 = 0x80;
+        const SAVED_S1: u32 = 0x70;
+        const SAVED_S2: u32 = 0x60;
+
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = 0x0046_0000;
+        frame.save(c, S1, SAVED_S1);
+        c.g[A2][0] = sx(r32(c, A2) << 3);
+        frame.save(c, S2, SAVED_S2);
+        c.g[A1][0] = sx(r32(c, A1) << 4);
+        frame.save(c, S0, SAVED_S0);
+        c.g[S1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
+        frame.save_ra(c, SAVED_RA);
+        c.g[S2][0] = sx(r32(c, V0).wrapping_sub(0x6038));
+        c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S1)));
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(4)).lw(c);
+        let rotate_180 = c.g[V1][0] != 0;
+        c.g[S0][0] = c.g[A0][0];
+        if rotate_180 {
+            handplant_rotate_180(c, frame)?;
+        }
+
+        c.cycles += 14;
+        c.g[V1][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[V0][0] = sx(r32(c, S1).wrapping_add(r32(c, S2)));
+        c.g[A1][0] = Addr(r32(c, V0)).lw(c);
+        c.g[A2][0] = 0;
+        c.g[AT][0] = sx(0xbf80_0000);
+        c.mtc1(AT, 12);
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(RIDER_ANIM)).lw(c);
+        call_ptr(c, CALL_ANIM_PLAY, 0x0013_309c)?;
+
+        frame.restore(c, S0, SAVED_S0);
+        frame.restore(c, S1, SAVED_S1);
+        frame.restore(c, S2, SAVED_S2);
+        frame.restore_ra(c, SAVED_RA);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The rotate-180 part of `RiderHandplantSub_PlayAnim`: the rider's matrix
+/// row 2 (VU0) times its rotation quaternion, written to the rotation, then
+/// `updateOrientationImplicit` and a heading offset of pi on the animation.
+pub(crate) fn handplant_rotate_180(c: &mut Cpu, frame: Frame) -> Flow {
+    const SELF_RIDER: u32 = 0x14;
+    const RIDER_MATRIX_ROW2: u32 = 0x1c0;
+    const RIDER_ROTATION: u32 = 0x120;
+    const RIDER_ANIM: u32 = 0x784;
+
+    c.cycles += 35;
+    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+    c.lq(2, r32(c, V1).wrapping_add(RIDER_MATRIX_ROW2));
+    let zero_word = frame.at(c, 0x1c);
+    Addr(zero_word).sw(c, 0);
+    let spill = frame.at(c, 0x30);
+    c.sq(2, spill);
+    c.lwc1(0, frame.at(c, 0x30));
+    c.lwc1(1, frame.at(c, 0x34));
+    c.lwc1(2, frame.at(c, 0x38));
+    c.swc1(0, frame.at(c, 0x10));
+    c.swc1(1, frame.at(c, 0x14));
+    c.swc1(2, frame.at(c, 0x18));
+    c.swc1(0, frame.at(c, 0x20));
+    c.swc1(1, frame.at(c, 0x24));
+    c.swc1(2, frame.at(c, 0x28));
+    let scratch = frame.at(c, 0x10);
+    c.lqc2(4, scratch);
+    let rotation = r32(c, V1).wrapping_add(RIDER_ROTATION);
+    c.lqc2(5, rotation);
+    c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+    c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+    c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+    c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+    c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+    c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+    let quad_spill = frame.at(c, 0x40);
+    c.sqc2(8, quad_spill);
+    c.lq(2, quad_spill);
+    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+    c.sq(2, frame.at(c, 0));
+    let rotation = r32(c, V1).wrapping_add(RIDER_ROTATION);
+    c.sq(2, rotation);
+    c.g[A0][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+    call_ptr(c, CALL_RIDER_UPDATE_ORIENTATION, 0x0013_306c)?;
+    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SELF_RIDER)).lw(c);
+    c.lwc1(12, r32(c, GP).wrapping_sub(0x7548));
+    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIDER_ANIM)).lw(c);
+    call_ptr(c, CALL_ANIM_CHANGE_HEADING, 0x0013_307c)?;
+    Ok(())
+}
+
+/// `RiderUberGrindSub_Enter(self)` (0x136268): start the uber grind. The
+/// rider's railslide style picks the entry animation: 4 into `BSIntoAnim`
+/// (after a half-turn orientation offset), 3 into `FSIntoAnim`, 2 into
+/// `FakieIntoAnim` (clearing the fakie flag and the flipped flag), else the
+/// regular `RegIntoAnim` (after the half turn). Then the grind event and the
+/// boost flag, the railslide style becomes 3, `self` is cleared, and both
+/// animation layers blend out at 0.33.
+pub fn rider_uber_grind_sub_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        const SELF_GRIND: u32 = 0x4;
+        const SELF_RIDER: u32 = 0x8;
+        const RIDER_RAIL_STYLE: u32 = 0x328;
+        const RIDER_ANIM: u32 = 0x784;
+        const RIDER_METRIX: u32 = 0x790;
+        const SAVED_RA: u32 = 0x30;
+        const SAVED_S0: u32 = 0x80;
+        const SAVED_S1: u32 = 0x70;
+        const SAVED_S2: u32 = 0x60;
+        const SAVED_S3: u32 = 0x50;
+        const SAVED_S4: u32 = 0x40;
+        const SAVED_F20: u32 = 0x90;
+
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xa0);
+        c.g[A1][0] = 0x24;
+        frame.save(c, S3, SAVED_S3);
+        c.g[V1][0] = 0x0046_0000;
+        frame.save(c, S4, SAVED_S4);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S0, SAVED_S0);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(0x5fc8));
+        frame.save(c, S1, SAVED_S1);
+        c.g[A0][0] = 4;
+        frame.save(c, S2, SAVED_S2);
+        frame.save_ra(c, SAVED_RA);
+        frame.save_fpr(c, 20, SAVED_F20);
+        c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SELF_GRIND)).lw(c);
+        c.g[A3][0] = Addr(r32(c, S3).wrapping_add(SELF_RIDER)).lw(c);
+        c.mult(0, 2, 2, 5);
+        c.g[A2][0] = Addr(r32(c, A3).wrapping_add(RIDER_RAIL_STYLE)).lw(c);
+        let back_side = c.g[A2][0] == c.g[A0][0];
+        c.g[S4][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        if back_side {
+            uber_enter_back_side(c)?;
+        } else {
+            uber_enter_other_style(c)?;
+        }
+
+        // The shared tail: the grind event, the boost flag, the railslide mode.
+        c.cycles += 34;
+        c.g[A1][0] = Addr(r32(c, S4).wrapping_add(0x20)).lw(c);
+        c.g[A2][0] = Addr(r32(c, V0).wrapping_add(RIDER_RAIL_STYLE)).lw(c);
+        c.lwc1(20, r32(c, GP).wrapping_sub(0x72dc));
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIDER_METRIX)).lw(c);
+        call_ptr(c, 0x0011_9938, 0x0013_6494)?;
+        c.g[A0][0] = Addr(r32(c, S3).wrapping_add(SELF_RIDER)).lw(c);
+        c.mov_s(12, 0);
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0010_e098, 0x0013_64a4)?;
+        c.g[V1][0] = Addr(r32(c, S3).wrapping_add(SELF_RIDER)).lw(c);
+        c.g[V0][0] = 3;
+        let rail_style = c.g[V0][0];
+        Addr(r32(c, V1).wrapping_add(RIDER_RAIL_STYLE)).sw(c, rail_style);
+        Addr(r32(c, S3)).sw(c, 0);
+        c.g[A0][0] = Addr(r32(c, S3).wrapping_add(SELF_RIDER)).lw(c);
+        call_ptr(c, 0x0011_6930, 0x0013_64bc)?;
+        c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SELF_RIDER)).lw(c);
+        c.mov_s(12, 20);
+        c.g[A1][0] = 1;
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIDER_ANIM)).lw(c);
+        call_ptr(c, 0x0031_1e88, 0x0013_64d0)?;
+        c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SELF_RIDER)).lw(c);
+        c.mov_s(12, 20);
+        c.g[A1][0] = 0;
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIDER_ANIM)).lw(c);
+        call_ptr(c, 0x0031_1e88, 0x0013_64e4)?;
+
+        frame.restore(c, S0, SAVED_S0);
+        frame.restore(c, S1, SAVED_S1);
+        frame.restore(c, S2, SAVED_S2);
+        frame.restore(c, S3, SAVED_S3);
+        frame.restore(c, S4, SAVED_S4);
+        frame.restore_ra(c, SAVED_RA);
+        frame.restore_fpr(c, 20, SAVED_F20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The rail style 4 entry: the back-side animation `BSIntoAnim` (table +0),
+/// after a half turn of the orientation offset.
+pub(crate) fn uber_enter_back_side(c: &mut Cpu) -> Flow {
+    c.cycles += 31;
+    c.g[V0][0] = 0x0050_0000;
+    c.g[S2][0] = Addr(r32(c, A3).wrapping_add(0x784)).lw(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xed0));
+    c.lwc1(12, r32(c, GP).wrapping_sub(0x72e8));
+    c.lq(3, r32(c, V0));
+    c.g[S0][0] = 0x0050_0000;
+    c.g[A0][0] = sx(uv_sp_of(c, 0x10));
+    c.g[A1][0] = sx(uv_sp_of(c, 0x14));
+    let s2_origin = r32(c, S2).wrapping_add(0x30);
+    c.sq(3, s2_origin);
+    c.g[S1][0] = sx(r32(c, S0).wrapping_sub(0xea0));
+    call_ptr(c, 0x0031_be50, 0x0013_62e0)?;
+    uber_axis_finish(c, 0x10);
+    c.g[A1][0] = Addr(r32(c, S4)).lw(c);
+    c.cycles += 4;
+    uber_play(c, 0x0013_63f8)?;
+    Ok(())
+}
+
+/// The other rail styles: 3 (frontside), 2 (fakie) and the default, which
+/// uses `RegIntoAnim`.
+pub(crate) fn uber_enter_other_style(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    c.g[V0][0] = 3;
+    let not_frontside = c.g[A2][0] != c.g[V0][0];
+    c.g[V0][0] = 2;
+    if !not_frontside {
+        // Frontside: `FSIntoAnim` (table +4), no orientation offset.
+        c.cycles += 8;
+        c.g[A0][0] = Addr(r32(c, A3).wrapping_add(0x784)).lw(c);
+        c.g[A2][0] = 0;
+        c.g[AT][0] = sx(0xbf80_0000);
+        c.mtc1(AT, 12);
+        c.g[A1][0] = Addr(r32(c, S4).wrapping_add(4)).lw(c);
+        call_ptr(c, 0x0031_28e8, 0x0013_6354)?;
+        c.g[V0][0] = Addr(r32(c, S3).wrapping_add(8)).lw(c);
+        return Ok(());
+    }
+    c.cycles += 2;
+    let not_fakie = c.g[A2][0] != c.g[V0][0];
+    c.g[V0][0] = 0x0050_0000;
+    if not_fakie {
+        // Default: `RegIntoAnim` after the half turn (its own return addresses).
+        c.cycles += 32;
+        c.g[S2][0] = Addr(r32(c, A3).wrapping_add(0x784)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xed0));
+        c.lwc1(12, r32(c, GP).wrapping_sub(0x72e0));
+        c.lq(3, r32(c, V0));
+        c.g[S0][0] = 0x0050_0000;
+        c.g[A0][0] = sx(uv_sp_of(c, 0x20));
+        c.g[A1][0] = sx(uv_sp_of(c, 0x24));
+        let s2_origin = r32(c, S2).wrapping_add(0x30);
+        c.sq(3, s2_origin);
+        c.g[S1][0] = sx(r32(c, S0).wrapping_sub(0xea0));
+        call_ptr(c, 0x0031_be50, 0x0013_6428)?;
+        uber_axis_finish(c, 0x20);
+        c.g[A1][0] = Addr(r32(c, S4).wrapping_add(0xc)).lw(c);
+        uber_play(c, 0x0013_647c)?;
+        return Ok(());
+    }
+    // Fakie: `FakieIntoAnim` (table +8), flags cleared, the half turn.
+    c.cycles += 35;
+    Addr(r32(c, A3).wrapping_add(0x320)).sw(c, 0);
+    c.g[A2][0] = 0x0050_0000;
+    c.g[A2][0] = sx(r32(c, A2).wrapping_sub(0xed0));
+    c.lwc1(12, r32(c, GP).wrapping_sub(0x72e4));
+    c.g[V1][0] = Addr(r32(c, S3).wrapping_add(8)).lw(c);
+    c.g[S0][0] = 0x0050_0000;
+    c.g[A0][0] = sx(uv_sp_of(c, 0x18));
+    c.g[A1][0] = sx(uv_sp_of(c, 0x1c));
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x784)).lw(c);
+    c.g[S1][0] = sx(r32(c, S0).wrapping_sub(0xea0));
+    Addr(r32(c, V0).wrapping_add(0x18)).sw(c, 0);
+    c.g[V1][0] = Addr(r32(c, S3).wrapping_add(8)).lw(c);
+    c.lq(2, r32(c, A2));
+    c.g[S2][0] = Addr(r32(c, V1).wrapping_add(0x784)).lw(c);
+    let s2_origin = r32(c, S2).wrapping_add(0x30);
+    c.sq(2, s2_origin);
+    call_ptr(c, 0x0031_be50, 0x0013_63a4)?;
+    uber_axis_finish(c, 0x18);
+    c.g[A1][0] = Addr(r32(c, S4).wrapping_add(8)).lw(c);
+    c.cycles += 4;
+    uber_play(c, 0x0013_63f8)?;
+    Ok(())
+}
+
+/// `sp + off` for the uber-grind frame (read at each use).
+pub(crate) fn uv_sp_of(c: &Cpu, off: u32) -> u32 {
+    r32(c, SP).wrapping_add(off)
+}
+
+/// What the entry branches share after the axis-angle call: the orientation
+/// quaternion (VU0-free FPU product of the axis with the scalar), stored at the
+/// animation's `OrientationOffset.Q` (`S2 + 0x40`), the play speed -1 in f12
+/// and `V1` = the rider.
+pub(crate) fn uber_axis_finish(c: &mut Cpu, scratch: u32) {
+    c.lwc1(1, r32(c, S1).wrapping_add(8));
+    c.g[A2][0] = 0;
+    c.lwc1(0, uv_sp_of(c, scratch));
+    c.lwc1(2, r32(c, S0).wrapping_sub(0xea0));
+    c.lwc1(4, r32(c, S1).wrapping_add(4));
+    c.mul_s(1, 0, 1);
+    c.mul_s(2, 0, 2);
+    c.lwc1(3, uv_sp_of(c, scratch.wrapping_add(4)));
+    c.mul_s(0, 0, 4);
+    c.g[AT][0] = sx(0xbf80_0000);
+    c.mtc1(AT, 12);
+    c.swc1(3, uv_sp_of(c, 0xc));
+    c.swc1(1, uv_sp_of(c, 0x8));
+    c.swc1(2, uv_sp_of(c, 0));
+    c.swc1(0, uv_sp_of(c, 0x4));
+    c.lq(2, uv_sp_of(c, 0));
+    let s2_quat = r32(c, S2).wrapping_add(0x40);
+    c.sq(2, s2_quat);
+    c.g[V1][0] = Addr(r32(c, S3).wrapping_add(8)).lw(c);
+}
+
+/// The play call that closes the entry branches (`RiderAnimBase_play` with
+/// speed -1, from `V1`'s rider), then `V0` = the rider.
+pub(crate) fn uber_play(c: &mut Cpu, ret: u32) -> Flow {
+    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x784)).lw(c);
+    call_ptr(c, 0x0031_28e8, ret)?;
+    c.g[V0][0] = Addr(r32(c, S3).wrapping_add(8)).lw(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -28399,6 +31055,635 @@ pub(crate) mod tests {
             0x0013_6ad0,
             0x40,
             Some(0x44),
+        );
+    }
+
+    use crate::difftest::fakes::prev_cell;
+
+    /// Gate word for the callee fakes below (set in every fixture).
+    pub(crate) const OC620_GATE: u32 = DATA + 0x1000;
+
+    pub(crate) const OC620_MAGIC: u32 = 0x6207_2034;
+
+    /// A gated leaf stand-in for a callee that has an override slot: it
+    /// returns at once when the gate is set, else runs the body the slot held
+    /// before (`prev_cell`, or the generated body if never hooked).
+    macro_rules! oc620_gated_leaf {
+        ($fake:ident, $generated:path) => {
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC620_GATE) != OC620_MAGIC {
+                    return fall_back(c, prev_cell($fake), $generated);
+                }
+                c.cycles += 5;
+                ret(c);
+            }
+        };
+    }
+
+    oc620_gated_leaf!(
+        oc620_fake_rider_base_load_state,
+        ee::s00::f_00111d98__generated
+    );
+
+    oc620_gated_leaf!(oc620_fake_ai_reset_riders, ee::s00::f_001297c8__generated);
+
+    oc620_gated_leaf!(oc620_fake_focus_man_reset, ee::s00::f_00103358__generated);
+
+    oc620_gated_leaf!(oc620_fake_danger_man_reset, ee::s00::f_00101688__generated);
+
+    oc620_gated_leaf!(oc620_fake_ai_set_race_state, ee::s00::f_00113b10__generated);
+
+    oc620_gated_leaf!(
+        oc620_fake_ai_load_anim_data_sources,
+        ee::s00::f_0012b280__generated
+    );
+
+    pub(crate) fn oc620_install_fakes() {
+        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 6] = [
+            (
+                std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00111D98),
+                oc620_fake_rider_base_load_state,
+            ),
+            (
+                std::ptr::addr_of_mut!(ee::s00::OVERRIDE_001297C8),
+                oc620_fake_ai_reset_riders,
+            ),
+            (
+                std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00103358),
+                oc620_fake_focus_man_reset,
+            ),
+            (
+                std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00101688),
+                oc620_fake_danger_man_reset,
+            ),
+            (
+                std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00113B10),
+                oc620_fake_ai_set_race_state,
+            ),
+            (
+                std::ptr::addr_of_mut!(ee::s00::OVERRIDE_0012B280),
+                oc620_fake_ai_load_anim_data_sources,
+            ),
+        ];
+        for (slot, fake) in slots {
+            hook(slot, fake, prev_cell(fake));
+        }
+    }
+
+    /// Both sides run the same gated fakes for the callees; the hook call
+    /// goes to `FAKE` (outside the table: the miss hook) with an offset that
+    /// is seed-dependent, so the store loops see different bases.
+    #[test]
+    fn ai_init_matches() {
+        oc620_install_fakes();
+        check(
+            ee::s00::f_00128818__generated,
+            oc620_ai_init,
+            50,
+            &|c, seed| {
+                machine(c, seed, 0x0012_8818, 0);
+                c.pc = 0x0012_8818;
+                c.bus.write32(OC620_GATE, OC620_MAGIC);
+                let ai = DATA + 0x6000;
+                let block = DATA + 0x7000;
+                c.g[A0][0] = sx(ai);
+                c.bus.write32(ai + 0xcc, block);
+                c.bus.write16(block + 0x30, ((seed % 4) * 0x10) as u16);
+                c.bus.write32(block + 0x34, FAKE);
+            },
+        );
+    }
+
+    /// The generated `AI_CreateMissionRider` returns at once when the riders
+    /// are loaded (`self->NumberOfMissionRidersLoaded`, +0x88 > 0), so the
+    /// fixture takes that short path; the reset is the gated fake.
+    #[test]
+    fn ai_setup_mission_rider_matches() {
+        oc620_install_fakes();
+        check(
+            ee::s00::f_00128ac0__generated,
+            oc620_ai_setup_mission_rider,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x6201_28ac ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0012_8ac0;
+                c.bus.write32(OC620_GATE, OC620_MAGIC);
+                let ai = DATA + 0x3000;
+                c.g[A0][0] = sx(ai);
+                c.bus.write32(ai + 0x88, 1 + seed % 3);
+            },
+        );
+    }
+
+    #[test]
+    fn ai_is_rider_in_special_list_matches() {
+        check(
+            ee::s00::f_0012a1f0__generated,
+            oc620_ai_is_rider_in_special_list,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x6201_a1f0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0012_a1f0;
+                // cGameModeMan_iCharRank = {2, 3, 4, 5, 6, 7}.
+                for i in 0..6u32 {
+                    c.bus.write32(0x0053_6708 + 4 * i, i + 2);
+                }
+                let world = DATA + 0x5000;
+                let table = DATA + 0x4000;
+                let idx = seed % 8;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0xc0, table);
+                c.bus.write32(table + 0x18 + 4 * idx, seed % 10);
+                c.g[A1][0] = sx(idx);
+            },
+        );
+    }
+
+    /// Gate word in the test machine's RAM: the rider-init fake logs only when
+    /// it is set, and otherwise runs the body it replaced.
+    pub(crate) const OC621_CTRL: u32 = DATA + 0x3e_0100;
+
+    pub(crate) const OC621_MAGIC: u32 = 0x0621_f00d;
+
+    /// Gated fake of `Rider_InitTrackPaths` (0x112180).
+    pub(crate) fn oc621_fake_rider_init(c: &mut Cpu) {
+        if c.bus.read32(OC621_CTRL) != OC621_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc621_fake_rider_init),
+                ee::s00::f_00112180__generated,
+            );
+        }
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0011_2180, ret);
+    }
+
+    pub(crate) fn oc621_hook_rider_init() {
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00112180),
+            oc621_fake_rider_init,
+            fakes::prev_cell(oc621_fake_rider_init),
+        );
+    }
+
+    #[test]
+    fn oc621_path_data_update_wrapper_matches() {
+        check(
+            ee::s00::f_0012a4d0__generated,
+            oc621_path_data_update_wrapper,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x12_a4d0, 0);
+                c.pc = 0x0012_a4d0;
+            },
+        );
+    }
+
+    #[test]
+    fn oc621_init_all_track_paths_matches() {
+        oc621_hook_rider_init();
+        check(
+            ee::s00::f_0012a4f0__generated,
+            oc621_init_all_track_paths,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x12_a4f0, 0);
+                c.pc = 0x0012_a4f0;
+                c.bus.write32(OC621_CTRL, OC621_MAGIC);
+                let this = DATA + 0x2000;
+                c.bus
+                    .write32(this + 0x78, [0u32, 1, 3, 2][(seed % 4) as usize]);
+                for i in 0..4u32 {
+                    c.bus
+                        .write32(this + 0x28 + 4 * i, DATA + 0x3000 + 0x100 * i);
+                }
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    #[test]
+    fn oc621_reset_listed_rider_render_slots_matches() {
+        check(
+            ee::s00::f_0012a998__generated,
+            oc621_reset_listed_rider_render_slots,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_a998, 0);
+                c.pc = 0x0012_a998;
+                let this = DATA + 0x2000;
+                // The GrMan-like object behind `GP-0x854` and its vtable slot.
+                let gp_obj = DATA + 0x7000;
+                let gp_vt = DATA + 0x7100;
+                c.bus.write32(GAME_GP - 0x854, gp_obj);
+                c.bus.write32(gp_obj + 0x10d8, gp_vt);
+                c.bus.write16(gp_vt + 0x390, 0);
+                c.bus.write32(gp_vt + 0x394, FAKE + 0x40);
+                let count = if seed % 7 == 0 { 0 } else { r.next_u32() % 4 };
+                c.bus.write32(this + 0x80, count);
+                for i in 0..4u32 {
+                    let entry = DATA + 0x3000 + 0x100 * i;
+                    let rider = DATA + 0x4000 + 0x400 * i;
+                    // The rider's object at +0x6c0 with a vtable whose slot
+                    // 0x38 (delta) and 0x3c (function) are fakes.
+                    let vt = DATA + 0x6000 + 0x100 * i;
+                    c.bus.write32(this + 0x48 + 4 * i, entry);
+                    c.bus.write32(entry + 0x18, rider);
+                    c.bus.write32(rider + 0x884, r.next_u32() % 2);
+                    c.bus.write32(rider + 0x6c0, vt);
+                    c.bus.write16(vt + 0x38, 0);
+                    c.bus.write32(vt + 0x3c, FAKE + 0x10 * i);
+                }
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    /// `AI_PlaceRidersAtPathStart`: the fixture has no finish-line marker, so
+    /// the search runs through the path nodes and returns without placing a
+    /// rider (the placement branch is not reached; see the module comment).
+    #[test]
+    fn oc621_place_riders_at_path_start_matches() {
+        check(
+            ee::s00::f_0012a560,
+            oc621_place_riders_at_path_start,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x12_a560, 0);
+                c.pc = 0x0012_a560;
+                let this = DATA + 0x2000;
+                c.bus
+                    .write32(OC621_GPATHS + 0x10, [0u32, 1, 3][(seed % 3) as usize]);
+                c.bus.write32(this + 0x78, seed % 4);
+                for i in 0..4u32 {
+                    c.bus
+                        .write32(this + 0x28 + 4 * i, DATA + 0x3000 + 0x100 * i);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 2 == 0 {
+                    u64::MAX
+                } else {
+                    (seed % 4) as u64
+                };
+            },
+        );
+    }
+
+    /// A board press control at `DATA` (its rider at `DATA + 0x1000`, the
+    /// rider's anim at `+0x2000`, its metrix at `+0x3000`), the command word
+    /// at `DATA + 0x100`, and the fields the four checks read. `seed` picks the
+    /// press mode, the ollie bit and the sign of the slew.
+    pub(crate) fn bp_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        let mut r = Rng(0x0623_0000 ^ seed as u64 ^ (entry as u64) << 24);
+        scramble(c, &mut r);
+        c.pc = entry;
+        c.g[GP][0] = GAME_GP as u64;
+        c.g[A0][0] = DATA as u64;
+        c.g[A1][0] = (DATA + 0x100) as u64;
+        fill(c, &mut r, DATA, 0x100);
+        let rider = DATA + 0x1000;
+        let anim = DATA + 0x2000;
+        let metrix = DATA + 0x3000;
+        c.bus.write32(DATA + 0x14, rider);
+        fill(c, &mut r, rider, 0x400);
+        c.bus.write32(rider + 0x784, anim);
+        c.bus.write32(rider + 0x790, metrix);
+        fill(c, &mut r, anim, 0x100);
+        fill(c, &mut r, metrix, 0x100);
+        c.bus.write32(rider + 0x330, seed % 4);
+        c.bus.write32(rider + 0x320, seed / 4 % 2);
+        c.bus.write32(rider + 0x328, seed / 8 % 2);
+        c.bus.write32(rider + 0x268, r.edge_f32());
+        c.bus.write32(rider + 0x280, r.edge_f32());
+        c.bus.write32(rider + 0x2dc, r.edge_f32());
+        c.bus.write32(rider + 0x300, r.edge_f32());
+        let ollie = if seed % 2 == 0 { 0x20000 } else { 0 };
+        c.bus
+            .write32(DATA + 0x100, (r.next_u32() & !0x20000) | ollie);
+    }
+
+    #[test]
+    fn rider_board_press_sub_update_end_matches() {
+        check(
+            ssx3_ee::s00::f_001304e0__generated,
+            rider_board_press_sub_update_end,
+            200,
+            &|c, seed| bp_fixture(c, seed, 0x0013_04e0),
+        );
+    }
+
+    #[test]
+    fn rider_board_press_sub_check_switch_matches() {
+        check(
+            ssx3_ee::s00::f_001306b0__generated,
+            rider_board_press_sub_check_switch,
+            200,
+            &|c, seed| bp_fixture(c, seed, 0x0013_06b0),
+        );
+    }
+
+    #[test]
+    fn rider_board_press_sub_check_jump_matches() {
+        check(
+            ssx3_ee::s00::f_001307b8__generated,
+            rider_board_press_sub_check_jump,
+            200,
+            &|c, seed| bp_fixture(c, seed, 0x0013_07b8),
+        );
+    }
+
+    #[test]
+    fn rider_board_press_sub_check_spin_matches() {
+        check(
+            ssx3_ee::s00::f_001308d8__generated,
+            rider_board_press_sub_check_spin,
+            200,
+            &|c, seed| bp_fixture(c, seed, 0x0013_08d8),
+        );
+    }
+
+    /// Gate word and the animation id the anim-id fake returns (at +4).
+    pub(crate) const OC624_CTRL: u32 = DATA + 0x4000;
+
+    pub(crate) const OC624_MAGIC: u32 = 0x0624_0624;
+
+    pub(crate) static OC624_PREV_ANIM: AtomicUsize = AtomicUsize::new(0);
+
+    /// `RiderAnimBase_getCurrentAnimID`: logs the call and returns the id
+    /// the fixture writes at `CTRL + 4`.
+    pub(crate) fn oc624_fake_anim_id(c: &mut Cpu) {
+        if c.bus.read32(OC624_CTRL) != OC624_MAGIC {
+            return fall_back(c, &OC624_PREV_ANIM, ee::s10::f_00312aa0__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let anim = c.bus.read32(OC624_CTRL + 4);
+        fake(c, 0x0031_2aa0, ra);
+        if c.pc == ra {
+            c.g[V0][0] = anim as u64;
+        }
+    }
+
+    macro_rules! oc624_fake {
+        ($fake:ident, $prev:ident, $target:literal, $generated:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC624_CTRL) != OC624_MAGIC {
+                    return fall_back(c, &$prev, $generated);
+                }
+                let ra = c.g[RA][0] as u32;
+                fake(c, $target, ra);
+            }
+        };
+    }
+
+    oc624_fake!(
+        oc624_fake_press_spin,
+        OC624_PREV_SPIN,
+        0x0011_9ad8,
+        ee::s00::f_00119ad8__generated
+    );
+
+    oc624_fake!(
+        oc624_fake_add_boost,
+        OC624_PREV_BOOST,
+        0x0010_e098,
+        ee::s00::f_0010e098__generated
+    );
+
+    oc624_fake!(
+        oc624_fake_flip,
+        OC624_PREV_FLIP,
+        0x0012_fec8,
+        ee::s00::f_0012fec8__generated
+    );
+
+    oc624_fake!(
+        oc624_fake_play,
+        OC624_PREV_PLAY,
+        0x0031_28e8,
+        ee::s10::f_003128e8__generated
+    );
+
+    pub(crate) fn oc624_install() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00312AA0),
+            oc624_fake_anim_id,
+            &OC624_PREV_ANIM,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00119AD8),
+            oc624_fake_press_spin,
+            &OC624_PREV_SPIN,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010E098),
+            oc624_fake_add_boost,
+            &OC624_PREV_BOOST,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0012FEC8),
+            oc624_fake_flip,
+            &OC624_PREV_FLIP,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003128E8),
+            oc624_fake_play,
+            &OC624_PREV_PLAY,
+        );
+    }
+
+    #[test]
+    fn rider_board_press_sub_finish_press_matches() {
+        oc624_install();
+        check(
+            ee::s00::f_00131428__generated,
+            rider_board_press_sub_finish_press,
+            300,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0624_1428, 0);
+                // Animation: 37, 38, 29, 30 or an unrelated one.
+                let anim = [37, 38, 29, 30, 5][(seed % 5) as usize];
+                // Board-press stick: below and above the 0.5 threshold.
+                let slew = [0.25f32, 0.5, -0.5, 0.75, -1.0][((seed / 5) % 5) as usize];
+                let this = DATA + 0x100;
+                let rider = DATA + 0x2000;
+                c.bus.write32(OC624_CTRL, OC624_MAGIC);
+                c.bus.write32(OC624_CTRL + 4, anim);
+                c.bus.write32(this + 0x14, rider);
+                c.bus.write32(rider + 0x280, slew.to_bits());
+                c.bus.write32(rider + 0x330, seed % 3);
+                c.bus.write32(rider + 0x784, DATA + 0x3000);
+                c.bus.write32(rider + 0x790, DATA + 0x3800);
+                c.g[A0][0] = sx(this);
+                c.pc = 0x0013_1428;
+            },
+        );
+    }
+
+    /// `kHandplantAnim` in the game's data (the table the head's constants
+    /// describe), read by the handplant tests.
+    pub(crate) const HANDPLANT_TABLE_TEST: u32 = 0x0045_9fc8;
+
+    /// A rider and its real animation object: the layer selector is the one
+    /// fake (returns the no-layer sentinel), so no animation resource loads.
+    pub(crate) fn rider_anim_fixture(c: &mut Cpu, r: &mut Rng, rider: u32) {
+        let anim = DATA + 0x5000;
+        let vt = DATA + 0x6000;
+        let lists = DATA + 0x7000;
+        let seq = DATA + 0x7100;
+        c.bus.write32(rider + 0x784, anim);
+        c.bus.write32(anim + 0x50, lists);
+        c.bus.write32(anim + 0x58, vt);
+        c.bus.write32(vt + 0x24, FAKE);
+        for i in 0..8 {
+            c.bus.write32(LOG_RESULTS + i * 4, 0x207);
+        }
+        for i in 0..4 {
+            c.bus.write32(lists + 8 * i + 4, seq);
+        }
+        c.bus.write32(anim + 8, 9 + r.next_u32() % 4);
+        c.bus.write32(seq + 0xc0, r.next_u32() % 2);
+        c.bus.write32(seq + 0xb0, 0);
+        for id in 9..=13 {
+            c.bus.write32(0x0044_6990 + id * 28, 0);
+        }
+        put_vec(c, rider + 0x120, [0, 0, 0, 1.0f32.to_bits()]);
+        put_vec(c, rider + 0x1c0, [0, 0, 1.0f32.to_bits(), 0]);
+    }
+
+    #[test]
+    fn rider_handplant_sub_enter_matches() {
+        check(
+            ee::s01::f_001328b0__generated,
+            rider_handplant_sub_enter,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1328b0, 0);
+                const SELF: u32 = DATA;
+                const RIDER: u32 = DATA + 0x400;
+                const AUDIO: u32 = DATA + 0x20000;
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = SELF as u64;
+                c.g[A1][0] = seed as u64;
+                c.pc = 0x0013_28b0;
+                put_words(c, GAME_GP - 0x756c, &[0.05f32.to_bits()]);
+                put_words(c, GAME_GP - 0x7568, &[0.33f32.to_bits()]);
+                put_words(c, GAME_GP - 0x7548, &[(-1.0f32).to_bits()]);
+                c.bus.write32(GAME_GP + 0x410, AUDIO);
+                c.bus.write32(SELF, (0.5f32 + (seed % 4) as f32).to_bits());
+                c.bus.write32(SELF + 4, seed % 2);
+                c.bus.write32(SELF + 0x10, seed % 3);
+                c.bus.write32(SELF + 0x14, RIDER);
+                // Mode 1 (set by the function) row of the handplant table.
+                for t in 0..3u32 {
+                    let row = HANDPLANT_TABLE_TEST + 16 + t * 8;
+                    c.bus.write32(row, 9 + t);
+                    c.bus.write32(row + 4, ((seed / 3 + t) % 2) as u32);
+                }
+                rider_anim_fixture(c, &mut r, RIDER);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_handplant_control_init_matches() {
+        check(
+            ee::s01::f_001329b0__generated,
+            rider_handplant_control_init,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1329b0, 0);
+                const SELF: u32 = DATA;
+                const HIT: u32 = DATA + 0x100;
+                const SPLINE: u32 = DATA + 0x200;
+                const RIDER: u32 = DATA + 0x400;
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = SELF as u64;
+                c.g[A1][0] = HIT as u64;
+                c.g[A2][0] = (seed % 2) as u64;
+                c.f[12] = r.edge_f32();
+                c.pc = 0x0013_29b0;
+                put_words(c, GAME_GP - 0x7564, &[2222.2222f32.to_bits()]);
+                c.bus.write32(SELF + 0x14, RIDER);
+                let speed = if seed % 3 == 0 { 3000.0f32 } else { 100.0f32 };
+                put_vec(
+                    c,
+                    RIDER + 0x1e0,
+                    [speed.to_bits(), (speed * 0.5).to_bits(), 0, 0],
+                );
+                c.bus
+                    .write32(HIT + 0x58, if seed % 4 == 0 { 0 } else { SPLINE });
+                c.bus.write32(SPLINE + 0x1c, (seed % 2) * 1);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_handplant_sub_play_anim_matches() {
+        check(
+            ee::s01::f_00132fb8__generated,
+            rider_handplant_sub_play_anim,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x132fb8, 0);
+                const SELF: u32 = DATA;
+                const RIDER: u32 = DATA + 0x400;
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = SELF as u64;
+                let mode = (seed % 5) as u64;
+                let ty = (seed / 5 % 3) as u64;
+                c.g[A1][0] = mode;
+                c.g[A2][0] = ty;
+                c.pc = 0x0013_2fb8;
+                put_words(c, GAME_GP - 0x7548, &[1.5707963705062866f32.to_bits()]);
+                c.bus.write32(SELF + 0x14, RIDER);
+                let row = HANDPLANT_TABLE_TEST + (mode as u32) * 16 + (ty as u32) * 8;
+                c.bus.write32(row, 9 + (seed % 5));
+                c.bus.write32(row + 4, (seed / 2 % 2) as u32);
+                put_vec(
+                    c,
+                    RIDER + 0x120,
+                    [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                );
+                rider_anim_fixture(c, &mut r, RIDER);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_uber_grind_sub_enter_matches() {
+        check(
+            ee::s01::f_00136268__generated,
+            rider_uber_grind_sub_enter,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x136268, 0);
+                const SELF: u32 = DATA;
+                const RIDER: u32 = DATA + 0x400;
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = SELF as u64;
+                c.pc = 0x0013_6268;
+                let kind = seed % 4;
+                c.bus.write32(SELF + 4, kind);
+                c.bus.write32(SELF + 8, RIDER);
+                let style = [0u32, 2, 3, 4, 5][(seed / 4 % 5) as usize];
+                c.bus.write32(RIDER + 0x328, style);
+                let uber_table = 0x0045_a038 + 0x24 * kind;
+                for (off, anim) in [(0x0, 9), (0x4, 10), (0x8, 11), (0xc, 12), (0x20, 13)] {
+                    c.bus.write32(uber_table + off, anim);
+                }
+                for off in [0x72e8, 0x72e4, 0x72e0] {
+                    put_words(c, GAME_GP - off, &[1.5707963705062866f32.to_bits()]);
+                }
+                put_words(c, GAME_GP - 0x72dc, &[0.33f32.to_bits()]);
+                put_vec(c, 0x004f_f130, [0, 0, 0, 1.0f32.to_bits()]);
+                put_vec(c, 0x004f_f160, [0, 0, 1.0f32.to_bits(), 0]);
+                rider_anim_fixture(c, &mut r, RIDER);
+            },
         );
     }
 }

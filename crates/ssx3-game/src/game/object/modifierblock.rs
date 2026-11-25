@@ -2211,6 +2211,479 @@ pub(crate) fn modifier_block_load_body(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// `cMemMan_alloc` (0x317d70, shard s10): called through the function table.
+pub(crate) const OC664_ALLOC: u32 = 0x0031_7d70;
+
+/// The UV scroll and tex flip modifiers (shard s12): called through the table.
+pub(crate) const OC664_UV_SCROLL_CTOR: u32 = 0x0035_f788;
+
+pub(crate) const OC664_TEX_FLIP_CTOR: u32 = 0x0035_f1a8;
+
+/// Constructors, appenders and helpers the bodies call by name (shard s11).
+pub(crate) const MB_SPLINE_CTOR: Callee = Callee {
+    addr: 0x0035_95d8,
+    f: ee::s11::f_003595d8,
+};
+
+pub(crate) const MB_MULTI_SPLINE_CTOR: Callee = Callee {
+    addr: 0x0035_a118,
+    f: ee::s11::f_0035a118,
+};
+
+pub(crate) const MB_PARENT_CTOR: Callee = Callee {
+    addr: 0x0035_7090,
+    f: ee::s11::f_00357090,
+};
+
+pub(crate) const MB_POSITION_CTOR: Callee = Callee {
+    addr: 0x0035_6f68,
+    f: ee::s11::f_00356f68,
+};
+
+pub(crate) const MB_ROLLER_CTOR: Callee = Callee {
+    addr: 0x0035_df70,
+    f: ee::s11::f_0035df70,
+};
+
+pub(crate) const MB_MAGNET_CTOR: Callee = Callee {
+    addr: 0x0035_7358,
+    f: ee::s11::f_00357358,
+};
+
+pub(crate) const MB_AVA_SPLINE_CTOR: Callee = Callee {
+    addr: 0x0035_7798,
+    f: ee::s11::f_00357798,
+};
+
+pub(crate) const MB_BOOST_CTOR: Callee = Callee {
+    addr: 0x0034_2808,
+    f: ee::s11::f_00342808,
+};
+
+pub(crate) const MB_PARTICLE_CTOR: Callee = Callee {
+    addr: 0x0034_59a8,
+    f: ee::s11::f_003459a8,
+};
+
+pub(crate) const MB_DYNAMIC_PARTICLE_CTOR: Callee = Callee {
+    addr: 0x0034_5d80,
+    f: ee::s11::f_00345d80,
+};
+
+pub(crate) const MB_HALO_CTOR: Callee = Callee {
+    addr: 0x0034_61c0,
+    f: ee::s11::f_003461c0,
+};
+
+pub(crate) const MB_EFFECT_APPEND: Callee = Callee {
+    addr: 0x0034_5720,
+    f: ee::s11::f_00345720,
+};
+
+pub(crate) const MB_RAIL_CTOR: Callee = Callee {
+    addr: 0x0035_ba88,
+    f: ee::s11::f_0035ba88,
+};
+
+pub(crate) const MB_RAIL_APPEND: Callee = Callee {
+    addr: 0x0035_b690,
+    f: ee::s11::f_0035b690,
+};
+
+/// One arm of the `hdr.type` chain: compares V1 with `kind` (V0 holds it),
+/// leaves `next` in V0, and on a match allocates `size` bytes named
+/// `0x490000 - name` and constructs the modifier with `ctor`.
+#[derive(Clone, Copy)]
+pub(crate) struct Oc664RootArm {
+    kind: u64,
+    next: u64,
+    entry: u64,
+    size: u64,
+    name: u32,
+    alloc_back: u32,
+    ctor: Callee,
+    ctor_back: u32,
+}
+
+pub(crate) const OC664_ROOT_ARMS: [Oc664RootArm; 6] = [
+    Oc664RootArm {
+        kind: 1,
+        next: 2,
+        entry: 3,
+        size: 0xf0,
+        name: 0x1730,
+        alloc_back: 0x0035_376c,
+        ctor: MB_SPLINE_CTOR,
+        ctor_back: 0x0035_3778,
+    },
+    Oc664RootArm {
+        kind: 2,
+        next: 4,
+        entry: 2,
+        size: 0x58,
+        name: 0x1730,
+        alloc_back: 0x0035_37a0,
+        ctor: MB_MULTI_SPLINE_CTOR,
+        ctor_back: 0x0035_37ac,
+    },
+    Oc664RootArm {
+        kind: 4,
+        next: 3,
+        entry: 2,
+        size: 0xb0,
+        name: 0x1720,
+        alloc_back: 0x0035_37d4,
+        ctor: MB_PARENT_CTOR,
+        ctor_back: 0x0035_37e0,
+    },
+    Oc664RootArm {
+        kind: 3,
+        next: 5,
+        entry: 2,
+        size: 0x90,
+        name: 0x1710,
+        alloc_back: 0x0035_3808,
+        ctor: MB_POSITION_CTOR,
+        ctor_back: 0x0035_3814,
+    },
+    Oc664RootArm {
+        kind: 5,
+        next: 6,
+        entry: 2,
+        size: 0x2d0,
+        name: 0x16f8,
+        alloc_back: 0x0035_383c,
+        ctor: MB_ROLLER_CTOR,
+        ctor_back: 0x0035_3848,
+    },
+    Oc664RootArm {
+        kind: 6,
+        next: 7,
+        entry: 2,
+        size: 0xb0,
+        name: 0x16e8,
+        alloc_back: 0x0035_3870,
+        ctor: MB_MAGNET_CTOR,
+        ctor_back: 0x0035_387c,
+    },
+];
+
+/// `cMemMan_alloc(size, str, 0x20000000, 0)` where the name string sits at
+/// `0x490000 - name_off`; returns to `back` with v0 = the block.
+pub(crate) fn oc664_alloc(c: &mut Cpu, size: u64, name_off: u32, back: u32) -> Flow {
+    c.g[A0][0] = size;
+    c.g[A1][0] = sx(0x0049_0000u32.wrapping_sub(name_off));
+    c.g[A2][0] = 0x2000_0000;
+    c.g[A3][0] = 0;
+    call_ptr(c, OC664_ALLOC, back)
+}
+
+/// `stream->read(a1, a2)` through the stream's vtable entry 2 (`{short delta;
+/// fn}` at +0x10). The vtable pointer goes to register `vt`, the method to
+/// `method`, and a0 = stream + delta; the caller sets a1 and a2 first. Which
+/// registers hold them differs per call site in the generated code.
+pub(crate) fn oc664_stream_read(
+    c: &mut Cpu,
+    stream: u32,
+    vt: usize,
+    method: usize,
+    back: u32,
+) -> Flow {
+    c.g[vt][0] = Addr(stream).lw(c);
+    let table = c.g[vt][0] as u32;
+    c.g[A0][0] = Addr(table.wrapping_add(0x10)).lh(c);
+    c.g[method][0] = Addr(table.wrapping_add(0x14)).lw(c);
+    let target = c.g[method][0] as u32;
+    c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, back)
+}
+
+/// One arm of the root-transform chain (`'b_353780` ... `'b_353884`). Returns
+/// true when the type matched (the arm built its modifier).
+pub(crate) fn oc664_root_arm(c: &mut Cpu, arm: Oc664RootArm) -> Result<bool, Unwound> {
+    c.cycles += arm.entry;
+    c.g[V0][0] = arm.kind;
+    let mismatch = c.g[V1][0] != c.g[V0][0];
+    c.g[V0][0] = arm.next;
+    if mismatch {
+        return Ok(false);
+    }
+    c.cycles += 11;
+    oc664_alloc(c, arm.size, arm.name, arm.alloc_back)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S1][0];
+    arm.ctor.call(c, arm.ctor_back)?;
+    let made = c.g[V0][0];
+    Addr(c.g[S2][0] as u32).sw(c, made);
+    Ok(true)
+}
+
+/// The root transform by `hdr.type` (V1), for `flags & 1`. Returns true when
+/// the body goes on to its tail: a match, or type 7 is not taken and the tail
+/// is skipped (false) when no arm matched.
+pub(crate) fn oc664_root_transform(c: &mut Cpu) -> Result<bool, Unwound> {
+    for arm in OC664_ROOT_ARMS {
+        if oc664_root_arm(c, arm)? {
+            return Ok(true);
+        }
+    }
+    // Type 7 (`'b_353884`'s successor): the flags word is reloaded before the
+    // branch, so the constructor call sees it in v0.
+    let hdr = sp(c);
+    c.cycles += 2;
+    let mismatch = c.g[V1][0] != c.g[V0][0];
+    c.g[V0][0] = Addr(hdr).lw(c);
+    if mismatch {
+        return Ok(false);
+    }
+    c.cycles += 10;
+    oc664_alloc(c, 0x90, 0x16d8, 0x0035_38a4)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S1][0];
+    MB_AVA_SPLINE_CTOR.call(c, 0x0035_38b0)?;
+    let made = c.g[V0][0];
+    Addr(c.g[S2][0] as u32).sw(c, made);
+    Ok(true)
+}
+
+/// One numA effect (`'b_353a1c`): the effect type is in v0 (a byte address
+/// on entry); a1 leaves with the effect (or 0) for the link.
+pub(crate) fn oc664_effect(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[V1][0] = 1;
+    c.g[V0][0] = Addr(c.g[V0][0] as u32).lb(c);
+    let mismatch = c.g[V0][0] != c.g[V1][0];
+    c.g[A0][0] = 0x1f0;
+    if !mismatch {
+        c.cycles += 9;
+        oc664_alloc(c, 0x1f0, 0x1688, 0x0035_39a8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        MB_PARTICLE_CTOR.call(c, 0x0035_39b4)?;
+        c.g[A1][0] = c.g[V0][0];
+        return Ok(());
+    }
+    c.cycles += 2;
+    let mismatch = c.g[V0][0] != c.g[S7][0];
+    c.g[A0][0] = 0x270;
+    if !mismatch {
+        c.cycles += 9;
+        oc664_alloc(c, 0x270, 0x1670, 0x0035_39d4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        MB_DYNAMIC_PARTICLE_CTOR.call(c, 0x0035_39e0)?;
+        c.g[A1][0] = c.g[V0][0];
+        return Ok(());
+    }
+    c.cycles += 2;
+    let mismatch = c.g[V0][0] != c.g[S5][0];
+    c.g[V0][0] = 0;
+    if !mismatch {
+        c.cycles += 10;
+        c.g[A0][0] = 0x40;
+        oc664_alloc(c, 0x40, 0x1658, 0x0035_3a04)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        MB_HALO_CTOR.call(c, 0x0035_3a10)?;
+        c.g[A1][0] = c.g[V0][0];
+        return Ok(());
+    }
+    c.cycles += 1;
+    c.g[A1][0] = c.g[V0][0];
+    Ok(())
+}
+
+/// `void tModifierBlock_readFromReplayFrame(ModifierBlock *self, Stream *stream)`
+/// (0x3536d8): reads the 52-byte block header (flags +0, transform type +4,
+/// kind +8, numA +0xc, numB +0x10, effect types from +0x14), clears the block's
+/// four slots, then builds what the flags ask for: the root transform
+/// (`flags & 1`, by type), the UV scroll (2), the tex flip (4), the boost
+/// (8, when kind is 1), the numA effects (linked at +0x10) and the numB rails
+/// (linked at +0x1c). Frame 0xe0: saves ra, s0-s7 and fp.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn modifier_block_load_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0xe0);
+        c.g[A2][0] = 0x34;
+        frame.save(c, 18, 0xb0);
+        frame.save(c, 17, 0xc0);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, 16, 0xd0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, 19, 0xa0);
+        c.g[A1][0] = c.g[SP][0];
+        frame.save(c, 20, 0x90);
+        frame.save(c, 21, 0x80);
+        frame.save(c, 22, 0x70);
+        frame.save(c, 23, 0x60);
+        frame.save(c, 30, 0x50);
+        frame.save_ra(c, 0x40);
+        let block = c.g[S2][0] as u32;
+        let stream = c.g[S1][0] as u32;
+        for off in [0u32, 4, 8, 0xc] {
+            Addr(block + off).sw(c, 0);
+        }
+        oc664_stream_read(c, stream, V0, V1, 0x0035_3738)?;
+
+        // flags & 1: the root transform, by hdr.type (V1).
+        let hdr = sp(c);
+        c.g[V0][0] = Addr(hdr).lw(c);
+        c.g[V0][0] &= 1;
+        let no_root = c.g[V0][0] == 0;
+        c.g[V1][0] = Addr(hdr + 4).lw(c);
+        let mut tail = true;
+        if !no_root {
+            tail = oc664_root_transform(c)?;
+        }
+        if tail {
+            c.cycles += 1;
+        }
+        c.g[V0][0] = Addr(hdr).lw(c);
+
+        // flags & 2: UV scroll.
+        c.cycles += 3;
+        c.g[V0][0] &= 2;
+        let no_uv = c.g[V0][0] == 0;
+        c.g[A0][0] = 0x50;
+        if !no_uv {
+            c.cycles += 9;
+            oc664_alloc(c, 0x50, 0x16c0, 0x0035_38d8)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, OC664_UV_SCROLL_CTOR, 0x0035_38e4)?;
+            let made = c.g[V0][0];
+            Addr(block + 4).sw(c, made);
+        }
+
+        // flags & 4: tex flip.
+        c.cycles += 4;
+        c.g[V0][0] = Addr(hdr).lw(c);
+        c.g[V0][0] &= 4;
+        let no_flip = c.g[V0][0] == 0;
+        c.g[A0][0] = 0xe8;
+        if !no_flip {
+            c.cycles += 9;
+            oc664_alloc(c, 0xe8, 0x16a8, 0x0035_390c)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, OC664_TEX_FLIP_CTOR, 0x0035_3918)?;
+            let made = c.g[V0][0];
+            Addr(block + 8).sw(c, made);
+        }
+
+        // flags & 8 and kind == 1: the boost (physics) modifier.
+        c.cycles += 4;
+        c.g[V0][0] = Addr(hdr).lw(c) & 8;
+        let no_boost_flag = c.g[V0][0] == 0;
+        c.g[V1][0] = Addr(hdr + 8).lw(c);
+        let mut tail = true;
+        if !no_boost_flag {
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            let not_boost = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = Addr(hdr + 0xc).lw(c);
+            if not_boost {
+                tail = false;
+            } else {
+                c.cycles += 10;
+                oc664_alloc(c, 0x50, 0x1698, 0x0035_3950)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S1][0];
+                MB_BOOST_CTOR.call(c, 0x0035_395c)?;
+                let made = c.g[V0][0];
+                Addr(block + 0xc).sw(c, made);
+            }
+        }
+        if tail {
+            c.cycles += 1;
+        }
+        c.g[V0][0] = Addr(hdr + 0xc).lw(c);
+
+        // numA effects, each linked into the list at block+0x10.
+        c.cycles += 2;
+        let effects_wanted = (c.g[V0][0] as i64) > 0;
+        c.g[S0][0] = 0;
+        if effects_wanted {
+            c.cycles += 7;
+            c.g[S3][0] = sx(hdr.wrapping_add(0x14));
+            c.g[FP][0] = 0x0049_0000;
+            c.g[S7][0] = 2;
+            c.g[S6][0] = 0x0049_0000;
+            c.g[S5][0] = 3;
+            c.g[S4][0] = 0x0049_0000;
+            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            loop {
+                oc664_effect(c)?;
+                c.cycles += 7;
+                c.g[A0][0] = sx(block.wrapping_add(0x10));
+                MB_EFFECT_APPEND.call(c, 0x0035_3a24)?;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                c.g[V0][0] = Addr(hdr + 0xc).lw(c);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_3988);
+                }
+            }
+        }
+
+        // numB rails, each built with a 0x90-byte name and linked at block+0x1c.
+        c.cycles += 3;
+        c.g[V0][0] = Addr(hdr + 0x10).lw(c);
+        let rails_wanted = (c.g[V0][0] as i64) > 0;
+        c.g[S0][0] = 0;
+        if rails_wanted {
+            c.cycles += 3;
+            c.g[S3][0] = 0x0049_0000;
+            c.g[A2][0] = 0x2000_0000;
+            loop {
+                c.cycles += 15;
+                c.g[A3][0] = 0;
+                c.g[A0][0] = 0x90;
+                c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1648));
+                call_ptr(c, OC664_ALLOC, 0x0035_3a60)?;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S1][0];
+                MB_RAIL_CTOR.call(c, 0x0035_3a70)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = sx(block.wrapping_add(0x1c));
+                MB_RAIL_APPEND.call(c, 0x0035_3a7c)?;
+                c.g[V0][0] = Addr(hdr + 0x10).lw(c);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A2][0] = 0x2000_0000;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_3a50);
+                }
+            }
+        }
+
+        c.cycles += 12;
+        frame.restore(c, 16, 0xd0);
+        frame.restore(c, 17, 0xc0);
+        frame.restore(c, 18, 0xb0);
+        frame.restore(c, 19, 0xa0);
+        frame.restore(c, 20, 0x90);
+        frame.restore(c, 21, 0x80);
+        frame.restore(c, 22, 0x70);
+        frame.restore(c, 23, 0x60);
+        frame.restore(c, 30, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3048,5 +3521,82 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA + 0x100 + (seed % 2) * 0x40);
             },
         );
+    }
+
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::prev_cell;
+    use std::ptr::addr_of_mut;
+
+    /// Gate word for the callee fakes (a magic word in the machine's RAM).
+    pub(crate) const OC664_CTRL: u32 = DATA + 0x3f00;
+
+    pub(crate) const OC664_MAGIC: u32 = 0x6f63_3634;
+
+    /// The objects under test.
+    #[allow(dead_code)]
+    pub(crate) const OC664_OBJ: u32 = DATA + 0x3000;
+
+    #[allow(dead_code)]
+    pub(crate) const OC664_NODE: u32 = DATA + 0x3a00;
+
+    /// A vtable whose slot at +0x110 is a fake (the dead branch of the update).
+    #[allow(dead_code)]
+    pub(crate) const OC664_VT2: u32 = DATA + 0x3d00;
+
+    /// A 52-byte modifier-block header at `at`: flags (the low nibble of the
+    /// seed), transform type (0..8), kind (1 or 2), numA and numB, effect types.
+    #[allow(dead_code)]
+    pub(crate) fn oc664_header(c: &mut Cpu, at: u32, seed: u32, r: &mut Rng) {
+        c.bus.write32(at, seed & 0xf);
+        c.bus.write32(at + 4, (seed >> 4) % 9);
+        c.bus.write32(at + 8, if seed % 5 == 0 { 2 } else { 1 });
+        c.bus.write32(at + 0xc, r.next_u32() % 4);
+        c.bus.write32(at + 0x10, r.next_u32() % 3);
+        for i in 0..4 {
+            c.bus.write8(at + 0x14 + i, (r.next_u32() % 4) as u8);
+        }
+    }
+
+    /// Gated fakes for the callees that have an override slot: while the gate
+    /// is set, a call is logged and returns; otherwise the body it replaced runs.
+    macro_rules! oc664_callees {
+        ($($fake:ident => $shard:ident :: $slot:ident, $gen:ident, $addr:expr;)*) => {
+            $(
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC664_CTRL) != OC664_MAGIC {
+                        return fall_back(c, prev_cell($fake), ee::$shard::$gen);
+                    }
+                    fake_call(c, $addr);
+                }
+            )*
+
+            pub(crate) fn oc664_install_slots() {
+                $(hook(addr_of_mut!(ee::$shard::$slot), $fake, prev_cell($fake));)*
+            }
+        };
+    }
+
+    oc664_callees! {
+        oc664_fake_alloc => s10::OVERRIDE_00317D70, f_00317d70__generated, 0x0031_7d70;
+        oc664_fake_spline => s11::OVERRIDE_003595D8, f_003595d8__generated, 0x0035_95d8;
+        oc664_fake_multi_spline => s11::OVERRIDE_0035A118, f_0035a118__generated, 0x0035_a118;
+        oc664_fake_parent => s11::OVERRIDE_00357090, f_00357090__generated, 0x0035_7090;
+        oc664_fake_position => s11::OVERRIDE_00356F68, f_00356f68__generated, 0x0035_6f68;
+        oc664_fake_magnet => s11::OVERRIDE_00357358, f_00357358__generated, 0x0035_7358;
+        oc664_fake_ava => s11::OVERRIDE_00357798, f_00357798__generated, 0x0035_7798;
+        oc664_fake_uv => s12::OVERRIDE_0035F788, f_0035f788__generated, 0x0035_f788;
+        oc664_fake_tex_flip => s12::OVERRIDE_0035F1A8, f_0035f1a8__generated, 0x0035_f1a8;
+        oc664_fake_boost => s11::OVERRIDE_00342808, f_00342808__generated, 0x0034_2808;
+        oc664_fake_particle => s11::OVERRIDE_003459A8, f_003459a8__generated, 0x0034_59a8;
+        oc664_fake_dyn_particle => s11::OVERRIDE_00345D80, f_00345d80__generated, 0x0034_5d80;
+        oc664_fake_halo => s11::OVERRIDE_003461C0, f_003461c0__generated, 0x0034_61c0;
+        oc664_fake_effect => s11::OVERRIDE_00345720, f_00345720__generated, 0x0034_5720;
+        oc664_fake_rail_link => s11::OVERRIDE_0035B690, f_0035b690__generated, 0x0035_b690;
+        oc664_fake_world => s11::OVERRIDE_0034FB90, f_0034fb90__generated, 0x0034_fb90;
+        oc664_fake_setup_overlap => s11::OVERRIDE_00356780, f_00356780__generated, 0x0035_6780;
+        oc664_fake_anim_ctor => s11::OVERRIDE_00341C80, f_00341c80__generated, 0x0034_1c80;
+        oc664_fake_anim_v15 => s11::OVERRIDE_00341D48, f_00341d48__generated, 0x0034_1d48;
     }
 }
