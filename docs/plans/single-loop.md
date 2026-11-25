@@ -54,7 +54,7 @@ equivalence is defined anew (step 1) before anything changes.
 | Worktree on `main` | ✅ |
 | 1 Acceptance | ✅ `tools/accept.py record/compare`, `SSX3_STATE_LOG` |
 | 2 `frame()` step | ✅ `Engine::step` runs the main thread on the driver's stack; it unwinds at `PS2ExecMan_WaitFrame` and re-enters there; boundaries inside in-place waits are made up (`Sched::host_frames`) |
-| 3 SND | 🟡 the SND thread is native (unwinds at its mixer wait); a lock holder is not preempted, so the SND mutex never blocks mid-body. Still guest code; turning it into a plain step call is open |
+| 3 SND | ✅ the mixer round runs as a frame step: `SND_EeThread` is a *step thread* (`kernel::register_step_entry`, `STEP_THREAD_ENTRIES`); the SIF handler's `iSignalSema` only wakes it, and `kernel::run_steps` runs the round from the top of the frame driver loop when nothing is nested and no thread is inside a lock. No preemption, no mutex wait for the round. The round is still guest code (a hand port); a command queue for game-thread SND calls is not done. `SSX3_SND_THREAD=1` keeps the old priority schedule (the gate uses it). Acceptance: `tools/accept.py` (race, 4 scenarios without halts; screenshots differ by sub-frame jitter only, 2nd/6, same clock) |
 | 4 Worker and loading | 🟡 the worker is native (unwinds at its job wait); jobs are still guest functions |
 | 5 Main's waits | ✅ `DelayTicks` etc. wait in place (the machine idles on main's frames) |
 | 6 Delete | 🟡 `threads.rs`, `threads_switcher.rs`, `corosensei` and the `StackSwitcher` deleted; the kernel scheduler stays (it is the guest syscall layer) |
