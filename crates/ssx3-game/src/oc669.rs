@@ -13,11 +13,7 @@ use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this module: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-];
-
-
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
 
 #[cfg(test)]
 mod tests {
@@ -25,6 +21,4 @@ mod tests {
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
     use crate::difftest::DATA;
-
-
 }

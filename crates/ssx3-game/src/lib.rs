@@ -86,7 +86,6 @@ pub mod native_files;
 pub mod oc643;
 #[cfg(feature = "oc658")]
 pub mod oc658;
-pub mod plugin_host;
 #[cfg(feature = "oc667")]
 pub mod oc667;
 #[cfg(feature = "oc668")]
@@ -129,6 +128,7 @@ pub mod oc685;
 pub mod oc686;
 #[cfg(feature = "oc687")]
 pub mod oc687;
+pub mod plugin_host;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
