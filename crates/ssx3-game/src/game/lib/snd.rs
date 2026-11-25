@@ -30152,28 +30152,38 @@ pub fn snd_vblank_handler(c: &mut Cpu) {
 pub fn snd_ee_thread(c: &mut Cpu) {
     use oc694_callee::*;
 
+    // A native thread (`ssx3_ps2::kernel::register_native_entry`) unwinds at its
+    // wait and is re-entered at the wait's return address, with its registers
+    // and stack as they were.
+    let after_wait = c.pc == 0x003c_19f0;
     guest(c, |c| {
-        c.cycles += 16;
-        let frame = Frame::open(c, 0x80);
-        c.g[V0][0] = 0x510000;
-        frame.save(c, S4, 0x30);
-        frame.save(c, S1, 0x60);
-        c.g[S4][0] = 0x510000;
-        frame.save(c, S3, 0x40);
-        c.g[S1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x5300));
-        frame.save(c, S5, 0x20);
-        c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5718));
-        frame.save(c, S6, 0x10);
-        c.g[S5][0] = 0x510000;
-        frame.save(c, S0, 0x70);
-        c.g[S6][0] = 0x510000;
-        frame.save(c, S2, 0x50);
-        frame.save_ra(c, 0);
+        if !after_wait {
+            c.cycles += 16;
+            let frame = Frame::open(c, 0x80);
+            c.g[V0][0] = 0x510000;
+            frame.save(c, S4, 0x30);
+            frame.save(c, S1, 0x60);
+            c.g[S4][0] = 0x510000;
+            frame.save(c, S3, 0x40);
+            c.g[S1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x5300));
+            frame.save(c, S5, 0x20);
+            c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5718));
+            frame.save(c, S6, 0x10);
+            c.g[S5][0] = 0x510000;
+            frame.save(c, S0, 0x70);
+            c.g[S6][0] = 0x510000;
+            frame.save(c, S2, 0x50);
+            frame.save_ra(c, 0);
+        }
+        let mut waited = after_wait;
         'round: loop {
             // Wait for the mixer semaphore.
-            c.cycles += 5;
-            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1aa4));
-            call_ptr(c, 0x00423de0, 0x003c_19f0)?;
+            if !waited {
+                c.cycles += 5;
+                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1aa4));
+                call_ptr(c, 0x00423de0, 0x003c_19f0)?;
+            }
+            waited = false;
             c.g[V1][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x1aad));
             let idle = c.g[V1][0] == 0u64;
             c.g[V0][0] = 0x450000;
