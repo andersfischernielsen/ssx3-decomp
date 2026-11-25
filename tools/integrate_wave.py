@@ -116,7 +116,9 @@ def build():
 
 def gate():
     out = tempfile.mktemp(suffix=".bin")
-    env = dict(os.environ, SSX3_RAM_DUMP=out, SSX3_INPUT=RACE_INPUT)
+    # The baseline is the old schedule: SND as a priority-scheduled thread. The
+    # step mode (the default) is checked with tools/accept.py.
+    env = dict(os.environ, SSX3_RAM_DUMP=out, SSX3_INPUT=RACE_INPUT, SSX3_SND_THREAD="1")
     run(["./target/game/ssx3-headless", "6000"], env=env, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL)
     same = open(out, "rb").read() == open(BASELINE, "rb").read()
