@@ -123,6 +123,36 @@ pub fn addu(a: u64, b: u64) -> u64 {
     sx((a as u32).wrapping_add(b as u32))
 }
 
+/// `subu`: 32-bit subtract, sign-extended.
+#[inline]
+pub fn subu(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_sub(b as u32))
+}
+
+/// `slt`: signed 64-bit `a < b`.
+#[inline]
+pub fn slt(a: u64, b: u64) -> u64 {
+    ((a as i64) < (b as i64)) as u64
+}
+
+/// `sltu`: unsigned 64-bit `a < b`.
+#[inline]
+pub fn sltu(a: u64, b: u64) -> u64 {
+    (a < b) as u64
+}
+
+/// `sll v, n` (32-bit, sign-extended).
+#[inline]
+pub fn sll(v: u64, n: u32) -> u64 {
+    sx((v as u32) << n)
+}
+
+/// `sra v, n` (32-bit arithmetic shift, sign-extended).
+#[inline]
+pub fn sra(v: u64, n: u32) -> u64 {
+    sx(((v as u32) as i32 >> n) as u32)
+}
+
 // ---------------------------------------------------------------------------
 // FPU registers.
 

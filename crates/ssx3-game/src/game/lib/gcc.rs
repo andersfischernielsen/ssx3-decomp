@@ -13,6 +13,7 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -254,6 +255,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_51d8, type_info_name, "type_info_name"),
     (0x0041_51e0, type_info_ctor, "type_info_ctor"),
     (0x0041_5238, type_info_before, "type_info_before"),
+    (0x0040_fcb0, divdi3, "__divdi3"),
+    (0x0041_f3a8, ieee754_log_2, "__ieee754_log_2"),
+    (0x0042_d470, moddi3, "__moddi3"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14436,6 +14440,1112 @@ pub(crate) mod throw_save {
     pub const CUR: u32 = 0x2f0;
 }
 
+// ---------------------------------------------------------------------------
+// 0x0040fcb0 __divdi3
+
+/// Entry of `__divdi3`. Every other address inside it runs the generated
+/// twin: the function makes no calls and has no event checks, so nothing
+/// resumes there.
+pub(crate) const DIVDI3_ENTRY: u32 = 0x0040_fcb0;
+
+/// The low word of a doubleword (the body builds this mask as
+/// `0xffff_ffff_ffff_0000 >> 32`).
+pub(crate) const DIVDI3_LOW_WORD: u64 = 0xffff_ffff;
+
+/// `W_TYPE_SIZE`: `count_leading_zeros` leaves it in a3.
+pub(crate) const DIVDI3_WORD_BITS: u64 = 32;
+
+/// The join a case leaves by, before the block that packs `q1:q0`: the
+/// `q1 = 0` join (0x410328), the join after it (0x410330) or the packing
+/// block itself (0x410334). Only the cycle charge differs.
+#[derive(Clone, Copy)]
+pub(crate) enum Divdi3Exit {
+    ZeroHigh,
+    Join,
+    Pack,
+}
+
+impl Divdi3Exit {
+    /// Cycles of the join blocks this exit runs.
+    fn cycles(self) -> u64 {
+        match self {
+            Divdi3Exit::ZeroHigh => 2 + 1,
+            Divdi3Exit::Join => 1,
+            Divdi3Exit::Pack => 0,
+        }
+    }
+}
+
+/// The quotient of the magnitudes, as `q1:q0`.
+pub(crate) struct Divdi3Quotient {
+    high: u32,
+    low: u32,
+    exit: Divdi3Exit,
+}
+
+/// `long long __divdi3(long long n, long long d)` (0x40fcb0): libgcc2's
+/// signed 64-bit division, truncating toward zero. It divides the
+/// magnitudes with `__udivmoddi4` inlined (32-bit words, 16-bit
+/// `udiv_qrnnd` digits, operands normalized by `count_leading_zeros`) and
+/// negates the quotient when exactly one operand is negative. It runs in
+/// registers only (no stack frame). Division by zero takes libgcc's
+/// `d0 = 1 / d0`, which the EE's `divu` answers with 0xffffffff (no trap),
+/// and runs on with that divisor (`5 / 0` gives 0x1_0000_0001).
+///
+/// Entered anywhere but its start, it runs the generated body.
+pub fn divdi3(c: &mut Cpu) {
+    if c.pc != DIVDI3_ENTRY {
+        return ee::s15::f_0040fcb0__entries(c);
+    }
+    c.cycles += 7;
+    let (n, d) = (c.g[A0][0], c.g[A1][0]);
+    // The magnitudes; t7 says whether the quotient is negated. Each
+    // negation leaves the low word of its result in a scratch register.
+    let mut negate = false;
+    let n = if (n as i64) < 0 {
+        c.cycles += 21;
+        negate = true;
+        let n = n.wrapping_neg();
+        c.g[A2][0] = n & DIVDI3_LOW_WORD;
+        n
+    } else {
+        n
+    };
+    c.cycles += 3;
+    let d = if (d as i64) < 0 {
+        c.cycles += 20;
+        negate = !negate;
+        let d = d.wrapping_neg();
+        c.g[A3][0] = d & DIVDI3_LOW_WORD;
+        d
+    } else {
+        d
+    };
+    c.g[T7][0] = if negate { u64::MAX } else { 0 };
+    c.g[T1][0] = d;
+
+    // The words: n0 in t4, n1 in t2, d0 in t0 (sign-extended).
+    c.cycles += 9;
+    let (n1, n0, d1, d0) = ((n >> 32) as u32, n as u32, (d >> 32) as u32, d as u32);
+    c.g[T0][0] = sx(d0);
+    c.g[T2][0] = sx(n1);
+    c.g[T4][0] = sx(n0);
+    let q = if d1 == 0 {
+        c.cycles += 3;
+        if n1 < d0 {
+            divdi3_by_word_short(c, n1, n0, d0)
+        } else {
+            divdi3_by_word_long(c, n1, n0, d0)
+        }
+    } else {
+        c.cycles += 2;
+        if d1 > n1 {
+            // 00 = nn / DD
+            c.cycles += 2;
+            Divdi3Quotient {
+                high: 0,
+                low: 0,
+                exit: Divdi3Exit::ZeroHigh,
+            }
+        } else {
+            divdi3_by_doubleword(c, n1, n0, d1, d0)
+        }
+    };
+    divdi3_return(c, q, negate);
+}
+
+/// `0q = nn / 0D` (d1 == 0, n1 < d0): one quotient word in two digits after
+/// normalizing. Leaves a3 = the high digit, a2 = the low digit's `q * dl`,
+/// t1 = dl and the normalized words in t0/t2/t4.
+pub(crate) fn divdi3_by_word_short(c: &mut Cpu, n1: u32, n0: u32, d0: u32) -> Divdi3Quotient {
+    c.cycles += 3;
+    let bm = clz_tab(c, d0);
+    let (mut d0, mut n1, mut n0) = (d0, n1, n0);
+    if bm != 0 {
+        c.cycles += 5;
+        n1 = (n1 << bm) | (n0 >> (32 - bm));
+        d0 <<= bm;
+        n0 <<= bm;
+    }
+    c.cycles += 6;
+    let (high, r) = qrnnd_step(c, n1, n0 >> 16, d0, 11, 3);
+    c.cycles += 2;
+    let low = qrnnd_step_quotient(c, r, n0 & 0xffff, d0);
+    // `mult a2, a1, t1` leaves the product's low word in a2 as well as LO.
+    c.g[A2][0] = c.lo[0];
+    c.cycles += 5;
+    c.g[A3][0] = sx(high);
+    c.g[T0][0] = sx(d0);
+    c.g[T1][0] = (d0 & 0xffff) as u64;
+    c.g[T2][0] = sx(n1);
+    c.g[T4][0] = sx(n0);
+    Divdi3Quotient {
+        high: 0,
+        low: high << 16 | low,
+        exit: Divdi3Exit::ZeroHigh,
+    }
+}
+
+/// `qq = NN / 0d` (d1 == 0, n1 >= d0): the high quotient word from `n1`
+/// (just `1` with `n1 -= d0` when d0 is normalized, else two digits of
+/// `n2:n1 / d0`), then the low word in two digits. Leaves a3 = the third
+/// digit, a2 = the last digit's `q * dl`, t1 = t3 = dl, t2 = the remainder
+/// of the high word and the normalized d0/n0 in t0/t4.
+pub(crate) fn divdi3_by_word_long(c: &mut Cpu, n1: u32, n0: u32, d0: u32) -> Divdi3Quotient {
+    c.cycles += 2;
+    let mut d0 = d0;
+    if d0 == 0 {
+        // `d0 = 1 / d0`: the intentional division by zero.
+        c.cycles += 3 + 6;
+        d0 = abi::divu(c, 1, d0).0;
+    }
+    c.cycles += 2;
+    let bm = clz_tab(c, d0);
+    let (mut n1, mut n0) = (n1, n0);
+    let high;
+    if bm == 0 {
+        c.cycles += 5;
+        n1 = n1.wrapping_sub(d0);
+        high = 1;
+    } else {
+        c.cycles += 13;
+        let b = 32 - bm;
+        d0 <<= bm;
+        let n2 = n1 >> b;
+        n1 = (n1 << bm) | (n0 >> b);
+        n0 <<= bm;
+        let (hi, r) = qrnnd_step(c, n2, n1 >> 16, d0, 12, 3);
+        c.cycles += 2;
+        let (lo, r) = qrnnd_step(c, r, n1 & 0xffff, d0, 13, 2);
+        c.cycles += 4;
+        high = hi << 16 | lo;
+        n1 = r;
+    }
+    c.g[T2][0] = sx(n1);
+    c.cycles += 6;
+    let (hi, r) = qrnnd_step(c, n1, n0 >> 16, d0, 11, 2);
+    c.cycles += 2;
+    let lo = qrnnd_step_quotient(c, r, n0 & 0xffff, d0);
+    // `mult a2, a1, t1` leaves the product's low word in a2 as well as LO.
+    c.g[A2][0] = c.lo[0];
+    c.cycles += 5;
+    c.g[A3][0] = sx(hi);
+    c.g[T0][0] = sx(d0);
+    c.g[T1][0] = (d0 & 0xffff) as u64;
+    c.g[T3][0] = (d0 & 0xffff) as u64;
+    c.g[T4][0] = sx(n0);
+    Divdi3Quotient {
+        high,
+        low: hi << 16 | lo,
+        exit: Divdi3Exit::Join,
+    }
+}
+
+/// `0q = NN / dd` (d1 != 0, d1 <= n1): a one-word quotient. With d1
+/// normalized it is 1 unless `n < d`; otherwise two digits of `n2:n1 / d1`
+/// after normalizing, then one less if `q0 * d0` (`umul_ppmm`) exceeds
+/// the remainder. Leaves a2 = bm and a3 = 32 for the first; for the second
+/// a2 = the high word of `q0 * d0`, a3 = the second digit's `q * dl`,
+/// t1 = the first digit, t3 = dl of d1 and the normalized words in
+/// t0/t2/t4, with the whole product in LO/HI.
+pub(crate) fn divdi3_by_doubleword(
+    c: &mut Cpu,
+    n1: u32,
+    n0: u32,
+    d1: u32,
+    d0: u32,
+) -> Divdi3Quotient {
+    c.cycles += 3;
+    let bm = clz_tab(c, d1);
+    if bm == 0 {
+        c.g[A2][0] = 0;
+        c.g[A3][0] = DIVDI3_WORD_BITS;
+        c.cycles += 3;
+        let low = if n1 > d1 {
+            1
+        } else {
+            c.cycles += 3;
+            if n0 < d0 {
+                0
+            } else {
+                c.cycles += 2;
+                1
+            }
+        };
+        return Divdi3Quotient {
+            high: 0,
+            low,
+            exit: Divdi3Exit::ZeroHigh,
+        };
+    }
+    c.cycles += 15;
+    let b = 32 - bm;
+    let d1 = (d1 << bm) | (d0 >> b);
+    let d0 = d0 << bm;
+    let n2 = n1 >> b;
+    let n1 = (n1 << bm) | (n0 >> b);
+    let n0 = n0 << bm;
+    let (hi, r) = qrnnd_step(c, n2, n1 >> 16, d1, 11, 3);
+    c.cycles += 2;
+    let (lo, rem) = qrnnd_step(c, r, n1 & 0xffff, d1, 13, 2);
+    // `mult a3, a2, t3` leaves the product's low word in a3 as well as LO.
+    c.g[A3][0] = c.lo[0];
+    c.cycles += 10;
+    let q0 = hi << 16 | lo;
+    // umul_ppmm(m1, m0, q0, d0)
+    abi::multu(c, q0, d0);
+    let product = q0 as u64 * d0 as u64;
+    let (m1, m0) = ((product >> 32) as u32, product as u32);
+    c.g[A2][0] = sx(m1);
+    c.g[T0][0] = sx(d0);
+    c.g[T1][0] = sx(hi);
+    c.g[T2][0] = sx(n1);
+    c.g[T3][0] = (d1 & 0xffff) as u64;
+    c.g[T4][0] = sx(n0);
+    // q0 is one too big when m1:m0 > rem:n0.
+    let (low, exit) = if m1 > rem {
+        (q0.wrapping_sub(1), Divdi3Exit::ZeroHigh)
+    } else {
+        c.cycles += 2;
+        if m1 != rem {
+            (q0, Divdi3Exit::Join)
+        } else {
+            c.cycles += 3;
+            if m0 > n0 {
+                c.cycles += 1;
+                (q0.wrapping_sub(1), Divdi3Exit::ZeroHigh)
+            } else {
+                (q0, Divdi3Exit::Pack)
+            }
+        }
+    };
+    Divdi3Quotient { high: 0, low, exit }
+}
+
+/// Packs `q1:q0` (t5 = q1, t8 = q0, a1 = the low-word mask), negates it
+/// when the signs differed (t6 = its low word, v1 = the borrow) and
+/// returns it in v0 (and a0).
+pub(crate) fn divdi3_return(c: &mut Cpu, q: Divdi3Quotient, negate: bool) {
+    c.cycles += q.exit.cycles() + 6;
+    c.g[T5][0] = sx(q.high);
+    c.g[T8][0] = q.low as u64;
+    c.g[A1][0] = DIVDI3_LOW_WORD;
+    c.g[V1][0] = (q.high as u64) << 32;
+    let quotient = (q.high as u64) << 32 | q.low as u64;
+    let result = if negate {
+        c.cycles += 18;
+        let result = quotient.wrapping_neg();
+        c.g[T6][0] = result & DIVDI3_LOW_WORD;
+        c.g[V1][0] = (q.low != 0) as u64;
+        result
+    } else {
+        quotient
+    };
+    c.cycles += 2;
+    c.g[A0][0] = result;
+    c.g[V0][0] = result;
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// 0x0042d470 __moddi3
+
+/// Bytes of `__moddi3`'s stack frame.
+pub(crate) const MODDI3_FRAME: u32 = 0x40;
+
+/// `w`, the remainder `__udivmoddi4` stores through `rp` (`rp = &w`).
+pub(crate) const MODDI3_SLOT_REMAINDER: u32 = 0x00;
+
+/// The caller's s0 (`sd`/`ld`): s0 holds the sign flag `c`.
+pub(crate) const MODDI3_SLOT_S0: u32 = 0x30;
+
+/// The low word of a doubleword (the body builds this mask as
+/// `0xffff_ffff_ffff_0000 >> 32`).
+pub(crate) const MODDI3_LOW_WORD: u64 = 0xffff_ffff;
+
+/// `W_TYPE_SIZE`: `count_leading_zeros` leaves it in a1 on the `d1 != 0`
+/// path, and `32 - bm` in t6.
+pub(crate) const MODDI3_WORD_BITS: u32 = 32;
+
+/// The shift `count_leading_zeros` picks for a word above 0xffffff (the top
+/// byte), which a normalized d1 always is.
+pub(crate) const MODDI3_CLZ_TOP_BYTE: u64 = 24;
+
+/// `long long __moddi3(long long n, long long d)` (0x42d470): libgcc2's
+/// signed 64-bit remainder, truncating toward zero, so the result has the
+/// dividend's sign. It takes the magnitudes, runs `__udivmoddi4` inlined
+/// for the remainder only (32-bit words, 16-bit `udiv_qrnnd` digits,
+/// operands normalized by `count_leading_zeros`), which stores it through
+/// `rp = &w` (a stack slot), and negates `w` there when n was negative.
+/// The compiler keeps `__udivmoddi4`'s `if (rp != 0)` tests (rp is never 0
+/// with a real stack) except on the `d1 > n1` exit. Division by zero takes
+/// libgcc's `d0 = 1 / d0`, which the EE's `divu` answers with 0xffffffff
+/// (no trap), and runs on with that divisor (`5 % 0` gives 6).
+pub fn moddi3(c: &mut Cpu) {
+    c.cycles += 8;
+    let n = c.g[A0][0];
+    let frame = Frame::open(c, MODDI3_FRAME);
+    let saved_s0 = c.g[S0][0];
+    Addr(frame.at(c, MODDI3_SLOT_S0)).sd(c, saved_s0);
+    let negative = (n as i64) < 0;
+    c.g[S0][0] = if negative { u64::MAX } else { 0 };
+    // The magnitudes. Each negation leaves the low word of its result in a
+    // scratch register.
+    let n = if negative {
+        c.cycles += 21;
+        let n = n.wrapping_neg();
+        c.g[A2][0] = n & MODDI3_LOW_WORD;
+        n
+    } else {
+        n
+    };
+    c.cycles += 3;
+    let d = c.g[A1][0];
+    // `negu a0, d1` sits in the branch delay slot: it runs for either sign.
+    c.g[A0][0] = sx(((d >> 32) as u32).wrapping_neg());
+    let d = if (d as i64) < 0 {
+        c.cycles += 18;
+        let d = d.wrapping_neg();
+        c.g[A0][0] = d & !MODDI3_LOW_WORD;
+        c.g[A1][0] = d;
+        c.g[A3][0] = d & MODDI3_LOW_WORD;
+        d
+    } else {
+        d
+    };
+
+    // The words: n0 in t4, n1 in t2, d0 in t0, d1 in t1 (sign-extended).
+    c.cycles += 9;
+    let (n1, n0, d1, d0) = ((n >> 32) as u32, n as u32, (d >> 32) as u32, d as u32);
+    c.g[T0][0] = sx(d0);
+    c.g[T1][0] = sx(d1);
+    c.g[T2][0] = sx(n1);
+    c.g[T4][0] = sx(n0);
+    let rp = c.g[SP][0];
+    c.g[T9][0] = rp;
+    c.cycles += 3;
+    if d1 == 0 {
+        if n1 < d0 {
+            moddi3_by_word_short(c, rp, n1, n0, d0);
+        } else {
+            moddi3_by_word_long(c, rp, n1, n0, d0);
+        }
+    } else if n1 < d1 {
+        // 00 = nn / DD: the remainder is n, stored with no `rp` test.
+        c.cycles += 5;
+        c.g[T7][0] = n;
+        Addr(frame.at(c, MODDI3_SLOT_REMAINDER)).sd(c, n);
+    } else {
+        moddi3_by_doubleword(c, rp, n1, n0, d1, d0);
+    }
+    moddi3_return(c, frame, negative);
+}
+
+/// `0q = nn / 0D` (d1 == 0, n1 < d0): normalizes, then the low word's two
+/// digits. Leaves t5 = bm and the normalized words in t0/t2.
+pub(crate) fn moddi3_by_word_short(c: &mut Cpu, rp: u64, n1: u32, n0: u32, d0: u32) {
+    c.cycles += 3;
+    let bm = clz_tab(c, d0);
+    c.g[T5][0] = bm as u64;
+    let (mut d0, mut n1, mut n0) = (d0, n1, n0);
+    if bm != 0 {
+        c.cycles += 5;
+        n1 = (n1 << bm) | (n0 >> (MODDI3_WORD_BITS - bm));
+        d0 <<= bm;
+        n0 <<= bm;
+        c.g[T0][0] = sx(d0);
+        c.g[T2][0] = sx(n1);
+        c.g[T4][0] = sx(n0);
+    }
+    c.cycles += 4;
+    moddi3_low_word(c, rp, n1, n0, d0, bm);
+}
+
+/// `qq = NN / 0d` (d1 == 0, n1 >= d0): reduces n1 below d0 first (just
+/// `n1 -= d0` when d0 is normalized, else the two digits of `n2:n1 / d0`),
+/// then the low word's two digits. Leaves t5 = bm, t6 = `32 - bm`, t1 = dl,
+/// t2 = the reduced n1 and, after normalizing, t3 = dl.
+pub(crate) fn moddi3_by_word_long(c: &mut Cpu, rp: u64, n1: u32, n0: u32, d0: u32) {
+    c.cycles += 2;
+    let mut d0 = d0;
+    if d0 == 0 {
+        // `d0 = 1 / d0`: the intentional division by zero (the body divides
+        // by d1, which is 0 too).
+        c.cycles += 3 + 5;
+        d0 = abi::divu(c, 1, 0).0;
+        c.g[T0][0] = sx(d0);
+    }
+    c.cycles += 2;
+    let bm = clz_tab(c, d0);
+    c.g[T5][0] = bm as u64;
+    c.g[T6][0] = (MODDI3_WORD_BITS - bm) as u64;
+    let (mut n1, mut n0) = (n1, n0);
+    if bm == 0 {
+        c.cycles += 4;
+        n1 = n1.wrapping_sub(d0);
+    } else {
+        c.cycles += 13;
+        let b = MODDI3_WORD_BITS - bm;
+        d0 <<= bm;
+        let n2 = n1 >> b;
+        n1 = (n1 << bm) | (n0 >> b);
+        n0 <<= bm;
+        c.g[T0][0] = sx(d0);
+        c.g[T3][0] = (d0 & 0xffff) as u64;
+        c.g[T4][0] = sx(n0);
+        let r = mod_step_first(c, n2, n1 >> 16, d0);
+        c.cycles += 4;
+        n1 = mod_step(c, r, n1 & 0xffff, d0);
+    }
+    c.g[T1][0] = (d0 & 0xffff) as u64;
+    c.g[T2][0] = sx(n1);
+    c.cycles += 3;
+    moddi3_low_word(c, rp, n1, n0, d0, bm);
+}
+
+/// The low word of a `d1 == 0` division: two digits of `n1:n0 / d0` (d0
+/// normalized, n1 < d0), then `*rp = n0 >> bm` with a zero high word.
+/// Leaves a1 = dh, a3 = dl, a0 = the last digit's part, a2 = its `q * dl`
+/// and t4 = the normalized remainder.
+pub(crate) fn moddi3_low_word(c: &mut Cpu, rp: u64, n1: u32, n0: u32, d0: u32, bm: u32) {
+    c.g[A1][0] = (d0 >> 16) as u64;
+    c.g[A3][0] = (d0 & 0xffff) as u64;
+    c.cycles += 3;
+    let r = mod_step(c, n1, n0 >> 16, d0);
+    c.cycles += 4;
+    c.g[A0][0] = (n0 & 0xffff) as u64;
+    let (rem, corrected) = mod_step_last(c, r, n0 & 0xffff, d0);
+    // `mult a2, v0, a3` left `m = q * dl` in a2.
+    c.g[A2][0] = sx(corrected.wrapping_sub(rem));
+    c.cycles += 2;
+    c.g[T4][0] = sx(rem);
+    if rp != 0 {
+        c.cycles += 4;
+        moddi3_store_remainder(c, rp, (rem >> bm) as u64);
+    }
+}
+
+/// `0q = NN / dd` (d1 != 0, d1 <= n1): one quotient digit pair after
+/// normalizing (with d1 normalized the quotient is 0 or 1 and n just loses
+/// d once, which only `MIN % MIN` reaches), corrected by `umul_ppmm(q0,
+/// d0)`, then `*rp = (n - m) >> bm`. Leaves t5 = bm, t6 = `32 - bm`, the
+/// normalized words in t0/t1/t4, t3 = the first digit and in a2/a3 the
+/// corrected product `m0`/`m1`.
+pub(crate) fn moddi3_by_doubleword(c: &mut Cpu, rp: u64, n1: u32, n0: u32, d1: u32, d0: u32) {
+    c.cycles += 4;
+    let bm = clz_tab(c, d1);
+    c.g[T5][0] = bm as u64;
+    c.g[T6][0] = (MODDI3_WORD_BITS - bm) as u64;
+    if bm == 0 {
+        c.g[A1][0] = MODDI3_WORD_BITS as u64;
+        c.g[A2][0] = MODDI3_CLZ_TOP_BYTE;
+        c.cycles += 3;
+        let low = n0.wrapping_sub(d0);
+        c.g[A0][0] = sx(low);
+        let subtract = if n1 > d1 {
+            true
+        } else {
+            c.cycles += 3;
+            n0 >= d0
+        };
+        let (mut n1, mut n0) = (n1, n0);
+        if subtract {
+            // sub_ddmmss(n1, n0, n1, n0, d1, d0)
+            c.cycles += 4;
+            n1 = n1.wrapping_sub(d1).wrapping_sub((n0 < low) as u32);
+            n0 = low;
+            c.g[T2][0] = sx(n1);
+            c.g[T4][0] = sx(n0);
+        }
+        c.cycles += 2;
+        if rp != 0 {
+            c.cycles += 4;
+            moddi3_store_remainder(c, rp, (n1 as u64) << 32 | n0 as u64);
+        }
+        return;
+    }
+    c.cycles += 15;
+    let b = MODDI3_WORD_BITS - bm;
+    let d1 = (d1 << bm) | (d0 >> b);
+    let d0 = d0 << bm;
+    let n2 = n1 >> b;
+    let n1 = (n1 << bm) | (n0 >> b);
+    let n0 = n0 << bm;
+    c.g[T0][0] = sx(d0);
+    c.g[T1][0] = sx(d1);
+    c.g[T4][0] = sx(n0);
+    let (hi, r) = qrnnd_step(c, n2, n1 >> 16, d1, 11, 3);
+    c.g[T3][0] = sx(hi);
+    c.cycles += 2;
+    let (lo, n1) = qrnnd_step(c, r, n1 & 0xffff, d1, 13, 2);
+    c.cycles += 11;
+    c.g[A1][0] = sx(n1);
+    c.g[T2][0] = sx(n1);
+    let q0 = hi << 16 | lo;
+    // umul_ppmm(m1, m0, q0, d0); q0 is one too big when m1:m0 > n1:n0.
+    abi::multu(c, q0, d0);
+    let product = q0 as u64 * d0 as u64;
+    let (mut m1, mut m0) = ((product >> 32) as u32, product as u32);
+    let too_big = if m1 > n1 {
+        true
+    } else {
+        c.cycles += 2;
+        if m1 != n1 {
+            false
+        } else {
+            c.cycles += 2;
+            if m0 > n0 {
+                c.cycles += 1;
+                true
+            } else {
+                false
+            }
+        }
+    };
+    if too_big {
+        // sub_ddmmss(m1, m0, m1, m0, d1, d0)
+        c.cycles += 4;
+        let low = m0.wrapping_sub(d0);
+        m1 = m1.wrapping_sub(d1).wrapping_sub((m0 < low) as u32);
+        m0 = low;
+    }
+    c.g[A2][0] = sx(m0);
+    c.g[A3][0] = sx(m1);
+    c.cycles += 2;
+    let low = n0.wrapping_sub(m0);
+    c.g[A0][0] = sx(low);
+    if rp != 0 {
+        // sub_ddmmss(n1, n0, n1, n0, m1, m0), then shifted back by bm
+        c.cycles += 12;
+        let high = n1.wrapping_sub(m1).wrapping_sub((n0 < low) as u32);
+        c.g[T2][0] = sx(high);
+        let rem_low = (high << b) | (low >> bm);
+        c.g[A0][0] = (low >> bm) as u64;
+        c.g[A1][0] = (rem_low as u64) << 32;
+        moddi3_store_remainder(c, rp, ((high >> bm) as u64) << 32 | rem_low as u64);
+    }
+}
+
+/// `*rp = rr.ll` (t7 = the remainder).
+pub(crate) fn moddi3_store_remainder(c: &mut Cpu, rp: u64, rem: u64) {
+    c.cycles += 1;
+    c.g[T7][0] = rem;
+    Addr(rp as u32).sd(c, rem);
+}
+
+/// Loads `w` back (v1), negates it in its slot when n was negative (a0 =
+/// the borrow, v1 = its high word, t8 = `-w`), returns it in v0 and
+/// restores s0.
+pub(crate) fn moddi3_return(c: &mut Cpu, frame: Frame, negative: bool) {
+    c.cycles += 2;
+    let slot = Addr(frame.at(c, MODDI3_SLOT_REMAINDER));
+    let w = slot.ld(c);
+    c.g[V1][0] = w;
+    if negative {
+        c.cycles += 21;
+        let w = w.wrapping_neg();
+        c.g[A0][0] = (w as u32 != 0) as u64;
+        c.g[V1][0] = w & !MODDI3_LOW_WORD;
+        c.g[T8][0] = w;
+        slot.sd(c, w);
+    }
+    c.cycles += 4;
+    c.g[V0][0] = slot.ld(c);
+    c.g[S0][0] = Addr(frame.at(c, MODDI3_SLOT_S0)).ld(c);
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// __ieee754_log_2 (0x41f3a8): the game's second copy of fdlibm's e_log.c on
+// the soft-float double ABI. Same algorithm and calls as `__ieee754_log`
+// (0x40db58), but every constant except -inf is built in a1 with lui/ori/dsll
+// instead of loaded from the .lit pool, the callee-saved registers are kept
+// whole (`sq`), and the two `k != 0` general tails are not merged.
+
+/// fdlibm e_log.c's double constants (bit patterns).
+pub(crate) const IEEE_LOG_TWO54: u64 = 0x4350_0000_0000_0000;
+
+pub(crate) const IEEE_LOG_ONE: u64 = 0x3ff0_0000_0000_0000;
+
+pub(crate) const IEEE_LOG_TWO: u64 = 0x4000_0000_0000_0000;
+
+pub(crate) const IEEE_LOG_HALF: u64 = 0x3fe0_0000_0000_0000;
+
+pub(crate) const IEEE_LOG_THIRD: u64 = 0x3fd5_5555_5555_5555;
+
+pub(crate) const IEEE_LOG_LN2_HI: u64 = 0x3fe6_2e42_fee0_0000;
+
+pub(crate) const IEEE_LOG_LN2_LO: u64 = 0x3dea_39ef_3579_3c76;
+
+pub(crate) const IEEE_LOG_LG1: u64 = 0x3fe5_5555_5555_5593;
+
+pub(crate) const IEEE_LOG_LG2: u64 = 0x3fd9_9999_9997_fa04;
+
+pub(crate) const IEEE_LOG_LG3: u64 = 0x3fd2_4924_9422_9359;
+
+pub(crate) const IEEE_LOG_LG4: u64 = 0x3fcc_71c5_1d8e_78af;
+
+pub(crate) const IEEE_LOG_LG5: u64 = 0x3fc7_4664_96cb_03de;
+
+pub(crate) const IEEE_LOG_LG6: u64 = 0x3fc3_9a09_d078_c69f;
+
+pub(crate) const IEEE_LOG_LG7: u64 = 0x3fc2_f112_df3e_5244;
+
+/// The .lit word holding -inf (`-two54 / zero`, folded by the compiler).
+pub(crate) const IEEE_LOG_2_NEG_INF: u32 = IEEE_LOG_POOL - 0x5790;
+
+/// Frame size; `ra` is at 0 and the callee-saved registers, all 128 bits, above it.
+pub(crate) const IEEE_LOG_2_FRAME: u32 = 0xa0;
+
+pub(crate) const IEEE_LOG_2_SLOT_RA: u32 = 0;
+
+/// s0 is restored on its own, in the delay slot of each early return.
+pub(crate) const IEEE_LOG_2_SLOT_S0: u32 = 0x90;
+
+pub(crate) const IEEE_LOG_2_SAVES: [(usize, u32); 9] = [
+    (S0, IEEE_LOG_2_SLOT_S0),
+    (S1, 0x80),
+    (S2, 0x70),
+    (S3, 0x60),
+    (S4, 0x50),
+    (S5, 0x40),
+    (S6, 0x30),
+    (S7, 0x20),
+    (FP, 0x10),
+];
+
+/// The high word's mantissa bits; a high word above it (signed) is normal.
+pub(crate) const IEEE_LOG_2_HI_MANTISSA: u32 = 0x000f_ffff;
+
+/// The largest finite high word: above it x is inf or NaN.
+pub(crate) const IEEE_LOG_2_HI_FINITE_MAX: u32 = 0x7fef_ffff;
+
+pub(crate) const IEEE_LOG_2_HI_ABS: u32 = 0x7fff_ffff;
+
+pub(crate) const IEEE_LOG_2_HI_EXP_LSB: u32 = 0x0010_0000;
+
+pub(crate) const IEEE_LOG_2_HI_ONE: u32 = 0x3ff0_0000;
+
+pub(crate) const IEEE_LOG_2_EXP_BIAS: u32 = 0x3ff;
+
+pub(crate) const IEEE_LOG_2_LO_WORD: u64 = 0xffff_ffff;
+
+/// `0x100000 - 0x6a09c`: carries into the exponent bit when the mantissa is
+/// at least sqrt(2)'s, which then halves x and adds one to k.
+pub(crate) const IEEE_LOG_2_SQRT2_CARRY: u32 = 0x95f64;
+
+/// `k` after the two54 scaling of a subnormal.
+pub(crate) const IEEE_LOG_2_SUBNORMAL_K: i64 = -54;
+
+/// `(hx + 2) & 0xfffff < 3`: |f| < 2^-20.
+pub(crate) const IEEE_LOG_2_TINY_SPAN: i64 = 3;
+
+/// `i = hx - 0x6147a; j = 0x6b851 - hx`: `i | j > 0` picks the hfsq form.
+pub(crate) const IEEE_LOG_2_SPLIT_LO: u32 = 0x6147a;
+
+pub(crate) const IEEE_LOG_2_SPLIT_HI: u32 = 0x6b851;
+
+/// Where a path of `__ieee754_log_2` joins the shared tail.
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+pub(crate) enum IeeeLog2Tail {
+    /// `a1 = v0`, then `v0 = a0 - a1`.
+    SubResult,
+    /// `v0 = a0 - a1`.
+    Sub,
+    /// Return v0 (restore s0 first).
+    Ret,
+    /// Return v0 (s0 already restored).
+    Epilogue,
+}
+
+/// `double __ieee754_log(double x)`, the game's second copy (0x41f3a8; x and
+/// the result as 64-bit integers in a0 / v0): fdlibm's natural logarithm on
+/// the soft-float helpers. log(+-0) = -inf, log(x < 0) = NaN, log(inf/NaN) =
+/// x + x; otherwise x = 2^k * (1 + f) with sqrt(2)/2 < 1 + f < sqrt(2), the
+/// short series for |f| < 2^-20 and `s = f / (2 + f)` with the Lg1..Lg7
+/// polynomial for the rest.
+pub fn ieee754_log_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, IEEE_LOG_2_FRAME);
+        c.g[A2][0] = c.g[A0][0];
+        for (reg, off) in IEEE_LOG_2_SAVES {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, IEEE_LOG_2_SLOT_RA);
+        c.g[V0][0] = c.g[A2][0];
+        c.g[S3][0] = ((c.g[V0][0] as i64) >> 32) as u64; // hx
+        c.g[V1][0] = ((c.g[V0][0] << 32) as i64 >> 32) as u64; // lx
+        c.g[V0][0] = IEEE_LOG_2_HI_MANTISSA as u64;
+        let normal = (c.g[V0][0] as i64) < (c.g[S3][0] as i64);
+        c.g[V0][0] = normal as u64;
+        c.g[FP][0] = 0; // k
+
+        let tail = 'body: {
+            if !normal {
+                if let Some(tail) = ieee_log_2_below_normal(c, frame)? {
+                    break 'body tail;
+                }
+            }
+
+            c.cycles += 5;
+            c.g[V0][0] = IEEE_LOG_2_HI_FINITE_MAX as u64;
+            let inf_nan = (c.g[V0][0] as i64) < (c.g[S3][0] as i64);
+            c.g[V0][0] = inf_nan as u64;
+            c.g[S0][0] = 0xf0000; // lui half of the mantissa mask
+            if inf_nan {
+                // x + x
+                c.cycles += 5;
+                c.g[A0][0] = c.g[A2][0];
+                c.g[A1][0] = c.g[A0][0];
+                IEEE_LOG_ADDDF3.call(c, 0x0041_f480)?;
+                frame.restore(c, S0, IEEE_LOG_2_SLOT_S0);
+                break 'body IeeeLog2Tail::Epilogue;
+            }
+
+            if ieee_log_2_normalise(c)? {
+                break 'body ieee_log_2_small_f(c, frame)?;
+            }
+            ieee_log_2_series(c)?;
+            ieee_log_2_combine(c)?;
+            IeeeLog2Tail::SubResult
+        };
+
+        if tail <= IeeeLog2Tail::SubResult {
+            c.cycles += 1;
+            c.g[A1][0] = c.g[V0][0];
+        }
+        if tail <= IeeeLog2Tail::Sub {
+            c.cycles += 2;
+            IEEE_LOG_SUBDF3.call(c, 0x0041_f9a4)?;
+        }
+        if tail <= IeeeLog2Tail::Ret {
+            c.cycles += 1;
+            frame.restore(c, S0, IEEE_LOG_2_SLOT_S0);
+        }
+        c.cycles += 11;
+        for &(reg, off) in &IEEE_LOG_2_SAVES[1..] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, IEEE_LOG_2_SLOT_RA);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `hx < 0x00100000`: +-0 gives -inf, x < 0 gives `(x - x) / zero`, a
+/// subnormal is scaled by two54 (k = -54) and goes on (`None`).
+pub(crate) fn ieee_log_2_below_normal(
+    c: &mut Cpu,
+    frame: Frame,
+) -> Result<Option<IeeeLog2Tail>, Unwound> {
+    c.cycles += 6;
+    c.g[V0][0] = IEEE_LOG_2_HI_ABS as u64;
+    c.g[V0][0] &= c.g[S3][0];
+    c.g[V0][0] |= c.g[V1][0];
+    let zero = c.g[V0][0] == 0;
+    c.g[V1][0] = IEEE_LOG_POOL as u64;
+    c.cycles += 2;
+    if zero {
+        c.g[V0][0] = c.ld(IEEE_LOG_2_NEG_INF);
+        return Ok(Some(IeeeLog2Tail::Ret));
+    }
+    let negative = (c.g[S3][0] as i64) < 0;
+    c.g[A0][0] = c.g[A2][0];
+    c.cycles += 7;
+    if negative {
+        c.g[A1][0] = c.g[A0][0];
+        IEEE_LOG_SUBDF3.call(c, 0x0041_f430)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        IEEE_LOG_DIVDF3.call(c, 0x0041_f43c)?;
+        frame.restore(c, S0, IEEE_LOG_2_SLOT_S0);
+        return Ok(Some(IeeeLog2Tail::Epilogue));
+    }
+    c.g[A1][0] = IEEE_LOG_TWO54;
+    c.g[FP][0] = IEEE_LOG_2_SUBNORMAL_K as u64;
+    IEEE_LOG_MULDF3.call(c, 0x0041_f454)?;
+    c.g[A2][0] = c.g[V0][0];
+    c.g[S3][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+    Ok(None)
+}
+
+/// `k += (hx >> 20) - 1023`, x (or x / 2 past sqrt(2)) put in
+/// [sqrt(2)/2, sqrt(2)), `f = x - 1` in s5. Returns whether |f| < 2^-20.
+pub(crate) fn ieee_log_2_normalise(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 31;
+    c.g[A0][0] = sx((r32(c, S3) as i32 >> 20) as u32);
+    c.g[S0][0] |= 0xffff; // s0 = IEEE_LOG_2_HI_MANTISSA
+    c.g[V0][0] = IEEE_LOG_2_SQRT2_CARRY as u64;
+    c.g[S3][0] &= c.g[S0][0];
+    c.g[V0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+    c.g[V1][0] = sx(r32(c, FP).wrapping_sub(IEEE_LOG_2_EXP_BIAS));
+    c.g[A1][0] = IEEE_LOG_2_HI_EXP_LSB as u64;
+    c.g[FP][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+    c.g[S4][0] = c.g[V0][0] & c.g[A1][0]; // i
+    c.g[A0][0] = c.g[A2][0];
+    c.g[V0][0] = IEEE_LOG_2_HI_ONE as u64;
+    c.g[V1][0] = IEEE_LOG_2_LO_WORD;
+    c.g[V0][0] ^= c.g[S4][0];
+    c.g[A0][0] &= c.g[V1][0];
+    c.g[V0][0] |= c.g[S3][0];
+    c.g[V0][0] <<= 32;
+    c.g[A2][0] = c.g[A0][0] | c.g[V0][0];
+    c.g[V1][0] = sx((r32(c, S4) as i32 >> 20) as u32);
+    c.g[A1][0] = IEEE_LOG_ONE;
+    c.g[FP][0] = sx(r32(c, FP).wrapping_add(r32(c, V1)));
+    c.g[A0][0] = c.g[A2][0];
+    IEEE_LOG_SUBDF3.call(c, 0x0041_f4ec)?;
+    c.g[S5][0] = c.g[V0][0]; // f
+    c.g[V0][0] = sx(r32(c, S3).wrapping_add(2));
+    c.g[V0][0] &= c.g[S0][0];
+    let tiny = (c.g[V0][0] as i64) < IEEE_LOG_2_TINY_SPAN;
+    c.g[V0][0] = tiny as u64;
+    c.g[S0][0] = 0;
+    Ok(tiny)
+}
+
+/// `s0 = dk * ln2_hi`, `v0 = dk * ln2_lo` with `s6 = dk = (double)k`
+/// (the two `|f| < 2^-20, k != 0` arms; `rets` of the three calls).
+pub(crate) fn ieee_log_2_dk_ln2(c: &mut Cpu, rets: [u32; 3]) -> Result<(), Unwound> {
+    c.g[A0][0] = c.g[FP][0];
+    IEEE_LOG_FLOATSIDF.call(c, rets[0])?;
+    c.g[S6][0] = c.g[V0][0];
+    c.g[A1][0] = IEEE_LOG_LN2_HI;
+    c.g[A0][0] = c.g[S6][0];
+    IEEE_LOG_MULDF3.call(c, rets[1])?;
+    c.g[A1][0] = IEEE_LOG_LN2_LO;
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S6][0];
+    IEEE_LOG_MULDF3.call(c, rets[2])
+}
+
+/// |f| < 2^-20: f == 0 gives 0 (k == 0) or `dk*ln2_hi + dk*ln2_lo`;
+/// otherwise `R = f*f*(0.5 - f/3)` and `f - R` (k == 0) or
+/// `dk*ln2_hi - ((R - dk*ln2_lo) - f)`.
+pub(crate) fn ieee_log_2_small_f(c: &mut Cpu, frame: Frame) -> Result<IeeeLog2Tail, Unwound> {
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S5][0];
+    c.g[A1][0] = c.g[S0][0]; // 0.0
+    IEEE_LOG_CMPDF2.call(c, 0x0041_f510)?;
+    let f_nonzero = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S5][0];
+    if !f_nonzero {
+        c.cycles += 2;
+        let k_zero = c.g[FP][0] == 0;
+        c.g[V0][0] = c.g[S0][0];
+        if k_zero {
+            return Ok(IeeeLog2Tail::Ret); // log(1) = 0
+        }
+        c.cycles += 26;
+        ieee_log_2_dk_ln2(c, [0x0041_f528, 0x0041_f54c, 0x0041_f574])?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        IEEE_LOG_ADDDF3.call(c, 0x0041_f580)?;
+        frame.restore(c, S0, IEEE_LOG_2_SLOT_S0);
+        return Ok(IeeeLog2Tail::Epilogue);
+    }
+
+    c.cycles += 21;
+    c.g[A1][0] = c.g[S5][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f590)?;
+    c.g[A1][0] = IEEE_LOG_THIRD;
+    c.g[S0][0] = c.g[V0][0]; // f*f
+    c.g[A0][0] = c.g[S5][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f5b8)?;
+    c.g[A0][0] = IEEE_LOG_HALF;
+    c.g[A1][0] = c.g[V0][0];
+    IEEE_LOG_SUBDF3.call(c, 0x0041_f5c8)?;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[V0][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f5d4)?;
+    let k_nonzero = c.g[FP][0] != 0;
+    c.g[S2][0] = c.g[V0][0]; // R
+    if !k_nonzero {
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A1][0] = c.g[S2][0];
+        return Ok(IeeeLog2Tail::Sub);
+    }
+    c.cycles += 29;
+    ieee_log_2_dk_ln2(c, [0x0041_f5f0, 0x0041_f614, 0x0041_f63c])?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[V0][0];
+    IEEE_LOG_SUBDF3.call(c, 0x0041_f648)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S5][0];
+    IEEE_LOG_SUBDF3.call(c, 0x0041_f654)?;
+    c.g[A0][0] = c.g[S0][0];
+    Ok(IeeeLog2Tail::SubResult)
+}
+
+/// `v0 = w * v0` (w in s1).
+pub(crate) fn ieee_log_2_times_w(c: &mut Cpu, ret: u32) -> Result<(), Unwound> {
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S1][0];
+    IEEE_LOG_MULDF3.call(c, ret)
+}
+
+/// `v0 = v0 + coefficient`.
+pub(crate) fn ieee_log_2_plus(c: &mut Cpu, coefficient: u64, ret: u32) -> Result<(), Unwound> {
+    c.g[A1][0] = coefficient;
+    c.g[A0][0] = c.g[V0][0];
+    IEEE_LOG_ADDDF3.call(c, ret)
+}
+
+/// `s7 = s = f / (2 + f)`, `s6 = dk`, `s2 = z = s*s`, `s1 = w = z*z`,
+/// `s4 = i | j`, then `s2 = R = t2 + t1` with
+/// `t1 = w*(Lg2 + w*(Lg4 + w*Lg6))`, `t2 = z*(Lg1 + w*(Lg3 + w*(Lg5 + w*Lg7)))`.
+pub(crate) fn ieee_log_2_series(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 110;
+    c.g[A1][0] = IEEE_LOG_TWO;
+    c.g[A0][0] = c.g[S5][0];
+    IEEE_LOG_ADDDF3.call(c, 0x0041_f66c)?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S5][0];
+    IEEE_LOG_DIVDF3.call(c, 0x0041_f678)?;
+    c.g[S7][0] = c.g[V0][0]; // s
+    c.g[A0][0] = c.g[FP][0];
+    IEEE_LOG_FLOATSIDF.call(c, 0x0041_f684)?;
+    c.g[A0][0] = c.g[S7][0];
+    c.g[A1][0] = c.g[S7][0];
+    c.g[S6][0] = c.g[V0][0]; // dk
+    IEEE_LOG_MULDF3.call(c, 0x0041_f694)?;
+    c.g[V1][0] = sx(IEEE_LOG_2_SPLIT_LO.wrapping_neg());
+    c.g[S2][0] = c.g[V0][0]; // z
+    c.g[A0][0] = c.g[S2][0];
+    c.g[S4][0] = sx(r32(c, S3).wrapping_add(r32(c, V1))); // i
+    c.g[A1][0] = c.g[S2][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f6b0)?;
+    c.g[S1][0] = c.g[V0][0]; // w
+    c.g[S0][0] = sx(IEEE_LOG_2_SPLIT_HI.wrapping_sub(r32(c, S3))); // j
+
+    // t1
+    c.g[A1][0] = IEEE_LOG_LG6;
+    c.g[A0][0] = c.g[S1][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f6e4)?;
+    c.g[S4][0] |= c.g[S0][0];
+    ieee_log_2_plus(c, IEEE_LOG_LG4, 0x0041_f70c)?;
+    ieee_log_2_times_w(c, 0x0041_f718)?;
+    ieee_log_2_plus(c, IEEE_LOG_LG2, 0x0041_f73c)?;
+    ieee_log_2_times_w(c, 0x0041_f748)?;
+    c.g[S0][0] = c.g[V0][0];
+
+    // t2
+    c.g[A1][0] = IEEE_LOG_LG7;
+    c.g[A0][0] = c.g[S1][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f770)?;
+    ieee_log_2_plus(c, IEEE_LOG_LG5, 0x0041_f794)?;
+    ieee_log_2_times_w(c, 0x0041_f7a0)?;
+    ieee_log_2_plus(c, IEEE_LOG_LG3, 0x0041_f7c4)?;
+    ieee_log_2_times_w(c, 0x0041_f7d0)?;
+    ieee_log_2_plus(c, IEEE_LOG_LG1, 0x0041_f7f4)?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[V0][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f800)?;
+
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S0][0];
+    IEEE_LOG_ADDDF3.call(c, 0x0041_f80c)
+}
+
+/// The result from R (v0) for |f| >= 2^-20, left as `a0 - v0` for the tail:
+/// i > 0 with `hfsq = 0.5*f*f`: `f - (hfsq - s*(hfsq + R))` or
+/// `dk*ln2_hi - ((hfsq - (s*(hfsq + R) + dk*ln2_lo)) - f)`; else
+/// `f - s*(f - R)` or `dk*ln2_hi - ((s*(f - R) - dk*ln2_lo) - f)`.
+pub(crate) fn ieee_log_2_combine(c: &mut Cpu) -> Result<(), Unwound> {
+    let hfsq_form = (c.g[S4][0] as i64) > 0;
+    c.g[S2][0] = c.g[V0][0]; // R
+    if hfsq_form {
+        c.cycles += 9;
+        c.g[A1][0] = IEEE_LOG_HALF;
+        c.g[A0][0] = c.g[S5][0];
+        IEEE_LOG_MULDF3.call(c, 0x0041_f824)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S5][0];
+        IEEE_LOG_MULDF3.call(c, 0x0041_f830)?;
+        let k_nonzero = c.g[FP][0] != 0;
+        c.g[S3][0] = c.g[V0][0]; // hfsq
+        if !k_nonzero {
+            c.cycles += 11;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A0][0] = c.g[S3][0];
+            IEEE_LOG_ADDDF3.call(c, 0x0041_f844)?;
+            c.g[A0][0] = c.g[S7][0];
+            c.g[A1][0] = c.g[V0][0];
+            IEEE_LOG_MULDF3.call(c, 0x0041_f850)?;
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = c.g[V0][0];
+            IEEE_LOG_SUBDF3.call(c, 0x0041_f85c)?;
+            c.g[A0][0] = c.g[S5][0];
+            return Ok(());
+        }
+        c.cycles += 36;
+        c.g[A1][0] = IEEE_LOG_LN2_HI;
+        c.g[A0][0] = c.g[S6][0];
+        IEEE_LOG_MULDF3.call(c, 0x0041_f884)?;
+        c.g[S1][0] = c.g[V0][0]; // dk*ln2_hi
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S3][0];
+        IEEE_LOG_ADDDF3.call(c, 0x0041_f894)?;
+        c.g[A0][0] = c.g[S7][0];
+        c.g[A1][0] = c.g[V0][0];
+        IEEE_LOG_MULDF3.call(c, 0x0041_f8a0)?;
+        c.g[A1][0] = IEEE_LOG_LN2_LO;
+        c.g[S0][0] = c.g[V0][0]; // s*(hfsq + R)
+        c.g[A0][0] = c.g[S6][0];
+        IEEE_LOG_MULDF3.call(c, 0x0041_f8c8)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        IEEE_LOG_ADDDF3.call(c, 0x0041_f8d4)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[V0][0];
+        IEEE_LOG_SUBDF3.call(c, 0x0041_f8e0)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S5][0];
+        IEEE_LOG_SUBDF3.call(c, 0x0041_f8ec)?;
+        c.g[A0][0] = c.g[S1][0];
+        return Ok(());
+    }
+
+    c.cycles += 2;
+    let k_zero = c.g[FP][0] == 0;
+    c.g[A1][0] = c.g[S2][0];
+    if k_zero {
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S5][0];
+        IEEE_LOG_SUBDF3.call(c, 0x0041_f988)?;
+        c.g[A0][0] = c.g[S7][0];
+        c.g[A1][0] = c.g[V0][0];
+        IEEE_LOG_MULDF3.call(c, 0x0041_f994)?;
+        c.g[A0][0] = c.g[S5][0];
+        return Ok(());
+    }
+    c.cycles += 33;
+    c.g[A1][0] = IEEE_LOG_LN2_HI;
+    c.g[A0][0] = c.g[S6][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f91c)?;
+    c.g[S1][0] = c.g[V0][0]; // dk*ln2_hi
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A0][0] = c.g[S5][0];
+    IEEE_LOG_SUBDF3.call(c, 0x0041_f92c)?;
+    c.g[A0][0] = c.g[S7][0];
+    c.g[A1][0] = c.g[V0][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f938)?;
+    c.g[A1][0] = IEEE_LOG_LN2_LO;
+    c.g[S0][0] = c.g[V0][0]; // s*(f - R)
+    c.g[A0][0] = c.g[S6][0];
+    IEEE_LOG_MULDF3.call(c, 0x0041_f960)?;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[V0][0];
+    IEEE_LOG_SUBDF3.call(c, 0x0041_f96c)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S5][0];
+    IEEE_LOG_SUBDF3.call(c, 0x0041_f978)?;
+    c.g[A0][0] = c.g[S1][0];
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_fixunssfsi, ee::s15::f_004139f8__generated);
@@ -19465,6 +20575,685 @@ pub(crate) mod tests {
                 };
                 let _ = r;
             },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::require_paths;
+    use std::ptr::addr_of_mut;
+
+    /// The `__clz_tab` copy `__divdi3` reads (the game image holds each
+    /// byte's bit length there, which `clz_table` writes).
+    pub(crate) const DIVDI3_CLZ_TAB: u32 = 0x0049_96a0;
+
+    /// Magnitudes below 2^63, so the sign digits decide the signs.
+    pub(crate) const DIVDI3_MAGNITUDE: u64 = u64::MAX >> 1;
+
+    /// Edge dividends and divisors, crossed by `divdi3_operands` case 6.
+    pub(crate) const DIVDI3_EDGE_N: [u64; 8] = [
+        0,
+        1,
+        u64::MAX,
+        1 << 63,
+        u64::MAX >> 1,
+        1 << 32,
+        0xffff_ffff,
+        0xffff_ffff_0000_0000,
+    ];
+
+    pub(crate) const DIVDI3_EDGE_D: [u64; 8] = [
+        1,
+        u64::MAX,
+        1 << 63,
+        u64::MAX >> 1,
+        1 << 32,
+        0xffff_ffff,
+        0x8000_0000,
+        0xffff_ffff_8000_0000,
+    ];
+
+    /// Arm totals `divdi3_operands` reaches, each taken by no other arm
+    /// combination of the fixture (block charges of the generated body:
+    /// signs 7 + 3 + 9, +21 for a negative n, +20 for a negative d, +18 to
+    /// negate the quotient; joins 11 / 9 / 8):
+    /// 34 / 72 / 73 / 75 `d1 > n1` with each sign pair; 89 `0q = nn/0D`,
+    /// d0 normalized, no corrections; 92 the same with d0 <= 0xffff; 95 its
+    /// low digit corrected twice; 96 its high digit corrected once; 111
+    /// both digits corrected twice after normalizing; 104 `0q = NN/dd`
+    /// normalized, `m1:m0 == n` exactly; 114 `q0 * d0` above n (one
+    /// correction per digit); 117 the second digit corrected twice; 105
+    /// division by zero (last digit corrected once); 168 `qq = NN/0d`
+    /// normalized from d0 <= 0xffff; 178 / 181 / 187 / 193 its third digit
+    /// corrected once / with carry / twice, and its second digit once.
+    pub(crate) const DIVDI3_TOTALS: [u64; 18] = [
+        34, 72, 73, 75, 89, 92, 95, 96, 111, 104, 114, 117, 105, 168, 178, 181, 187, 193,
+    ];
+
+    /// One operand pair per arm, `(n, d, generated cycle total)`, for the
+    /// arms whose totals other arms share (a correction with carry, the two
+    /// `umul_ppmm` exits that cost the same, the low digit corrected twice):
+    /// the total pins the arm totals worked out from the block charges.
+    pub(crate) const DIVDI3_ARMS: [(u64, u64, u64); 19] = [
+        // qq, both negative: third digit twice, last once
+        (0x801c_aa02_da0c_46ff, 0xffff_ffff_bfff_8004, 189),
+        // 0q = NN/dd, m1 < n1, no corrections
+        (0x4000_a769_7bad_915b, 0x0000_4000_7fff_5f63, 100),
+        // 0q = nn/0D, n negative: high digit with carry, low digit once
+        (0x9189_9abe_0bf1_2eaa, 0x0000_0000_d6e7_c7d1, 139),
+        // 0q = nn/0D, d0 <= 0xffff, d negative
+        (0x0000_2191_a95e_b2ad, 0xffff_ffff_ffff_cbeb, 130),
+        // 0 / 0
+        (0, 0, 102),
+        // 0q = NN/dd, q0 * d0 above n, d negative
+        (0x7f00_05f3_783b_42d0, 0xffff_feff_fe00_142c, 152),
+        // qq: second digit with carry, third and last with carry
+        (0x7fff_ff62_d92f_6ef9, 0x0000_0000_3fff_fffc, 145),
+        // 0q = NN/dd, d1 > 0xffff, m1:m0 == n, n negative
+        (0xb512_002e_b3c2_4331, 0x4aed_ffd1_4c3d_bcce, 143),
+        // qq: third digit once, last twice
+        (0x2b6d_c92d_487a_dc8d, 0x0000_0000_2000_3fff, 145),
+        // 0q = NN/dd: both digits with carry
+        (0x7fff_dc6e_67e7_600f, 0x0000_7fff_fffb_f405, 110),
+        // 0q = nn/0D: both digits twice
+        (0x0400_07fd_f058_20d2, 0x0000_0000_0400_07ff, 111),
+        // 0q = nn/0D, d negative: high digit once, low digit with carry
+        (0x4f42_4379_4418_253b, 0xffff_ffff_16e4_0df7, 137),
+        // d1 > n1
+        (0x2233_ff22_58b2_2fdd, 0x2233_ff23_d3f1_3c79, 34),
+        // qq, d0 = 1
+        (0x59fa_57f3_3670_78b4, 1, 130),
+        // 0q = NN/dd, m1 == n1 and m0 > n0, d negative
+        (0x5344_22bb_3f73_a135, 0xffff_5ead_2b30_8415, 144),
+        // 0q = NN/dd, both negative: second digit twice
+        (0xbfff_adea_f634_00fe, 0xffff_bfff_8001_5f48, 158),
+        // MIN / MIN: d1 normalized, n == d
+        (1 << 63, 1 << 63, 100),
+        // qq: second digit once, third once
+        (0x673e_14dd_02d5_6d8a, 0x0000_0000_0001_0001, 146),
+        // MIN / 2^31: qq with d0 normalized (q1 = 1, n1 -= d0)
+        (1 << 63, 0x8000_0000, 132),
+    ];
+
+    /// Operands for one seed: the case is `seed % 8`, the sign of n
+    /// `seed / 8 % 2`, the sign of d `seed / 16 % 2`, the magnitude
+    /// `pick = seed / 32 % 16`, the case-1 step `seed / 512 % 4` and the
+    /// case-3 shift `seed / 64 % 32`, each independent of the others.
+    /// Shared by the `__divdi3` and `__moddi3` tests.
+    pub(crate) fn divdi3_operands(seed: u32) -> (u64, u64) {
+        let mut r = Rng(0x0040_fcb0_0d1d_0000 ^ (seed as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15));
+        let wide = |r: &mut Rng| (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+        let pick = seed / 32 % 16;
+        let (n, d) = match seed % 8 {
+            0 => {
+                // 00 = nn / DD: d1 > n1
+                let d1 = (r.next_u32() >> (1 + pick)) | 1;
+                let n1 = match pick % 4 {
+                    0 => d1 - 1,
+                    1 => 0,
+                    _ => r.next_u32() % d1,
+                };
+                let n0 = r.next_u32();
+                let d0 = r.next_u32();
+                ((n1 as u64) << 32 | n0 as u64, (d1 as u64) << 32 | d0 as u64)
+            }
+            1 => {
+                // 0q = NN / dd with n a small step from a multiple of d:
+                // the `umul_ppmm` compare arms
+                let bm = 1 + pick + pick / 8 % 2 * 15;
+                let d = (wide(&mut r) >> bm) | 1 << (63 - bm);
+                let q = 1 + (r.next_u32() % (1 << bm.min(16))) as u64;
+                let k = [0, 1, u64::MAX, 2][(seed / 512 % 4) as usize];
+                (d.wrapping_mul(q).wrapping_add(k) & DIVDI3_MAGNITUDE, d)
+            }
+            2 => {
+                // 0q = NN / dd with digit estimates one or two too big:
+                // built normalized (shifted left by bm), then shifted back
+                let bm = [17, 23, 28, 31][(pick % 4) as usize];
+                let d1n = if pick / 4 % 2 == 0 {
+                    0x8000_ffff - r.next_u32() % 16
+                } else {
+                    0xffff_ffff - r.next_u32() % 16
+                };
+                let dh = d1n >> 16;
+                let top = (1u32 << (bm - 1)) - 1;
+                let n2 = (top / dh * dh + r.next_u32() % 4).min(top);
+                let n1n = if pick / 8 == 0 {
+                    r.next_u32()
+                } else {
+                    d1n - 1 - r.next_u32() % 4
+                };
+                let low = u32::MAX >> bm << bm;
+                let d = ((d1n as u64) << 32 | (r.next_u32() & low) as u64) >> bm;
+                let n = (((n2 as u128) << 64 | (n1n as u128) << 32 | (r.next_u32() & low) as u128)
+                    >> bm) as u64;
+                (n, d)
+            }
+            3 => {
+                // 0q = nn / 0D: d1 == 0, n1 < d0
+                let (d0, n1) = match pick % 4 {
+                    0 => {
+                        let d0 = 0x8000_0000 | r.next_u32();
+                        (d0, r.next_u32() % d0)
+                    }
+                    1 => {
+                        let d0 = (r.next_u32() >> (16 + pick / 4 * 4)) | 1;
+                        (d0, r.next_u32() % d0)
+                    }
+                    2 => {
+                        // estimates one or two too big
+                        let d0 = (0x8000_ffff - r.next_u32() % 16) >> (pick / 4 * 5);
+                        (d0, d0 - 1 - r.next_u32() % 4)
+                    }
+                    _ => {
+                        let d0 = (r.next_u32() >> (seed / 64 % 32)) | 1;
+                        (d0, r.next_u32() % d0)
+                    }
+                };
+                let n0 = r.next_u32();
+                (
+                    ((n1 as u64) << 32 | n0 as u64) & DIVDI3_MAGNITUDE,
+                    d0 as u64,
+                )
+            }
+            4 => {
+                // qq = NN / 0d: d1 == 0, n1 >= d0 != 0 (estimates too big
+                // with the large base and a dividend near the top)
+                let shift = [1, 2, 5, 9, 15, 23, 30, 31][(pick / 2 % 8) as usize];
+                let (d, n) = if pick % 2 == 0 {
+                    (
+                        (0x8000_ffff - r.next_u32() % 16) >> shift,
+                        wide(&mut r) >> 1,
+                    )
+                } else {
+                    (
+                        (0xffff_ffff - r.next_u32() % 16) >> shift,
+                        DIVDI3_MAGNITUDE - (wide(&mut r) >> 24),
+                    )
+                };
+                let d = d as u64;
+                (if n >> 32 < d { n | d << 32 } else { n }, d)
+            }
+            5 => {
+                // division by zero
+                let n = match pick % 8 {
+                    0 => 0,
+                    1 => 1,
+                    2 => wide(&mut r) >> 1,
+                    3 => DIVDI3_MAGNITUDE,
+                    4 => ((r.next_u32() >> 1) as u64) << 32,
+                    5 => r.next_u32() as u64,
+                    6 => 1 << 63,
+                    _ => 0x7fff_fffe << 32,
+                };
+                (n, 0)
+            }
+            6 => {
+                // edge values, crossed; they carry their own signs
+                return (
+                    DIVDI3_EDGE_N[(seed / 8 % 8) as usize],
+                    DIVDI3_EDGE_D[(seed / 64 % 8) as usize],
+                );
+            }
+            _ => {
+                // every divisor bit length (leading-zero counts 63..0)
+                let k = seed / 8 % 64;
+                let d = if k == 63 {
+                    1 << 63
+                } else {
+                    1 << k | wide(&mut r) & ((1 << k) - 1)
+                };
+                (wide(&mut r) >> 1, d)
+            }
+        };
+        let n = if seed / 8 % 2 == 1 {
+            n.wrapping_neg()
+        } else {
+            n
+        };
+        let d = if seed / 16 % 2 == 1 {
+            d.wrapping_neg()
+        } else {
+            d
+        };
+        (n, d)
+    }
+
+    /// A machine about to divide `n` by `d`: junk in every register and in
+    /// LO/HI, the clz table where the generated body reads it.
+    pub(crate) fn divdi3_machine(c: &mut Cpu, seed: u32, n: u64, d: u64) {
+        let mut r = Rng(0x0040_fcb0 ^ seed as u64);
+        scramble(c, &mut r);
+        c.lo[0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+        c.hi[0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+        clz_table(c, DIVDI3_CLZ_TAB);
+        c.g[A0][0] = n;
+        c.g[A1][0] = d;
+        c.pc = DIVDI3_ENTRY;
+    }
+
+    /// `__divdi3` against the generated body over every case of
+    /// `__udivmoddi4` (each `count_leading_zeros` range, normalized or not,
+    /// digit corrections, the `umul_ppmm` exits), signs crossed, edge
+    /// values, every divisor bit length and division by zero; LO/HI too.
+    #[test]
+    fn divdi3_matches() {
+        check_paths_lohi(
+            ee::s15::f_0040fcb0__generated,
+            divdi3,
+            2048,
+            &DIVDI3_TOTALS,
+            &|c, seed| {
+                let (n, d) = divdi3_operands(seed);
+                divdi3_machine(c, seed, n, d);
+            },
+        );
+    }
+
+    /// The arms whose cycle totals other arms share, one operand pair each.
+    #[test]
+    fn divdi3_arms_match() {
+        for (i, &(n, d, total)) in DIVDI3_ARMS.iter().enumerate() {
+            check_paths_lohi(
+                ee::s15::f_0040fcb0__generated,
+                divdi3,
+                1,
+                &[total],
+                &|c, _| divdi3_machine(c, i as u32, n, d),
+            );
+        }
+    }
+
+    /// Entry of `__moddi3` (it has no resume entries: no calls, no event
+    /// checks).
+    pub(crate) const MODDI3_ENTRY: u32 = 0x0042_d470;
+
+    /// The `__clz_tab` copy `__moddi3` reads (the game image holds each
+    /// byte's bit length there, which `clz_table` writes).
+    pub(crate) const MODDI3_CLZ_TAB: u32 = 0x0049_ae18;
+
+    /// An entry sp that puts the frame at address 0, so `rp = &w` is 0 and
+    /// every `if (rp != 0)` store is skipped.
+    pub(crate) const MODDI3_NULL_RP_SP: u64 = MODDI3_FRAME as u64;
+
+    /// Arm totals `divdi3_operands` reaches, each taken by no other arm
+    /// combination of the fixture (block charges of the generated body:
+    /// signs 8 + 3 + 9 + 3, +21 for a negative n, +18 for a negative d, +21
+    /// to negate the remainder, return 2 + 4; `0q`/`qq` digits 10/14/18 or
+    /// 10/14/16 by correction (none / with carry / tested twice), the `qq`
+    /// high word's digits 11/15/20/19 and 10/14/18, the `NN/dd` digits
+    /// 11/16/18/22 and 13/18/20/23; the remainder store 4 + 1, 12 + 1 after
+    /// `umul_ppmm`): 34 / 52 / 76 `d1 > n1` with n+ d+, n+ d-, n- d+; 86
+    /// `0q = nn/0D`, d0 normalized, no corrections; 107 the same with d0 <=
+    /// 0xffff, d negative; 108 d0 normalized, d negative, low digit with
+    /// carry; 137 n negative, high digit with carry; 147 both digits twice;
+    /// 159 both negative, high digit once; 98 division by zero; 106 the
+    /// same with both digits with carry; 122 `qq = NN/0d` with d0 <=
+    /// 0xffff; 174 n negative, the low word's high digit once; 196 both
+    /// negative, the high word's low digit and both low-word digits with
+    /// carry; 206 the same corrected once; 125 `0q = NN/dd`, high digit
+    /// once, `m1 > n1`; 151 d negative, high digit once, low digit twice,
+    /// `m1 != n1`; 162 d1 > 0xffff, n negative, `m1 == n1` and `m0 <= n0`;
+    /// 172 n negative, both digits once; 186 both negative, both digits with
+    /// carry.
+    pub(crate) const MODDI3_TOTALS: [u64; 20] = [
+        34, 52, 76, 86, 107, 108, 137, 147, 159, 98, 106, 122, 174, 196, 206, 125, 151, 162, 172,
+        186,
+    ];
+
+    /// One operand pair per arm, `(n, d, generated cycle total)`, for the
+    /// arms whose totals other arms share in the fixture: the total pins
+    /// the arm worked out from the block charges.
+    pub(crate) const MODDI3_ARMS: [(u64, u64, u64); 7] = [
+        // qq, d negative: both low-word digits corrected twice
+        (0x5232_27f3_a8cd_3c30, 0xffff_ffff_fbff_f801, 156),
+        // -1 % 0
+        (u64::MAX, 0, 140),
+        // 0q, n negative, d0 normalized: high digit with carry, low once
+        (0x9189_9abe_0bf1_2eaa, 0x0000_0000_d6e7_c7d1, 138),
+        // 0q = NN/dd, d negative: m1 == n1 and m0 > n0
+        (0x5344_22bb_3f73_a135, 0xffff_5ead_2b30_8415, 141),
+        // d1 > n1, both negative
+        (0xab77_d99f_5a22_194a, 0xab77_d99e_6609_0a55, 94),
+        // MIN % MIN: d1 normalized, n == d
+        (1 << 63, 1 << 63, 126),
+        // MIN % 2^31: qq with d0 normalized (n1 -= d0)
+        (1 << 63, 0x8000_0000, 132),
+    ];
+
+    /// Arm totals of the `rp == 0` run (no remainder store; the stale slot
+    /// is returned, negated for a negative n): 81 / 129 `0q` with d0
+    /// normalized, n+ / n-; 84 / 132 the same unnormalized; 93 / 139
+    /// division by zero; 117 / 159 `qq`; 107 / 145 `0q = NN/dd`.
+    pub(crate) const MODDI3_NULL_RP_TOTALS: [u64; 10] =
+        [81, 129, 84, 132, 93, 139, 117, 159, 107, 145];
+
+    /// `MIN % MIN` with `rp == 0`, `(n, d, generated cycle total)`.
+    pub(crate) const MODDI3_NULL_RP_ARM: (u64, u64, u64) = (1 << 63, 1 << 63, 121);
+
+    /// A machine about to take `n % d`: junk in every register, in LO/HI and
+    /// in the frame `__moddi3` opens below `sp` (so a missing or extra store
+    /// of `w` shows), the clz table where the generated body reads it.
+    pub(crate) fn moddi3_machine(c: &mut Cpu, seed: u32, n: u64, d: u64) {
+        let mut r = Rng(0x0042_d470 ^ seed as u64);
+        scramble(c, &mut r);
+        c.lo[0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+        c.hi[0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+        let frame = (c.g[SP][0] as u32).wrapping_sub(MODDI3_FRAME);
+        for off in (0..MODDI3_FRAME).step_by(4) {
+            c.bus.write32(frame + off, r.next_u32() | 1);
+        }
+        clz_table(c, MODDI3_CLZ_TAB);
+        c.g[A0][0] = n;
+        c.g[A1][0] = d;
+        c.pc = MODDI3_ENTRY;
+    }
+
+    /// `__moddi3` against the generated body over every case of
+    /// `__udivmoddi4` (each `count_leading_zeros` range, normalized or not,
+    /// digit corrections, the `umul_ppmm` exits), signs crossed, edge
+    /// values, every divisor bit length and division by zero; LO/HI too.
+    #[test]
+    fn moddi3_matches() {
+        check_paths_lohi(
+            ee::s15::f_0042d470__generated,
+            moddi3,
+            // The both-negative high-digit-once arm (159) first appears at
+            // seed 3547.
+            8192,
+            &MODDI3_TOTALS,
+            &|c, seed| {
+                let (n, d) = divdi3_operands(seed);
+                moddi3_machine(c, seed, n, d);
+            },
+        );
+    }
+
+    /// The arms whose cycle totals other arms share, one operand pair each.
+    #[test]
+    fn moddi3_arms_match() {
+        for (i, &(n, d, total)) in MODDI3_ARMS.iter().enumerate() {
+            check_paths_lohi(
+                ee::s15::f_0042d470__generated,
+                moddi3,
+                1,
+                &[total],
+                &|c, _| moddi3_machine(c, i as u32, n, d),
+            );
+        }
+    }
+
+    /// `rp == 0` (the frame at address 0): every `if (rp != 0)` store is
+    /// skipped and the stale slot comes back, negated for a negative n.
+    #[test]
+    fn moddi3_null_rp_matches() {
+        let null_rp = |c: &mut Cpu, seed: u32, n: u64, d: u64| {
+            c.g[SP][0] = MODDI3_NULL_RP_SP;
+            moddi3_machine(c, seed, n, d);
+        };
+        check_paths_lohi(
+            ee::s15::f_0042d470__generated,
+            moddi3,
+            256,
+            &MODDI3_NULL_RP_TOTALS,
+            &|c, seed| {
+                let (n, d) = divdi3_operands(seed);
+                null_rp(c, seed, n, d);
+            },
+        );
+        let (n, d, total) = MODDI3_NULL_RP_ARM;
+        check_paths_lohi(
+            ee::s15::f_0042d470__generated,
+            moddi3,
+            1,
+            &[total],
+            &|c, _| null_rp(c, 0, n, d),
+        );
+    }
+
+    pub(crate) const IEEE_LOG_2_ENTRY: u32 = 0x0041_f3a8;
+
+    pub(crate) const IEEE_LOG_2_SEEDS: u32 = 400;
+
+    /// Gate word of the path meters (outside the image, the stack and the fake log).
+    pub(crate) const IEEE_LOG_2_TEST_METER: u32 = DATA + 0x20_0000;
+
+    pub(crate) const IEEE_LOG_2_TEST_METER_MAGIC: u32 = 0x4c06_f3a8;
+
+    /// The first high-word mantissa at or past sqrt(2)'s (x is halved).
+    pub(crate) const IEEE_LOG_2_TEST_SQRT2_HM: u64 = 0x6a09c;
+
+    /// High-word mantissas at the edges of the `i > 0` window and the sqrt(2) cut.
+    pub(crate) const IEEE_LOG_2_TEST_EDGES: [u64; 10] = [
+        0x6147a, 0x61479, 0x6b851, 0x6b852, 0x6a09b, 0x6a09c, 1, 2, 0xffffd, 0x6a09e,
+    ];
+
+    /// High-word mantissas with |f| < 2^-20.
+    pub(crate) const IEEE_LOG_2_TEST_TINY: [u64; 3] = [0, 0xffffe, 0xfffff];
+
+    /// Own cycles of every arm (soft-float helpers metered out), from the
+    /// generated block charges.
+    pub(crate) const IEEE_LOG_2_TEST_PATHS: [u64; 12] = [
+        41,  // +-0: -inf
+        47,  // x < 0: NaN
+        42,  // inf / NaN: x + x
+        76,  // x == 1: 0
+        101, // |f| < 2^-20, f == 0, k != 0
+        100, // |f| < 2^-20, f != 0, k == 0
+        127, // |f| < 2^-20, f != 0, k != 0
+        202, // i > 0, k == 0
+        227, // i > 0, k != 0
+        190, // i <= 0, k == 0
+        217, // i <= 0, k != 0
+        // Subnormal (+15): this build's soft-float reads a zero exponent as zero
+        // (`gcc::unpack_d`), so `x * two54` is 0 and every subnormal takes the f == 0
+        // arm; the subnormal tiny-f (142) and i > 0 / i <= 0 (242 / 232) arms cannot run.
+        116,
+    ];
+
+    /// Path meters on the six soft-float helpers: with the gate word set a
+    /// helper runs as before and then takes back the cycles it charged, so a
+    /// run's total is the cost of `__ieee754_log_2`'s own blocks. Gate off:
+    /// whatever the slot held before.
+    macro_rules! ieee_log_2_meters {
+        ($($meter:ident: $slot:ident, $generated:ident;)*) => {
+            $(
+                pub(crate) fn $meter(c: &mut Cpu) {
+                    let prev = fakes::prev_cell($meter);
+                    if c.bus.read32(IEEE_LOG_2_TEST_METER) != IEEE_LOG_2_TEST_METER_MAGIC {
+                        return fakes::fall_back(c, prev, ee::s15::$generated);
+                    }
+                    let start = c.cycles;
+                    fakes::fall_back(c, prev, ee::s15::$generated);
+                    c.cycles = start;
+                }
+            )*
+
+            pub(crate) fn ieee_log_2_meters_install() {
+                $(fakes::hook(addr_of_mut!(ee::s15::$slot), $meter, fakes::prev_cell($meter));)*
+            }
+        };
+    }
+
+    ieee_log_2_meters! {
+        ieee_log_2_meter_adddf3: OVERRIDE_00411F18, f_00411f18__generated;
+        ieee_log_2_meter_subdf3: OVERRIDE_00411F70, f_00411f70__generated;
+        ieee_log_2_meter_muldf3: OVERRIDE_00411FD8, f_00411fd8__generated;
+        ieee_log_2_meter_divdf3: OVERRIDE_00412280, f_00412280__generated;
+        ieee_log_2_meter_cmpdf2: OVERRIDE_00412500, f_00412500__generated;
+        ieee_log_2_meter_floatsidf: OVERRIDE_00412550, f_00412550__generated;
+    }
+
+    pub(crate) fn ieee_log_2_test_bits(e: u64, hm: u64, lo: u32) -> u64 {
+        e << 52 | hm << 32 | lo as u64
+    }
+
+    /// A high-word mantissa in one of the four regions: i > 0 below and above
+    /// the sqrt(2) cut, i <= 0 below and above it (|f| < 2^-20 left out).
+    pub(crate) fn ieee_log_2_test_region(r: &mut Rng, region: u32) -> u64 {
+        let (lo, hi) = match region {
+            0 => (0x6147a, IEEE_LOG_2_TEST_SQRT2_HM),
+            1 => (IEEE_LOG_2_TEST_SQRT2_HM, 0x6b852),
+            2 => (1, 0x6147a),
+            _ => (0x6b852, 0xffffe),
+        };
+        lo + r.next_u32() as u64 % (hi - lo)
+    }
+
+    /// The exponent field for case 0 (k == 0), 1 (any other) or 2 (the
+    /// smallest or largest normal, `side`).
+    pub(crate) fn ieee_log_2_test_exp(r: &mut Rng, hm: u64, case: u32, side: u32) -> u64 {
+        let k_zero = if hm >= IEEE_LOG_2_TEST_SQRT2_HM {
+            0x3fe
+        } else {
+            0x3ff
+        };
+        match case {
+            0 => k_zero,
+            1 => {
+                let e = 1 + (r.next_u32() % 0x7fe) as u64;
+                if e == k_zero {
+                    e + 1
+                } else {
+                    e
+                }
+            }
+            _ => [1, 0x7fe][side as usize],
+        }
+    }
+
+    /// A subnormal whose scaled high-word mantissa is `hm` (top bit at 21..51).
+    pub(crate) fn ieee_log_2_test_subnormal(r: &mut Rng, hm: u64, lo: u32) -> u64 {
+        let top = 21 + r.next_u32() % 31;
+        let mantissa = hm << 32 | lo as u64;
+        1u64 << top | mantissa >> (52 - top)
+    }
+
+    /// x for `seed`: the phase is `seed % 8`, its cases the digits of `seed / 8`.
+    pub(crate) fn ieee_log_2_test_x(r: &mut Rng, seed: u32) -> u64 {
+        let d = seed / 8;
+        let lo = r.next_u32();
+        match seed % 8 {
+            // +-0
+            0 => ((d % 2) as u64) << 63,
+            // x < 0: normal, subnormal, -inf, -NaN, -1
+            1 => {
+                let magnitude = match d % 5 {
+                    0 => {
+                        let e = 1 + (r.next_u32() % 0x7fe) as u64;
+                        ieee_log_2_test_bits(e, (r.next_u32() % 0x10_0000) as u64, lo)
+                    }
+                    1 => ieee_log_2_test_bits(0, (r.next_u32() % 0x10_0000) as u64, lo | 1),
+                    2 => ieee_log_2_test_bits(0x7ff, 0, 0),
+                    3 => ieee_log_2_test_bits(0x7ff, 0x8_0000, lo),
+                    _ => IEEE_LOG_ONE,
+                };
+                1 << 63 | magnitude
+            }
+            // inf, NaNs (quiet, low word only, all ones)
+            2 => match d % 4 {
+                0 => ieee_log_2_test_bits(0x7ff, 0, 0),
+                1 => ieee_log_2_test_bits(0x7ff, 0x8_0000, lo),
+                2 => ieee_log_2_test_bits(0x7ff, 0, lo | 1),
+                _ => 0x7fff_ffff_ffff_ffff,
+            },
+            // Subnormals: a power of two, |f| < 2^-20, both i arms, edges
+            3 => match d % 5 {
+                0 => 1 << (r.next_u32() % 52),
+                1 => {
+                    let hm = IEEE_LOG_2_TEST_TINY[(d / 5 % 3) as usize];
+                    ieee_log_2_test_subnormal(r, hm, lo | 0x8000_0000)
+                }
+                2 => {
+                    let hm = ieee_log_2_test_region(r, d / 5 % 2);
+                    ieee_log_2_test_subnormal(r, hm, lo)
+                }
+                3 => {
+                    let hm = ieee_log_2_test_region(r, 2 + d / 5 % 2);
+                    ieee_log_2_test_subnormal(r, hm, lo)
+                }
+                _ => [0x000f_ffff_ffff_ffff, (lo | 1) as u64][(d / 5 % 2) as usize],
+            },
+            // Powers of two: 1 (k == 0), then k != 0
+            4 => {
+                let e = match d % 6 {
+                    0 => 0x3ff,
+                    1 => 0x3fe,
+                    2 => 0x400,
+                    3 => 1,
+                    4 => 0x7fe,
+                    _ => {
+                        let e = 1 + (r.next_u32() % 0x7fe) as u64;
+                        if e == 0x3ff {
+                            0x3fd
+                        } else {
+                            e
+                        }
+                    }
+                };
+                e << 52
+            }
+            // |f| < 2^-20, f != 0, crossed with k
+            5 => {
+                let hm = IEEE_LOG_2_TEST_TINY[(d % 3) as usize];
+                let e = ieee_log_2_test_exp(r, hm, d / 3 % 3, d / 9 % 2);
+                ieee_log_2_test_bits(e, hm, lo | 1)
+            }
+            // The four mantissa regions crossed with k
+            6 => {
+                let hm = ieee_log_2_test_region(r, d % 4);
+                let e = ieee_log_2_test_exp(r, hm, d / 4 % 3, d / 12 % 2);
+                ieee_log_2_test_bits(e, hm, lo)
+            }
+            // The region edges crossed with k
+            _ => {
+                let hm = IEEE_LOG_2_TEST_EDGES[(d % 10) as usize];
+                let e = ieee_log_2_test_exp(r, hm, d / 10 % 3, d / 30 % 2);
+                ieee_log_2_test_bits(e, hm, lo)
+            }
+        }
+    }
+
+    /// Scrambled registers, the game image (soft-float's NaN constant), x in
+    /// a0; the -inf word overwritten with a value only it holds (the pool has
+    /// another -inf at 0x4a0000 - 0x6ef0). `metered` turns the path meters on.
+    pub(crate) fn ieee_log_2_setup(c: &mut Cpu, seed: u32, metered: bool) {
+        let mut r = machine(c, seed, 0x41_f3a8, 0);
+        elf_image(c);
+        c.bus.write64(
+            IEEE_LOG_2_NEG_INF,
+            0xfff0_0000_0000_0000 | (seed as u64) << 4 | 0xd,
+        );
+        c.pc = IEEE_LOG_2_ENTRY;
+        c.g[A0][0] = ieee_log_2_test_x(&mut r, seed);
+        if metered {
+            ieee_log_2_meters_install();
+            c.bus
+                .write32(IEEE_LOG_2_TEST_METER, IEEE_LOG_2_TEST_METER_MAGIC);
+        }
+    }
+
+    /// __ieee754_log_2 on every phase of e_log.c: +-0, negatives, inf/NaN,
+    /// subnormals, powers of two, |f| < 2^-20 with k == 0 and not, and the
+    /// four mantissa regions and their edges crossed with k; real soft-float
+    /// helpers.
+    #[test]
+    fn ieee754_log_2_matches() {
+        check(
+            ee::s15::f_0041f3a8__generated,
+            ieee754_log_2,
+            IEEE_LOG_2_SEEDS,
+            &|c, seed| ieee_log_2_setup(c, seed, false),
+        );
+    }
+
+    /// The same seeds reach all fifteen arms (own cycles, helpers metered out).
+    #[test]
+    fn ieee754_log_2_paths() {
+        require_paths(
+            ee::s15::f_0041f3a8__generated,
+            IEEE_LOG_2_SEEDS,
+            &IEEE_LOG_2_TEST_PATHS,
+            &|c, seed| ieee_log_2_setup(c, seed, true),
         );
     }
 }
