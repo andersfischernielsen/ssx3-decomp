@@ -42,6 +42,7 @@ pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -286,6 +287,41 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0028_3180,
         oc436_script_cam_binding_unbind,
         "ScriptCamBinding_Unbind",
+    ),
+    (
+        0x0028_2020,
+        script_engine_destroy_script_database_2,
+        "ScriptEngine_DestroyScriptDatabase",
+    ),
+    (
+        0x0028_2498,
+        script_engine_set_process_speed,
+        "ScriptEngine_SetProcessSpeed",
+    ),
+    (
+        0x0028_2510,
+        script_engine_set_process_user_data,
+        "ScriptEngine_SetProcessUserData",
+    ),
+    (
+        0x0028_2698,
+        script_engine_pause_all_seqs,
+        "ScriptEngine_PauseAllSeqs",
+    ),
+    (
+        0x0028_26b8,
+        script_engine_resume_all_seqs,
+        "ScriptEngine_ResumeAllSeqs",
+    ),
+    (
+        0x0028_27f8,
+        script_engine_get_process_script_id,
+        "ScriptEngine_GetProcessScriptId",
+    ),
+    (
+        0x0028_2bc0,
+        script_engine_get_process_user_data,
+        "ScriptEngine_GetProcessUserData",
     ),
 ];
 
@@ -2755,6 +2791,259 @@ pub fn c_transition_man_script_set_owner(c: &mut Cpu) {
     ret(c);
 }
 
+/// `ScriptEngine_DestroyScriptDatabase` (0x282020, the reference's
+/// `cBXScriptEngine_PurgeBXEngine`): when a script database is loaded, stops
+/// and kills every process, removes the script objects, frees the database
+/// (`+0x2b0`, its size at `+0x2b4`) and the in-sequence object (`+0x2b8`),
+/// frees its heap (`+0x2bc`) and resets the process table.
+pub fn script_engine_destroy_script_database_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(this).off(0x2b0).lw(c);
+        if c.g[V0][0] != 0 {
+            c.cycles += 9;
+            Callee {
+                addr: 0x0028_2390,
+                f: ee::s07::f_00282390,
+            }
+            .call(c, 0x0028_2044)?;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0028_23f0,
+                f: ee::s07::f_002823f0,
+            }
+            .call(c, 0x0028_204c)?;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0027_d050,
+                f: ee::s07::f_0027d050,
+            }
+            .call(c, 0x0028_2054)?;
+            c.g[A0][0] = Addr(this).off(0x2b0).lw(c);
+            if c.g[A0][0] == 0 {
+                c.g[A0][0] = Addr(this).off(0x2b8).lw(c);
+            } else {
+                c.cycles += 3;
+                call_ptr(c, 0x0031_7e98, 0x0028_2068)?;
+                c.g[A0][0] = Addr(this).off(0x2b8).lw(c);
+            }
+            c.cycles += 3;
+            Addr(this).off(0x2b0).sw(c, 0);
+            let has_in_seq = c.g[A0][0] != 0;
+            Addr(this).off(0x2b4).sw(c, 0);
+            if has_in_seq {
+                c.cycles += 2;
+                c.g[A1][0] = 3;
+                Callee {
+                    addr: 0x0027_28d0,
+                    f: ee::s07::f_002728d0,
+                }
+                .call(c, 0x0028_2080)?;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = Addr(this).off(0x2bc).lw(c);
+            let has_heap = c.g[A0][0] != 0;
+            Addr(this).off(0x2b8).sw(c, 0);
+            if has_heap {
+                c.cycles += 2;
+                call_ptr(c, 0x0031_7e98, 0x0028_2094)?;
+            }
+            c.cycles += 4;
+            Addr(this).off(0x2bc).sw(c, 0);
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0028_28b8,
+                f: ee::s07::f_002828b8,
+            }
+            .call(c, 0x0028_20a0)?;
+        }
+        frame.restore(c, 16, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `ScriptEngine_SetProcessSpeed` (0x282498, `cBXScriptEngine_SetScriptPlayRate`):
+/// a rate below 0.01 is refused (returns 0). Otherwise the process of the
+/// handle `a1` takes the rate: stored in the process while it is still
+/// loading (state 1, returns 1), else handed to its in-sequence object.
+pub fn script_engine_set_process_speed(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x4784));
+        frame.save_fpr(c, 20, 0x10);
+        c.mov_s(20, 12);
+        let rate = FpuF32(c.f[20]);
+        let threshold = FpuF32(c.f[0]);
+        let below = abi::c_lt_s(c, rate, threshold);
+        frame.save_ra(c, 0);
+        let mut accepted = false;
+        if !below {
+            c.cycles += 5;
+            Callee {
+                addr: 0x0028_2cb0,
+                f: ee::s07::f_00282cb0,
+            }
+            .call(c, 0x0028_24c0)?;
+            c.g[A0][0] = c.g[V0][0];
+            accepted = c.g[A0][0] != 0;
+        }
+        if accepted {
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).off(0x4).lw(c);
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            if c.g[V1][0] == c.g[V0][0] {
+                Addr(c.g[A0][0] as u32).off(0x18).write_fpu(c, rate);
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = Addr(c.g[A0][0] as u32).lw(c);
+                abi::set_fpr(c, 12, rate);
+                Callee {
+                    addr: 0x0027_4808,
+                    f: ee::s07::f_00274808,
+                }
+                .call(c, 0x0028_24ec)?;
+                c.g[V0][0] = 1;
+            }
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `ScriptEngine_SetProcessUserData` (0x282510, `cBXScriptEngine_SetRequestUserData1`):
+/// swaps the user word (`+0xc`) of the process of handle `a1` for `a2`, and
+/// returns the old word.
+pub fn script_engine_set_process_user_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        Callee {
+            addr: 0x0028_2cb0,
+            f: ee::s07::f_00282cb0,
+        }
+        .call(c, 0x0028_2524)?;
+        let process = c.g[V0][0] as u32;
+        c.g[V1][0] = Addr(process).off(0xc).lw(c);
+        let value = c.g[S0][0];
+        Addr(process).off(0xc).sw(c, value);
+        frame.restore(c, 16, 0x10);
+        c.g[V0][0] = c.g[V1][0];
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `ScriptEngine_PauseAllSeqs` (0x282698): pauses the in-sequence object at
+/// `self->+0x2b8`.
+pub fn script_engine_pause_all_seqs(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(c.g[A0][0] as u32).off(0x2b8).lw(c);
+        Callee {
+            addr: 0x0027_2bf8,
+            f: ee::s07::f_00272bf8,
+        }
+        .call(c, 0x0028_26a8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `ScriptEngine_ResumeAllSeqs` (0x2826b8): resumes the in-sequence object at
+/// `self->+0x2b8`.
+pub fn script_engine_resume_all_seqs(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(c.g[A0][0] as u32).off(0x2b8).lw(c);
+        Callee {
+            addr: 0x0027_2c70,
+            f: ee::s07::f_00272c70,
+        }
+        .call(c, 0x0028_26c8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `ScriptEngine_GetProcessScriptId` (0x2827f8, `cBXScriptEngine_GetRequestScriptIndex`):
+/// the script index of the process of handle `a1`: the loading index in
+/// state 1, else the anim script index. -1 without a process.
+pub fn script_engine_get_process_script_id(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Callee {
+            addr: 0x0028_2cb0,
+            f: ee::s07::f_00282cb0,
+        }
+        .call(c, 0x0028_2808)?;
+        c.g[A0][0] = c.g[V0][0];
+        if c.g[A0][0] != 0 {
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).off(0x4).lw(c);
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            if c.g[V1][0] == c.g[V0][0] {
+                c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x14).lw(c);
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x8).lw(c);
+            }
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = u64::MAX;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `ScriptEngine_GetProcessUserData` (0x282bc0, `cBXScriptEngine_GetRequestUserData1`):
+/// the user word (`+0xc`) of the process of handle `a1`.
+pub fn script_engine_get_process_user_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Callee {
+            addr: 0x0028_2cb0,
+            f: ee::s07::f_00282cb0,
+        }
+        .call(c, 0x0028_2bd0)?;
+        c.g[V0][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4036,6 +4325,129 @@ pub(crate) mod tests {
             ee::s07::f_00282da8__generated,
             c_transition_man_script_set_owner,
             0x0028_2da8,
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC554_CELL;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc554_gate_on;
+
+    #[test]
+    fn script_engine_destroy_script_database_matches() {
+        check(
+            ee::s07::f_00282020__generated,
+            script_engine_destroy_script_database_2,
+            200,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0004);
+                let this = DATA + 0x9000;
+                let db = if seed % 3 == 0 { 0 } else { DATA + 0xa000 };
+                let in_seq = if seed % 4 == 0 { 0 } else { DATA + 0xa100 };
+                let heap = if seed % 2 == 0 { 0 } else { DATA + 0xa200 };
+                c.bus.write32(this + 0x2b0, db);
+                c.bus.write32(this + 0x2b4, r.next_u32());
+                c.bus.write32(this + 0x2b8, in_seq);
+                c.bus.write32(this + 0x2bc, heap);
+                c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_set_process_speed_matches() {
+        check(
+            ee::s07::f_00282498__generated,
+            script_engine_set_process_speed,
+            300,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0005);
+                c.bus.write32(GAME_GP - 0x4784, 0.01f32.to_bits());
+                let rate = [0.001f32, 0.5, 0.01, 2.0][(seed % 4) as usize];
+                c.f[12] = rate.to_bits();
+                let process = DATA + 0xb000;
+                c.bus
+                    .write32(OC554_CELL, if seed % 5 == 0 { 0 } else { process });
+                c.bus.write32(process, DATA + 0xb200);
+                c.bus
+                    .write32(process + 0x4, if seed % 2 == 0 { 1 } else { 2 });
+                c.bus.write32(process + 0x18, r.next_u32());
+                c.g[A0][0] = (DATA + 0xb100) as u64;
+                c.g[A1][0] = 7;
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_set_process_user_data_matches() {
+        check(
+            ee::s07::f_00282510__generated,
+            script_engine_set_process_user_data,
+            200,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0006);
+                let process = DATA + 0xb300;
+                c.bus.write32(OC554_CELL, process);
+                c.bus.write32(process + 0xc, r.next_u32());
+                c.g[A0][0] = (DATA + 0xb100) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_pause_and_resume_all_seqs_match() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let _ = oc554_gate_on(c, seed, 0x554_0007);
+            c.g[A0][0] = (DATA + 0xb400) as u64;
+            c.bus.write32(DATA + 0xb400 + 0x2b8, DATA + 0xb500);
+        };
+        check(
+            ee::s07::f_00282698__generated,
+            script_engine_pause_all_seqs,
+            100,
+            &setup,
+        );
+        check(
+            ee::s07::f_002826b8__generated,
+            script_engine_resume_all_seqs,
+            100,
+            &setup,
+        );
+    }
+
+    #[test]
+    fn script_engine_get_process_script_id_matches() {
+        check(
+            ee::s07::f_002827f8__generated,
+            script_engine_get_process_script_id,
+            300,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0008);
+                let process = DATA + 0xb600;
+                c.bus
+                    .write32(OC554_CELL, if seed % 4 == 0 { 0 } else { process });
+                c.bus.write32(process + 0x4, [1, 2, 3][(seed % 3) as usize]);
+                c.bus.write32(process + 0x8, r.next_u32());
+                c.bus.write32(process + 0x14, r.next_u32());
+                c.g[A1][0] = 5;
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_get_process_user_data_matches() {
+        check(
+            ee::s07::f_00282bc0__generated,
+            script_engine_get_process_user_data,
+            200,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0009);
+                let process = DATA + 0xb700;
+                c.bus.write32(OC554_CELL, process);
+                c.bus.write32(process + 0xc, r.next_u32());
+                c.g[A1][0] = 5;
+            },
         );
     }
 }

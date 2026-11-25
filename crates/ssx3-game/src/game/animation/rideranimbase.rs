@@ -117,6 +117,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         anim_controller_play_anim_impl,
         "AnimController_PlayAnimImpl",
     ),
+    (
+        0x0031_19f8,
+        animtable_get_layer_name,
+        "AnimTable_GetLayerName",
+    ),
+    (
+        0x0031_1a30,
+        animtable_get_anim_name,
+        "AnimTable_GetAnimName",
+    ),
+    (
+        0x0031_1d88,
+        animcontroller_set_sequences_user_data,
+        "AnimController_SetSequencesUserData",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3048,6 +3063,134 @@ pub(crate) fn pai_match(c: &mut Cpu) {
     c.g[V0][0] = Addr(r32(c, S6)).lw(c);
 }
 
+/// `const char* AnimTable_GetLayerName(int anim)` (0x3119f8): the name of the
+/// layer the animation's entry names, from the layer name table at 0x44af80.
+pub fn animtable_get_layer_name(c: &mut Cpu) {
+    c.cycles += 13;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[A0][0] = c.g[A1][0];
+    guest(c, |c| {
+        Callee {
+            addr: 0x0031_15c8,
+            f: ee::s10::f_003115c8,
+        }
+        .call(c, 0x0031_1a08)?;
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        c.g[V0][0] = 0x450000;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5080));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `const char* AnimTable_GetAnimName(int anim)` (0x311a30): forwards the
+/// animation index to the name stub.
+pub fn animtable_get_anim_name(c: &mut Cpu) {
+    c.cycles += 7;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[A0][0] = c.g[A1][0];
+    guest(c, |c| {
+        Callee {
+            addr: 0x0031_1860,
+            f: ee::s10::f_00311860,
+        }
+        .call(c, 0x0031_1a40)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void AnimController_SetSequencesUserData(AnimController* self, void* data)`
+/// (0x311d88): sets `IsFlipped` (+0x80) of every playing sequence of every
+/// sequencer (six of them, eight bytes apart from `self + 0x50`) to `data`.
+/// The sequences come from `AnimSeqList_GetAt`, and each loop checks for an
+/// event at its back edge.
+pub fn animcontroller_set_sequences_user_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, 18, 0x30);
+        frame.save(c, 20, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, 16, 0x50);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, 17, 0x40);
+        c.g[A0][0] = 0;
+        frame.save(c, 19, 0x20);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
+        'seq_loop: loop {
+            'b_311e04: {
+                c.cycles += 6;
+                c.g[A1][0] = sx((c.g[A0][0] as u32) << 3);
+                c.g[S3][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[S0][0] = 0;
+                if t {
+                    break 'b_311e04;
+                }
+                c.cycles += 2;
+                c.g[S1][0] = c.g[A1][0];
+                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
+                'play_loop: loop {
+                    c.cycles += 11;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    Callee {
+                        addr: 0x0031_4760,
+                        f: ee::s10::f_00314760,
+                    }
+                    .call(c, 0x0031_1de8)?;
+                    let value = c.g[S4][0];
+                    let node = (c.g[V0][0] as u32).wrapping_add(0x80);
+                    c.sw(node, value);
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[V1][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    if c.g[V1][0] != 0 {
+                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_1dd8);
+                        }
+                        continue 'play_loop;
+                    }
+                    break 'b_311e04;
+                }
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S3][0];
+            c.g[V0][0] = ((c.g[A0][0] as i64) < 6) as u64;
+            if c.g[V0][0] != 0 {
+                c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_1db8);
+                }
+                continue 'seq_loop;
+            }
+            c.cycles += 8;
+            frame.restore(c, 16, 0x50);
+            frame.restore(c, 17, 0x40);
+            frame.restore(c, 18, 0x30);
+            frame.restore(c, 19, 0x20);
+            frame.restore(c, 20, 0x10);
+            frame.restore_ra(c, 0);
+            frame.close(c);
+            return Ok(());
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3902,6 +4045,73 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = pai_setup(c, seed, 0);
                 schedule(c, &mut r, seed, 0x0031_1f00)
+            },
+        );
+    }
+
+    #[test]
+    fn animtable_get_layer_name_matches() {
+        check(
+            ee::s10::f_003119f8__generated,
+            animtable_get_layer_name,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x0031_19f8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_19f8;
+                let idx = seed % 6;
+                c.g[A1][0] = idx as u64;
+                // The anim entry at 0x446990 + idx * 0x1c names a layer; the layer
+                // table at 0x44af80 names the layer.
+                let entry = 0x0044_6990 + idx * 0x1c;
+                c.bus.write32(entry + 0xc, seed % 8);
+                c.bus.write32(0x0044_af80 + (seed % 8) * 4, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn animtable_get_anim_name_matches() {
+        check(
+            ee::s10::f_00311a30__generated,
+            animtable_get_anim_name,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x0031_1a30 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_1a30;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn animcontroller_set_sequences_user_data_matches() {
+        check(
+            ee::s10::f_00311d88__generated,
+            animcontroller_set_sequences_user_data,
+            80,
+            &|c, seed| {
+                let mut r = Rng(0x0031_1d88 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_1d88;
+                let this = DATA;
+                let base = DATA + 0x1000;
+                c.bus.write32(this + 0x50, base);
+                // Six sequencers of 8 bytes: NumPlaying (0..2) and a list head.
+                for i in 0..6u32 {
+                    let entry = base + i * 8;
+                    c.bus.write32(entry, (seed + i) % 3);
+                    let head = DATA + 0x4000 + i * 0x400;
+                    c.bus.write32(entry + 0x4, head);
+                    for k in 0..3u32 {
+                        let node = head + k * 0x100;
+                        let next = if k == 2 { 0 } else { node + 0x100 };
+                        c.bus.write32(node + 0xc8, next);
+                    }
+                }
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = r.next_u32() as u64;
             },
         );
     }

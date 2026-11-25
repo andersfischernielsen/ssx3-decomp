@@ -41,6 +41,7 @@ pub(crate) use crate::game::object::splinemodifier::stf as stf_2;
 pub(crate) use crate::game::render::particle::addi;
 pub(crate) use crate::game::render::particle::at as at_2;
 pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
+pub(crate) use crate::game::scripter::ssxscriptengine::script_obj_base_dtor_forward;
 use crate::game::visualfx::boardwakefx as bw;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
@@ -272,6 +273,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002e_02b8,
         dynamic_spray_fx_update_emitter1,
         "cDynamicSprayFX_UpdateEmitter1",
+    ),
+    (
+        0x0028_4aa8,
+        c_transition_man_script_dtor,
+        "cTransitionMan_ScriptDtor",
     ),
 ];
 
@@ -14887,6 +14893,11 @@ pub(crate) fn spray_emitter1_edge_velocity(c: &mut Cpu) -> crate::call::Flow {
     c.sq(2, ue1_sp(c, 0x60));
     c.sq(2, ue1_sp(c, 0x20));
     Ok(())
+}
+
+/// `cTransitionMan_ScriptDtor` (0x284aa8).
+pub fn c_transition_man_script_dtor(c: &mut Cpu) {
+    script_obj_base_dtor_forward(c, 0x0028_4ab8);
 }
 
 #[cfg(test)]

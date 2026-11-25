@@ -257,6 +257,43 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cell_find_rail_recursive,
         "Cell_FindRailRecursive",
     ),
+    (
+        0x0033_03f0,
+        coll_sphere_tree_construct,
+        "CollSphereTree_ctor",
+    ),
+    (
+        0x0033_0ba8,
+        overlap_list_gather_objects,
+        "OverlapList_GatherObjects",
+    ),
+    (0x0033_6d40, cell_collide_object_ex, "Cell_CollideObjectEx"),
+    (0x0034_00d8, collision_static_init, "Collision_StaticInit"),
+    (
+        0x0034_0a40,
+        cell_gather_objects_subtree,
+        "Cell_GatherObjectsSubtree",
+    ),
+    (
+        0x0034_0c20,
+        cell_gather_objinst_subtree,
+        "Cell_GatherObjInstSubtree",
+    ),
+    (
+        0x0034_0fa0,
+        cell_collide_volume_subtree,
+        "Cell_CollideVolumeSubtree",
+    ),
+    (
+        0x0034_10c0,
+        cell_collide_objects_subtree,
+        "Cell_CollideObjectsSubtree",
+    ),
+    (0x0034_11b8, cell_find_rail_subtree, "Cell_FindRailSubtree"),
+    (0x0034_1368, collision_global_ctors, "Collision_GlobalCtors"),
+    (0x0034_1388, boost_node_ctor, "cBoostNode_cBoostNode1"),
+    (0x0034_1818, boost_node_apply_boost, "cBoostNode_applyBoost"),
+    (0x0034_2a88, boost_modifier_v07, "BoostModifier_v07"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -30763,6 +30800,3034 @@ pub fn cell_gather_objects_recursive(c: &mut Cpu) {
     });
 }
 
+/// Stack frame of `OverlapList_GatherObjects`.
+pub(crate) const FRAME: u32 = 0xa0;
+
+/// Saved-register slots (`sq` of s0..s6, `sd` of ra), offsets from `sp`.
+pub(crate) const SAVE_S0: u32 = 0x90;
+
+pub(crate) const SAVE_S1: u32 = 0x80;
+
+pub(crate) const SAVE_S2: u32 = 0x70;
+
+pub(crate) const SAVE_S3: u32 = 0x60;
+
+pub(crate) const SAVE_S4: u32 = 0x50;
+
+pub(crate) const SAVE_S5: u32 = 0x40;
+
+pub(crate) const SAVE_S6: u32 = 0x30;
+
+pub(crate) const SAVE_RA: u32 = 0x20;
+
+/// The `OverlapInstancesCallback` record on the frame: instance array pointer,
+/// count pointer, maximum (0x40) and the query box.
+pub(crate) const CB_INSTANCES: u32 = 0x0;
+
+pub(crate) const CB_NUMBER: u32 = 0x4;
+
+pub(crate) const CB_MAXIMUM: u32 = 0x8;
+
+pub(crate) const CB_BOX: u32 = 0xc;
+
+/// `char flags[8]` on the frame; cell `k` gets `FLAGS + k`.
+pub(crate) const FLAGS: u32 = 0x10;
+
+/// The overlap list (`self`): the Nash grid, the delete count, the instance
+/// count and array, the patch count (-1 when not collected) and the typed count.
+pub(crate) const LIST_NASH: u32 = 0x00;
+
+pub(crate) const LIST_DELETE_COUNT: u32 = 0x04;
+
+pub(crate) const LIST_NUM_INSTANCES: u32 = 0x08;
+
+pub(crate) const LIST_INSTANCES: u32 = 0x0c;
+
+pub(crate) const LIST_NUM_PATCHES: u32 = 0x10c;
+
+pub(crate) const LIST_NUM_TYPED: u32 = 0x210;
+
+/// The grid (`sGrid`): eight octant cells of 0x14 bytes (level, x, y, z, tree),
+/// then the delete count at +0xa0.
+pub(crate) const CELL_SIZE: u32 = 0x14;
+
+pub(crate) const CELL_TREE: u32 = 0x10;
+
+pub(crate) const GRID_DELETE_COUNT: u32 = 0xa0;
+
+/// Return addresses of the calls. Each cell's code is 0x104 bytes after the
+/// previous one's; a cell's children are 0x14 bytes apart.
+pub(crate) const PROX_RET: u32 = 0x0033_0c1c;
+
+pub(crate) const COLLECT_RET: u32 = 0x0033_0c34;
+
+pub(crate) const CHILD_RET: u32 = 0x0033_0c48;
+
+pub(crate) const REC_RET: u32 = 0x0033_0d00;
+
+pub(crate) const CELL_STRIDE_RET: u32 = 0x104;
+
+pub(crate) const CHILD_STRIDE_RET: u32 = 0x14;
+
+/// Cell 7's recursive call returns to the epilogue block, not the stride.
+pub(crate) const REC_LAST_RET: u32 = 0x0033_1418;
+
+/// The cell proximity test (0 inside, 1 outside, 2 crossing).
+pub(crate) const PROX_FN: u32 = 0x0032_8360;
+
+pub(crate) const CELL_GATHER_OBJECTS: Callee = Callee {
+    addr: 0x0033_09d8,
+    f: ee::s11::f_003309d8,
+};
+
+pub(crate) const CELL_GATHER_OBJECTS_SUBTREE: Callee = Callee {
+    addr: 0x0034_0a40,
+    f: ee::s11::f_00340a40,
+};
+
+pub(crate) const CELL_GATHER_OBJECTS_RECURSIVE: Callee = Callee {
+    addr: 0x0033_8920,
+    f: ee::s11::f_00338920,
+};
+
+pub(crate) fn cell_ret(base: u32, k: u32) -> u32 {
+    base + CELL_STRIDE_RET * k
+}
+
+pub(crate) fn child_ret(k: u32, j: u32) -> u32 {
+    cell_ret(CHILD_RET, k) + CHILD_STRIDE_RET * j
+}
+
+pub(crate) fn rec_ret(k: u32) -> u32 {
+    cell_ret(REC_RET, k)
+}
+
+/// `void cOverlapList_getinstances(cOverlapList* self, tBoundBox* box)`
+/// (0x330ba8, `OverlapList_GatherObjects`): collects into `self`'s instance
+/// array the instances whose bounds overlap `box`, walking the Nash grid's eight
+/// octant roots. The delete count is copied from the grid, the instance count is
+/// cleared, and the patch and typed counts end at -1 (not collected).
+///
+/// Each root with a tree is tested against the box (`0x328360`). Inside (0): the
+/// root goes to the callback and each of its children to the subtree walker.
+/// Crossing (2): the cell goes to the recursive collector. Outside (1): skipped.
+pub fn overlap_list_gather_objects(c: &mut Cpu) {
+    guest(c, gather_objects_2);
+}
+
+pub(crate) fn gather_objects_2(c: &mut Cpu) -> Flow {
+    c.cycles += 25;
+    let frame = Frame::open(c, FRAME);
+    frame.save(c, S0, SAVE_S0);
+    frame.save(c, S5, SAVE_S5);
+    frame.save(c, S6, SAVE_S6);
+    c.g[S5][0] = c.g[A1][0];
+    frame.save(c, S1, SAVE_S1);
+    c.g[S6][0] = c.g[A0][0];
+    frame.save(c, S2, SAVE_S2);
+    let list = c.g[S6][0] as u32;
+    c.g[V1][0] = sx(list.wrapping_add(LIST_INSTANCES));
+    frame.save(c, S3, SAVE_S3);
+    c.g[A0][0] = sx(list.wrapping_add(LIST_NUM_INSTANCES));
+    frame.save_ra(c, SAVE_RA);
+    c.g[A1][0] = 0x40;
+    frame.save(c, S4, SAVE_S4);
+    c.g[S4][0] = Addr(list.wrapping_add(LIST_NASH)).lw(c);
+    let grid = c.g[S4][0] as u32;
+    c.g[V0][0] = Addr(grid.wrapping_add(GRID_DELETE_COUNT)).lw(c);
+    let instances = c.g[V1][0];
+    Addr(sp(c).wrapping_add(CB_INSTANCES)).sw(c, instances);
+    let deletes = c.g[V0][0];
+    Addr(list.wrapping_add(LIST_DELETE_COUNT)).sw(c, deletes);
+    let number = c.g[A0][0];
+    Addr(sp(c).wrapping_add(CB_NUMBER)).sw(c, number);
+    let maximum = c.g[A1][0];
+    Addr(sp(c).wrapping_add(CB_MAXIMUM)).sw(c, maximum);
+    let bbox = c.g[S5][0];
+    Addr(sp(c).wrapping_add(CB_BOX)).sw(c, bbox);
+    Addr(list.wrapping_add(LIST_NUM_INSTANCES)).sw(c, 0);
+    c.g[S1][0] = Addr(grid.wrapping_add(CELL_TREE)).lw(c);
+    c.g[S0][0] = c.g[SP][0];
+
+    gather_cell0(c)?;
+    for k in 1..=6 {
+        gather_cell(c, k)?;
+    }
+    gather_last_cell(c)?;
+
+    // Epilogue: the patch and typed counts become -1.
+    c.cycles += 14;
+    c.g[V0][0] = 0xffff_ffff_ffff_0000;
+    frame.restore(c, S0, SAVE_S0);
+    c.g[V0][0] |= 0xffff;
+    frame.restore(c, S1, SAVE_S1);
+    let minus_one = c.g[V0][0];
+    let list = c.g[S6][0] as u32;
+    Addr(list.wrapping_add(LIST_NUM_TYPED)).sw(c, minus_one);
+    Addr(list.wrapping_add(LIST_NUM_PATCHES)).sw(c, minus_one);
+    frame.restore(c, S2, SAVE_S2);
+    frame.restore(c, S3, SAVE_S3);
+    frame.restore(c, S4, SAVE_S4);
+    frame.restore(c, S5, SAVE_S5);
+    frame.restore(c, S6, SAVE_S6);
+    frame.restore_ra(c, SAVE_RA);
+    frame.close(c);
+    Ok(())
+}
+
+/// Sets `V0` to the tree of the cell after `k`.
+pub(crate) fn load_next_tree(c: &mut Cpu, k: u32) {
+    let grid = c.g[S4][0] as u32;
+    c.g[V0][0] = Addr(grid.wrapping_add(CELL_SIZE * (k + 1) + CELL_TREE)).lw(c);
+}
+
+/// A cell with no tree: one more cycle, then on to the next cell.
+pub(crate) fn skip_cell(c: &mut Cpu, k: u32) {
+    c.cycles += 1;
+    load_next_tree(c, k);
+}
+
+/// Collects one octant root whose box holds the whole subtree: the root goes to
+/// the callback (`Cell_GatherObjects`), then its eight children are walked with
+/// `Cell_GatherObjectsSubtree`. A child is tested in `A0`, and the next child's
+/// pointer is loaded after each call.
+pub(crate) fn gather_node(c: &mut Cpu, k: u32) -> Flow {
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[S1][0];
+    CELL_GATHER_OBJECTS.call(c, cell_ret(COLLECT_RET, k))?;
+    c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+    for j in 0..7u32 {
+        if j > 0 {
+            c.cycles += 2;
+        }
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S0][0];
+            CELL_GATHER_OBJECTS_SUBTREE.call(c, child_ret(k, j))?;
+        }
+        let slot = (c.g[S1][0] as u32).wrapping_add(4 * (j + 1));
+        c.g[A0][0] = Addr(slot).lw(c);
+    }
+    c.cycles += 2;
+    if c.g[A0][0] != 0 {
+        c.cycles += 4;
+        c.g[A1][0] = c.g[S0][0];
+        CELL_GATHER_OBJECTS_SUBTREE.call(c, child_ret(k, 7))?;
+    }
+    Ok(())
+}
+
+/// Octant 0: the cell pointer is the grid itself, its flag is `flags[0]` in s2.
+/// Entered after the prologue, with `s1` = the tree.
+pub(crate) fn gather_cell0(c: &mut Cpu) -> Flow {
+    if c.g[S1][0] == 0 {
+        skip_cell(c, 0);
+        return Ok(());
+    }
+    c.cycles += 7;
+    c.g[S2][0] = sx(sp(c).wrapping_add(FLAGS));
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = c.g[S5][0];
+    call_ptr(c, PROX_FN, cell_ret(PROX_RET, 0))?;
+    c.g[V1][0] = c.g[V0][0];
+    let hit = c.g[V1][0] != 0;
+    c.g[V0][0] = 2;
+    if hit {
+        c.cycles += 2;
+        if c.g[V1][0] != c.g[V0][0] {
+            load_next_tree(c, 0);
+            return Ok(());
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[T0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A3][0] = c.g[S5][0];
+        c.g[T1][0] = c.g[S4][0];
+        CELL_GATHER_OBJECTS_RECURSIVE.call(c, rec_ret(0))?;
+        skip_cell(c, 0);
+        return Ok(());
+    }
+    gather_node(c, 0)?;
+    load_next_tree(c, 0);
+    Ok(())
+}
+
+/// Octant `k` (1..=6): entered with `V0` = the cell's tree, leaves `V0` = the
+/// next cell's tree. Cell pointer in s2, flag in s3.
+pub(crate) fn gather_cell(c: &mut Cpu, k: u32) -> Flow {
+    c.cycles += 2;
+    let empty = c.g[V0][0] == 0;
+    let cell = (c.g[S4][0] as u32).wrapping_add(CELL_SIZE * k);
+    c.g[S2][0] = sx(cell);
+    if empty {
+        skip_cell(c, k);
+        return Ok(());
+    }
+    c.cycles += 8;
+    c.g[S1][0] = Addr(cell.wrapping_add(CELL_TREE)).lw(c);
+    c.g[S3][0] = sx(sp(c).wrapping_add(FLAGS + k));
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S5][0];
+    call_ptr(c, PROX_FN, cell_ret(PROX_RET, k))?;
+    c.g[V1][0] = c.g[V0][0];
+    let hit = c.g[V1][0] != 0;
+    c.g[V0][0] = 2;
+    if hit {
+        c.cycles += 2;
+        if c.g[V1][0] != c.g[V0][0] {
+            load_next_tree(c, k);
+            return Ok(());
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[T0][0] = c.g[S1][0];
+        c.g[T1][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A3][0] = c.g[S5][0];
+        CELL_GATHER_OBJECTS_RECURSIVE.call(c, rec_ret(k))?;
+        skip_cell(c, k);
+        return Ok(());
+    }
+    gather_node(c, k)?;
+    load_next_tree(c, k);
+    Ok(())
+}
+
+/// Octant 7: like [`gather_cell`], but every exit goes to the epilogue (no
+/// next cell, no skip charge), and its crossing branch clears `a1` first and
+/// charges 6 cycles.
+pub(crate) fn gather_last_cell(c: &mut Cpu) -> Flow {
+    c.cycles += 2;
+    let empty = c.g[V0][0] == 0;
+    let cell = (c.g[S4][0] as u32).wrapping_add(CELL_SIZE * 7);
+    c.g[S2][0] = sx(cell);
+    if empty {
+        return Ok(());
+    }
+    c.cycles += 8;
+    c.g[S1][0] = Addr(cell.wrapping_add(CELL_TREE)).lw(c);
+    c.g[S3][0] = sx(sp(c).wrapping_add(FLAGS + 7));
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S5][0];
+    call_ptr(c, PROX_FN, cell_ret(PROX_RET, 7))?;
+    c.g[V1][0] = c.g[V0][0];
+    let hit = c.g[V1][0] != 0;
+    c.g[V0][0] = 2;
+    if !hit {
+        return gather_node(c, 7);
+    }
+    c.cycles += 2;
+    c.g[A1][0] = c.g[S0][0];
+    if c.g[V1][0] != c.g[V0][0] {
+        return Ok(());
+    }
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A3][0] = c.g[S5][0];
+    c.g[T0][0] = c.g[S1][0];
+    c.g[T1][0] = c.g[S2][0];
+    c.g[A2][0] = c.g[A1][0];
+    CELL_GATHER_OBJECTS_RECURSIVE.call(c, REC_LAST_RET)?;
+    Ok(())
+}
+
+/// `Collision_StaticInit(initialize, priority)` (0x3400d8): when the priority
+/// argument is `0xFFFF` and `initialize` is non-zero, it writes the collision
+/// sphere-tree constants (the `sV4_3400D8` vectors at `0x4FF2C0..0x4FF630`
+/// and the axis data around them), with the `gSphTreeAlignAxis_c` init inlined
+/// as stores. The body is one flat run of constant stores: the float
+/// constants come from gp-relative words, and every register the generated
+/// code leaves is reproduced, so the port is a transcription of it (a script
+/// over the generated text), not a restructuring.
+pub fn collision_static_init(c: &mut Cpu) {
+    ssx3_ee_rt::prof::enter(c, 0x0034_00d8);
+    c.cycles += 12;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+    c.g[V0][0] = 0xffff;
+    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+    c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
+    c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
+    c.sq(30, c.g[SP][0] as u32);
+    if c.g[A1][0] == c.g[V0][0] {
+        c.cycles += 2;
+        let t = c.g[A0][0] == 0u64;
+        c.g[T5][0] = 0x500000;
+        if !t {
+            c.cycles += 524;
+            c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x2cac));
+            c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x2ca8));
+            c.g[T6][0] = 0x500000;
+            c.lwc1(11, (c.g[GP][0] as u32).wrapping_sub(0x2ca4));
+            c.g[T7][0] = 0x500000;
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x2ca0));
+            c.g[V0][0] = sx((c.g[T7][0] as u32).wrapping_sub(0xd10));
+            c.swc1(9, (c.g[T5][0] as u32).wrapping_sub(0xd30));
+            c.g[S1][0] = 0x500000;
+            c.swc1(10, (c.g[T6][0] as u32).wrapping_sub(0xd20));
+            c.g[S2][0] = 0x500000;
+            c.swc1(11, (c.g[T7][0] as u32).wrapping_sub(0xd10));
+            c.g[S3][0] = 0x500000;
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x2c9c));
+            c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0xce0));
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x2c98));
+            c.g[S5][0] = 0x500000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x2c94));
+            c.g[S4][0] = 0x500000;
+            c.swc1(7, (c.g[V0][0] as u32).wrapping_add(0xc));
+            c.g[T3][0] = 0x500000;
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2c90));
+            c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_sub(0xd40));
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 0);
+            c.g[A3][0] = sx((c.g[T5][0] as u32).wrapping_sub(0xd30));
+            c.swc1(8, (c.g[S1][0] as u32).wrapping_sub(0xd00));
+            c.g[T1][0] = sx((c.g[T6][0] as u32).wrapping_sub(0xd20));
+            c.swc1(4, (c.g[S2][0] as u32).wrapping_sub(0xcf0));
+            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0xd00));
+            c.swc1(5, (c.g[S3][0] as u32).wrapping_sub(0xce0));
+            c.g[T0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0xcf0));
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2c8c));
+            c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_sub(0xcd0));
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2c88));
+            c.g[S2][0] = 0x500000;
+            c.swc1(2, (c.g[A0][0] as u32).wrapping_add(0xc));
+            c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0xc60));
+            c.g[AT][0] = 0x3f000000;
+            c.mtc1(1, 6);
+            c.g[S3][0] = 0x500000;
+            c.swc1(3, (c.g[S4][0] as u32).wrapping_sub(0xcd0));
+            c.g[T4][0] = sx((c.g[T3][0] as u32).wrapping_sub(0xcc0));
+            c.swc1(1, (c.g[T3][0] as u32).wrapping_sub(0xcc0));
+            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_sub(0xc50));
+            c.swc1(0, (c.g[S5][0] as u32).wrapping_sub(0xd40));
+            c.g[FP][0] = 0x500000;
+            c.swc1(6, (c.g[A1][0] as u32).wrapping_add(0xc));
+            c.g[S3][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xc40));
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[T9][0] = 0x500000;
+            c.lwc1(17, (c.g[GP][0] as u32).wrapping_sub(0x2c84));
+            c.g[T2][0] = sx((c.g[T9][0] as u32).wrapping_sub(0xcb0));
+            c.lwc1(18, (c.g[GP][0] as u32).wrapping_sub(0x2c80));
+            c.g[S6][0] = 0x500000;
+            c.sw((c.g[T1][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[FP][0] = 0x500000;
+            c.lwc1(13, (c.g[GP][0] as u32).wrapping_sub(0x2c7c));
+            c.g[T7][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xc80));
+            c.lwc1(14, (c.g[GP][0] as u32).wrapping_sub(0x2c78));
+            c.g[T8][0] = 0x500000;
+            c.swc1(17, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[T5][0] = sx((c.g[T8][0] as u32).wrapping_sub(0xca0));
+            c.swc1(18, (c.g[V0][0] as u32).wrapping_add(0x8));
+            c.g[S7][0] = 0x500000;
+            c.swc1(13, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = 0x500000;
+            c.swc1(14, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xc30));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[V0][0] = 0x500000;
+            c.lwc1(15, (c.g[GP][0] as u32).wrapping_sub(0x2c74));
+            c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xbf0));
+            c.lwc1(16, (c.g[GP][0] as u32).wrapping_sub(0x2c70));
+            c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xbe0));
+            c.sw((c.g[T0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[FP][0] = 0x500000;
+            c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x2c6c));
+            c.g[V0][0] = 0x500000;
+            c.swc1(15, (c.g[A0][0] as u32).wrapping_add(0x4));
+            c.g[T3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xbc0));
+            c.swc1(16, (c.g[A0][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = 0x500000;
+            c.swc1(12, (c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xbd0));
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0xc));
+            c.g[FP][0] = 0x500000;
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[T6][0] = sx((c.g[S7][0] as u32).wrapping_sub(0xc90));
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xba0));
+            c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = 0x500000;
+            c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x4));
+            c.g[T1][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xb70));
+            c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x8));
+            c.lwc1(19, (c.g[GP][0] as u32).wrapping_sub(0x2c68));
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2c64));
+            c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb90));
+            c.swc1(19, (c.g[T4][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = 0x500000;
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2c60));
+            c.g[FP][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb50));
+            c.swc1(2, (c.g[T9][0] as u32).wrapping_sub(0xcb0));
+            c.g[V0][0] = 0x500000;
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x2c5c));
+            c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb40));
+            c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0xc));
+            c.g[V0][0] = 0x500000;
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2c58));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xc70));
+            c.swc1(8, (c.g[T7][0] as u32).wrapping_add(0xc));
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x2c54));
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x2c50));
+            c.swc1(3, (c.g[T4][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[T4][0] as u32).wrapping_add(0xc), 0u64);
+            c.swc1(4, (c.g[T2][0] as u32).wrapping_add(0x4));
+            c.swc1(5, (c.g[T2][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[T8][0] as u32).wrapping_sub(0xca0));
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0xc));
+            c.swc1(0, (c.g[S7][0] as u32).wrapping_sub(0xc90));
+            c.sw((c.g[T6][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x2c4c));
+            c.swc1(0, (c.g[S6][0] as u32).wrapping_sub(0xc80));
+            c.swc1(7, (c.g[T7][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xc70));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc));
+            c.g[T0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xae0));
+            c.g[V0][0] = 0x500000;
+            c.g[S0][0] = 0x500000;
+            c.g[T4][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xac0));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xc60));
+            c.g[V0][0] = 0x500000;
+            c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_sub(0xc50));
+            c.g[T2][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xab0));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xc40));
+            c.g[V0][0] = 0x500000;
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xc70));
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = 0x500000;
+            c.sw((c.g[T6][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[T5][0] = 0x500000;
+            c.sw((c.g[T6][0] as u32).wrapping_add(0x8), 0u64);
+            c.swc1(8, (c.g[T7][0] as u32).wrapping_add(0x4));
+            c.g[T6][0] = 0x500000;
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[T7][0] = 0x500000;
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+            c.g[T7][0] = sx((c.g[T7][0] as u32).wrapping_sub(0xc00));
+            c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x9c0));
+            c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = 0x500000;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[S1][0] = sx((c.g[T6][0] as u32).wrapping_sub(0xa40));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[T6][0] = 0x500000;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[S2][0] = sx((c.g[T5][0] as u32).wrapping_sub(0xa50));
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x8), 0u64);
+            c.sw((c.g[S3][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2c48));
+            c.g[S3][0] = 0x500000;
+            c.swc1(6, (c.g[T7][0] as u32).wrapping_add(0xc));
+            c.g[T5][0] = sx((c.g[S3][0] as u32).wrapping_sub(0xa10));
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2c44));
+            c.g[T7][0] = 0x500000;
+            c.swc1(2, (c.g[V1][0] as u32).wrapping_add(0xc));
+            c.g[S3][0] = 0x500000;
+            c.swc1(1, (c.g[T6][0] as u32).wrapping_sub(0xbd0));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xc30));
+            c.g[T6][0] = sx((c.g[T7][0] as u32).wrapping_sub(0xa00));
+            c.g[T7][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x9f0));
+            c.g[S0][0] = 0x500000;
+            c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x9e0));
+            c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x500000;
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x2c40));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xc20));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xc20));
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x2c3c));
+            c.swc1(6, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x500000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x2c38));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xc10));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xc10));
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x2c34));
+            c.swc1(6, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x500000;
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2c30));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xc00));
+            c.g[S0][0] = 0x500000;
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2c2c));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xbf0));
+            c.swc1(8, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x500000;
+            c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = 0x500000;
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2c28));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xbe0));
+            c.swc1(5, (c.g[S4][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = 0x500000;
+            c.sw((c.g[S4][0] as u32).wrapping_add(0xc), 0u64);
+            c.swc1(4, (c.g[A0][0] as u32).wrapping_add(0x4));
+            c.swc1(3, (c.g[A0][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[A0][0] as u32).wrapping_add(0xc), 0u64);
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xbc0));
+            c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xbb0));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xc20));
+            c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xc10));
+            c.swc1(6, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = 0x500000;
+            c.swc1(6, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xc00));
+            c.swc1(6, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xbb0));
+            c.swc1(0, (c.g[S4][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.swc1(2, (c.g[A2][0] as u32).wrapping_add(0xc));
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2c24));
+            c.swc1(1, (c.g[T1][0] as u32).wrapping_add(0xc));
+            c.swc1(3, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x2c20));
+            c.g[V1][0] = 0x500000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x2c1c));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xba0));
+            c.swc1(4, (c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x500000;
+            c.swc1(5, (c.g[A1][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x2c18));
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x2c14));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xb90));
+            c.swc1(6, (c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = c.g[S0][0];
+            c.swc1(7, (c.g[A2][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xb80));
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x2c10));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xb80));
+            c.swc1(8, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0xc));
+            c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x2c0c));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xb70));
+            c.swc1(9, (c.g[T1][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = c.g[V1][0];
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xb60));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xb60));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xb50));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0xc));
+            c.g[V1][0] = 0x500000;
+            c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x2c08));
+            c.lwc1(11, (c.g[GP][0] as u32).wrapping_sub(0x2c04));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xb40));
+            c.swc1(10, (c.g[A3][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x500000;
+            c.swc1(11, (c.g[A3][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xb80));
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x2c00));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xb30));
+            c.swc1(12, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xb60));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xb30));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xad0));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x2bfc));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2bf8));
+            c.g[S0][0] = 0x500000;
+            c.swc1(4, (c.g[FP][0] as u32).wrapping_sub(0xaf0));
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2bf4));
+            c.g[FP][0] = c.g[S0][0];
+            c.swc1(3, (c.g[T0][0] as u32).wrapping_add(0xc));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xb20));
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2bf0));
+            c.swc1(2, (c.g[V1][0] as u32).wrapping_add(0xc));
+            c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0xc));
+            c.g[V1][0] = 0x500000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x2bec));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xb20));
+            c.swc1(5, (c.g[FP][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = c.g[V1][0];
+            c.sw((c.g[FP][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xb10));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xb10));
+            c.g[FP][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[V1][0] = c.g[FP][0];
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_sub(0xb00));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xb00));
+            c.g[S0][0] = 0x500000;
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xaf0));
+            c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x2be8));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[FP][0] = 0x500000;
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x2be4));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_sub(0xae0));
+            c.g[S0][0] = c.g[V1][0];
+            c.swc1(6, (c.g[T0][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xad0));
+            c.swc1(7, (c.g[T0][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = 0x500000;
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x2be0));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xad0));
+            c.swc1(8, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x500000;
+            c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x2bdc));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_sub(0xac0));
+            c.swc1(9, (c.g[T4][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = 0x500000;
+            c.sw((c.g[T4][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xb20));
+            c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x2bd8));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xab0));
+            c.swc1(10, (c.g[T2][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xaa0));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xb10));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xb00));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xaf0));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[V1][0] = 0x500000;
+            c.sw((c.g[FP][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xad0));
+            c.sw((c.g[FP][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xaa0));
+            c.swc1(0, (c.g[T4][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = 0x500000;
+            c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xa90));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x500000;
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x2bd4));
+            c.swc1(12, (c.g[FP][0] as u32).wrapping_add(0xc));
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2bd0));
+            c.swc1(2, (c.g[S2][0] as u32).wrapping_add(0xc));
+            c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0xc));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xa90));
+            c.g[FP][0] = c.g[S0][0];
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xa80));
+            c.g[V1][0] = 0x500000;
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xa80));
+            c.sw((c.g[FP][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[S0][0] = c.g[V1][0];
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xa70));
+            c.g[FP][0] = 0x500000;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xa70));
+            c.g[V1][0] = c.g[FP][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xa60));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_sub(0xa60));
+            c.g[S0][0] = 0x500000;
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[FP][0] = 0x500000;
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2bcc));
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_sub(0xa50));
+            c.swc1(3, (c.g[S2][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = c.g[V1][0];
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x2bc8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xa30));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_sub(0xa40));
+            c.swc1(4, (c.g[S1][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = 0x500000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x2bc4));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xa30));
+            c.swc1(5, (c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.g[FP][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xa20));
+            c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x2bc0));
+            c.g[S0][0] = 0x500000;
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x2bbc));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xaa0));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_sub(0xa20));
+            c.swc1(6, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = 0x500000;
+            c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xa90));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = 0x500000;
+            c.swc1(12, (c.g[FP][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xa80));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xa70));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[FP][0] = 0x500000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xa60));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[V1][0] = 0x500000;
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xa30));
+            c.sw((c.g[FP][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[S0][0] = 0x500000;
+            c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xa20));
+            c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+            c.g[S2][0] = 0x500000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = 0x500000;
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2bb8));
+            c.g[V1][0] = 0x500000;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2bb4));
+            c.g[S0][0] = 0x500000;
+            c.swc1(3, (c.g[T6][0] as u32).wrapping_add(0xc));
+            c.swc1(1, (c.g[T7][0] as u32).wrapping_add(0xc));
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x2bb0));
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x2bac));
+            c.swc1(0, (c.g[S2][0] as u32).wrapping_sub(0xa10));
+            c.swc1(4, (c.g[T5][0] as u32).wrapping_add(0x4));
+            c.swc1(5, (c.g[T5][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[T5][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x2ba8));
+            c.g[T5][0] = 0x500000;
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x2ba4));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_sub(0xa00));
+            c.swc1(6, (c.g[T6][0] as u32).wrapping_add(0x4));
+            c.swc1(7, (c.g[T6][0] as u32).wrapping_add(0x8));
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x2ba0));
+            c.g[T6][0] = 0x500000;
+            c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x2b9c));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0x9f0));
+            c.swc1(8, (c.g[T7][0] as u32).wrapping_add(0x4));
+            c.swc1(9, (c.g[T7][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_sub(0x9e0));
+            c.g[T7][0] = c.g[T6][0];
+            c.sw((c.g[S3][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[T7][0] = sx((c.g[T7][0] as u32).wrapping_sub(0x9d0));
+            c.swc1(0, (c.g[T6][0] as u32).wrapping_sub(0x9d0));
+            c.g[AT][0] = 0xffffffffbf800000;
+            c.mtc1(1, 2);
+            c.sw((c.g[T7][0] as u32).wrapping_add(0xc), 0u64);
+            c.swc1(2, (c.g[S0][0] as u32).wrapping_sub(0x9c0));
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x4), 0u64);
+            c.swc1(0, (c.g[S3][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[T7][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[T7][0] as u32).wrapping_add(0x8), 0u64);
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0xc), 0u64);
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x10));
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x14));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x18));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x1c), 0u64);
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x20));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x24));
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x28));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x2c), 0u64);
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x30));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x34));
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x68));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x78));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x7c), 0u64);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x38));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x3c), 0u64);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x40));
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x44));
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x48));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x4c), 0u64);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x50));
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x54));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x58));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x5c), 0u64);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x60));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x64));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x6c), 0u64);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x70));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x74));
+        }
+    }
+    c.cycles += 11;
+    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+    c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
+    c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
+    c.lq(30, c.g[SP][0] as u32);
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+    ret(c);
+}
+
+/// The static-init entry the global constructor thunk calls.
+pub(crate) const COLLISION_STATIC_INIT: Callee = Callee {
+    addr: 0x0034_00d8,
+    f: ee::s11::Collision_StaticInit,
+};
+
+/// `nash_Cell` (spatial tree node) layout: eight child pointers
+/// (`children[a][b][c]` at index `4a + 2b + c`), the head of the static
+/// object list (`nodesinside[0]`), and the head of the typed-node list
+/// (`nodesinside[2]`).
+pub(crate) const CELL_CHILDREN: u32 = 0x00;
+
+pub(crate) const CELL_OBJECTS: u32 = 0x20;
+
+pub(crate) const CELL_TYPED: u32 = 0x28;
+
+/// Static object record: `next` at +0 (flags at +8, read by the callback).
+pub(crate) const OBJECT_NEXT: u32 = 0x00;
+
+/// Typed space node record: `next` at +0, `type` at +8, the rail / flex
+/// node / spline segment fields at +0xc / +0x68 (parent).
+pub(crate) const TYPED_NEXT: u32 = 0x00;
+
+pub(crate) const TYPED_TYPE: u32 = 0x08;
+
+pub(crate) const TYPED_RAIL: u32 = 0x0c;
+
+pub(crate) const TYPED_PARENT: u32 = 0x68;
+
+/// The spline query record that the tree walk reads (box, position, mask,
+/// hit count, distance, info).
+pub(crate) const QUERY_BOX_MIN: u32 = 0x00;
+
+pub(crate) const QUERY_BOX_MAX: u32 = 0x04;
+
+pub(crate) const QUERY_MASK: u32 = 0x08;
+
+pub(crate) const QUERY_POS: u32 = 0x0c;
+
+pub(crate) const QUERY_HIT: u32 = 0x10;
+
+pub(crate) const QUERY_DIST: u32 = 0x14;
+
+/// Call sites of `Cell_CollideObjectsSubtree` (the 0x3410c0 child walk) and
+/// the static-object callback, in generated order.
+pub(crate) const COLLIDE_OBJECT_3: Callee = Callee {
+    addr: 0x0033_6d40,
+    f: ee::s11::Cell_CollideObjectEx,
+};
+
+pub(crate) const COLLIDE_OBJECTS_SUBTREE: Callee = Callee {
+    addr: 0x0034_10c0,
+    f: ee::s11::Cell_CollideObjectsSubtree,
+};
+
+pub(crate) const COLLIDE_CHILD_RETURNS: [u32; 8] = [
+    0x0034_1110,
+    0x0034_1124,
+    0x0034_1138,
+    0x0034_114c,
+    0x0034_1160,
+    0x0034_1174,
+    0x0034_1188,
+    0x0034_119c,
+];
+
+pub(crate) const COLLIDE_OBJECT_RETURN: u32 = 0x0034_10f0;
+
+pub(crate) const COLLIDE_OBJECT_HEAD: u32 = 0x0034_10e8;
+
+/// Rail, flex-rail and spline-segment hit tests of the typed list, and the
+/// subtree walk itself.
+pub(crate) const RAIL_MODIFIER_SPLINE: Callee = Callee {
+    addr: 0x0035_c698,
+    f: ee::s11::RailModifier_FindClosestPoint,
+};
+
+pub(crate) const FLEX_RAIL_SPLINE: Callee = Callee {
+    addr: 0x0034_8290,
+    f: ee::s11::FlexRail_FindClosestPoint,
+};
+
+pub(crate) const SPLINE_SEGMENT_SPLINE: Callee = Callee {
+    addr: 0x0033_5128,
+    f: ee::s11::Rail_FindNearestPoint,
+};
+
+pub(crate) const FIND_RAIL_SUBTREE: Callee = Callee {
+    addr: 0x0034_11b8,
+    f: ee::s11::Cell_FindRailSubtree,
+};
+
+pub(crate) const FIND_RAIL_CHILD_RETURNS: [u32; 8] = [
+    0x0034_12b8,
+    0x0034_12cc,
+    0x0034_12e0,
+    0x0034_12f4,
+    0x0034_1308,
+    0x0034_131c,
+    0x0034_1330,
+    0x0034_1344,
+];
+
+pub(crate) const RAIL_RETURN: u32 = 0x0034_1224;
+
+pub(crate) const FLEX_RAIL_RETURN: u32 = 0x0034_1258;
+
+pub(crate) const SEGMENT_RETURN: u32 = 0x0034_1298;
+
+pub(crate) const FIND_RAIL_LOOP_HEAD: u32 = 0x0034_11f8;
+
+/// `void Collision_GlobalCtors()` (0x341368): the static constructor thunk.
+/// Calls `Collision_StaticInit(1, 0xffff)` and returns its result.
+pub fn collision_global_ctors(c: &mut Cpu) {
+    guest(c, collision_global_ctors_body)
+}
+
+pub(crate) fn collision_global_ctors_body(c: &mut Cpu) -> Flow {
+    c.cycles += 8;
+    let frame = Frame::open(c, 0x10);
+    c.g[A0][0] = 1;
+    frame.save_ra(c, 0);
+    c.g[A1][0] = 0xffff;
+    COLLISION_STATIC_INIT.call(c, 0x0034_137c)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void Cell_CollideObjectsSubtree(nash_Cell* cell, void* ctx)` (0x3410c0,
+/// `nash_Cell_descend5`): runs the static-object callback over the cell's
+/// object list, then walks the eight children in order (each non-null child
+/// recursively). The object loop checks events at its back edge (head
+/// 0x3410e8).
+pub fn cell_collide_objects_subtree(c: &mut Cpu) {
+    guest(c, cell_collide_objects_subtree_body)
+}
+
+pub(crate) fn cell_collide_objects_subtree_body(c: &mut Cpu) -> Flow {
+    c.cycles += 9;
+    let frame = Frame::open(c, 0x40);
+    frame.save(c, S1, 0x20);
+    frame.save(c, S2, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S2][0] = c.g[A0][0];
+    frame.save(c, S0, 0x30);
+    c.g[S0][0] = Addr((c.g[S2][0] as u32).wrapping_add(CELL_OBJECTS)).lw(c);
+    let no_objects = c.g[S0][0] == 0;
+    c.g[S1][0] = c.g[A1][0];
+    if !no_objects {
+        c.cycles += 1;
+        c.g[A1][0] = c.g[S0][0];
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            COLLIDE_OBJECT_3.call(c, COLLIDE_OBJECT_RETURN)?;
+            c.g[S0][0] = Addr(c.g[S0][0] as u32).off(OBJECT_NEXT).lw(c);
+            let more = c.g[S0][0] != 0;
+            c.g[A1][0] = c.g[S0][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, COLLIDE_OBJECT_HEAD);
+            }
+        }
+    }
+    // The eight children. Each block tests the child loaded by the block
+    // before it; the first block charges 3 cycles, the others 2.
+    c.cycles += 3;
+    c.g[A0][0] = Addr(c.g[S2][0] as u32).lw(c);
+    for i in 0..8usize {
+        if i > 0 {
+            c.cycles += 2;
+        }
+        // The last block restores s0 before and after its call.
+        if i == 7 {
+            frame.restore(c, S0, 0x30);
+        }
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S1][0];
+            COLLIDE_OBJECTS_SUBTREE.call(c, COLLIDE_CHILD_RETURNS[i])?;
+            if i == 7 {
+                frame.restore(c, S0, 0x30);
+            }
+        }
+        if i < 7 {
+            c.g[A0][0] =
+                Addr((c.g[S2][0] as u32).wrapping_add(CELL_CHILDREN + 4 * (i as u32 + 1))).lw(c);
+        }
+    }
+    c.cycles += 5;
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S2, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void Cell_FindRailSubtree(nash_Cell* cell, SplineQuery* q)` (0x3411b8,
+/// `nash_Cell_descend6`): walks the cell's typed list and tests each node
+/// against the spline query. Rails (type 2), flex rails (3) and spline
+/// segments (1, only when the parent's flags pass the query mask) call their
+/// intersection routine. Then the eight children, recursively.
+pub fn cell_find_rail_subtree(c: &mut Cpu) {
+    guest(c, cell_find_rail_subtree_body)
+}
+
+pub(crate) fn cell_find_rail_subtree_body(c: &mut Cpu) -> Flow {
+    c.cycles += 12;
+    let frame = Frame::open(c, 0x70);
+    frame.save(c, S0, 0x60);
+    frame.save(c, S2, 0x40);
+    frame.save(c, S3, 0x30);
+    c.g[S2][0] = c.g[A0][0];
+    frame.save(c, S4, 0x20);
+    frame.save(c, S5, 0x10);
+    frame.save_ra(c, 0);
+    frame.save(c, S1, 0x50);
+    c.g[S1][0] = Addr((c.g[S2][0] as u32).wrapping_add(CELL_TYPED)).lw(c);
+    let no_typed = c.g[S1][0] == 0;
+    c.g[S0][0] = c.g[A1][0];
+    if !no_typed {
+        c.cycles += 4;
+        c.g[S5][0] = 2;
+        c.g[S4][0] = 3;
+        c.g[S3][0] = 1;
+        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(TYPED_TYPE)).lw(c);
+        loop {
+            c.cycles += 2;
+            if c.g[V0][0] == c.g[S5][0] {
+                // Rail: RailModifier_FindClosestPoint(rail, box, box, pos, mask, hit, dist, info).
+                c.cycles += 11;
+                let q = c.g[S0][0] as u32;
+                c.g[A1][0] = Addr(q).off(QUERY_DIST).lw(c);
+                c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(TYPED_RAIL)).lw(c);
+                c.g[A3][0] = Addr(q).off(QUERY_BOX_MIN).lw(c);
+                c.g[A2][0] = c.g[A1][0];
+                c.g[T0][0] = Addr(q).off(QUERY_MASK).lw(c);
+                c.g[T1][0] = Addr(q).off(QUERY_POS).lw(c);
+                c.g[T2][0] = Addr(q).off(QUERY_HIT).lw(c);
+                c.g[T3][0] = Addr(q).off(QUERY_BOX_MAX).lw(c);
+                RAIL_MODIFIER_SPLINE.call(c, RAIL_RETURN)?;
+                c.g[S1][0] = Addr(c.g[S1][0] as u32).off(TYPED_NEXT).lw(c);
+            } else {
+                c.cycles += 2;
+                if c.g[V0][0] == c.g[S4][0] {
+                    // Flex rail: cFlexRailNode_splineIntersect.
+                    c.cycles += 11;
+                    let q = c.g[S0][0] as u32;
+                    c.g[A1][0] = Addr(q).off(QUERY_DIST).lw(c);
+                    c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(TYPED_RAIL)).lw(c);
+                    c.g[A3][0] = Addr(q).off(QUERY_BOX_MIN).lw(c);
+                    c.g[A2][0] = c.g[A1][0];
+                    c.g[T0][0] = Addr(q).off(QUERY_MASK).lw(c);
+                    c.g[T1][0] = Addr(q).off(QUERY_POS).lw(c);
+                    c.g[T2][0] = Addr(q).off(QUERY_HIT).lw(c);
+                    c.g[T3][0] = Addr(q).off(QUERY_BOX_MAX).lw(c);
+                    FLEX_RAIL_SPLINE.call(c, FLEX_RAIL_RETURN)?;
+                    c.g[S1][0] = Addr(c.g[S1][0] as u32).off(TYPED_NEXT).lw(c);
+                } else {
+                    c.cycles += 2;
+                    if c.g[V0][0] == c.g[S3][0] {
+                        // Spline segment, if its parent's flags pass the mask.
+                        c.cycles += 6;
+                        let q = c.g[S0][0] as u32;
+                        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(TYPED_PARENT)).lw(c);
+                        c.g[A0][0] = Addr(q).off(QUERY_MASK).lw(c);
+                        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x1c)).lw(c);
+                        c.g[V1][0] &= c.g[A0][0];
+                        let filtered_out = c.g[V1][0] == 0;
+                        c.g[A0][0] = c.g[S1][0];
+                        if !filtered_out {
+                            c.cycles += 6;
+                            c.g[A1][0] = Addr(q).off(QUERY_DIST).lw(c);
+                            c.g[A2][0] = Addr(q).off(QUERY_BOX_MIN).lw(c);
+                            c.g[A3][0] = Addr(q).off(QUERY_POS).lw(c);
+                            c.g[T0][0] = Addr(q).off(QUERY_HIT).lw(c);
+                            c.g[T1][0] = Addr(q).off(QUERY_BOX_MAX).lw(c);
+                            SPLINE_SEGMENT_SPLINE.call(c, SEGMENT_RETURN)?;
+                        }
+                        c.cycles += 1;
+                        c.g[S1][0] = Addr(c.g[S1][0] as u32).off(TYPED_NEXT).lw(c);
+                    } else {
+                        c.g[S1][0] = Addr(c.g[S1][0] as u32).off(TYPED_NEXT).lw(c);
+                    }
+                }
+            }
+            // Back edge of the typed list: the next node's type is loaded
+            // here, and a due event is delivered with the list pointer set.
+            c.cycles += 2;
+            if c.g[S1][0] == 0 {
+                break;
+            }
+            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(TYPED_TYPE)).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, FIND_RAIL_LOOP_HEAD);
+            }
+        }
+    }
+    // The eight children, as in Cell_CollideObjectsSubtree.
+    c.cycles += 3;
+    c.g[A0][0] = Addr(c.g[S2][0] as u32).lw(c);
+    for i in 0..8usize {
+        if i > 0 {
+            c.cycles += 2;
+        }
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S0][0];
+            FIND_RAIL_SUBTREE.call(c, FIND_RAIL_CHILD_RETURNS[i])?;
+        }
+        if i < 7 {
+            c.g[A0][0] =
+                Addr((c.g[S2][0] as u32).wrapping_add(CELL_CHILDREN + 4 * (i as u32 + 1))).lw(c);
+        } else {
+            frame.restore(c, S0, 0x60);
+        }
+    }
+    c.cycles += 8;
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore(c, S3, 0x30);
+    frame.restore(c, S4, 0x20);
+    frame.restore(c, S5, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void BoostModifier_v07(void* self, void* obj)` (0x342a88): calls the
+/// object's vtable slot at 0x14 (its `this`-relative argument is `self +
+/// delta`, the delta a halfword at 0x10), then, when the vector scaled by
+/// the frame time (`cObjectInterface_getUpdateTime`) is below the threshold
+/// at self+0x20, calls the second slot (0x24) on the same object.
+pub fn boost_modifier_v07(c: &mut Cpu) {
+    guest(c, boost_modifier_v07_body)
+}
+
+pub(crate) fn boost_modifier_v07_body(c: &mut Cpu) -> Flow {
+    c.cycles += 27;
+    let frame = Frame::open(c, 0x70);
+    frame.save(c, S0, 0x60);
+    frame.save(c, S1, 0x50);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save_ra(c, 0x40);
+    c.g[S1][0] = c.g[A1][0];
+    c.g[V1][0] = Addr(c.g[S1][0] as u32).lw(c);
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x10).lh(c);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x14).lw(c);
+    let slot = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, slot, 0x0034_2ab4)?;
+    c.lwc1(2, (c.g[S0][0] as u32).wrapping_add(0x20));
+    c.lqc2(3, c.g[V0][0] as u32);
+    c.lqc2(5, (c.g[S0][0] as u32).wrapping_add(0x10));
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(3, 4);
+    c.mtc1(3, 0);
+    c.mtc1(0, 1);
+    c.sub_s(2, 2, 0);
+    c.c_lt_s(1, 2);
+    let below = c.fcc();
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+    if below {
+        c.cycles += 29;
+        c.mfc1(3, 2);
+        c.lqc2(4, (c.g[S0][0] as u32).wrapping_add(0x10));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        let spill = frame.at(c, 0x30);
+        c.sqc2(5, spill);
+        c.lq(2, spill);
+        let spill20 = frame.at(c, 0x20);
+        c.sq(2, spill20);
+        c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x14));
+        c.mfc1(3, 0);
+        c.lqc2(4, spill20);
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, spill);
+        c.lq(2, spill);
+        let spill10 = frame.at(c, 0x10);
+        c.sq(2, spill10);
+        call_ptr(c, 0x002d_1c70, 0x0034_2b34)?;
+        c.mfc1(2, 0);
+        c.lqc2(4, spill10);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, spill);
+        c.g[A1][0] = c.g[SP][0];
+        c.lq(2, spill);
+        c.g[V1][0] = Addr(c.g[S1][0] as u32).lw(c);
+        let sp_slot = frame.at(c, 0x0);
+        c.sq(2, sp_slot);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x20).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x24).lw(c);
+        let slot2 = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, slot2, 0x0034_2b68)?;
+    }
+    c.cycles += 5;
+    frame.restore(c, S0, 0x60);
+    frame.restore(c, S1, 0x50);
+    frame.restore_ra(c, 0x40);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void AnimTeeter_v43(void* self, void* anim, void* out)` (0x342538): when
+/// the anim's signed index at +0x5c is non-negative and the table entry it
+/// selects is set, calls the controller's vtable slot 0xec (delta at 0xe8),
+/// then, when the VU0 test passes, blends the teeter vector at `self` with
+/// the anim vector and writes it back. Hand-written with the original's
+/// VU0 macro ops; the early exits are the generated `break`s.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn anim_teeter_v43(c: &mut Cpu) {
+    guest(c, anim_teeter_v43_body)
+}
+
+pub(crate) fn anim_teeter_v43_body(c: &mut Cpu) -> Flow {
+    c.cycles += 10;
+    let frame = Frame::open(c, 0x80);
+    frame.save(c, S0, 0x70);
+    frame.save(c, S1, 0x60);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save(c, S2, 0x50);
+    c.g[S1][0] = c.g[A1][0];
+    frame.save_ra(c, 0x40);
+    c.g[A3][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x5c)).lw(c);
+    let negative = (c.g[A3][0] as i64) < 0;
+    c.g[S2][0] = c.g[A2][0];
+    'exit: {
+        if negative {
+            break 'exit;
+        }
+        c.cycles += 9;
+        c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x44));
+        c.g[A1][0] = sx((c.g[A3][0] as u32) << 4);
+        c.g[V0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x18)).lw(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x80)).lw(c);
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x8)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x8)).lw(c);
+        let no_entry = c.g[V0][0] == 0;
+        c.g[A1][0] = c.g[A3][0];
+        if no_entry {
+            break 'exit;
+        }
+        c.cycles += 22;
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x50)).lw(c);
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xe8)).lh(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xec)).lw(c);
+        let slot = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, slot, 0x0034_2598)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[AT][0] = 0x42c8_0000;
+        c.mtc1(1, 1);
+        c.lqc2(3, c.g[S1][0] as u32);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(2, 22);
+        c.mtc1(2, 0);
+        c.c_lt_s(1, 0);
+        let passed = c.fcc();
+        c.g[A0][0] = c.g[V1][0];
+        if !passed {
+            break 'exit;
+        }
+        'blend: {
+            c.cycles += 13;
+            c.lq(2, (c.g[V1][0] as u32).wrapping_add(0x30));
+            c.mtc1(0, 1);
+            let spill10 = frame.at(c, 0x10);
+            c.sq(2, spill10);
+            c.lqc2(3, c.g[S1][0] as u32);
+            c.lqc2(4, spill10);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            let spill20 = frame.at(c, 0x20);
+            c.sqc2(5, spill20);
+            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+            c.lq(2, spill20);
+            c.c_lt_s(0, 1);
+            let below = c.fcc();
+            let spill0 = frame.at(c, 0x0);
+            c.sq(2, spill0);
+            if !below {
+                break 'blend;
+            }
+            c.cycles += 10;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 0);
+            c.mfc1(3, 0);
+            let spill0_q = frame.at(c, 0x0);
+            c.lqc2(4, spill0_q);
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, spill20);
+            c.lq(2, spill20);
+            c.sq(2, spill0_q);
+            c.sq(2, spill10);
+        }
+        'scale: {
+            c.cycles += 6;
+            c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x5c)).lw(c);
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x2c)).lw(c);
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> ((c.g[V1][0] as u32) & 31)) as u32);
+            c.g[V0][0] &= 0x1;
+            let clear = c.g[V0][0] == 0;
+            c.g[V0][0] = 0x50_0000;
+            if clear {
+                break 'scale;
+            }
+            c.cycles += 11;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 0);
+            c.mfc1(3, 0);
+            let base = frame.at(c, 0x0);
+            c.lqc2(4, base);
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            let spill20 = frame.at(c, 0x20);
+            c.sqc2(5, spill20);
+            c.lq(2, spill20);
+            let base2 = frame.at(c, 0x0);
+            c.sq(2, base2);
+            let spill10 = frame.at(c, 0x10);
+            c.sq(2, spill10);
+            c.g[V0][0] = 0x50_0000;
+        }
+        c.cycles += 33;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xeb0));
+        c.lqc2(8, c.g[V0][0] as u32);
+        c.lqc2(4, c.g[A0][0] as u32);
+        c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
+        c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
+        c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        let spill20 = frame.at(c, 0x20);
+        c.sqc2(12, spill20);
+        c.lq(2, spill20);
+        let spill10 = frame.at(c, 0x10);
+        c.sq(2, spill10);
+        let base = frame.at(c, 0x0);
+        c.lqc2(4, base);
+        c.lqc2(5, c.g[S2][0] as u32);
+        c.vu0().opmula(4, 5);
+        c.vu0().opmsub(6, 5, 4);
+        c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+        let spill30 = frame.at(c, 0x30);
+        c.sqc2(6, spill30);
+        c.lq(2, spill30);
+        c.lwc1(0, c.g[S0][0] as u32);
+        c.sq(2, spill20);
+        c.lqc2(3, spill10);
+        c.lqc2(5, spill20);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.qmfc2(3, 4);
+        c.mtc1(3, 1);
+        c.add_s(0, 0, 1);
+        c.swc1(0, c.g[S0][0] as u32);
+    }
+    c.cycles += 6;
+    frame.restore(c, S0, 0x70);
+    frame.restore(c, S1, 0x60);
+    frame.restore(c, S2, 0x50);
+    frame.restore_ra(c, 0x40);
+    frame.close(c);
+    Ok(())
+}
+
+/// `EA_MemAllocNamed` (0x317d70), through the function table.
+pub(crate) const EA_ALLOC_NAMED_ADDR: u32 = 0x0031_7d70;
+
+/// `SphereTree_ctor` (0x32c508), through the function table.
+pub(crate) const SPHERE_TREE_CTOR_ADDR: u32 = 0x0032_c508;
+
+/// `SphereTree_GetRadius` (0x32c590), through the function table.
+pub(crate) const SPHERE_TREE_RADIUS_ADDR: u32 = 0x0032_c590;
+
+/// `CollSphereTree` constructor (0x3303f0): sets the vtable and the counters,
+/// copies the owner's sphere (`owner+0x80`, radius from `SphereTree_GetRadius`)
+/// into the tree, derives the plus/minus boxes, then allocates the node
+/// storage (0x140 bytes) and constructs the sphere tree over it.
+pub fn coll_sphere_tree_construct(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x49_0000;
+        frame.save(c, S1, 0x30);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1a10));
+        frame.save(c, S0, 0x40);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        let s1 = c.g[S1][0] as u32;
+        let vtable = c.g[V0][0];
+        c.sw(s1.wrapping_add(0x50), vtable);
+        c.sw(s1.wrapping_add(0x8), 0u64);
+        let no_flag = c.g[A2][0] == 0;
+        c.sw(s1.wrapping_add(0x4), 0u64);
+        if no_flag {
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+            let one = c.g[V0][0];
+            c.sw(s1, one);
+        } else {
+            c.cycles += 2;
+            c.sw(s1, 0u64);
+        }
+
+        c.cycles += 47;
+        let owner = c.g[A1][0];
+        c.sw(s1.wrapping_add(0x64), owner);
+        c.g[A0][0] = c.g[A1][0];
+        c.sw(s1.wrapping_add(0x60), owner);
+        let owner_sphere = (c.g[A1][0] as u32).wrapping_add(0x80);
+        c.lq(2, owner_sphere);
+        let s = frame.at(c, 0);
+        c.sq(2, s);
+        call_ptr(c, SPHERE_TREE_RADIUS_ADDR, 0x0033_0444)?;
+
+        // Plus and minus boxes of the sphere, from its radius.
+        let s = frame.at(c, 0);
+        c.lwc1(3, s);
+        c.g[A1][0] = 0x49_0000;
+        let s4 = frame.at(c, 4);
+        c.lwc1(2, s4);
+        c.g[A2][0] = 0;
+        let s8 = frame.at(c, 8);
+        c.lwc1(1, s8);
+        c.add_s(4, 3, 0);
+        c.add_s(5, 2, 0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 7);
+        c.add_s(6, 1, 0);
+        let s = frame.at(c, 0);
+        c.lq(2, s);
+        let f10 = frame.at(c, 0x10);
+        c.swc1(4, f10);
+        c.sub_s(1, 1, 0);
+        let f14 = frame.at(c, 0x14);
+        c.swc1(5, f14);
+        c.sub_s(3, 3, 0);
+        let f18 = frame.at(c, 0x18);
+        c.swc1(6, f18);
+        c.sub_s(2, 2, 0);
+        let f1c = frame.at(c, 0x1c);
+        c.swc1(7, f1c);
+        c.g[A3][0] = 0;
+        c.sq(2, (c.g[S1][0] as u32).wrapping_add(0x40));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1ab0));
+        c.g[A0][0] = 0x140;
+        c.lq(3, f10);
+        c.swc1(3, f10);
+        c.swc1(2, f14);
+        c.swc1(1, f18);
+        c.swc1(7, f1c);
+        c.sq(3, (c.g[S1][0] as u32).wrapping_add(0x20));
+        c.lq(2, f10);
+        c.sq(2, (c.g[S1][0] as u32).wrapping_add(0x30));
+        call_ptr(c, EA_ALLOC_NAMED_ADDR, 0x0033_04c0)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, SPHERE_TREE_CTOR_ADDR, 0x0033_04cc)?;
+        let node = c.g[S0][0];
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x68), node);
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The callees of the subtree walkers and of `Cell_CollideObjectEx`, through
+/// their generated aliases (which go through the override slots).
+pub(crate) const CALL_GATHER_OBJECTS: Callee = Callee {
+    addr: 0x0033_09d8,
+    f: ee::s11::Cell_GatherObjects,
+};
+
+pub(crate) const CALL_SUBTREE_OBJECTS: Callee = Callee {
+    addr: 0x0034_0a40,
+    f: ee::s11::Cell_GatherObjectsSubtree,
+};
+
+pub(crate) const CALL_SUBTREE_TYPE2: Callee = Callee {
+    addr: 0x0034_0b18,
+    f: ee::s11::Cell_GatherType2Subtree,
+};
+
+pub(crate) const CALL_SUBTREE_OBJINST: Callee = Callee {
+    addr: 0x0034_0c20,
+    f: ee::s11::Cell_GatherObjInstSubtree,
+};
+
+pub(crate) const CALL_SUBTREE_ALL: Callee = Callee {
+    addr: 0x0034_0dc0,
+    f: ee::s11::Cell_GatherAllSubtree,
+};
+
+pub(crate) const CALL_SUBTREE_VOLUME: Callee = Callee {
+    addr: 0x0034_0fa0,
+    f: ee::s11::Cell_CollideVolumeSubtree,
+};
+
+pub(crate) const CALL_CELL_COLLIDE_INSTANCE: Callee = Callee {
+    addr: 0x0033_5960,
+    f: ee::s11::Cell_CollideInstance,
+};
+
+pub(crate) const CALL_CELL_COLLIDE_OBJECT: Callee = Callee {
+    addr: 0x0033_5b90,
+    f: ee::s11::Cell_CollideObject,
+};
+
+pub(crate) const CALL_COLLIDE_VOLUME_OBJECT: Callee = Callee {
+    addr: 0x0033_4888,
+    f: ee::s11::Collide_VolumeObject,
+};
+
+/// `lw off(reg)`.
+pub(crate) fn sub_lw(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    let a = r32(c, reg).wrapping_add(off);
+    Addr(a).lw(c)
+}
+
+/// `lh off(reg)`.
+pub(crate) fn sub_lh(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    let a = r32(c, reg).wrapping_add(off);
+    Addr(a).lh(c)
+}
+
+/// One child of a subtree walk: child `k` is in `A0` when the block starts.
+/// Charges `pre` cycles, restores `s0` from `sp + s0_off` before and after
+/// the call when `s0_off` is given (the last child of a walk does), calls
+/// `callee` with `A1 = arg` when the child is non-null (returning to `ret`),
+/// then loads the next child `A0 = base[next]`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn sub_child(
+    c: &mut Cpu,
+    pre: u64,
+    base: usize,
+    next: Option<u32>,
+    s0_off: Option<u32>,
+    callee: Callee,
+    ret: u32,
+    arg: usize,
+) -> Flow {
+    c.cycles += pre;
+    if let Some(off) = s0_off {
+        c.lq(16, sp(c).wrapping_add(off));
+    }
+    if c.g[A0][0] != 0 {
+        c.cycles += 3;
+        c.g[A1][0] = c.g[arg][0];
+        callee.call(c, ret)?;
+        if let Some(off) = s0_off {
+            c.lq(16, sp(c).wrapping_add(off));
+        }
+    }
+    if let Some(off) = next {
+        c.g[A0][0] = sub_lw(c, base, off);
+    }
+    Ok(())
+}
+
+/// The eight children of a walked node (`base + 4k`, k = 0..8). `A0` holds
+/// child 0 on entry. Child k returns to `ret0 + 0x14k`; child 7 restores `s0`
+/// from `s0_off` around its call. `pre0` is child 0's test charge (the others
+/// charge 2).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn sub_chain8(
+    c: &mut Cpu,
+    base: usize,
+    callee: Callee,
+    ret0: u32,
+    arg: usize,
+    pre0: u64,
+    s0_off: u32,
+) -> Flow {
+    for k in 0..8u32 {
+        let last = k == 7;
+        let pre = if k == 0 { pre0 } else { 2 };
+        let next = if last { None } else { Some(4 * (k + 1)) };
+        let restore = if last { Some(s0_off) } else { None };
+        sub_child(c, pre, base, next, restore, callee, ret0 + 0x14 * k, arg)?;
+    }
+    Ok(())
+}
+
+/// Appends the object in `A2` to the list pair at `pair` (`pair+0` the array
+/// base, `pair+4` the address of the count word), then `A2` = the object's
+/// next link. Sets every register the generated append leaves.
+pub(crate) fn sub_push(c: &mut Cpu, pair: u32) {
+    c.g[A1][0] = Addr(pair.wrapping_add(4)).lw(c);
+    c.g[A0][0] = Addr(pair).lw(c);
+    c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+    c.g[V0][0] = sx(r32(c, V1) << 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+    let slot = r32(c, V0);
+    let obj = c.g[A2][0];
+    Addr(slot).sw(c, obj);
+    let count_at = r32(c, A1);
+    let count = c.g[V1][0];
+    Addr(count_at).sw(c, count);
+    c.g[A2][0] = Addr(r32(c, A2)).lw(c);
+}
+
+/// One slab test of an object against a box: loads `f1` from `f1_at` and `f0`
+/// from `f0_at` (after `cy` cycles), then `c.le.s` or `c.lt.s` with the
+/// operands in the order the generated code uses (`lhs_f1`: `f1 OP f0`, else
+/// `f0 OP f1`). Leaves the condition bit set; returns it.
+pub(crate) fn sub_cmp(
+    c: &mut Cpu,
+    cy: u64,
+    f1_at: u32,
+    f0_at: u32,
+    lt: bool,
+    lhs_f1: bool,
+) -> bool {
+    c.cycles += cy;
+    c.lwc1(1, f1_at);
+    c.lwc1(0, f0_at);
+    let f0 = FpuF32(c.f[0]);
+    let f1 = FpuF32(c.f[1]);
+    let t = match (lt, lhs_f1) {
+        (false, false) => f0.le(f1),
+        (false, true) => f1.le(f0),
+        (true, false) => f0.lt(f1),
+        (true, true) => f1.lt(f0),
+    };
+    crate::abi::set_fcc(c, t);
+    t
+}
+
+/// The object's box test against the box `bx` (min x/y/z at `obj+0x158..`,
+/// max at `obj+0x164..`): six slab tests, each stopping the walk at its first
+/// miss, with the cycle charge of each.
+pub(crate) fn sub_box_hit(c: &mut Cpu, obj: u32, bx: u32) -> bool {
+    sub_cmp(c, 6, obj + 0x164, bx, false, false)
+        && sub_cmp(c, 5, bx + 0x10, obj + 0x158, false, false)
+        && sub_cmp(c, 5, bx + 4, obj + 0x168, false, true)
+        && sub_cmp(c, 5, bx + 0x14, obj + 0x15c, false, false)
+        && sub_cmp(c, 5, bx + 8, obj + 0x16c, false, true)
+        && sub_cmp(c, 6, bx + 0x18, obj + 0x160, false, false)
+}
+
+/// The epilogue of the 0x30-byte walkers: restores `s1` and `ra`, pops.
+pub(crate) fn sub_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 4;
+    frame.restore(c, S1, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `Cell_GatherObjectsSubtree(tree, ctx)` (0x340a40): the node's objects go to
+/// the callback (`Cell_GatherObjects(ctx, tree)`), then its eight children's
+/// subtrees, each with the same `ctx`.
+pub fn cell_gather_objects_subtree(c: &mut Cpu) {
+    guest(c, gather_objects_subtree_body)
+}
+
+pub(crate) fn gather_objects_subtree_body(c: &mut Cpu) -> Flow {
+    c.cycles += 12;
+    let frame = Frame::open(c, 0x30);
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S0][0] = c.g[A0][0];
+    c.g[S1][0] = c.g[A1][0];
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S0][0];
+    CALL_GATHER_OBJECTS.call(c, 0x0034_0a64)?;
+    c.g[A0][0] = sub_lw(c, S0, 0);
+    sub_chain8(c, S0, CALL_SUBTREE_OBJECTS, 0x0034_0a78, S1, 0, 0x20)?;
+    sub_epilogue(c, frame)
+}
+
+/// `Cell_GatherType2Subtree(tree, ctx)` (0x340b18): appends the node's
+/// type-2 list (`tree+0x28`) to the `ctx` pair at `ctx+0`, then its eight
+/// children's subtrees.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn cell_gather_type2_subtree(c: &mut Cpu) {
+    guest(c, gather_type2_subtree_body)
+}
+
+pub(crate) fn gather_type2_subtree_body(c: &mut Cpu) -> Flow {
+    c.cycles += 8;
+    let frame = Frame::open(c, 0x30);
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S1][0] = c.g[A0][0];
+    c.g[A2][0] = sub_lw(c, S1, 0x28);
+    let empty = c.g[A2][0] == 0;
+    c.g[S0][0] = c.g[A1][0];
+    if !empty {
+        c.cycles += 2;
+        c.g[A1][0] = sub_lw(c, S0, 4);
+        loop {
+            c.cycles += 10;
+            let pair = r32(c, S0);
+            sub_push(c, pair);
+            if c.g[A2][0] == 0 {
+                break;
+            }
+            c.g[A1][0] = sub_lw(c, S0, 4);
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_0b40);
+            }
+        }
+    }
+    c.g[A0][0] = sub_lw(c, S1, 0);
+    sub_chain8(c, S1, CALL_SUBTREE_TYPE2, 0x0034_0b7c, S0, 3, 0x20)?;
+    sub_epilogue(c, frame)
+}
+
+/// `Cell_GatherObjInstSubtree(tree, ctx)` (0x340c20): the node's object list
+/// (`tree+0x24`) whose boxes overlap the `ctx` box (`ctx+0x1c`) goes to the
+/// `ctx+0x10` pair, then the eight children.
+pub fn cell_gather_objinst_subtree(c: &mut Cpu) {
+    guest(c, gather_objinst_subtree_body)
+}
+
+pub(crate) fn gather_objinst_subtree_body(c: &mut Cpu) -> Flow {
+    c.cycles += 12;
+    let frame = Frame::open(c, 0x30);
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    c.g[S0][0] = c.g[A0][0];
+    c.g[S1][0] = c.g[A1][0];
+    frame.save_ra(c, 0);
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S0][0];
+    CALL_GATHER_OBJECTS.call(c, 0x0034_0c44)?;
+    c.g[A2][0] = sub_lw(c, S0, 0x24);
+    let empty = c.g[A2][0] == 0;
+    c.g[A3][0] = sx(r32(c, S1).wrapping_add(0x10));
+    if !empty {
+        c.cycles += 2;
+        c.g[V0][0] = sub_lw(c, A3, 0xc);
+        loop {
+            let obj = r32(c, A2);
+            let bx = r32(c, V0);
+            let hit = sub_box_hit(c, obj, bx);
+            c.g[V1][0] = hit as u64;
+            c.cycles += 2;
+            if c.g[V1][0] == 0 {
+                c.g[A2][0] = sub_lw(c, A2, 0);
+            } else {
+                c.cycles += 9;
+                let pair = r32(c, A3);
+                sub_push(c, pair);
+            }
+            c.cycles += 2;
+            if c.g[A2][0] == 0 {
+                break;
+            }
+            c.g[V0][0] = sub_lw(c, A3, 0xc);
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_0c58);
+            }
+        }
+    }
+    c.g[A0][0] = sub_lw(c, S0, 0);
+    sub_chain8(c, S0, CALL_SUBTREE_OBJINST, 0x0034_0d20, S1, 3, 0x20)?;
+    sub_epilogue(c, frame)
+}
+
+/// `Cell_GatherAllSubtree(tree, ctx)` (0x340dc0): the object list with the
+/// box test (`tree+0x24` into `ctx+0x10`), the all-list (`tree+0x28` into
+/// `ctx+0x20`, no test), then the eight children.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn cell_gather_all_subtree(c: &mut Cpu) {
+    guest(c, gather_all_subtree_body)
+}
+
+pub(crate) fn gather_all_subtree_body(c: &mut Cpu) -> Flow {
+    c.cycles += 12;
+    let frame = Frame::open(c, 0x30);
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S0][0] = c.g[A0][0];
+    c.g[S1][0] = c.g[A1][0];
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S0][0];
+    CALL_GATHER_OBJECTS.call(c, 0x0034_0de4)?;
+    c.g[A2][0] = sub_lw(c, S0, 0x24);
+    let empty = c.g[A2][0] == 0;
+    c.g[A3][0] = sx(r32(c, S1).wrapping_add(0x10));
+    if !empty {
+        c.cycles += 2;
+        c.g[V0][0] = sub_lw(c, A3, 0xc);
+        loop {
+            let obj = r32(c, A2);
+            let bx = r32(c, V0);
+            let hit = sub_box_hit(c, obj, bx);
+            c.g[V1][0] = hit as u64;
+            c.cycles += 2;
+            if c.g[V1][0] == 0 {
+                c.g[A2][0] = sub_lw(c, A2, 0);
+            } else {
+                c.cycles += 9;
+                let pair = r32(c, A3);
+                sub_push(c, pair);
+            }
+            c.cycles += 2;
+            if c.g[A2][0] == 0 {
+                break;
+            }
+            c.g[V0][0] = sub_lw(c, A3, 0xc);
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_0df8);
+            }
+        }
+    }
+    c.cycles += 3;
+    c.g[A2][0] = sub_lw(c, S0, 0x28);
+    let empty2 = c.g[A2][0] == 0;
+    c.g[A3][0] = sx(r32(c, S1).wrapping_add(0x20));
+    if !empty2 {
+        c.cycles += 2;
+        c.g[A1][0] = sub_lw(c, A3, 4);
+        loop {
+            c.cycles += 10;
+            let pair = r32(c, A3);
+            sub_push(c, pair);
+            if c.g[A2][0] == 0 {
+                break;
+            }
+            c.g[A1][0] = sub_lw(c, A3, 4);
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_0ec0);
+            }
+        }
+    }
+    c.cycles += 3;
+    c.g[A0][0] = sub_lw(c, S0, 0);
+    sub_chain8(c, S0, CALL_SUBTREE_ALL, 0x0034_0efc, S1, 3, 0x20)?;
+    sub_epilogue(c, frame)
+}
+
+/// `Cell_CollideVolumeSubtree(tree, ctx)` (0x340fa0): `Cell_CollideInstance`
+/// on each instance of `tree+0x24` and `Cell_CollideObject` on each object of
+/// `tree+0x20` (both with `A0 = ctx`), then the eight children.
+pub fn cell_collide_volume_subtree(c: &mut Cpu) {
+    guest(c, collide_volume_subtree_body)
+}
+
+pub(crate) fn collide_volume_subtree_body(c: &mut Cpu) -> Flow {
+    c.cycles += 9;
+    let frame = Frame::open(c, 0x40);
+    frame.save(c, S1, 0x20);
+    frame.save(c, S2, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S2][0] = c.g[A0][0];
+    frame.save(c, S0, 0x30);
+    c.g[S0][0] = sub_lw(c, S2, 0x24);
+    let empty = c.g[S0][0] == 0;
+    c.g[S1][0] = c.g[A1][0];
+    if !empty {
+        c.cycles += 1;
+        c.g[A1][0] = c.g[S0][0];
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            CALL_CELL_COLLIDE_INSTANCE.call(c, 0x0034_0fd0)?;
+            c.g[S0][0] = sub_lw(c, S0, 0);
+            let more = c.g[S0][0] != 0;
+            c.g[A1][0] = c.g[S0][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_0fc8);
+            }
+        }
+    }
+    c.cycles += 3;
+    c.g[S0][0] = sub_lw(c, S2, 0x20);
+    if c.g[S0][0] == 0 {
+        c.g[A0][0] = sub_lw(c, S2, 0);
+    } else {
+        c.cycles += 2;
+        c.g[A1][0] = c.g[S0][0];
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            CALL_CELL_COLLIDE_OBJECT.call(c, 0x0034_0ff8)?;
+            c.g[S0][0] = sub_lw(c, S0, 0);
+            let more = c.g[S0][0] != 0;
+            c.g[A1][0] = c.g[S0][0];
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_0ff0);
+                }
+            } else {
+                c.cycles += 1;
+                c.g[A0][0] = sub_lw(c, S2, 0);
+                break;
+            }
+        }
+    }
+    sub_chain8(c, S2, CALL_SUBTREE_VOLUME, 0x0034_1018, S1, 2, 0x30)?;
+    c.cycles += 5;
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S2, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `Cell_CollideObjectEx` (`StaticObjectCallback_intersectinstance`, 0x336d40):
+/// the callback for a static-object or dynamic-instance node (`flags` at
+/// `+8`). Static nodes (0x20) test their box against the query (`ctx+0`), dynamic
+/// ones (0x40) ask their active sub-object for its box through the vtable at
+/// `+0xc`, and a hit is collected into `ctx+0xc` by `Collide_VolumeObject`.
+pub fn cell_collide_object_ex(c: &mut Cpu) {
+    guest(c, collide_object_ex_body)
+}
+
+pub(crate) fn collide_object_ex_body(c: &mut Cpu) -> Flow {
+    c.cycles += 14;
+    let frame = Frame::open(c, 0x40);
+    c.g[V1][0] = 3;
+    frame.save(c, S0, 0x30);
+    frame.save(c, S1, 0x20);
+    c.g[S0][0] = c.g[A1][0];
+    frame.save(c, S2, 0x10);
+    c.g[S1][0] = c.g[A0][0];
+    frame.save_ra(c, 0);
+    c.g[S2][0] = 1;
+    c.g[A1][0] = sub_lw(c, S0, 8);
+    c.g[V0][0] = sub_lw(c, S1, 0x10);
+    c.g[A0][0] = c.g[A1][0] & 0x20;
+    let no_static = c.g[A0][0] == 0;
+    if c.g[V0][0] != 0 {
+        c.g[S2][0] = c.g[V1][0];
+    }
+    if !no_static {
+        let hit = cx_static_test(c);
+        c.cycles += 2;
+        if !hit {
+            return cx_exit(c, frame);
+        }
+        c.cycles += 2;
+        c.g[V0][0] = sub_lw(c, S1, 0xc);
+        return cx_collect(c, frame);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[A1][0] & 0x40;
+    if c.g[V0][0] == 0 {
+        return cx_exit(c, frame);
+    }
+    c.cycles += 8;
+    c.g[A1][0] = sub_lw(c, S0, 0xc);
+    c.g[V1][0] = sub_lw(c, A1, 0xc);
+    c.g[A0][0] = sub_lh(c, V1, 0x160);
+    c.g[V0][0] = sub_lw(c, V1, 0x164);
+    let target = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+    call_ptr(c, target, 0x0033_6e30)?;
+    if c.g[V0][0] == 0 {
+        return cx_exit(c, frame);
+    }
+    // The second box, from the vtable's other slot, tested against the query.
+    c.cycles += 13;
+    c.g[A1][0] = sub_lw(c, S0, 0xc);
+    c.g[V1][0] = sub_lw(c, A1, 0xc);
+    c.g[A0][0] = sub_lh(c, V1, 0x168);
+    c.g[V0][0] = sub_lw(c, V1, 0x16c);
+    let target = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+    call_ptr(c, target, 0x0033_6e50)?;
+    c.g[V1][0] = sub_lw(c, S1, 0);
+    let bx = r32(c, V0);
+    let q = r32(c, V1);
+    c.g[A0][0] = 0;
+    let mut ok = sub_cmp(c, 0, bx, q + 0x20, true, true);
+    if ok {
+        ok = sub_cmp(c, 5, q + 0x30, bx + 0x10, true, true);
+    }
+    if ok {
+        ok = sub_cmp(c, 5, q + 0x24, bx + 4, true, false);
+    }
+    if ok {
+        ok = sub_cmp(c, 5, q + 0x34, bx + 0x14, true, true);
+    }
+    if ok {
+        ok = sub_cmp(c, 5, q + 0x28, bx + 8, true, false);
+    }
+    if ok {
+        ok = sub_cmp(c, 6, q + 0x38, bx + 0x18, true, true);
+    }
+    if ok {
+        c.g[A0][0] = 1;
+    }
+    c.cycles += 2;
+    if c.g[A0][0] == 0 {
+        return cx_exit(c, frame);
+    }
+    c.cycles += 1;
+    c.g[V0][0] = sub_lw(c, S1, 0xc);
+    cx_collect(c, frame)
+}
+
+/// The static box test of `Cell_CollideObjectEx` (`V0` = the query `ctx+0`):
+/// six `c.lt.s` tests; leaves `V1` = the result and returns it.
+pub(crate) fn cx_static_test(c: &mut Cpu) -> bool {
+    c.g[V0][0] = sub_lw(c, S1, 0);
+    let node = r32(c, S0);
+    let q = r32(c, V0);
+    let mut hit = sub_cmp(c, 7, node + 0x60, q + 0x20, true, true);
+    if hit {
+        hit = sub_cmp(c, 5, q + 0x30, node + 0x6c, true, true);
+    }
+    if hit {
+        hit = sub_cmp(c, 5, q + 0x24, node + 0x64, true, false);
+    }
+    if hit {
+        hit = sub_cmp(c, 5, q + 0x34, node + 0x70, true, true);
+    }
+    if hit {
+        hit = sub_cmp(c, 5, q + 0x28, node + 0x68, true, false);
+    }
+    if hit {
+        hit = sub_cmp(c, 6, q + 0x38, node + 0x74, true, true);
+    }
+    c.g[V1][0] = hit as u64;
+    hit
+}
+
+/// `Cell_CollideObjectEx`'s collect: `Collide_VolumeObject(query, node, mode,
+/// box)`, then the hit count at `ctx+0xc` grows by its result.
+pub(crate) fn cx_collect(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 15;
+    c.g[A1][0] = c.g[S0][0];
+    c.g[V1][0] = sub_lw(c, S1, 8);
+    c.g[T0][0] = c.g[S2][0];
+    c.g[A3][0] = Addr(r32(c, V0)).lw(c);
+    c.g[T1][0] = sub_lw(c, S1, 4);
+    c.g[A2][0] = sx(r32(c, A3) << 7);
+    c.g[A0][0] = sub_lw(c, S1, 0);
+    c.g[A3][0] = sx(r32(c, V1).wrapping_sub(r32(c, A3)));
+    c.g[A2][0] = sx(r32(c, T1).wrapping_add(r32(c, A2)));
+    CALL_COLLIDE_VOLUME_OBJECT.call(c, 0x0033_6f08)?;
+    c.g[A0][0] = sub_lw(c, S1, 0xc);
+    c.g[V1][0] = Addr(r32(c, A0)).lw(c);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    let slot = r32(c, A0);
+    let total = c.g[V1][0];
+    Addr(slot).sw(c, total);
+    frame.restore(c, S0, 0x30);
+    cx_epilogue(c, frame)
+}
+
+/// Exit without collecting: restore `s0` and return.
+pub(crate) fn cx_exit(c: &mut Cpu, frame: Frame) -> Flow {
+    frame.restore(c, S0, 0x30);
+    cx_epilogue(c, frame)
+}
+
+pub(crate) fn cx_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 5;
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S2, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+// The cBoostNode constructor's callees and globals.
+/// `cInstanceNode_cInstanceNode1` (the WorldObj constructor).
+pub(crate) const BOOST_CTOR_WORLD_OBJ: Callee = Callee {
+    addr: 0x0034_fb00,
+    f: ee::s11::f_0034fb00,
+};
+
+/// Return address after the WorldObj constructor call.
+pub(crate) const BOOST_CTOR_RET_WORLD: u32 = 0x0034_13a4;
+
+/// `cBoostNode_vtbl`.
+pub(crate) const BOOST_NODE_VTBL: u32 = 0x0049_14e0;
+
+/// `cAppMan_TheAppMan` (a GP-relative pointer); its `TimerHz` int is at +0x10.
+pub(crate) const GP_APP_MAN: u32 = 0x2a74;
+
+pub(crate) const APP_MAN_TIMER_HZ: u32 = 0x10;
+
+/// The float 27.7777786f (game units to speed), at gp-0x2b98.
+pub(crate) const GP_SPEED_SCALE: u32 = 0x2b98;
+
+/// `t4vect_Zero` and `t4vect_YAxis` (the zero and up vectors).
+pub(crate) const T4VECT_ZERO: u32 = 0x004f_f120;
+
+pub(crate) const T4VECT_Y_AXIS: u32 = 0x004f_f150;
+
+/// `tMakeBoostData` (the definition the node is built from).
+pub(crate) const DEF_DRAG: u32 = 0x0c;
+
+pub(crate) const DEF_MAX_SPEED: u32 = 0x10;
+
+pub(crate) const DEF_BOOST_TIME: u32 = 0x08;
+
+pub(crate) const DEF_TYPE: u32 = 0x04;
+
+pub(crate) const DEF_BOOST_X: u32 = 0x14;
+
+pub(crate) const DEF_BOOST_Y: u32 = 0x18;
+
+pub(crate) const DEF_BOOST_Z: u32 = 0x1c;
+
+/// `cBoostNode` fields.
+pub(crate) const BOOST_VPTR: u32 = 0x0c;
+
+pub(crate) const BOOST_INSTANCE: u32 = 0x18;
+
+pub(crate) const BOOST_TIME: u32 = 0x3c;
+
+pub(crate) const BOOST_BOOST: u32 = 0x20;
+
+pub(crate) const BOOST_MAX_SPEED: u32 = 0x30;
+
+pub(crate) const BOOST_DRAG: u32 = 0x34;
+
+pub(crate) const BOOST_BOOST_TIME: u32 = 0x38;
+
+pub(crate) const BOOST_TYPE: u32 = 0x40;
+
+/// The instance's `m_fmTransform` (a 4x4 matrix at +0x10).
+pub(crate) const INSTANCE_MATRIX: u32 = 0x10;
+
+/// `cBoostNode::cBoostNode(self, bucket, nodeType, instance, def)`: the
+/// WorldObj part, then the boost vector (the definition's direction, or
+/// the velocity-free up or zero vector when it has none; a negated,
+/// transformed copy for type 2), the max speed and drag, and the time.
+pub fn boost_node_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0x30);
+        c.g[S1][0] = c.g[T0][0];
+        BOOST_CTOR_WORLD_OBJ.call(c, BOOST_CTOR_RET_WORLD)?;
+        let this = c.g[S0][0] as u32;
+        let def = c.g[S1][0] as u32;
+
+        'b_341488: {
+            'b_34143c: {
+                c.g[V0][0] = sx(BOOST_NODE_VTBL);
+                c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(GP_APP_MAN)).lw(c);
+                c.mtc1(0, 2);
+                let vptr = c.g[V0][0];
+                Addr(this.wrapping_add(BOOST_VPTR)).sw(c, vptr);
+                c.g[A0][0] = Addr(def.wrapping_add(DEF_TYPE)).lh(c);
+                let ty = c.g[A0][0];
+                Addr(this.wrapping_add(BOOST_TYPE)).sw(c, ty);
+                // BoostTime = (int)(def->BoostTime * (float)TimerHz).
+                c.lwc1(1, (c.g[V1][0] as u32).wrapping_add(APP_MAN_TIMER_HZ));
+                c.cvt_s_w(1, 1);
+                c.lwc1(0, def.wrapping_add(DEF_BOOST_TIME));
+                c.mul_s(0, 0, 1);
+                c.cvt_w_s(1, 0);
+                c.swc1(1, this.wrapping_add(BOOST_BOOST_TIME));
+                // All three BoostX/Y/Z zero: the up or zero vector.
+                c.lwc1(1, def.wrapping_add(DEF_BOOST_X));
+                c.c_eq_s(1, 2);
+                if !c.fcc() {
+                    c.lwc1(0, def.wrapping_add(DEF_BOOST_X));
+                    break 'b_34143c;
+                }
+                c.cycles += 5;
+                c.lwc1(0, def.wrapping_add(DEF_BOOST_Y));
+                c.c_eq_s(0, 2);
+                if !c.fcc() {
+                    c.lwc1(0, def.wrapping_add(DEF_BOOST_X));
+                    break 'b_34143c;
+                }
+                'b_341438: {
+                    c.cycles += 5;
+                    c.lwc1(0, def.wrapping_add(DEF_BOOST_Z));
+                    c.c_eq_s(0, 2);
+                    let nonzero = !c.fcc();
+                    c.g[V0][0] = 0x2;
+                    if nonzero {
+                        break 'b_341438;
+                    }
+                    'b_34142c: {
+                        'b_341428: {
+                            // Type 2 boosts along the up vector, others along zero.
+                            c.cycles += 2;
+                            if c.g[A0][0] != c.g[V0][0] {
+                                break 'b_341428;
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = sx(T4VECT_Y_AXIS);
+                            break 'b_34142c;
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = sx(T4VECT_ZERO);
+                    }
+                    c.cycles += 3;
+                    c.lq(3, c.g[V0][0] as u32);
+                    c.sq(3, this.wrapping_add(BOOST_BOOST));
+                    break 'b_341488;
+                }
+                c.cycles += 1;
+                c.lwc1(0, def.wrapping_add(DEF_BOOST_X));
+            }
+            // The non-zero vector: normalise (def dir) through VU0.
+            c.cycles += 19;
+            c.lwc1(1, def.wrapping_add(DEF_BOOST_Y));
+            c.lwc1(2, def.wrapping_add(DEF_BOOST_Z));
+            c.swc1(0, sp(c).wrapping_add(0x10));
+            c.swc1(1, sp(c).wrapping_add(0x14));
+            c.swc1(2, sp(c).wrapping_add(0x18));
+            c.sw(sp(c).wrapping_add(0x1c), 0u64);
+            c.lqc2(3, sp(c).wrapping_add(0x10));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().rsqrt(0, 3, 4, 0);
+            c.vu0().waitq();
+            c.vu0().mul(0b1111, 5, 3, Src::Q);
+            c.sqc2(5, sp(c).wrapping_add(0x20));
+            c.lq(2, sp(c).wrapping_add(0x20));
+            c.sq(2, this.wrapping_add(BOOST_BOOST));
+            c.sq(2, sp(c));
+            break 'b_341488;
+        }
+
+        {
+            c.cycles += 9;
+            c.lwc1(0, def.wrapping_add(DEF_MAX_SPEED));
+            c.g[V0][0] = 0;
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(GP_SPEED_SCALE));
+            c.g[V1][0] = Addr(this.wrapping_add(BOOST_TYPE)).lw(c);
+            c.mul_s(0, 0, 1);
+            c.swc1(0, this.wrapping_add(BOOST_MAX_SPEED));
+            c.lwc1(1, def.wrapping_add(DEF_DRAG));
+            let no_type = c.g[V1][0] == 0;
+            c.swc1(1, this.wrapping_add(BOOST_DRAG));
+            if !no_type {
+                c.cycles += 1;
+                c.g[V0][0] = Addr(this.wrapping_add(BOOST_BOOST_TIME)).lw(c);
+            }
+        }
+
+        'b_341530: {
+            c.cycles += 4;
+            let time = c.g[V0][0];
+            Addr(this.wrapping_add(BOOST_TIME)).sw(c, time);
+            c.g[V0][0] = 0x2;
+            let not_type2 = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = c.g[S0][0];
+            if not_type2 {
+                break 'b_341530;
+            }
+            // Type 2: the boost points the other way through the instance matrix.
+            c.cycles += 28;
+            c.g[V1][0] = Addr(this.wrapping_add(BOOST_INSTANCE)).lw(c);
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 0);
+            c.mfc1(2, 0);
+            c.lqc2(4, this.wrapping_add(BOOST_BOOST));
+            c.qmtc2(2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp(c).wrapping_add(0x20));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(INSTANCE_MATRIX));
+            c.lq(2, sp(c).wrapping_add(0x20));
+            c.sq(2, sp(c).wrapping_add(0x10));
+            c.lqc2(8, sp(c).wrapping_add(0x10));
+            c.lqc2(4, c.g[V1][0] as u32);
+            c.lqc2(5, (c.g[V1][0] as u32).wrapping_add(0x10));
+            c.lqc2(6, (c.g[V1][0] as u32).wrapping_add(0x20));
+            c.lqc2(7, (c.g[V1][0] as u32).wrapping_add(0x30));
+            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+            c.sqc2(12, sp(c).wrapping_add(0x20));
+            c.lwc1(0, this.wrapping_add(BOOST_MAX_SPEED));
+            c.lq(2, sp(c).wrapping_add(0x20));
+            c.neg_s(0, 0);
+            c.sq(2, this.wrapping_add(BOOST_BOOST));
+            c.sq(2, sp(c));
+            c.swc1(0, this.wrapping_add(BOOST_MAX_SPEED));
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S0, 0x50);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// cBoostNode_applyBoost callees.
+/// `cObjectInterface_getUpdateTime`.
+pub(crate) const APPLY_GET_UPDATE_TIME: u32 = 0x002d_1c70;
+
+/// Return addresses of the calls in `cBoostNode_applyBoost`.
+pub(crate) const APPLY_RET_VELOCITY: u32 = 0x0034_1844;
+
+pub(crate) const APPLY_RET_UPDATE_TYPE2: u32 = 0x0034_1954;
+
+pub(crate) const APPLY_RET_APPLY_TYPE2: u32 = 0x0034_1988;
+
+pub(crate) const APPLY_RET_UPDATE: u32 = 0x0034_19e4;
+
+pub(crate) const APPLY_RET_APPLY: u32 = 0x0034_1a18;
+
+/// `obj->getVelocity()` and `obj->applyBoost(&vel)` are read from the
+/// object's vtable: halfword delta at +0x10 / +0x20, function at +0x14 / +0x24.
+pub(crate) const VT_GET_VELOCITY: u32 = 0x10;
+
+pub(crate) const VT_APPLY_BOOST: u32 = 0x20;
+
+/// `cBoostNodeState` fields (`&self->Boost`).
+pub(crate) const BOOST_STATE_MAX_SPEED: u32 = 0x10;
+
+pub(crate) const BOOST_STATE_DRAG: u32 = 0x14;
+
+/// `void cBoostNode::applyBoost(cBeing* obj)`: the object's velocity along
+/// the boost direction (the velocity itself when the direction is zero); for
+/// type 2 a push when moving against it, else the room left to MaxSpeed when
+/// positive. The push is scaled by drag and the update time and handed to
+/// `obj->applyBoost`.
+pub fn boost_node_apply_boost(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x60);
+        c.g[S1][0] = c.g[A1][0];
+        let obj = c.g[S1][0] as u32;
+        let this = c.g[S0][0] as u32;
+
+        'b_3418c4: {
+            'b_3418c0: {
+                // vel = obj->getVelocity(); dir = self->Boost
+                c.g[V1][0] = Addr(obj).lw(c);
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(VT_GET_VELOCITY)).lh(c);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(VT_GET_VELOCITY + 4)).lw(c);
+                let get_velocity = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(obj.wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, get_velocity, APPLY_RET_VELOCITY)?;
+                let vel = c.g[V0][0] as u32;
+                c.lq(3, this.wrapping_add(BOOST_BOOST));
+                c.lq(4, vel);
+                c.sq(3, sp(c).wrapping_add(0x10));
+                c.mtc1(0, 1);
+                c.lwc1(0, sp(c).wrapping_add(0x10));
+                c.c_eq_s(0, 1);
+                let dir_x_nonzero = !c.fcc();
+                c.sq(4, sp(c));
+                if dir_x_nonzero {
+                    break 'b_3418c0;
+                }
+                c.cycles += 5;
+                c.lwc1(0, sp(c).wrapping_add(0x14));
+                c.c_eq_s(0, 1);
+                let dir_y_nonzero = !c.fcc();
+                c.lwc1(0, sp(c).wrapping_add(0x18));
+                if dir_y_nonzero {
+                    break 'b_3418c0;
+                }
+                c.cycles += 4;
+                c.c_eq_s(0, 1);
+                if !c.fcc() {
+                    c.lwc1(0, this.wrapping_add(BOOST_MAX_SPEED));
+                    break 'b_3418c4;
+                }
+                // dir is zero: dir = normalize(vel), through VU0.
+                c.cycles += 13;
+                c.lqc2(3, sp(c));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.vu0().rsqrt(0, 3, 4, 0);
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 5, 3, Src::Q);
+                c.sqc2(5, sp(c).wrapping_add(0x30));
+                c.lq(2, sp(c).wrapping_add(0x30));
+                c.sq(2, sp(c).wrapping_add(0x10));
+                c.sq(2, sp(c).wrapping_add(0x20));
+            }
+            c.cycles += 1;
+            c.lwc1(0, this.wrapping_add(BOOST_MAX_SPEED));
+        }
+
+        'b_341a1c: {
+            'b_341990: {
+                // alongSpeed = dot(vel, dir); diff = MaxSpeed - alongSpeed.
+                c.cycles += 14;
+                c.lqc2(3, sp(c));
+                c.lqc2(5, sp(c).wrapping_add(0x10));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.qmfc2(2, 4);
+                c.mtc1(2, 2);
+                let this = c.g[S0][0] as u32;
+                c.g[V1][0] = Addr(this.wrapping_add(BOOST_TYPE)).lw(c);
+                c.g[A0][0] = sx(this.wrapping_add(BOOST_BOOST));
+                c.g[V0][0] = 0x2;
+                let not_type2 = c.g[V1][0] != c.g[V0][0];
+                c.sub_s(1, 0, 2);
+                if not_type2 {
+                    break 'b_341990;
+                }
+                // Type 2 pushes only while moving along the boost (dot >= 0).
+                c.cycles += 5;
+                c.mtc1(0, 0);
+                c.c_le_s(0, 2);
+                let against = !c.fcc();
+                frame.restore(c, S0, 0x80);
+                if against {
+                    break 'b_341a1c;
+                }
+                c.cycles += 32;
+                c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(BOOST_STATE_MAX_SPEED));
+                c.mfc1(3, 0);
+                c.lqc2(4, sp(c).wrapping_add(0x10));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c).wrapping_add(0x50));
+                c.lq(2, sp(c).wrapping_add(0x50));
+                c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(BOOST_STATE_DRAG));
+                c.sq(2, sp(c).wrapping_add(0x40));
+                c.mfc1(3, 0);
+                c.lqc2(4, sp(c).wrapping_add(0x40));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c).wrapping_add(0x50));
+                c.lq(2, sp(c).wrapping_add(0x50));
+                c.sq(2, sp(c).wrapping_add(0x30));
+                call_ptr(c, APPLY_GET_UPDATE_TIME, APPLY_RET_UPDATE_TYPE2)?;
+                c.mfc1(2, 0);
+                c.lqc2(4, sp(c).wrapping_add(0x30));
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c).wrapping_add(0x50));
+                c.g[A1][0] = sx(sp(c).wrapping_add(0x20));
+                c.lq(2, sp(c).wrapping_add(0x50));
+                c.g[V1][0] = Addr(obj).lw(c);
+                c.sq(2, sp(c).wrapping_add(0x20));
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(VT_APPLY_BOOST)).lh(c);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(VT_APPLY_BOOST + 4)).lw(c);
+                let apply = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(obj.wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, apply, APPLY_RET_APPLY_TYPE2)?;
+                frame.restore(c, S0, 0x80);
+                break 'b_341a1c;
+            }
+            // Other types push the room left to MaxSpeed while it is positive.
+            c.cycles += 5;
+            c.mtc1(0, 0);
+            c.c_lt_s(0, 1);
+            let no_room = !c.fcc();
+            frame.restore(c, S0, 0x80);
+            if no_room {
+                break 'b_341a1c;
+            }
+            c.cycles += 30;
+            c.mfc1(3, 1);
+            c.lqc2(4, sp(c).wrapping_add(0x10));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp(c).wrapping_add(0x50));
+            c.lq(2, sp(c).wrapping_add(0x50));
+            c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(BOOST_STATE_DRAG));
+            c.sq(2, sp(c).wrapping_add(0x40));
+            c.mfc1(3, 0);
+            c.lqc2(4, sp(c).wrapping_add(0x40));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp(c).wrapping_add(0x50));
+            c.lq(2, sp(c).wrapping_add(0x50));
+            c.sq(2, sp(c).wrapping_add(0x30));
+            call_ptr(c, APPLY_GET_UPDATE_TIME, APPLY_RET_UPDATE)?;
+            c.mfc1(2, 0);
+            c.lqc2(4, sp(c).wrapping_add(0x30));
+            c.qmtc2(2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp(c).wrapping_add(0x50));
+            c.g[A1][0] = sx(sp(c).wrapping_add(0x20));
+            c.lq(2, sp(c).wrapping_add(0x50));
+            c.g[V1][0] = Addr(obj).lw(c);
+            c.sq(2, sp(c).wrapping_add(0x20));
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(VT_APPLY_BOOST)).lh(c);
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(VT_APPLY_BOOST + 4)).lw(c);
+            let apply = c.g[V0][0] as u32;
+            c.g[A0][0] = sx(obj.wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, apply, APPLY_RET_APPLY)?;
+            frame.restore(c, S0, 0x80);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The stack frame of `Nash_CollideObjects`.
+const NASH_FRAME: u32 = 0x100;
+/// The query box copied onto the stack (two 16-byte quads).
+const NASH_BOX_OFF: u32 = 0x20;
+/// The `int` result counter.
+const NASH_COUNT_OFF: u32 = 0x40;
+/// `SpatialKey_ClassifyAABB(node, box)` (0x328360). The generated branches
+/// read its result as: 0 (test the cell's objects and children), 1 (nothing),
+/// 2 (wholly inside: recurse into the whole subtree). Inferred from the
+/// branches, not from the callee's own source.
+const NASH_CLASSIFY: u32 = 0x0032_8360;
+
+/// `Cell_CollideObjectEx(ctx, obj)` (0x336d40).
+pub(crate) const NASH_COLLIDE_EX: Callee = Callee {
+    addr: 0x0033_6d40,
+    f: ee::s11::f_00336d40,
+};
+
+/// `Cell_CollideObjectsSubtree(cell, ctx)` (0x3410c0).
+pub(crate) const NASH_COLLIDE_SUBTREE: Callee = Callee {
+    addr: 0x0034_10c0,
+    f: ee::s11::f_003410c0,
+};
+
+/// `Cell_CollideObjectsRecursive(out, cell, node, ctx, ctx, box)` (0x33dfd8).
+pub(crate) const NASH_COLLIDE_RECURSIVE: Callee = Callee {
+    addr: 0x0033_dfd8,
+    f: ee::s11::f_0033dfd8,
+};
+
+/// One of the eight sub-nodes the function walks in order: node `k` lives at
+/// `nash + node_off` and its cell pointer at +0x10. The phase's stack slots,
+/// call return addresses and cycle charges are the generated body's own.
+#[derive(Clone, Copy)]
+struct NashPhase {
+    /// Offset of the node inside the nash object.
+    node_off: u32,
+    /// Stack byte the recursion writes its flag through (`sp + out_off`).
+    out_off: u32,
+    /// The register that holds `out` (s0, or s3 for the second node).
+    out_reg: usize,
+    /// Cycles charged on entry, before the cell test.
+    entry_cycles: u64,
+    /// Cycles charged before the classify call.
+    box_cycles: u64,
+    /// Cycles charged when the cell has objects (on top of the 3 always).
+    list_else: u64,
+    /// Return address of the classify call.
+    box_ra: u32,
+    /// Return address of the object call (the list loop).
+    list_ra: u32,
+    /// Back-edge pc of the object loop (event delivery).
+    list_head: u32,
+    /// Return address of the first child call; child `i` returns at `+0x14 * i`.
+    child_ra: u32,
+    /// Return address of the recursion.
+    rec_ra: u32,
+    /// Offset of the next node (its cell is the exit value); `None` returns
+    /// the object count instead.
+    next_off: Option<u32>,
+}
+
+const NASH_PHASES: [NashPhase; 8] = [
+    NashPhase {
+        node_off: 0x00,
+        out_off: 0x44,
+        out_reg: S0,
+        entry_cycles: 0,
+        box_cycles: 7,
+        list_else: 2,
+        box_ra: 0x0033_6fa8,
+        list_ra: 0x0033_6fd0,
+        list_head: 0x0033_6fc8,
+        child_ra: 0x0033_6ff0,
+        rec_ra: 0x0033_70a8,
+        next_off: Some(0x14),
+    },
+    NashPhase {
+        node_off: 0x14,
+        out_off: 0x45,
+        out_reg: S3,
+        entry_cycles: 10,
+        box_cycles: 8,
+        list_else: 2,
+        box_ra: 0x0033_70e8,
+        list_ra: 0x0033_7110,
+        list_head: 0x0033_7108,
+        child_ra: 0x0033_7130,
+        rec_ra: 0x0033_71e8,
+        next_off: Some(0x28),
+    },
+    NashPhase {
+        node_off: 0x28,
+        out_off: 0x46,
+        out_reg: S0,
+        entry_cycles: 2,
+        box_cycles: 7,
+        list_else: 1,
+        box_ra: 0x0033_7204,
+        list_ra: 0x0033_7228,
+        list_head: 0x0033_7220,
+        child_ra: 0x0033_7248,
+        rec_ra: 0x0033_7300,
+        next_off: Some(0x3c),
+    },
+    NashPhase {
+        node_off: 0x3c,
+        out_off: 0x47,
+        out_reg: S0,
+        entry_cycles: 2,
+        box_cycles: 7,
+        list_else: 1,
+        box_ra: 0x0033_731c,
+        list_ra: 0x0033_7340,
+        list_head: 0x0033_7338,
+        child_ra: 0x0033_7360,
+        rec_ra: 0x0033_7418,
+        next_off: Some(0x50),
+    },
+    NashPhase {
+        node_off: 0x50,
+        out_off: 0x48,
+        out_reg: S0,
+        entry_cycles: 2,
+        box_cycles: 7,
+        list_else: 1,
+        box_ra: 0x0033_7434,
+        list_ra: 0x0033_7458,
+        list_head: 0x0033_7450,
+        child_ra: 0x0033_7478,
+        rec_ra: 0x0033_7530,
+        next_off: Some(0x64),
+    },
+    NashPhase {
+        node_off: 0x64,
+        out_off: 0x49,
+        out_reg: S0,
+        entry_cycles: 2,
+        box_cycles: 7,
+        list_else: 1,
+        box_ra: 0x0033_754c,
+        list_ra: 0x0033_7570,
+        list_head: 0x0033_7568,
+        child_ra: 0x0033_7590,
+        rec_ra: 0x0033_7648,
+        next_off: Some(0x78),
+    },
+    NashPhase {
+        node_off: 0x78,
+        out_off: 0x4a,
+        out_reg: S0,
+        entry_cycles: 2,
+        box_cycles: 8,
+        list_else: 2,
+        box_ra: 0x0033_7668,
+        list_ra: 0x0033_7690,
+        list_head: 0x0033_7688,
+        child_ra: 0x0033_76b0,
+        rec_ra: 0x0033_7768,
+        next_off: Some(0x8c),
+    },
+    NashPhase {
+        node_off: 0x8c,
+        out_off: 0x4b,
+        out_reg: S0,
+        entry_cycles: 2,
+        box_cycles: 8,
+        list_else: 2,
+        box_ra: 0x0033_7788,
+        list_ra: 0x0033_77b0,
+        list_head: 0x0033_77a8,
+        child_ra: 0x0033_77d0,
+        rec_ra: 0x0033_7888,
+        next_off: None,
+    },
+];
+
+/// The value a phase leaves in v0: the next node's cell, or the object
+/// count after the last node.
+fn nash_exit_value(c: &mut Cpu, nash: u32, sp_: u32, ph: &NashPhase) -> u64 {
+    match ph.next_off {
+        Some(off) => Addr(nash.wrapping_add(off).wrapping_add(0x10)).lw(c),
+        None => Addr(sp_.wrapping_add(NASH_COUNT_OFF)).lw(c),
+    }
+}
+
+/// One node's pass: classify the node's box, then either recurse into the
+/// whole subtree (inside), or test the cell's objects and its eight children
+/// (partly overlapping). `cell` is the node's cell pointer (already tested
+/// for the entry in v0 or s2).
+fn nash_collide_phase(c: &mut Cpu, nash: u32, ph: &NashPhase, cell: u64) -> Flow {
+    let sp_ = sp(c);
+    c.cycles += ph.entry_cycles;
+    if cell == 0 {
+        c.cycles += 1;
+        c.g[V0][0] = nash_exit_value(c, nash, sp_, ph);
+        return Ok(());
+    }
+    let node = nash.wrapping_add(ph.node_off);
+    let out = sp_.wrapping_add(ph.out_off);
+    let boxp = sp_.wrapping_add(NASH_BOX_OFF);
+    c.cycles += ph.box_cycles;
+    c.g[ph.out_reg][0] = sx(out);
+    c.g[S2][0] = cell;
+    c.g[A0][0] = sx(node);
+    c.g[A1][0] = sx(boxp);
+    call_ptr(c, NASH_CLASSIFY, ph.box_ra)?;
+    c.g[V1][0] = c.g[V0][0];
+    c.g[V0][0] = 2;
+    if c.g[V1][0] != 0 {
+        c.cycles += 2;
+        if c.g[V1][0] != c.g[V0][0] {
+            c.g[V0][0] = nash_exit_value(c, nash, sp_, ph);
+            return Ok(());
+        }
+        // Wholly inside: the recursion takes the whole subtree.
+        c.cycles += 7;
+        c.g[A0][0] = sx(out);
+        c.g[T0][0] = c.g[S2][0];
+        c.g[T1][0] = sx(node);
+        c.g[A1][0] = sx(sp_);
+        c.g[A2][0] = sx(sp_);
+        c.g[A3][0] = sx(boxp);
+        NASH_COLLIDE_RECURSIVE.call(c, ph.rec_ra)?;
+        c.cycles += 1;
+        c.g[V0][0] = nash_exit_value(c, nash, sp_, ph);
+        return Ok(());
+    }
+
+    // Partly overlapping: the cell's own objects, then its eight children.
+    let cell32 = cell as u32;
+    c.cycles += 3;
+    c.g[S0][0] = Addr(cell32.wrapping_add(0x20)).lw(c);
+    if c.g[S0][0] == 0 {
+        c.g[A0][0] = Addr(cell32).lw(c);
+    } else {
+        c.cycles += ph.list_else;
+        c.g[A1][0] = c.g[S0][0];
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = sx(sp_);
+            NASH_COLLIDE_EX.call(c, ph.list_ra)?;
+            c.g[S0][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[A1][0] = c.g[S0][0];
+            if c.g[S0][0] != 0 {
+                if event_due(c) {
+                    deliver_event_here(c, ph.list_head);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 1;
+        c.g[A0][0] = Addr(cell32).lw(c);
+    }
+    for i in 0..8u32 {
+        c.cycles += 2;
+        if c.g[A0][0] == 0 {
+            if i == 7 {
+                break;
+            }
+            c.g[A0][0] = Addr(cell32.wrapping_add(4 * (i + 1))).lw(c);
+            continue;
+        }
+        c.cycles += if i == 7 { 4 } else { 3 };
+        c.g[A1][0] = sx(sp_);
+        NASH_COLLIDE_SUBTREE.call(c, ph.child_ra.wrapping_add(0x14 * i))?;
+        if i == 7 {
+            break;
+        }
+        c.g[A0][0] = Addr(cell32.wrapping_add(4 * (i + 1))).lw(c);
+    }
+    c.g[V0][0] = nash_exit_value(c, nash, sp_, ph);
+    Ok(())
+}
+
+/// `Nash_CollideObjects` (0x336f30, 2444 bytes): collides a query box with
+/// the nash's eight sub-nodes in turn (each with its cell's objects and
+/// children, or its whole subtree when the box holds it), counting the hits
+/// through the stack context. Returns the hit count in v0.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+/// Not installed: the diff leaves one RAM word different (see the wave notes).
+#[allow(dead_code)]
+pub fn nash_collide_objects(c: &mut Cpu) {
+    guest(c, nash_collide_objects_body);
+}
+
+fn nash_collide_objects_body(c: &mut Cpu) -> Flow {
+    c.cycles += 26;
+    let frame = Frame::open(c, NASH_FRAME);
+    frame.save(c, S1, 0xe0);
+    c.g[V0][0] = sx(sp(c).wrapping_add(NASH_COUNT_OFF));
+    frame.save(c, S4, 0xb0);
+    c.g[S1][0] = c.g[SP][0];
+    frame.save(c, S0, 0xf0);
+    c.g[S4][0] = c.g[A0][0];
+    frame.save(c, S2, 0xd0);
+    frame.save(c, S3, 0xc0);
+    frame.save(c, S5, 0xa0);
+    frame.save(c, S6, 0x90);
+    frame.save(c, S7, 0x80);
+    frame.save(c, FP, 0x70);
+    frame.save_ra(c, 0x60);
+
+    // The query box, copied to the stack; the context fields.
+    let query = c.g[A1][0] as u32;
+    c.lq(A0, query.wrapping_add(0x20));
+    c.lq(V1, query.wrapping_add(0x30));
+    let nash = c.g[S4][0] as u32;
+    c.g[S2][0] = Addr(nash.wrapping_add(0x10)).lw(c);
+    let sp_ = sp(c);
+    let a2 = c.g[A2][0];
+    c.sw(sp_.wrapping_add(4), a2);
+    let a3 = c.g[A3][0];
+    c.sw(sp_.wrapping_add(8), a3);
+    let v0 = c.g[V0][0];
+    c.sw(sp_.wrapping_add(0xc), v0);
+    let t0 = c.g[T0][0];
+    c.sw(sp_.wrapping_add(0x10), t0);
+    c.sq(V1, sp_.wrapping_add(NASH_BOX_OFF));
+    c.sq(A0, sp_.wrapping_add(0x30));
+    let a1 = c.g[A1][0];
+    c.sw(sp_, a1);
+    c.sw(sp_.wrapping_add(NASH_COUNT_OFF), 0);
+
+    // Node 0: the nash itself.
+    let cell = c.g[S2][0];
+    nash_collide_phase(c, nash, &NASH_PHASES[0], cell)?;
+
+    // Node 1 (its entry also stores the addresses of nodes 6 and 7 on the
+    // stack and loads the node pointers the later phases use).
+    let v1 = sx(nash.wrapping_add(0x78));
+    c.g[V1][0] = v1;
+    c.sw(sp_.wrapping_add(0x4c), v1);
+    c.g[S0][0] = sx(nash.wrapping_add(0x14));
+    let v1 = sx(nash.wrapping_add(0x8c));
+    c.g[V1][0] = v1;
+    c.g[S5][0] = sx(nash.wrapping_add(0x28));
+    c.g[S6][0] = sx(nash.wrapping_add(0x3c));
+    c.g[S7][0] = sx(nash.wrapping_add(0x50));
+    c.g[FP][0] = sx(nash.wrapping_add(0x64));
+    c.sw(sp_.wrapping_add(0x50), v1);
+    let cell = c.g[V0][0];
+    nash_collide_phase(c, nash, &NASH_PHASES[1], cell)?;
+
+    // Nodes 2 to 5.
+    let cell = c.g[V0][0];
+    nash_collide_phase(c, nash, &NASH_PHASES[2], cell)?;
+    let cell = c.g[V0][0];
+    nash_collide_phase(c, nash, &NASH_PHASES[3], cell)?;
+    let cell = c.g[V0][0];
+    nash_collide_phase(c, nash, &NASH_PHASES[4], cell)?;
+    let cell = c.g[V0][0];
+    nash_collide_phase(c, nash, &NASH_PHASES[5], cell)?;
+
+    // Node 6: its pointer comes from the stack slot.
+    let cell = c.g[V0][0];
+    let node7 = Addr(sp_.wrapping_add(0x4c)).lw(c);
+    c.g[V0][0] = node7;
+    nash_collide_phase(c, nash, &NASH_PHASES[6], cell)?;
+
+    // Node 7: its pointer comes from the stack slot, in v1.
+    let cell = c.g[V0][0];
+    let node8 = Addr(sp_.wrapping_add(0x50)).lw(c);
+    c.g[V1][0] = node8;
+    nash_collide_phase(c, nash, &NASH_PHASES[7], cell)?;
+
+    c.cycles += 12;
+    frame.restore(c, S0, 0xf0);
+    frame.restore(c, S1, 0xe0);
+    frame.restore(c, S2, 0xd0);
+    frame.restore(c, S3, 0xc0);
+    frame.restore(c, S4, 0xb0);
+    frame.restore(c, S5, 0xa0);
+    frame.restore(c, S6, 0x90);
+    frame.restore(c, S7, 0x80);
+    frame.restore(c, FP, 0x70);
+    frame.restore_ra(c, 0x60);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -33910,6 +36975,714 @@ pub(crate) mod tests {
             cell_gather_objects_recursive,
             200,
             &setup_7,
+        );
+    }
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::RA as SENTINEL;
+
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::game::fe::feasyncfile::tests::alloc_base_3;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::CTRL as CTRL_2;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::MAGIC as MAGIC_2;
+
+    pub(crate) use crate::game::intersect::riderspheretree::tests::base_7 as base;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::floats_2 as floats;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::hook_fakes;
+
+    /// Gate word in the machine's RAM: the fakes forward to the real bodies
+    /// unless it holds `OC563_MAGIC`.
+    pub(crate) const OC563_GATE: u32 = DATA + 0x8_0000;
+
+    pub(crate) const OC563_MAGIC: u32 = 0x5633_0ba8;
+
+    /// The proximity answer for each of the eight cells (one word each).
+    pub(crate) const OC563_PROX: u32 = DATA + 0x8_0100;
+
+    pub(crate) const OC563_SELF: u32 = DATA + 0x8_1000;
+
+    pub(crate) const OC563_GRID: u32 = DATA + 0x8_2000;
+
+    /// Node `k` is cell `k`'s tree; its children are leaves below `OC563_LEAVES`.
+    pub(crate) const OC563_NODES: u32 = DATA + 0x8_4000;
+
+    pub(crate) const OC563_LEAVES: u32 = DATA + 0x8_8000;
+
+    pub(crate) const OC563_BOX: u32 = DATA + 0x8_c000;
+
+    pub(crate) static OC563_PREV_PROX: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC563_PREV_CGO: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC563_PREV_REC: AtomicUsize = AtomicUsize::new(0);
+
+    /// The proximity test, gated: answers the fixture's word for the cell
+    /// (the cell pointer is `a0`), through the logging fake.
+    pub(crate) fn oc563_prox_fake(c: &mut Cpu) {
+        if c.bus.read32(OC563_GATE) != OC563_MAGIC {
+            return fakes::fall_back(c, &OC563_PREV_PROX, ee::s10::f_00328360__generated);
+        }
+        let k = (c.g[A0][0] as u32).wrapping_sub(OC563_GRID) / 0x14;
+        let r = c.bus.read32(OC563_PROX + 4 * (k & 7));
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0032_8360, ret);
+        if c.pc == ret {
+            c.g[V0][0] = r as u64;
+        }
+    }
+
+    /// The callback (`Cell_GatherObjects`), gated, logged.
+    pub(crate) fn oc563_cgo_fake(c: &mut Cpu) {
+        if c.bus.read32(OC563_GATE) != OC563_MAGIC {
+            return fakes::fall_back(c, &OC563_PREV_CGO, ee::s11::f_003309d8__generated);
+        }
+        fakes::fake_call(c, 0x0033_09d8);
+    }
+
+    /// The recursive collector, gated, logged.
+    pub(crate) fn oc563_rec_fake(c: &mut Cpu) {
+        if c.bus.read32(OC563_GATE) != OC563_MAGIC {
+            return fakes::fall_back(c, &OC563_PREV_REC, ee::s11::f_00338920__generated);
+        }
+        fakes::fake_call(c, 0x0033_8920);
+    }
+
+    pub(crate) fn oc563_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00328360),
+            oc563_prox_fake,
+            &OC563_PREV_PROX,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003309D8),
+            oc563_cgo_fake,
+            &OC563_PREV_CGO,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00338920),
+            oc563_rec_fake,
+            &OC563_PREV_REC,
+        );
+    }
+
+    #[test]
+    fn overlap_list_gather_objects_matches() {
+        oc563_install();
+        fakes::covered(
+            ee::s11::f_00330ba8__generated,
+            overlap_list_gather_objects,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0563_0ba8, 24);
+                c.bus.write32(OC563_GATE, OC563_MAGIC);
+                c.bus.write32(OC563_SELF, OC563_GRID);
+                c.bus.write32(OC563_SELF + 8, r.next_u32());
+                c.bus.write32(OC563_SELF + 0x10c, r.next_u32());
+                c.bus.write32(OC563_SELF + 0x210, r.next_u32());
+                c.bus.write32(OC563_GRID + 0xa0, r.next_u32());
+                for k in 0..8u32 {
+                    let cell = OC563_GRID + 0x14 * k;
+                    let node = OC563_NODES + 0x100 * k;
+                    let has_tree = r.next_u32() % 4 != 0;
+                    c.bus.write32(cell + 0x10, if has_tree { node } else { 0 });
+                    c.bus.write32(OC563_PROX + 4 * k, r.next_u32() % 3);
+                    for j in 0..8u32 {
+                        let child = if r.next_u32() % 3 != 0 {
+                            OC563_LEAVES + 0x100 * (8 * k + j)
+                        } else {
+                            0
+                        };
+                        c.bus.write32(node + 4 * j, child);
+                    }
+                }
+                c.g[A0][0] = sx(OC563_SELF);
+                c.g[A1][0] = sx(OC563_BOX);
+                c.pc = 0x0033_0ba8;
+            },
+        );
+    }
+
+    #[test]
+    fn collision_static_init_matches() {
+        check(
+            ee::s11::f_003400d8__generated,
+            collision_static_init,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0034_00d8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                // The float constants the body loads: gp-0x2cac .. gp-0x2b9c.
+                fill(c, &mut r, GAME_GP - 0x2cb0, 0x48);
+                // Priority 0xFFFF and a non-zero initialize run the body; the
+                // other seeds take each early exit.
+                c.g[A1][0] = if seed % 4 == 0 {
+                    (r.next_u32() as u64) | 0x1_0000
+                } else {
+                    0xffff
+                };
+                c.g[A0][0] = if seed % 5 == 0 {
+                    0
+                } else {
+                    sx(r.next_u32() | 1)
+                };
+            },
+        );
+    }
+
+    /// Scratch regions of the fixtures, all inside the test data area and
+    /// clear of the fakes' log and the pool.
+    pub(crate) const TREE_CELLS: u32 = DATA + 0x2000;
+
+    pub(crate) const TREE_OBJECTS: u32 = DATA + 0x8000;
+
+    pub(crate) const CTX_4: u32 = DATA + 0x4000;
+
+    pub(crate) const TYPED_CELLS: u32 = DATA + 0x3000;
+
+    pub(crate) const TYPED_NODES: u32 = DATA + 0x9000;
+
+    pub(crate) const TYPED_PARENTS: u32 = DATA + 0x6000;
+
+    pub(crate) const QUERY: u32 = DATA + 0x5000;
+
+    /// An acyclic tree of cells (children only point at later cells) with
+    /// random static object lists. Object flags avoid 0x20 and 0x40, so the
+    /// object callback returns at once.
+    pub(crate) fn collide_tree_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        let n = 1 + seed % 9;
+        let mut next_object = 0u32;
+        for k in 0..n {
+            let cell = TREE_CELLS + 0x40 * k;
+            for s in 0..8u32 {
+                let j = k + 1 + r.next_u32() % 4;
+                let child = if j < n && r.next_u32() % 3 != 0 {
+                    TREE_CELLS + 0x40 * j
+                } else {
+                    0
+                };
+                c.bus.write32(cell + CELL_CHILDREN + 4 * s, child);
+            }
+            let mut head = 0;
+            for _ in 0..r.next_u32() % 3 {
+                let obj = TREE_OBJECTS + 0x20 * next_object;
+                next_object += 1;
+                c.bus.write32(obj + OBJECT_NEXT, head);
+                c.bus.write32(obj + 8, r.next_u32() & !0x60);
+                head = obj;
+            }
+            c.bus.write32(cell + CELL_OBJECTS, head);
+        }
+        TREE_CELLS
+    }
+
+    /// Like [`collide_tree_fixture`], with typed lists instead of object
+    /// lists. Node types are 0, 1, 4 or 5: type 1 nodes have a zero-flag
+    /// parent, so their spline test is filtered out and nothing is called.
+    /// (Types 2 and 3 call the rail intersection routines, which have no
+    /// short path on zeroed fixture data; they are not generated here.)
+    pub(crate) fn find_rail_tree_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        let n = 1 + seed % 9;
+        let mut next_node = 0u32;
+        for k in 0..n {
+            let cell = TYPED_CELLS + 0x40 * k;
+            for s in 0..8u32 {
+                let j = k + 1 + r.next_u32() % 4;
+                let child = if j < n && r.next_u32() % 3 != 0 {
+                    TYPED_CELLS + 0x40 * j
+                } else {
+                    0
+                };
+                c.bus.write32(cell + CELL_CHILDREN + 4 * s, child);
+            }
+            let mut head = 0;
+            for _ in 0..r.next_u32() % 3 {
+                let node = TYPED_NODES + 0x80 * next_node;
+                let parent = TYPED_PARENTS + 0x40 * next_node;
+                next_node += 1;
+                let kind = [0u32, 1, 4, 5][(r.next_u32() % 4) as usize];
+                c.bus.write32(node + TYPED_NEXT, head);
+                c.bus.write32(node + TYPED_TYPE, kind);
+                c.bus.write32(node + TYPED_PARENT, parent);
+                c.bus.write32(parent + 0x1c, 0);
+                head = node;
+            }
+            c.bus.write32(cell + CELL_TYPED, head);
+        }
+        for i in 0..8u32 {
+            c.bus.write32(QUERY + 4 * i, r.next_u32());
+        }
+        TYPED_CELLS
+    }
+
+    #[test]
+    fn collision_global_ctors_matches() {
+        check(
+            ssx3_ee::s11::f_00341368__generated,
+            collision_global_ctors,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x3413_6800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0034_1368;
+                c.g[RA][0] = sx(SENTINEL);
+            },
+        );
+    }
+
+    #[test]
+    fn cell_collide_objects_subtree_matches() {
+        check(
+            ssx3_ee::s11::f_003410c0__generated,
+            cell_collide_objects_subtree,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3410_c000 ^ seed as u64);
+                scramble(c, &mut r);
+                let root = collide_tree_fixture(c, &mut r, seed);
+                c.pc = 0x0034_10c0;
+                c.g[A0][0] = sx(root);
+                c.g[A1][0] = sx(CTX_4);
+                c.g[RA][0] = sx(SENTINEL);
+            },
+        );
+    }
+
+    #[test]
+    fn cell_find_rail_subtree_matches() {
+        check(
+            ssx3_ee::s11::f_003411b8__generated,
+            cell_find_rail_subtree,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3411_b800 ^ seed as u64);
+                scramble(c, &mut r);
+                let root = find_rail_tree_fixture(c, &mut r, seed);
+                c.pc = 0x0034_11b8;
+                c.g[A0][0] = sx(root);
+                c.g[A1][0] = sx(QUERY);
+                c.g[RA][0] = sx(SENTINEL);
+            },
+        );
+    }
+
+    #[test]
+    fn boost_modifier_v07_matches() {
+        check(
+            ssx3_ee::s11::f_00342a88__generated,
+            boost_modifier_v07,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_2a88, 0);
+                c.pc = 0x0034_2a88;
+                // obj: first word is the vtable; slots 0x14 and 0x24 are
+                // fakes with the halfword deltas at 0x10 and 0x20.
+                let vt = vtable(c, &mut r, &[0x10, 0x20]);
+                let obj = ptr(&mut r);
+                c.bus.write32(obj, vt);
+                // self: the vector at +0x10 and the float at +0x20.
+                let this = DATA + 0x3000 + (r.next_u32() & 0xff0);
+                for i in 0..8u32 {
+                    c.bus.write32(this + 0x10 + 4 * i, r.f32(4.0));
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(obj);
+                c.g[RA][0] = sx(SENTINEL);
+            },
+        );
+    }
+
+    #[test]
+    fn coll_sphere_tree_construct_matches() {
+        hook_fakes();
+        check(
+            ee::s11::f_003303f0__generated,
+            coll_sphere_tree_construct,
+            200,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x3303);
+                c.pc = 0x0033_03f0;
+                c.bus.write32(CTRL_2, MAGIC_2);
+                let this = DATA + 0x1000;
+                let owner = DATA + 0x2000;
+                floats(c, &mut r, owner, 0x40);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(owner);
+                c.g[A2][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    /// Gate word in the machine's RAM: the fakes below forward to the real
+    /// bodies unless it holds `OC570_MAGIC`.
+    pub(crate) const OC570_GATE: u32 = DATA + 0x8_0000;
+
+    pub(crate) const OC570_MAGIC: u32 = 0x5570_0570;
+
+    /// The root node of the walk and its eight leaves.
+    pub(crate) const OC570_ROOT: u32 = DATA + 0x2000;
+
+    /// The callback context (`ctx`): array pairs at +0, +0x10, +0x20 and the box at +0x1c.
+    pub(crate) const OC570_CTX: u32 = DATA + 0x3000;
+
+    pub(crate) const OC570_ARR0: u32 = DATA + 0x3100;
+
+    pub(crate) const OC570_CNT0: u32 = DATA + 0x3300;
+
+    pub(crate) const OC570_ARR1: u32 = DATA + 0x3400;
+
+    pub(crate) const OC570_CNT1: u32 = DATA + 0x3600;
+
+    pub(crate) const OC570_BOX: u32 = DATA + 0x3700;
+
+    pub(crate) const OC570_ARR2: u32 = DATA + 0x3800;
+
+    pub(crate) const OC570_CNT2: u32 = DATA + 0x3a00;
+
+    /// Object records (0x100 bytes each).
+    pub(crate) const OC570_OBJS: u32 = DATA + 0x1_0000;
+
+    pub(crate) static OC570_PREV_CGO: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC570_PREV_CI: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC570_PREV_CO: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC570_PREV_CVO: AtomicUsize = AtomicUsize::new(0);
+
+    /// Leaf `k` of the root.
+    pub(crate) fn oc570_leaf(k: u32) -> u32 {
+        DATA + 0x2100 + 0x100 * k
+    }
+
+    /// `Cell_GatherObjects`, gated: logged, returns to `ra`.
+    pub(crate) fn oc570_cgo_fake(c: &mut Cpu) {
+        if c.bus.read32(OC570_GATE) != OC570_MAGIC {
+            return fakes::fall_back(c, &OC570_PREV_CGO, ee::s11::f_003309d8__generated);
+        }
+        fakes::fake_call(c, 0x0033_09d8);
+    }
+
+    /// `Cell_CollideInstance`, gated, logged.
+    pub(crate) fn oc570_ci_fake(c: &mut Cpu) {
+        if c.bus.read32(OC570_GATE) != OC570_MAGIC {
+            return fakes::fall_back(c, &OC570_PREV_CI, ee::s11::f_00335960__generated);
+        }
+        fakes::fake_call(c, 0x0033_5960);
+    }
+
+    /// `Cell_CollideObject`, gated, logged.
+    pub(crate) fn oc570_co_fake(c: &mut Cpu) {
+        if c.bus.read32(OC570_GATE) != OC570_MAGIC {
+            return fakes::fall_back(c, &OC570_PREV_CO, ee::s11::f_00335b90__generated);
+        }
+        fakes::fake_call(c, 0x0033_5b90);
+    }
+
+    /// `Collide_VolumeObject`, gated, logged.
+    pub(crate) fn oc570_cvo_fake(c: &mut Cpu) {
+        if c.bus.read32(OC570_GATE) != OC570_MAGIC {
+            return fakes::fall_back(c, &OC570_PREV_CVO, ee::s11::f_00334888__generated);
+        }
+        fakes::fake_call(c, 0x0033_4888);
+    }
+
+    pub(crate) fn oc570_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003309D8),
+            oc570_cgo_fake,
+            &OC570_PREV_CGO,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00335960),
+            oc570_ci_fake,
+            &OC570_PREV_CI,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00335B90),
+            oc570_co_fake,
+            &OC570_PREV_CO,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00334888),
+            oc570_cvo_fake,
+            &OC570_PREV_CVO,
+        );
+    }
+
+    /// A list of up to three objects (random boxes), headed at `head_at`.
+    pub(crate) fn oc570_list(c: &mut Cpu, r: &mut Rng, head_at: u32, objs: &mut u32) {
+        let count = r.next_u32() % 4;
+        let mut next = 0;
+        for _ in 0..count {
+            let o = OC570_OBJS + 0x100 * *objs;
+            *objs += 1;
+            c.bus.write32(o, next);
+            for f in 0..6 {
+                c.bus.write32(o + 0x158 + 4 * f, r.f32(4.0));
+            }
+            next = o;
+        }
+        c.bus.write32(head_at, next);
+    }
+
+    /// The walk's fixture: a root with random children (leaves or zero),
+    /// leaves with no children, object lists on every node, the callback
+    /// context with its arrays and counts, and the box.
+    pub(crate) fn oc570_tree(c: &mut Cpu, r: &mut Rng) {
+        let mut objs = 0;
+        for k in 0..8u32 {
+            let kid = if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                oc570_leaf(k)
+            };
+            c.bus.write32(OC570_ROOT + 4 * k, kid);
+        }
+        oc570_list(c, r, OC570_ROOT + 0x20, &mut objs);
+        oc570_list(c, r, OC570_ROOT + 0x24, &mut objs);
+        oc570_list(c, r, OC570_ROOT + 0x28, &mut objs);
+        for k in 0..8u32 {
+            let leaf = oc570_leaf(k);
+            for j in 0..8u32 {
+                c.bus.write32(leaf + 4 * j, 0);
+            }
+            oc570_list(c, r, leaf + 0x20, &mut objs);
+            oc570_list(c, r, leaf + 0x24, &mut objs);
+            oc570_list(c, r, leaf + 0x28, &mut objs);
+        }
+        c.bus.write32(OC570_CTX, OC570_ARR0);
+        c.bus.write32(OC570_CTX + 4, OC570_CNT0);
+        c.bus.write32(OC570_CTX + 0x10, OC570_ARR1);
+        c.bus.write32(OC570_CTX + 0x14, OC570_CNT1);
+        c.bus.write32(OC570_CTX + 0x1c, OC570_BOX);
+        c.bus.write32(OC570_CTX + 0x20, OC570_ARR2);
+        c.bus.write32(OC570_CTX + 0x24, OC570_CNT2);
+        c.bus.write32(OC570_CNT0, r.next_u32() % 4);
+        c.bus.write32(OC570_CNT1, r.next_u32() % 4);
+        c.bus.write32(OC570_CNT2, r.next_u32() % 4);
+        for k in 0..6u32 {
+            c.bus.write32(OC570_BOX + 4 * k, r.f32(4.0));
+        }
+    }
+
+    #[test]
+    fn cell_gather_objects_subtree_matches() {
+        oc570_install();
+        check(
+            ee::s11::f_00340a40__generated,
+            cell_gather_objects_subtree,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0570_0a40, 30);
+                c.bus.write32(OC570_GATE, OC570_MAGIC);
+                oc570_tree(c, &mut r);
+                c.g[A0][0] = sx(OC570_ROOT);
+                c.g[A1][0] = sx(OC570_CTX);
+                c.pc = 0x0034_0a40;
+            },
+        );
+    }
+
+    #[test]
+    fn cell_gather_objinst_subtree_matches() {
+        oc570_install();
+        check(
+            ee::s11::f_00340c20__generated,
+            cell_gather_objinst_subtree,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0570_0c20, 30);
+                c.bus.write32(OC570_GATE, OC570_MAGIC);
+                oc570_tree(c, &mut r);
+                c.g[A0][0] = sx(OC570_ROOT);
+                c.g[A1][0] = sx(OC570_CTX);
+                c.pc = 0x0034_0c20;
+            },
+        );
+    }
+
+    #[test]
+    fn cell_collide_volume_subtree_matches() {
+        oc570_install();
+        check(
+            ee::s11::f_00340fa0__generated,
+            cell_collide_volume_subtree,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0570_0fa0, 30);
+                c.bus.write32(OC570_GATE, OC570_MAGIC);
+                oc570_tree(c, &mut r);
+                c.g[A0][0] = sx(OC570_ROOT);
+                c.g[A1][0] = sx(OC570_CTX);
+                c.pc = 0x0034_0fa0;
+            },
+        );
+    }
+
+    /// `Cell_CollideObjectEx`: the static node, the dynamic node (through the
+    /// vtable's two slots, which the fake callees answer) and the collect.
+    pub(crate) const OC570_CX_CTX: u32 = DATA + 0x6c00;
+
+    pub(crate) const OC570_CX_QRY: u32 = DATA + 0x7000;
+
+    pub(crate) const OC570_CX_NODE: u32 = DATA + 0x6800;
+
+    pub(crate) const OC570_CX_ACT: u32 = DATA + 0x6400;
+
+    pub(crate) const OC570_CX_VT: u32 = DATA + 0x6600;
+
+    pub(crate) const OC570_CX_OUT: u32 = DATA + 0x7400;
+
+    #[test]
+    fn cell_collide_object_ex_matches() {
+        oc570_install();
+        check(
+            ee::s11::f_00336d40__generated,
+            cell_collide_object_ex,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0570_6d40, 6);
+                c.bus.write32(OC570_GATE, OC570_MAGIC);
+                // The active sub-object's vtable: slot 0x160 and slot 0x168.
+                c.bus
+                    .write16(OC570_CX_VT + 0x160, (r.next_u32() as u16) & !3);
+                c.bus.write32(OC570_CX_VT + 0x164, fakes::FAKE);
+                c.bus
+                    .write16(OC570_CX_VT + 0x168, (r.next_u32() as u16) & !3);
+                c.bus.write32(OC570_CX_VT + 0x16c, fakes::FAKE + 0x10);
+                c.bus.write32(OC570_CX_ACT + 0xc, OC570_CX_VT);
+                // The node: flags (static 0x20, dynamic 0x40, or both),
+                // the active sub-object, and the static box at +0x60..+0x74.
+                let flags = [0x20u32, 0x40, 0x60, 0x00][(seed % 4) as usize];
+                c.bus.write32(OC570_CX_NODE + 8, flags);
+                c.bus.write32(OC570_CX_NODE + 0xc, OC570_CX_ACT);
+                for off in (0x60..0x78).step_by(4) {
+                    c.bus.write32(OC570_CX_NODE + off, r.f32(3.0));
+                }
+                // The context: the query, two words, the output word, the mode.
+                c.bus.write32(OC570_CX_CTX, OC570_CX_QRY);
+                c.bus.write32(OC570_CX_CTX + 4, r.next_u32());
+                c.bus.write32(OC570_CX_CTX + 8, r.next_u32());
+                c.bus.write32(OC570_CX_CTX + 0xc, OC570_CX_OUT);
+                c.bus.write32(OC570_CX_CTX + 0x10, r.next_u32() & 1);
+                c.bus.write32(OC570_CX_OUT, r.next_u32());
+                for off in (0x20..0x3c).step_by(4) {
+                    c.bus.write32(OC570_CX_QRY + off, r.f32(3.0));
+                }
+                c.g[A0][0] = sx(OC570_CX_CTX);
+                c.g[A1][0] = sx(OC570_CX_NODE);
+                c.pc = 0x0033_6d40;
+            },
+        );
+    }
+
+    /// The `TimerHz` global's struct and the speed scale constant (gp-0x2b98).
+    pub(crate) const APP_MAN: u32 = DATA + 0x7000;
+
+    pub(crate) const SPEED_SCALE: f32 = 27.777_779;
+
+    /// A direction in six patterns: zero, then one, two or three non-zero
+    /// components (or all three) so every branch of the zero test runs.
+    pub(crate) fn boost_dir(r: &mut Rng, mask: u32) -> [u32; 3] {
+        [
+            if matches!(mask, 1 | 4 | 5) {
+                r.f32(1.0)
+            } else {
+                0
+            },
+            if matches!(mask, 2 | 4 | 5) {
+                r.f32(1.0)
+            } else {
+                0
+            },
+            if matches!(mask, 3 | 4 | 5) {
+                r.f32(1.0)
+            } else {
+                0
+            },
+        ]
+    }
+
+    #[test]
+    fn boost_node_ctor_matches() {
+        check(
+            ee::s11::f_00341388__generated,
+            boost_node_ctor,
+            300,
+            &|c, seed| {
+                let mut r = alloc_base_3(c, seed, 0x34_1388, 0);
+                c.pc = 0x0034_1388;
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA + 0x4000;
+                let def = DATA + 0x5000;
+                let instance = DATA + 0x6000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x8000);
+                c.g[A2][0] = (seed % 3) as u64;
+                c.g[A3][0] = sx(instance);
+                c.g[T0][0] = sx(def);
+                fill(c, &mut r, this, 16);
+                fill(c, &mut r, instance, 32);
+                c.bus.write32(GAME_GP + GP_APP_MAN, APP_MAN);
+                c.bus.write32(APP_MAN + APP_MAN_TIMER_HZ, 30 + seed % 40);
+                c.bus
+                    .write32(GAME_GP - GP_SPEED_SCALE, SPEED_SCALE.to_bits());
+                put_vec(c, T4VECT_ZERO, [0, 0, 0, 0]);
+                put_vec(c, T4VECT_Y_AXIS, [0, 1.0f32.to_bits(), 0, 0]);
+                // Type 0, 1 or 2 (type 2 is the reversed, transformed boost).
+                c.bus
+                    .write16(def + DEF_TYPE, [0u16, 2, 1][seed as usize % 3]);
+                c.bus.write32(def + DEF_BOOST_TIME, r.f32(20.0));
+                c.bus.write32(def + DEF_DRAG, r.f32(2.0));
+                c.bus.write32(def + DEF_MAX_SPEED, r.f32(50.0));
+                let [x, y, z] = boost_dir(&mut r, seed % 6);
+                c.bus.write32(def + DEF_BOOST_X, x);
+                c.bus.write32(def + DEF_BOOST_Y, y);
+                c.bus.write32(def + DEF_BOOST_Z, z);
+            },
+        );
+    }
+
+    #[test]
+    fn boost_node_apply_boost_matches() {
+        check(
+            ee::s11::f_00341818__generated,
+            boost_node_apply_boost,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_1818, 0);
+                c.pc = 0x0034_1818;
+                let this = DATA + 0x4000;
+                let obj = DATA + 0x5000;
+                let vel = DATA + 0x4800;
+                let vtbl = DATA + 0x6800;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(obj);
+                fill(c, &mut r, this, 16);
+                // self->Boost (the direction), MaxSpeed, Drag, Type.
+                let [x, y, z] = boost_dir(&mut r, seed % 6);
+                c.bus.write32(this + BOOST_BOOST, x);
+                c.bus.write32(this + BOOST_BOOST + 4, y);
+                c.bus.write32(this + BOOST_BOOST + 8, z);
+                c.bus.write32(this + BOOST_BOOST + 12, 0);
+                c.bus.write32(this + BOOST_MAX_SPEED, r.f32(30.0));
+                c.bus.write32(this + BOOST_DRAG, r.f32(2.0));
+                c.bus
+                    .write32(this + BOOST_TYPE, [0u32, 2, 1][seed as usize % 3]);
+                // The object's velocity (the first fake call returns its pointer),
+                // and its vtable: getVelocity and applyBoost are fake targets.
+                fill(c, &mut r, vel, 4);
+                c.bus.write32(LOG_RESULTS, vel);
+                c.bus.write32(obj, vtbl);
+                c.bus.write16(vtbl + VT_GET_VELOCITY, 0);
+                c.bus.write32(vtbl + VT_GET_VELOCITY + 4, FAKE);
+                c.bus.write16(vtbl + VT_APPLY_BOOST, 8);
+                c.bus.write32(vtbl + VT_APPLY_BOOST + 4, FAKE + 0x40);
+            },
         );
     }
 }

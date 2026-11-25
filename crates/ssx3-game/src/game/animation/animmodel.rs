@@ -140,6 +140,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         oc436_cadf_data_source_ctor,
         "cAdfDataSource_ctor",
     ),
+    (
+        0x0031_0458,
+        rider_model_get_part_point_world,
+        "RiderModel_GetPartPointWorld",
+    ),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -7292,6 +7297,102 @@ pub fn oc436_cadf_data_source_ctor(c: &mut Cpu) {
     })
 }
 
+/// `Vec4 RiderModel_GetPartPointWorld(RiderModel* model, int id, int index)`
+/// (0x310458, with `out` in a0): hot spot `index` of the model part whose id
+/// is `id`, as a world point. The hot spot's local point (w = 1) goes through
+/// the part's bone matrix (`skel + (boneId + firstBone) * 64`) on VU0. Writes
+/// `out` and returns it in v0; `t4vect_Origin` when no part has the id.
+///
+/// Args: a0 = out, a1 = model, a2 = id, a3 = index.
+pub fn rider_model_get_part_point_world(c: &mut Cpu) {
+    let frame = Frame::open(c, 0x20);
+    'b_310524: {
+        'b_310514: {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+            c.g[T2][0] = c.g[A0][0];
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[T0][0] = 0;
+            if t {
+                break 'b_310514;
+            }
+            c.cycles += 5;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 2);
+            c.g[A3][0] = sx((c.g[A3][0] as u32) << 4);
+            c.g[T1][0] = 0;
+            'part_loop: loop {
+                'b_310504: {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                    let part = (c.g[T1][0] as u32).wrapping_add(c.g[V0][0] as u32);
+                    c.g[A0][0] = sx(part);
+                    c.g[V1][0] = c.lw(part);
+                    if c.g[V1][0] != c.g[A2][0] {
+                        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                        break 'b_310504;
+                    }
+                    c.cycles += 28;
+                    c.g[V0][0] = c.lw(part.wrapping_add(0x3c));
+                    c.g[A0][0] = c.lw(part.wrapping_add(0x4));
+                    let pt = (c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32);
+                    c.g[V0][0] = sx(pt);
+                    c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x34));
+                    c.lwc1(0, pt);
+                    c.g[V1][0] = c.lw(pt.wrapping_add(0xc));
+                    c.swc1(0, frame.at(c, 0));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.lwc1(1, pt.wrapping_add(4));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 6);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    let mat = c.g[V1][0] as u32;
+                    c.swc1(1, frame.at(c, 4));
+                    c.lwc1(0, pt.wrapping_add(8));
+                    c.swc1(2, frame.at(c, 0xc));
+                    c.swc1(0, frame.at(c, 8));
+                    c.lqc2(8, frame.at(c, 0));
+                    c.lqc2(4, mat);
+                    c.lqc2(5, mat.wrapping_add(0x10));
+                    c.lqc2(6, mat.wrapping_add(0x20));
+                    c.lqc2(7, mat.wrapping_add(0x30));
+                    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+                    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+                    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+                    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+                    c.sqc2(12, frame.at(c, 0x10));
+                    c.lq(2, frame.at(c, 0x10));
+                    let out = c.g[T2][0] as u32;
+                    c.sq(2, out);
+                    break 'b_310524;
+                }
+                c.cycles += 4;
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+                c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x58));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_0480);
+                    }
+                    continue 'part_loop;
+                }
+                break 'b_310514;
+            }
+        }
+        // No part has the id: the origin point.
+        c.cycles += 4;
+        c.g[V0][0] = 0x500000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xed0));
+        let origin = c.g[V0][0] as u32;
+        c.lq(3, origin);
+        let out = c.g[T2][0] as u32;
+        c.sq(3, out);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[T2][0];
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8786,6 +8887,51 @@ pub(crate) mod tests {
                 let mode = schedule(c, &mut r, seed, 0x0031_1110);
                 c.g[RA][0] = SENTINEL as u64;
                 mode
+            },
+        );
+    }
+
+    #[test]
+    fn rider_model_get_part_point_world_matches() {
+        check(
+            ee::s10::f_00310458__generated,
+            rider_model_get_part_point_world,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0031_0458 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_0458;
+                let model = DATA;
+                let parts = DATA + 0x100;
+                let hot = DATA + 0x400;
+                let skel = DATA + 0x800;
+                // numParts 0..3: the zero-part path and parts with ids 5, 7, 9.
+                c.bus.write32(model + 0x8, seed % 4);
+                c.bus.write32(model + 0xc, parts);
+                c.bus.write32(model + 0x34, skel);
+                for i in 0..3u32 {
+                    let p = parts + i * 0x58;
+                    c.bus.write32(p, 5 + 2 * i);
+                    c.bus.write32(p + 0x4, r.next_u32() % 3);
+                    c.bus.write32(p + 0x3c, hot);
+                }
+                for k in 0..4u32 {
+                    let h = hot + k * 16;
+                    c.bus.write32(h, r.next_u32());
+                    c.bus.write32(h + 0x4, r.next_u32());
+                    c.bus.write32(h + 0x8, r.next_u32());
+                    c.bus.write32(h + 0xc, r.next_u32() % 4);
+                }
+                fill(c, &mut r, skel, 128);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                c.g[A1][0] = model as u64;
+                // Found (ids 5, 7, 9) or missing (id 3).
+                c.g[A2][0] = if seed % 5 == 0 {
+                    3
+                } else {
+                    (5 + 2 * (seed % 3)) as u64
+                };
+                c.g[A3][0] = (seed % 4) as u64;
             },
         );
     }

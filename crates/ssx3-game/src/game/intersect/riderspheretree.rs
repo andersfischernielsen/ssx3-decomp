@@ -238,6 +238,79 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_init_sphere_tree_cache,
         "World_InitSphereTreeCache",
     ),
+    (
+        0x0032_9938,
+        rider_sphere_tree_ctor_copy,
+        "RiderSphereTree_ctor_copy",
+    ),
+    (0x0032_b468, rle_encode, "RLE_Encode"),
+    (0x0032_b620, rle_decode, "RLE_Decode"),
+    (
+        0x0032_c648,
+        sphere_tree_set_transform,
+        "SphereTree_SetTransform",
+    ),
+    (
+        0x0032_c770,
+        sphere_tree_apply_transform,
+        "SphereTree_ApplyTransform",
+    ),
+    (
+        0x0032_cdb0,
+        sphere_tree_collide_sphere_node,
+        "SphereTree_CollideSphereNode",
+    ),
+    (
+        0x0032_d028,
+        sphere_tree_collide_aabb_node,
+        "SphereTree_CollideAABBNode",
+    ),
+    (
+        0x0032_d208,
+        sphere_tree_collide_plane_node,
+        "SphereTree_CollidePlaneNode",
+    ),
+    (
+        0x0032_d440,
+        sphere_tree_point_in_triangle,
+        "SphereTree_PointInTriangle",
+    ),
+    (
+        0x0032_d470,
+        sphere_tree_collide_triangle_node,
+        "SphereTree_CollideTriangleNode",
+    ),
+    (
+        0x0032_de20,
+        world_free_sphere_tree_cache,
+        "World_FreeSphereTreeCache",
+    ),
+    (
+        0x0032_df28,
+        sphere_tree_cache_get_masks,
+        "SphereTreeCache_GetMasks",
+    ),
+    (
+        0x0032_e5e8,
+        coll_segment_collide_triangle_2sided,
+        "CollSegment_CollideTriangle2Sided",
+    ),
+    (
+        0x0032_fe78,
+        coll_sphere_collide_triangle,
+        "CollSphere_CollideTriangle",
+    ),
+    (
+        0x0032_ffa0,
+        coll_sphere_collide_triangle_2sided,
+        "CollSphere_CollideTriangle2Sided",
+    ),
+    (0x0033_00f8, vec3_neg_dot, "Vec3_NegDot"),
+    (
+        0x0033_0128,
+        closest_point_on_segment,
+        "ClosestPointOnSegment",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6011,6 +6084,3143 @@ pub fn world_init_sphere_tree_cache(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod collide_plane_node {
+
+    /// `float scale`: multiplies a level's radius.
+    pub(crate) const SCALE: u32 = 0x90;
+
+    /// `float worstCase`: the closest penetration so far, the distance at
+    /// which a leaf last updated the outputs.
+    pub(crate) const WORST_CASE: u32 = 0x94;
+
+    /// `SphereTreeInfo* treeInfo`.
+    pub(crate) const TREE_INFO: u32 = 0x98;
+
+    /// `int sortAxis[8]`: the order the children are visited in.
+    pub(crate) const SORT_AXIS: u32 = 0x9c;
+
+    /// `SphereTreeInfo`: `int depth`.
+    pub(crate) const INFO_DEPTH: u32 = 0x0c;
+
+    /// `SphereTreeInfo`: `levels` (12-byte records).
+    pub(crate) const INFO_LEVELS: u32 = 0x20;
+
+    /// `SphereTreeInfo`: `unsigned char* bitTree` (one mask per node).
+    pub(crate) const INFO_BIT_TREE: u32 = 0x28;
+
+    /// A level record: `float radius` +0, `float cenOffset` +4, `int
+    /// indexOffset` +8.
+    pub(crate) const LEVEL_SIZE: u32 = 12;
+
+    pub(crate) const LEVEL_RADIUS: u32 = 0;
+
+    pub(crate) const LEVEL_CEN_OFFSET: u32 = 4;
+
+    pub(crate) const LEVEL_INDEX_OFFSET: u32 = 8;
+
+    /// The stack frame size.
+    pub(crate) const FRAME: u32 = 0x100;
+
+    /// Where a child call returns to.
+    pub(crate) const RET_CHILD: u32 = 0x0032_d368;
+
+    /// The child-loop head (the event check resumes there).
+    pub(crate) const LOOP_HEAD: u32 = 0x0032_d2e0;
+
+    /// This function's entry.
+    pub(crate) const ENTRY: u32 = 0x0032_d208;
+}
+
+/// `RiderSphereTree_Assign(tree)` (0x329a28).
+pub(crate) const RIDER_SPHERE_TREE_ASSIGN: Callee = Callee {
+    addr: 0x0032_9a28,
+    f: ee::s10::f_00329a28,
+};
+
+/// `RiderSphereTree* RiderSphereTree_ctor_copy(RiderSphereTree* t)`
+/// (0x329938): sets the tree up by `RiderSphereTree_Assign` and returns it.
+pub fn rider_sphere_tree_ctor_copy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x13;
+        frame.save(c, S0, 0x10);
+        c.g[V1][0] = u64::MAX;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = c.g[S0][0];
+        RIDER_SPHERE_TREE_ASSIGN.call(c, 0x0032_9958)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `int RLE_Decode(u8* dst, const s8* src)` (0x32b620): decodes the
+/// signed-header run-length stream at `src` into `dst`. A header `h >= 0`
+/// repeats the next byte `h + 1` times; `h < 0` copies the next `-h`
+/// bytes; a zero header ends the stream. Returns the bytes written.
+pub fn rle_decode(c: &mut Cpu) {
+    c.cycles += 2;
+    let has_src = c.g[A1][0] != 0;
+    c.g[A2][0] = c.g[A0][0];
+    if !has_src {
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[A3][0] = Addr(c.g[A1][0] as u32).lb(c);
+    loop {
+        c.cycles += 2;
+        let repeat = (c.g[A3][0] as i64) >= 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+        if repeat {
+            c.cycles += 2;
+            let end = c.g[A3][0] == 0;
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+            if end {
+                break;
+            }
+            c.cycles += 1;
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = Addr(c.g[A1][0] as u32).lbu(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                let value = c.g[V0][0];
+                Addr(c.g[A2][0] as u32).sb(c, value);
+                let more = c.g[V1][0] != 0;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_b678);
+                    }
+                    continue;
+                }
+                c.cycles += 1;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                break;
+            }
+        } else {
+            c.cycles += 2;
+            c.g[V1][0] = sx(0u32.wrapping_sub(c.g[A3][0] as u32));
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = Addr(c.g[A1][0] as u32).lbu(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                let value = c.g[V0][0];
+                Addr(c.g[A2][0] as u32).sb(c, value);
+                let more = c.g[V1][0] != 0;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_b648);
+                    }
+                    continue;
+                }
+                c.cycles += 2;
+                break;
+            }
+        }
+        c.cycles += 2;
+        if c.g[A3][0] != 0 {
+            c.g[A3][0] = Addr(c.g[A1][0] as u32).lb(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_b638);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+    ret(c);
+}
+
+// Field offsets of the sphere tree node (`self`) and of its tree info.
+/// `t4Vector axis[8]`: one 16-byte axis per child, indexed by child number.
+pub(crate) const SCT_AXIS: u32 = 0x00;
+
+/// `float scale`.
+pub(crate) const SCT_SCALE: u32 = 0x90;
+
+/// `float worstCase`: the closest plane offset found so far.
+pub(crate) const SCT_WORST_CASE: u32 = 0x94;
+
+/// `SphereTreeInfo* treeInfo`.
+pub(crate) const SCT_TREE_INFO: u32 = 0x98;
+
+/// `int sortAxis[8]`: the child order.
+pub(crate) const SCT_SORT_AXIS: u32 = 0x9c;
+
+/// `int depth` of the tree.
+pub(crate) const SCT_INFO_DEPTH: u32 = 0x0c;
+
+/// `Level* levels`, 12 bytes each: radius, cenOffset, indexOffset.
+pub(crate) const SCT_INFO_LEVELS: u32 = 0x20;
+
+/// `unsigned char* bitTree`: one byte per node, bit k set when child k exists.
+pub(crate) const SCT_INFO_BIT_TREE: u32 = 0x28;
+
+pub(crate) const SCT_LEVEL_STRIDE: u32 = 12;
+
+pub(crate) const SCT_LEVEL_CEN_OFFSET: u32 = 4;
+
+pub(crate) const SCT_LEVEL_INDEX_OFFSET: u32 = 8;
+
+/// The node function itself: the recursion into a child.
+pub(crate) const SCT_RECURSE: Callee = Callee {
+    addr: 0x0032_d470,
+    f: ee::s11::f_0032d470,
+};
+
+/// `PointInTriangle` (0x32d440): is the plane point inside the triangle.
+pub(crate) const SCT_POINT_IN_TRIANGLE: Callee = Callee {
+    addr: 0x0032_d440,
+    f: ee::s11::f_0032d440,
+};
+
+/// `base + off` for a register: the address `off(reg)` as the compiled code
+/// forms it (32-bit wrap).
+#[inline]
+pub(crate) fn sct_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// `void SphereTree_CollideTriangleNode(SphereTree* self, t4Vector* p1,
+/// t4Vector* p2, t4Vector* p3, t4Vector* uNorm, t4Vector* pos, int depth,
+/// int base, t4Vector* outA, t4Vector* outB)` (0x32d470): tests one node of
+/// the sphere tree against a triangle. The plane distance of `pos` is
+/// compared with the node's sphere (level radius times scale) and with
+/// `worstCase`; the sphere's plane point is tested against the triangle, and
+/// a leaf (or a node the triangle misses) that is the closest so far stores
+/// its normal and plane point into `outA`/`outB` and raises `worstCase`. An
+/// inner node recurses into its children, in `sortAxis` order, for the bits
+/// set in its byte.
+pub fn sphere_tree_collide_triangle_node(c: &mut Cpu) {
+    guest(c, sct_body);
+}
+
+pub(crate) fn sct_body(c: &mut Cpu) -> Flow {
+    'b_32da0c: {
+        'b_32d53c: {
+            c.cycles += 46;
+            c.g[SP][0] = sx(sp(c).wrapping_sub(0x140));
+            c.g[V1][0] = 0xc;
+            c.sq(21, sct_at(c, SP, 0xd0));
+            c.sq(30, sct_at(c, SP, 0xa0));
+            c.g[S5][0] = c.g[A1][0];
+            c.sq(17, sct_at(c, SP, 0x110));
+            c.g[FP][0] = c.g[T1][0];
+            c.sq(19, sct_at(c, SP, 0xf0));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(20, sct_at(c, SP, 0xe0));
+            c.g[S3][0] = c.g[T0][0];
+            c.sq(23, sct_at(c, SP, 0xb0));
+            c.g[S4][0] = c.g[T2][0];
+            c.swc1(20, sct_at(c, SP, 0x130));
+            // depth * 12: the level's offset in `levels`.
+            c.mult(0, 3, 20, 3);
+            c.sq(16, sct_at(c, SP, 0x120));
+            c.g[S7][0] = c.g[A2][0];
+            c.sq(18, sct_at(c, SP, 0x100));
+            c.sq(22, sct_at(c, SP, 0xc0));
+            c.sd(sct_at(c, SP, 0x90), c.g[RA][0]);
+            c.swc1(21, sct_at(c, SP, 0x138));
+            c.lqc2(3, c.g[FP][0] as u32);
+            c.lqc2(4, c.g[S5][0] as u32);
+            // planePoint offset: pos - point1.
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, sct_at(c, SP, 0x20));
+            c.lq(2, sct_at(c, SP, 0x20));
+            c.g[A0][0] = c.lw(sct_at(c, S1, SCT_TREE_INFO));
+            c.lwc1(1, sct_at(c, S1, SCT_SCALE));
+            c.sq(2, sct_at(c, SP, 0x10));
+            c.sw(sct_at(c, SP, 0x80), c.g[A3][0]);
+            c.lqc2(3, c.g[S3][0] as u32);
+            c.lqc2(5, sct_at(c, SP, 0x10));
+            // planeDist = Dot(uNorm, pos - point1).
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(2, 4);
+            c.mtc1(2, 21);
+            c.sw(sct_at(c, SP, 0x84), c.g[T3][0]);
+            c.mov_s(2, 21);
+            c.g[V0][0] = c.lw(sct_at(c, A0, SCT_INFO_LEVELS));
+            c.g[V1][0] = sx(sct_at(c, V1, 0).wrapping_add(c.g[V0][0] as u32));
+            // levelRadius = levels[depth].radius * self->scale.
+            c.lwc1(0, c.g[V1][0] as u32);
+            let t = c.g[S4][0] != 0u64;
+            c.mul_s(20, 0, 1);
+            if t {
+                break 'b_32d53c;
+            } else {
+                // depth 0: a triangle behind the plane is not hit.
+                c.cycles += 5;
+                c.mtc1(0, 0);
+                c.c_lt_s(21, 0);
+                let t = c.fcc();
+                c.lq(16, sct_at(c, SP, 0x120));
+                if t {
+                    break 'b_32da0c;
+                } else {
+                    break 'b_32d53c;
+                }
+            }
+        }
+        'b_32da08: {
+            // if (!(planeDist < levelRadius + worstCase)) return;
+            c.cycles += 6;
+            c.lwc1(0, sct_at(c, S1, SCT_WORST_CASE));
+            c.add_s(0, 20, 0);
+            c.c_lt_s(21, 0);
+            let t = !c.fcc();
+            c.g[S0][0] = 0u64;
+            if t {
+                break 'b_32da08;
+            } else {
+                // leaf (S0 = 1) unless the node has children below depth 3.
+                'b_32d58c: {
+                    'b_32d588: {
+                        c.cycles += 8;
+                        c.g[V0][0] = c.lw(sct_at(c, A0, SCT_INFO_BIT_TREE));
+                        c.g[V1][0] = c.lw(sct_at(c, A0, SCT_INFO_DEPTH));
+                        c.g[A0][0] = c.lw(sct_at(c, SP, 0x84));
+                        c.g[V1][0] = ((c.g[S4][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V0][0] = c.lbu(c.g[V0][0] as u32);
+                        let t = c.g[V1][0] == 0u64;
+                        c.sw(sct_at(c, SP, 0x88), c.g[V0][0]);
+                        if t {
+                            break 'b_32d588;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = ((c.g[S4][0] as i64) < 3i64) as u64;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = c.lw(sct_at(c, SP, 0x88));
+                            if t {
+                                break 'b_32d588;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] != 0u64;
+
+                                if t {
+                                    break 'b_32d58c;
+                                } else {
+                                    break 'b_32d588;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[S0][0] = 0x1;
+                    break 'b_32d58c;
+                }
+                // The triangle test of the sphere (PointInTriangle on the
+                // plane point), then the edge tests when it misses.
+                'b_32d8dc: {
+                    c.cycles += 22;
+                    c.mfc1(2, 2);
+                    c.lqc2(4, c.g[S3][0] as u32);
+                    c.qmtc2(2, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, sct_at(c, SP, 0x30));
+                    c.g[A0][0] = c.g[S1][0];
+                    c.lq(2, sct_at(c, SP, 0x30));
+                    c.g[A1][0] = c.g[S5][0];
+                    c.g[A3][0] = c.lw(sct_at(c, SP, 0x80));
+                    c.g[A2][0] = c.g[S7][0];
+                    c.sq(2, sct_at(c, SP, 0x20));
+                    c.g[T0][0] = sx(sct_at(c, SP, 0x10));
+                    c.lqc2(3, c.g[FP][0] as u32);
+                    c.lqc2(4, sct_at(c, SP, 0x20));
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, sct_at(c, SP, 0x30));
+                    c.mov_s(12, 20);
+                    c.lq(2, sct_at(c, SP, 0x30));
+                    c.sq(2, sct_at(c, SP, 0x10));
+                    SCT_POINT_IN_TRIANGLE.call(c, 0x0032_d5dc)?;
+                    let t = c.g[V0][0] != 0u64;
+
+                    if t {
+                        break 'b_32d8dc;
+                    } else {
+                        c.cycles += 2;
+                        if c.g[S0][0] != 0u64 {
+                            c.lq(16, sct_at(c, SP, 0x120));
+                            break 'b_32da0c;
+                        } else {
+                            c.cycles += 6;
+                            c.g[AT][0] = 0x41a00000;
+                            c.mtc1(1, 0);
+                            c.c_lt_s(20, 0);
+                            if c.fcc() {
+                                c.lq(16, sct_at(c, SP, 0x120));
+                                break 'b_32da0c;
+                            } else {
+                                c.cycles += 19;
+                                c.lqc2(3, c.g[FP][0] as u32);
+                                c.lqc2(4, c.g[S5][0] as u32);
+                                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                                c.sqc2(5, sct_at(c, SP, 0x30));
+                                c.mul_s(3, 20, 20);
+                                c.lq(2, sct_at(c, SP, 0x30));
+                                c.sq(2, sct_at(c, SP, 0x20));
+                                c.lqc2(3, sct_at(c, SP, 0x20));
+                                c.lqc2(5, sct_at(c, SP, 0x20));
+                                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                c.qmfc2(3, 4);
+                                c.mtc1(3, 5);
+                                c.c_lt_s(3, 5);
+                                let t = !c.fcc();
+                                if t {
+                                    break 'b_32d8dc;
+                                } else {
+                                    'b_32d70c: {
+                                        'b_32d708: {
+                                            c.cycles += 31;
+                                            c.lqc2(3, c.g[S7][0] as u32);
+                                            c.lqc2(4, c.g[S5][0] as u32);
+                                            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                                            c.sqc2(5, sct_at(c, SP, 0x40));
+                                            c.mtc1(0, 1);
+                                            c.lq(2, sct_at(c, SP, 0x40));
+                                            c.sq(2, sct_at(c, SP, 0x30));
+                                            c.lqc2(3, sct_at(c, SP, 0x30));
+                                            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                                            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                            c.vu0().sqrt(4, 0);
+                                            c.vu0().waitq();
+                                            c.cfc2(3, 22);
+                                            c.mtc1(3, 4);
+                                            c.lqc2(3, sct_at(c, SP, 0x20));
+                                            c.lqc2(5, sct_at(c, SP, 0x30));
+                                            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                                            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                            c.qmfc2(2, 4);
+                                            c.mtc1(2, 0);
+                                            c.div_s(2, 0, 4);
+                                            c.c_lt_s(2, 1);
+                                            let t = c.fcc();
+                                            c.g[V0][0] = 0u64;
+                                            if t {
+                                                break 'b_32d708;
+                                            } else {
+                                                c.cycles += 6;
+                                                c.mul_s(0, 2, 2);
+                                                c.sub_s(0, 5, 0);
+                                                c.c_lt_s(3, 0);
+                                                let t = c.fcc();
+                                                c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                                if t {
+                                                    break 'b_32d70c;
+                                                } else {
+                                                    c.cycles += 8;
+                                                    c.sub_s(0, 3, 0);
+                                                    c.g[V0][0] = 0x1;
+                                                    c.sqrt_s(0, 0);
+                                                    c.sub_s(0, 2, 0);
+                                                    c.c_lt_s(4, 0);
+                                                    let t = !c.fcc();
+                                                    c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                                    if t {
+                                                        break 'b_32d70c;
+                                                    } else {
+                                                        c.cycles += 1;
+                                                        c.g[V0][0] = 0u64;
+                                                        break 'b_32d708;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        c.cycles += 1;
+                                        c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                        break 'b_32d70c;
+                                    }
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V1][0] = c.lw(sct_at(c, SP, 0x80));
+                                    if t {
+                                        break 'b_32d8dc;
+                                    } else {
+                                        'b_32d7d0: {
+                                            'b_32d7cc: {
+                                                c.cycles += 31;
+                                                c.lqc2(3, c.g[V1][0] as u32);
+                                                c.lqc2(4, c.g[S5][0] as u32);
+                                                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                                                c.sqc2(5, sct_at(c, SP, 0x50));
+                                                c.mtc1(0, 1);
+                                                c.lq(2, sct_at(c, SP, 0x50));
+                                                c.sq(2, sct_at(c, SP, 0x40));
+                                                c.lqc2(3, sct_at(c, SP, 0x40));
+                                                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                                c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                                                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                                c.vu0().sqrt(4, 0);
+                                                c.vu0().waitq();
+                                                c.cfc2(3, 22);
+                                                c.mtc1(3, 4);
+                                                c.lqc2(3, sct_at(c, SP, 0x20));
+                                                c.lqc2(5, sct_at(c, SP, 0x40));
+                                                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                                c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                                                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                                c.qmfc2(2, 4);
+                                                c.mtc1(2, 0);
+                                                c.div_s(2, 0, 4);
+                                                c.c_lt_s(2, 1);
+                                                let t = c.fcc();
+                                                c.g[V0][0] = 0u64;
+                                                if t {
+                                                    break 'b_32d7cc;
+                                                } else {
+                                                    c.cycles += 6;
+                                                    c.mul_s(0, 2, 2);
+                                                    c.sub_s(0, 5, 0);
+                                                    c.c_lt_s(3, 0);
+                                                    let t = c.fcc();
+                                                    c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                                    if t {
+                                                        break 'b_32d7d0;
+                                                    } else {
+                                                        c.cycles += 8;
+                                                        c.sub_s(0, 3, 0);
+                                                        c.g[V0][0] = 0x1;
+                                                        c.sqrt_s(0, 0);
+                                                        c.sub_s(0, 2, 0);
+                                                        c.c_lt_s(4, 0);
+                                                        let t = !c.fcc();
+                                                        c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                                        if t {
+                                                            break 'b_32d7d0;
+                                                        } else {
+                                                            c.cycles += 1;
+                                                            c.g[V0][0] = 0u64;
+                                                            break 'b_32d7cc;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 1;
+                                            c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                            break 'b_32d7d0;
+                                        }
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+
+                                        if t {
+                                            break 'b_32d8dc;
+                                        } else {
+                                            'b_32d8d4: {
+                                                'b_32d8d0: {
+                                                    c.cycles += 47;
+                                                    c.lqc2(3, c.g[FP][0] as u32);
+                                                    c.lqc2(4, c.g[S7][0] as u32);
+                                                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                                                    c.sqc2(5, sct_at(c, SP, 0x60));
+                                                    c.mtc1(0, 1);
+                                                    c.lq(2, sct_at(c, SP, 0x60));
+                                                    c.g[A0][0] = c.lw(sct_at(c, SP, 0x80));
+                                                    c.sq(2, sct_at(c, SP, 0x50));
+                                                    c.lqc2(3, sct_at(c, SP, 0x50));
+                                                    c.lqc2(5, sct_at(c, SP, 0x50));
+                                                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                                    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                                                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                                    c.qmfc2(3, 4);
+                                                    c.mtc1(3, 5);
+                                                    c.lqc2(3, c.g[A0][0] as u32);
+                                                    c.lqc2(4, c.g[S7][0] as u32);
+                                                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                                                    c.sqc2(5, sct_at(c, SP, 0x70));
+                                                    c.lq(2, sct_at(c, SP, 0x70));
+                                                    c.sq(2, sct_at(c, SP, 0x60));
+                                                    c.lqc2(3, sct_at(c, SP, 0x60));
+                                                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                                    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                                                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                                    c.vu0().sqrt(4, 0);
+                                                    c.vu0().waitq();
+                                                    c.cfc2(3, 22);
+                                                    c.mtc1(3, 4);
+                                                    c.lqc2(3, sct_at(c, SP, 0x50));
+                                                    c.lqc2(5, sct_at(c, SP, 0x60));
+                                                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                                                    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                                                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                                                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                                                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                                                    c.qmfc2(2, 4);
+                                                    c.mtc1(2, 0);
+                                                    c.div_s(2, 0, 4);
+                                                    c.c_lt_s(2, 1);
+                                                    let t = c.fcc();
+                                                    c.g[V0][0] = 0u64;
+                                                    if t {
+                                                        break 'b_32d8d0;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.mul_s(0, 2, 2);
+                                                        c.sub_s(0, 5, 0);
+                                                        c.c_lt_s(3, 0);
+                                                        let t = c.fcc();
+                                                        c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                                        if t {
+                                                            break 'b_32d8d4;
+                                                        } else {
+                                                            c.cycles += 8;
+                                                            c.sub_s(0, 3, 0);
+                                                            c.g[V0][0] = 0x1;
+                                                            c.sqrt_s(0, 0);
+                                                            c.sub_s(0, 2, 0);
+                                                            c.c_lt_s(4, 0);
+                                                            let t = !c.fcc();
+                                                            c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                                            if t {
+                                                                break 'b_32d8d4;
+                                                            } else {
+                                                                c.cycles += 1;
+                                                                c.g[V0][0] = 0u64;
+                                                                break 'b_32d8d0;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 1;
+                                                c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                                                break 'b_32d8d4;
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] != 0u64 {
+                                                c.lq(16, sct_at(c, SP, 0x120));
+                                                break 'b_32da0c;
+                                            } else {
+                                                break 'b_32d8dc;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Inner nodes recurse into the children (sortAxis order, the
+                // child bit set in the node's byte); a leaf takes the plane.
+                'b_32d9bc: {
+                    c.cycles += 2;
+                    if c.g[S0][0] != 0u64 {
+                        c.sub_s(12, 21, 20);
+                        break 'b_32d9bc;
+                    } else {
+                        c.cycles += 9;
+                        c.g[V0][0] = 0xc;
+                        c.g[V1][0] = c.lw(sct_at(c, S1, SCT_TREE_INFO));
+                        c.mult(0, 2, 20, 2);
+                        c.g[S0][0] = sx(sct_at(c, S1, SCT_SORT_AXIS));
+                        c.g[A0][0] = c.lw(sct_at(c, V1, SCT_INFO_LEVELS));
+                        c.g[S2][0] = 0x7;
+                        c.g[S6][0] = c.g[V0][0];
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.lwc1(20, sct_at(c, V0, SCT_LEVEL_STRIDE + SCT_LEVEL_CEN_OFFSET));
+                        'l_32d908: loop {
+                            'b_32d9a8: {
+                                c.cycles += 6;
+                                c.g[T4][0] = c.lw(c.g[S0][0] as u32);
+                                c.g[V1][0] = c.lw(sct_at(c, SP, 0x88));
+                                c.g[V0][0] = sx(((c.g[V1][0] as u32) as i32
+                                    >> ((c.g[T4][0] as u32) & 31))
+                                    as u32);
+                                c.g[V0][0] = c.g[V0][0] & 0x1;
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = sx((c.g[T4][0] as u32) << 4);
+                                if t {
+                                    break 'b_32d9a8;
+                                } else {
+                                    c.cycles += 34;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[V0][0] =
+                                        sx(sct_at(c, V0, SCT_AXIS).wrapping_add(c.g[S1][0] as u32));
+                                    c.g[T4][0] = sx(sct_at(c, T4, 1));
+                                    c.mfc1(3, 20);
+                                    c.lqc2(4, c.g[V0][0] as u32);
+                                    c.qmtc2(3, 3);
+                                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                                    c.sqc2(5, sct_at(c, SP, 0x40));
+                                    c.g[A1][0] = c.g[S5][0];
+                                    c.lq(2, sct_at(c, SP, 0x40));
+                                    c.g[A2][0] = c.g[S7][0];
+                                    c.g[A3][0] = c.lw(sct_at(c, SP, 0x80));
+                                    c.g[T0][0] = c.g[S3][0];
+                                    c.sq(2, sct_at(c, SP, 0x30));
+                                    c.g[T1][0] = sx(sct_at(c, SP, 0x20));
+                                    c.lqc2(3, c.g[FP][0] as u32);
+                                    c.lqc2(4, sct_at(c, SP, 0x30));
+                                    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                                    c.sqc2(5, sct_at(c, SP, 0x40));
+                                    c.g[T2][0] = sx(sct_at(c, S4, 1));
+                                    c.lq(3, sct_at(c, SP, 0x40));
+                                    c.g[T3][0] = c.lw(sct_at(c, S1, SCT_TREE_INFO));
+                                    c.sq(3, sct_at(c, SP, 0x20));
+                                    c.g[V1][0] = c.lw(sct_at(c, SP, 0x148));
+                                    c.g[V0][0] = c.lw(sct_at(c, T3, SCT_INFO_LEVELS));
+                                    c.g[V0][0] =
+                                        sx(sct_at(c, S6, 0).wrapping_add(c.g[V0][0] as u32));
+                                    c.g[T3][0] = c.lw(sct_at(c, V0, SCT_LEVEL_INDEX_OFFSET));
+                                    c.g[V0][0] = c.lw(sct_at(c, SP, 0x140));
+                                    c.sw(sct_at(c, SP, 0x8), c.g[V1][0]);
+                                    c.sw(sct_at(c, SP, 0), c.g[V0][0]);
+                                    c.g[V0][0] = c.lw(sct_at(c, SP, 0x84));
+                                    c.lo[0] = c.g[V0][0];
+                                    // child base = (k + 1) * indexOffset + base
+                                    c.madd(0, 11, 12, 11);
+                                    SCT_RECURSE.call(c, 0x0032_d9a8)?;
+                                    break 'b_32d9a8;
+                                }
+                            }
+                            c.cycles += 3;
+                            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                            let t = (c.g[S2][0] as i64) >= 0;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0032_d908);
+                                }
+                                continue 'l_32d908;
+                            } else {
+                                c.cycles += 2;
+                                c.lq(16, sct_at(c, SP, 0x120));
+                                break 'b_32da0c;
+                            }
+                        }
+                    }
+                }
+                // The leaf (or the last child): the plane offset becomes the
+                // new closest distance when it is smaller than worstCase.
+                c.cycles += 5;
+                c.lwc1(0, sct_at(c, S1, SCT_WORST_CASE));
+                c.c_lt_s(12, 0);
+                let t = !c.fcc();
+                c.lq(16, sct_at(c, SP, 0x120));
+                if t {
+                    break 'b_32da0c;
+                } else {
+                    c.cycles += 14;
+                    c.neg_s(0, 12);
+                    c.mfc1(2, 0);
+                    c.lqc2(4, c.g[S3][0] as u32);
+                    c.qmtc2(2, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, sct_at(c, SP, 0x30));
+                    c.lq(3, sct_at(c, SP, 0x30));
+                    c.g[A0][0] = c.lw(sct_at(c, SP, 0x140));
+                    c.lq(2, sct_at(c, SP, 0x10));
+                    c.sq(3, c.g[A0][0] as u32);
+                    c.g[A0][0] = c.lw(sct_at(c, SP, 0x148));
+                    c.sq(2, c.g[A0][0] as u32);
+                    c.swc1(12, sct_at(c, S1, SCT_WORST_CASE));
+                    c.sq(3, sct_at(c, SP, 0x20));
+                    break 'b_32da08;
+                }
+            }
+        }
+        c.cycles += 1;
+        c.lq(16, sct_at(c, SP, 0x120));
+        break 'b_32da0c;
+    }
+    c.cycles += 13;
+    c.lq(17, sct_at(c, SP, 0x110));
+    c.lq(18, sct_at(c, SP, 0x100));
+    c.lq(19, sct_at(c, SP, 0xf0));
+    c.lq(20, sct_at(c, SP, 0xe0));
+    c.lq(21, sct_at(c, SP, 0xd0));
+    c.lq(22, sct_at(c, SP, 0xc0));
+    c.lq(23, sct_at(c, SP, 0xb0));
+    c.lq(30, sct_at(c, SP, 0xa0));
+    c.g[RA][0] = c.ld(sct_at(c, SP, 0x90));
+    c.lwc1(21, sct_at(c, SP, 0x138));
+    c.lwc1(20, sct_at(c, SP, 0x130));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sct_at(c, SP, 0x140));
+    c.pc = t;
+    Ok(())
+}
+
+/// `float Vec3_NegDot(const Vec3* a, const Vec3* b)` (0x3300f8): the negated
+/// dot product of the vectors at `a0` and `a1`, computed on VU0 and returned
+/// in f0.
+pub fn vec3_neg_dot(c: &mut Cpu) {
+    c.cycles += 11;
+    c.lqc2(3, c.g[A0][0] as u32);
+    c.lqc2(5, c.g[A1][0] as u32);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(2, 4);
+    c.mtc1(2, 0);
+    c.neg_s(0, 0);
+    ret(c);
+}
+
+/// `int CollSegment_CollideTriangle2Sided(seg, ..., t0 = triangle vector)`
+/// (0x32e5e8). The segment's vector at `seg+0x70` is dotted with the vector
+/// at `t0` on VU0. When that dot is below zero, the vector at `t0` is
+/// negated (copied to the stack) and passed on; the callback at `+0x24` of
+/// the object at `seg+0x50` is then called with `a0 = seg + lh(obj+0x20)`.
+pub fn coll_segment_collide_triangle_2sided(c: &mut Cpu) {
+    let frame = Frame::open(c, 0x30);
+    guest(c, |c| coll_segment_body(c, frame));
+}
+
+pub(crate) fn coll_segment_body(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 17;
+    c.g[T4][0] = c.g[A0][0];
+    frame.save_ra(c, 0x20);
+    c.mtc1(0, 0);
+    c.lqc2(3, (c.g[T4][0] as u32).wrapping_add(0x70));
+    c.lqc2(5, c.g[T0][0] as u32);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(2, 4);
+    c.mtc1(2, 1);
+    c.c_lt_s(1, 0);
+    let negative = c.fcc();
+    c.g[V1][0] = c.lw((c.g[T4][0] as u32).wrapping_add(0x50));
+    if negative {
+        c.cycles += 13;
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 0);
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+        c.mfc1(2, 0);
+        c.lqc2(4, c.g[T0][0] as u32);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        let spill = frame.at(c, 0x10);
+        c.sqc2(5, spill);
+        c.lq(2, spill);
+        c.g[A0][0] = sx((c.g[T4][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[T0][0] = c.g[SP][0];
+        let copy = frame.at(c, 0);
+        c.sq(2, copy);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+    } else {
+        c.cycles += 4;
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = sx((c.g[T4][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    }
+    c.cycles += 5;
+    let target = c.g[V0][0] as u32;
+    call_ptr(c, target, 0x0032_e678)?;
+    frame.restore_ra(c, 0x20);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void SphereTree_SortChildOrder(SphereTree* node, Vec4* dir)` (0x32db40).
+/// Four child centres at `node+0..0x40` are projected on `dir` (scaled by
+/// -1000 on VU0) and truncated to int keys; the keys are stored at
+/// `node+0x9c` (index order) and `node+0xb8` (descending), then sorted
+/// through `ShellSortDesc_KeyVal` (0x32da40) on the stack.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn sphere_tree_sort_child_order(c: &mut Cpu) {
+    let frame = Frame::open(c, 0x50);
+    guest(c, |c| sort_child_order_body(c, frame));
+}
+
+pub(crate) fn sort_child_order_body(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 20;
+    c.g[AT][0] = 0xffff_ffff_c47a_0000;
+    c.mtc1(1, 0);
+    frame.save_ra(c, 0x40);
+    c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x9c));
+    c.mfc1(2, 0);
+    c.lqc2(4, c.g[A1][0] as u32);
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let spill = frame.at(c, 0x30);
+    c.sqc2(5, spill);
+    c.g[T2][0] = 0;
+    c.lq(2, spill);
+    c.g[A1][0] = c.g[A0][0];
+    c.g[T4][0] = 7;
+    c.g[T3][0] = sx((c.g[A0][0] as u32).wrapping_add(0xb8));
+    let scaled = frame.at(c, 0x20);
+    c.sq(2, scaled);
+    c.g[T1][0] = c.g[A2][0];
+    c.g[T0][0] = sx(frame.at(c, 0x1c));
+    c.g[A3][0] = sx(frame.at(c, 0));
+    loop {
+        c.cycles += 25;
+        c.lqc2(3, c.g[A1][0] as u32);
+        c.lqc2(5, scaled);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.qmfc2(2, 4);
+        c.mtc1(2, 0);
+        c.g[V1][0] = sx((c.g[T4][0] as u32).wrapping_sub(c.g[T2][0] as u32));
+        c.cvt_w_s(1, 0);
+        c.mfc1(4, 1);
+        c.sw(c.g[T1][0] as u32, c.g[T2][0]);
+        c.sw(c.g[T3][0] as u32, c.g[V1][0]);
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+        c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x4));
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = sx(0u32.wrapping_sub(c.g[A0][0] as u32));
+        c.sw(c.g[A3][0] as u32, c.g[A0][0]);
+        c.sw(c.g[T0][0] as u32, c.g[V0][0]);
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x4));
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x4));
+        c.g[V0][0] = ((c.g[T2][0] as i64) < 4i64) as u64;
+        let more = c.g[V0][0] != 0u64;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_db90);
+        }
+    }
+    c.cycles += 6;
+    c.g[A0][0] = 0x8;
+    c.g[A1][0] = c.g[SP][0];
+    call_ptr(c, 0x0032_da40, 0x0032_dc00)?;
+    frame.restore_ra(c, 0x40);
+    frame.close(c);
+    Ok(())
+}
+
+/// `base + off` as a 32-bit guest address (the `off(reg)` of the generated code).
+pub(crate) fn sphere_addr(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// `int RLE_Encode(out, in, len, minRun)` (0x32b468, `sphTreeRLE`): run-length
+/// encodes `len` bytes of `in` into `out`. A run of at least `minRun` bytes (2
+/// at least, at most 127) is written as `count, byte`; other bytes go out as a
+/// literal stretch `-n, bytes...` (at most 127). A zero byte ends the output,
+/// and the result is the output length.
+pub fn rle_encode(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = 0x1;
+        frame.save(c, S3, 0x40);
+        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A3][0] as i64)) as u64;
+        frame.save(c, S5, 0x20);
+        c.g[S3][0] = c.g[A1][0]; // in
+        frame.save(c, S4, 0x30);
+        c.g[S5][0] = 0x2; // min run
+        frame.save(c, S6, 0x10);
+        c.g[S4][0] = sx(sphere_addr(c.g[S3][0], c.g[A2][0] as u32)); // end = in + len
+        frame.save(c, S1, 0x60);
+        c.g[S6][0] = c.g[A0][0]; // out (start)
+        if c.g[V0][0] != 0 {
+            c.g[S5][0] = c.g[A3][0];
+        }
+        frame.save(c, S0, 0x70);
+        frame.save(c, S2, 0x50);
+        c.g[S1][0] = c.g[S6][0]; // out (cursor)
+        frame.save_ra(c, 0);
+
+        'outer: loop {
+            // while (in < end)
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[S3][0] < c.g[S4][0]) as u64;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A1][0] = c.g[S3][0];
+            if t {
+                break 'outer;
+            }
+            // A run starting at `in`, or a literal stretch: S0 = run, S2 = literal length.
+            'run_or_lit: {
+                c.cycles += 3;
+                c.g[S0][0] = 0;
+                let t = c.g[V0][0] == 0u64;
+                c.g[S2][0] = 0;
+                if t {
+                    break 'run_or_lit;
+                }
+                c.cycles += 1;
+                c.g[A0][0] = c.lbu(sphere_addr(c.g[A1][0], 0));
+                'scan: loop {
+                    // Measure the run at the cursor.
+                    'run_len: {
+                        c.cycles += 4;
+                        c.g[S0][0] = 0x1;
+                        c.g[V0][0] = c.lbu(sphere_addr(c.g[A1][0], 0x1));
+                        let t = c.g[A0][0] != c.g[V0][0];
+                        c.g[V1][0] = sx(sphere_addr(c.g[A1][0], 0x1));
+                        if t {
+                            break 'run_len;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[V1][0] < c.g[S4][0]) as u64;
+                        let t = c.g[V0][0] == 0u64;
+                        if t {
+                            break 'run_len;
+                        }
+                        c.cycles += 1;
+                        c.g[V1][0] = sx(sphere_addr(c.g[V1][0], 0x1));
+                        'extend: loop {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lbu(sphere_addr(c.g[V1][0], 0));
+                            let t = c.g[A0][0] != c.g[V0][0];
+                            c.g[S0][0] = sx(sphere_addr(c.g[S0][0], 0x1));
+                            if t {
+                                break 'run_len;
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = (c.g[V1][0] < c.g[S4][0]) as u64;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = ((c.g[S0][0] as i64) < 127i64) as u64;
+                            if t {
+                                break 'run_len;
+                            }
+                            c.cycles += 2;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V1][0] = sx(sphere_addr(c.g[V1][0], 0x1));
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0032_b4e8);
+                                }
+                                continue 'extend;
+                            } else {
+                                break 'run_len;
+                            }
+                        }
+                    }
+                    // Clamp the run to the input, and drop a run of one byte at the end.
+                    'run_clip: {
+                        c.cycles += 2;
+                        let t = c.g[V1][0] != c.g[S4][0];
+                        c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S5][0] as i64)) as u64;
+                        if t {
+                            break 'run_clip;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[S0][0] as i64) < 2i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S5][0] as i64)) as u64;
+                        if t {
+                            break 'run_clip;
+                        }
+                        c.cycles += 3;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                        c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x1));
+                        c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S5][0] as i64)) as u64;
+                    }
+                    // A run that is long enough ends the literal stretch.
+                    'run_end: {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] == 0u64;
+                        if t {
+                            break 'run_end;
+                        }
+                        c.cycles += 3;
+                        c.g[S2][0] = sx(sphere_addr(c.g[S2][0], c.g[S0][0] as u32));
+                        c.g[A1][0] = c.g[V1][0];
+                        c.g[S0][0] = 0u64;
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < 127i64) as u64;
+                    if t {
+                        break 'run_or_lit;
+                    }
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = (c.g[A1][0] < c.g[S4][0]) as u64;
+                    if t {
+                        break 'run_or_lit;
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[A0][0] = c.lbu(sphere_addr(c.g[A1][0], 0));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0032_b4c8);
+                        }
+                        continue 'scan;
+                    } else {
+                        break 'run_or_lit;
+                    }
+                }
+            }
+            // Emit: a literal stretch (-n, bytes) when S2 is set, then a run (count, byte).
+            'emit: {
+                c.cycles += 5;
+                c.g[V1][0] = ((c.g[S2][0] as i64) < 128i64) as u64;
+                c.g[V0][0] = 0x7f;
+                if c.g[V1][0] == 0 {
+                    c.g[S2][0] = c.g[V0][0];
+                }
+                let t = c.g[S2][0] == 0u64;
+                c.g[A0][0] = c.g[S1][0];
+                if t {
+                    break 'emit;
+                }
+                c.cycles += 8;
+                c.g[A1][0] = sx(0u32.wrapping_sub(c.g[S2][0] as u32));
+                c.g[A2][0] = 0x1;
+                c.g[S1][0] = sx(sphere_addr(c.g[S1][0], 0x1));
+                call_ptr(c, 0x003e_6448, 0x0032_b578)?;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+                let t = c.g[S2][0] == c.g[V0][0];
+                if t {
+                    break 'emit;
+                }
+                c.cycles += 2;
+                c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+                'copy: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lbu(sphere_addr(c.g[S3][0], 0));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[S3][0] = sx(sphere_addr(c.g[S3][0], 0x1));
+                    c.sb(sphere_addr(c.g[S1][0], 0), c.g[V0][0]);
+                    let t = c.g[S2][0] != c.g[V1][0];
+                    c.g[S1][0] = sx(sphere_addr(c.g[S1][0], 0x1));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0032_b590);
+                        }
+                        continue 'copy;
+                    } else {
+                        break 'emit;
+                    }
+                }
+            }
+            c.cycles += 2;
+            let t = c.g[S0][0] == 0u64;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_b4ac);
+                }
+                continue 'outer;
+            }
+            c.cycles += 11;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A2][0] = 0x1;
+            call_ptr(c, 0x003e_6448, 0x0032_b5c4)?;
+            c.g[S1][0] = sx(sphere_addr(c.g[S1][0], 0x1));
+            c.g[V0][0] = c.lbu(sphere_addr(c.g[S3][0], 0));
+            c.g[S3][0] = sx(sphere_addr(c.g[S3][0], 0x1));
+            c.sb(sphere_addr(c.g[S1][0], 0), c.g[V0][0]);
+            c.g[S3][0] = sx(sphere_addr(c.g[S3][0], c.g[S0][0] as u32));
+            c.g[S1][0] = sx(sphere_addr(c.g[S1][0], 0x1));
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_b4ac);
+            }
+            continue 'outer;
+        }
+        // The terminating zero byte, then out - start.
+        c.cycles += 16;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0u64;
+        c.g[A2][0] = 0x1;
+        c.g[S1][0] = sx(sphere_addr(c.g[S1][0], 0x1));
+        call_ptr(c, 0x003e_6448, 0x0032_b5f4)?;
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[S6][0] as u32));
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SphereTree_SetTransform(self, mat, scale)` (0x32c648, dev-build
+/// `TransformAbs`): the four axes are the align axes (`gSphTreeAlignAxis`,
+/// 0x4ff640) rotated by `mat` and scaled, their negations fill axes 4..7; the
+/// centre is the rotated root centre times `scale`, and `self->scale = scale`.
+pub fn sphere_tree_set_transform(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[V0][0] = 0x0050_0000;
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 0); // f0 = -1.0
+    let frame = Frame::open(c, 0x40);
+    c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x9c0));
+    c.g[A3][0] = sx(sphere_addr(c.g[A0][0], 0x70));
+    c.g[A2][0] = c.g[A0][0];
+    c.g[T1][0] = 0x3;
+    loop {
+        c.cycles += 33;
+        c.mfc1(2, 12);
+        c.lqc2(4, c.g[T0][0] as u32);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sphere_addr(c.g[SP][0], 0x20));
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x1));
+        c.lq(2, sphere_addr(c.g[SP][0], 0x20));
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x10));
+        c.sq(2, sphere_addr(c.g[SP][0], 0x10));
+        c.lqc2(8, sphere_addr(c.g[SP][0], 0x10));
+        c.lqc2(4, sphere_addr(c.g[A1][0], 0));
+        c.lqc2(5, sphere_addr(c.g[A1][0], 0x10));
+        c.lqc2(6, sphere_addr(c.g[A1][0], 0x20));
+        c.lqc2(7, sphere_addr(c.g[A1][0], 0x30));
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, sphere_addr(c.g[SP][0], 0x20));
+        c.lq(2, sphere_addr(c.g[SP][0], 0x20));
+        c.sq(2, sphere_addr(c.g[A2][0], 0));
+        c.sq(2, sphere_addr(c.g[SP][0], 0));
+        c.mfc1(3, 0);
+        c.lqc2(4, sphere_addr(c.g[A2][0], 0));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sphere_addr(c.g[SP][0], 0x10));
+        c.lq(2, sphere_addr(c.g[SP][0], 0x10));
+        c.g[A2][0] = sx(sphere_addr(c.g[A2][0], 0x10));
+        c.sq(2, sphere_addr(c.g[A3][0], 0));
+        c.sq(2, sphere_addr(c.g[SP][0], 0));
+        let t = (c.g[T1][0] as i64) >= 0;
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x10));
+        if !t {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_c668);
+        }
+    }
+    c.cycles += 32;
+    c.g[V0][0] = c.lw(sphere_addr(c.g[A0][0], 0x98));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 3); // f3 = 1.0
+    c.lwc1(2, sphere_addr(c.g[V0][0], 0x1c));
+    c.lwc1(0, sphere_addr(c.g[V0][0], 0x14));
+    c.lwc1(1, sphere_addr(c.g[V0][0], 0x18));
+    c.mul_s(2, 2, 12);
+    c.mul_s(0, 0, 12);
+    c.swc1(3, sphere_addr(c.g[SP][0], 0x1c));
+    c.mul_s(1, 1, 12);
+    c.swc1(2, sphere_addr(c.g[SP][0], 0x18));
+    c.swc1(0, sphere_addr(c.g[SP][0], 0x10));
+    c.swc1(1, sphere_addr(c.g[SP][0], 0x14));
+    c.swc1(0, sphere_addr(c.g[SP][0], 0x20));
+    c.swc1(1, sphere_addr(c.g[SP][0], 0x24));
+    c.swc1(2, sphere_addr(c.g[SP][0], 0x28));
+    c.lqc2(8, sphere_addr(c.g[SP][0], 0x10));
+    c.lqc2(4, sphere_addr(c.g[A1][0], 0));
+    c.lqc2(5, sphere_addr(c.g[A1][0], 0x10));
+    c.lqc2(6, sphere_addr(c.g[A1][0], 0x20));
+    c.lqc2(7, sphere_addr(c.g[A1][0], 0x30));
+    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+    c.sqc2(12, sphere_addr(c.g[SP][0], 0x30));
+    c.lq(2, sphere_addr(c.g[SP][0], 0x30));
+    c.swc1(12, sphere_addr(c.g[A0][0], 0x90));
+    c.sq(2, sphere_addr(c.g[A0][0], 0x80));
+    c.sq(2, sphere_addr(c.g[SP][0], 0));
+    frame.close(c);
+}
+
+/// `void SphereTree_ApplyTransform(self, mat, scale)` (0x32c770, dev-build
+/// `TransformRel`): the axes and the centre are transformed again by `mat`
+/// and scaled by `scale` (f12) on top of the current ones; `self->scale`
+/// grows by the same factor. The axes' negations are rebuilt as in
+/// [`sphere_tree_set_transform`].
+pub fn sphere_tree_apply_transform(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 0); // f0 = -1.0
+    let frame = Frame::open(c, 0x30);
+    c.g[A3][0] = sx(sphere_addr(c.g[A0][0], 0x70));
+    c.g[A2][0] = c.g[A0][0];
+    c.g[T0][0] = 0x3;
+    loop {
+        c.cycles += 32;
+        c.lqc2(8, c.g[A2][0] as u32);
+        c.lqc2(4, c.g[A1][0] as u32);
+        c.lqc2(5, sphere_addr(c.g[A1][0], 0x10));
+        c.lqc2(6, sphere_addr(c.g[A1][0], 0x20));
+        c.lqc2(7, sphere_addr(c.g[A1][0], 0x30));
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, sphere_addr(c.g[SP][0], 0x20));
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x1));
+        c.lq(2, sphere_addr(c.g[SP][0], 0x20));
+        c.sq(2, sphere_addr(c.g[SP][0], 0x10));
+        c.mfc1(3, 12);
+        c.lqc2(4, sphere_addr(c.g[SP][0], 0x10));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sphere_addr(c.g[SP][0], 0x20));
+        c.lq(2, sphere_addr(c.g[SP][0], 0x20));
+        c.sq(2, sphere_addr(c.g[A2][0], 0));
+        c.sq(2, sphere_addr(c.g[SP][0], 0));
+        c.mfc1(3, 0);
+        c.lqc2(4, sphere_addr(c.g[A2][0], 0));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sphere_addr(c.g[SP][0], 0x10));
+        c.lq(2, sphere_addr(c.g[SP][0], 0x10));
+        c.g[A2][0] = sx(sphere_addr(c.g[A2][0], 0x10));
+        c.sq(2, sphere_addr(c.g[A3][0], 0));
+        c.sq(2, sphere_addr(c.g[SP][0], 0));
+        let t = (c.g[T0][0] as i64) >= 0;
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x10));
+        if !t {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_c788);
+        }
+    }
+    c.cycles += 36;
+    c.lqc2(8, sphere_addr(c.g[A0][0], 0x80));
+    c.lqc2(4, c.g[A1][0] as u32);
+    c.lqc2(5, sphere_addr(c.g[A1][0], 0x10));
+    c.lqc2(6, sphere_addr(c.g[A1][0], 0x20));
+    c.lqc2(7, sphere_addr(c.g[A1][0], 0x30));
+    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+    c.sqc2(12, sphere_addr(c.g[SP][0], 0x20));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 1); // f1 = 1.0
+    c.lq(2, sphere_addr(c.g[SP][0], 0x20));
+    c.lwc1(3, sphere_addr(c.g[A0][0], 0x90));
+    c.sq(2, sphere_addr(c.g[SP][0], 0x10));
+    c.swc1(1, sphere_addr(c.g[SP][0], 0x2c));
+    c.mul_s(3, 3, 12);
+    c.lwc1(0, sphere_addr(c.g[SP][0], 0x10));
+    c.lwc1(1, sphere_addr(c.g[SP][0], 0x14));
+    c.lwc1(2, sphere_addr(c.g[SP][0], 0x18));
+    c.mul_s(0, 0, 12);
+    c.mul_s(1, 1, 12);
+    c.lwc1(4, sphere_addr(c.g[SP][0], 0x1c));
+    c.mul_s(2, 2, 12);
+    c.swc1(3, sphere_addr(c.g[A0][0], 0x90));
+    c.swc1(0, sphere_addr(c.g[SP][0], 0));
+    c.swc1(1, sphere_addr(c.g[SP][0], 0x4));
+    c.swc1(2, sphere_addr(c.g[SP][0], 0x8));
+    c.swc1(4, sphere_addr(c.g[SP][0], 0xc));
+    c.swc1(12, sphere_addr(c.g[SP][0], 0x20));
+    c.lq(2, sphere_addr(c.g[SP][0], 0));
+    c.swc1(12, sphere_addr(c.g[SP][0], 0x24));
+    c.sq(2, sphere_addr(c.g[A0][0], 0x80));
+    c.swc1(12, sphere_addr(c.g[SP][0], 0x28));
+    frame.close(c);
+}
+
+/// `int SphereTree_CollidePlane(self, plane, outPush, outContact)` (0x32c9b8):
+/// builds the tree's buffer when it is compressed, stores the plane's
+/// zero-w copy in the frame for the tree's sort axes, resets `worstCase`
+/// and walks the tree with `SphereTree_checkPlaneCollision`. Returns 1 when
+/// the plane is hit (`worstCase < 0`), else 0.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn sphere_tree_collide_plane(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A2][0];
+        c.g[A0][0] = c.lw(sphere_addr(c.g[S0][0], 0x98)); // treeInfo
+        c.g[V0][0] = c.lw(sphere_addr(c.g[A0][0], 0x8)); // isCompressed
+        c.g[S3][0] = c.g[A3][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            call_ptr(c, 0x0032_df28, 0x0032_c9f4)?; // SphereTree_AllocBuf(treeInfo)
+            c.g[V1][0] = c.lw(sphere_addr(c.g[S0][0], 0x98));
+            c.sw(sphere_addr(c.g[V1][0], 0x28), c.g[V0][0]); // bitTree
+        }
+        c.cycles += 23;
+        // The plane's copy with w cleared, as the sort axes' argument.
+        c.lq(2, sphere_addr(c.g[S1][0], 0));
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.sq(2, sphere_addr(c.g[SP][0], 0x10));
+        c.sw(sphere_addr(c.g[SP][0], 0x1c), 0);
+        c.lq(2, sphere_addr(c.g[SP][0], 0x10));
+        c.sq(2, sphere_addr(c.g[SP][0], 0));
+        call_ptr(c, 0x0032_db40, 0x0032_ca1c)?; // SphereTree_populateSortAxis_v
+        c.sw(sphere_addr(c.g[S0][0], 0x94), 0); // worstCase = 0
+        c.g[A1][0] = c.g[S1][0];
+        c.g[T1][0] = c.g[S2][0];
+        c.g[T2][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = sx(sphere_addr(c.g[S0][0], 0x80));
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0;
+        call_ptr(c, 0x0032_d208, 0x0032_ca40)?; // SphereTree_checkPlaneCollision
+        c.lwc1(1, sphere_addr(c.g[S0][0], 0x94));
+        c.mtc1(0, 0);
+        c.c_lt_s(1, 0);
+        let t = c.fcc();
+        c.g[V0][0] = 0x1;
+        if !t {
+            c.cycles += 1;
+            c.g[V0][0] = 0u64;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `VU0_TriangleIntersect` (0x32b6a8), reached through the function table.
+pub(crate) const TRI_INTERSECT_ADDR: u32 = 0x0032_b6a8;
+
+/// `EA_MemFree` (0x317e98), through the function table.
+pub(crate) const EA_FREE_ADDR: u32 = 0x0031_7e98;
+
+/// `CollSphere_PlaneDistance` (0x330360), a direct call.
+pub(crate) const COLL_PLANE_DIST_CALLEE: Callee = Callee {
+    addr: 0x0033_0360,
+    f: ee::s11::f_00330360,
+};
+
+/// `CollSphere_HitsTriangleEdges` (0x330250), a direct call.
+pub(crate) const COLL_HITS_EDGES_CALLEE: Callee = Callee {
+    addr: 0x0033_0250,
+    f: ee::s11::f_00330250,
+};
+
+/// The sphere-tree node itself (0x32cdb0): the recursive child call.
+pub(crate) const SPHERE_NODE_CALLEE: Callee = Callee {
+    addr: 0x0032_cdb0,
+    f: ee::s10::f_0032cdb0,
+};
+
+/// `gp + off` for the game's gp-relative globals (`off` may be negative).
+pub(crate) fn gp_word_addr(c: &Cpu, off: i32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_add(off as u32)
+}
+
+/// `int SphereTree_PointInTriangle(a0, a1, a2, a3, t0)` (0x32d440): a tail
+/// wrapper around `VU0_TriangleIntersect`, the tolerance (`gp-0x2d80`) passed
+/// in f12. The callee's result is returned unchanged.
+pub fn sphere_tree_point_in_triangle(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[A0][0] = c.g[A1][0];
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A2][0];
+        let tol = gp_word_addr(c, -0x2d80);
+        c.lwc1(12, tol);
+        c.g[A2][0] = c.g[A3][0];
+        frame.save_ra(c, 0);
+        c.g[A3][0] = c.g[T0][0];
+        call_ptr(c, TRI_INTERSECT_ADDR, 0x0032_d460)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void World_FreeSphereTreeCache(void)` (0x32de20): frees the cached
+/// sphere-tree node arrays and single entries through `EA_MemFree`, clearing
+/// each pointer. The first array is at `gp+0xed8` (count `gp+0xee0`), the
+/// single at `gp+0xedc`, the second array at `gp+0xee8` (count `gp+0xef0`),
+/// and the last single at `gp+0xeec`.
+pub fn world_free_sphere_tree_cache(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        let a = gp_word_addr(c, 0xed8);
+        c.g[A0][0] = c.lw(a);
+        frame.save(c, S0, 0x10);
+        let list_empty = c.g[A0][0] == 0;
+        frame.save_ra(c, 0);
+        if !list_empty {
+            // First array: elements 0 .. count-1 at gp+0xed8.
+            c.cycles += 3;
+            let a = gp_word_addr(c, 0xee0);
+            c.g[V0][0] = c.lw(a);
+            let counted = (c.g[V0][0] as i64) > 0;
+            c.g[S0][0] = 0;
+            if counted {
+                loop {
+                    c.cycles += 6;
+                    let a = gp_word_addr(c, 0xed8);
+                    c.g[V1][0] = c.lw(a);
+                    c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    let slot = c.g[V0][0] as u32;
+                    c.g[A0][0] = c.lw(slot);
+                    let empty = c.g[A0][0] == 0;
+                    let a = gp_word_addr(c, 0xee0);
+                    c.g[V0][0] = c.lw(a);
+                    if !empty {
+                        c.cycles += 3;
+                        call_ptr(c, EA_FREE_ADDR, 0x0032_de60)?;
+                        let a = gp_word_addr(c, 0xee0);
+                        c.g[V0][0] = c.lw(a);
+                    }
+                    c.cycles += 4;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    let a = gp_word_addr(c, 0xed8);
+                    c.g[A0][0] = c.lw(a);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_de40);
+                    }
+                }
+            }
+            c.cycles += 2;
+            if c.g[A0][0] == 0 {
+                let a = gp_word_addr(c, 0xed8);
+                c.sw(a, 0u64);
+            } else {
+                c.cycles += 3;
+                call_ptr(c, EA_FREE_ADDR, 0x0032_de84)?;
+                let a = gp_word_addr(c, 0xed8);
+                c.sw(a, 0u64);
+            }
+        }
+        // The single at gp+0xedc, then the second array's head at gp+0xee8.
+        c.cycles += 3;
+        let a = gp_word_addr(c, 0xedc);
+        c.g[A0][0] = c.lw(a);
+        if c.g[A0][0] == 0 {
+            let a = gp_word_addr(c, 0xee8);
+            c.g[A0][0] = c.lw(a);
+        } else {
+            c.cycles += 4;
+            call_ptr(c, EA_FREE_ADDR, 0x0032_de9c)?;
+            let a = gp_word_addr(c, 0xedc);
+            c.sw(a, 0u64);
+            let a = gp_word_addr(c, 0xee8);
+            c.g[A0][0] = c.lw(a);
+        }
+        // Second array: elements at gp+0xee8 (count gp+0xef0).
+        c.cycles += 2;
+        let second_empty = c.g[A0][0] == 0;
+        let a = gp_word_addr(c, 0xef0);
+        c.g[V0][0] = c.lw(a);
+        if !second_empty {
+            c.cycles += 2;
+            let counted = (c.g[V0][0] as i64) > 0;
+            c.g[S0][0] = 0;
+            if counted {
+                c.cycles += 1;
+                loop {
+                    c.cycles += 6;
+                    let a = gp_word_addr(c, 0xee8);
+                    c.g[V1][0] = c.lw(a);
+                    c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    let slot = c.g[V0][0] as u32;
+                    c.g[A0][0] = c.lw(slot);
+                    let empty = c.g[A0][0] == 0;
+                    let a = gp_word_addr(c, 0xef0);
+                    c.g[V0][0] = c.lw(a);
+                    if !empty {
+                        c.cycles += 3;
+                        call_ptr(c, EA_FREE_ADDR, 0x0032_ded8)?;
+                        let a = gp_word_addr(c, 0xef0);
+                        c.g[V0][0] = c.lw(a);
+                    }
+                    c.cycles += 4;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    let a = gp_word_addr(c, 0xee8);
+                    c.g[A0][0] = c.lw(a);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_deb8);
+                    }
+                }
+            }
+            c.cycles += 2;
+            if c.g[A0][0] == 0 {
+                let a = gp_word_addr(c, 0xee8);
+                c.sw(a, 0u64);
+            } else {
+                c.cycles += 3;
+                call_ptr(c, EA_FREE_ADDR, 0x0032_defc)?;
+                let a = gp_word_addr(c, 0xee8);
+                c.sw(a, 0u64);
+            }
+        }
+        // The single at gp+0xeec, then the epilogue.
+        c.cycles += 3;
+        let a = gp_word_addr(c, 0xeec);
+        c.g[A0][0] = c.lw(a);
+        let single_empty = c.g[A0][0] == 0;
+        frame.restore(c, S0, 0x10);
+        if !single_empty {
+            c.cycles += 4;
+            call_ptr(c, EA_FREE_ADDR, 0x0032_df14)?;
+            let a = gp_word_addr(c, 0xeec);
+            c.sw(a, 0u64);
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The one-sided test of a sphere against a triangle that the centre is in
+/// front of ('b_32ff50' of 0x32fe78): the centre projected into the plane
+/// (`VU0_TriangleIntersect`, tolerance `gp-0x2d70`), then the triangle edges
+/// (`CollSphere_HitsTriangleEdges`) when it is outside. True on a hit. On a
+/// miss it leaves v0 = 0 and returns false.
+pub(crate) fn collide_triangle_front_one_sided(
+    c: &mut Cpu,
+    frame: &Frame,
+) -> Result<bool, Unwound> {
+    c.cycles += 22;
+    c.g[A3][0] = c.g[S3][0];
+    c.mfc1(2, 0);
+    let s0 = c.g[S0][0] as u32;
+    c.lqc2(4, s0);
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let t20 = frame.at(c, 0x20);
+    c.sqc2(5, t20);
+    let tol = gp_word_addr(c, -0x2d70);
+    c.lwc1(12, tol);
+    c.lq(2, t20);
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S4][0];
+    c.g[A2][0] = c.g[S5][0];
+    let t10 = frame.at(c, 0x10);
+    c.sq(2, t10);
+    let s1_60 = (c.g[S1][0] as u32).wrapping_add(0x60);
+    c.lqc2(3, s1_60);
+    c.lqc2(4, t10);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, t20);
+    c.lq(2, t20);
+    let s3 = c.g[S3][0] as u32;
+    c.sq(2, s3);
+    let sp0 = frame.at(c, 0);
+    c.sq(2, sp0);
+    call_ptr(c, TRI_INTERSECT_ADDR, 0x0032_ff28)?;
+    if c.g[V0][0] != 0 {
+        let s0 = c.g[S0][0] as u32;
+        c.lq(3, s0);
+        return Ok(true);
+    }
+    c.cycles += 7;
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A2][0] = c.g[S4][0];
+    c.g[A3][0] = c.g[S5][0];
+    c.g[A0][0] = c.g[S1][0];
+    COLL_HITS_EDGES_CALLEE.call(c, 0x0032_ff44)?;
+    let missed = c.g[V0][0] == 0;
+    c.g[V0][0] = 0;
+    if missed {
+        return Ok(false);
+    }
+    c.cycles += 1;
+    let s0 = c.g[S0][0] as u32;
+    c.lq(3, s0);
+    Ok(true)
+}
+
+/// `int CollSphere_CollideTriangle(self, a1, a2, a3, t0, t1, t2, t3)`
+/// (0x32fe78): one-sided sphere-triangle collision. Tests the sphere centre
+/// against the triangle's plane (`CollSphere_PlaneDistance`, distance at
+/// sp+0x30); on the front side it tests the centre inside the triangle and
+/// then the edges. A hit writes the penetration-scaled contact normal to `t2`
+/// and the corrected centre to `t3`, and returns 1.
+pub fn coll_sphere_collide_triangle(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S1, 0xb0);
+        frame.save(c, S2, 0xa0);
+        frame.save(c, S3, 0x90);
+        frame.save(c, S4, 0x80);
+        frame.save(c, S5, 0x70);
+        frame.save(c, S6, 0x60);
+        frame.save(c, S7, 0x50);
+        frame.save_ra(c, 0x40);
+        c.g[S0][0] = c.g[T0][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A1][0];
+        c.g[S4][0] = c.g[A2][0];
+        c.g[S5][0] = c.g[A3][0];
+        c.g[S3][0] = c.g[T1][0];
+        c.g[S6][0] = c.g[T2][0];
+        c.g[S7][0] = c.g[T3][0];
+
+        // Plane distance of the centre (written to sp+0x30).
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S2][0];
+        let dist = frame.at(c, 0x30);
+        c.g[A3][0] = sx(dist);
+        COLL_PLANE_DIST_CALLEE.call(c, 0x0032_fed0)?;
+        let dist = frame.at(c, 0x30);
+        let plane_front = c.g[V0][0] != 0;
+        c.lwc1(0, dist);
+        if !plane_front {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else if collide_triangle_front_one_sided(c, &frame)? {
+            c.cycles += 7;
+            c.g[V0][0] = 1;
+            let dist = frame.at(c, 0x30);
+            c.lwc1(1, dist);
+            let s6 = c.g[S6][0] as u32;
+            c.sq(3, s6);
+            let s1_70 = (c.g[S1][0] as u32).wrapping_add(0x70);
+            c.lwc1(0, s1_70);
+            c.sub_s(0, 0, 1);
+            let s7 = c.g[S7][0] as u32;
+            c.swc1(0, s7);
+        }
+
+        // Epilogue.
+        c.cycles += 11;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore(c, S5, 0x70);
+        frame.restore(c, S6, 0x60);
+        frame.restore(c, S7, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The two-sided test of a sphere against a triangle ('b_3300b0' of
+/// 0x32ffa0): the centre projected into the plane (`VU0_TriangleIntersect`,
+/// tolerance `gp-0x2d6c`), then the triangle edges when it is outside. True on
+/// a hit; on a miss the caller sets v0 = 0 and charges one cycle.
+pub(crate) fn collide_triangle_front_two_sided(
+    c: &mut Cpu,
+    frame: &Frame,
+) -> Result<bool, Unwound> {
+    c.cycles += 22;
+    c.g[A3][0] = c.g[S2][0];
+    c.mfc1(2, 0);
+    let s = frame.at(c, 0);
+    c.lqc2(4, s);
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let t30 = frame.at(c, 0x30);
+    c.sqc2(5, t30);
+    let tol = gp_word_addr(c, -0x2d6c);
+    c.lwc1(12, tol);
+    c.lq(2, t30);
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S4][0];
+    let t20 = frame.at(c, 0x20);
+    c.sq(2, t20);
+    let s0_60 = (c.g[S0][0] as u32).wrapping_add(0x60);
+    c.lqc2(3, s0_60);
+    c.lqc2(4, t20);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, t30);
+    c.lq(2, t30);
+    let s2 = c.g[S2][0] as u32;
+    c.sq(2, s2);
+    let t10 = frame.at(c, 0x10);
+    c.sq(2, t10);
+    call_ptr(c, TRI_INTERSECT_ADDR, 0x0033_008c)?;
+    let inside = c.g[V0][0] != 0;
+    let s = frame.at(c, 0);
+    c.lq(3, s);
+    if inside {
+        return Ok(true);
+    }
+    c.cycles += 7;
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = c.g[S3][0];
+    c.g[A3][0] = c.g[S4][0];
+    c.g[A0][0] = c.g[S0][0];
+    COLL_HITS_EDGES_CALLEE.call(c, 0x0033_00a8)?;
+    let missed = c.g[V0][0] == 0;
+    let s = frame.at(c, 0);
+    c.lq(3, s);
+    Ok(!missed)
+}
+
+/// `int CollSphere_CollideTriangle2Sided(self, a1, a2, a3, t0, t1, t2, t3)`
+/// (0x32ffa0): as the one-sided test, but the plane's normal is flipped when
+/// the centre is behind it, so both faces collide. A hit writes the contact
+/// normal to `t2` and the corrected centre to `t3`, and returns 1.
+pub fn coll_sphere_collide_triangle_2sided(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0xd0);
+        let t0 = c.g[T0][0] as u32;
+        c.lq(2, t0);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S1, 0xb0);
+        frame.save(c, S2, 0xa0);
+        frame.save(c, S3, 0x90);
+        frame.save(c, S4, 0x80);
+        frame.save(c, S5, 0x70);
+        frame.save(c, S6, 0x60);
+        frame.save_ra(c, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S3][0] = c.g[A2][0];
+        c.g[S4][0] = c.g[A3][0];
+        c.g[S2][0] = c.g[T1][0];
+        c.g[S5][0] = c.g[T2][0];
+        c.g[S6][0] = c.g[T3][0];
+        let s = frame.at(c, 0);
+        c.sq(2, s);
+
+        // Plane distance of the centre (written to sp+0x40).
+        c.g[A1][0] = c.g[T0][0];
+        c.g[A2][0] = c.g[S1][0];
+        let dist = frame.at(c, 0x40);
+        c.g[A3][0] = sx(dist);
+        COLL_PLANE_DIST_CALLEE.call(c, 0x0032_fff8)?;
+        let plane_front = c.g[V0][0] != 0;
+        let dist = frame.at(c, 0x40);
+        c.lwc1(1, dist);
+        let mut hit = false;
+        if plane_front {
+            c.cycles += 5;
+            c.mtc1(0, 0);
+            c.c_lt_s(1, 0);
+            let below = c.fcc();
+            let dist = frame.at(c, 0x40);
+            c.lwc1(0, dist);
+            if below {
+                // Behind the plane: flip the normal (and the distance) to -1.
+                c.cycles += 10;
+                c.neg_s(0, 1);
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.mtc1(1, 1);
+                c.swc1(0, dist);
+                c.mfc1(2, 1);
+                let s = frame.at(c, 0);
+                c.lqc2(4, s);
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, s);
+                c.lwc1(0, dist);
+            }
+            hit = collide_triangle_front_two_sided(c, &frame)?;
+        }
+        if hit {
+            c.cycles += 7;
+            c.g[V0][0] = 1;
+            let dist = frame.at(c, 0x40);
+            c.lwc1(1, dist);
+            let s5 = c.g[S5][0] as u32;
+            c.sq(3, s5);
+            let s0_70 = (c.g[S0][0] as u32).wrapping_add(0x70);
+            c.lwc1(0, s0_70);
+            c.sub_s(0, 0, 1);
+            let s6 = c.g[S6][0] as u32;
+            c.swc1(0, s6);
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+
+        // Epilogue.
+        c.cycles += 10;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore(c, S5, 0x70);
+        frame.restore(c, S6, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Vector ClosestPointOnSegment(out, a, b, p)` (0x330128): the point on the
+/// segment `a`..`b` nearest `p`, written to `out`, and `out` returned. The
+/// projection parameter is clamped to the ends: `a` when the parameter is
+/// <= 0 and `b` when the far end is <= the parameter.
+pub fn closest_point_on_segment(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 48;
+        let frame = Frame::open(c, 0x60);
+        c.mtc1(0, 0);
+        // p - a (sp+0x10 and sp+0), then b - a (sp+0x10 and sp+0x20).
+        let p = c.g[A3][0] as u32;
+        c.lqc2(3, p);
+        let a = c.g[A1][0] as u32;
+        c.lqc2(4, a);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        let t10 = frame.at(c, 0x10);
+        c.sqc2(5, t10);
+        c.lq(2, t10);
+        let s0 = frame.at(c, 0);
+        c.sq(2, s0);
+        let b = c.g[A2][0] as u32;
+        c.lqc2(3, b);
+        let a = c.g[A1][0] as u32;
+        c.lqc2(4, a);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        let t20 = frame.at(c, 0x20);
+        c.sqc2(5, t20);
+        c.lq(2, t20);
+        c.sq(2, t10);
+        // The unit direction (b - a) / |b - a| (sp+0x20).
+        c.lqc2(3, t10);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().rsqrt(0, 3, 4, 0);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 3, Src::Q);
+        let t30 = frame.at(c, 0x30);
+        c.sqc2(5, t30);
+        c.lq(2, t30);
+        c.sq(2, t20);
+        // t = unit direction . (p - a) (f1).
+        c.lqc2(3, t20);
+        c.lqc2(5, s0);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.qmfc2(3, 4);
+        c.mtc1(3, 1);
+        // |b - a| (f2) against the parameter.
+        c.lqc2(3, t10);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(2, 22);
+        c.mtc1(2, 2);
+        c.c_le_s(1, 0);
+        if c.fcc() {
+            // t <= 0: the result is a.
+            c.cycles += 3;
+            let a = c.g[A1][0] as u32;
+            c.lq(2, a);
+            let out = c.g[A0][0] as u32;
+            c.sq(2, out);
+        } else {
+            c.cycles += 3;
+            c.c_le_s(2, 1);
+            if c.fcc() {
+                // |b - a| <= t: the result is b.
+                c.cycles += 3;
+                let b = c.g[A2][0] as u32;
+                c.lq(2, b);
+                let out = c.g[A0][0] as u32;
+                c.sq(2, out);
+            } else {
+                // a + t * unit direction.
+                c.cycles += 14;
+                c.mfc1(2, 1);
+                c.lqc2(4, t20);
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                let t50 = frame.at(c, 0x50);
+                c.sqc2(5, t50);
+                c.lq(3, t50);
+                let t40 = frame.at(c, 0x40);
+                c.sq(3, t40);
+                let a = c.g[A1][0] as u32;
+                c.lqc2(3, a);
+                c.lqc2(4, t40);
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, t50);
+                c.lq(2, t50);
+                let out = c.g[A0][0] as u32;
+                c.sq(2, out);
+                let t30 = frame.at(c, 0x30);
+                c.sq(2, t30);
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[A0][0];
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SphereTree_CollideSphereNode(self, spherePos, radius, pos, depth,
+/// base, outA, outB)` (0x32cdb0): the recursive sphere-against-tree test.
+/// Returns 0 when the sphere misses this node's bound; at a leaf (or a node
+/// with no children) it writes the contact normal to `outA` and the corrected
+/// centre to `outB` and returns 1; otherwise it recurses into the children
+/// whose bit is set in the node mask.
+pub fn sphere_tree_collide_sphere_node(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 50;
+        let frame = Frame::open(c, 0x110);
+        c.g[V0][0] = 0xc;
+        frame.save(c, S1, 0xe0);
+        frame.save(c, S3, 0xc0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S4, 0xb0);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S5, 0xa0);
+        // A3 = depth * 12 (the level stride).
+        c.mult(0, A3, S3, V0);
+        frame.save(c, S6, 0x90);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save(c, S7, 0x80);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, FP, 0x70);
+        c.g[S4][0] = c.g[T0][0];
+        frame.save_fpr(c, 21, 0x108);
+        c.g[S7][0] = c.g[T1][0];
+        frame.save(c, S0, 0xf0);
+        c.mov_s(21, 12);
+        frame.save(c, S2, 0xd0);
+        c.g[FP][0] = c.g[T2][0];
+        frame.save_ra(c, 0x60);
+        frame.save_fpr(c, 20, 0x100);
+
+        // Bound test: the centre distance against radius + the node radius.
+        let info = (c.g[S1][0] as u32).wrapping_add(0x98);
+        c.g[V1][0] = c.lw(info);
+        let scale = (c.g[S1][0] as u32).wrapping_add(0x90);
+        c.lwc1(1, scale);
+        let levels_ptr = (c.g[V1][0] as u32).wrapping_add(0x20);
+        c.g[V0][0] = c.lw(levels_ptr);
+        c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let level = c.g[V0][0] as u32;
+        c.lwc1(0, level);
+        let s6 = c.g[S6][0] as u32;
+        c.lqc2(3, s6);
+        let s5 = c.g[S5][0] as u32;
+        c.lqc2(4, s5);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        let t10 = frame.at(c, 0x10);
+        c.sqc2(5, t10);
+        c.mul_s(0, 0, 1);
+        c.lq(2, t10);
+        let s0 = frame.at(c, 0);
+        c.sq(2, s0);
+        c.add_s(1, 21, 0);
+        c.lqc2(3, s0);
+        c.lqc2(5, t10);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.qmfc2(2, 4);
+        c.mtc1(2, 2);
+        c.mul_s(0, 1, 1);
+        c.c_lt_s(2, 0);
+        let near = c.fcc();
+        c.g[V0][0] = 0;
+        if near {
+            let leaf = sphere_node_walk(c, &frame)?;
+            if leaf {
+                sphere_node_leaf(c, &frame);
+            }
+        }
+
+        // Epilogue.
+        c.cycles += 14;
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore(c, S2, 0xd0);
+        frame.restore(c, S3, 0xc0);
+        frame.restore(c, S4, 0xb0);
+        frame.restore(c, S5, 0xa0);
+        frame.restore(c, S6, 0x90);
+        frame.restore(c, S7, 0x80);
+        frame.restore(c, FP, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.restore_fpr(c, 21, 0x108);
+        frame.restore_fpr(c, 20, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The child walk of the sphere-tree node ('b_32cf54' and its loop). Returns
+/// `Ok(true)` when the node is a leaf (the caller writes the contact); `Ok(false)`
+/// when the result is already in v0 (a child hit, or no child hit).
+pub(crate) fn sphere_node_walk(c: &mut Cpu, frame: &Frame) -> Result<bool, Unwound> {
+    c.cycles += 7;
+    let info = (c.g[S1][0] as u32).wrapping_add(0x98);
+    c.g[A0][0] = c.lw(info);
+    let masks_ptr = (c.g[A0][0] as u32).wrapping_add(0x28);
+    c.g[V0][0] = c.lw(masks_ptr);
+    let depth_ptr = (c.g[A0][0] as u32).wrapping_add(0xc);
+    c.g[V1][0] = c.lw(depth_ptr);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+    c.g[V1][0] = ((c.g[S3][0] as i64) < (c.g[V1][0] as i64)) as u64;
+    let below_depth = c.g[V1][0] != 0;
+    let mask_addr = c.g[V0][0] as u32;
+    c.g[S2][0] = c.lbu(mask_addr);
+    if !below_depth {
+        return Ok(true);
+    }
+    c.cycles += 2;
+    let no_children = c.g[S2][0] == 0;
+    c.g[V1][0] = 0;
+    if no_children {
+        return Ok(true);
+    }
+    c.cycles += 5;
+    let levels_ptr = (c.g[A0][0] as u32).wrapping_add(0x20);
+    c.g[V0][0] = c.lw(levels_ptr);
+    let a3_save = frame.at(c, 0x50);
+    let depth_stride = c.g[A3][0];
+    c.sw(a3_save, depth_stride);
+    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    // distance = levels[depth + 1].offset (f20).
+    let next_level = (c.g[V0][0] as u32).wrapping_add(0x10);
+    c.lwc1(20, next_level);
+    c.g[V0][0] = sx(((c.g[S2][0] as u32) as i32 >> ((c.g[V1][0] as u32) & 31)) as u32);
+
+    loop {
+        // 'b_32cf3c: child i is present when bit i of the mask is set.
+        c.cycles += 3;
+        c.g[V0][0] &= 0x1;
+        let absent = c.g[V0][0] == 0;
+        c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        if !absent {
+            c.cycles += 32;
+            c.g[V0][0] = sx((c.g[V1][0] as u32) << 4);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+            c.g[A1][0] = c.g[S6][0];
+            c.mfc1(3, 20);
+            let axis = c.g[V0][0] as u32;
+            c.lqc2(4, axis);
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            let t30 = frame.at(c, 0x30);
+            c.sqc2(5, t30);
+            c.mov_s(12, 21);
+            c.lq(2, t30);
+            let child_pos = frame.at(c, 0x10);
+            c.g[A2][0] = sx(child_pos);
+            c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+            c.g[T1][0] = c.g[S7][0];
+            let t20 = frame.at(c, 0x20);
+            c.sq(2, t20);
+            c.g[T2][0] = c.g[FP][0];
+            let s5 = c.g[S5][0] as u32;
+            c.lqc2(3, s5);
+            c.lqc2(4, t20);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, t30);
+            c.lq(3, t30);
+            let info = (c.g[S1][0] as u32).wrapping_add(0x98);
+            c.g[T0][0] = c.lw(info);
+            c.sq(3, child_pos);
+            let stride_slot = frame.at(c, 0x50);
+            c.g[V1][0] = c.lw(stride_slot);
+            let levels_ptr = (c.g[T0][0] as u32).wrapping_add(0x20);
+            c.g[V0][0] = c.lw(levels_ptr);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            let stride_field = (c.g[V0][0] as u32).wrapping_add(0x8);
+            c.g[T0][0] = c.lw(stride_field);
+            c.mult(0, 2, 16, 8);
+            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            SPHERE_NODE_CALLEE.call(c, 0x0032_cf34)?;
+            let child_hit = c.g[V0][0] != 0;
+            c.g[V0][0] = 1;
+            if child_hit {
+                return Ok(false);
+            }
+        }
+        // Next child: v1 = i + 1 while i + 1 < 8.
+        c.cycles += 4;
+        c.g[V1][0] = c.g[S0][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 8) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V0][0] = sx(((c.g[S2][0] as u32) as i32 >> ((c.g[V1][0] as u32) & 31)) as u32);
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_ceb0);
+            }
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+            return Ok(false);
+        }
+    }
+}
+
+/// The leaf of the sphere-tree node ('cycles += 38' of 0x32cdb0): the contact
+/// normal (the centre offset, normalised) scaled by the penetration goes to
+/// `outA`, and the corrected centre to `outB`. Leaves v0 = 1.
+pub(crate) fn sphere_node_leaf(c: &mut Cpu, frame: &Frame) {
+    c.cycles += 38;
+    let delta = frame.at(c, 0);
+    c.lqc2(3, delta);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().rsqrt(0, 3, 4, 0);
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 5, 3, Src::Q);
+    let normal = frame.at(c, 0x20);
+    c.sqc2(5, normal);
+    c.sqrt_s(0, 2);
+    c.lq(3, normal);
+    // distance = sum - |delta| (f20); v0 = 1.
+    c.sub_s(20, 1, 0);
+    c.g[V0][0] = 1;
+    let n_slot = frame.at(c, 0x10);
+    c.sq(3, n_slot);
+    c.mfc1(4, 20);
+    c.lqc2(4, n_slot);
+    c.qmtc2(4, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let scaled = frame.at(c, 0x30);
+    c.sqc2(5, scaled);
+    // radius - distance (f0): the normal's length left for the centre.
+    c.sub_s(0, 21, 20);
+    c.lq(3, scaled);
+    let out_a = c.g[S7][0] as u32;
+    c.sq(3, out_a);
+    c.sq(3, normal);
+    c.mfc1(4, 0);
+    c.lqc2(4, n_slot);
+    c.qmtc2(4, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let pushed = frame.at(c, 0x40);
+    c.sqc2(5, pushed);
+    c.lq(3, pushed);
+    c.sq(3, scaled);
+    let s6 = c.g[S6][0] as u32;
+    c.lqc2(3, s6);
+    c.lqc2(4, scaled);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, pushed);
+    c.lq(3, pushed);
+    let out_b = c.g[FP][0] as u32;
+    c.sq(3, out_b);
+    c.sq(3, normal);
+}
+
+// SphereTree (`self`): the sphere centres of the eight children at +0x00
+// (t4Vector each), the scale at +0x90, the tree info pointer at +0x98.
+#[cfg(test)]
+pub(crate) const SELF_AXIS: u32 = 0x00;
+
+pub(crate) const SELF_SCALE: u32 = 0x90;
+
+pub(crate) const SELF_TREE_INFO: u32 = 0x98;
+
+// SphereTreeInfo: depth at +0x0c, level table at +0x20, bit tree at +0x28.
+pub(crate) const TREE_DEPTH: u32 = 0x0c;
+
+pub(crate) const TREE_LEVELS: u32 = 0x20;
+
+pub(crate) const TREE_BIT_TREE: u32 = 0x28;
+
+// Level entries are 12 bytes: radius (f32) at +0, cenOffset (f32) at +4,
+// indexOffset (int) at +8. The loaded cenOffset is `levels[depth + 1]`.
+pub(crate) const LEVEL_SIZE: u32 = 0x0c;
+
+pub(crate) const LEVEL_INDEX_OFFSET: u32 = 0x08;
+
+pub(crate) const LEVEL_NEXT_CEN_OFFSET: u32 = LEVEL_SIZE + 0x04;
+
+// Stack slots of the frame (0x110 bytes).
+pub(crate) const SLOT_NORMAL: u32 = 0x00;
+
+pub(crate) const SLOT_DIST: u32 = 0x50;
+
+pub(crate) const SLOT_DIR: u32 = 0x10;
+
+pub(crate) const SLOT_CHILD_POS: u32 = 0x20;
+
+pub(crate) const SLOT_SCALED: u32 = 0x30;
+
+pub(crate) const SLOT_TEMP: u32 = 0x40;
+
+pub(crate) const SLOT_OUT_POS: u32 = 0x54;
+
+pub(crate) const SLOT_SAVED_IDX: u32 = 0x58;
+
+pub(crate) const SLOT_RA: u32 = 0x60;
+
+pub(crate) const SLOT_FRAME: u32 = 0x110;
+
+// Calls and return addresses (from the generated body).
+pub(crate) const GIS_BOX_SPHERE_INT: u32 = 0x0032_9590;
+
+pub(crate) const RET_AFTER_GIS: u32 = 0x0032_d0b4;
+
+pub(crate) const RET_AFTER_CHILD: u32 = 0x0032_d17c;
+
+pub(crate) const LOOP_HEAD: u32 = 0x0032_d0f8;
+
+pub(crate) const SELF_ADDR: u32 = 0x0032_d028;
+
+/// Address `off(reg)`, read from the register's low word.
+#[inline(always)]
+pub(crate) fn sphere_reg_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// Epilogue: `c.cycles += 13`, restore the callee-saved registers and `ra`
+/// and f20, then `addiu sp, sp, 0x110; jr ra`.
+pub(crate) fn sphere_finish(c: &mut Cpu, frame: Frame) {
+    c.cycles += 13;
+    frame.restore(c, S0, 0xf0);
+    frame.restore(c, S1, 0xe0);
+    frame.restore(c, S2, 0xd0);
+    frame.restore(c, S3, 0xc0);
+    frame.restore(c, S4, 0xb0);
+    frame.restore(c, S5, 0xa0);
+    frame.restore(c, S6, 0x90);
+    frame.restore(c, S7, 0x80);
+    frame.restore(c, FP, 0x70);
+    frame.restore_ra(c, SLOT_RA);
+    frame.restore_fpr(c, 20, 0x100);
+    frame.close(c);
+}
+
+/// The part of the body after the bounding-box test passed: either the
+/// recursion into the children (returns 1 at the first child that hits, or
+/// 0), or the leaf, which writes the normal and the scaled direction. Every
+/// exit then goes to the epilogue (`sphere_finish`).
+pub(crate) fn sphere_children_or_leaf(c: &mut Cpu, frame: Frame) -> Flow {
+    'leaf_test: {
+        c.cycles += 7;
+        c.g[A0][0] = Addr(sphere_reg_at(c, S1, SELF_TREE_INFO)).lw(c);
+        let tree = c.g[A0][0] as u32;
+        c.g[V0][0] = Addr(tree.wrapping_add(TREE_BIT_TREE)).lw(c);
+        c.g[V1][0] = Addr(tree.wrapping_add(TREE_DEPTH)).lw(c);
+        let bits = c.g[V0][0] as u32;
+        c.g[V0][0] = sx(bits.wrapping_add(c.g[S4][0] as u32));
+        c.g[V1][0] = ((c.g[S3][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        let inside_depth = c.g[V1][0] == 0;
+        c.g[S2][0] = Addr(c.g[V0][0] as u32).lbu(c);
+        if inside_depth {
+            break 'leaf_test;
+        }
+        c.cycles += 2;
+        let no_mask = c.g[S2][0] == 0;
+        c.g[V1][0] = 0;
+        if no_mask {
+            break 'leaf_test;
+        }
+        c.cycles += 6;
+        c.g[V0][0] = Addr(tree.wrapping_add(TREE_LEVELS)).lw(c);
+        let saved_stride = c.g[S0][0];
+        Addr(sp(c).wrapping_add(SLOT_SAVED_IDX)).sw(c, saved_stride);
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let level_next = (c.g[V0][0] as u32).wrapping_add(LEVEL_NEXT_CEN_OFFSET);
+        c.lwc1(20, level_next);
+        c.g[V0][0] = sx(((c.g[S2][0] as u32) as i32 >> ((c.g[V1][0] as u32) & 31)) as u32);
+        // The child loop: i = V1 walks the eight bits of the mask.
+        'scan: loop {
+            'child: {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[V0][0] & 0x1;
+                let bit_clear = c.g[V0][0] == 0;
+                c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                if bit_clear {
+                    break 'child;
+                }
+                c.cycles += 32;
+                // childPos = pos + axis[i] * off, with off = levels[depth+1].cenOffset.
+                c.g[V0][0] = sx((c.g[V1][0] as u32) << 4);
+                c.g[A0][0] = c.g[S1][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[A1][0] = c.g[FP][0];
+                c.mfc1(3, 20);
+                let axis = c.g[V0][0] as u32;
+                c.lqc2(4, axis);
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                let temp = sp(c).wrapping_add(SLOT_TEMP);
+                c.sqc2(5, temp);
+                c.g[A2][0] = c.g[S7][0];
+                c.lq(2, temp);
+                c.g[A3][0] = sx(sp(c).wrapping_add(SLOT_CHILD_POS));
+                c.g[T2][0] = Addr(sp(c).wrapping_add(SLOT_OUT_POS)).lw(c);
+                c.g[T0][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+                let scaled = sp(c).wrapping_add(SLOT_SCALED);
+                c.sq(2, scaled);
+                c.g[T3][0] = c.g[S6][0];
+                let pos = c.g[S5][0] as u32;
+                c.lqc2(3, pos);
+                c.lqc2(4, scaled);
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, temp);
+                c.lq(3, temp);
+                c.g[T1][0] = Addr(sphere_reg_at(c, S1, SELF_TREE_INFO)).lw(c);
+                c.sq(3, sp(c).wrapping_add(SLOT_CHILD_POS));
+                c.g[V1][0] = Addr(sp(c).wrapping_add(SLOT_SAVED_IDX)).lw(c);
+                let levels = c.g[T1][0] as u32;
+                c.g[V0][0] = Addr(levels.wrapping_add(TREE_LEVELS)).lw(c);
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                let level = c.g[V0][0] as u32;
+                c.g[T1][0] = Addr(level.wrapping_add(LEVEL_INDEX_OFFSET)).lw(c);
+                // child base = (i + 1) * indexOffset + base
+                c.mult(0, V0, S0, T1);
+                c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                let child = Callee {
+                    addr: SELF_ADDR,
+                    f: ee::s11::f_0032d028__generated,
+                };
+                child.call(c, RET_AFTER_CHILD)?;
+                let child_hit = c.g[V0][0] != 0;
+                c.g[V0][0] = 1;
+                if child_hit {
+                    return Ok(());
+                }
+                break 'child;
+            }
+            c.cycles += 4;
+            c.g[V1][0] = c.g[S0][0];
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 8) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V0][0] = sx(((c.g[S2][0] as u32) as i32 >> ((c.g[V1][0] as u32) & 31)) as u32);
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, LOOP_HEAD);
+                }
+                continue 'scan;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+            return Ok(());
+        }
+    }
+    // Leaf: *outNormal = normal, *outPos = dir * dist.
+    c.cycles += 13;
+    frame.restore(c, V1, SLOT_NORMAL);
+    c.g[V0][0] = 0x1;
+    c.lwc1(0, sp(c).wrapping_add(SLOT_DIST));
+    let out_normal = c.g[S6][0] as u32;
+    c.sq(3, out_normal);
+    c.mfc1(4, 0);
+    c.lqc2(4, sp(c).wrapping_add(SLOT_DIR));
+    c.qmtc2(4, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    let scaled = sp(c).wrapping_add(SLOT_SCALED);
+    c.sqc2(5, scaled);
+    c.lq(3, scaled);
+    c.g[A0][0] = Addr(sp(c).wrapping_add(SLOT_OUT_POS)).lw(c);
+    let out_pos = c.g[A0][0] as u32;
+    c.sq(3, out_pos);
+    c.sq(3, sp(c).wrapping_add(SLOT_CHILD_POS));
+    Ok(())
+}
+
+/// Body after the prologue: the box test, then the children or the leaf.
+pub(crate) fn sphere_collide_body(c: &mut Cpu) -> Flow {
+    c.cycles += 37;
+    let frame = Frame::open(c, SLOT_FRAME);
+    c.g[V0][0] = 0xc;
+    frame.save(c, S0, 0xf0);
+    frame.save(c, S1, 0xe0);
+    frame.save(c, S3, 0xc0);
+    c.g[S1][0] = c.g[A0][0];
+    frame.save(c, S4, 0xb0);
+    c.g[S3][0] = c.g[T0][0];
+    frame.save(c, S5, 0xa0);
+    // s0 = depth * 12 (the level stride; v0 = 12).
+    c.mult(0, S0, S3, V0);
+    frame.save(c, S6, 0x90);
+    c.g[S5][0] = c.g[A3][0];
+    frame.save(c, S7, 0x80);
+    c.g[S4][0] = c.g[T1][0];
+    frame.save(c, FP, 0x70);
+    c.g[S7][0] = c.g[A2][0];
+    frame.save(c, S2, 0xd0);
+    c.g[FP][0] = c.g[A1][0];
+    frame.save_ra(c, SLOT_RA);
+    c.g[S6][0] = c.g[T3][0];
+    frame.save_fpr(c, 20, 0x100);
+    // gIsBoxSphereInt(boxMin, boxMax, pos, &normal, &dir, &dist, radius * scale)
+    c.g[A0][0] = c.g[FP][0];
+    c.g[A1][0] = c.g[S7][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[V1][0] = Addr(sphere_reg_at(c, S1, SELF_TREE_INFO)).lw(c);
+    c.g[A3][0] = c.g[SP][0];
+    c.lwc1(0, sphere_reg_at(c, S1, SELF_SCALE));
+    c.g[T0][0] = sx(sp(c).wrapping_add(SLOT_DIR));
+    let tree = c.g[V1][0] as u32;
+    c.g[V0][0] = Addr(tree.wrapping_add(TREE_LEVELS)).lw(c);
+    c.g[T1][0] = sx(sp(c).wrapping_add(SLOT_DIST));
+    let out_pos_slot = sp(c).wrapping_add(SLOT_OUT_POS);
+    let out_pos_value = c.g[T2][0];
+    Addr(out_pos_slot).sw(c, out_pos_value);
+    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    let radius_at = c.g[V0][0] as u32;
+    c.lwc1(12, radius_at);
+    c.mul_s(12, 12, 0);
+    call_ptr(c, GIS_BOX_SPHERE_INT, RET_AFTER_GIS)?;
+    let missed = c.g[V0][0] == 0;
+    c.g[V0][0] = 0;
+    if missed {
+        sphere_finish(c, frame);
+        return Ok(());
+    }
+    sphere_children_or_leaf(c, frame)?;
+    sphere_finish(c, frame);
+    Ok(())
+}
+
+/// `int SphereTree_CollideAABBNode(SphereTree* self, t4Vector* boxMin,
+/// t4Vector* boxMax, t4Vector* pos, int depth, int base, t4Vector* outPos,
+/// t4Vector* outNormal)` (0x32d028): a sphere-box test of the node at
+/// `depth`. On a miss it returns 0. On a hit at a leaf (or a node with no
+/// children below the tree depth) it stores the normal and the scaled
+/// direction and returns 1. Otherwise it recurses into the children whose
+/// bit is set in the node's mask and returns 1 at the first child that hits.
+pub fn sphere_tree_collide_aabb_node(c: &mut Cpu) {
+    guest(c, sphere_collide_body)
+}
+
+/// How the interior walk ended.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum CollideWalk {
+    /// The node is a leaf (no children, or past the tree's depth): run the
+    /// leaf test.
+    Leaf,
+    /// The children were visited and the loop ended: the epilogue follows
+    /// (`s0` already restored).
+    Returned,
+}
+
+/// How the body ends before the epilogue.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum CollideExit {
+    /// `s0` already restored: straight to the epilogue.
+    Done,
+    /// The early and the update exits: one more cycle, then `s0` restored.
+    Early,
+}
+
+/// `void SphereTree_CollidePlaneNode(SphereTree* self, void* plane,
+/// t4Vector* pos, int depth, int base, t4Vector* outA, t4Vector* outB)`
+/// (0x0032d208): pushes a plane down the sphere tree. A node whose
+/// `plane . pos` lies beyond its radius plus `worstCase` is skipped. An
+/// interior node (`depth` above the tree's depth and a non-zero mask) hands
+/// the plane to the children its mask selects, nearest-first in `sortAxis`
+/// order, each moved by its axis times `cenOffset`. A leaf that lies closer
+/// than `worstCase` stores its normal in `outA`, the point on the plane in
+/// `outB` and its distance as the new `worstCase`.
+pub fn sphere_tree_collide_plane_node(c: &mut Cpu) {
+    guest(c, collide_plane_node_body);
+}
+
+pub(crate) fn collide_plane_node_body(c: &mut Cpu) -> Flow {
+    use collide_plane_node::*;
+    c.cycles += 42;
+    let frame = Frame::open(c, FRAME);
+    c.g[V0][0] = 0xc;
+    frame.save(c, 16, 0xe0);
+    frame.save(c, 20, 0xa0);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save(c, 21, 0x90);
+    c.g[S4][0] = c.g[A1][0];
+    frame.save(c, 22, 0x80);
+    c.g[S5][0] = c.g[A2][0];
+    frame.save(c, 23, 0x70);
+    c.g[S6][0] = c.g[A3][0];
+    frame.save(c, 30, 0x60);
+    // a3 = depth * 12: the byte offset of levels[depth].
+    c.mult(0, 7, 22, 2);
+    frame.save(c, 17, 0xd0);
+    c.g[S7][0] = c.g[T0][0];
+    frame.save(c, 18, 0xc0);
+    c.g[FP][0] = c.g[T1][0];
+    frame.save(c, 19, 0xb0);
+    frame.save_ra(c, 0x50);
+    frame.save_fpr(c, 20, 0xf0);
+
+    // planeDist = dot(plane, pos) (the unit's VU0 dot sequence).
+    c.lqc2(3, c.g[S4][0] as u32);
+    c.lqc2(5, c.g[S5][0] as u32);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(3, 4);
+    c.mtc1(3, 4);
+    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(TREE_INFO));
+    c.mov_s(3, 4);
+    c.lwc1(2, (c.g[S0][0] as u32).wrapping_add(SCALE));
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(INFO_LEVELS));
+    c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(WORST_CASE));
+    // &levels[depth]; nodeRadius = radius * scale + worstCase.
+    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.lwc1(1, (c.g[A1][0] as u32).wrapping_add(LEVEL_RADIUS));
+    c.mul_s(1, 1, 2);
+    c.add_s(0, 1, 0);
+    // planeDist < nodeRadius is the test that keeps the node.
+    c.c_lt_s(3, 0);
+    let inside = c.fcc();
+    let outb_slot = frame.at(c, 0x40);
+    let outb = c.g[T2][0];
+    c.sw(outb_slot, outb);
+
+    let exit = if !inside {
+        CollideExit::Early
+    } else {
+        match collide_walk(c, frame)? {
+            CollideWalk::Returned => CollideExit::Done,
+            CollideWalk::Leaf => collide_leaf(c, frame),
+        }
+    };
+    if exit == CollideExit::Early {
+        c.cycles += 1;
+        frame.restore(c, 16, 0xe0);
+    }
+
+    // Epilogue.
+    c.cycles += 12;
+    frame.restore(c, 17, 0xd0);
+    frame.restore(c, 18, 0xc0);
+    frame.restore(c, 19, 0xb0);
+    frame.restore(c, 20, 0xa0);
+    frame.restore(c, 21, 0x90);
+    frame.restore(c, 22, 0x80);
+    frame.restore(c, 23, 0x70);
+    frame.restore(c, 30, 0x60);
+    frame.restore_ra(c, 0x50);
+    frame.restore_fpr(c, 20, 0xf0);
+    frame.close(c);
+    Ok(())
+}
+
+/// The interior node: visits the children its mask selects (in `sortAxis`
+/// order), or reports a leaf.
+pub(crate) fn collide_walk(c: &mut Cpu, frame: Frame) -> Result<CollideWalk, Unwound> {
+    use collide_plane_node::*;
+    c.cycles += 6;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(INFO_BIT_TREE));
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(INFO_DEPTH));
+    // The node's mask: bitTree[base].
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S7][0] as u32));
+    c.g[V1][0] = ((c.g[S6][0] as i64) < (c.g[V1][0] as i64)) as u64;
+    let below_depth = c.g[V1][0] != 0;
+    c.g[S3][0] = c.lbu(c.g[V0][0] as u32);
+    if !below_depth {
+        return Ok(CollideWalk::Leaf);
+    }
+    c.cycles += 2;
+    let has_children = c.g[S3][0] != 0;
+    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(SORT_AXIS));
+    if !has_children {
+        return Ok(CollideWalk::Leaf);
+    }
+    c.cycles += 4;
+    // distance = levels[depth + 1].cenOffset (the children's offset).
+    c.lwc1(
+        20,
+        (c.g[A1][0] as u32).wrapping_add(LEVEL_SIZE + LEVEL_CEN_OFFSET),
+    );
+    let depth12_slot = frame.at(c, 0x44);
+    let depth12 = c.g[A3][0];
+    c.sw(depth12_slot, depth12);
+    c.g[S2][0] = 0x7;
+    loop {
+        c.cycles += 5;
+        c.g[T3][0] = c.lw(c.g[S1][0] as u32); // k = sortAxis[i]
+        c.g[V0][0] = sx(((c.g[S3][0] as u32) as i32 >> ((c.g[T3][0] as u32) & 31)) as u32);
+        c.g[V0][0] &= 0x1;
+        let child_set = c.g[V0][0] != 0;
+        c.g[V0][0] = sx((c.g[T3][0] as u32) << 4);
+        if child_set {
+            c.cycles += 29;
+            c.g[A0][0] = c.g[S0][0];
+            // &self->axis[k]
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+            c.mfc1(3, 20);
+            c.lqc2(4, c.g[V0][0] as u32);
+            c.qmtc2(3, 3);
+            // childOffset = axis[k] * distance
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            let scaled = frame.at(c, 0x20);
+            c.sqc2(5, scaled);
+            c.g[A1][0] = c.g[S4][0];
+            c.lq(2, frame.at(c, 0x20));
+            c.g[A2][0] = c.g[SP][0];
+            c.g[T2][0] = c.lw(frame.at(c, 0x40));
+            c.g[A3][0] = sx((c.g[S6][0] as u32).wrapping_add(0x1));
+            c.sq(2, frame.at(c, 0x10));
+            c.g[T1][0] = c.g[FP][0];
+            c.lqc2(3, c.g[S5][0] as u32);
+            c.lqc2(4, frame.at(c, 0x10));
+            // childPos = pos + childOffset, kept at sp for the child.
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            let child_pos = frame.at(c, 0x20);
+            c.sqc2(5, child_pos);
+            c.lq(3, frame.at(c, 0x20));
+            c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(TREE_INFO));
+            c.sq(3, sp(c));
+            c.g[V1][0] = c.lw(frame.at(c, 0x44));
+            c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(INFO_LEVELS));
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[T0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(LEVEL_INDEX_OFFSET));
+            // childBase = (k + 1) * indexOffset + base
+            c.mult(0, 2, 11, 8);
+            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S7][0] as u32));
+            Callee {
+                addr: ENTRY,
+                f: ee::s11::SphereTree_CollidePlaneNode,
+            }
+            .call(c, RET_CHILD)?;
+        }
+        c.cycles += 3;
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+        let more = (c.g[S2][0] as i64) >= 0;
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+        if !more {
+            c.cycles += 2;
+            frame.restore(c, 16, 0xe0);
+            return Ok(CollideWalk::Returned);
+        }
+        // Loop back edge: the event is delivered here; the result is not
+        // acted on (the generated code continues the loop either way).
+        if event_due(c) {
+            deliver_event_here(c, LOOP_HEAD);
+        }
+    }
+}
+
+/// The leaf test: the distance `planeDist - nodeRadius`, and when it is
+/// closer than `worstCase`, the outputs and the new `worstCase`.
+pub(crate) fn collide_leaf(c: &mut Cpu, frame: Frame) -> CollideExit {
+    use collide_plane_node::*;
+    c.cycles += 6;
+    c.sub_s(20, 4, 1); // distance = planeDist - nodeRadius
+    c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(WORST_CASE));
+    c.c_lt_s(20, 0);
+    if !c.fcc() {
+        frame.restore(c, 16, 0xe0);
+        return CollideExit::Done;
+    }
+    c.cycles += 29;
+    // n = plane with w cleared (the word at sp+0x1c is zeroed).
+    c.lq(2, c.g[S4][0] as u32);
+    c.sq(2, frame.at(c, 0x10));
+    let w_slot = frame.at(c, 0x1c);
+    c.sw(w_slot, 0u64);
+    c.lq(2, frame.at(c, 0x10));
+    c.sq(2, frame.at(c, 0x0));
+    // *outA = n * distance
+    c.mfc1(3, 20);
+    c.lqc2(4, frame.at(c, 0x0));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x20));
+    c.lq(2, frame.at(c, 0x20));
+    c.sq(2, c.g[FP][0] as u32);
+    c.sq(2, frame.at(c, 0x10));
+    // *outB = pos - n * planeDist
+    c.mfc1(3, 3);
+    c.lqc2(4, frame.at(c, 0x0));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x30));
+    c.lq(2, frame.at(c, 0x30));
+    c.sq(2, frame.at(c, 0x20));
+    c.lqc2(3, c.g[S5][0] as u32);
+    c.lqc2(4, frame.at(c, 0x20));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0x30));
+    c.lq(2, frame.at(c, 0x30));
+    c.g[V1][0] = c.lw(frame.at(c, 0x40));
+    c.sq(2, c.g[V1][0] as u32);
+    c.swc1(20, (c.g[S0][0] as u32).wrapping_add(WORST_CASE));
+    c.sq(2, frame.at(c, 0x10));
+    CollideExit::Early
+}
+
+/// `SphereTreeCache_GetMasks` (0x0032df28): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn sphere_tree_cache_get_masks(c: &mut Cpu) {
+    if c.pc != 0x0032df28 {
+        return ee::s11::f_0032df28__generated(c);
+    }
+    guest(c, |c| {
+        let mut pc: u32 = 0x0032df28;
+        loop {
+            match pc {
+                0x0032df28 => {
+                    c.cycles += 10;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef8));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S0][0] = c.lw(c.g[A0][0] as u32);
+                    if t {
+                        pc = 0x0032e008;
+                        continue;
+                    }
+                    pc = 0x0032df50;
+                    continue;
+                }
+                0x0032df50 => {
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+                    c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xedc));
+                    c.g[A1][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[V0][0] != c.g[S0][0];
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee0));
+                    if t {
+                        pc = 0x0032df78;
+                        continue;
+                    }
+                    pc = 0x0032df6c;
+                    continue;
+                }
+                0x0032df6c => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xed8));
+                    let t = true;
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    if t {
+                        pc = 0x0032e0e8;
+                        continue;
+                    }
+                    pc = 0x0032df78;
+                    continue;
+                }
+                0x0032df78 => {
+                    c.cycles += 2;
+                    let t = (c.g[V0][0] as i64) <= 0;
+                    c.g[V1][0] = 0u64;
+                    if t {
+                        pc = 0x0032dfa4;
+                        continue;
+                    }
+                    pc = 0x0032df80;
+                    continue;
+                }
+                0x0032df80 => {
+                    c.cycles += 2;
+                    c.g[A3][0] = c.g[V0][0];
+                    c.g[A1][0] = c.g[A2][0];
+                    pc = 0x0032df88;
+                    continue;
+                }
+                0x0032df88 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                    let t = c.g[V0][0] == c.g[S0][0];
+                    c.g[A2][0] = sx((c.g[V1][0] as u32) << 2);
+                    if t {
+                        pc = 0x0032e030;
+                        continue;
+                    }
+                    pc = 0x0032df94;
+                    continue;
+                }
+                0x0032df94 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if back_edge_unwinds(c, 0x0032df88) {
+                            return Ok(());
+                        }
+                        pc = 0x0032df88;
+                        continue;
+                    }
+                    pc = 0x0032dfa4;
+                    continue;
+                }
+                0x0032dfa4 => {
+                    c.cycles += 21;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee4));
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xed8));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x24));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[RA][0] = sx(0x0032dfc0);
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                    call_ptr(c, 0x0032b620, 0x0032dfc0)?;
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee4));
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xedc));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[S0][0]);
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee4));
+                    c.sw(c.g[S1][0] as u32, c.g[A0][0]);
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee4));
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee0));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.div(0, 2, 3);
+                    c.sw((c.g[GP][0] as u32).wrapping_add(0xee4), c.g[V0][0]);
+
+                    if c.g[V1][0] == 0u64 {
+                        pc = 0x0032dff8;
+                        continue;
+                    }
+                    pc = 0x0032dff8;
+                    continue;
+                }
+                0x0032dff8 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xed8));
+                    c.g[A0][0] = c.hi[0];
+                    let t = true;
+                    c.sw((c.g[GP][0] as u32).wrapping_add(0xee4), c.g[A0][0]);
+                    if t {
+                        pc = 0x0032e0dc;
+                        continue;
+                    }
+                    pc = 0x0032e008;
+                    continue;
+                }
+                0x0032e008 => {
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+                    c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xeec));
+                    c.g[A1][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[V0][0] != c.g[S0][0];
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef0));
+                    if t {
+                        pc = 0x0032e050;
+                        continue;
+                    }
+                    pc = 0x0032e024;
+                    continue;
+                }
+                0x0032e024 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee8));
+                    let t = true;
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    if t {
+                        pc = 0x0032e0e8;
+                        continue;
+                    }
+                    pc = 0x0032e030;
+                    continue;
+                }
+                0x0032e030 => {
+                    c.cycles += 4;
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xed8));
+                    let t = true;
+                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    if t {
+                        pc = 0x0032e0e8;
+                        continue;
+                    }
+                    pc = 0x0032e040;
+                    continue;
+                }
+                0x0032e040 => {
+                    c.cycles += 4;
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee8));
+                    let t = true;
+                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    if t {
+                        pc = 0x0032e0e8;
+                        continue;
+                    }
+                    pc = 0x0032e050;
+                    continue;
+                }
+                0x0032e050 => {
+                    c.cycles += 2;
+                    let t = (c.g[V0][0] as i64) <= 0;
+                    c.g[V1][0] = 0u64;
+                    if t {
+                        pc = 0x0032e07c;
+                        continue;
+                    }
+                    pc = 0x0032e058;
+                    continue;
+                }
+                0x0032e058 => {
+                    c.cycles += 2;
+                    c.g[A3][0] = c.g[V0][0];
+                    c.g[A1][0] = c.g[A2][0];
+                    pc = 0x0032e060;
+                    continue;
+                }
+                0x0032e060 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                    let t = c.g[V0][0] == c.g[S0][0];
+                    c.g[A2][0] = sx((c.g[V1][0] as u32) << 2);
+                    if t {
+                        if back_edge_unwinds(c, 0x0032e040) {
+                            return Ok(());
+                        }
+                        pc = 0x0032e040;
+                        continue;
+                    }
+                    pc = 0x0032e06c;
+                    continue;
+                }
+                0x0032e06c => {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if back_edge_unwinds(c, 0x0032e060) {
+                            return Ok(());
+                        }
+                        pc = 0x0032e060;
+                        continue;
+                    }
+                    pc = 0x0032e07c;
+                    continue;
+                }
+                0x0032e07c => {
+                    c.cycles += 21;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef4));
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee8));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x24));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[RA][0] = sx(0x0032e098);
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                    call_ptr(c, 0x0032b620, 0x0032e098)?;
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef4));
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xeec));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[S0][0]);
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef4));
+                    c.sw(c.g[S1][0] as u32, c.g[A0][0]);
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef4));
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef0));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.div(0, 2, 3);
+                    c.sw((c.g[GP][0] as u32).wrapping_add(0xef4), c.g[V0][0]);
+
+                    if c.g[V1][0] == 0u64 {
+                        pc = 0x0032e0d0;
+                        continue;
+                    }
+                    pc = 0x0032e0d0;
+                    continue;
+                }
+                0x0032e0d0 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee8));
+                    c.g[A0][0] = c.hi[0];
+                    c.sw((c.g[GP][0] as u32).wrapping_add(0xef4), c.g[A0][0]);
+                    pc = 0x0032e0dc;
+                    continue;
+                }
+                0x0032e0dc => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    pc = 0x0032e0e8;
+                    continue;
+                }
+                0x0032e0e8 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0032df28, 0x0032e100);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7931,6 +11141,743 @@ pub(crate) mod tests {
                 }
                 c.g[RA][0] = SENTINEL_m2 as u64;
                 mode
+            },
+        );
+    }
+
+    use crate::difftest as dt;
+
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::input::inputmap::tests::oc561_setup;
+
+    pub(crate) use crate::game::input::inputmap::tests::oc561_install_fakes;
+
+    #[test]
+    fn rider_sphere_tree_ctor_copy_matches() {
+        oc561_install_fakes();
+        check(
+            ee::s10::f_00329938__generated,
+            rider_sphere_tree_ctor_copy,
+            16,
+            &|c, seed| {
+                let mut r = Rng(0x0032_9938 ^ seed as u64);
+                oc561_setup(c, &mut r);
+                c.g[A0][0] = sx(DATA + 0x40 * seed);
+            },
+        );
+    }
+
+    #[test]
+    fn rle_decode_matches() {
+        check(
+            ee::s10::f_0032b620__generated,
+            rle_decode,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0032_b620 ^ seed as u64);
+                scramble(c, &mut r);
+                let src = DATA + 0x1000;
+                let mut at = src;
+                if seed % 6 == 0 {
+                    c.g[A1][0] = 0;
+                } else {
+                    c.g[A1][0] = sx(src);
+                    let segments = 1 + r.next_u32() % 6;
+                    for _ in 0..segments {
+                        if r.next_u32() & 1 == 0 {
+                            // Repeat run: header 0..127, then the byte to repeat.
+                            c.bus.write8(at, (1 + r.next_u32() % 40) as u8);
+                            c.bus.write8(at + 1, r.next_u32() as u8);
+                            at += 2;
+                        } else {
+                            // Literal run: header -n, then n bytes.
+                            let n = 1 + r.next_u32() % 20;
+                            c.bus.write8(at, (256 - n) as u8);
+                            at += 1;
+                            for _ in 0..n {
+                                c.bus.write8(at, r.next_u32() as u8);
+                                at += 1;
+                            }
+                        }
+                    }
+                    c.bus.write8(at, 0);
+                }
+                c.g[A0][0] = sx(DATA + 0x20000);
+            },
+        );
+    }
+
+    /// Fixture layout (all inside `dt::DATA..dt::DATA + 0xfffff`).
+    pub(crate) const SELF: u32 = dt::DATA;
+
+    pub(crate) const TREE: u32 = dt::DATA + 0x200;
+
+    pub(crate) const LEVELS: u32 = dt::DATA + 0x400;
+
+    pub(crate) const BITS: u32 = dt::DATA + 0x600;
+
+    pub(crate) const UNORM: u32 = dt::DATA + 0x800;
+
+    pub(crate) const POS: u32 = dt::DATA + 0x820;
+
+    pub(crate) const P1: u32 = dt::DATA + 0x840;
+
+    pub(crate) const P2: u32 = dt::DATA + 0x860;
+
+    pub(crate) const P3: u32 = dt::DATA + 0x880;
+
+    pub(crate) const OUT_A: u32 = dt::DATA + 0x900;
+
+    pub(crate) const OUT_B: u32 = dt::DATA + 0x920;
+
+    pub(crate) fn set_vec(c: &mut Cpu, addr: u32, r: &mut Rng) {
+        for i in 0..4 {
+            c.bus.write32(addr + 4 * i, r.f32(8.0));
+        }
+    }
+
+    #[test]
+    fn sphere_tree_collide_triangle_node_matches() {
+        check(
+            ee::s11::f_0032d470__generated,
+            sphere_tree_collide_triangle_node,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x5eed_0562 ^ seed as u64);
+                scramble(c, &mut r);
+                // The node: a unit scale, a worst case that sometimes lets
+                // every plane offset through, child axes and order.
+                c.bus.write32(
+                    SELF + SCT_SCALE,
+                    if seed % 2 == 0 {
+                        0x3f80_0000
+                    } else {
+                        r.f32(2.0)
+                    },
+                );
+                c.bus.write32(
+                    SELF + SCT_WORST_CASE,
+                    if seed % 3 == 0 {
+                        0x7f7f_ffff
+                    } else {
+                        r.f32(4.0)
+                    },
+                );
+                c.bus.write32(SELF + SCT_TREE_INFO, TREE);
+                for k in 0..8u32 {
+                    set_vec(c, SELF + SCT_AXIS + 16 * k, &mut r);
+                    c.bus.write32(SELF + SCT_SORT_AXIS + 4 * k, (7 - k) % 8);
+                }
+                // The tree: depth 0..2, levels with radius and offsets.
+                c.bus.write32(TREE + SCT_INFO_DEPTH, (seed % 3) + 1);
+                c.bus.write32(TREE + SCT_INFO_LEVELS, LEVELS);
+                c.bus.write32(TREE + SCT_INFO_BIT_TREE, BITS);
+                for l in 0..4u32 {
+                    let base = LEVELS + SCT_LEVEL_STRIDE * l;
+                    c.bus.write32(base, r.f32(30.0) & 0x7fff_ffff);
+                    c.bus.write32(base + SCT_LEVEL_CEN_OFFSET, r.f32(10.0));
+                    c.bus.write32(base + SCT_LEVEL_INDEX_OFFSET, 1 + l);
+                }
+                for i in 0..4u32 {
+                    c.bus
+                        .write8(BITS + i, if seed % 5 == 0 { 0 } else { r.next_u32() as u8 });
+                }
+                set_vec(c, UNORM, &mut r);
+                set_vec(c, POS, &mut r);
+                set_vec(c, P1, &mut r);
+                set_vec(c, P2, &mut r);
+                set_vec(c, P3, &mut r);
+                set_vec(c, OUT_A, &mut r);
+                set_vec(c, OUT_B, &mut r);
+                // Stack arguments 9 and 10.
+                c.bus.write32(dt::SP + 0x140, OUT_A);
+                c.bus.write32(dt::SP + 0x148, OUT_B);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(P1);
+                c.g[A2][0] = sx(P2);
+                c.g[A3][0] = sx(P3);
+                c.g[T0][0] = sx(UNORM);
+                c.g[T1][0] = sx(POS);
+                c.g[T2][0] = sx(seed % 3);
+                c.g[T3][0] = sx(seed % 2);
+                c.g[SP][0] = sx(dt::SP);
+                c.g[RA][0] = sx(dt::RA);
+                c.pc = 0x0032_d470;
+            },
+        );
+    }
+
+    #[test]
+    fn vec3_neg_dot_matches() {
+        check(
+            ssx3_ee::s11::f_003300f8__generated,
+            vec3_neg_dot,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0033_00f8;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x20);
+                for k in 0..4u32 {
+                    c.bus.write32(DATA + 4 * k, r.f32(100.0));
+                    c.bus.write32(DATA + 0x20 + 4 * k, r.f32(100.0));
+                }
+            },
+        );
+    }
+
+    /// The callback the segment test calls: a real leaf that returns 0.
+    pub(crate) const LEAF_RET0: u32 = 0x0014_06c0;
+
+    #[test]
+    fn coll_segment_collide_triangle_2sided_matches() {
+        check(
+            ssx3_ee::s11::f_0032e5e8__generated,
+            coll_segment_collide_triangle_2sided,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2c6b_9d31_5a7e_1f03 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0032_e5e8;
+                let seg = DATA + 0x100;
+                let tri = DATA + 0x200;
+                let obj = DATA + 0x300;
+                c.g[A0][0] = sx(seg);
+                c.g[T0][0] = sx(tri);
+                for k in 0..4u32 {
+                    c.bus.write32(seg + 0x70 + 4 * k, r.f32(10.0));
+                    c.bus.write32(tri + 4 * k, r.f32(10.0));
+                }
+                c.bus.write32(seg + 0x50, obj);
+                c.bus.write16(obj + 0x20, r.next_u32() as u16);
+                c.bus.write32(obj + 0x24, LEAF_RET0);
+            },
+        );
+    }
+
+    /// The RLE test's input and output.
+    pub(crate) const RLE_IN: u32 = DATA + 0x800;
+
+    pub(crate) const RLE_OUT: u32 = DATA + 0x1000;
+
+    /// The gSphTreeAlignAxis table the transform reads (0x4ff640 .. +0x40).
+    pub(crate) const ALIGN_AXIS: u32 = 0x004f_f640;
+
+    pub(crate) fn rle_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x7e1c_0de5_0000_0001 ^ (seed as u64) << 8);
+        scramble(c, &mut r);
+        let len = r.next_u32() % 49;
+        let min_run = r.next_u32() % 6;
+        c.g[A0][0] = sx(RLE_OUT);
+        c.g[A1][0] = sx(RLE_IN);
+        c.g[A2][0] = len as u64;
+        c.g[A3][0] = min_run as u64;
+        // Bytes in runs of a few values, so both kinds of output occur.
+        let mut byte = 0u8;
+        for i in 0..len {
+            if r.next_u32() % 3 == 0 {
+                byte = (r.next_u32() % 3) as u8;
+            }
+            c.bus.write8(RLE_IN + i, byte);
+        }
+    }
+
+    #[test]
+    fn rle_encode_matches() {
+        check(
+            ee::s10::f_0032b468__generated,
+            rle_encode,
+            300,
+            &|c, seed| rle_setup(c, seed),
+        );
+    }
+
+    /// The transform's self (axes, centre, scale), its tree info (root centre)
+    /// and the matrix at DATA+0x100.
+    pub(crate) fn set_transform_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x5e7_0c64_0000_0001 ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x100);
+        c.f[12] = r.edge_f32();
+        for i in 0..16u32 {
+            c.bus.write32(ALIGN_AXIS + 4 * i, r.f32(2.0));
+        }
+        for i in 0..16u32 {
+            c.bus.write32(DATA + 0x100 + 4 * i, r.f32(4.0));
+        }
+        let info = DATA + 0x200;
+        c.bus.write32(DATA + 0x98, info);
+        for i in 0..3u32 {
+            c.bus.write32(info + 0x14 + 4 * i, r.f32(100.0));
+        }
+    }
+
+    #[test]
+    fn sphere_tree_set_transform_matches() {
+        check(
+            ee::s10::f_0032c648__generated,
+            sphere_tree_set_transform,
+            300,
+            &|c, seed| set_transform_setup(c, seed),
+        );
+    }
+
+    /// The transform's self (axes, centre at +0x80, scale at +0x90) and the matrix.
+    pub(crate) fn apply_transform_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0a99_17e5_0000_0001 ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x100);
+        c.f[12] = r.edge_f32();
+        for i in 0..0x26u32 {
+            c.bus.write32(DATA + 4 * i, r.f32(4.0));
+        }
+        c.bus.write32(DATA + 0x90, r.f32(2.0));
+        for i in 0..16u32 {
+            c.bus.write32(DATA + 0x100 + 4 * i, r.f32(4.0));
+        }
+    }
+
+    #[test]
+    fn sphere_tree_apply_transform_matches() {
+        check(
+            ee::s10::f_0032c770__generated,
+            sphere_tree_apply_transform,
+            300,
+            &|c, seed| apply_transform_setup(c, seed),
+        );
+    }
+
+    /// The fakes below run only when the machine holds `MAGIC` at `CTRL`.
+    pub(crate) const CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const MAGIC: u32 = 0x0569_f00d;
+
+    pub(crate) static FREE_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static ALLOC_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static CTOR_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemFree`: a leaf that returns (gate on).
+    pub(crate) fn oc569_fake_mem_free(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &FREE_PREV, ee::s10::f_00317e98__generated);
+        }
+        abi::ret(c);
+    }
+
+    /// `EA_MemAllocNamed`: returns a fixed block in the scratch area (gate on).
+    pub(crate) fn oc569_fake_alloc(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &ALLOC_PREV, ee::s10::f_00317d70__generated);
+        }
+        c.g[V0][0] = (DATA + 0x30_0000) as u64;
+        abi::ret(c);
+    }
+
+    /// `SphereTree_ctor`: a leaf that returns (gate on).
+    pub(crate) fn oc569_fake_tree_ctor(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &CTOR_PREV, ee::s10::f_0032c508__generated);
+        }
+        abi::ret(c);
+    }
+
+    pub(crate) fn hook_fakes() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            oc569_fake_mem_free,
+            &FREE_PREV,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc569_fake_alloc,
+            &ALLOC_PREV,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0032C508),
+            oc569_fake_tree_ctor,
+            &CTOR_PREV,
+        );
+    }
+
+    /// Scrambled registers and the game gp.
+    pub(crate) fn base_7(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = Rng(0x5690_0000_0000_0001 ^ ((seed as u64) << 8) ^ salt);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        r
+    }
+
+    /// `words` random float bit patterns at `addr`.
+    pub(crate) fn floats_2(c: &mut Cpu, r: &mut Rng, addr: u32, words: u32) {
+        for i in 0..words {
+            c.bus.write32(addr + 4 * i, r.edge_f32());
+        }
+    }
+
+    /// Self at DATA+0x1000, vectors at DATA+0x2000..; pointers in the argument
+    /// registers of the triangle tests.
+    pub(crate) fn triangle_fixture(c: &mut Cpu, r: &mut Rng) {
+        floats_2(c, r, DATA + 0x1000, 0x180);
+        floats_2(c, r, DATA + 0x2000, 0x180);
+        c.g[A0][0] = sx(DATA + 0x1000);
+        c.g[A1][0] = sx(DATA + 0x2000);
+        c.g[A2][0] = sx(DATA + 0x2100);
+        c.g[A3][0] = sx(DATA + 0x2200);
+        c.g[T0][0] = sx(DATA + 0x2300);
+        c.g[T1][0] = sx(DATA + 0x2400);
+        c.g[T2][0] = sx(DATA + 0x2500);
+        c.g[T3][0] = sx(DATA + 0x2600);
+    }
+
+    #[test]
+    fn sphere_tree_point_in_triangle_matches() {
+        check(
+            ee::s11::f_0032d440__generated,
+            sphere_tree_point_in_triangle,
+            200,
+            &|c, seed| {
+                let mut r = base_7(c, seed, 0x32d4);
+                c.pc = 0x0032_d440;
+                floats_2(c, &mut r, DATA + 0x100, 0x40);
+                c.bus.write32(GAME_GP - 0x2d80, r.f32(1.0e-4));
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = sx(DATA + 0x200);
+                c.g[A2][0] = sx(DATA + 0x300);
+                c.g[A3][0] = sx(DATA + 0x400);
+                c.g[T0][0] = sx(DATA + 0x500);
+            },
+        );
+    }
+
+    #[test]
+    fn world_free_sphere_tree_cache_matches() {
+        hook_fakes();
+        check(
+            ee::s11::f_0032de20__generated,
+            world_free_sphere_tree_cache,
+            200,
+            &|c, seed| {
+                let _r = base_7(c, seed, 0x32de);
+                c.pc = 0x0032_de20;
+                c.bus.write32(CTRL, MAGIC);
+                let arr1 = DATA + 0x2000;
+                let arr2 = DATA + 0x2100;
+                c.bus.write32(GAME_GP + 0xed8, arr1);
+                c.bus.write32(GAME_GP + 0xee0, seed % 4);
+                c.bus.write32(GAME_GP + 0xee8, arr2);
+                c.bus.write32(GAME_GP + 0xef0, (seed / 4) % 4);
+                let single = if seed % 3 == 0 { 0 } else { DATA + 0x2200 };
+                c.bus.write32(GAME_GP + 0xedc, single);
+                let single2 = if seed % 5 == 0 { 0 } else { DATA + 0x2300 };
+                c.bus.write32(GAME_GP + 0xeec, single2);
+                for i in 0..4u32 {
+                    let e1 = if (seed + i) % 3 == 0 {
+                        0
+                    } else {
+                        DATA + 0x2400 + 0x10 * i
+                    };
+                    let e2 = if (seed + i) % 4 == 0 {
+                        0
+                    } else {
+                        DATA + 0x2500 + 0x10 * i
+                    };
+                    c.bus.write32(arr1 + 4 * i, e1);
+                    c.bus.write32(arr2 + 4 * i, e2);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn coll_sphere_collide_triangle_matches() {
+        check(
+            ee::s11::f_0032fe78__generated,
+            coll_sphere_collide_triangle,
+            200,
+            &|c, seed| {
+                let mut r = base_7(c, seed, 0x32fe);
+                c.pc = 0x0032_fe78;
+                triangle_fixture(c, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn coll_sphere_collide_triangle_2sided_matches() {
+        check(
+            ee::s11::f_0032ffa0__generated,
+            coll_sphere_collide_triangle_2sided,
+            200,
+            &|c, seed| {
+                let mut r = base_7(c, seed, 0x32ff);
+                c.pc = 0x0032_ffa0;
+                triangle_fixture(c, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn closest_point_on_segment_matches() {
+        check(
+            ee::s11::f_00330128__generated,
+            closest_point_on_segment,
+            200,
+            &|c, seed| {
+                let mut r = base_7(c, seed, 0x3301);
+                c.pc = 0x0033_0128;
+                floats_2(c, &mut r, DATA + 0x3100, 0x40);
+                c.g[A0][0] = sx(DATA + 0x3000);
+                c.g[A1][0] = sx(DATA + 0x3100);
+                c.g[A2][0] = sx(DATA + 0x3200);
+                c.g[A3][0] = sx(DATA + 0x3300);
+            },
+        );
+    }
+
+    #[test]
+    fn sphere_tree_collide_sphere_node_matches() {
+        check(
+            ee::s10::f_0032cdb0__generated,
+            sphere_tree_collide_sphere_node,
+            200,
+            &|c, seed| {
+                let mut r = base_7(c, seed, 0x32cd);
+                c.pc = 0x0032_cdb0;
+                let this = DATA + 0x1000;
+                let info = DATA + 0x1100;
+                let levels = DATA + 0x1200;
+                let masks = DATA + 0x1300;
+                // Axes (16 bytes each at self+0), scale at +0x90, tree at +0x98.
+                floats_2(c, &mut r, this, 0x10);
+                c.bus.write32(this + 0x90, r.f32(2.0));
+                c.bus.write32(this + 0x98, info);
+                c.bus.write32(info + 0xc, 2);
+                c.bus.write32(info + 0x20, levels);
+                c.bus.write32(info + 0x28, masks);
+                floats_2(c, &mut r, levels, 9);
+                for k in 0..3u32 {
+                    c.bus.write32(levels + 12 * k + 8, 0x40 * (k + 1));
+                }
+                c.bus.write32(masks, r.next_u32());
+                let pos = DATA + 0x1400;
+                let centre = DATA + 0x1420;
+                floats_2(c, &mut r, pos, 4);
+                floats_2(c, &mut r, centre, 4);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(pos);
+                c.g[A2][0] = sx(centre);
+                c.g[A3][0] = sx(seed % 3);
+                c.g[T0][0] = 0;
+                c.g[T1][0] = sx(DATA + 0x1440);
+                c.g[T2][0] = sx(DATA + 0x1460);
+                c.f[12] = r.f32(8.0);
+            },
+        );
+    }
+
+    #[test]
+    fn sphere_tree_collide_aabb_node_matches() {
+        check(
+            ssx3_ee::s11::f_0032d028__generated,
+            sphere_tree_collide_aabb_node,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0032_d028 ^ ((seed as u64 + 1) << 24) | 1);
+                scramble(c, &mut r);
+                let me = DATA;
+                let tree = DATA + 0x400;
+                let levels = DATA + 0x500;
+                let bits = DATA + 0x600;
+                let out_pos = DATA + 0x700;
+                let out_normal = DATA + 0x720;
+                let pos_at = DATA + 0x740;
+                let box_min_at = DATA + 0x760;
+                let box_max_at = DATA + 0x780;
+                // Tree depth 0..2; the incoming depth below or at it (both
+                // the leaf and the recursion paths get taken).
+                let tree_depth = seed % 3;
+                let depth = (seed / 3) % 3;
+                let base = (seed / 9) % 16;
+                c.bus.write32(me + SELF_TREE_INFO, tree);
+                c.bus.write32(tree + TREE_DEPTH, tree_depth);
+                c.bus.write32(tree + TREE_LEVELS, levels);
+                c.bus.write32(tree + TREE_BIT_TREE, bits);
+                c.bus.write32(me + SELF_SCALE, r.f32(2.0));
+                for i in 0..8 {
+                    put_vec(
+                        c,
+                        me + SELF_AXIS + i * 0x10,
+                        [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0],
+                    );
+                }
+                for k in 0..4 {
+                    c.bus.write32(levels + k * LEVEL_SIZE, r.f32(1.0));
+                    c.bus.write32(levels + k * LEVEL_SIZE + 4, r.f32(0.5));
+                    c.bus.write32(
+                        levels + k * LEVEL_SIZE + LEVEL_INDEX_OFFSET,
+                        1 + r.next_u32() % 3,
+                    );
+                }
+                fill(c, &mut r, bits, 64);
+                let p = [r.f32(4.0), r.f32(4.0), r.f32(4.0), 0];
+                put_vec(c, pos_at, p);
+                // Most seeds put the box around the centre (a hit); every
+                // fourth moves it far away (a miss).
+                let far = if seed % 4 == 0 { 100.0 } else { 0.0 };
+                let f = |u: u32| f32::from_bits(u);
+                let lo = [
+                    f(p[0]) - 1.5 + far,
+                    f(p[1]) - 1.5 + far,
+                    f(p[2]) - 1.5 + far,
+                    0.0,
+                ];
+                let hi = [
+                    f(p[0]) + 1.5 + far,
+                    f(p[1]) + 1.5 + far,
+                    f(p[2]) + 1.5 + far,
+                    0.0,
+                ];
+                put_vec(c, box_min_at, lo.map(f32::to_bits));
+                put_vec(c, box_max_at, hi.map(f32::to_bits));
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(box_min_at);
+                c.g[A2][0] = sx(box_max_at);
+                c.g[A3][0] = sx(pos_at);
+                c.g[T0][0] = depth as u64;
+                c.g[T1][0] = base as u64;
+                c.g[T2][0] = sx(out_pos);
+                c.g[T3][0] = sx(out_normal);
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_7: u32 = 200;
+
+    pub(crate) const SELF_2: u32 = DATA + 0x1000;
+
+    pub(crate) const INFO: u32 = DATA + 0x2000;
+
+    pub(crate) const BITS_2: u32 = DATA + 0x3000;
+
+    pub(crate) const LEVELS_2: u32 = DATA + 0x4000;
+
+    pub(crate) const PLANE: u32 = DATA + 0x5000;
+
+    pub(crate) const POS_2: u32 = DATA + 0x5010;
+
+    pub(crate) const OUT_A_2: u32 = DATA + 0x5100;
+
+    pub(crate) const OUT_B_2: u32 = DATA + 0x5110;
+
+    pub(crate) const STACK: u32 = DATA + 0x8000;
+
+    /// The tree in memory: a depth 1..3 tree, the axes, the sort order, the
+    /// scale and worstCase (seed-selected: early exits, always-update leaves,
+    /// random ones), the masks (some seeds all zero) and the plane and point.
+    pub(crate) fn fixture_data(c: &mut Cpu, seed: u32, r: &mut Rng) {
+        use collide_plane_node::*;
+        let depth = 1 + seed % 3;
+        c.bus.write32(INFO + INFO_DEPTH, depth);
+        c.bus.write32(INFO + INFO_LEVELS, LEVELS_2);
+        c.bus.write32(INFO + INFO_BIT_TREE, BITS_2);
+        for i in 0..=depth {
+            let at = LEVELS_2 + i * LEVEL_SIZE;
+            let radius = 0.5 + (r.next_u32() % 100) as f32 / 50.0;
+            c.bus.write32(at + LEVEL_RADIUS, radius.to_bits());
+            c.bus.write32(at + LEVEL_CEN_OFFSET, r.f32(1.0));
+            c.bus.write32(at + LEVEL_INDEX_OFFSET, 1 + r.next_u32() % 3);
+        }
+        for k in 0..8 {
+            let v = [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)];
+            put_vec(c, SELF_2 + 16 * k, v);
+            c.bus.write32(SELF_2 + SORT_AXIS + 4 * k, (k + seed) % 8);
+        }
+        c.bus
+            .write32(SELF_2 + SCALE, (0.5 + (seed % 3) as f32 * 0.25).to_bits());
+        let worst = match seed % 7 {
+            0 => (-1.0e6f32).to_bits(),  // never inside: the early exit
+            1..=4 => 1.0e6f32.to_bits(), // always inside, leaves update
+            _ => r.f32(2.0),
+        };
+        c.bus.write32(SELF_2 + WORST_CASE, worst);
+        c.bus.write32(SELF_2 + TREE_INFO, INFO);
+        let plane = [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(2.0)];
+        put_vec(c, PLANE, plane);
+        let pos = [r.f32(2.0), r.f32(2.0), r.f32(2.0), 1.0f32.to_bits()];
+        put_vec(c, POS_2, pos);
+        put_vec(c, OUT_A_2, [0; 4]);
+        put_vec(c, OUT_B_2, [0; 4]);
+        for i in 0..0x100 {
+            let mask = if seed % 5 == 2 { 0 } else { r.next_u32() as u8 };
+            c.bus.write8(BITS_2 + i, mask);
+        }
+    }
+
+    /// The argument registers. `depth` is below the tree's depth on most
+    /// seeds (interior nodes), at it on the rest (leaves).
+    pub(crate) fn fixture_args(c: &mut Cpu, seed: u32) {
+        let depth = 1 + seed % 3;
+        let level = if seed % 4 == 3 { depth } else { seed % depth };
+        c.pc = collide_plane_node::ENTRY;
+        c.g[A0][0] = sx(SELF_2);
+        c.g[A1][0] = sx(PLANE);
+        c.g[A2][0] = sx(POS_2);
+        c.g[A3][0] = level as u64;
+        c.g[T0][0] = (seed % 2) as u64;
+        c.g[T1][0] = sx(OUT_A_2);
+        c.g[T2][0] = sx(OUT_B_2);
+    }
+
+    #[test]
+    fn sphere_tree_collide_plane_node_matches() {
+        check(
+            ee::s11::f_0032d208__generated,
+            sphere_tree_collide_plane_node,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = Rng(0x7a3c_51d9 ^ seed as u64);
+                scramble(c, &mut r);
+                fixture_data(c, seed, &mut r);
+                c.g[SP][0] = sx(STACK);
+                fixture_args(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn sphere_tree_collide_plane_node_events_match() {
+        check_events(
+            ee::s11::f_0032d208__generated,
+            sphere_tree_collide_plane_node,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = Rng(0x3e9b_0d17 ^ seed as u64);
+                scramble(c, &mut r);
+                fixture_data(c, seed, &mut r);
+                let mode = schedule(c, &mut r, seed, collide_plane_node::ENTRY);
+                fixture_args(c, seed);
+                mode
+            },
+        );
+    }
+
+    #[test]
+    fn sphere_tree_cache_get_masks_matches() {
+        check(
+            ee::s11::f_0032df28__generated,
+            sphere_tree_cache_get_masks,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0xdf28, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x0032df28;
             },
         );
     }

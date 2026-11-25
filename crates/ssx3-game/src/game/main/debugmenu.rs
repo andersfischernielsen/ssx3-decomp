@@ -7,9 +7,11 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 pub(crate) use crate::game::fe::feasyncfile::p;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::fereal::close;
@@ -157,6 +159,201 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0024_e0f8,
         power_up_fx_toggles_menu_dtor_2,
         "PowerUpFXTogglesMenu_dtor",
+    ),
+    (
+        0x0024_e388,
+        camera_splash_menu_dtor,
+        "CameraSplashMenu_dtor",
+    ),
+    (0x0024_e7c8, path_arrow_menu_dtor, "PathArrowMenu_dtor"),
+    (
+        0x0024_f7e0,
+        render_toggles_menu_on_activate,
+        "RenderTogglesMenu_OnActivate",
+    ),
+    (
+        0x0024_f800,
+        render_toggles_menu_on_deactivate,
+        "RenderTogglesMenu_OnDeactivate",
+    ),
+    (
+        0x0024_f820,
+        visual_effects_test_menu_on_activate,
+        "VisualEffectsTestMenu_OnActivate",
+    ),
+    (
+        0x0024_f840,
+        visual_effects_test_menu_on_deactivate,
+        "VisualEffectsTestMenu_OnDeactivate",
+    ),
+    (
+        0x0024_f940,
+        plants_menu_on_activate,
+        "PlantsMenu_OnActivate",
+    ),
+    (
+        0x0024_f960,
+        plants_menu_on_deactivate,
+        "PlantsMenu_OnDeactivate",
+    ),
+    (
+        0x0024_f980,
+        light_glow_menu_on_activate,
+        "LightGlowMenu_OnActivate",
+    ),
+    (
+        0x0024_f9a0,
+        light_glow_menu_on_deactivate,
+        "LightGlowMenu_OnDeactivate",
+    ),
+    (
+        0x0024_f9c0,
+        depth_fog_menu_on_activate,
+        "DepthFogMenu_OnActivate",
+    ),
+    (
+        0x0024_f9e0,
+        depth_fog_menu_on_deactivate,
+        "DepthFogMenu_OnDeactivate",
+    ),
+    (
+        0x0024_fa78,
+        height_fog_menu_on_activate,
+        "HeightFogMenu_OnActivate",
+    ),
+    (
+        0x0024_fa98,
+        height_fog_menu_on_deactivate,
+        "HeightFogMenu_OnDeactivate",
+    ),
+    (
+        0x0024_fb80,
+        detail_system_menu_on_activate,
+        "DetailSystemMenu_OnActivate",
+    ),
+    (
+        0x0024_fba0,
+        detail_system_menu_on_deactivate,
+        "DetailSystemMenu_OnDeactivate",
+    ),
+    (
+        0x0024_fc80,
+        shell_renderer_menu_on_activate,
+        "ShellRendererMenu_OnActivate",
+    ),
+    (
+        0x0024_fca0,
+        shell_renderer_menu_on_deactivate,
+        "ShellRendererMenu_OnDeactivate",
+    ),
+    (
+        0x0024_fcc0,
+        screen_tint_menu_on_activate,
+        "ScreenTintMenu_OnActivate",
+    ),
+    (
+        0x0024_fce0,
+        screen_tint_menu_on_deactivate,
+        "ScreenTintMenu_OnDeactivate",
+    ),
+    (
+        0x0024_fdc0,
+        shadow_menu_on_activate,
+        "ShadowMenu_OnActivate",
+    ),
+    (
+        0x0024_fde0,
+        shadow_menu_on_deactivate,
+        "ShadowMenu_OnDeactivate",
+    ),
+    (
+        0x0024_fea8,
+        snow_surface_menu_on_activate,
+        "SnowSurfaceMenu_OnActivate",
+    ),
+    (
+        0x0024_fec8,
+        snow_surface_menu_on_deactivate,
+        "SnowSurfaceMenu_OnDeactivate",
+    ),
+    (
+        0x0024_fee8,
+        board_trail_menu_on_activate,
+        "BoardTrailMenu_OnActivate",
+    ),
+    (
+        0x0024_ff08,
+        board_trail_menu_on_deactivate,
+        "BoardTrailMenu_OnDeactivate",
+    ),
+    (0x0024_ff90, flags_menu_on_activate, "FlagsMenu_OnActivate"),
+    (
+        0x0024_ffb0,
+        flags_menu_on_deactivate,
+        "FlagsMenu_OnDeactivate",
+    ),
+    (
+        0x0024_ffd0,
+        power_up_fx_toggles_menu_on_activate,
+        "PowerUpFXTogglesMenu_OnActivate",
+    ),
+    (
+        0x0024_fff0,
+        power_up_fx_toggles_menu_on_deactivate,
+        "PowerUpFXTogglesMenu_OnDeactivate",
+    ),
+    (
+        0x0025_0010,
+        snowfall_toggles_menu_on_activate,
+        "SnowfallTogglesMenu_OnActivate",
+    ),
+    (
+        0x0025_0030,
+        snowfall_toggles_menu_on_deactivate,
+        "SnowfallTogglesMenu_OnDeactivate",
+    ),
+    (
+        0x0025_0050,
+        camera_splash_menu_on_activate,
+        "CameraSplashMenu_OnActivate",
+    ),
+    (
+        0x0025_0070,
+        camera_splash_menu_on_deactivate,
+        "CameraSplashMenu_OnDeactivate",
+    ),
+    (0x0025_0128, tube_menu_on_activate, "TubeMenu_OnActivate"),
+    (
+        0x0025_0148,
+        tube_menu_on_deactivate,
+        "TubeMenu_OnDeactivate",
+    ),
+    (
+        0x0025_0168,
+        path_arrow_menu_on_activate,
+        "PathArrowMenu_OnActivate",
+    ),
+    (
+        0x0025_0188,
+        path_arrow_menu_on_deactivate,
+        "PathArrowMenu_OnDeactivate",
+    ),
+    (
+        0x0025_01a8,
+        visual_effects_menus_global_ctors,
+        "VisualEffectsMenus_GlobalCtors",
+    ),
+    (
+        0x0025_01c8,
+        visual_effects_menus_global_dtors,
+        "VisualEffectsMenus_GlobalDtors",
+    ),
+    (0x0025_01e8, avalanche_menu_ctor, "AvalancheMenu_ctor"),
+    (0x0025_0ae0, avalanche_menu_ctor_2, "AvalancheMenu_dtor"),
+    (
+        0x0025_0cb0,
+        aivisual_effects_menus_static_init_destroy,
+        "AIVisualEffectsMenus_StaticInitDestroy",
     ),
 ];
 
@@ -6994,6 +7191,2180 @@ pub fn screen_tint_menu_dtor_2(c: &mut Cpu) {
     })
 }
 
+/// `cMenuItem::~cMenuItem` (0x2ca280), the item destructor the menus chain.
+pub(crate) const MENU_ITEM_DTOR_TARGET: u32 = 0x002c_a280;
+
+/// `cMenu::~cMenu` (0x2caa80), the page destructor the menus end with.
+pub(crate) const MENU_DTOR_TARGET: u32 = 0x002c_aa80;
+
+/// An argument of one call in a destructor's straight-line body.
+#[derive(Clone, Copy)]
+pub(crate) enum MenuDtorArg {
+    /// `this + off`, sign-extended (`addiu a0, s0, off`).
+    This(u32),
+    /// The value a saved register holds (`s0`..`s5`).
+    Reg(usize),
+    /// A constant.
+    Imm(u64),
+}
+
+/// One step of a destructor body: a register set between two calls, or a
+/// call (`a0`, `a1`, the function-table target and the return address).
+/// `a1 == None` leaves `a1` as the previous callee left it, as the generated
+/// body does.
+#[derive(Clone, Copy)]
+pub(crate) enum MenuDtorStep {
+    /// `s<reg> = this + off`.
+    Set(usize, u32),
+    Call(MenuDtorArg, Option<MenuDtorArg>, u32, u32),
+}
+
+pub(crate) fn menu_dtor_arg(c: &Cpu, this: u32, arg: MenuDtorArg) -> u64 {
+    match arg {
+        MenuDtorArg::This(off) => sx(this.wrapping_add(off)),
+        MenuDtorArg::Reg(reg) => c.g[reg][0],
+        MenuDtorArg::Imm(v) => v,
+    }
+}
+
+/// Runs a destructor's steps for the object at `this`.
+pub(crate) fn run_menu_dtor_steps(c: &mut Cpu, this: u32, steps: &[MenuDtorStep]) -> Flow {
+    for step in steps {
+        match *step {
+            MenuDtorStep::Set(reg, off) => c.g[reg][0] = sx(this.wrapping_add(off)),
+            MenuDtorStep::Call(a0, a1, target, ret_addr) => {
+                c.g[A0][0] = menu_dtor_arg(c, this, a0);
+                if let Some(a1) = a1 {
+                    c.g[A1][0] = menu_dtor_arg(c, this, a1);
+                }
+                call_ptr(c, target, ret_addr)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The steps of `camera_splash_menu_dtor`, in the generated order.
+pub(crate) const CAMERA_SPLASH_MENU_DTOR_STEPS: &[MenuDtorStep] = &[
+    MenuDtorStep::Set(S1, 0x1eec),
+    MenuDtorStep::Set(S2, 0x1890),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x252c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e3c4,
+    ),
+    MenuDtorStep::Set(S3, 0xe58),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x2508),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e3d4,
+    ),
+    MenuDtorStep::Set(S4, 0x7fc),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x24e4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e3e4,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x24c0),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e3f0,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x249c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e3fc,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1f04),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_DTOR_TARGET,
+        0x0024e408,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::Reg(S1),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e414,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1ed0),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e420,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1eac),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e42c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1e88),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e438,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1e64),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e444,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1e40),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e450,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x18a8),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_DTOR_TARGET,
+        0x0024e45c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::Reg(S2),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e468,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x185c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e474,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1828),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e480,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x17f4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e48c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x17c0),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e498,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x178c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e4a4,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1758),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e4b0,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1724),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e4bc,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x16f0),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e4c8,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x16bc),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e4d4,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1688),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e4e0,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1654),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e4ec,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1620),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e4f8,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x15ec),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e504,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x15b8),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e510,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1584),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e51c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1550),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e528,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x151c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e534,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x14e8),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e540,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x14b4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e54c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1498),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e558,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1474),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e564,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1450),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e570,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x142c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e57c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1408),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e588,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0xe70),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_DTOR_TARGET,
+        0x0024e594,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::Reg(S3),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e5a0,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0xe3c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e5ac,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0xe18),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e5b8,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0xdf4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e5c4,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0xdd0),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e5d0,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0xdac),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e5dc,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x814),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_DTOR_TARGET,
+        0x0024e5e8,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::Reg(S4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e5f4,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x7c8),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e600,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x794),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e60c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x760),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e618,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x72c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e624,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x6f8),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e630,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x6c4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e63c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x690),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e648,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x65c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e654,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x628),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e660,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x5f4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e66c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x5c0),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e678,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x58c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e684,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x558),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e690,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x524),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e69c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x4f0),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e6a8,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x4bc),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e6b4,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x488),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e6c0,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x454),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e6cc,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x420),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e6d8,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x3ec),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e6e4,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x3b8),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e6f0,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x384),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e6fc,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x350),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e708,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x31c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e714,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x2ec),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e720,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x2bc),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e72c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x28c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e738,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x258),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e744,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x224),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e750,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1f4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e75c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1c4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e768,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x194),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e774,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x164),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e780,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x14c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e78c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x130),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e798,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::Reg(S0),
+        Some(MenuDtorArg::Reg(S5)),
+        MENU_DTOR_TARGET,
+        0x0024e7a4,
+    ),
+];
+
+/// The steps of `path_arrow_menu_dtor`, in the generated order.
+pub(crate) const PATH_ARROW_MENU_DTOR_STEPS: &[MenuDtorStep] = &[
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x458),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e7ec,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x428),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e7f8,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x3f4),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e804,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x3c0),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e810,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x38c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e81c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x35c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e828,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x32c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e834,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x2fc),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e840,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x2cc),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e84c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x298),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e858,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x264),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e864,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x230),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e870,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1fc),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e87c,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x1c8),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e888,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x194),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e894,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x164),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e8a0,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x14c),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e8ac,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::This(0x130),
+        Some(MenuDtorArg::Imm(0x2)),
+        MENU_ITEM_DTOR_TARGET,
+        0x0024e8b8,
+    ),
+    MenuDtorStep::Call(
+        MenuDtorArg::Reg(S0),
+        Some(MenuDtorArg::Reg(S1)),
+        MENU_DTOR_TARGET,
+        0x0024e8c4,
+    ),
+];
+
+/// `void CameraSplashMenu_dtor(CameraSplashMenu *this, int flags)` (0x24e388):
+/// destroys the crystal, drop and snowfall option items (flags 2 each) and
+/// the page itself with the caller's flags.
+pub fn camera_splash_menu_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 272;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S5, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+        run_menu_dtor_steps(c, this, CAMERA_SPLASH_MENU_DTOR_STEPS)?;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PathArrowMenu_dtor(PathArrowMenu *this, int flags)` (0x24e7c8):
+/// destroys the path-arrow option items (flags 2 each), then the page with
+/// the caller's flags.
+pub fn path_arrow_menu_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 68;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+        run_menu_dtor_steps(c, this, PATH_ARROW_MENU_DTOR_STEPS)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RenderTogglesMenu_OnActivate(void)` (0x24f7e0): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn render_toggles_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024f7f0)
+}
+
+/// `void RenderTogglesMenu_OnDeactivate(void)` (0x24f800): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn render_toggles_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024f810)
+}
+
+/// `void VisualEffectsTestMenu_OnActivate(void)` (0x24f820): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn visual_effects_test_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024f830)
+}
+
+/// `void VisualEffectsTestMenu_OnDeactivate(void)` (0x24f840): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn visual_effects_test_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024f850)
+}
+
+/// `void PlantsMenu_OnActivate(void)` (0x24f940): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn plants_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024f950)
+}
+
+/// `void PlantsMenu_OnDeactivate(void)` (0x24f960): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn plants_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024f970)
+}
+
+/// `void LightGlowMenu_OnActivate(void)` (0x24f980): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn light_glow_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024f990)
+}
+
+/// `void LightGlowMenu_OnDeactivate(void)` (0x24f9a0): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn light_glow_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024f9b0)
+}
+
+/// `void DepthFogMenu_OnActivate(void)` (0x24f9c0): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn depth_fog_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024f9d0)
+}
+
+/// `void DepthFogMenu_OnDeactivate(void)` (0x24f9e0): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn depth_fog_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024f9f0)
+}
+
+/// `void HeightFogMenu_OnActivate(void)` (0x24fa78): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn height_fog_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024fa88)
+}
+
+/// `void HeightFogMenu_OnDeactivate(void)` (0x24fa98): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn height_fog_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024faa8)
+}
+
+/// `void DetailSystemMenu_OnActivate(void)` (0x24fb80): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn detail_system_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024fb90)
+}
+
+/// `void DetailSystemMenu_OnDeactivate(void)` (0x24fba0): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn detail_system_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024fbb0)
+}
+
+/// `void ShellRendererMenu_OnActivate(void)` (0x24fc80): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn shell_renderer_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024fc90)
+}
+
+/// `void ShellRendererMenu_OnDeactivate(void)` (0x24fca0): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn shell_renderer_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024fcb0)
+}
+
+/// `void ScreenTintMenu_OnActivate(void)` (0x24fcc0): `MenuSysPage_OnActivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn screen_tint_menu_on_activate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbf60), 0x0024fcd0)
+}
+
+/// `void ScreenTintMenu_OnDeactivate(void)` (0x24fce0): `MenuSysPage_OnDeactivate(this)`, a 7-cycle forwarding wrapper
+/// (`this` passes through in `a0`).
+pub fn screen_tint_menu_on_deactivate(c: &mut Cpu) {
+    call::tail_wrapper(c, None, call::Target::Table(0x002cbfd0), 0x0024fcf0)
+}
+
+/// `VisualEffectsMenus_StaticInitDestroy(int initialize, uint priority)`
+/// (0x24e8d8), the static menu table the global ctor and dtor call.
+pub(crate) const OC527_VISUAL_EFFECTS_STATIC_INIT_DESTROY: Callee = Callee {
+    addr: 0x0024_e8d8,
+    f: ee::s06::f_0024e8d8,
+};
+
+/// `void ShadowMenu_OnActivate(void)` (0x24fdc0): `MenuSysPage_OnActivate(this)`.
+pub fn shadow_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0024_fdd0)
+}
+
+/// `void ShadowMenu_OnDeactivate(void)` (0x24fde0): `MenuSysPage_OnDeactivate(this)`.
+pub fn shadow_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0024_fdf0)
+}
+
+/// `void SnowSurfaceMenu_OnActivate(void)` (0x24fea8): `MenuSysPage_OnActivate(this)`.
+pub fn snow_surface_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0024_feb8)
+}
+
+/// `void SnowSurfaceMenu_OnDeactivate(void)` (0x24fec8): `MenuSysPage_OnDeactivate(this)`.
+pub fn snow_surface_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0024_fed8)
+}
+
+/// `void BoardTrailMenu_OnActivate(void)` (0x24fee8): `MenuSysPage_OnActivate(this)`.
+pub fn board_trail_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0024_fef8)
+}
+
+/// `void BoardTrailMenu_OnDeactivate(void)` (0x24ff08): `MenuSysPage_OnDeactivate(this)`.
+pub fn board_trail_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0024_ff18)
+}
+
+/// `void FlagsMenu_OnActivate(void)` (0x24ff90): `MenuSysPage_OnActivate(this)`.
+pub fn flags_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0024_ffa0)
+}
+
+/// `void FlagsMenu_OnDeactivate(void)` (0x24ffb0): `MenuSysPage_OnDeactivate(this)`.
+pub fn flags_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0024_ffc0)
+}
+
+/// `void PowerUpFXTogglesMenu_OnActivate(void)` (0x24ffd0): `MenuSysPage_OnActivate(this)`.
+pub fn power_up_fx_toggles_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0024_ffe0)
+}
+
+/// `void PowerUpFXTogglesMenu_OnDeactivate(void)` (0x24fff0): `MenuSysPage_OnDeactivate(this)`.
+pub fn power_up_fx_toggles_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0025_0000)
+}
+
+/// `void SnowfallTogglesMenu_OnActivate(void)` (0x250010): `MenuSysPage_OnActivate(this)`.
+pub fn snowfall_toggles_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0025_0020)
+}
+
+/// `void SnowfallTogglesMenu_OnDeactivate(void)` (0x250030): `MenuSysPage_OnDeactivate(this)`.
+pub fn snowfall_toggles_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0025_0040)
+}
+
+/// `void CameraSplashMenu_OnActivate(void)` (0x250050): `MenuSysPage_OnActivate(this)`.
+pub fn camera_splash_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0025_0060)
+}
+
+/// `void CameraSplashMenu_OnDeactivate(void)` (0x250070): `MenuSysPage_OnDeactivate(this)`.
+pub fn camera_splash_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0025_0080)
+}
+
+/// `void TubeMenu_OnActivate(void)` (0x250128): `MenuSysPage_OnActivate(this)`.
+pub fn tube_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0025_0138)
+}
+
+/// `void TubeMenu_OnDeactivate(void)` (0x250148): `MenuSysPage_OnDeactivate(this)`.
+pub fn tube_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0025_0158)
+}
+
+/// `void PathArrowMenu_OnActivate(void)` (0x250168): `MenuSysPage_OnActivate(this)`.
+pub fn path_arrow_menu_on_activate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bf60), 0x0025_0178)
+}
+
+/// `void PathArrowMenu_OnDeactivate(void)` (0x250188): `MenuSysPage_OnDeactivate(this)`.
+pub fn path_arrow_menu_on_deactivate(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x002c_bfd0), 0x0025_0198)
+}
+
+/// `void VisualEffectsMenus_GlobalCtors(void)` (0x2501a8): construct the
+/// static menus (`VisualEffectsMenus_StaticInitDestroy(1, 0xffff)`).
+pub fn visual_effects_menus_global_ctors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 1;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xffff;
+        OC527_VISUAL_EFFECTS_STATIC_INIT_DESTROY.call(c, 0x0025_01bc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void VisualEffectsMenus_GlobalDtors(void)` (0x2501c8): destroy the
+/// static menus (`VisualEffectsMenus_StaticInitDestroy(0, 0xffff)`).
+pub fn visual_effects_menus_global_dtors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xffff;
+        OC527_VISUAL_EFFECTS_STATIC_INIT_DESTROY.call(c, 0x0025_01dc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `addiu rt, rs, imm`: `rs + imm`, sign-extended to 64 bits.
+pub(crate) fn avalanche_ctor_addiu(c: &Cpu, rs: usize, imm: i32) -> u64 {
+    sx((c.g[rs][0] as u32).wrapping_add(imm as u32))
+}
+
+/// The 32-bit address `rs + off`.
+pub(crate) fn avalanche_ctor_at(c: &Cpu, rs: usize, off: u32) -> u32 {
+    (c.g[rs][0] as u32).wrapping_add(off)
+}
+
+/// `cAvalancheMenu::cAvalancheMenu(this)` (0x2501e8): the menu's base
+/// constructor, its vtable, then the title, the spacer and one item per
+/// tuning value (int or float, each with its variable and range), and
+/// finally every item added to the page in order. Returns `this`.
+/// Stack: 0x130 bytes; the item addresses are kept in 0x4-byte slots at
+/// `sp+0x0..` (title at slot 0, then one slot per item).
+pub fn avalanche_menu_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 508;
+        let frame = Frame::open(c, 0x130);
+        frame.save(c, S0, 0x100);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0xf0);
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 304);
+        frame.save(c, S2, 0xe0);
+        frame.save(c, S3, 0xd0);
+        frame.save(c, S4, 0xc0);
+        c.g[S2][0] = avalanche_ctor_addiu(c, S0, 1812);
+        frame.save(c, S5, 0xb0);
+        c.g[S4][0] = avalanche_ctor_addiu(c, S0, 1760);
+        frame.save(c, S6, 0xa0);
+        c.g[S5][0] = avalanche_ctor_addiu(c, S0, 1556);
+        frame.save(c, S7, 0x90);
+        c.g[S6][0] = avalanche_ctor_addiu(c, S0, 1660);
+        frame.save(c, FP, 0x80);
+        c.g[S7][0] = avalanche_ctor_addiu(c, S0, 1712);
+        frame.save_ra(c, 0x70);
+        c.g[FP][0] = avalanche_ctor_addiu(c, S0, 1452);
+        frame.save_fpr(c, 23, 0x128);
+        c.g[S3][0] = avalanche_ctor_addiu(c, S0, 1864);
+        frame.save_fpr(c, 22, 0x120);
+        c.g[S1][0] = avalanche_ctor_addiu(c, S0, 1916);
+        frame.save_fpr(c, 21, 0x118);
+        frame.save_fpr(c, 20, 0x110);
+        c.sw(frame.at(c, 0), c.g[V0][0]);
+        call_ptr(c, 0x002caa58, 0x00250254)?; // cMenu_cMenu (MenuSysPage_ctor)
+        c.mtc1(0, 20);
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 332);
+        c.g[A1][0] = 0x480000;
+        c.sw(frame.at(c, 0x4), c.g[V0][0]);
+        c.g[A1][0] = avalanche_ctor_addiu(c, A1, -640);
+        c.g[V0][0] = 0x480000;
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 21);
+        c.g[V0][0] = avalanche_ctor_addiu(c, V0, 64);
+        c.g[AT][0] = 0x447a0000;
+        c.mtc1(1, 22);
+        c.sw(avalanche_ctor_at(c, S0, 0x12c), c.g[V0][0]);
+        c.g[AT][0] = 0x41200000;
+        c.mtc1(1, 23);
+        c.g[A0][0] = c.lw(frame.at(c, 0));
+        call_ptr(c, 0x002cd2a0, 0x00250294)?; // cNullMenuItem ctor: TitleItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x4));
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 356);
+        c.sw(frame.at(c, 0x8), c.g[V0][0]);
+        c.g[A1][0] = 0x28;
+        call_ptr(c, 0x002cd350, 0x002502a8)?; // cSpaceMenuItem ctor: SpaceItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 404);
+        c.g[A0][0] = c.lw(frame.at(c, 0x8));
+        c.sw(frame.at(c, 0xc), c.g[V0][0]);
+        c.g[T1][0] = 0x4a0000;
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 452);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, 11760);
+        c.sw(frame.at(c, 0x10), c.g[V0][0]);
+        c.g[A1][0] = 0u64;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2368);
+        c.g[A3][0] = 0u64;
+        c.g[T0][0] = 0x1;
+        call_ptr(c, 0x002cd8f8, 0x002502d8)?; // cIntMenuItem ctor: EnableItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 504);
+        c.g[A0][0] = c.lw(frame.at(c, 0xc));
+        c.sw(frame.at(c, 0x14), c.g[V0][0]);
+        c.g[T1][0] = 0x4a0000;
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 552);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, 11768);
+        c.sw(frame.at(c, 0x18), c.g[V0][0]);
+        c.g[T0][0] = 0x1;
+        c.g[A3][0] = 0xffffffffffffffff;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2372);
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x002cd8f8, 0x00250308)?; // cIntMenuItem ctor: RecalcItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 600);
+        c.g[A0][0] = c.lw(frame.at(c, 0x10));
+        c.sw(frame.at(c, 0x1c), c.g[V0][0]);
+        c.g[A3][0] = 0x480000;
+        c.g[AT][0] = 0x40800000;
+        c.mtc1(1, 13);
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 648);
+        c.sw(frame.at(c, 0x20), c.g[V0][0]);
+        c.mov_s(12, 20);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -624);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2376);
+        c.g[A1][0] = 0x2;
+        call_ptr(c, 0x002cdce8, 0x0025033c)?; // cFloatMenuItem ctor: BrightnessItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 696);
+        c.g[A0][0] = c.lw(frame.at(c, 0x14));
+        c.sw(frame.at(c, 0x24), c.g[V0][0]);
+        c.g[T1][0] = 0x480000;
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 744);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, -608);
+        c.sw(frame.at(c, 0x28), c.g[V0][0]);
+        c.g[A1][0] = 0x3;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2380);
+        c.g[A3][0] = 0u64;
+        c.g[T0][0] = 0x1;
+        call_ptr(c, 0x002cd8f8, 0x0025036c)?; // cIntMenuItem ctor: UseLightMapColourItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 796);
+        c.g[A0][0] = c.lw(frame.at(c, 0x18));
+        c.sw(frame.at(c, 0x2c), c.g[V0][0]);
+        c.g[T1][0] = 0x480000;
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 844);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, -584);
+        c.sw(frame.at(c, 0x30), c.g[V0][0]);
+        c.g[A1][0] = 0x4;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2384);
+        c.g[A3][0] = 0u64;
+        c.g[T0][0] = 0x1;
+        call_ptr(c, 0x002cd8f8, 0x0025039c)?; // cIntMenuItem ctor: UseEndColourItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 892);
+        c.g[A0][0] = c.lw(frame.at(c, 0x1c));
+        c.sw(frame.at(c, 0x34), c.g[V0][0]);
+        c.g[T1][0] = 0x480000;
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 940);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, -568);
+        c.sw(frame.at(c, 0x38), c.g[V0][0]);
+        c.g[A1][0] = 0x5;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2388);
+        c.g[A3][0] = 0u64;
+        c.g[T0][0] = 0x1;
+        call_ptr(c, 0x002cd8f8, 0x002503cc)?; // cIntMenuItem ctor: SquareLerpItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x20));
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 988);
+        c.g[T1][0] = 0x4a0000;
+        c.sw(frame.at(c, 0x3c), c.g[V0][0]);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, 11776);
+        c.g[A1][0] = 0x6;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2392);
+        c.g[A3][0] = 0u64;
+        c.g[T0][0] = 0x1;
+        call_ptr(c, 0x002cd8f8, 0x002503f4)?; // cIntMenuItem ctor: SaveItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x24));
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1040);
+        c.g[T1][0] = 0x4a0000;
+        c.sw(frame.at(c, 0x40), c.g[V0][0]);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, 11784);
+        c.g[T0][0] = 0x1;
+        c.g[A3][0] = 0u64;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2396);
+        c.g[A1][0] = 0x7;
+        call_ptr(c, 0x002cd8f8, 0x0025041c)?; // cIntMenuItem ctor: LoadItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1092);
+        c.g[A0][0] = c.lw(frame.at(c, 0x28));
+        c.sw(frame.at(c, 0x44), c.g[V0][0]);
+        c.g[A3][0] = 0x480000;
+        c.g[AT][0] = 0x42f00000;
+        c.mtc1(1, 13);
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1144);
+        c.sw(frame.at(c, 0x48), c.g[V0][0]);
+        c.mov_s(12, 20);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -544);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2400);
+        c.g[A1][0] = 0x8;
+        call_ptr(c, 0x002cdce8, 0x00250450)?; // cFloatMenuItem ctor: MinImpactVelocityItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1196);
+        c.g[A0][0] = c.lw(frame.at(c, 0x2c));
+        c.sw(frame.at(c, 0x4c), c.g[V0][0]);
+        c.g[T1][0] = 0x480000;
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1248);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, -520);
+        c.sw(frame.at(c, 0x50), c.g[V0][0]);
+        c.g[A1][0] = 0x9;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2404);
+        c.g[A3][0] = 0u64;
+        c.g[T0][0] = 0x1;
+        call_ptr(c, 0x002cd8f8, 0x00250480)?; // cIntMenuItem ctor: RenderEmittersItem
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1300);
+        c.g[A0][0] = c.lw(frame.at(c, 0x30));
+        c.sw(frame.at(c, 0x54), c.g[V0][0]);
+        c.g[T1][0] = 0x480000;
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1348);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, -504);
+        c.sw(frame.at(c, 0x58), c.g[V0][0]);
+        c.g[A1][0] = 0xa;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2408);
+        c.g[A3][0] = 0u64;
+        c.g[T0][0] = 0x3f;
+        call_ptr(c, 0x002cd8f8, 0x002504b0)?; // cIntMenuItem ctor: RenderLinesItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x34));
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1400);
+        c.g[T1][0] = 0x480000;
+        c.sw(frame.at(c, 0x5c), c.g[V0][0]);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, -488);
+        c.g[A1][0] = 0xb;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2412);
+        c.g[A3][0] = 0xffffffffffffffff;
+        c.g[T0][0] = 0x1;
+        call_ptr(c, 0x002cd8f8, 0x002504d8)?; // cIntMenuItem ctor: TriggerItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x38));
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1504);
+        c.g[T1][0] = 0x4a0000;
+        c.sw(frame.at(c, 0x60), c.g[V0][0]);
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, 11792);
+        c.g[T0][0] = 0x1;
+        c.g[A3][0] = 0xffffffffffffffff;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2416);
+        c.g[A1][0] = 0xc;
+        call_ptr(c, 0x002cd8f8, 0x00250500)?; // cIntMenuItem ctor: UpdateItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x3c));
+        c.g[V0][0] = avalanche_ctor_addiu(c, S0, 1608);
+        c.g[A3][0] = 0x480000;
+        c.sw(frame.at(c, 0x64), c.g[V0][0]);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -464);
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2420);
+        c.g[A1][0] = 0xd;
+        call_ptr(c, 0x002cdce8, 0x00250528)?; // cFloatMenuItem ctor: UpdateTimeStepItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x40));
+        c.g[A3][0] = 0x480000;
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -440);
+        c.mov_s(12, 20);
+        c.mov_s(13, 22);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2424);
+        c.g[A1][0] = 0xe;
+        call_ptr(c, 0x002cdce8, 0x00250548)?; // cFloatMenuItem ctor: RotationalVelocityScaleItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x44));
+        c.g[A3][0] = 0x480000;
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -408);
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2428);
+        c.g[A1][0] = 0xf;
+        call_ptr(c, 0x002cdce8, 0x00250568)?; // cFloatMenuItem ctor: RandomBounceChanceItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x48));
+        c.g[A3][0] = 0x480000;
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -384);
+        c.mov_s(12, 20);
+        c.mov_s(13, 22);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2432);
+        c.g[A1][0] = 0x10;
+        call_ptr(c, 0x002cdce8, 0x00250588)?; // cFloatMenuItem ctor: RandomBounceVelocityScaleXYItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x4c));
+        c.g[A3][0] = 0x480000;
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -352);
+        c.mov_s(12, 20);
+        c.mov_s(13, 22);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2436);
+        c.g[A1][0] = 0x11;
+        call_ptr(c, 0x002cdce8, 0x002505a8)?; // cFloatMenuItem ctor: RandomBounceVelocityScaleZItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x50));
+        c.g[A3][0] = 0x480000;
+        c.mov_s(12, 21);
+        c.mov_s(13, 22);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -320);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2440);
+        c.g[A1][0] = 0x12;
+        call_ptr(c, 0x002cdce8, 0x002505c8)?; // cFloatMenuItem ctor: RandomBounceVelocityScaleItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x54));
+        c.g[T1][0] = 0x480000;
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, -288);
+        c.g[T0][0] = 0x3e8;
+        c.g[A3][0] = 0u64;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2444);
+        c.g[A1][0] = 0x13;
+        call_ptr(c, 0x002cd8f8, 0x002505e8)?; // cIntMenuItem ctor: AvalancheIdItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x58));
+        c.g[A3][0] = 0x4a0000;
+        c.g[AT][0] = 0x42fe0000;
+        c.mtc1(1, 13);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, 11800);
+        c.mov_s(12, 20);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2448);
+        c.g[A1][0] = 0x14;
+        call_ptr(c, 0x002cdce8, 0x0025060c)?; // cFloatMenuItem ctor: GravityItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x5c));
+        c.g[A3][0] = 0x480000;
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -272);
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2452);
+        c.g[A1][0] = 0x15;
+        call_ptr(c, 0x002cdce8, 0x0025062c)?; // cFloatMenuItem ctor: VelocityDampingItem
+        c.g[A3][0] = 0x480000;
+        c.g[A0][0] = c.g[FP][0];
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -248);
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2456);
+        c.g[A1][0] = 0x16;
+        call_ptr(c, 0x002cdce8, 0x0025064c)?; // cFloatMenuItem ctor: NormalVelocityScaleItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x60));
+        c.g[A3][0] = 0x480000;
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -224);
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2460);
+        c.g[A1][0] = 0x17;
+        call_ptr(c, 0x002cdce8, 0x0025066c)?; // cFloatMenuItem ctor: ForwardVelocityScaleItem
+        c.g[A3][0] = 0x480000;
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -200);
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2464);
+        c.g[A1][0] = 0x18;
+        call_ptr(c, 0x002cdce8, 0x0025068c)?; // cFloatMenuItem ctor: NormalToForwardScaleItem
+        c.g[A0][0] = c.lw(frame.at(c, 0x64));
+        c.g[A3][0] = 0x480000;
+        c.g[AT][0] = 0x42ee0000;
+        c.mtc1(1, 13);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -176);
+        c.mov_s(12, 21);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2468);
+        c.g[A1][0] = 0x19;
+        call_ptr(c, 0x002cdce8, 0x002506b0)?; // cFloatMenuItem ctor: MaxVelocityItem
+        c.g[A3][0] = 0x4a0000;
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A0][0] = c.g[S6][0];
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, 11808);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2472);
+        c.g[A1][0] = 0x1a;
+        call_ptr(c, 0x002cdce8, 0x002506d0)?; // cFloatMenuItem ctor: DampingItem
+        c.g[T1][0] = 0x480000;
+        c.g[T0][0] = 0x400;
+        c.g[T1][0] = avalanche_ctor_addiu(c, T1, -160);
+        c.g[A0][0] = c.g[S7][0];
+        c.g[A3][0] = 0x1;
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2476);
+        c.g[A1][0] = 0x1b;
+        call_ptr(c, 0x002cd8f8, 0x002506f0)?; // cIntMenuItem ctor: NumParticlesItem
+        c.g[A3][0] = 0x480000;
+        c.mov_s(12, 21);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -144);
+        c.g[A0][0] = c.g[S4][0];
+        c.mov_s(13, 22);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2480);
+        c.g[A1][0] = 0x1c;
+        call_ptr(c, 0x002cdce8, 0x00250710)?; // cFloatMenuItem ctor: DefaultSizeItem
+        c.g[A3][0] = 0x480000;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -128);
+        c.mov_s(12, 20);
+        c.mov_s(13, 23);
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2484);
+        c.g[A1][0] = 0x1d;
+        call_ptr(c, 0x002cdce8, 0x00250730)?; // cFloatMenuItem ctor: PatchColourScaleItem
+        c.g[A3][0] = 0x480000;
+        c.mov_s(12, 20);
+        c.mov_s(13, 23);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, -104);
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2488);
+        c.g[A1][0] = 0x1e;
+        call_ptr(c, 0x002cdce8, 0x00250750)?; // cFloatMenuItem ctor: PatchColourScale2Item
+        c.g[AT][0] = 0xffffffffbf800000;
+        c.mtc1(1, 12);
+        c.g[A3][0] = 0x4a0000;
+        c.mov_s(13, 22);
+        c.g[A3][0] = avalanche_ctor_addiu(c, A3, 11816);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = avalanche_ctor_addiu(c, GP, 2492);
+        c.g[A1][0] = 0x1f;
+        call_ptr(c, 0x002cdce8, 0x00250774)?; // cFloatMenuItem ctor: SeedItem
+        c.g[A1][0] = c.lw(frame.at(c, 0));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250784)?; // cMenu_addItem: TitleItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x4));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250794)?; // cMenu_addItem: SpaceItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x8));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002507a4)?; // cMenu_addItem: EnableItem
+        c.g[A1][0] = c.lw(frame.at(c, 0xc));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002507b4)?; // cMenu_addItem: RecalcItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x10));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002507c4)?; // cMenu_addItem: BrightnessItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x14));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002507d4)?; // cMenu_addItem: UseLightMapColourItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x18));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002507e4)?; // cMenu_addItem: UseEndColourItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x1c));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002507f4)?; // cMenu_addItem: SquareLerpItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x20));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250804)?; // cMenu_addItem: SaveItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x24));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250814)?; // cMenu_addItem: LoadItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x28));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250824)?; // cMenu_addItem: MinImpactVelocityItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x2c));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250834)?; // cMenu_addItem: RenderEmittersItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x30));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250844)?; // cMenu_addItem: RenderLinesItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x34));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250854)?; // cMenu_addItem: TriggerItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x38));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250864)?; // cMenu_addItem: UpdateItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x3c));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250874)?; // cMenu_addItem: UpdateTimeStepItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x40));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250884)?; // cMenu_addItem: RotationalVelocityScaleItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x44));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250894)?; // cMenu_addItem: RandomBounceChanceItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x48));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002508a4)?; // cMenu_addItem: RandomBounceVelocityScaleXYItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x4c));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002508b4)?; // cMenu_addItem: RandomBounceVelocityScaleZItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x50));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002508c4)?; // cMenu_addItem: RandomBounceVelocityScaleItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x54));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002508d4)?; // cMenu_addItem: AvalancheIdItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x58));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002508e4)?; // cMenu_addItem: GravityItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x5c));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x002508f4)?; // cMenu_addItem: VelocityDampingItem
+        c.g[A1][0] = c.g[FP][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250904)?; // cMenu_addItem: NormalVelocityScaleItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x60));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250914)?; // cMenu_addItem: ForwardVelocityScaleItem
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250924)?; // cMenu_addItem: NormalToForwardScaleItem
+        c.g[A1][0] = c.lw(frame.at(c, 0x64));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250934)?; // cMenu_addItem: MaxVelocityItem
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250944)?; // cMenu_addItem: DampingItem
+        c.g[A1][0] = c.g[S7][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250954)?; // cMenu_addItem: NumParticlesItem
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250964)?; // cMenu_addItem: DefaultSizeItem
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250974)?; // cMenu_addItem: PatchColourScaleItem
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250984)?; // cMenu_addItem: PatchColourScale2Item
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        call_ptr(c, 0x002cbcc8, 0x00250994)?; // cMenu_addItem: SeedItem
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0xf0);
+        frame.restore(c, S0, 0x100);
+        frame.restore(c, S2, 0xe0);
+        frame.restore(c, S3, 0xd0);
+        frame.restore(c, S4, 0xc0);
+        frame.restore(c, S5, 0xb0);
+        frame.restore(c, S6, 0xa0);
+        frame.restore(c, S7, 0x90);
+        frame.restore(c, FP, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.restore_fpr(c, 23, 0x128);
+        frame.restore_fpr(c, 22, 0x120);
+        frame.restore_fpr(c, 21, 0x118);
+        frame.restore_fpr(c, 20, 0x110);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `AIVisualEffectsMenus_StaticInitDestroy(int prio, int init)` (0x250cb0, the
+/// `__sti__aivisualeffectsmenu_cpp` static initialiser/destructor of the
+/// visual-effects debug menu). Only `prio == 0xffff` does anything: with
+/// `init != 0` it fills the sV4 colour table (0x4d1968..0x4d1c78) and the
+/// sSlot array (0x4a5060..0x4a50d0), then constructs the static
+/// `AvalancheMenu` at 0x4d1c88; with `init == 0` it destroys that menu. The
+/// frame is 0xa0 bytes; s16-s23 and s30 are saved.
+///
+/// The table fills are 254 stores into fixed addresses (`gp`-relative for the
+/// flags at 0x1f70..0x1fe0), transcribed from the generated body in order, so
+/// the final value of every register and the cycle charge stay as the original
+/// leaves them.
+pub fn aivisual_effects_menus_static_init_destroy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0xffff;
+        frame.save(c, 16, 0x90);
+        frame.save(c, 17, 0x80);
+        frame.save(c, 18, 0x70);
+        frame.save(c, 19, 0x60);
+        frame.save(c, 20, 0x50);
+        frame.save(c, 21, 0x40);
+        frame.save(c, 22, 0x30);
+        frame.save(c, 23, 0x20);
+        frame.save(c, 30, 0x10);
+        let prio_not_ffff = c.g[A1][0] != c.g[V0][0];
+        frame.save_ra(c, 0);
+        if prio_not_ffff {
+            c.cycles += 1;
+            frame.restore(c, 16, 0x90);
+        } else {
+            c.cycles += 2;
+            let a0_zero = c.g[A0][0] == 0u64;
+            c.g[T5][0] = 0x4d0000;
+            if !a0_zero {
+                // init != 0: the table fills, then the AvalancheMenu constructor.
+                c.cycles += 561;
+                c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x4ec0));
+                c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x4ebc));
+                c.g[T6][0] = 0x4d0000;
+                c.lwc1(11, (c.g[GP][0] as u32).wrapping_sub(0x4eb8));
+                c.g[T7][0] = 0x4d0000;
+                c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4eb4));
+                c.g[V0][0] = sx((c.g[T7][0] as u32).wrapping_add(0x1938));
+                c.swc1(9, (c.g[T5][0] as u32).wrapping_add(0x1918));
+                c.g[S1][0] = 0x4d0000;
+                c.swc1(10, (c.g[T6][0] as u32).wrapping_add(0x1928));
+                c.g[S2][0] = 0x4d0000;
+                c.swc1(11, (c.g[T7][0] as u32).wrapping_add(0x1938));
+                c.g[S3][0] = 0x4d0000;
+                c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4eb0));
+                c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1968));
+                c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4eac));
+                c.g[S5][0] = 0x4d0000;
+                c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4ea8));
+                c.g[S4][0] = 0x4d0000;
+                c.swc1(7, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.g[T3][0] = 0x4d0000;
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4ea4));
+                c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x1908));
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 0);
+                c.g[A3][0] = sx((c.g[T5][0] as u32).wrapping_add(0x1918));
+                c.swc1(8, (c.g[S1][0] as u32).wrapping_add(0x1948));
+                c.g[T1][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1928));
+                c.swc1(4, (c.g[S2][0] as u32).wrapping_add(0x1958));
+                c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1948));
+                c.swc1(5, (c.g[S3][0] as u32).wrapping_add(0x1968));
+                c.g[T0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1958));
+                c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4ea0));
+                c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1978));
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4e9c));
+                c.g[T4][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1988));
+                c.swc1(2, (c.g[A0][0] as u32).wrapping_add(0xc));
+                c.g[S2][0] = 0x4d0000;
+                c.g[AT][0] = 0x3f000000;
+                c.mtc1(1, 6);
+                c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x19e8));
+                c.swc1(3, (c.g[S4][0] as u32).wrapping_add(0x1978));
+                c.g[T9][0] = 0x4d0000;
+                c.swc1(1, (c.g[T3][0] as u32).wrapping_add(0x1988));
+                c.g[S3][0] = 0x4d0000;
+                c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0x1908));
+                c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(0x19f8));
+                c.swc1(6, (c.g[A1][0] as u32).wrapping_add(0xc));
+                c.g[T2][0] = sx((c.g[T9][0] as u32).wrapping_add(0x1998));
+                c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[S6][0] = 0x4d0000;
+                c.lwc1(17, (c.g[GP][0] as u32).wrapping_sub(0x4e98));
+                c.g[FP][0] = 0x4d0000;
+                c.lwc1(18, (c.g[GP][0] as u32).wrapping_sub(0x4e94));
+                c.g[S3][0] = sx((c.g[FP][0] as u32).wrapping_add(0x1a08));
+                c.sw((c.g[T1][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[T7][0] = sx((c.g[S6][0] as u32).wrapping_add(0x19c8));
+                c.lwc1(13, (c.g[GP][0] as u32).wrapping_sub(0x4e90));
+                c.g[FP][0] = 0x4d0000;
+                c.lwc1(14, (c.g[GP][0] as u32).wrapping_sub(0x4e8c));
+                c.g[T8][0] = 0x4d0000;
+                c.swc1(17, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[T5][0] = sx((c.g[T8][0] as u32).wrapping_add(0x19a8));
+                c.swc1(18, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[S7][0] = 0x4d0000;
+                c.swc1(13, (c.g[V1][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(14, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1a18));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[T6][0] = sx((c.g[S7][0] as u32).wrapping_add(0x19b8));
+                c.lwc1(15, (c.g[GP][0] as u32).wrapping_sub(0x4e88));
+                c.g[V1][0] = 0x4d0000;
+                c.lwc1(16, (c.g[GP][0] as u32).wrapping_sub(0x4e84));
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1a58));
+                c.sw((c.g[T0][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_add(0x1a78));
+                c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x4e80));
+                c.g[FP][0] = 0x4d0000;
+                c.swc1(15, (c.g[A0][0] as u32).wrapping_add(0x4));
+                c.g[S0][0] = 0x4d0000;
+                c.swc1(16, (c.g[A0][0] as u32).wrapping_add(0x8));
+                c.swc1(12, (c.g[A2][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0xc));
+                c.g[S4][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1a68));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
+                c.g[T3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1a88));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = 0x4d0000;
+                c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+                c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1aa8));
+                c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x4));
+                c.g[T1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1ad8));
+                c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x8));
+                c.g[A3][0] = 0x4d0000;
+                c.lwc1(19, (c.g[GP][0] as u32).wrapping_sub(0x4e7c));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4e78));
+                c.g[A2][0] = sx((c.g[FP][0] as u32).wrapping_add(0x1ab8));
+                c.swc1(19, (c.g[T4][0] as u32).wrapping_add(0x4));
+                c.g[FP][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1af8));
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4e74));
+                c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1b08));
+                c.swc1(2, (c.g[T9][0] as u32).wrapping_add(0x1998));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4e70));
+                c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1b68));
+                c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = c.g[S0][0];
+                c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4e6c));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x19d8));
+                c.swc1(8, (c.g[T7][0] as u32).wrapping_add(0xc));
+                c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4e68));
+                c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4e64));
+                c.swc1(3, (c.g[T4][0] as u32).wrapping_add(0x8));
+                c.sw((c.g[T4][0] as u32).wrapping_add(0xc), 0u64);
+                c.swc1(4, (c.g[T2][0] as u32).wrapping_add(0x4));
+                c.swc1(5, (c.g[T2][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[T8][0] as u32).wrapping_add(0x19a8));
+                c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[S7][0] as u32).wrapping_add(0x19b8));
+                c.sw((c.g[T6][0] as u32).wrapping_add(0xc), 0u64);
+                c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4e60));
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_add(0x19c8));
+                c.swc1(7, (c.g[T7][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x19d8));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4e5c));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x19e8));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0xc));
+                c.g[T4][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1b88));
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4e58));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4e54));
+                c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1b98));
+                c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4e50));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4e4c));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x19f8));
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x1a08));
+                c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = c.g[S0][0];
+                c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x19d8));
+                c.sw((c.g[T6][0] as u32).wrapping_add(0x4), 0u64);
+                c.sw((c.g[T6][0] as u32).wrapping_add(0x8), 0u64);
+                c.swc1(8, (c.g[T7][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x8));
+                c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1bc8));
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x4), 0u64);
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x8), 0u64);
+                c.g[A0][0] = 0x4d0000;
+                c.g[S2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1be8));
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x4), 0u64);
+                c.g[A0][0] = 0x4d0000;
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x8), 0u64);
+                c.g[T7][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c08));
+                c.sw((c.g[S3][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[A0][0] = 0x4d0000;
+                c.g[S3][0] = 0x4d0000;
+                c.g[T6][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c18));
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1a48));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(6, (c.g[S3][0] as u32).wrapping_add(0xc));
+                c.g[T5][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c28));
+                c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4e48));
+                c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0x1a78));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4e44));
+                c.g[S3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c38));
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4e40));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4e3c));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x1a18));
+                c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x1a28));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1a28));
+                c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x4e38));
+                c.swc1(6, (c.g[A0][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x4e34));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x1a38));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1a38));
+                c.lwc1(11, (c.g[GP][0] as u32).wrapping_sub(0x4e30));
+                c.swc1(6, (c.g[A0][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = 0x4d0000;
+                c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x4e2c));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x1a48));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x1a58));
+                c.swc1(3, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = 0x4d0000;
+                c.swc1(4, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c88));
+                c.g[V0][0] = 0x4d0000;
+                c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4e28));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1a68));
+                c.swc1(5, (c.g[S4][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = 0x4d0000;
+                c.sw((c.g[S4][0] as u32).wrapping_add(0xc), 0u64);
+                c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x4));
+                c.swc1(8, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[V1][0] = 0x4d0000;
+                c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4e24));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1a88));
+                c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0xc));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1a98));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1a28));
+                c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1a38));
+                c.swc1(6, (c.g[V1][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(6, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1a48));
+                c.swc1(6, (c.g[V1][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1a98));
+                c.swc1(0, (c.g[S4][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.swc1(2, (c.g[A2][0] as u32).wrapping_add(0xc));
+                c.swc1(1, (c.g[T1][0] as u32).wrapping_add(0xc));
+                c.swc1(3, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.sw((c.g[V0][0] as u32).wrapping_add(0xc), 0u64);
+                c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4e20));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1aa8));
+                c.swc1(4, (c.g[A1][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(5, (c.g[A1][0] as u32).wrapping_add(0x8));
+                c.sw((c.g[A1][0] as u32).wrapping_add(0xc), 0u64);
+                c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x4e1c));
+                c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4e18));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1ab8));
+                c.swc1(6, (c.g[A2][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = c.g[V1][0];
+                c.swc1(7, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1ac8));
+                c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4e14));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1ac8));
+                c.swc1(8, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1ad8));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(9, (c.g[T1][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = c.g[V0][0];
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1ae8));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1ae8));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1af8));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1b08));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1ac8));
+                c.swc1(10, (c.g[A3][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(11, (c.g[A3][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1ae8));
+                c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[A3][0] = 0x4d0000;
+                c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4e10));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x1b18));
+                c.swc1(12, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1b18));
+                c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1b78));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+                c.g[FP][0] = 0x4d0000;
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0xc));
+                c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4e0c));
+                c.g[A3][0] = c.g[V1][0];
+                c.swc1(4, (c.g[FP][0] as u32).wrapping_add(0x1b58));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1b28));
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4e08));
+                c.g[FP][0] = 0x4d0000;
+                c.swc1(3, (c.g[T0][0] as u32).wrapping_add(0xc));
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4e04));
+                c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = c.g[FP][0];
+                c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4e00));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1b38));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1b28));
+                c.swc1(5, (c.g[A3][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = 0x4d0000;
+                c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x1b38));
+                c.g[A3][0] = c.g[V1][0];
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1b48));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1b48));
+                c.g[FP][0] = 0x4d0000;
+                c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x1b58));
+                c.sw((c.g[FP][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[V0][0] = 0x4d0000;
+                c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x4dfc));
+                c.g[V1][0] = 0x4d0000;
+                c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4df8));
+                c.g[A3][0] = c.g[V1][0];
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1b68));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1b78));
+                c.swc1(6, (c.g[T0][0] as u32).wrapping_add(0x4));
+                c.g[FP][0] = 0x4d0000;
+                c.swc1(7, (c.g[T0][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = 0x4d0000;
+                c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4df4));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1b78));
+                c.swc1(8, (c.g[A3][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = 0x4d0000;
+                c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x4df0));
+                c.g[A3][0] = 0x4d0000;
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x1b88));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1b28));
+                c.swc1(9, (c.g[T4][0] as u32).wrapping_add(0x8));
+                c.g[FP][0] = 0x4d0000;
+                c.sw((c.g[T4][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x1b38));
+                c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x4dec));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1b98));
+                c.swc1(10, (c.g[T2][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1ba8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1b48));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1b58));
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x8));
+                c.g[A3][0] = 0x4d0000;
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1b78));
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+                c.g[FP][0] = 0x4d0000;
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
+                c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x1ba8));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x8), 0u64);
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1bb8));
+                c.swc1(0, (c.g[T4][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = 0x4d0000;
+                c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1bf8));
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = 0x4d0000;
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4de8));
+                c.swc1(12, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4de4));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(2, (c.g[V1][0] as u32).wrapping_add(0xc));
+                c.swc1(1, (c.g[T7][0] as u32).wrapping_add(0xc));
+                c.g[V1][0] = c.g[V0][0];
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0xc));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1bd8));
+                c.g[FP][0] = 0x4d0000;
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x1bb8));
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x1bc8));
+                c.g[A3][0] = 0x4d0000;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[FP][0] = 0x4d0000;
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1bd8));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[V0][0] = c.g[FP][0];
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x1be8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1bf8));
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[V1][0] = 0x4d0000;
+                c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4de0));
+                c.g[A3][0] = 0x4d0000;
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x1bf8));
+                c.swc1(3, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[FP][0] = 0x4d0000;
+                c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4ddc));
+                c.g[V0][0] = 0x4d0000;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1c08));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1ba8));
+                c.swc1(4, (c.g[T7][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = 0x4d0000;
+                c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4dd8));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1bb8));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x1c18));
+                c.swc1(5, (c.g[T6][0] as u32).wrapping_add(0x8));
+                c.g[A3][0] = 0x4d0000;
+                c.sw((c.g[T6][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1bd8));
+                c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x4dd4));
+                c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4dd0));
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x1c28));
+                c.swc1(6, (c.g[T5][0] as u32).wrapping_add(0x4));
+                c.g[FP][0] = 0x1;
+                c.swc1(7, (c.g[T5][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.swc1(12, (c.g[V1][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = 0x2;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = 0x3;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+                c.sw((c.g[A3][0] as u32).wrapping_add(0x8), 0u64);
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x8), 0u64);
+                c.g[A3][0] = 0x4d0000;
+                c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1c48));
+                c.g[S2][0] = 0x4d0000;
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4dcc));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1bf8));
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4dc8));
+                c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[T7][0] as u32).wrapping_add(0x4));
+                c.g[S2][0] = 0x4d0000;
+                c.swc1(0, (c.g[T6][0] as u32).wrapping_add(0x4));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1c58));
+                c.sw((c.g[T5][0] as u32).wrapping_add(0xc), 0u64);
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1f88), c.g[V0][0]);
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1f90), c.g[V1][0]);
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1f78), 0u64);
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1f80), c.g[FP][0]);
+                c.g[V1][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1f88));
+                c.g[A2][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1f78));
+                c.g[V0][0] = c.g[FP][0] & 0xff;
+                c.g[A1][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1f90));
+                c.g[FP][0] = 0x4d0000;
+                c.swc1(2, (c.g[A3][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = c.g[V0][0] | 0x100;
+                c.swc1(1, (c.g[S2][0] as u32).wrapping_add(0xc));
+                c.g[A3][0] = 0x4d0000;
+                c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4dc4));
+                c.g[S2][0] = c.g[A3][0];
+                c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4dc0));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1c48));
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x1c38));
+                c.g[V1][0] = c.g[V1][0] | 0x200;
+                c.swc1(3, (c.g[S3][0] as u32).wrapping_add(0x4));
+                c.g[A1][0] = c.g[A1][0] | 0x300;
+                c.swc1(4, (c.g[S3][0] as u32).wrapping_add(0x8));
+                c.sw((c.g[S3][0] as u32).wrapping_add(0xc), 0u64);
+                c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4dbc));
+                c.g[S3][0] = 0x4d0000;
+                c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x4db8));
+                c.g[FP][0] = c.g[S3][0];
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x1c48));
+                c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x1c58));
+                c.swc1(5, (c.g[S2][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = 0x4d0000;
+                c.swc1(6, (c.g[S2][0] as u32).wrapping_add(0x8));
+                c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4db4));
+                c.g[S2][0] = c.g[A3][0];
+                c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4db0));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1c68));
+                c.swc1(0, (c.g[S3][0] as u32).wrapping_add(0x1c58));
+                c.swc1(7, (c.g[FP][0] as u32).wrapping_add(0x4));
+                c.g[S3][0] = 0x4d0000;
+                c.swc1(8, (c.g[FP][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x1c68));
+                c.g[FP][0] = c.g[S3][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xc), 0u64);
+                c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x1c78));
+                c.swc1(0, (c.g[S3][0] as u32).wrapping_add(0x1c78));
+                c.g[A3][0] = 0x6;
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+                c.g[S3][0] = 0x8;
+                c.sw((c.g[FP][0] as u32).wrapping_add(0xc), 0u64);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1f78), c.g[A2][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1f80), c.g[V0][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1f88), c.g[V1][0]);
+                c.g[V0][0] = 0x4;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x4), 0u64);
+                c.g[V1][0] = 0x5;
+                c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x8));
+                c.sw((c.g[FP][0] as u32).wrapping_add(0x8), 0u64);
+                c.g[S2][0] = 0x7;
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1f74), 0u64);
+                c.g[FP][0] = 0x9;
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1f70), 0u64);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1f90), c.g[A1][0]);
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1f98), c.g[V0][0]);
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fa0), c.g[V1][0]);
+                c.g[V0][0] = 0xa;
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fa8), c.g[A3][0]);
+                c.g[V1][0] = 0xb;
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fb0), c.g[S2][0]);
+                c.g[A3][0] = 0xc;
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fd0), c.g[V1][0]);
+                c.g[S2][0] = 0xd;
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fc8), c.g[V0][0]);
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fd8), c.g[A3][0]);
+                c.g[A1][0] = c.g[V1][0] & 0xff;
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fb8), c.g[S3][0]);
+                c.g[A2][0] = c.g[V0][0] & 0xff;
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fc0), c.g[FP][0]);
+                c.g[A2][0] = c.g[A2][0] | 0xa00;
+                c.sb((c.g[GP][0] as u32).wrapping_add(0x1fe0), c.g[S2][0]);
+                c.g[T0][0] = c.g[S3][0] & 0xff;
+                c.g[T1][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1f98));
+                c.g[A3][0] = c.g[FP][0] & 0xff;
+                c.g[T3][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1fa0));
+                c.g[V0][0] = c.g[S2][0] & 0xff;
+                c.g[T4][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1fa8));
+                c.g[T1][0] = c.g[T1][0] | 0x400;
+                c.g[T2][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1fb0));
+                c.g[T3][0] = c.g[T3][0] | 0x500;
+                c.g[V1][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1fd8));
+                c.g[T4][0] = c.g[T4][0] | 0x600;
+                c.g[T2][0] = c.g[T2][0] | 0x700;
+                c.g[T0][0] = c.g[T0][0] | 0x800;
+                c.g[A3][0] = c.g[A3][0] | 0x900;
+                c.g[A1][0] = c.g[A1][0] | 0xb00;
+                c.g[V1][0] = c.g[V1][0] | 0xc00;
+                c.g[V0][0] = c.g[V0][0] | 0xd00;
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1f98), c.g[T1][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fa0), c.g[T3][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fa8), c.g[T4][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fb0), c.g[T2][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fb8), c.g[T0][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fc0), c.g[A3][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fc8), c.g[A2][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fd0), c.g[A1][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fd8), c.g[V1][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x1fe0), c.g[V0][0]);
+                Callee {
+                    addr: 0x0025_01e8,
+                    f: ee::s06::f_002501e8,
+                }
+                .call(c, 0x0025_15a8)?;
+                frame.restore(c, 16, 0x90);
+            } else {
+                // init == 0: the AvalancheMenu destructor, with a2 = 2.
+                c.cycles += 4;
+                c.g[A0][0] = 0x4d0000;
+                c.g[A1][0] = 0x2;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c88));
+                Callee {
+                    addr: 0x0025_0ae0,
+                    f: ee::s06::f_00250ae0,
+                }
+                .call(c, 0x0025_15c0)?;
+                c.cycles += 1;
+                frame.restore(c, 16, 0x90);
+            }
+        }
+        // epilogue
+        c.cycles += 11;
+        frame.restore(c, 17, 0x80);
+        frame.restore(c, 18, 0x70);
+        frame.restore(c, 19, 0x60);
+        frame.restore(c, 20, 0x50);
+        frame.restore(c, 21, 0x40);
+        frame.restore(c, 22, 0x30);
+        frame.restore(c, 23, 0x20);
+        frame.restore(c, 30, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Offsets (from the menu object) of the 34 `cMenuItem` members, in the order
+/// the constructor builds them.
+pub(crate) const AVALANCHE_MENU_ITEM_OFFSETS: [u32; 34] = [
+    0x77c, 0x748, 0x714, 0x6e0, 0x6b0, 0x67c, 0x648, 0x614, 0x5e0, 0x5ac, 0x578, 0x544, 0x514,
+    0x4e0, 0x4ac, 0x478, 0x444, 0x410, 0x3dc, 0x3ac, 0x37c, 0x34c, 0x31c, 0x2e8, 0x2b8, 0x288,
+    0x258, 0x228, 0x1f8, 0x1c4, 0x194, 0x164, 0x14c, 0x130,
+];
+
+/// `cMenuItem::cMenuItem(this, 2)` (0x2ca280).
+pub(crate) const MENU_ITEM_CTOR: u32 = 0x002c_a280;
+
+/// `cMenu::cMenu(this, flags)` (0x2caa80).
+pub(crate) const MENU_CTOR: u32 = 0x002c_aa80;
+
+/// `cAvalancheMenu::cAvalancheMenu(this, flags)` (0x250ae0). The constructor
+/// (the list calls it a destructor) builds the menu's 34 `cMenuItem`s (flag 2)
+/// at their fixed offsets, then runs the base `cMenu` constructor on the whole
+/// object. Item `i` returns to `0x250b04 + 12 * i`; the base constructor returns
+/// to `0x250c9c`. A callee that unwinds returns at once, as the compiled code
+/// does.
+pub fn avalanche_menu_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 116;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        for (i, &off) in AVALANCHE_MENU_ITEM_OFFSETS.iter().enumerate() {
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(off));
+            c.g[A1][0] = 2;
+            call_ptr(c, MENU_ITEM_CTOR, 0x0025_0b04 + 12 * i as u32)?;
+        }
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, MENU_CTOR, 0x0025_0c9c)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7672,6 +10043,512 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = 0;
                 c.pc = 0x0024_e0f8;
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    use crate::difftest::fakes;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// A menu-page thunk: `this` at `DATA`, random junk in every register.
+    pub(crate) fn thunk_case(generated: GuestFn, hand: GuestFn, entry: u32) {
+        check(generated, hand, 100, &|c, seed| {
+            machine(c, seed, entry as u64, 0);
+            c.g[A0][0] = DATA as u64;
+            c.pc = entry;
+        });
+    }
+
+    /// A destructor: `this` in the fixture area, flags with bit 0 clear so the
+    /// items do not take the `operator delete` path.
+    pub(crate) fn dtor_case_2(generated: GuestFn, hand: GuestFn, entry: u32, salt: u64) {
+        check(generated, hand, 24, &|c, seed| {
+            let mut r = machine(c, seed, salt, 0);
+            c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 0x40);
+            c.g[A1][0] = ((r.next_u32() as u64) << 1) | 0x2;
+            c.pc = entry;
+        });
+    }
+
+    #[test]
+    fn camera_splash_menu_dtor_matches() {
+        dtor_case_2(
+            ee::s06::f_0024e388__generated,
+            camera_splash_menu_dtor,
+            0x0024_e388,
+            0x24_e388,
+        );
+    }
+
+    #[test]
+    fn path_arrow_menu_dtor_matches() {
+        dtor_case_2(
+            ee::s06::f_0024e7c8__generated,
+            path_arrow_menu_dtor,
+            0x0024_e7c8,
+            0x24_e7c8,
+        );
+    }
+
+    #[test]
+    fn render_toggles_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024f7e0__generated,
+            render_toggles_menu_on_activate,
+            0x0024f7e0,
+        );
+    }
+
+    #[test]
+    fn render_toggles_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024f800__generated,
+            render_toggles_menu_on_deactivate,
+            0x0024f800,
+        );
+    }
+
+    #[test]
+    fn visual_effects_test_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024f820__generated,
+            visual_effects_test_menu_on_activate,
+            0x0024f820,
+        );
+    }
+
+    #[test]
+    fn visual_effects_test_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024f840__generated,
+            visual_effects_test_menu_on_deactivate,
+            0x0024f840,
+        );
+    }
+
+    #[test]
+    fn plants_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024f940__generated,
+            plants_menu_on_activate,
+            0x0024f940,
+        );
+    }
+
+    #[test]
+    fn plants_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024f960__generated,
+            plants_menu_on_deactivate,
+            0x0024f960,
+        );
+    }
+
+    #[test]
+    fn light_glow_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024f980__generated,
+            light_glow_menu_on_activate,
+            0x0024f980,
+        );
+    }
+
+    #[test]
+    fn light_glow_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024f9a0__generated,
+            light_glow_menu_on_deactivate,
+            0x0024f9a0,
+        );
+    }
+
+    #[test]
+    fn depth_fog_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024f9c0__generated,
+            depth_fog_menu_on_activate,
+            0x0024f9c0,
+        );
+    }
+
+    #[test]
+    fn depth_fog_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024f9e0__generated,
+            depth_fog_menu_on_deactivate,
+            0x0024f9e0,
+        );
+    }
+
+    #[test]
+    fn height_fog_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024fa78__generated,
+            height_fog_menu_on_activate,
+            0x0024fa78,
+        );
+    }
+
+    #[test]
+    fn height_fog_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024fa98__generated,
+            height_fog_menu_on_deactivate,
+            0x0024fa98,
+        );
+    }
+
+    #[test]
+    fn detail_system_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024fb80__generated,
+            detail_system_menu_on_activate,
+            0x0024fb80,
+        );
+    }
+
+    #[test]
+    fn detail_system_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024fba0__generated,
+            detail_system_menu_on_deactivate,
+            0x0024fba0,
+        );
+    }
+
+    #[test]
+    fn shell_renderer_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024fc80__generated,
+            shell_renderer_menu_on_activate,
+            0x0024fc80,
+        );
+    }
+
+    #[test]
+    fn shell_renderer_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024fca0__generated,
+            shell_renderer_menu_on_deactivate,
+            0x0024fca0,
+        );
+    }
+
+    #[test]
+    fn screen_tint_menu_on_activate_matches() {
+        thunk_case(
+            ee::s06::f_0024fcc0__generated,
+            screen_tint_menu_on_activate,
+            0x0024fcc0,
+        );
+    }
+
+    #[test]
+    fn screen_tint_menu_on_deactivate_matches() {
+        thunk_case(
+            ee::s06::f_0024fce0__generated,
+            screen_tint_menu_on_deactivate,
+            0x0024fce0,
+        );
+    }
+
+    pub(crate) const SEEDS_5: u32 = 100;
+
+    /// A menu page wrapper's fixture: `a0` points at random page data.
+    pub(crate) fn page_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        c.g[A0][0] = DATA as u64;
+        fill(c, &mut r, DATA, 0x100 / 4);
+    }
+
+    #[test]
+    fn shadow_menu_on_activate_matches() {
+        check(
+            ee::s06::f_0024fdc0__generated,
+            shadow_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_fdc0),
+        );
+    }
+
+    #[test]
+    fn shadow_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_0024fde0__generated,
+            shadow_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_fde0),
+        );
+    }
+
+    #[test]
+    fn snow_surface_menu_on_activate_matches() {
+        check(
+            ee::s06::f_0024fea8__generated,
+            snow_surface_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_fea8),
+        );
+    }
+
+    #[test]
+    fn snow_surface_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_0024fec8__generated,
+            snow_surface_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_fec8),
+        );
+    }
+
+    #[test]
+    fn board_trail_menu_on_activate_matches() {
+        check(
+            ee::s06::f_0024fee8__generated,
+            board_trail_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_fee8),
+        );
+    }
+
+    #[test]
+    fn board_trail_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_0024ff08__generated,
+            board_trail_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_ff08),
+        );
+    }
+
+    #[test]
+    fn flags_menu_on_activate_matches() {
+        check(
+            ee::s06::f_0024ff90__generated,
+            flags_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_ff90),
+        );
+    }
+
+    #[test]
+    fn flags_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_0024ffb0__generated,
+            flags_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_ffb0),
+        );
+    }
+
+    #[test]
+    fn power_up_fx_toggles_menu_on_activate_matches() {
+        check(
+            ee::s06::f_0024ffd0__generated,
+            power_up_fx_toggles_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_ffd0),
+        );
+    }
+
+    #[test]
+    fn power_up_fx_toggles_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_0024fff0__generated,
+            power_up_fx_toggles_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0024_fff0),
+        );
+    }
+
+    #[test]
+    fn snowfall_toggles_menu_on_activate_matches() {
+        check(
+            ee::s06::f_00250010__generated,
+            snowfall_toggles_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0025_0010),
+        );
+    }
+
+    #[test]
+    fn snowfall_toggles_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_00250030__generated,
+            snowfall_toggles_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0025_0030),
+        );
+    }
+
+    #[test]
+    fn camera_splash_menu_on_activate_matches() {
+        check(
+            ee::s06::f_00250050__generated,
+            camera_splash_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0025_0050),
+        );
+    }
+
+    #[test]
+    fn camera_splash_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_00250070__generated,
+            camera_splash_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0025_0070),
+        );
+    }
+
+    #[test]
+    fn tube_menu_on_activate_matches() {
+        check(
+            ee::s06::f_00250128__generated,
+            tube_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0025_0128),
+        );
+    }
+
+    #[test]
+    fn tube_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_00250148__generated,
+            tube_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0025_0148),
+        );
+    }
+
+    #[test]
+    fn path_arrow_menu_on_activate_matches() {
+        check(
+            ee::s06::f_00250168__generated,
+            path_arrow_menu_on_activate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0025_0168),
+        );
+    }
+
+    #[test]
+    fn path_arrow_menu_on_deactivate_matches() {
+        check(
+            ee::s06::f_00250188__generated,
+            path_arrow_menu_on_deactivate,
+            SEEDS_5,
+            &|c, seed| page_setup(c, seed, 0x0025_0188),
+        );
+    }
+
+    #[test]
+    fn visual_effects_menus_global_ctors_matches() {
+        check(
+            ee::s06::f_002501a8__generated,
+            visual_effects_menus_global_ctors,
+            SEEDS_5,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0025_01a8, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn visual_effects_menus_global_dtors_matches() {
+        check(
+            ee::s06::f_002501c8__generated,
+            visual_effects_menus_global_dtors,
+            SEEDS_5,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0025_01c8, 0);
+            },
+        );
+    }
+
+    /// The menu lives at `DATA`; the ctor writes the page fields and every
+    /// item, the rest of the object is random junk.
+    #[test]
+    fn avalanche_menu_ctor_matches() {
+        check(
+            ssx3_ee::s06::f_002501e8__generated,
+            avalanche_menu_ctor,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2501_e8, 0);
+                fill(c, &mut r, DATA, 0x240);
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | DATA as u64;
+            },
+        );
+    }
+
+    /// Covers the constructor path (prio 0xffff, a0 != 0), the destructor path
+    /// (a0 == 0) and the early return for another priority.
+    #[test]
+    fn aivisual_effects_menus_static_init_destroy_matches() {
+        check(
+            ee::s06::f_00250cb0__generated,
+            aivisual_effects_menus_static_init_destroy,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x250c_b0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0025_0cb0;
+                c.g[A0][0] = sx(if seed % 3 == 0 { 0 } else { DATA });
+                c.g[A1][0] = sx(if seed % 4 == 0 { r.next_u32() } else { 0xffff });
+            },
+        );
+    }
+
+    /// Gate word for the menu constructor's callee fakes (test machines only).
+    pub(crate) const AVALANCHE_MENU_GATE: u32 = DATA + 0x200000;
+
+    pub(crate) static OC531_PREV_MENU_ITEM: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC531_PREV_MENU: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc531_fake_menu_item(c: &mut Cpu) {
+        if c.bus.read32(AVALANCHE_MENU_GATE) != 0x0531_0001 {
+            return fakes::fall_back(c, &OC531_PREV_MENU_ITEM, ee::s09::f_002ca280__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, MENU_ITEM_CTOR, ra);
+    }
+
+    pub(crate) fn oc531_fake_menu(c: &mut Cpu) {
+        if c.bus.read32(AVALANCHE_MENU_GATE) != 0x0531_0001 {
+            return fakes::fall_back(c, &OC531_PREV_MENU, ee::s09::f_002caa80__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, MENU_CTOR, ra);
+    }
+
+    #[test]
+    fn avalanche_menu_ctor_matches_2() {
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CA280),
+            oc531_fake_menu_item,
+            &OC531_PREV_MENU_ITEM,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CAA80),
+            oc531_fake_menu,
+            &OC531_PREV_MENU,
+        );
+        check(
+            ee::s06::f_00250ae0__generated,
+            avalanche_menu_ctor_2,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0025_0ae0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(AVALANCHE_MENU_GATE, 0x0531_0001);
+                c.g[A0][0] = sx(DATA + 0x1000 * (seed % 4));
+                c.g[A1][0] = r.next_u32() as u64;
+                c.pc = 0x0025_0ae0;
             },
         );
     }

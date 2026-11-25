@@ -7,6 +7,7 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 pub(crate) use crate::game::dirtysock::tagsunk::arg;
 pub(crate) use crate::game::scripter::ssxscriptengine::oc428_at;
@@ -55,6 +56,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ScriptCmdQueue_IsFull",
     ),
     (0x0028_3c80, script_cmd_queue_push_2, "ScriptCmdQueue_Push"),
+    (0x0028_39a8, script_movie_start, "ScriptMovie_Start"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -694,6 +696,108 @@ pub fn script_cmd_queue_push_2(c: &mut Cpu) {
     })
 }
 
+/// `ScriptMovie_Start` (0x2839a8, `cVidEngine_PlayVideo`): with no movie
+/// player returns 0, and 1 when one is already playing. Otherwise it starts
+/// the player, pushes the pause state (10) on the pause stack, saves the TV
+/// display format, moves the cut-scene manager to regular mode (remembering
+/// whether it had to) and pauses the SFX. Returns 1.
+pub fn script_movie_start(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let movie = c.g[S0][0] as u32;
+        c.g[A0][0] = Addr(movie).lw(c);
+        c.g[V0][0] = 0;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(movie).off(0x4).lw(c);
+            let playing = c.g[V0][0] != 0;
+            c.g[V0][0] = 1;
+            if !playing {
+                start_movie(c)?;
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The starting half of [`script_movie_start`]: the player is in `a0` and
+/// `s0` is the movie object.
+pub(crate) fn start_movie(c: &mut Cpu) -> Flow {
+    let movie = c.g[S0][0] as u32;
+    let gp = c.g[GP][0] as u32;
+    c.cycles += 23;
+    call_ptr(c, 0x0025_3860, 0x0028_39d8)?;
+    c.g[A1][0] = Addr(gp.wrapping_sub(0x69c)).lw(c);
+    c.g[V1][0] = 0x530000;
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x66e8));
+    c.g[A3][0] = 1;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+    let playing_flag = c.g[A3][0];
+    Addr(movie).off(0x4).sw(c, playing_flag);
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[A2][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[A0][0] = 0xa;
+    let stack_slot = c.g[V0][0] as u32;
+    let pause_state = c.g[A0][0];
+    Addr(stack_slot).sw(c, pause_state);
+    c.g[V1][0] = 0x440000;
+    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x2918)).lw(c);
+    c.g[A0][0] = Addr(c.g[A2][0] as u32).off(0x84).lw(c);
+    let saved_flags = c.g[V0][0];
+    Addr(gp.wrapping_sub(0x6a0)).sw(c, saved_flags);
+    c.g[A0][0] = Addr(c.g[A0][0] as u32).off(0x64).lw(c);
+    let stack_index = c.g[A1][0];
+    Addr(gp.wrapping_sub(0x69c)).sw(c, stack_index);
+    Addr(movie).off(0x14).sw(c, 0);
+    c.g[V1][0] = Addr(c.g[A0][0] as u32).off(0x10).lw(c);
+    let state_zero = c.g[V1][0] == 0;
+    c.g[V0][0] = 2;
+    if !state_zero {
+        c.cycles += 2;
+        if c.g[V1][0] != c.g[V0][0] {
+            Addr(movie).off(0x14).sw(c, playing_flag);
+        }
+    }
+    c.cycles += 22;
+    call_ptr(c, 0x002e_a820, 0x0028_3a3c)?;
+    c.g[A1][0] = Addr(gp.wrapping_sub(0x854)).lw(c);
+    c.g[V1][0] = Addr(c.g[A1][0] as u32).off(0x10d8).lw(c);
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x150).lh(c);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x154).lw(c);
+    let method = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, method, 0x0028_3a54)?;
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+    c.g[A1][0] = 0;
+    c.g[A2][0] = Addr(gp.wrapping_sub(0x854)).lw(c);
+    let display_format = c.g[V1][0];
+    Addr(movie).off(0x10).sw(c, display_format);
+    c.g[V0][0] = Addr(c.g[A2][0] as u32).off(0x10d8).lw(c);
+    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x140).lh(c);
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x144).lw(c);
+    let set_method = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, set_method, 0x0028_3a78)?;
+    Callee {
+        addr: 0x0028_b180,
+        f: ee::s07::f_0028b180,
+    }
+    .call(c, 0x0028_3a80)?;
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, 0x0029_ce28, 0x0028_3a88)?;
+    c.g[V0][0] = 1;
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1018,6 +1122,46 @@ pub(crate) mod tests {
                     },
                 );
                 crate::difftest::fill(c, &mut r, cmd, 7);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::GAME_GP;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc554_gate_on;
+
+    #[test]
+    fn script_movie_start_matches() {
+        check(
+            ee::s07::f_002839a8__generated,
+            script_movie_start,
+            300,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0011);
+                let movie = DATA + 0x7000;
+                let grman = DATA + 0x5000;
+                let vt = DATA + 0x6400;
+                let world = DATA + 0x5400;
+                let game = DATA + 0x5800;
+                let cut = DATA + 0x5c00;
+                c.bus
+                    .write32(movie, if seed % 5 == 0 { 0 } else { DATA + 0x7100 });
+                c.bus
+                    .write32(movie + 0x4, if seed % 3 == 0 { 1 } else { 0 });
+                c.bus.write32(movie + 0x14, r.next_u32());
+                c.bus.write32(GAME_GP - 0x854, grman);
+                c.bus.write32(grman + 0x10d8, vt);
+                c.bus.write16(vt + 0x140, 0x20);
+                c.bus.write32(vt + 0x144, fakes::FAKE);
+                c.bus.write16(vt + 0x150, 0x10);
+                c.bus.write32(vt + 0x154, fakes::FAKE);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0x64, cut);
+                c.bus.write32(cut + 0x10, seed % 4);
+                c.bus.write32(GAME_GP - 0x69c, seed % 4);
+                c.g[A0][0] = movie as u64;
             },
         );
     }

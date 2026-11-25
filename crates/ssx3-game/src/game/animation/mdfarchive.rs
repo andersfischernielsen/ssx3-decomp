@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -18,6 +19,7 @@ pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -53,6 +55,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_anim_map_unregister_bank,
         "GameAnimMap_UnregisterBank",
     ),
+    (0x0031_4db0, gameanimmap_dtor, "GameAnimMap_dtor"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -420,6 +423,31 @@ pub fn game_anim_map_register_bank(c: &mut Cpu) {
     })
 }
 
+/// `cGameAnimMap::~cGameAnimMap(int flags)` (0x314db0): clears the global
+/// map pointer (`GP + 0xd8c`) and frees `self` when flag bit 0 is set.
+pub fn gameanimmap_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A1][0] & 1;
+        frame.save_ra(c, 0);
+        let free = c.g[A1][0] != 0;
+        c.sw((c.g[GP][0] as u32).wrapping_add(0xd8c), 0);
+        if free {
+            c.cycles += 2;
+            Callee {
+                addr: 0x0031_7e50,
+                f: ee::s10::f_00317e50,
+            }
+            .call(c, 0x0031_4dcc)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -622,6 +650,30 @@ pub(crate) mod tests {
                 for i in 0..4u32 {
                     c.bus.write32(DATA + 0x1400 + i * 0x14, r.next_u32());
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::animsequencer::tests::OC560_GATE;
+    pub(crate) use crate::game::animation::animsequencer::tests::OC560_MAGIC;
+
+    pub(crate) use crate::game::animation::animsequencer::tests::oc560_hook_delete;
+
+    #[test]
+    fn gameanimmap_dtor_matches() {
+        oc560_hook_delete();
+        check(
+            ee::s10::f_00314db0__generated,
+            gameanimmap_dtor,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x0031_4db0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_4db0;
+                c.bus.write32(OC560_GATE, OC560_MAGIC);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
             },
         );
     }
