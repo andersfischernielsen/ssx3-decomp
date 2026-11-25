@@ -508,34 +508,49 @@ mod tests {
 
     #[test]
     fn conveyor_node_ctor_matches() {
-        check(ee::s12::f_00361500__generated, conveyor_node_ctor, 150, &|c, seed| {
-            let mut r = Rng(0x0036_1500 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0036_1500;
-            c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
-        });
+        check(
+            ee::s12::f_00361500__generated,
+            conveyor_node_ctor,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1500 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1500;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
+            },
+        );
     }
 
     #[test]
     fn counter_node_ctor_matches() {
-        check(ee::s12::f_00361530__generated, counter_node_ctor, 150, &|c, seed| {
-            let mut r = Rng(0x0036_1530 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0036_1530;
-            c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
-        });
+        check(
+            ee::s12::f_00361530__generated,
+            counter_node_ctor,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1530 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1530;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
+            },
+        );
     }
 
     #[test]
     fn roller_modifier_v10_matches() {
-        check(ee::s12::f_00361cd8__generated, roller_modifier_v10, 150, &|c, seed| {
-            let mut r = Rng(0x0036_1cd8 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0036_1cd8;
-            c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
-            c.bus
-                .write32(DATA + 0x100 * (seed % 2) + 0x20, r.next_u32());
-        });
+        check(
+            ee::s12::f_00361cd8__generated,
+            roller_modifier_v10,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1cd8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1cd8;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
+                c.bus
+                    .write32(DATA + 0x100 * (seed % 2) + 0x20, r.next_u32());
+            },
+        );
     }
 
     #[test]
@@ -554,11 +569,16 @@ mod tests {
 
     #[test]
     fn intc_table_shutdown_matches() {
-        check(ee::s12::f_00361f40__generated, intc_table_shutdown, 100, &|c, seed| {
-            let mut r = Rng(0x0036_1f40 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0036_1f40;
-        });
+        check(
+            ee::s12::f_00361f40__generated,
+            intc_table_shutdown,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1f40 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1f40;
+            },
+        );
     }
 
     #[test]
@@ -615,18 +635,23 @@ mod tests {
 
     #[test]
     fn stream_man_cancel_matches() {
-        check(ee::s13::f_003a7010__generated, stream_man_cancel, 150, &|c, seed| {
-            let mut r = Rng(0x003a_7010 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x003a_7010;
-            c.g[A0][0] = sx(DATA);
-            c.bus.write32(
-                DATA + 0x90,
-                if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
-            );
-            c.bus.write32(DATA + 0x88, DATA + 0x400);
-            c.bus.write32(DATA + 0x9c, r.next_u32());
-        });
+        check(
+            ee::s13::f_003a7010__generated,
+            stream_man_cancel,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x003a_7010 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003a_7010;
+                c.g[A0][0] = sx(DATA);
+                c.bus.write32(
+                    DATA + 0x90,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                c.bus.write32(DATA + 0x88, DATA + 0x400);
+                c.bus.write32(DATA + 0x9c, r.next_u32());
+            },
+        );
     }
 
     #[test]

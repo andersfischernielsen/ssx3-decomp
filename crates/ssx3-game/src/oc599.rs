@@ -371,40 +371,45 @@ mod tests {
 
     #[test]
     fn anim_combo_ctor_matches() {
-        check(ee::s11::f_00358c80__generated, anim_combo_ctor, 240, &|c, seed| {
-            let mut r = Rng(0x3c80_0358 ^ seed as u64);
-            let gp = GAME_GP;
-            c.g[GP][0] = gp as u64;
-            // the allocator for the transform array (operator new)
-            rail_test_allocator(c);
-            let this = DATA + 0x2000;
-            let inst = DATA + 0x3000;
-            let model = DATA + 0x4000;
-            let adata = DATA + 0x3800;
-            let timer = DATA + 0x5000;
-            let frac = |r: &mut Rng| ((r.next_u32() % 2000) as f32 - 1000.0) * 0.01;
-            // float constants of the game (1/30 and a scale), and the timer
-            put_f(c, gp.wrapping_sub(0x2a7c), 1.0 / 30.0);
-            put_f(c, gp.wrapping_sub(0x2a78), 1.0 / 30.0);
-            put_f(c, gp.wrapping_sub(0x2a74), 0.5);
-            c.bus.write32(gp + 0x2a74, timer); // cAppMan_TheAppMan
-            c.bus.write32(timer + 0x10, 30 + seed % 30); // TimerHz
-            c.bus.write32(inst + 0x80, model); // pInstance->m_Model
-            put_f(c, model + 0x14, frac(&mut r)); // m_fAnimTime
-            let from = frac(&mut r).abs() + 0.25;
-            put_f(c, adata + 0x28, if seed % 2 == 0 { from } else { -from }); // FromTime2
-            put_f(c, adata + 0x10, frac(&mut r)); // ToTime
-            let to2 = frac(&mut r).abs() + 0.25;
-            put_f(c, adata + 0x2c, if seed % 3 == 0 { -to2 } else { to2 }); // ToTime2
-            put_f(c, adata + 0x30, frac(&mut r)); // Speed2
-            let stop = [0u32, 1, u32::MAX, 2][((seed / 3) % 4) as usize];
-            c.bus.write32(adata + 0x34, stop); // Stop
-            c.bus.write32(this + 0x74, seed % 4); // NumAnimMeshes
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = (seed % 5) as u64;
-            c.g[A2][0] = inst as u64;
-            c.g[A3][0] = adata as u64;
-            c.pc = 0x0035_8c80;
-        });
+        check(
+            ee::s11::f_00358c80__generated,
+            anim_combo_ctor,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3c80_0358 ^ seed as u64);
+                let gp = GAME_GP;
+                c.g[GP][0] = gp as u64;
+                // the allocator for the transform array (operator new)
+                rail_test_allocator(c);
+                let this = DATA + 0x2000;
+                let inst = DATA + 0x3000;
+                let model = DATA + 0x4000;
+                let adata = DATA + 0x3800;
+                let timer = DATA + 0x5000;
+                let frac = |r: &mut Rng| ((r.next_u32() % 2000) as f32 - 1000.0) * 0.01;
+                // float constants of the game (1/30 and a scale), and the timer
+                put_f(c, gp.wrapping_sub(0x2a7c), 1.0 / 30.0);
+                put_f(c, gp.wrapping_sub(0x2a78), 1.0 / 30.0);
+                put_f(c, gp.wrapping_sub(0x2a74), 0.5);
+                c.bus.write32(gp + 0x2a74, timer); // cAppMan_TheAppMan
+                c.bus.write32(timer + 0x10, 30 + seed % 30); // TimerHz
+                c.bus.write32(inst + 0x80, model); // pInstance->m_Model
+                put_f(c, model + 0x14, frac(&mut r)); // m_fAnimTime
+                let from = frac(&mut r).abs() + 0.25;
+                put_f(c, adata + 0x28, if seed % 2 == 0 { from } else { -from }); // FromTime2
+                put_f(c, adata + 0x10, frac(&mut r)); // ToTime
+                let to2 = frac(&mut r).abs() + 0.25;
+                put_f(c, adata + 0x2c, if seed % 3 == 0 { -to2 } else { to2 }); // ToTime2
+                put_f(c, adata + 0x30, frac(&mut r)); // Speed2
+                let stop = [0u32, 1, u32::MAX, 2][((seed / 3) % 4) as usize];
+                c.bus.write32(adata + 0x34, stop); // Stop
+                c.bus.write32(this + 0x74, seed % 4); // NumAnimMeshes
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (seed % 5) as u64;
+                c.g[A2][0] = inst as u64;
+                c.g[A3][0] = adata as u64;
+                c.pc = 0x0035_8c80;
+            },
+        );
     }
 }

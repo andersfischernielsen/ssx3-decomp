@@ -613,13 +613,18 @@ mod tests {
     #[test]
     fn dead_fade_save_matches() {
         install_fakes();
-        check(ee::s11::f_00350e70__generated, dead_fade_save, SEEDS, &|c, seed| {
-            let mut r = Rng(0x587_0e70 ^ seed as u64);
-            scramble(c, &mut r);
-            gate_on(c);
-            c.pc = 0x0035_0e70;
-            c.g[A0][0] = sx(DATA + 0x100 + (seed % 3) * 0x40);
-        });
+        check(
+            ee::s11::f_00350e70__generated,
+            dead_fade_save,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x587_0e70 ^ seed as u64);
+                scramble(c, &mut r);
+                gate_on(c);
+                c.pc = 0x0035_0e70;
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 3) * 0x40);
+            },
+        );
     }
 
     #[test]
@@ -745,45 +750,55 @@ mod tests {
     #[test]
     fn mesh_anim_ctor_matches() {
         install_fakes();
-        check(ee::s11::f_00352168__generated, mesh_anim_ctor, SEEDS, &|c, seed| {
-            let mut r = Rng(0x587_2168 ^ seed as u64);
-            scramble(c, &mut r);
-            gate_on(c);
-            c.pc = 0x0035_2168;
-            c.g[A0][0] = sx(DATA + 0x100);
-            c.g[A2][0] = sx(DATA + 0x500);
-            c.bus.write32(DATA + 0x500, DATA + 0x600);
-            c.bus.write16(DATA + 0x610, ((seed % 4) * 0x10) as u16);
-            c.bus.write32(DATA + 0x614, LEAF);
-        });
+        check(
+            ee::s11::f_00352168__generated,
+            mesh_anim_ctor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x587_2168 ^ seed as u64);
+                scramble(c, &mut r);
+                gate_on(c);
+                c.pc = 0x0035_2168;
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A2][0] = sx(DATA + 0x500);
+                c.bus.write32(DATA + 0x500, DATA + 0x600);
+                c.bus.write16(DATA + 0x610, ((seed % 4) * 0x10) as u16);
+                c.bus.write32(DATA + 0x614, LEAF);
+            },
+        );
     }
 
     #[test]
     fn mesh_anim_kill_matches() {
         install_fakes();
-        check(ee::s11::f_00352780__generated, mesh_anim_kill, SEEDS, &|c, seed| {
-            let mut r = Rng(0x587_2780 ^ seed as u64);
-            scramble(c, &mut r);
-            gate_on(c);
-            c.pc = 0x0035_2780;
-            // mode 0: node already dead (replace), 1: live node with a hook,
-            // 2: a null self (the store path with the null test taken)
-            let mode = seed % 3;
-            let this = if mode == 2 { 0 } else { DATA + 0x400 };
-            c.g[A0][0] = sx(this);
-            if mode == 2 {
-                c.bus.write32(0x6b0, 1);
-            } else {
-                c.bus
-                    .write32(DATA + 0x400 + 0x6b0, if mode == 0 { 0 } else { 1 });
-                c.bus.write32(DATA + 0x400 + 0x18, DATA + 0x800);
-                c.bus.write32(DATA + 0x400 + 0xc, DATA + 0x900);
-                c.bus.write32(DATA + 0x800 + 0x8, r.next_u32());
-                c.bus.write32(DATA + 0x800, 0x1234_5678);
-                c.bus.write16(DATA + 0x908, 0x20);
-                c.bus.write32(DATA + 0x90c, LEAF);
-            }
-        });
+        check(
+            ee::s11::f_00352780__generated,
+            mesh_anim_kill,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x587_2780 ^ seed as u64);
+                scramble(c, &mut r);
+                gate_on(c);
+                c.pc = 0x0035_2780;
+                // mode 0: node already dead (replace), 1: live node with a hook,
+                // 2: a null self (the store path with the null test taken)
+                let mode = seed % 3;
+                let this = if mode == 2 { 0 } else { DATA + 0x400 };
+                c.g[A0][0] = sx(this);
+                if mode == 2 {
+                    c.bus.write32(0x6b0, 1);
+                } else {
+                    c.bus
+                        .write32(DATA + 0x400 + 0x6b0, if mode == 0 { 0 } else { 1 });
+                    c.bus.write32(DATA + 0x400 + 0x18, DATA + 0x800);
+                    c.bus.write32(DATA + 0x400 + 0xc, DATA + 0x900);
+                    c.bus.write32(DATA + 0x800 + 0x8, r.next_u32());
+                    c.bus.write32(DATA + 0x800, 0x1234_5678);
+                    c.bus.write16(DATA + 0x908, 0x20);
+                    c.bus.write32(DATA + 0x90c, LEAF);
+                }
+            },
+        );
     }
 
     #[test]
@@ -809,12 +824,17 @@ mod tests {
     #[test]
     fn sky_box_dtor_matches() {
         install_fakes();
-        check(ee::s11::f_00353ae8__generated, sky_box_dtor, SEEDS, &|c, seed| {
-            let mut r = Rng(0x587_3ae8 ^ seed as u64);
-            scramble(c, &mut r);
-            gate_on(c);
-            c.pc = 0x0035_3ae8;
-            c.g[A0][0] = sx(DATA + 0x100 + (seed % 2) * 0x40);
-        });
+        check(
+            ee::s11::f_00353ae8__generated,
+            sky_box_dtor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x587_3ae8 ^ seed as u64);
+                scramble(c, &mut r);
+                gate_on(c);
+                c.pc = 0x0035_3ae8;
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 2) * 0x40);
+            },
+        );
     }
 }

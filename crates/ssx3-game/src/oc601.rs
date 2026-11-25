@@ -990,9 +990,12 @@ mod tests {
 
     #[test]
     fn flex_bridge_ctor_matches() {
-        fakes::covered(ee::s11::f_00346350__generated, flex_bridge_ctor, 120, &|c, seed| {
-            ctor_setup(c, seed)
-        });
+        fakes::covered(
+            ee::s11::f_00346350__generated,
+            flex_bridge_ctor,
+            120,
+            &|c, seed| ctor_setup(c, seed),
+        );
     }
 
     /// The replay-frame constructor: its vtable slot 0x14 reads the
@@ -1013,9 +1016,12 @@ mod tests {
 
     #[test]
     fn flex_bridge_ctor_2_matches() {
-        fakes::covered(ee::s11::f_003464e0__generated, flex_bridge_ctor_2, 120, &|c, seed| {
-            ctor_2_setup(c, seed)
-        });
+        fakes::covered(
+            ee::s11::f_003464e0__generated,
+            flex_bridge_ctor_2,
+            120,
+            &|c, seed| ctor_2_setup(c, seed),
+        );
     }
 
     /// The node with its index and normal blocks set on odd seeds, its
@@ -1043,8 +1049,11 @@ mod tests {
 
     #[test]
     fn flex_bridge_dtor_matches() {
-        fakes::covered(ee::s11::f_00346568__generated, flex_bridge_dtor, 120, &|c, seed| {
-            dtor_setup(c, seed)
-        });
+        fakes::covered(
+            ee::s11::f_00346568__generated,
+            flex_bridge_dtor,
+            120,
+            &|c, seed| dtor_setup(c, seed),
+        );
     }
 }

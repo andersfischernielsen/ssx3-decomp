@@ -1069,12 +1069,17 @@ mod tests {
     #[test]
     fn dead_node_v01_matches() {
         install_leaves();
-        check(ee::s12::f_00360a28__generated, dead_node_v01, 60, &|c, seed| {
-            let _ = machine(c, seed, 0x0a28, 0);
-            gate_on(c);
-            c.pc = 0x0036_0a28;
-            c.g[A0][0] = sx(DATA);
-        });
+        check(
+            ee::s12::f_00360a28__generated,
+            dead_node_v01,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0a28, 0);
+                gate_on(c);
+                c.pc = 0x0036_0a28;
+                c.g[A0][0] = sx(DATA);
+            },
+        );
     }
 
     #[test]

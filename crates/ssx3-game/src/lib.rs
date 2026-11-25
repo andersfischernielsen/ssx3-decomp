@@ -132,6 +132,20 @@ pub mod oc607;
 pub mod oc608;
 #[cfg(feature = "oc609")]
 pub mod oc609;
+#[cfg(feature = "oc611")]
+pub mod oc611;
+#[cfg(feature = "oc612")]
+pub mod oc612;
+#[cfg(feature = "oc614")]
+pub mod oc614;
+#[cfg(feature = "oc615")]
+pub mod oc615;
+#[cfg(feature = "oc616")]
+pub mod oc616;
+#[cfg(feature = "oc617")]
+pub mod oc617;
+#[cfg(feature = "oc618")]
+pub mod oc618;
 pub mod plugin_host;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
@@ -158,6 +172,20 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
+    #[cfg(feature = "oc618")]
+    v.extend_from_slice(oc618::OVERRIDES);
+    #[cfg(feature = "oc617")]
+    v.extend_from_slice(oc617::OVERRIDES);
+    #[cfg(feature = "oc616")]
+    v.extend_from_slice(oc616::OVERRIDES);
+    #[cfg(feature = "oc615")]
+    v.extend_from_slice(oc615::OVERRIDES);
+    #[cfg(feature = "oc614")]
+    v.extend_from_slice(oc614::OVERRIDES);
+    #[cfg(feature = "oc612")]
+    v.extend_from_slice(oc612::OVERRIDES);
+    #[cfg(feature = "oc611")]
+    v.extend_from_slice(oc611::OVERRIDES);
     #[cfg(feature = "oc609")]
     v.extend_from_slice(oc609::OVERRIDES);
     #[cfg(feature = "oc608")]

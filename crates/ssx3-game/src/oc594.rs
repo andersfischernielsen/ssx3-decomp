@@ -1265,9 +1265,14 @@ mod tests {
 
     #[test]
     fn world_return_self_matches() {
-        check(ee::s13::f_003ad250__generated, world_return_self, SEEDS, &|c, seed| {
-            machine(c, seed, 0x3ad2, 0x003a_d250);
-        });
+        check(
+            ee::s13::f_003ad250__generated,
+            world_return_self,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 0x3ad2, 0x003a_d250);
+            },
+        );
     }
 
     #[test]

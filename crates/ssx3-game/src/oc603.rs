@@ -583,27 +583,32 @@ mod tests {
     #[test]
     fn flex_rail_node_ctor_matches() {
         oc603_install();
-        covered(ee::s11::f_00347d90__generated, flex_rail_node_ctor, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x0034_7d90, 4);
-            c.pc = 0x0034_7d90;
-            c.bus.write32(OC603_CTRL, OC603_MAGIC);
-            // Instance ids 1..8 are -1 or random; id 0 never is, so the
-            // node count is at least one.
-            c.bus.write32(OC603_DESC + 4, r.next_u32() & 0x7fff_ffff);
-            for i in 1..8u32 {
-                let v = if (seed >> i) & 1 == 1 {
-                    0xffff_ffff
-                } else {
-                    r.next_u32()
-                };
-                c.bus.write32(OC603_DESC + 4 + 4 * i, v);
-            }
-            c.bus.write32(OC603_DESC + 0x44, r.next_u32());
-            c.g[A0][0] = sx(OC603_OBJ);
-            c.g[A1][0] = sx(r.next_u32());
-            c.g[A2][0] = sx(r.next_u32());
-            c.g[A3][0] = sx(OC603_DESC);
-        });
+        covered(
+            ee::s11::f_00347d90__generated,
+            flex_rail_node_ctor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_7d90, 4);
+                c.pc = 0x0034_7d90;
+                c.bus.write32(OC603_CTRL, OC603_MAGIC);
+                // Instance ids 1..8 are -1 or random; id 0 never is, so the
+                // node count is at least one.
+                c.bus.write32(OC603_DESC + 4, r.next_u32() & 0x7fff_ffff);
+                for i in 1..8u32 {
+                    let v = if (seed >> i) & 1 == 1 {
+                        0xffff_ffff
+                    } else {
+                        r.next_u32()
+                    };
+                    c.bus.write32(OC603_DESC + 4 + 4 * i, v);
+                }
+                c.bus.write32(OC603_DESC + 0x44, r.next_u32());
+                c.g[A0][0] = sx(OC603_OBJ);
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(r.next_u32());
+                c.g[A3][0] = sx(OC603_DESC);
+            },
+        );
     }
 
     #[test]
@@ -635,38 +640,43 @@ mod tests {
     #[test]
     fn flex_rail_render_matches() {
         oc603_install();
-        covered(ee::s11::f_003480c8__generated, flex_rail_render, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x0034_80c8, 2);
-            c.pc = 0x0034_80c8;
-            c.bus.write32(OC603_CTRL, OC603_MAGIC);
-            // The render context and its vtable: GetMat is slot 43, Cull
-            // slot 93 (8-byte entries: a 16-bit this-delta, then the
-            // target). Both targets are fakes.
-            c.bus.write32(GAME_GP + 0x2a90, OC603_CTX);
-            c.bus.write32(OC603_CTX + 0x10d8, OC603_CTX_VT);
-            c.bus.write32(OC603_CTX + 0xe84, OC603_DRAW);
-            c.bus.write16(OC603_CTX_VT + 0x158, 0x40);
-            c.bus.write32(OC603_CTX_VT + 0x15c, FAKE + 0x10);
-            c.bus.write16(OC603_CTX_VT + 0x2e8, 0x80);
-            c.bus.write32(OC603_CTX_VT + 0x2ec, FAKE + 0x20);
-            c.bus.write32(OC603_DRAW + 4, r.next_u32());
-            c.bus.write32(OC603_DRAW + 0x10, r.next_u32());
-            for off in [
-                0x2b34u32, 0x2b30, 0x2b2c, 0x2b28, 0x2b24, 0x2b20, 0x2b1c, 0x2b18, 0x2b14,
-            ] {
-                c.bus.write32(GAME_GP - off, r.next_u32());
-            }
-            // The colour-table flag: clear on odd seeds (the table is
-            // built), set on even ones.
-            c.bus.write32(GAME_GP + 0x2890, 1 - seed % 2);
-            // Cull is call 1: force "culled" on every fourth seed.
-            if seed % 4 == 3 {
-                c.bus.write32(LOG_RESULTS + 4, 1);
-            }
-            fill(c, &mut r, OC603_OBJ + 0x30, 6);
-            c.bus.write32(OC603_OBJ + 0x20, 1 + seed % 4);
-            c.g[A0][0] = sx(OC603_OBJ);
-        });
+        covered(
+            ee::s11::f_003480c8__generated,
+            flex_rail_render,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_80c8, 2);
+                c.pc = 0x0034_80c8;
+                c.bus.write32(OC603_CTRL, OC603_MAGIC);
+                // The render context and its vtable: GetMat is slot 43, Cull
+                // slot 93 (8-byte entries: a 16-bit this-delta, then the
+                // target). Both targets are fakes.
+                c.bus.write32(GAME_GP + 0x2a90, OC603_CTX);
+                c.bus.write32(OC603_CTX + 0x10d8, OC603_CTX_VT);
+                c.bus.write32(OC603_CTX + 0xe84, OC603_DRAW);
+                c.bus.write16(OC603_CTX_VT + 0x158, 0x40);
+                c.bus.write32(OC603_CTX_VT + 0x15c, FAKE + 0x10);
+                c.bus.write16(OC603_CTX_VT + 0x2e8, 0x80);
+                c.bus.write32(OC603_CTX_VT + 0x2ec, FAKE + 0x20);
+                c.bus.write32(OC603_DRAW + 4, r.next_u32());
+                c.bus.write32(OC603_DRAW + 0x10, r.next_u32());
+                for off in [
+                    0x2b34u32, 0x2b30, 0x2b2c, 0x2b28, 0x2b24, 0x2b20, 0x2b1c, 0x2b18, 0x2b14,
+                ] {
+                    c.bus.write32(GAME_GP - off, r.next_u32());
+                }
+                // The colour-table flag: clear on odd seeds (the table is
+                // built), set on even ones.
+                c.bus.write32(GAME_GP + 0x2890, 1 - seed % 2);
+                // Cull is call 1: force "culled" on every fourth seed.
+                if seed % 4 == 3 {
+                    c.bus.write32(LOG_RESULTS + 4, 1);
+                }
+                fill(c, &mut r, OC603_OBJ + 0x30, 6);
+                c.bus.write32(OC603_OBJ + 0x20, 1 + seed % 4);
+                c.g[A0][0] = sx(OC603_OBJ);
+            },
+        );
     }
 
     #[test]

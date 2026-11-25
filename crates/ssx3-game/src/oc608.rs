@@ -240,37 +240,42 @@ mod tests {
     #[test]
     fn anim_combo_v15_matches() {
         oc608_install();
-        check(ee::s11::f_00358eb8__generated, anim_combo_v15, 240, &|c, seed| {
-            let mut r = machine(c, seed, 0x358e_b8, 0);
-            c.bus
-                .write32(GAME_GP.wrapping_sub(0x2a70), 1e10f32.to_bits());
-            let s = DATA + 0x100;
-            fill(c, &mut r, s, 0x80);
-            c.bus.write32(OC608_CTRL, OC608_MAGIC);
-            c.bus.write32(OC608_CTRL + 4, r.f32(1.5));
-            c.bus
-                .write32(OC608_CTRL + 8, if seed % 5 == 0 { 0 } else { 1 + seed % 3 });
-            c.bus.write32(OC608_CTRL + 12, (seed % 11 == 0) as u32);
-            c.bus.write32(OC608_CTRL + 16, (seed % 17 == 0) as u32);
-            c.bus
-                .write32(s + 0x00, (0.25 + (seed % 4) as f32 * 0.5).to_bits());
-            c.bus.write32(s + 0x04, ((seed % 5) as f32).to_bits());
-            c.bus
-                .write32(s + 0x0c, (1.0 + (seed % 6) as f32 * 1.5).to_bits());
-            c.bus.write32(s + 0x34, ((seed % 3) as f32 * 2.0).to_bits());
-            c.bus.write32(
-                s + 0x24,
-                match (seed / 4) % 4 {
-                    0 => (-2i32) as u32,
-                    2 => 3,
-                    _ => 0,
-                },
-            );
-            c.bus.write8(s + 0x14, if seed % 4 == 0 { 0 } else { 1 });
-            c.bus.write8(s + 0x15, if seed % 9 == 0 { 1 } else { 0 });
-            c.bus.write8(s + 0x16, ((seed / 2) % 2) as u8);
-            c.g[A0][0] = sx(s);
-            c.pc = 0x0035_8eb8;
-        });
+        check(
+            ee::s11::f_00358eb8__generated,
+            anim_combo_v15,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x358e_b8, 0);
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2a70), 1e10f32.to_bits());
+                let s = DATA + 0x100;
+                fill(c, &mut r, s, 0x80);
+                c.bus.write32(OC608_CTRL, OC608_MAGIC);
+                c.bus.write32(OC608_CTRL + 4, r.f32(1.5));
+                c.bus
+                    .write32(OC608_CTRL + 8, if seed % 5 == 0 { 0 } else { 1 + seed % 3 });
+                c.bus.write32(OC608_CTRL + 12, (seed % 11 == 0) as u32);
+                c.bus.write32(OC608_CTRL + 16, (seed % 17 == 0) as u32);
+                c.bus
+                    .write32(s + 0x00, (0.25 + (seed % 4) as f32 * 0.5).to_bits());
+                c.bus.write32(s + 0x04, ((seed % 5) as f32).to_bits());
+                c.bus
+                    .write32(s + 0x0c, (1.0 + (seed % 6) as f32 * 1.5).to_bits());
+                c.bus.write32(s + 0x34, ((seed % 3) as f32 * 2.0).to_bits());
+                c.bus.write32(
+                    s + 0x24,
+                    match (seed / 4) % 4 {
+                        0 => (-2i32) as u32,
+                        2 => 3,
+                        _ => 0,
+                    },
+                );
+                c.bus.write8(s + 0x14, if seed % 4 == 0 { 0 } else { 1 });
+                c.bus.write8(s + 0x15, if seed % 9 == 0 { 1 } else { 0 });
+                c.bus.write8(s + 0x16, ((seed / 2) % 2) as u8);
+                c.g[A0][0] = sx(s);
+                c.pc = 0x0035_8eb8;
+            },
+        );
     }
 }

@@ -9058,7 +9058,7 @@ s11	00344240	003442e0	o	CrowdMan3d_LoadState
 s11	003442e0	00344344	o	CrowdMan3d_GroupReset
 s11	00344348	00344364	o	CrowdMan3d_GroupFree
 s11	00344368	003443a8	o	CrowdMan3d_GroupInit
-s11	003443a8	0034472c	-	CrowdMan3d_GroupCreateMeshes
+s11	003443a8	0034472c	o	CrowdMan3d_GroupCreateMeshes
 s11	00344730	003447fc	o	CrowdMan3d_GroupSetMeshFrame
 s11	00344800	00344898	o	CrowdMan3d_GroupFreeMeshes
 s11	00344898	003449f0	-	CrowdMan3d_GroupRemoveSection
@@ -9121,7 +9121,7 @@ s11	00347f90	00348004	o	FlexRail_dtor
 s11	00348008	00348058	o	FlexRail_Update
 s11	00348058	003480c8	o	FlexRail_UpdateSpaceNode
 s11	003480c8	00348290	o	FlexRail_Render
-s11	00348290	00348b40	-	FlexRail_FindClosestPoint
+s11	00348290	00348b40	o	FlexRail_FindClosestPoint
 s11	00348b40	00348b8c	o	FlexRail_Save
 s11	00348b90	00348c44	o	FlexRail_RegisterSpaceNode
 s11	00348c48	00348d94	-	FlexRail_UnregisterSpaceNode
@@ -9452,7 +9452,7 @@ s11	003584f0	00358588	o	RailMan_ctor
 s11	00358588	00358664	o	RailMan_ctor_2
 s11	00358668	003586fc	o	RailMan_dtor
 s11	00358700	00358780	o	RailMan_OnSectionUnload
-s11	00358780	00358994	-	RailMan_DisableRail
+s11	00358780	00358994	o	RailMan_DisableRail
 s11	00358998	00358b24	o	RailMan_EnableRail
 s11	00358b28	00358c2c	o	RailMan_SetRailEnabled
 s11	00358c30	00358c7c	o	RailMan_Save
@@ -9489,7 +9489,7 @@ s11	0035a550	0035a560	o	MultiSplineModifier_SetSpeed
 s11	0035a560	0035a5d8	o	MultiSplineModifier_Update
 s11	0035a5d8	0035a5f4	o	MultiSplineModifier_v03
 s11	0035a5f8	0035a780	o	MultiSplineModifier_InsertNodeInstances
-s11	0035a780	0035a914	-	MultiSplineModifier_RemoveNodeInstances
+s11	0035a780	0035a914	o	MultiSplineModifier_RemoveNodeInstances
 s11	0035a918	0035aad0	o	MultiSplineModifier_v24
 s11	0035aad0	0035aae0	o	MultiSplineModifier_AddRef
 s11	0035aae0	0035aaf0	o	MultiSplineModifier_Release
@@ -9533,7 +9533,7 @@ s11	0035ed90	0035edc8	o	RollerModifier_Translate
 s11	0035edc8	0035f0b4	-	RollerModifier_CollideWorld
 s12	0035f0b8	0035f1a8	o	TexFlipModifier_ctor
 s12	0035f1a8	0035f214	o	TexFlipModifier_ctor_2
-s12	0035f218	0035f378	-	TexFlipModifier_Init
+s12	0035f218	0035f378	o	TexFlipModifier_Init
 s12	0035f378	0035f3a8	o	TexFlipModifier_SetFrame
 s12	0035f3a8	0035f410	o	TexFlipModifier_ApplyFrame
 s12	0035f410	0035f598	o	TexFlipModifier_Update
@@ -9799,7 +9799,7 @@ s12	00362230	0036233c	o	IntcHandler_RestoreRegs
 s12	00362340	003623a4	o	IntcTable_Vif1Handler
 s12	003623a8	003623d8	o	IntcTable_Vu1Handler
 s12	003623d8	00362444	o	GsPkt_AddScissor
-s12	00362478	003625bc	e	GsPkt_AddAlpha
+s12	00362478	003625bc	oe	GsPkt_AddAlpha
 s12	003625c0	00362660	o	GsPkt_AddClamp
 s12	00362660	003626d8	o	GsPkt_AddZbuf
 s12	003626d8	003627a4	o	GsPkt_AddTest
@@ -10801,7 +10801,7 @@ s13	003a7768	003a7790	o	WorldBlockPool_AllocBlock
 s13	003a7790	003a77b0	o	WorldBlockPool_FreeBlock
 s13	003a77b0	003a77cc	o	SectionAllocator_ctor
 s13	003a77d0	003a7814	o	SectionAllocator_dtor
-s13	003a7818	003a7874	e	SectionAllocator_FreeAll
+s13	003a7818	003a7874	oe	SectionAllocator_FreeAll
 s13	003a7878	003a7a20	o	SectionAllocator_Alloc
 s13	003a7a20	003a7aa4	o	WorldMemman_ctor
 s13	003a7aa8	003a7b18	o	WorldMemman_dtor

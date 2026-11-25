@@ -1208,42 +1208,47 @@ mod tests {
 
     #[test]
     fn dead_fade_render_matches() {
-        check(ee::s11::f_00350cb8__generated, dead_fade_render, 200, &|c, seed| {
-            let mut r = Rng(0xdead ^ seed as u64);
-            scramble(c, &mut r);
-            let gp = crate::difftest::GAME_GP;
-            let state = DATA + 0x100;
-            let table = DATA + 0x2000;
-            let timing = DATA + 0x2400;
-            c.g[GP][0] = sx(gp);
-            c.g[S5][0] = sx(state);
-            c.bus.write32(gp + 0x16c8, DATA + 0x2800);
-            c.bus.write32(gp + 0x2a90, DATA + 0x2c00);
-            c.bus.write32(DATA + 0x2800, table);
-            c.bus.write32(state + 0x18, DATA + 0x200);
-            c.bus.write8(
-                DATA + 0x200 + 0x7d,
-                if seed % 4 == 0 {
-                    0xff
-                } else {
-                    (seed % 3) as u8
-                },
-            );
-            c.bus.write16(DATA + 0x200 + 0x7e, (seed % 5) as u16);
-            c.bus.write32(table, table + 0x100);
-            c.bus.write32(table + 0x100 + 0x24, (seed % 2) as u32 * 6);
-            c.bus.write32(DATA + 0x2c00 + 0x10d8, timing);
-            c.bus.write16(timing + 0x2e8, 0);
-            c.bus.write16(timing + 0x158, 0);
-            c.bus.write32(timing + 0x15c, LEAF);
-            c.bus.write16(timing + 0x2f8, 0);
-            c.bus.write32(timing + 0x2fc, LEAF);
-            c.bus.write32(timing + 0x2ec, LEAF);
-            c.bus.write32(DATA + 0x200 + 0x94, DATA + 0x2400);
-            for k in 0..0x40 {
-                c.bus.write32(DATA + 0x200 + 4 * k, r.next_u32());
-            }
-        });
+        check(
+            ee::s11::f_00350cb8__generated,
+            dead_fade_render,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0xdead ^ seed as u64);
+                scramble(c, &mut r);
+                let gp = crate::difftest::GAME_GP;
+                let state = DATA + 0x100;
+                let table = DATA + 0x2000;
+                let timing = DATA + 0x2400;
+                c.g[GP][0] = sx(gp);
+                c.g[S5][0] = sx(state);
+                c.bus.write32(gp + 0x16c8, DATA + 0x2800);
+                c.bus.write32(gp + 0x2a90, DATA + 0x2c00);
+                c.bus.write32(DATA + 0x2800, table);
+                c.bus.write32(state + 0x18, DATA + 0x200);
+                c.bus.write8(
+                    DATA + 0x200 + 0x7d,
+                    if seed % 4 == 0 {
+                        0xff
+                    } else {
+                        (seed % 3) as u8
+                    },
+                );
+                c.bus.write16(DATA + 0x200 + 0x7e, (seed % 5) as u16);
+                c.bus.write32(table, table + 0x100);
+                c.bus.write32(table + 0x100 + 0x24, (seed % 2) as u32 * 6);
+                c.bus.write32(DATA + 0x2c00 + 0x10d8, timing);
+                c.bus.write16(timing + 0x2e8, 0);
+                c.bus.write16(timing + 0x158, 0);
+                c.bus.write32(timing + 0x15c, LEAF);
+                c.bus.write16(timing + 0x2f8, 0);
+                c.bus.write32(timing + 0x2fc, LEAF);
+                c.bus.write32(timing + 0x2ec, LEAF);
+                c.bus.write32(DATA + 0x200 + 0x94, DATA + 0x2400);
+                for k in 0..0x40 {
+                    c.bus.write32(DATA + 0x200 + 4 * k, r.next_u32());
+                }
+            },
+        );
     }
 
     #[test]

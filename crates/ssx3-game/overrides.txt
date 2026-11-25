@@ -8739,6 +8739,14 @@
 0x00363c20    DeferMan_EmitStateChange
 0x00358eb8    AnimCombo_v15
 0x0035a118    MultiSplineModifier_ctor_2
+# Phase 2 wave: oc610, oc611, oc612, oc613, oc614, oc615, oc616, oc617, oc618, oc619
+0x0035a780    MultiSplineModifier_RemoveNodeInstances
+0x00358780    RailMan_DisableRail
+0x0035f218    TexFlipModifier_Init
+0x003443a8    CrowdMan3d_GroupCreateMeshes
+0x00362478    GsPkt_AddAlpha
+0x003a7818    SectionAllocator_FreeAll
+0x00348290    FlexRail_FindClosestPoint
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

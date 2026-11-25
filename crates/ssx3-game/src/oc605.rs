@@ -432,8 +432,11 @@ mod tests {
             oc605_fake_world_obj_ctor,
             &OC605_PREV_WORLD_OBJ_CTOR,
         );
-        check(ee::s11::f_00350750__generated, dead_fade_ctor_2, 200, &|c, seed| {
-            oc605_setup(c, seed)
-        });
+        check(
+            ee::s11::f_00350750__generated,
+            dead_fade_ctor_2,
+            200,
+            &|c, seed| oc605_setup(c, seed),
+        );
     }
 }

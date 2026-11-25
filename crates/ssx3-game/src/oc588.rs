@@ -530,29 +530,39 @@ mod tests {
 
     #[test]
     fn game_process_ctor_2_matches() {
-        check(ee::s11::f_00354688__generated, game_process_ctor_2, 300, &|c, seed| {
-            let mut r = Rng(0x3546_8800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            oc300_process_list(c, &mut r);
-            c.g[A0][0] = sx(DATA + 0x100);
-            c.g[A1][0] = (r.next_u32() % 4) as u64;
-            c.g[RA][0] = SENTINEL as u64;
-            c.pc = 0x0035_4688;
-        });
+        check(
+            ee::s11::f_00354688__generated,
+            game_process_ctor_2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3546_8800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                oc300_process_list(c, &mut r);
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0035_4688;
+            },
+        );
     }
 
     #[test]
     fn process_list_ctor_matches() {
-        check(ee::s11::f_003549d0__generated, process_list_ctor, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x3549d0, 0);
-            let list = DATA + 0x100;
-            c.bus.write32(list, r.next_u32());
-            c.bus.write32(list + 4, r.next_u32());
-            c.g[A0][0] = sx(list);
-            c.g[RA][0] = SENTINEL as u64;
-            c.pc = 0x0035_49d0;
-        });
+        check(
+            ee::s11::f_003549d0__generated,
+            process_list_ctor,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3549d0, 0);
+                let list = DATA + 0x100;
+                c.bus.write32(list, r.next_u32());
+                c.bus.write32(list + 4, r.next_u32());
+                c.g[A0][0] = sx(list);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0035_49d0;
+            },
+        );
     }
 
     #[test]
