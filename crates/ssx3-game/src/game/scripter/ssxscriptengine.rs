@@ -13,6 +13,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
 use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -62,6 +63,7 @@ pub(crate) use crate::game::visualfx::renderstateman::gp;
 pub(crate) use crate::game::world::world::oc435_callee;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -717,6 +719,153 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0027_ac60,
         script_engine_queue_race_cutscene,
         "ScriptEngine_QueueRaceCutscene",
+    ),
+    (0x0027_8590, script_engine_purge, "ScriptEngine_Shutdown"),
+    (
+        0x0027_8718,
+        script_engine_clear_skip_delay_on_exit,
+        "ScriptEngine_ClearSkipDelayOnExit",
+    ),
+    (
+        0x0027_8de8,
+        script_engine_set_skip_delay,
+        "ScriptEngine_SetSkipDelay",
+    ),
+    (
+        0x0027_8ff8,
+        script_engine_list_transfer,
+        "ScriptEngine_ListTransfer",
+    ),
+    (
+        0x0027_9178,
+        script_engine_list_get_entry_ext_type,
+        "ScriptEngine_ListGetEntryExtType",
+    ),
+    (
+        0x0027_91a8,
+        script_engine_list_get_entry_script_index,
+        "ScriptEngine_ListGetEntryScriptIndex",
+    ),
+    (
+        0x0027_9270,
+        script_engine_list_is_next_ready,
+        "ScriptEngine_ListIsNextReady",
+    ),
+    (
+        0x0027_93b8,
+        script_engine_aux_list_add,
+        "ScriptEngine_AuxListAdd",
+    ),
+    (
+        0x0027_93f8,
+        script_engine_aux_list_prepare,
+        "ScriptEngine_AuxListPrepare",
+    ),
+    (
+        0x0027_9428,
+        script_engine_aux_list_start,
+        "ScriptEngine_AuxListStart",
+    ),
+    (
+        0x0027_9458,
+        script_engine_aux_list_stop,
+        "ScriptEngine_AuxListStop",
+    ),
+    (
+        0x0027_94e0,
+        script_engine_aux_list_get_state,
+        "ScriptEngine_AuxListGetState",
+    ),
+    (
+        0x0027_96b8,
+        script_engine_spawn_script_by_id,
+        "ScriptEngine_SpawnScriptById",
+    ),
+    (0x0027_9da8, script_engine_v03_2, "ScriptEngine_v03"),
+    (
+        0x0027_a9f0,
+        script_engine_skip_finish_script,
+        "ScriptEngine_SkipFinishScript",
+    ),
+    (
+        0x0027_b948,
+        script_engine_get_rider_pose,
+        "ScriptEngine_GetRiderPose",
+    ),
+    (
+        0x0027_c0a0,
+        script_cam_manual_get_key_block,
+        "ScriptCam_ManualGetKeyBlock",
+    ),
+    (
+        0x0027_c0c0,
+        script_cam_manual_get_track_block,
+        "ScriptCam_ManualGetTrackBlock",
+    ),
+    (
+        0x0027_c2b0,
+        script_cam_target_get_key_block,
+        "ScriptCam_TargetGetKeyBlock",
+    ),
+    (
+        0x0027_c2d0,
+        script_cam_target_get_track_block,
+        "ScriptCam_TargetGetTrackBlock",
+    ),
+    (
+        0x0027_c4b8,
+        script_cam_get_subject_params,
+        "ScriptCam_GetSubjectParams",
+    ),
+    (
+        0x0027_c4c0,
+        script_cam_subject_get_key_block,
+        "ScriptCam_SubjectGetKeyBlock",
+    ),
+    (
+        0x0027_c4e0,
+        script_cam_subject_get_track_block,
+        "ScriptCam_SubjectGetTrackBlock",
+    ),
+    (
+        0x0027_c6a0,
+        script_cam_get_algorithmic_params,
+        "ScriptCam_GetAlgorithmicParams",
+    ),
+    (
+        0x0027_c6a8,
+        script_cam_algorithmic_get_key_block,
+        "ScriptCam_AlgorithmicGetKeyBlock",
+    ),
+    (
+        0x0027_c6c8,
+        script_cam_algorithmic_get_track_block,
+        "ScriptCam_AlgorithmicGetTrackBlock",
+    ),
+    (
+        0x0027_c890,
+        script_view_get_key_block,
+        "ScriptView_GetKeyBlock",
+    ),
+    (
+        0x0027_c8b0,
+        script_view_get_track_block,
+        "ScriptView_GetTrackBlock",
+    ),
+    (
+        0x0027_c960,
+        script_rider_get_key_block,
+        "ScriptRider_GetKeyBlock",
+    ),
+    (
+        0x0027_c980,
+        script_rider_get_track_block,
+        "ScriptRider_GetTrackBlock",
+    ),
+    (
+        0x0027_d788,
+        script_obj_cam_set_weight,
+        "ScriptObjCam_SetWeight",
     ),
 ];
 
@@ -14145,6 +14294,1089 @@ pub fn script_engine_queue_race_cutscene(c: &mut Cpu) {
     })
 }
 
+/// `void ScriptEngine_ClearSkipDelayOnExit(ScriptEngine* e)` (0x278718): zeroes
+/// the skip-delay word at `+0x554`.
+pub fn script_engine_clear_skip_delay_on_exit(c: &mut Cpu) {
+    c.cycles += 2;
+    Addr((c.g[A0][0] as u32).wrapping_add(0x554)).sw(c, 0);
+    abi::ret(c);
+}
+
+/// `void ScriptEngine_SetSkipDelay(ScriptEngine* e, int delay)` (0x278de8): stores
+/// `delay` at `+0x554`.
+pub fn script_engine_set_skip_delay(c: &mut Cpu) {
+    c.cycles += 2;
+    let delay = c.g[A1][0];
+    Addr((c.g[A0][0] as u32).wrapping_add(0x554)).sw(c, delay);
+    abi::ret(c);
+}
+
+/// `ScriptEngine_ListTransfer(e, from, to)` (0x278ff8): nothing to move when
+/// `from == to` (returns 1); otherwise moves the entries of the list at
+/// `e + 0x54c` with `ScriptList_TakeFrom` (the entries are 0xcc bytes each).
+pub fn script_engine_list_transfer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.g[A1][0];
+        let same = c.g[V0][0] == c.g[A2][0];
+        frame.save_ra(c, 0);
+        if same {
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 9;
+            let list = c.g[A0][0] as u32;
+            c.g[A3][0] = Addr(list.wrapping_add(0x54c)).lw(c);
+            c.g[A0][0] = 0xcc;
+            let to = c.g[A2][0] as u32;
+            c.g[V1][0] = sx(abi::mult(c, to, 0xcc));
+            c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            let from = c.g[V0][0] as u32;
+            c.g[V1][0] = sx(abi::mult(c, from, 0xcc));
+            c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            Callee {
+                addr: 0x0027_6198,
+                f: ee::s07::f_00276198,
+            }
+            .call(c, 0x0027_9024)?;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The argument setup of the list-entry wrappers: `v1 = a1 * 0xcc` (the byte
+/// offset of entry `a1`), then `a0 = *(list + table) + v1` (the entry).
+pub(crate) fn oc536_entry_args(c: &mut Cpu, table: u32) {
+    c.g[V0][0] = 0xcc;
+    let index = c.g[A1][0] as u32;
+    c.g[V1][0] = sx(abi::mult(c, index, 0xcc));
+    let list = c.g[A0][0] as u32;
+    c.g[A0][0] = Addr(list.wrapping_add(table)).lw(c);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+}
+
+/// Shared shape of the `ScriptEngine_ListGetEntry*` wrappers: the entry of
+/// `e + 0x54c` at index `a1` is passed on with `a1 = a2`.
+pub(crate) fn oc536_list_entry_wrapper(c: &mut Cpu, callee: Callee, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        oc536_entry_args(c, 0x54c);
+        c.g[A1][0] = c.g[A2][0];
+        callee.call(c, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptEngine_ListGetEntryExtType(e, index, a2)` (0x279178): the list entry's
+/// extended type, through `ScriptList_GetEntryExtType`.
+pub fn script_engine_list_get_entry_ext_type(c: &mut Cpu) {
+    oc536_list_entry_wrapper(
+        c,
+        Callee {
+            addr: 0x0027_6a08,
+            f: ee::s07::f_00276a08,
+        },
+        0x0027_9198,
+    )
+}
+
+/// `ScriptEngine_ListGetEntryScriptIndex(e, index, a2)` (0x2791a8): the list
+/// entry's script index, through `ScriptList_GetEntryScriptIndex`.
+pub fn script_engine_list_get_entry_script_index(c: &mut Cpu) {
+    oc536_list_entry_wrapper(
+        c,
+        Callee {
+            addr: 0x0027_6a78,
+            f: ee::s07::f_00276a78,
+        },
+        0x0027_91c8,
+    )
+}
+
+/// `ScriptEngine_ListIsNextReady(e, index)` (0x279270): `ScriptList_IsNextReady`
+/// on the list entry at index `a1` (`*(e + 0x54c) + a1 * 0xcc`).
+pub fn script_engine_list_is_next_ready(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0xcc;
+        frame.save_ra(c, 0);
+        let index = c.g[A1][0] as u32;
+        c.g[A1][0] = sx(abi::mult(c, index, 0xcc));
+        let list = c.g[A0][0] as u32;
+        c.g[A0][0] = Addr(list.wrapping_add(0x54c)).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        Callee {
+            addr: 0x0027_7100,
+            f: ee::s07::f_00277100,
+        }
+        .call(c, 0x0027_928c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptEngine_AuxListAdd(e, index, choice, flag)` (0x2793b8): adds a choice
+/// to the aux list at `*(e + 0x624) + index * 0xcc` (`ScriptList_AddChoice`);
+/// a non-zero `flag` passes 8 as the choice's last argument.
+pub fn script_engine_aux_list_add(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0xcc;
+        frame.save_ra(c, 0);
+        let index = c.g[A1][0] as u32;
+        c.g[T3][0] = sx(abi::mult(c, index, 0xcc));
+        c.g[A1][0] = c.g[A2][0];
+        c.g[V1][0] = 8;
+        let aux = c.g[A0][0] as u32;
+        c.g[A0][0] = Addr(aux.wrapping_add(0x624)).lw(c);
+        c.g[A2][0] = 0;
+        if c.g[A3][0] != 0 {
+            c.g[A2][0] = c.g[V1][0];
+        }
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T3][0] as u32));
+        Callee {
+            addr: 0x0027_5ed0,
+            f: ee::s07::f_00275ed0,
+        }
+        .call(c, 0x0027_93e8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The head shared by the `ScriptEngine_AuxList*` wrappers: the entry at
+/// `index * 0xcc` of the aux list `*(e + 0x624)` goes to `a0` (`v1` is the offset).
+pub(crate) fn oc536_aux_entry_args(c: &mut Cpu) {
+    c.g[V0][0] = 0xcc;
+    let index = c.g[A1][0] as u32;
+    c.g[V1][0] = sx(abi::mult(c, index, 0xcc));
+    let aux = c.g[A0][0] as u32;
+    c.g[A0][0] = Addr(aux.wrapping_add(0x624)).lw(c);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+}
+
+/// `ScriptEngine_AuxListPrepare(e, index, flag)` (0x2793f8): `ScriptList_Prepare`
+/// on the aux entry; `a1 = 2`, or 0 when `flag` is zero.
+pub fn script_engine_aux_list_prepare(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        oc536_aux_entry_args(c);
+        c.g[A1][0] = 2;
+        if c.g[A2][0] == 0 {
+            c.g[A1][0] = 0;
+        }
+        Callee {
+            addr: 0x0027_6270,
+            f: ee::s07::f_00276270,
+        }
+        .call(c, 0x0027_941c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptEngine_AuxListStart(e, index)` (0x279428): `ScriptList_Start` on the
+/// aux entry with `a1 = a2 = 0`.
+pub fn script_engine_aux_list_start(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        oc536_aux_entry_args(c);
+        c.g[A2][0] = 0;
+        c.g[A1][0] = 0;
+        Callee {
+            addr: 0x0027_6388,
+            f: ee::s07::f_00276388,
+        }
+        .call(c, 0x0027_944c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptEngine_AuxListStop(e, index)` (0x279458): `ScriptList_Stop` on the
+/// aux entry with `a1 = 1`.
+pub fn script_engine_aux_list_stop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        oc536_aux_entry_args(c);
+        c.g[A1][0] = 1;
+        Callee {
+            addr: 0x0027_6868,
+            f: ee::s07::f_00276868,
+        }
+        .call(c, 0x0027_9478)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptEngine_AuxListGetState(e, index)` (0x2794e0): polls the async loads,
+/// then `ScriptList_GetState` on the aux entry (`index` kept in `s0`).
+pub fn script_engine_aux_list_get_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        Callee {
+            addr: 0x0027_8918,
+            f: ee::s07::f_00278918,
+        }
+        .call(c, 0x0027_94fc)?;
+        c.g[V0][0] = 0xcc;
+        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x624)).lw(c);
+        let index = c.g[S0][0] as u32;
+        c.g[S0][0] = sx(abi::mult(c, index, 0xcc));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        Callee {
+            addr: 0x0027_6b98,
+            f: ee::s07::f_00276b98,
+        }
+        .call(c, 0x0027_9510)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int ScriptEngine_SpawnScriptById(e, id)` (0x2796b8): spawns the first entry
+/// of the table at `*(e + 0x530)` (count at `*(e + 0x52c)`, 0xc-byte entries)
+/// whose id word (`+4`) equals `id`, returning what `ScriptEngine_SpawnScript`
+/// returns; -1 when none matches.
+pub fn script_engine_spawn_script_by_id(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[T2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x52c)).lw(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        let has_entries = (c.g[V0][0] as i64) > 0;
+        c.g[A1][0] = 0;
+        if has_entries {
+            c.cycles += 1;
+            c.g[T1][0] = 0;
+            loop {
+                c.cycles += 5;
+                let base = Addr((c.g[A0][0] as u32).wrapping_add(0x530)).lw(c);
+                c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(base as u32));
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(4)).lw(c);
+                if c.g[V1][0] == c.g[T2][0] {
+                    c.cycles += 4;
+                    Callee {
+                        addr: 0x0027_95d0,
+                        f: ee::s07::f_002795d0,
+                    }
+                    .call(c, 0x0027_96f4)?;
+                    frame.restore_ra(c, 0);
+                    c.cycles += 2;
+                    frame.close(c);
+                    return Ok(());
+                }
+                c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x52c)).lw(c);
+                c.cycles += 5;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0xc));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_96d8);
+                }
+            }
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ScriptEngine_v03(e, obj)` (0x279da8): the removal of a view object.
+/// Kind 1 (`obj->0`) removes its camera (`ScriptViewObj_RemoveCam`); kind 2
+/// runs the object's callback at `+0x4c` and then `ScriptViewObj_SetTransition`.
+/// Both end by removing the script object (`ScriptEngine_RemoveScriptObj`).
+pub fn script_engine_v03_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        Callee {
+            addr: 0x0027_d320,
+            f: ee::s07::f_0027d320,
+        }
+        .call(c, 0x0027_9dc4)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[V0][0] = 1;
+        let kind_is_1 = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = 2;
+        if kind_is_1 {
+            c.cycles += 8;
+            c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x7c)).lw(c);
+            c.g[V0][0] = 0x120;
+            let slot = c.g[A0][0] as u32;
+            c.g[A0][0] = sx(abi::mult(c, slot, 0x120));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6d0));
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            Callee {
+                addr: 0x0028_11e8,
+                f: ee::s07::f_002811e8,
+            }
+            .call(c, 0x0027_9df0)?;
+            c.g[A0][0] = c.g[S0][0];
+        } else {
+            c.cycles += 2;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[A0][0] = c.g[S0][0];
+            } else {
+                c.cycles += 12;
+                c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0xc)).lw(c);
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x48)).lh(c);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4c)).lw(c);
+                let callback = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, callback, 0x0027_9e14)?;
+                c.g[V1][0] = 0x120;
+                c.g[A1][0] = 0;
+                let v0 = c.g[V0][0] as u32;
+                let scale = c.g[V1][0] as u32;
+                c.g[V0][0] = sx(abi::mult(c, v0, scale));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6d0));
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                Callee {
+                    addr: 0x0028_12e0,
+                    f: ee::s07::f_002812e0,
+                }
+                .call(c, 0x0027_9e2c)?;
+                c.g[A0][0] = c.g[S0][0];
+            }
+        }
+        c.cycles += 7;
+        c.g[A1][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0027_cf88,
+            f: ee::s07::f_0027cf88,
+        }
+        .call(c, 0x0027_9e38)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The table teardown of `ScriptEngine_Purge` (run for the tables at `e+0x54c`
+/// and `e+0x624`): when the table at `a1` has entries, `ScriptList_dtor` runs on
+/// them from the last one down until the table's head (`e + field`) is reached;
+/// returns with `a0 = *(e + field)` for the free that follows.
+pub(crate) fn oc536_purge_table(c: &mut Cpu, field: u32, head: u32, dtor_ret: u32) -> Flow {
+    c.cycles += 5;
+    let table = c.g[A1][0] as u32;
+    c.g[V1][0] = Addr(table.wrapping_sub(0x10)).lw(c);
+    let count_scaled = c.g[V1][0] as u32;
+    c.g[A0][0] = sx(abi::mult(c, count_scaled, 0xcc));
+    c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(table));
+    if c.g[A1][0] == c.g[S0][0] {
+        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(field)).lw(c);
+    } else {
+        c.cycles += 2;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xcc));
+        loop {
+            c.cycles += 6;
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0027_5d90,
+                f: ee::s07::f_00275d90,
+            }
+            .call(c, dtor_ret)?;
+            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(field)).lw(c);
+            let more = c.g[V0][0] != c.g[S0][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xcc));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, head);
+            }
+        }
+        c.cycles += 1;
+        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(field)).lw(c);
+    }
+    Ok(())
+}
+
+/// `void ScriptEngine_Purge(ScriptEngine* e)` (0x278590; the dev-build
+/// `cSSXScriptEngine::Purge`): stops and unregisters every script object, unloads
+/// the world's scripts and banks, removes the data instances, stops the movie,
+/// tears down both script tables (the frees go through the function table at
+/// 0x317e98), and clears the table pointers and counters.
+pub fn script_engine_purge(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = 1;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x6d0));
+        Callee {
+            addr: 0x0027_8a98,
+            f: ee::s07::f_00278a98,
+        }
+        .call(c, 0x0027_85b8)?;
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0028_23f0,
+            f: ee::s07::f_002823f0,
+        }
+        .call(c, 0x0027_85c0)?;
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+            Callee {
+                addr: 0x0028_32d8,
+                f: ee::s07::f_002832d8,
+            }
+            .call(c, 0x0027_85cc)?;
+            let more = (c.g[S2][0] as i64) >= 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x120));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0027_85c0);
+            }
+        }
+        c.cycles += 11;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x91c));
+        c.g[S0][0] = 0;
+        Callee {
+            addr: 0x0028_32d8,
+            f: ee::s07::f_002832d8,
+        }
+        .call(c, 0x0027_85e0)?;
+        c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x51c));
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x938));
+        c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x500));
+        Callee {
+            addr: 0x0028_32d8,
+            f: ee::s07::f_002832d8,
+        }
+        .call(c, 0x0027_85f0)?;
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0027_8cd8,
+            f: ee::s07::f_00278cd8,
+        }
+        .call(c, 0x0027_85f8)?;
+        c.g[A1][0] = c.g[S0][0];
+        loop {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0027_b410,
+                f: ee::s07::f_0027b410,
+            }
+            .call(c, 0x0027_8608)?;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[S0][0] as i64) < 10) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A1][0] = c.g[S0][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0027_8600);
+            }
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S2][0];
+        Callee {
+            addr: 0x0027_5b08,
+            f: ee::s07::f_00275b08,
+        }
+        .call(c, 0x0027_8620)?;
+        c.g[A0][0] = c.g[S3][0];
+        Callee {
+            addr: 0x0028_3818,
+            f: ee::s07::f_00283818,
+        }
+        .call(c, 0x0027_8628)?;
+        c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x54c)).lw(c);
+        c.g[V0][0] = 0xcc;
+        if c.g[A1][0] != 0 {
+            oc536_purge_table(c, 0x54c, 0x0027_8650, 0x0027_865c)?;
+            c.cycles += 2;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x10));
+            call_ptr(c, 0x0031_7e98, 0x0027_8674)?;
+        }
+        // The block at 0x27868c: the table at 0x544 is freed, then `a1` takes the
+        // second table's pointer.
+        c.cycles += 3;
+        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x544)).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x0027_8688)?;
+        }
+        c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x624)).lw(c);
+        c.cycles += 2;
+        c.g[V0][0] = 0xcc;
+        if c.g[A1][0] != 0 {
+            oc536_purge_table(c, 0x624, 0x0027_86b0, 0x0027_86bc)?;
+            c.cycles += 2;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x10));
+            call_ptr(c, 0x0031_7e98, 0x0027_86d4)?;
+        }
+        c.cycles += 15;
+        c.g[A0][0] = 0;
+        call_ptr(c, 0x002e_f368, 0x0027_86dc)?;
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0027_bf90,
+            f: ee::s07::f_0027bf90,
+        }
+        .call(c, 0x0027_86e4)?;
+        Addr((c.g[S1][0] as u32).wrapping_add(0x624)).sw(c, 0);
+        Addr((c.g[S1][0] as u32).wrapping_add(0x54c)).sw(c, 0);
+        Addr((c.g[S1][0] as u32).wrapping_add(0x544)).sw(c, 0);
+        Addr((c.g[S1][0] as u32).wrapping_add(0x548)).sw(c, 0);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Math_Atan` (0x31c228), reached through the function table.
+pub(crate) const SCRIPT_POSE_ATAN: u32 = 0x0031_c228;
+
+/// `InSeq_ChannelGetBlockPayload` (0x2742e0): overridden elsewhere.
+pub(crate) const SCRIPT_CHANNEL_GET_BLOCK_PAYLOAD: Callee = Callee {
+    addr: 0x0027_42e0,
+    f: ee::s07::f_002742e0,
+};
+
+/// `InSeq_FindChannelData` (0x274d90): generated.
+pub(crate) const SCRIPT_CHANNEL_FIND_DATA: Callee = Callee {
+    addr: 0x0027_4d90,
+    f: ee::s07::f_00274d90,
+};
+
+/// `InSeq_GetBlockPayload` (0x274318): generated.
+pub(crate) const SCRIPT_BLOCK_GET_PAYLOAD: Callee = Callee {
+    addr: 0x0027_4318,
+    f: ee::s07::f_00274318,
+};
+
+/// `cSSXScriptEngine::FillOrientationFromRiderOrientationInfo(self, obj, pos,
+/// roll, pitch, yaw)` (0x27b948). `obj` holds a sub-object at +0x6c0 whose
+/// vtable method at +0x2c (`this` adjusted by the delta at +0x28) returns the
+/// rider position, copied to `pos`. The heading is row 1 of its matrix (+0x1b0,
+/// copied to the stack as `dir`): roll is 0, yaw = atan2(dir.y, dir.x), pitch =
+/// atan2(dir.z, length(dir.x, dir.y)), each with the quadrant corrections of
+/// the original. FPU code; the branches follow the generated blocks.
+pub fn script_engine_get_rider_pose(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 31;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save_fpr(c, 22, 0x90);
+        frame.save_fpr(c, 21, 0x88);
+        frame.save_fpr(c, 20, 0x80);
+        frame.save_ra(c, 0x20);
+
+        let obj = c.g[A1][0];
+        c.g[S0][0] = obj;
+        c.g[S1][0] = c.g[A2][0];
+        c.g[S3][0] = c.g[T0][0];
+        c.g[S4][0] = c.g[A3][0];
+        c.g[S2][0] = c.g[T1][0];
+        let sub = r32(c, S0).wrapping_add(0x6c0);
+        c.g[A1][0] = sx(sub);
+        c.f[22] = 0;
+
+        // Position: the sub-object's virtual method at +0x2c.
+        let vt = Addr(sub).lw(c);
+        c.g[V1][0] = vt;
+        let slot = VSlot::read(c, vt, 0x28);
+        c.g[A0][0] = slot.this(c.g[A1][0]);
+        c.g[V0][0] = slot.func;
+        call_ptr(c, slot.func as u32, 0x0027_b9a0)?;
+
+        // *pos = the returned vector; dir = row 1 of the matrix, on the stack.
+        let got = r32(c, V0);
+        c.lq(V1, got);
+        let pos = r32(c, S1);
+        c.sq(V1, pos);
+        let row = r32(c, S0).wrapping_add(0x1b0);
+        c.lq(V0, row);
+        let sp0 = sp(c);
+        c.sq(V0, sp0);
+
+        let gp = r32(c, GP);
+        c.f[20] = Addr(sp0).read_u32(c);
+        let zero = FpuF32(c.f[22]);
+        let dx_zero = FpuF32(c.f[20]).eq_s(zero);
+        crate::abi::set_fcc(c, dx_zero);
+        let dx_nonzero = !dx_zero;
+        c.f[21] = Addr(sp0.wrapping_add(4)).read_u32(c);
+
+        'axis: {
+            'yaw_atan: {
+                'vec_x: {
+                    if dx_nonzero {
+                        break 'vec_x;
+                    }
+                    // dir.x == 0: yaw is +-pi/2 (or 0 when dir.y is 0).
+                    c.cycles += 4;
+                    let dy_zero = FpuF32(c.f[21]).eq_s(zero);
+                    crate::abi::set_fcc(c, dy_zero);
+                    c.f[12] = c.f[21];
+                    if dy_zero {
+                        break 'yaw_atan;
+                    }
+                    c.cycles += 4;
+                    let dy_nonneg = zero.le(FpuF32(c.f[21]));
+                    crate::abi::set_fcc(c, dy_nonneg);
+                    c.f[12] = Addr(gp.wrapping_sub(0x47cc)).read_u32(c);
+                    c.f[0] = Addr(sp0).read_u32(c);
+                    if !dy_nonneg {
+                        break 'yaw_atan;
+                    }
+                    c.cycles += 3;
+                    c.f[12] = Addr(gp.wrapping_sub(0x47c8)).read_u32(c);
+                    c.f[1] = Addr(sp0.wrapping_add(4)).read_u32(c);
+                    break 'axis;
+                }
+
+                // dir.x != 0: yaw = atan(dir.y / dir.x) with the quadrant fix.
+                c.cycles += 7;
+                c.f[12] = FpuF32(c.f[21]).div(FpuF32(c.f[20])).0;
+                call_ptr(c, SCRIPT_POSE_ATAN, 0x0027_b9fc)?;
+                // The callee may leave f22 changed: re-read the zero the
+                // original compares against.
+                let zero = FpuF32(c.f[22]);
+                let dx_negative = FpuF32(c.f[20]).lt(zero);
+                crate::abi::set_fcc(c, dx_negative);
+                c.f[12] = c.f[0];
+                if !dx_negative {
+                    break 'yaw_atan;
+                }
+                'yaw_sign: {
+                    c.cycles += 3;
+                    let dy_positive = zero.lt(FpuF32(c.f[21]));
+                    crate::abi::set_fcc(c, dy_positive);
+                    if !dy_positive {
+                        break 'yaw_sign;
+                    }
+                    c.cycles += 3;
+                    c.f[0] = Addr(gp.wrapping_sub(0x47c4)).read_u32(c);
+                    c.f[12] = (FpuF32(c.f[12]) + FpuF32(c.f[0])).0;
+                    break 'yaw_atan;
+                }
+                c.cycles += 2;
+                c.f[0] = Addr(gp.wrapping_sub(0x47c0)).read_u32(c);
+                c.f[12] = (FpuF32(c.f[12]) - FpuF32(c.f[0])).0;
+            }
+            // Shared exit of the yaw paths: dir.x, dir.y to f0, f1.
+            c.cycles += 2;
+            c.f[0] = Addr(sp0).read_u32(c);
+            c.f[1] = Addr(sp0.wrapping_add(4)).read_u32(c);
+            break 'axis;
+        }
+
+        'done: {
+            'pitch: {
+                'horiz_zero: {
+                    // Horizontal length of dir.x, dir.y; *yaw is in f12.
+                    c.cycles += 12;
+                    let fx = FpuF32(c.f[0]);
+                    c.f[2] = (fx * fx).0;
+                    let yaw = c.f[12];
+                    Addr(r32(c, S2)).write_u32(c, yaw);
+                    let fy = FpuF32(c.f[1]);
+                    c.f[3] = (fy * fy).0;
+                    let f0_saved = c.f[0];
+                    Addr(sp0.wrapping_add(0x10)).write_u32(c, f0_saved);
+                    c.f[22] = 0;
+                    let f1_saved = c.f[1];
+                    Addr(sp0.wrapping_add(0x14)).write_u32(c, f1_saved);
+                    let horiz_sq = FpuF32(c.f[2]) + FpuF32(c.f[3]);
+                    c.f[2] = horiz_sq.0;
+                    c.f[21] = Addr(sp0.wrapping_add(8)).read_u32(c);
+                    let horiz = horiz_sq.sqrt();
+                    c.f[20] = horiz.0;
+                    let len_zero = horiz.eq_s(zero);
+                    crate::abi::set_fcc(c, len_zero);
+                    if !len_zero {
+                        break 'horiz_zero;
+                    }
+                    // Zero horizontal length: pitch is dir.z or +-pi/2.
+                    c.cycles += 4;
+                    let dz_zero = FpuF32(c.f[21]).eq_s(zero);
+                    crate::abi::set_fcc(c, dz_zero);
+                    c.f[0] = c.f[21];
+                    if dz_zero {
+                        break 'pitch;
+                    }
+                    c.cycles += 4;
+                    let dz_nonneg = zero.le(FpuF32(c.f[21]));
+                    crate::abi::set_fcc(c, dz_nonneg);
+                    c.f[0] = Addr(gp.wrapping_sub(0x47bc)).read_u32(c);
+                    if !dz_nonneg {
+                        let v = c.f[0];
+                        Addr(r32(c, S3)).write_u32(c, v);
+                        break 'done;
+                    }
+                    c.cycles += 3;
+                    c.f[0] = Addr(gp.wrapping_sub(0x47b8)).read_u32(c);
+                    let v = c.f[0];
+                    Addr(r32(c, S3)).write_u32(c, v);
+                    break 'done;
+                }
+
+                // pitch = atan(dir.z / length) with the quadrant fix.
+                'pitch_atan: {
+                    c.cycles += 7;
+                    c.f[12] = FpuF32(c.f[21]).div(FpuF32(c.f[20])).0;
+                    call_ptr(c, SCRIPT_POSE_ATAN, 0x0027_ba9c)?;
+                    let zero = FpuF32(c.f[22]);
+                    let len_negative = FpuF32(c.f[20]).lt(zero);
+                    crate::abi::set_fcc(c, len_negative);
+                    c.f[12] = c.f[0];
+                    if !len_negative {
+                        break 'pitch_atan;
+                    }
+                    'pitch_sign: {
+                        c.cycles += 3;
+                        let dz_positive = zero.lt(FpuF32(c.f[21]));
+                        crate::abi::set_fcc(c, dz_positive);
+                        if !dz_positive {
+                            break 'pitch_sign;
+                        }
+                        c.cycles += 3;
+                        c.f[0] = Addr(gp.wrapping_sub(0x47b4)).read_u32(c);
+                        c.f[12] = (FpuF32(c.f[12]) + FpuF32(c.f[0])).0;
+                        break 'pitch_atan;
+                    }
+                    c.cycles += 2;
+                    c.f[0] = Addr(gp.wrapping_sub(0x47b0)).read_u32(c);
+                    c.f[12] = (FpuF32(c.f[12]) - FpuF32(c.f[0])).0;
+                }
+                c.cycles += 1;
+                c.f[0] = c.f[12];
+            }
+            c.cycles += 1;
+            let pitch = c.f[0];
+            Addr(r32(c, S3)).write_u32(c, pitch);
+        }
+
+        // roll = 0.
+        c.cycles += 12;
+        Addr(r32(c, S4)).sw(c, 0);
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 22, 0x90);
+        frame.restore_fpr(c, 21, 0x88);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptCam_GetSubjectParams(self)` (0x27c4b8): the word at self+0x20.
+pub fn script_cam_get_subject_params(c: &mut Cpu) {
+    c.cycles += 2;
+    let addr = r32(c, A0).wrapping_add(0x20);
+    c.g[V0][0] = Addr(addr).lw(c);
+    ret(c);
+}
+
+/// `ScriptCam_GetAlgorithmicParams(self)` (0x27c6a0): the word at self+0x20.
+pub fn script_cam_get_algorithmic_params(c: &mut Cpu) {
+    c.cycles += 2;
+    let addr = r32(c, A0).wrapping_add(0x20);
+    c.g[V0][0] = Addr(addr).lw(c);
+    ret(c);
+}
+
+/// `ScriptObjCam_SetWeight(self, weight)` (0x27d788): stores the float
+/// argument f12 at self+0x18.
+pub fn script_obj_cam_set_weight(c: &mut Cpu) {
+    c.cycles += 2;
+    let weight = crate::abi::farg(c, 0);
+    let addr = r32(c, A0).wrapping_add(0x18);
+    Addr(addr).write_fpu(c, weight);
+    ret(c);
+}
+
+/// `ScriptCam_ManualGetKeyBlock(self)` (0x27c0a0): `InSeq_ChannelGetBlockPayload(self)`.
+pub fn script_cam_manual_get_key_block(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(SCRIPT_CHANNEL_GET_BLOCK_PAYLOAD),
+        0x0027_c0b0,
+    )
+}
+
+/// `ScriptCam_TargetGetKeyBlock(self)` (0x27c2b0): `InSeq_ChannelGetBlockPayload(self)`.
+pub fn script_cam_target_get_key_block(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(SCRIPT_CHANNEL_GET_BLOCK_PAYLOAD),
+        0x0027_c2c0,
+    )
+}
+
+/// `ScriptCam_SubjectGetKeyBlock(self)` (0x27c4c0): `InSeq_ChannelGetBlockPayload(self)`.
+pub fn script_cam_subject_get_key_block(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(SCRIPT_CHANNEL_GET_BLOCK_PAYLOAD),
+        0x0027_c4d0,
+    )
+}
+
+/// `ScriptCam_AlgorithmicGetKeyBlock(self)` (0x27c6a8): `InSeq_ChannelGetBlockPayload(self)`.
+pub fn script_cam_algorithmic_get_key_block(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(SCRIPT_CHANNEL_GET_BLOCK_PAYLOAD),
+        0x0027_c6b8,
+    )
+}
+
+/// `ScriptView_GetKeyBlock(self)` (0x27c890): `InSeq_ChannelGetBlockPayload(self)`.
+pub fn script_view_get_key_block(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(SCRIPT_CHANNEL_GET_BLOCK_PAYLOAD),
+        0x0027_c8a0,
+    )
+}
+
+/// `ScriptRider_GetKeyBlock(self)` (0x27c960): `InSeq_ChannelGetBlockPayload(self)`.
+pub fn script_rider_get_key_block(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(SCRIPT_CHANNEL_GET_BLOCK_PAYLOAD),
+        0x0027_c970,
+    )
+}
+
+/// The track-block wrappers' shape: `FindChannelData(self, entity)` gives
+/// the channel, then `GetBlockPayload(channel, variation)` with the variation
+/// (a2) kept in s0 across the first call.
+pub(crate) fn script_track_block_wrapper(c: &mut Cpu, find_ret: u32, payload_ret: u32) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        SCRIPT_CHANNEL_FIND_DATA.call(c, find_ret)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        SCRIPT_BLOCK_GET_PAYLOAD.call(c, payload_ret)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptCam_ManualGetTrackBlock(self, entity, variation)` (0x27c0c0).
+pub fn script_cam_manual_get_track_block(c: &mut Cpu) {
+    script_track_block_wrapper(c, 0x0027_c0d4, 0x0027_c0e0)
+}
+
+/// `ScriptCam_TargetGetTrackBlock(self, entity, variation)` (0x27c2d0).
+pub fn script_cam_target_get_track_block(c: &mut Cpu) {
+    script_track_block_wrapper(c, 0x0027_c2e4, 0x0027_c2f0)
+}
+
+/// `ScriptCam_SubjectGetTrackBlock(self, entity, variation)` (0x27c4e0).
+pub fn script_cam_subject_get_track_block(c: &mut Cpu) {
+    script_track_block_wrapper(c, 0x0027_c4f4, 0x0027_c500)
+}
+
+/// `ScriptCam_AlgorithmicGetTrackBlock(self, entity, variation)` (0x27c6c8).
+pub fn script_cam_algorithmic_get_track_block(c: &mut Cpu) {
+    script_track_block_wrapper(c, 0x0027_c6dc, 0x0027_c6e8)
+}
+
+/// `ScriptView_GetTrackBlock(self, entity, variation)` (0x27c8b0).
+pub fn script_view_get_track_block(c: &mut Cpu) {
+    script_track_block_wrapper(c, 0x0027_c8c4, 0x0027_c8d0)
+}
+
+/// `ScriptRider_GetTrackBlock(self, entity, variation)` (0x27c980).
+pub fn script_rider_get_track_block(c: &mut Cpu) {
+    script_track_block_wrapper(c, 0x0027_c994, 0x0027_c9a0)
+}
+
+/// `ScriptEngine_SkipFinishScript` (0x0027a9f0): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn script_engine_skip_finish_script(c: &mut Cpu) {
+    if c.pc != 0x0027a9f0 {
+        return ee::s07::f_0027a9f0__generated(c);
+    }
+    guest(c, |c| {
+        'b_27aa50: {
+            c.cycles += 12;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.g[A1][0] = 0x1;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[A2][0] = 0u64;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[RA][0] = sx(0x0027aa10);
+            c.g[S1][0] = c.g[A0][0];
+            Callee {
+                addr: 0x00279148,
+                f: ee::s07::ScriptEngine_ListGetEntryType,
+            }
+            .call(c, 0x0027aa10)?;
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xc));
+            c.g[V0][0] = (c.g[V1][0] < 0x9u64) as u64;
+            let t = c.g[V0][0] == 0u64;
+            c.g[S0][0] = 0u64;
+            if t {
+                break 'b_27aa50;
+            } else {
+                'b_27aa4c: {
+                    'b_27aa44: {
+                        c.cycles += 7;
+                        c.g[V0][0] = 0x480000;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1e20));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                        let t = c.g[A0][0] as u32;
+                        match t {
+                            0x0027aa3c => {
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[S0][0] = 0x3;
+                                if t {
+                                    break 'b_27aa50;
+                                } else {
+                                    break 'b_27aa44;
+                                }
+                            }
+                            0x0027aa44 => {
+                                break 'b_27aa44;
+                            }
+                            0x0027aa4c => {
+                                break 'b_27aa4c;
+                            }
+                            0x0027aa50 => {
+                                break 'b_27aa50;
+                            }
+                            _ => {
+                                c.jump_out(t, 0x0027a9f0, 0x0027aa7c);
+                                return Ok(());
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S0][0] = 0x2;
+                    if t {
+                        break 'b_27aa50;
+                    } else {
+                        break 'b_27aa4c;
+                    }
+                }
+                c.cycles += 1;
+                c.g[S0][0] = 0x1;
+                break 'b_27aa50;
+            }
+        }
+        c.cycles += 11;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A1][0] = 0x1;
+        c.g[RA][0] = sx(0x0027aa64);
+        c.g[A3][0] = 0x1;
+        Callee {
+            addr: 0x00279070,
+            f: ee::s07::ScriptEngine_ListSkip,
+        }
+        .call(c, 0x0027aa64)?;
+        c.g[V0][0] = (0u64 < c.g[S0][0]) as u64;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -19327,6 +20559,540 @@ pub(crate) mod tests {
                 c.bus.write32(OC444_GAME + 0x84, OC444_OBJ);
                 c.bus.write32(OC444_OBJ + 0x10, (seed % 5 != 0) as u32);
                 let _ = r;
+            },
+        );
+    }
+
+    /// Gate word for the test-only fakes (set in this test's machine only).
+    pub(crate) const GATE: u32 = DATA + 0x20_0000;
+
+    pub(crate) const GATE_ON: u32 = 0x0536_c0de;
+
+    /// The script object `ScriptEngine_GetScriptObj` returns while the gate is on.
+    pub(crate) const OBJ_4: u32 = DATA + 0x20_0010;
+
+    /// Gated fake of the free the teardown calls through 0x317e98: a no-op.
+    pub(crate) fn oc536_fake_free(c: &mut Cpu) {
+        if c.bus.read32(GATE) != GATE_ON {
+            return fakes::fall_back(c, fakes::prev_cell(oc536_fake_free), ee::s10::f_00317e98);
+        }
+        abi::ret(c);
+    }
+
+    /// Gated fake of `ScriptEngine_GetScriptObj`: returns `OBJ`.
+    pub(crate) fn oc536_fake_script_obj(c: &mut Cpu) {
+        if c.bus.read32(GATE) != GATE_ON {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc536_fake_script_obj),
+                ee::s07::f_0027d320,
+            );
+        }
+        c.g[V0][0] = OBJ_4 as u64;
+        c.cycles += 3;
+        abi::ret(c);
+    }
+
+    pub(crate) fn install() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            oc536_fake_free,
+            fakes::prev_cell(oc536_fake_free),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0027D320),
+            oc536_fake_script_obj,
+            fakes::prev_cell(oc536_fake_script_obj),
+        );
+    }
+
+    /// Scrambled registers and `a0 = DATA` (the object or list under test).
+    pub(crate) fn fixture(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = Rng(0x5360_0536_0000_0001 ^ (seed as u64) << 9 ^ salt);
+        scramble(c, &mut r);
+        c.g[A0][0] = sx(DATA);
+        r
+    }
+
+    #[test]
+    fn script_engine_clear_skip_delay_on_exit_matches() {
+        check(
+            ee::s07::f_00278718__generated,
+            script_engine_clear_skip_delay_on_exit,
+            200,
+            &|c, seed| {
+                let mut r = fixture(c, seed, 3);
+                fill(c, &mut r, DATA, 0x200);
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_set_skip_delay_matches() {
+        check(
+            ee::s07::f_00278de8__generated,
+            script_engine_set_skip_delay,
+            200,
+            &|c, seed| {
+                let mut r = fixture(c, seed, 4);
+                fill(c, &mut r, DATA, 0x200);
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_list_transfer_matches() {
+        check(
+            ee::s07::f_00278ff8__generated,
+            script_engine_list_transfer,
+            200,
+            &|c, seed| {
+                fixture(c, seed, 5);
+                c.bus.write32(DATA + 0x54c, DATA + 0x2000);
+                c.g[A1][0] = sx(seed % 5);
+                c.g[A2][0] = if seed % 2 == 0 {
+                    c.g[A1][0]
+                } else {
+                    sx(seed % 7 + 1)
+                };
+            },
+        );
+    }
+
+    /// Shared fixture of the list-entry wrappers.
+    pub(crate) fn list_entry_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        fixture(c, seed, salt);
+        c.bus.write32(DATA + 0x54c, DATA + 0x2000);
+        c.g[A1][0] = sx(seed % 7);
+        c.g[A2][0] = sx(seed % 3);
+    }
+
+    #[test]
+    fn script_engine_list_get_entry_ext_type_matches() {
+        check(
+            ee::s07::f_00279178__generated,
+            script_engine_list_get_entry_ext_type,
+            200,
+            &|c, seed| list_entry_setup(c, seed, 6),
+        );
+    }
+
+    #[test]
+    fn script_engine_list_get_entry_script_index_matches() {
+        check(
+            ee::s07::f_002791a8__generated,
+            script_engine_list_get_entry_script_index,
+            200,
+            &|c, seed| list_entry_setup(c, seed, 7),
+        );
+    }
+
+    #[test]
+    fn script_engine_list_is_next_ready_matches() {
+        check(
+            ee::s07::f_00279270__generated,
+            script_engine_list_is_next_ready,
+            200,
+            &|c, seed| {
+                fixture(c, seed, 8);
+                c.bus.write32(DATA + 0x54c, DATA + 0x2000);
+                c.g[A1][0] = sx(seed % 7);
+            },
+        );
+    }
+
+    /// Shared fixture of the aux-list wrappers.
+    pub(crate) fn aux_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        fixture(c, seed, salt);
+        c.bus.write32(DATA + 0x624, DATA + 0x2000);
+        c.g[A1][0] = sx(seed % 7);
+        c.g[A2][0] = (seed % 2) as u64;
+        c.g[A3][0] = (seed % 3) as u64;
+    }
+
+    #[test]
+    fn script_engine_aux_list_add_matches() {
+        check(
+            ee::s07::f_002793b8__generated,
+            script_engine_aux_list_add,
+            200,
+            &|c, seed| aux_setup(c, seed, 9),
+        );
+    }
+
+    #[test]
+    fn script_engine_aux_list_prepare_matches() {
+        check(
+            ee::s07::f_002793f8__generated,
+            script_engine_aux_list_prepare,
+            200,
+            &|c, seed| aux_setup(c, seed, 10),
+        );
+    }
+
+    #[test]
+    fn script_engine_aux_list_start_matches() {
+        check(
+            ee::s07::f_00279428__generated,
+            script_engine_aux_list_start,
+            200,
+            &|c, seed| aux_setup(c, seed, 11),
+        );
+    }
+
+    #[test]
+    fn script_engine_aux_list_stop_matches() {
+        check(
+            ee::s07::f_00279458__generated,
+            script_engine_aux_list_stop,
+            200,
+            &|c, seed| aux_setup(c, seed, 12),
+        );
+    }
+
+    #[test]
+    fn script_engine_aux_list_get_state_matches() {
+        check(
+            ee::s07::f_002794e0__generated,
+            script_engine_aux_list_get_state,
+            200,
+            &|c, seed| aux_setup(c, seed, 13),
+        );
+    }
+
+    #[test]
+    fn script_engine_spawn_script_by_id_matches() {
+        check(
+            ee::s07::f_002796b8__generated,
+            script_engine_spawn_script_by_id,
+            200,
+            &|c, seed| {
+                fixture(c, seed, 14);
+                c.bus.write32(DATA + 0x52c, DATA + 0x2000);
+                c.bus.write32(DATA + 0x2000, seed % 3);
+                c.bus.write32(DATA + 0x530, DATA + 0x3000);
+                for i in 0..3u32 {
+                    let id = if (seed + i) % 2 == 0 { 5 } else { 9 };
+                    c.bus.write32(DATA + 0x3004 + 0xc * i, id);
+                }
+                c.g[A1][0] = 5;
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_v03_matches() {
+        install();
+        check(
+            ee::s07::f_00279da8__generated,
+            script_engine_v03_2,
+            200,
+            &|c, seed| {
+                fixture(c, seed, 15);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GATE, GATE_ON);
+                c.g[A1][0] = sx(DATA + 0x4000);
+                c.bus.write32(OBJ_4, seed % 3);
+                c.bus.write32(OBJ_4 + 0x7c, seed % 4);
+                c.bus.write32(OBJ_4 + 0xc, DATA + 0x5000);
+                c.bus.write16(DATA + 0x5048, 0x10);
+                c.bus.write32(DATA + 0x504c, 0x0014_06c0);
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_purge_matches() {
+        install();
+        check(
+            ee::s07::f_00278590__generated,
+            script_engine_purge,
+            200,
+            &|c, seed| {
+                fixture(c, seed, 16);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GATE, GATE_ON);
+                let count = seed % 3;
+                if seed % 2 == 1 {
+                    c.bus.write32(DATA + 0x54c, DATA + 0x3000);
+                    c.bus.write32(DATA + 0x2ff0, count);
+                }
+                if seed % 4 == 0 {
+                    c.bus.write32(DATA + 0x624, DATA + 0x4000);
+                    c.bus.write32(DATA + 0x3ff0, count);
+                }
+                if seed % 5 == 0 {
+                    c.bus.write32(DATA + 0x544, 0x0080_1000);
+                }
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_18: u32 = 200;
+
+    /// Gate word for the channel-payload fake (test machines only).
+    pub(crate) const OC537_GATE: u32 = DATA + 0x200000;
+
+    pub(crate) const OC537_MAGIC: u32 = 0x0537_0001;
+
+    pub(crate) static OC537_PREV_CHANNEL_PAYLOAD: AtomicUsize = AtomicUsize::new(0);
+
+    /// Records the `InSeq_ChannelGetBlockPayload` calls while the gate is set.
+    pub(crate) fn oc537_fake_channel_payload(c: &mut Cpu) {
+        if c.bus.read32(OC537_GATE) != OC537_MAGIC {
+            return fakes::fall_back(
+                c,
+                &OC537_PREV_CHANNEL_PAYLOAD,
+                ee::s07::f_002742e0__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0027_42e0, ra);
+    }
+
+    pub(crate) fn oc537_hook_channel_payload() {
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_002742E0),
+            oc537_fake_channel_payload,
+            &OC537_PREV_CHANNEL_PAYLOAD,
+        );
+    }
+
+    /// The one-call wrappers: gate on, random arguments.
+    pub(crate) fn oc537_key_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 1);
+        c.bus.write32(OC537_GATE, OC537_MAGIC);
+        c.g[A0][0] = sx(fakes::ptr(&mut r));
+        c.g[A1][0] = r.next_u32() as u64;
+        c.g[A2][0] = r.next_u32() as u64;
+    }
+
+    /// The track-block wrappers: a small channel count and variation, and a
+    /// self block of random words (the lookups only read it).
+    pub(crate) fn oc537_track_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        let me = DATA + 0x40000;
+        fill(c, &mut r, me, 0x40);
+        c.g[A0][0] = sx(me);
+        c.g[A1][0] = sx(seed % 4);
+        c.g[A2][0] = sx(r.next_u32() % 4);
+    }
+
+    #[test]
+    fn script_engine_get_rider_pose_matches() {
+        covered(
+            ee::s07::f_0027b948__generated,
+            script_engine_get_rider_pose,
+            SEEDS_18,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x27b948, 1);
+                let obj = DATA + 0x10000;
+                let vt = DATA + 0x30000;
+                c.bus.write16(vt + 0x28, (r.next_u32() as u16) & !3);
+                c.bus.write32(vt + 0x2c, FAKE);
+                c.bus.write32(obj + 0x6c0, vt);
+                // Row 1 of the matrix: zero, positive, negative or random.
+                let comp = |r: &mut Rng, pick: u32| match pick {
+                    0 => 0,
+                    1 => 1.25f32.to_bits(),
+                    2 => (-0.75f32).to_bits(),
+                    _ => r.f32(2.0),
+                };
+                let x = comp(&mut r, seed % 4);
+                let y = comp(&mut r, seed / 4 % 4);
+                let z = comp(&mut r, seed / 16 % 4);
+                c.bus.write32(obj + 0x1b0, x);
+                c.bus.write32(obj + 0x1b4, y);
+                c.bus.write32(obj + 0x1b8, z);
+                c.bus.write32(obj + 0x1bc, r.next_u32());
+                c.g[A0][0] = sx(DATA + 0x20000);
+                c.g[A1][0] = sx(obj);
+                c.g[A2][0] = sx(DATA + 0x2000);
+                c.g[A3][0] = sx(DATA + 0x2100);
+                c.g[T0][0] = sx(DATA + 0x2200);
+                c.g[T1][0] = sx(DATA + 0x2300);
+            },
+        );
+    }
+
+    #[test]
+    fn script_cam_manual_get_key_block_matches() {
+        oc537_hook_channel_payload();
+        covered(
+            ee::s07::f_0027c0a0__generated,
+            script_cam_manual_get_key_block,
+            SEEDS_18,
+            &|c, seed| oc537_key_setup(c, seed, 0x0c0a0),
+        );
+    }
+
+    #[test]
+    fn script_cam_target_get_key_block_matches() {
+        oc537_hook_channel_payload();
+        covered(
+            ee::s07::f_0027c2b0__generated,
+            script_cam_target_get_key_block,
+            SEEDS_18,
+            &|c, seed| oc537_key_setup(c, seed, 0x0c2b0),
+        );
+    }
+
+    #[test]
+    fn script_cam_subject_get_key_block_matches() {
+        oc537_hook_channel_payload();
+        covered(
+            ee::s07::f_0027c4c0__generated,
+            script_cam_subject_get_key_block,
+            SEEDS_18,
+            &|c, seed| oc537_key_setup(c, seed, 0x0c4c0),
+        );
+    }
+
+    #[test]
+    fn script_cam_algorithmic_get_key_block_matches() {
+        oc537_hook_channel_payload();
+        covered(
+            ee::s07::f_0027c6a8__generated,
+            script_cam_algorithmic_get_key_block,
+            SEEDS_18,
+            &|c, seed| oc537_key_setup(c, seed, 0x0c6a8),
+        );
+    }
+
+    #[test]
+    fn script_view_get_key_block_matches() {
+        oc537_hook_channel_payload();
+        covered(
+            ee::s07::f_0027c890__generated,
+            script_view_get_key_block,
+            SEEDS_18,
+            &|c, seed| oc537_key_setup(c, seed, 0x0c890),
+        );
+    }
+
+    #[test]
+    fn script_rider_get_key_block_matches() {
+        oc537_hook_channel_payload();
+        covered(
+            ee::s07::f_0027c960__generated,
+            script_rider_get_key_block,
+            SEEDS_18,
+            &|c, seed| oc537_key_setup(c, seed, 0x0c960),
+        );
+    }
+
+    #[test]
+    fn script_cam_manual_get_track_block_matches() {
+        check(
+            ee::s07::f_0027c0c0__generated,
+            script_cam_manual_get_track_block,
+            SEEDS_18,
+            &|c, seed| oc537_track_setup(c, seed, 0x0c0c0),
+        );
+    }
+
+    #[test]
+    fn script_cam_target_get_track_block_matches() {
+        check(
+            ee::s07::f_0027c2d0__generated,
+            script_cam_target_get_track_block,
+            SEEDS_18,
+            &|c, seed| oc537_track_setup(c, seed, 0x0c2d0),
+        );
+    }
+
+    #[test]
+    fn script_cam_subject_get_track_block_matches() {
+        check(
+            ee::s07::f_0027c4e0__generated,
+            script_cam_subject_get_track_block,
+            SEEDS_18,
+            &|c, seed| oc537_track_setup(c, seed, 0x0c4e0),
+        );
+    }
+
+    #[test]
+    fn script_cam_algorithmic_get_track_block_matches() {
+        check(
+            ee::s07::f_0027c6c8__generated,
+            script_cam_algorithmic_get_track_block,
+            SEEDS_18,
+            &|c, seed| oc537_track_setup(c, seed, 0x0c6c8),
+        );
+    }
+
+    #[test]
+    fn script_view_get_track_block_matches() {
+        check(
+            ee::s07::f_0027c8b0__generated,
+            script_view_get_track_block,
+            SEEDS_18,
+            &|c, seed| oc537_track_setup(c, seed, 0x0c8b0),
+        );
+    }
+
+    #[test]
+    fn script_rider_get_track_block_matches() {
+        check(
+            ee::s07::f_0027c980__generated,
+            script_rider_get_track_block,
+            SEEDS_18,
+            &|c, seed| oc537_track_setup(c, seed, 0x0c980),
+        );
+    }
+
+    #[test]
+    fn script_cam_get_subject_params_matches() {
+        check(
+            ee::s07::f_0027c4b8__generated,
+            script_cam_get_subject_params,
+            SEEDS_18,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0c4b8, 0);
+                fill(c, &mut r, DATA + 0x50000, 0x10);
+                c.g[A0][0] = sx(DATA + 0x50000);
+            },
+        );
+    }
+
+    #[test]
+    fn script_cam_get_algorithmic_params_matches() {
+        check(
+            ee::s07::f_0027c6a0__generated,
+            script_cam_get_algorithmic_params,
+            SEEDS_18,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0c6a0, 0);
+                fill(c, &mut r, DATA + 0x50000, 0x10);
+                c.g[A0][0] = sx(DATA + 0x50000);
+            },
+        );
+    }
+
+    #[test]
+    fn script_obj_cam_set_weight_matches() {
+        check(
+            ee::s07::f_0027d788__generated,
+            script_obj_cam_set_weight,
+            SEEDS_18,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0d788, 0);
+                c.g[A0][0] = sx(DATA + 0x60000);
+            },
+        );
+    }
+
+    #[test]
+    fn script_engine_skip_finish_script_matches() {
+        check(
+            ee::s07::f_0027a9f0__generated,
+            script_engine_skip_finish_script,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0xa9f0, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x0027a9f0;
             },
         );
     }

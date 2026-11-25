@@ -12,6 +12,7 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw;
@@ -111,6 +112,39 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_d760, replay_record_snapshot, "Replay_RecordSnapshot"),
     (0x0026_d818, world_state_write, "WorldState_Write"),
     (0x0026_c898, playback_man_free_data, "PlaybackMan_FreeData"),
+    (0x0026_c588, playback_man_dtor_2, "PlaybackMan_dtor"),
+    (0x0026_c6e8, playback_man_init, "PlaybackMan_Init"),
+    (
+        0x0026_caf8,
+        playback_man_load_playback,
+        "PlaybackMan_LoadPlayback",
+    ),
+    (
+        0x0026_cbb0,
+        playback_man_clear_world_state_saved,
+        "PlaybackMan_ClearWorldStateSaved",
+    ),
+    (
+        0x0026_cd98,
+        playback_man_start_recording,
+        "PlaybackMan_StartRecording",
+    ),
+    (
+        0x0026_cdd0,
+        playback_man_stop_recording,
+        "PlaybackMan_StopRecording",
+    ),
+    (0x0026_cfe8, playback_man_find_file, "PlaybackMan_FindFile"),
+    (
+        0x0026_d020,
+        playback_man_apply_file,
+        "PlaybackMan_ApplyFile",
+    ),
+    (
+        0x0026_d558,
+        replay_cache_deserialize_2,
+        "ReplayCache_Deserialize",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2166,6 +2200,721 @@ pub fn playback_man_ctor(c: &mut Cpu) {
     })
 }
 
+/// `PlaybackMan::ClearWorldStateSaved(this)` (0x26cbb0): clears the word at
+/// +0x10 (the saved-world-state flag).
+pub fn playback_man_clear_world_state_saved(c: &mut Cpu) {
+    c.cycles += 2;
+    Addr((c.g[A0][0] as u32).wrapping_add(0x10)).sw(c, 0);
+    abi::ret(c);
+}
+
+/// `PlaybackMan::StopRecording(this)` (0x26cdd0): restores the world state
+/// (`PlaybackMan_RestoreWorldState`, 0x26cc18), then clears the word at +0x70.
+pub fn playback_man_stop_recording(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0026_cc18, 0x0026_cde4)?;
+        Addr((c.g[S0][0] as u32).wrapping_add(0x70)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PlaybackMan::StartRecording(this)` (0x26cd98): saves the world state
+/// (`PlaybackMan_SaveWorldState`, 0x26cbb8), clears the word at `*(this+4)+8`
+/// and sets the mode word at +0x70 to 2.
+pub fn playback_man_start_recording(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0026_cbb8, 0x0026_cdac)?;
+        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(4)).lw(c);
+        c.g[V1][0] = 2;
+        frame.restore_ra(c, 0);
+        Addr((c.g[V0][0] as u32).wrapping_add(8)).sw(c, 0);
+        let mode = c.g[V1][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x70)).sw(c, mode);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PlaybackMan::FindFile(this, key)` (0x26cfe8): scans the file table (count
+/// at +0x50, entries of 12 bytes at +0x58, key in the entry's first word) and
+/// returns the index of the first entry whose key matches, or -1.
+pub fn playback_man_find_file(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[A2][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x50)).lw(c);
+    let empty = (c.g[A2][0] as i64) <= 0;
+    c.g[V1][0] = 0;
+    'scan: {
+        if empty {
+            break 'scan;
+        }
+        c.cycles += 1;
+        c.g[A0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x58)).lw(c);
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[A0][0] as u32).lw(c);
+            if c.g[V0][0] != c.g[A1][0] {
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+                if !more {
+                    break 'scan;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_cff8);
+                }
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = c.g[V1][0];
+                abi::ret(c);
+                return;
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+    abi::ret(c);
+}
+
+/// `PlaybackMan::IsFileLoaded(this, key)` (0x26c998): finds `key` with
+/// `PlaybackMan_FindFile` (0x26cfe8). Not found: 0 (after the `+0x78` word
+/// is not consulted). Found: 1 when the entry's word at +4 is set; otherwise 0
+/// unless the table's word at +0x78 is negative.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn playback_man_is_file_loaded(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0026_cfe8, 0x0026_c9ac)?;
+        c.g[V1][0] = c.g[V0][0];
+        if (c.g[V1][0] as i64) < 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 6;
+            c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x58)).lw(c);
+            c.mult(0, 2, 3, 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(4)).lw(c);
+            c.g[V0][0] = 1;
+            if c.g[V1][0] != 0 {
+                c.cycles += 1;
+            } else {
+                c.cycles += 3;
+                c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x78)).lw(c);
+                if (c.g[V1][0] as i64) >= 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                }
+            }
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PlaybackMan::~PlaybackMan(this, flags)` (0x26c588): frees the buffer at
+/// `*this` (0x3168e8, size class 3), the two handles at +0x6c and +0x68
+/// (0x317e50), the data (`PlaybackMan_FreeData`), clears the pointer at
+/// +0x14 and, when `flags` bit 0 is set, frees `this` (0x317e50).
+pub fn playback_man_dtor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            c.g[A1][0] = 3;
+            call_ptr(c, 0x0031_68e8, 0x0026_c5b0)?;
+        }
+        c.cycles += 11;
+        c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x6c)).lw(c);
+        call_ptr(c, 0x0031_7e50, 0x0026_c5b8)?;
+        c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x68)).lw(c);
+        call_ptr(c, 0x0031_7e50, 0x0026_c5c0)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0026_c898, 0x0026_c5c8)?;
+        c.g[V0][0] = 0x0048_0000;
+        c.g[V1][0] = c.g[S1][0] & 0x1;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1898));
+        let free_this = c.g[V1][0] != 0;
+        let cleared = c.g[V0][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x14)).sw(c, cleared);
+        if free_this {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0031_7e50, 0x0026_c5e4)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PlaybackMan_ApplyFile(this, index)` (0x26d020): the table entry at
+/// `index` (12-byte entries at `this+0x58`). An entry already loaded (its word
+/// at +4 set) is handed to 0x2c85a0 and the call returns 1. Otherwise the
+/// stream at `this+4` is primed (0x3e6448) and the entry's two words are
+/// written; the call returns 0.
+pub fn playback_man_apply_file(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = 0xc;
+        frame.save(c, S0, 0x10);
+        c.mult(0, 5, 5, 3);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x58)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(4)).lw(c);
+        if c.g[V0][0] != 0 {
+            c.g[A2][0] = Addr((c.g[A0][0] as u32).wrapping_add(4)).lw(c);
+            c.cycles += 4;
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x002c_85a0, 0x0026_d08c)?;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 14;
+            c.g[S0][0] = Addr((c.g[A0][0] as u32).wrapping_add(4)).lw(c);
+            c.g[A2][0] = 0x10000;
+            c.g[A1][0] = 0;
+            c.g[A2][0] |= 0xc22c;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x003e_6448, 0x0026_d060)?;
+            c.g[V0][0] = 0x10000;
+            c.g[V1][0] = 0xffff_ffff_dbac_0000;
+            c.g[V0][0] |= 0xc200;
+            c.g[V1][0] |= 0x101;
+            let word1 = c.g[V0][0];
+            Addr((c.g[S0][0] as u32).wrapping_add(4)).sw(c, word1);
+            c.g[V0][0] = 0;
+            let word0 = c.g[V1][0];
+            Addr(c.g[S0][0] as u32).sw(c, word0);
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ReplayCache_Deserialize(cache, stream)` (0x26d558): reads two words from
+/// the stream (0x3e6574, 8 bytes then 4), stores the stream position back,
+/// copies the second word into `cache[0]`, then reads a record with 0x2c85a0
+/// and returns 1 with the stream position advanced by the record's size.
+pub fn replay_cache_deserialize_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 35;
+        let frame = Frame::open(c, 0x50);
+        c.g[A2][0] = 8;
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        call_ptr(c, 0x003e_6574, 0x0026_d580)?;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[A0][0] = sx(frame.at(c, 0x10));
+        c.g[V1][0] = Addr(frame.at(c, 4)).lw(c);
+        c.g[A2][0] = 4;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(8));
+        let position = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).sw(c, position);
+        let first = c.g[V1][0];
+        Addr(c.g[S1][0] as u32).sw(c, first);
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        call_ptr(c, 0x003e_6574, 0x0026_d5a4)?;
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[A1][0] = 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+        let advanced = c.g[A0][0];
+        Addr(c.g[S0][0] as u32).sw(c, advanced);
+        c.g[A2][0] = Addr((c.g[S1][0] as u32).wrapping_add(0xc)).lw(c);
+        call_ptr(c, 0x002c_85a0, 0x0026_d5bc)?;
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[V0][0] = 1;
+        c.g[A0][0] = Addr(frame.at(c, 0x10)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        let end = c.g[V1][0];
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        Addr(c.g[S0][0] as u32).sw(c, end);
+        frame.restore(c, S0, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The FindFile callee (`PlaybackMan_FindFile`, not overridden: it runs for real
+/// in the tests, over the fixture's file table).
+pub(crate) const CALLEE_PLAYBACK_FIND_FILE: Callee = Callee {
+    addr: 0x0026_cfe8,
+    f: ee::s07::f_0026cfe8,
+};
+
+/// `WorldStateStream_Reset` (called as a direct alias by the generated body).
+pub(crate) const CALLEE_WORLD_STREAM_RESET: Callee = Callee {
+    addr: 0x0026_d628,
+    f: ee::s07::f_0026d628,
+};
+
+/// `ReplayStream_SetBuffer` (direct alias in the generated body).
+pub(crate) const CALLEE_REPLAY_STREAM_SET_BUFFER: Callee = Callee {
+    addr: 0x0026_e950,
+    f: ee::s07::f_0026e950,
+};
+
+/// `void PlaybackMan_Init(PlaybackMan* self, const char* location)` (0x26c6e8).
+/// Copies the location name, clears the save-frame counters, allocates the
+/// save data (0x14000 bytes) and the current frame (0x1c22c bytes, version
+/// 0xDBAC0101, buffer size 0x1c200), then builds the playback file table: one
+/// entry per slot of `MaxPlaybackFiles` (id -1, no pack data), and one id per
+/// mission of the mission interface.
+pub fn playback_man_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 61;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        let me = c.g[S1][0] as u32;
+
+        // strcpy(self->Location, name)
+        c.g[A0][0] = sx(me.wrapping_add(0x8));
+        c.g[S0][0] = sx(me.wrapping_add(0x14));
+        call_ptr(c, 0x0041_66f4, 0x0026_c710)?;
+
+        // Save frame: none yet, AsyncFileNum = AsyncHandle = -1.
+        c.g[V1][0] = u64::MAX;
+        Addr(me.wrapping_add(0x10)).sw(c, 0);
+        c.g[A1][0] = 0x48_0000;
+        c.g[A0][0] = 0x1_0000;
+        let m1 = c.g[V1][0];
+        Addr(me.wrapping_add(0x78)).sw(c, m1);
+        c.g[A3][0] = 0;
+        let m1 = c.g[V1][0];
+        Addr(me.wrapping_add(0x74)).sw(c, m1);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1570));
+        c.g[A2][0] = 0;
+        c.g[A0][0] = c.g[A0][0] | 0x4000;
+        call_ptr(c, 0x0031_7e30, 0x0026_c73c)?;
+        let save_data = c.g[V0][0];
+        Addr(me.wrapping_add(0x4c)).sw(c, save_data);
+
+        // WorldStateStream_Reset(save frame stream); ReplayStream_SetBuffer(stream, buffer, 0)
+        c.g[A0][0] = c.g[S0][0];
+        CALLEE_WORLD_STREAM_RESET.call(c, 0x0026_c748)?;
+        c.g[A1][0] = Addr(me.wrapping_add(0x4c)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0;
+        CALLEE_REPLAY_STREAM_SET_BUFFER.call(c, 0x0026_c758)?;
+
+        // The current frame: cMemMan_alloc(0x1c22c), then MEM_fill to zero.
+        c.g[A1][0] = 0x48_0000;
+        c.g[A0][0] = 0x1_0000;
+        c.g[A3][0] = 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1580));
+        c.g[A0][0] = c.g[A0][0] | 0xc22c;
+        c.g[A2][0] = 0;
+        call_ptr(c, 0x0031_7d70, 0x0026_c774)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A2][0] = 0x1_0000;
+        let frame_ptr = c.g[S0][0];
+        Addr(me.wrapping_add(0x4)).sw(c, frame_ptr);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = c.g[A2][0] | 0xc22c;
+        call_ptr(c, 0x003e_6448, 0x0026_c790)?;
+
+        // The playback file table: operator_new(MaxPlaybackFiles * 12).
+        c.g[A1][0] = Addr(me.wrapping_add(0x54)).lw(c);
+        c.g[A0][0] = 0xc;
+        c.g[V1][0] = 0xffff_ffff_dbac_0000;
+        c.g[V0][0] = 0x1_0000;
+        c.mult(0, 0, 5, 4);
+        c.g[V1][0] = c.g[V1][0] | 0x101;
+        c.g[V0][0] = c.g[V0][0] | 0xc200;
+        c.g[A1][0] = 0x48_0000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1590));
+        let fv1 = c.g[V1][0];
+        Addr(c.g[S0][0] as u32).sw(c, fv1);
+        let fv0 = c.g[V0][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x4)).sw(c, fv0);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A0][0] = c.lo[0];
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7e30, 0x0026_c7cc)?;
+        c.g[V1][0] = Addr(me.wrapping_add(0x54)).lw(c);
+        c.g[A1][0] = 0;
+        let no_files = (c.g[V1][0] as i64) <= 0;
+        let files = c.g[V0][0];
+        Addr(me.wrapping_add(0x58)).sw(c, files);
+        if !no_files {
+            c.cycles += 3;
+            c.g[A2][0] = u64::MAX;
+            c.g[A0][0] = 0;
+            loop {
+                c.cycles += 14;
+                c.g[V1][0] = Addr(me.wrapping_add(0x58)).lw(c);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                let neg1 = c.g[A2][0];
+                Addr(c.g[V1][0] as u32).sw(c, neg1);
+                c.g[V0][0] = Addr(me.wrapping_add(0x58)).lw(c);
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                Addr(c.g[V0][0] as u32).off(0x4).sw(c, 0);
+                c.g[V1][0] = Addr(me.wrapping_add(0x58)).lw(c);
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr(c.g[V1][0] as u32).off(0x8).sw(c, 0);
+                c.g[V0][0] = Addr(me.wrapping_add(0x54)).lw(c);
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_c7e8);
+                }
+            }
+        }
+
+        // The mission interface: its mission count, then one id per mission.
+        c.cycles += 10;
+        c.g[S0][0] = 0;
+        call_ptr(c, 0x0014_dc80, 0x0026_c828)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xa;
+        call_ptr(c, 0x0014_dd58, 0x0026_c834)?;
+        c.g[S3][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S3][0];
+        call_ptr(c, 0x0015_4278, 0x0026_c840)?;
+        let missions = c.g[V0][0];
+        let no_missions = (missions as i64) <= 0;
+        Addr(me.wrapping_add(0x50)).sw(c, missions);
+        if !no_missions {
+            c.cycles += 2;
+            c.g[S2][0] = 0;
+            loop {
+                c.cycles += 11;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[S3][0];
+                call_ptr(c, 0x0015_4588, 0x0026_c85c)?;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[V1][0] = Addr(me.wrapping_add(0x58)).lw(c);
+                c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                let id = c.g[V0][0];
+                Addr(c.g[V1][0] as u32).sw(c, id);
+                c.g[V0][0] = Addr(me.wrapping_add(0x50)).lw(c);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_c850);
+                }
+            }
+        }
+
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PlaybackMan_StartFileLoad(PlaybackMan* self, int key)` (0x26c9f0).
+/// Looks the key up in the file table. Unknown key: 0. Pack data already
+/// present: 1. Otherwise starts the async load of the file's path into the
+/// file's handle slot: 1 on success; on failure the handle is reset to -1
+/// and the result is 0.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn playback_man_start_file_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x130);
+        frame.save(c, S0, 0x120);
+        frame.save(c, S1, 0x110);
+        frame.save_ra(c, 0x100);
+        c.g[S0][0] = c.g[A0][0];
+        let me = c.g[S0][0] as u32;
+        CALLEE_PLAYBACK_FIND_FILE.call(c, 0x0026_ca08)?;
+        c.g[A1][0] = c.g[V0][0];
+        'done: {
+            if (c.g[A1][0] as i64) < 0 {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                break 'done;
+            }
+            c.cycles += 6;
+            c.g[A0][0] = Addr(me.wrapping_add(0x58)).lw(c);
+            c.mult(0, 2, 5, 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x4)).lw(c);
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = 1;
+                break 'done;
+            }
+
+            // PackData is zero: start the load. AsyncFileNum = idx, AsyncHandle = -1.
+            c.cycles += 16;
+            c.g[S1][0] = u64::MAX;
+            let idx = c.g[A1][0];
+            Addr(me.wrapping_add(0x74)).sw(c, idx);
+            let minus1 = c.g[S1][0];
+            Addr(me.wrapping_add(0x78)).sw(c, minus1);
+            c.g[A2][0] = 0x4a_0000;
+            c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x324));
+            c.g[A0][0] = c.g[SP][0];
+            c.g[T1][0] = c.lw(c.g[V0][0] as u32);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3430));
+            c.g[A3][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x320));
+            c.g[T0][0] = sx(me.wrapping_add(0x8));
+            call_ptr(c, 0x0041_7828, 0x0026_ca58)?;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = 0x100;
+            call_ptr(c, 0x003d_f690, 0x0026_ca64)?;
+            let handle = c.g[V0][0];
+            Addr(me.wrapping_add(0x78)).sw(c, handle);
+            if (handle as i64) < 0 {
+                c.cycles += 1;
+                let minus1 = c.g[S1][0];
+                Addr(me.wrapping_add(0x78)).sw(c, minus1);
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                break 'done;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+        }
+
+        c.cycles += 5;
+        frame.restore(c, S0, 0x120);
+        frame.restore(c, S1, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PlaybackMan_LoadPlayback` (0x0026caf8): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn playback_man_load_playback(c: &mut Cpu) {
+    if c.pc != 0x0026caf8 {
+        return ee::s07::f_0026caf8__generated(c);
+    }
+    guest(c, |c| {
+        let mut pc: u32 = 0x0026caf8;
+        loop {
+            match pc {
+                0x0026caf8 => {
+                    c.cycles += 9;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x70));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S1][0] = c.g[A1][0];
+                    if t {
+                        pc = 0x0026cb94;
+                        continue;
+                    }
+                    pc = 0x0026cb1c;
+                    continue;
+                }
+                0x0026cb1c => {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x0026cb24);
+                    Callee {
+                        addr: 0x0026cfe8,
+                        f: ee::s07::PlaybackMan_FindFile,
+                    }
+                    .call(c, 0x0026cb24)?;
+                    c.g[S2][0] = c.g[V0][0];
+                    let t = (c.g[S2][0] as i64) < 0;
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x0026cb94;
+                        continue;
+                    }
+                    pc = 0x0026cb30;
+                    continue;
+                }
+                0x0026cb30 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0026cb38);
+                    c.g[A1][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x0026c9f0,
+                        f: ee::s07::PlaybackMan_StartFileLoad,
+                    }
+                    .call(c, 0x0026cb38)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x0026cb94;
+                        continue;
+                    }
+                    pc = 0x0026cb40;
+                    continue;
+                }
+                0x0026cb40 => {
+                    c.cycles += 2;
+                    let t = true;
+
+                    if t {
+                        pc = 0x0026cb64;
+                        continue;
+                    }
+                    pc = 0x0026cb48;
+                    continue;
+                }
+                0x0026cb48 => {
+                    c.cycles += 7;
+                    c.g[RA][0] = sx(0x0026cb50);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x0026c5f8,
+                        f: ee::s07::PlaybackMan_PollFileLoad,
+                    }
+                    .call(c, 0x0026cb50)?;
+                    c.g[RA][0] = sx(0x0026cb58);
+                    c.g[A0][0] = 0u64;
+                    call_ptr(c, 0x003e5928, 0x0026cb58)?;
+                    c.g[RA][0] = sx(0x0026cb60);
+                    c.g[A0][0] = 0x1;
+                    call_ptr(c, 0x003e52b0, 0x0026cb60)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    pc = 0x0026cb64;
+                    continue;
+                }
+                0x0026cb64 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0026cb6c);
+                    c.g[A1][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x0026c998,
+                        f: ee::s07::PlaybackMan_IsFileLoaded,
+                    }
+                    .call(c, 0x0026cb6c)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A1][0] = c.g[S2][0];
+                    if t {
+                        if back_edge_unwinds(c, 0x0026cb48) {
+                            return Ok(());
+                        }
+                        pc = 0x0026cb48;
+                        continue;
+                    }
+                    pc = 0x0026cb74;
+                    continue;
+                }
+                0x0026cb74 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0026cb7c);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x0026d020,
+                        f: ee::s07::PlaybackMan_ApplyFile,
+                    }
+                    .call(c, 0x0026cb7c)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0026cb98;
+                        continue;
+                    }
+                    pc = 0x0026cb84;
+                    continue;
+                }
+                0x0026cb84 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                    let t = (c.g[V1][0] as i64) > 0;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        pc = 0x0026cb98;
+                        continue;
+                    }
+                    pc = 0x0026cb94;
+                    continue;
+                }
+                0x0026cb94 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                    pc = 0x0026cb98;
+                    continue;
+                }
+                0x0026cb98 => {
+                    c.cycles += 6;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0026caf8, 0x0026cbb0);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3221,6 +3970,557 @@ pub(crate) mod tests {
                 c.bus.write32(OC430_CTRL, OC430_MAGIC);
                 c.pc = 0x0026_c898;
                 oc430_playback_fixture(c, &mut r, seed, true);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn playback_man_clear_world_state_saved_matches() {
+        check(
+            ee::s07::f_0026cbb0__generated,
+            playback_man_clear_world_state_saved,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0026_cbb0 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA + 0x1000 * (seed % 3);
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x10, r.next_u32());
+                c.pc = 0x0026_cbb0;
+            },
+        );
+    }
+
+    /// Gate word for the world-state fakes of the recording functions.
+    pub(crate) const PLAYBACK_RECORDING_GATE: u32 = DATA + 0x200000;
+
+    pub(crate) static OC531_PREV_RESTORE_WS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC531_PREV_SAVE_WS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc531_fake_restore_ws(c: &mut Cpu) {
+        if c.bus.read32(PLAYBACK_RECORDING_GATE) != 0x0531_0003 {
+            return fakes::fall_back(c, &OC531_PREV_RESTORE_WS, ee::s07::f_0026cc18__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0026_cc18, ra);
+    }
+
+    pub(crate) fn oc531_fake_save_ws(c: &mut Cpu) {
+        if c.bus.read32(PLAYBACK_RECORDING_GATE) != 0x0531_0003 {
+            return fakes::fall_back(c, &OC531_PREV_SAVE_WS, ee::s07::f_0026cbb8__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0026_cbb8, ra);
+    }
+
+    /// The playback object: the `+4` pointer and the word at `+0x70` the
+    /// recording functions write.
+    pub(crate) fn oc531_playback_fixture(c: &mut Cpu, seed: u32, r: &mut Rng) {
+        let this = DATA + 0x1000;
+        c.bus.write32(this + 4, DATA + 0x2000);
+        c.bus.write32(this + 0x70, r.next_u32());
+        c.bus.write32(DATA + 0x2000 + 8, r.next_u32());
+        c.bus.write32(PLAYBACK_RECORDING_GATE, 0x0531_0003);
+        c.g[A0][0] = sx(this + 0x100 * (seed % 2));
+    }
+
+    #[test]
+    fn playback_man_stop_recording_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026CC18),
+            oc531_fake_restore_ws,
+            &OC531_PREV_RESTORE_WS,
+        );
+        check(
+            ee::s07::f_0026cdd0__generated,
+            playback_man_stop_recording,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0026_cdd0 ^ seed as u64);
+                scramble(c, &mut r);
+                oc531_playback_fixture(c, seed, &mut r);
+                c.pc = 0x0026_cdd0;
+            },
+        );
+    }
+
+    #[test]
+    fn playback_man_start_recording_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026CBB8),
+            oc531_fake_save_ws,
+            &OC531_PREV_SAVE_WS,
+        );
+        check(
+            ee::s07::f_0026cd98__generated,
+            playback_man_start_recording,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0026_cd98 ^ seed as u64);
+                scramble(c, &mut r);
+                oc531_playback_fixture(c, seed, &mut r);
+                c.pc = 0x0026_cd98;
+            },
+        );
+    }
+
+    #[test]
+    fn playback_man_find_file_matches() {
+        check(
+            ee::s07::f_0026cfe8__generated,
+            playback_man_find_file,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0026_cfe8 ^ seed as u64);
+                scramble(c, &mut r);
+                let table = DATA + 0x1000;
+                let entries = DATA + 0x2000;
+                let count = if seed % 7 == 6 { u32::MAX } else { seed % 6 };
+                c.bus.write32(table + 0x50, count);
+                c.bus.write32(table + 0x58, entries);
+                for i in 0..6 {
+                    c.bus.write32(entries + 0xc * i, r.next_u32() % 4);
+                }
+                c.g[A0][0] = sx(table);
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.pc = 0x0026_cfe8;
+            },
+        );
+    }
+
+    /// Gate word for the playback destructor's callee fakes.
+    pub(crate) const PLAYBACK_DTOR_GATE: u32 = DATA + 0x200000;
+
+    pub(crate) static OC531_PREV_DTOR_FREE_BUF: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC531_PREV_DTOR_HANDLE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC531_PREV_DTOR_DATA: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc531_fake_dtor_buf(c: &mut Cpu) {
+        if c.bus.read32(PLAYBACK_DTOR_GATE) != 0x0531_0004 {
+            return fakes::fall_back(c, &OC531_PREV_DTOR_FREE_BUF, ee::s10::f_003168e8__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_68e8, ra);
+    }
+
+    pub(crate) fn oc531_fake_dtor_handle(c: &mut Cpu) {
+        if c.bus.read32(PLAYBACK_DTOR_GATE) != 0x0531_0004 {
+            return fakes::fall_back(c, &OC531_PREV_DTOR_HANDLE, ee::s10::f_00317e50__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_7e50, ra);
+    }
+
+    pub(crate) fn oc531_fake_dtor_data(c: &mut Cpu) {
+        if c.bus.read32(PLAYBACK_DTOR_GATE) != 0x0531_0004 {
+            return fakes::fall_back(c, &OC531_PREV_DTOR_DATA, ee::s07::f_0026c898__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0026_c898, ra);
+    }
+
+    #[test]
+    fn playback_man_dtor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003168E8),
+            oc531_fake_dtor_buf,
+            &OC531_PREV_DTOR_FREE_BUF,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc531_fake_dtor_handle,
+            &OC531_PREV_DTOR_HANDLE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026C898),
+            oc531_fake_dtor_data,
+            &OC531_PREV_DTOR_DATA,
+        );
+        check(
+            ee::s07::f_0026c588__generated,
+            playback_man_dtor_2,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0026_c588 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(PLAYBACK_DTOR_GATE, 0x0531_0004);
+                let this = DATA + 0x1000;
+                c.bus
+                    .write32(this, if seed % 4 == 0 { 0 } else { DATA + 0x3000 });
+                c.bus.write32(this + 0x6c, r.next_u32());
+                c.bus.write32(this + 0x68, r.next_u32());
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.pc = 0x0026_c588;
+            },
+        );
+    }
+
+    /// Gate word for the stream and record callee fakes of the file loaders.
+    pub(crate) const OC531_CALLEE_GATE: u32 = DATA + 0x200000;
+
+    pub(crate) static OC531_PREV_PRIME: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC531_PREV_READ: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC531_PREV_RECORD: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc531_fake_stream_prime(c: &mut Cpu) {
+        if c.bus.read32(OC531_CALLEE_GATE) != 0x0531_0005 {
+            return fakes::fall_back(c, &OC531_PREV_PRIME, ee::s14::f_003e6448__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x003e_6448, ra);
+    }
+
+    pub(crate) fn oc531_fake_stream_read(c: &mut Cpu) {
+        if c.bus.read32(OC531_CALLEE_GATE) != 0x0531_0005 {
+            return fakes::fall_back(c, &OC531_PREV_READ, ee::s14::f_003e6574__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x003e_6574, ra);
+    }
+
+    pub(crate) fn oc531_fake_record(c: &mut Cpu) {
+        if c.bus.read32(OC531_CALLEE_GATE) != 0x0531_0005 {
+            return fakes::fall_back(c, &OC531_PREV_RECORD, ee::s09::f_002c85a0__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x002c_85a0, ra);
+    }
+
+    #[test]
+    fn playback_man_apply_file_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6448),
+            oc531_fake_stream_prime,
+            &OC531_PREV_PRIME,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002C85A0),
+            oc531_fake_record,
+            &OC531_PREV_RECORD,
+        );
+        check(
+            ee::s07::f_0026d020__generated,
+            playback_man_apply_file,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0026_d020 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(OC531_CALLEE_GATE, 0x0531_0005);
+                let this = DATA + 0x1000;
+                let table = DATA + 0x2000;
+                c.bus.write32(this + 0x58, table);
+                c.bus.write32(this + 4, DATA + 0x3000);
+                for i in 0..3 {
+                    let loaded = if (seed + i) % 2 == 0 { 0 } else { r.next_u32() };
+                    c.bus.write32(table + 12 * i + 4, loaded);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 3) as u64;
+                c.pc = 0x0026_d020;
+            },
+        );
+    }
+
+    #[test]
+    fn replay_cache_deserialize_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6574),
+            oc531_fake_stream_read,
+            &OC531_PREV_READ,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002C85A0),
+            oc531_fake_record,
+            &OC531_PREV_RECORD,
+        );
+        check(
+            ee::s07::f_0026d558__generated,
+            replay_cache_deserialize_2,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0026_d558 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(OC531_CALLEE_GATE, 0x0531_0005);
+                let cache = DATA + 0x5000;
+                let pos = DATA + 0x6000;
+                c.bus.write32(pos, DATA + 0x7000);
+                c.bus.write32(cache, r.next_u32());
+                c.bus.write32(cache + 0xc, r.next_u32());
+                c.g[A0][0] = sx(cache);
+                c.g[A1][0] = sx(pos);
+                c.pc = 0x0026_d558;
+            },
+        );
+    }
+
+    /// Gate word for this module's callee fakes (test machines only): the fakes
+    /// run their gate-off body unless the machine holds the magic.
+    pub(crate) const OC539_GATE: u32 = DATA + 0x200000;
+
+    pub(crate) const OC539_MAGIC: u32 = 0x0539_0001;
+
+    /// The async load's result (the fake returns it, sign-extended).
+    pub(crate) const OC539_ASYNC_RESULT: u32 = DATA + 0x200010;
+
+    /// The mission count and the mission ids the interface fakes return.
+    pub(crate) const OC539_MISSIONS: u32 = DATA + 0x200020;
+
+    pub(crate) const OC539_IDS: u32 = DATA + 0x200040;
+
+    /// Pointers the allocator fakes return (outside the table and the self object).
+    pub(crate) const OC539_ALLOC_RET: u32 = DATA + 0x240000;
+
+    pub(crate) const OC539_NEW_RET: u32 = DATA + 0x220000;
+
+    pub(crate) const OC539_BE_RET: u32 = DATA + 0x250000;
+
+    pub(crate) const OC539_IFACE_RET: u32 = DATA + 0x252000;
+
+    /// A gated fake for an overridden callee: logs the call (`fakes::fake`),
+    /// then sets the result in `$body`; when the gate is off it runs the body
+    /// the slot held before.
+    macro_rules! gated_fake {
+        ($fake:ident, $prev:ident, $gen:path, $target:expr, |$c:ident| $body:block) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake($c: &mut Cpu) {
+                if $c.bus.read32(OC539_GATE) != OC539_MAGIC {
+                    return fakes::fall_back($c, &$prev, $gen);
+                }
+                let ra = $c.g[RA][0] as u32;
+                fakes::fake($c, $target, ra);
+                $body
+            }
+        };
+    }
+
+    gated_fake!(
+        oc539_fake_strcpy,
+        OC539_PREV_STRCPY,
+        ee::s15::f_004166f4__generated,
+        0x0041_66f4,
+        |c| {}
+    );
+
+    gated_fake!(
+        oc539_fake_stream_reset,
+        OC539_PREV_STREAM_RESET,
+        ee::s07::f_0026d628__generated,
+        0x0026_d628,
+        |c| {}
+    );
+
+    gated_fake!(
+        oc539_fake_set_buffer,
+        OC539_PREV_SET_BUFFER,
+        ee::s07::f_0026e950__generated,
+        0x0026_e950,
+        |c| {}
+    );
+
+    gated_fake!(
+        oc539_fake_alloc,
+        OC539_PREV_ALLOC,
+        ee::s10::f_00317d70__generated,
+        0x0031_7d70,
+        |c| {
+            c.g[V0][0] = sx(OC539_ALLOC_RET);
+        }
+    );
+
+    gated_fake!(
+        oc539_fake_new,
+        OC539_PREV_NEW,
+        ee::s10::f_00317e30__generated,
+        0x0031_7e30,
+        |c| {
+            c.g[V0][0] = sx(OC539_NEW_RET);
+        }
+    );
+
+    gated_fake!(
+        oc539_fake_mem_fill,
+        OC539_PREV_MEM_FILL,
+        ee::s14::f_003e6448__generated,
+        0x003e_6448,
+        |c| {}
+    );
+
+    gated_fake!(
+        oc539_fake_get_be,
+        OC539_PREV_GET_BE,
+        ee::s01::f_0014dc80__generated,
+        0x0014_dc80,
+        |c| {
+            c.g[V0][0] = sx(OC539_BE_RET);
+        }
+    );
+
+    gated_fake!(
+        oc539_fake_get_iface,
+        OC539_PREV_GET_IFACE,
+        ee::s01::f_0014dd58__generated,
+        0x0014_dd58,
+        |c| {
+            c.g[V0][0] = sx(OC539_IFACE_RET);
+        }
+    );
+
+    gated_fake!(
+        oc539_fake_missions,
+        OC539_PREV_MISSIONS,
+        ee::s01::f_00154278__generated,
+        0x0015_4278,
+        |c| {
+            c.g[V0][0] = sx(c.bus.read32(OC539_MISSIONS));
+        }
+    );
+
+    gated_fake!(
+        oc539_fake_sprintf,
+        OC539_PREV_SPRINTF,
+        ee::s15::f_00417828__generated,
+        0x0041_7828,
+        |c| {}
+    );
+
+    gated_fake!(
+        oc539_fake_async,
+        OC539_PREV_ASYNC,
+        ee::s14::f_003df690__generated,
+        0x003d_f690,
+        |c| {
+            c.g[V0][0] = sx(c.bus.read32(OC539_ASYNC_RESULT));
+        }
+    );
+
+    /// The mission id fake reads the mission index from `a1`, which `fake`
+    /// clobbers, so it is written out by hand.
+    pub(crate) static OC539_PREV_MISSION_ID: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc539_fake_mission_id(c: &mut Cpu) {
+        if c.bus.read32(OC539_GATE) != OC539_MAGIC {
+            return fakes::fall_back(c, &OC539_PREV_MISSION_ID, ee::s01::f_00154588__generated);
+        }
+        let index = c.g[A1][0] as u32;
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0015_4588, ra);
+        c.g[V0][0] = sx(c.bus.read32(OC539_IDS + 4 * index));
+    }
+
+    /// Hooks every fake of this module (each once per process).
+    pub(crate) fn hook_all() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004166F4),
+            oc539_fake_strcpy,
+            &OC539_PREV_STRCPY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026D628),
+            oc539_fake_stream_reset,
+            &OC539_PREV_STREAM_RESET,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026E950),
+            oc539_fake_set_buffer,
+            &OC539_PREV_SET_BUFFER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc539_fake_alloc,
+            &OC539_PREV_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            oc539_fake_new,
+            &OC539_PREV_NEW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6448),
+            oc539_fake_mem_fill,
+            &OC539_PREV_MEM_FILL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            oc539_fake_get_be,
+            &OC539_PREV_GET_BE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            oc539_fake_get_iface,
+            &OC539_PREV_GET_IFACE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00154278),
+            oc539_fake_missions,
+            &OC539_PREV_MISSIONS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00154588),
+            oc539_fake_mission_id,
+            &OC539_PREV_MISSION_ID,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            oc539_fake_sprintf,
+            &OC539_PREV_SPRINTF,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DF690),
+            oc539_fake_async,
+            &OC539_PREV_ASYNC,
+        );
+    }
+
+    /// Machine state with the fakes gated on and registers scrambled.
+    pub(crate) fn gate_on(c: &mut Cpu, seed: u32, salt: u64) {
+        fakes::machine(c, seed, salt, 0);
+        c.bus.write32(OC539_GATE, OC539_MAGIC);
+    }
+
+    #[test]
+    fn playback_man_init_matches() {
+        hook_all();
+        check(
+            ee::s07::f_0026c6e8__generated,
+            playback_man_init,
+            200,
+            &|c, seed| {
+                gate_on(c, seed, 0x539_0001);
+                let me = DATA + 0x1000;
+                // MaxPlaybackFiles (0 covers the skipped table), and the missions.
+                c.bus.write32(me + 0x54, seed % 4);
+                c.bus.write32(OC539_MISSIONS, seed % 5);
+                for i in 0..4 {
+                    c.bus.write32(OC539_IDS + 4 * i, 0x100 + i + seed % 7);
+                }
+                c.bus.write32(OC539_ASYNC_RESULT, 0);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(DATA + 0x1800);
+            },
+        );
+    }
+
+    #[test]
+    fn playback_man_load_playback_matches() {
+        check(
+            ee::s07::f_0026caf8__generated,
+            playback_man_load_playback,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0xcaf8, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x0026caf8;
             },
         );
     }
