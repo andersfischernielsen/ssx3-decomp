@@ -82,6 +82,50 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
+#[cfg(feature = "oc552")]
+pub mod oc552;
+#[cfg(feature = "oc553")]
+pub mod oc553;
+#[cfg(feature = "oc554")]
+pub mod oc554;
+#[cfg(feature = "oc555")]
+pub mod oc555;
+#[cfg(feature = "oc556")]
+pub mod oc556;
+#[cfg(feature = "oc557")]
+pub mod oc557;
+#[cfg(feature = "oc558")]
+pub mod oc558;
+#[cfg(feature = "oc559")]
+pub mod oc559;
+#[cfg(feature = "oc560")]
+pub mod oc560;
+#[cfg(feature = "oc561")]
+pub mod oc561;
+#[cfg(feature = "oc562")]
+pub mod oc562;
+#[cfg(feature = "oc563")]
+pub mod oc563;
+#[cfg(feature = "oc564")]
+pub mod oc564;
+#[cfg(feature = "oc565")]
+pub mod oc565;
+#[cfg(feature = "oc566")]
+pub mod oc566;
+#[cfg(feature = "oc567")]
+pub mod oc567;
+#[cfg(feature = "oc568")]
+pub mod oc568;
+#[cfg(feature = "oc569")]
+pub mod oc569;
+#[cfg(feature = "oc570")]
+pub mod oc570;
+#[cfg(feature = "oc571")]
+pub mod oc571;
+#[cfg(feature = "oc572")]
+pub mod oc572;
+#[cfg(feature = "oc573")]
+pub mod oc573;
 pub mod plugin_host;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
@@ -108,6 +152,50 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
+    #[cfg(feature = "oc573")]
+    v.extend_from_slice(oc573::OVERRIDES);
+    #[cfg(feature = "oc572")]
+    v.extend_from_slice(oc572::OVERRIDES);
+    #[cfg(feature = "oc571")]
+    v.extend_from_slice(oc571::OVERRIDES);
+    #[cfg(feature = "oc570")]
+    v.extend_from_slice(oc570::OVERRIDES);
+    #[cfg(feature = "oc569")]
+    v.extend_from_slice(oc569::OVERRIDES);
+    #[cfg(feature = "oc568")]
+    v.extend_from_slice(oc568::OVERRIDES);
+    #[cfg(feature = "oc552")]
+    v.extend_from_slice(oc552::OVERRIDES);
+    #[cfg(feature = "oc553")]
+    v.extend_from_slice(oc553::OVERRIDES);
+    #[cfg(feature = "oc554")]
+    v.extend_from_slice(oc554::OVERRIDES);
+    #[cfg(feature = "oc555")]
+    v.extend_from_slice(oc555::OVERRIDES);
+    #[cfg(feature = "oc556")]
+    v.extend_from_slice(oc556::OVERRIDES);
+    #[cfg(feature = "oc557")]
+    v.extend_from_slice(oc557::OVERRIDES);
+    #[cfg(feature = "oc558")]
+    v.extend_from_slice(oc558::OVERRIDES);
+    #[cfg(feature = "oc559")]
+    v.extend_from_slice(oc559::OVERRIDES);
+    #[cfg(feature = "oc560")]
+    v.extend_from_slice(oc560::OVERRIDES);
+    #[cfg(feature = "oc561")]
+    v.extend_from_slice(oc561::OVERRIDES);
+    #[cfg(feature = "oc562")]
+    v.extend_from_slice(oc562::OVERRIDES);
+    #[cfg(feature = "oc563")]
+    v.extend_from_slice(oc563::OVERRIDES);
+    #[cfg(feature = "oc564")]
+    v.extend_from_slice(oc564::OVERRIDES);
+    #[cfg(feature = "oc565")]
+    v.extend_from_slice(oc565::OVERRIDES);
+    #[cfg(feature = "oc566")]
+    v.extend_from_slice(oc566::OVERRIDES);
+    #[cfg(feature = "oc567")]
+    v.extend_from_slice(oc567::OVERRIDES);
     v.extend_from_slice(movie::overrides());
     #[cfg(feature = "math")]
     v.extend_from_slice(math::OVERRIDES);
