@@ -101,7 +101,9 @@ pub struct Sched {
     pub trace_calls: bool,
     /// Host clock mode (`SSX3_HOST_CLOCK=1`), see [`follow_host_clock`].
     pub host_clock: Option<HostClock>,
-    /// Nesting of `service_events` calls.
+    /// Nesting of `service_events` calls on the frame driver's own stack (token 0).
+    /// Coroutines have stacks of their own, and a call suspended there must not
+    /// leave the count raised for the next context.
     pub service_depth: u32,
     /// Native thread slices running on the driver's stack (`kernel::run_native`).
     pub native_slices: u32,
@@ -269,9 +271,14 @@ fn idle(c: &mut Cpu) {
 /// Advance hardware time and deliver interrupts. Returns true when the current
 /// thread must unwind (thread switch, or the host wants a frame).
 pub fn service_events(c: &mut Cpu) -> bool {
-    m!(c).sched.service_depth += 1;
+    let on_driver = crate::threads::my_token() == 0;
+    if on_driver {
+        m!(c).sched.service_depth += 1;
+    }
     let r = service_events_inner(c);
-    m!(c).sched.service_depth -= 1;
+    if on_driver {
+        m!(c).sched.service_depth -= 1;
+    }
     r
 }
 

@@ -114,7 +114,7 @@ pub(crate) fn boot(
     let mut c = ssx3_ps2::new_cpu();
     ssx3_ps2::m!(c).kernel.host_threads = ssx3_ee::HOST_THREADS;
     if ssx3_core::config::var("SSX3_NATIVE_THREADS").as_deref() != Some("0") {
-        for &entry in ssx3_game::NATIVE_THREAD_ENTRIES {
+        for &entry in ssx3_game::native_thread_entries() {
             ssx3_ps2::kernel::register_native_entry(entry);
         }
     }

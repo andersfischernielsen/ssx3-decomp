@@ -168,11 +168,6 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v
 }
 
-/// Install the replacements (call once at boot, before guest code runs).
-/// `SSX3_NO_OVERRIDES=1` keeps the generated bodies everywhere (A/B checks);
-/// `SSX3_OVERRIDES=addr,addr` installs only the listed ones,
-/// `SSX3_SKIP_OVERRIDES=addr,addr` all but the listed ones.
-/// Returns how many were installed.
 /// Thread entries that run natively on the kernel scheduler (see
 /// `docs/plans/guest-thread-removal.md`): bodies that unwind at their wait and
 /// accept the wait's return address as a resume point.
@@ -184,6 +179,26 @@ pub const NATIVE_THREAD_ENTRIES: &[u32] = &[
     0x0038_2740, // Renderer_DmaKickThreadEntry (parks once)
 ];
 
+/// The native thread entries to register: none when the replacements are
+/// disabled or filtered (`SSX3_NO_OVERRIDES`, `SSX3_OVERRIDES`,
+/// `SSX3_SKIP_OVERRIDES`), because their bodies need the hand-written ports
+/// (resume arms, unwinding calls); the generated bodies do not implement that.
+pub fn native_thread_entries() -> &'static [u32] {
+    let filtered = ["SSX3_NO_OVERRIDES", "SSX3_OVERRIDES", "SSX3_SKIP_OVERRIDES"]
+        .iter()
+        .any(|v| ssx3_core::config::var_os(v).is_some());
+    if filtered {
+        &[]
+    } else {
+        NATIVE_THREAD_ENTRIES
+    }
+}
+
+/// Install the replacements (call once at boot, before guest code runs).
+/// `SSX3_NO_OVERRIDES=1` keeps the generated bodies everywhere (A/B checks);
+/// `SSX3_OVERRIDES=addr,addr` installs only the listed ones,
+/// `SSX3_SKIP_OVERRIDES=addr,addr` all but the listed ones.
+/// Returns how many were installed.
 pub fn install() -> usize {
     if ssx3_core::config::var_os("SSX3_NO_OVERRIDES").is_some() {
         return 0;
