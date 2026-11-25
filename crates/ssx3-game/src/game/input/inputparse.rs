@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -27,6 +28,7 @@ pub(crate) use crate::game::fe::festateloadhint::sqsp;
 pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
+pub(crate) use crate::game::intersect::riderspheretree::sphere_addr;
 pub(crate) use crate::game::intersect::worldsphtree::p;
 pub(crate) use crate::game::misc::add32;
 pub(crate) use crate::game::misc::MEMCPY;
@@ -209,6 +211,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "InputPreproc_ProcessFile",
     ),
     (0x0032_3098, input_parser_parse_all, "InputParser_ParseAll"),
+    (
+        0x0032_64b0,
+        input_preproc_skip_block_comment,
+        "InputPreproc_SkipBlockComment",
+    ),
+    (
+        0x0032_6a20,
+        input_preproc_empty_stub,
+        "InputPreproc_EmptyStub",
+    ),
+    (
+        0x0032_6ae0,
+        pad_queue_stop_all_actuators_2,
+        "PadQueue_StopAllActuators",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8917,6 +8934,214 @@ pub fn input_parser_parse_all(c: &mut Cpu) {
     })
 }
 
+/// `PadDevice_StopActuators(device)` (0x326cf0).
+pub(crate) const PADDEV_STOP_ACTUATORS: Callee = Callee {
+    addr: 0x0032_6cf0,
+    f: ee::s10::f_00326cf0,
+};
+
+/// `void InputPreproc_EmptyStub(void)` (0x326a20): does nothing.
+pub fn input_preproc_empty_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void PadQueue_StopAllActuators(PadQueue* q)` (0x326ae0): stops every
+/// pad device in the queue (`count` at `+0x2ee8`, the device pointers from
+/// `+0x2eec`), checking events at each back edge.
+pub fn pad_queue_stop_all_actuators_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save(c, S0, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let queue = c.g[S2][0] as u32;
+        c.g[V0][0] = Addr(queue.wrapping_add(0x2ee8)).lw(c);
+        let none = (c.g[V0][0] as i64) <= 0;
+        c.g[S1][0] = 0;
+        if !none {
+            c.cycles += 3;
+            c.g[S0][0] = sx(queue.wrapping_add(0x2eec));
+            c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+            loop {
+                c.cycles += 7;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+                PADDEV_STOP_ACTUATORS.call(c, 0x0032_6b1c)?;
+                let count_at = (c.g[S2][0] as u32).wrapping_add(0x2ee8);
+                c.g[V0][0] = Addr(count_at).lw(c);
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_6b10);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `InputPreproc_Write` (0x326360): one character into the output buffer.
+pub(crate) const SKIP_BLOCK_WRITE: Callee = Callee {
+    addr: 0x0032_6360,
+    f: ee::s10::f_00326360,
+};
+
+/// `InputPreproc_NextChar` (0x326478): advance the source by one character.
+pub(crate) const SKIP_BLOCK_NEXT_CHAR: Callee = Callee {
+    addr: 0x0032_6478,
+    f: ee::s10::f_00326478,
+};
+
+/// `InputPreproc_EmptyStub` (0x326a20): the error report of an unterminated comment.
+pub(crate) const SKIP_BLOCK_EMPTY_STUB: Callee = Callee {
+    addr: 0x0032_6a20,
+    f: ee::s10::f_00326a20,
+};
+
+/// `void InputPreproc_SkipBlockComment(self, src, a2, a3)` (0x3264b0): skips
+/// a `/* ... */` comment that the preprocessor has begun. Newlines are written
+/// through `InputPreproc_Write` and counted in `src->LineNumber` (`src + 0xc`),
+/// and the first newline clears `single`. The closing `*/` ends the comment
+/// (one space is written when no newline was seen). Input ending first is
+/// reported through `InputPreproc_EmptyStub`. `CurrentChar` is `self + 0xc`.
+pub fn input_preproc_skip_block_comment(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        // single: the comment is on one line until a newline clears it.
+        c.g[S2][0] = 1;
+        c.g[S3][0] = 0x2f; // '/'
+        c.g[S4][0] = c.g[A2][0];
+        c.g[S5][0] = c.g[A3][0];
+        c.g[S6][0] = 0x2a; // '*'
+        c.g[S7][0] = 0xa; // '\n'
+        c.g[V0][0] = c.lw(sphere_addr(c.g[S0][0], 0xc));
+
+        'resume: loop {
+            'done: {
+                'after_star: {
+                    'err: {
+                        'chr: {
+                            // A newline: count it, write it, read on.
+                            'nl: {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] != c.g[S7][0];
+                                c.g[A0][0] = c.g[S0][0];
+                                if t {
+                                    break 'nl;
+                                }
+                                c.cycles += 8;
+                                c.g[V0][0] = c.lw(sphere_addr(c.g[S1][0], 0xc));
+                                c.g[S2][0] = 0;
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                                c.sw(sphere_addr(c.g[S1][0], 0xc), c.g[V0][0]);
+                                c.g[A1][0] = c.lb(sphere_addr(c.g[S0][0], 0xc));
+                                SKIP_BLOCK_WRITE.call(c, 0x0032_6520)?;
+                                c.g[A0][0] = c.g[S0][0];
+                                break 'chr;
+                            }
+                            // A '*': the comment ends at "*/", else read on.
+                            'star: {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] != c.g[S6][0];
+                                if t {
+                                    break 'star;
+                                }
+                                c.cycles += 5;
+                                c.g[A1][0] = c.g[S1][0];
+                                SKIP_BLOCK_NEXT_CHAR.call(c, 0x0032_6538)?;
+                                c.g[V0][0] = c.lw(sphere_addr(c.g[S0][0], 0xc));
+                                let t = c.g[V0][0] != c.g[S3][0];
+                                c.g[A1][0] = c.g[S1][0];
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x0032_6500);
+                                    }
+                                    continue 'resume;
+                                }
+                                c.cycles += 4;
+                                c.g[A0][0] = c.g[S0][0];
+                                SKIP_BLOCK_NEXT_CHAR.call(c, 0x0032_654c)?;
+                                let t = c.g[S2][0] == 0;
+                                c.g[A0][0] = c.g[S0][0];
+                                if t {
+                                    break 'after_star;
+                                }
+                                c.cycles += 4;
+                                c.g[A1][0] = 0x20;
+                                SKIP_BLOCK_WRITE.call(c, 0x0032_655c)?;
+                                c.lq(16, sphere_addr(c.g[SP][0], 0x80));
+                                break 'done;
+                            }
+                            // Any other character: at end of input (negative) give up.
+                            c.cycles += 2;
+                            let t = (c.g[V0][0] as i64) < 0;
+                            c.g[A0][0] = c.g[S0][0];
+                            if t {
+                                break 'err;
+                            }
+                        }
+                        // Read the next character and go round again.
+                        c.cycles += 4;
+                        c.g[A1][0] = c.g[S1][0];
+                        SKIP_BLOCK_NEXT_CHAR.call(c, 0x0032_6574)?;
+                        c.g[V0][0] = c.lw(sphere_addr(c.g[S0][0], 0xc));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0032_6500);
+                        }
+                        continue 'resume;
+                    }
+                    // End of input inside the comment.
+                    c.cycles += 6;
+                    c.g[T0][0] = 0x490000;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A2][0] = c.g[S4][0];
+                    c.g[A3][0] = c.g[S5][0];
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x1c28));
+                    SKIP_BLOCK_EMPTY_STUB.call(c, 0x0032_6594)?;
+                }
+                c.cycles += 1;
+                c.lq(16, sphere_addr(c.g[SP][0], 0x80));
+            }
+            c.cycles += 10;
+            frame.restore(c, S1, 0x70);
+            frame.restore(c, S2, 0x60);
+            frame.restore(c, S3, 0x50);
+            frame.restore(c, S4, 0x40);
+            frame.restore(c, S5, 0x30);
+            frame.restore(c, S6, 0x20);
+            frame.restore(c, S7, 0x10);
+            frame.restore_ra(c, 0);
+            frame.close(c);
+            return Ok(());
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11232,6 +11457,104 @@ pub(crate) mod tests {
                 }
                 oc431_force(c, 5 + more, 0);
             },
+        );
+    }
+
+    pub(crate) use crate::game::input::inputmap::tests::oc561_setup;
+
+    pub(crate) use crate::game::input::inputmap::tests::oc561_install_fakes;
+
+    #[test]
+    fn input_preproc_empty_stub_matches() {
+        check(
+            ee::s10::f_00326a20__generated,
+            input_preproc_empty_stub,
+            8,
+            &|c, seed| {
+                let mut r = Rng(0x0032_6a20 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn pad_queue_stop_all_actuators_matches() {
+        oc561_install_fakes();
+        check(
+            ee::s10::f_00326ae0__generated,
+            pad_queue_stop_all_actuators_2,
+            96,
+            &|c, seed| {
+                let mut r = Rng(0x0032_6ae0 ^ seed as u64);
+                oc561_setup(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                let count = match seed % 6 {
+                    5 => (-2i32) as u32,
+                    k => k,
+                };
+                c.bus.write32(DATA + 0x2ee8, count);
+                for i in 0..6u32 {
+                    c.bus.write32(DATA + 0x2eec + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// The preprocessor (self) and the source cursor (src) of the comment
+    /// test, and the text the source holds.
+    pub(crate) const PP: u32 = DATA;
+
+    pub(crate) const SRC: u32 = DATA + 0x100;
+
+    pub(crate) const TEXT: u32 = DATA + 0x500;
+
+    pub(crate) fn skip_comment_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[A0][0] = sx(PP);
+        c.g[A1][0] = sx(SRC);
+        c.g[A2][0] = r.next_u32() as u64;
+        c.g[A3][0] = r.next_u32() as u64;
+        // Output: count, capacity, buffer (the real Write runs on them).
+        c.bus.write32(PP, 0);
+        c.bus.write32(PP + 4, 0x100);
+        c.bus.write32(PP + 8, PP + 0x400);
+        // CurrentChar: the comment's first character (or end of input).
+        let first = [b'*', b'\n', b'a', b'*'][(seed % 4) as usize];
+        c.bus.write32(
+            PP + 0xc,
+            if seed % 11 == 0 {
+                u32::MAX
+            } else {
+                first as u32
+            },
+        );
+        // The text: random characters, then "*/" in most seeds.
+        let alphabet = [b'a', b'\n', b'*', b'/', b' '];
+        let n = r.next_u32() % 10;
+        let mut text: Vec<u8> = (0..n)
+            .map(|_| alphabet[(r.next_u32() % 5) as usize])
+            .collect();
+        if seed % 3 != 0 {
+            text.extend_from_slice(b"*/");
+        }
+        for (i, b) in text.iter().enumerate() {
+            c.bus.write8(TEXT + i as u32, *b);
+        }
+        // The source cursor: base, length, position, line number.
+        c.bus.write32(SRC, TEXT);
+        c.bus.write32(SRC + 4, text.len() as u32);
+        c.bus.write32(SRC + 8, TEXT);
+        c.bus.write32(SRC + 0xc, r.next_u32() % 1000);
+    }
+
+    #[test]
+    fn input_preproc_skip_block_comment_matches() {
+        check(
+            ee::s10::f_003264b0__generated,
+            input_preproc_skip_block_comment,
+            300,
+            &|c, seed| skip_comment_setup(c, seed),
         );
     }
 }

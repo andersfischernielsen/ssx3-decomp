@@ -96,6 +96,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         mdf_file_set_borrowed_data,
         "MdfFile_SetBorrowedData",
     ),
+    (
+        0x0031_3b38,
+        animsequence_remove_trigger,
+        "AnimSequence_RemoveTrigger",
+    ),
+    (0x0031_4a60, mdffile_load, "MdfFile_Load"),
+    (0x0031_4ae0, mdffile_has_model, "MdfFile_HasModel"),
+    (0x0031_4b70, mdffile_find_model, "MdfFile_FindModel"),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -1386,6 +1394,254 @@ pub fn mdf_file_set_borrowed_data(c: &mut Cpu) {
     })
 }
 
+/// `void cAnimSequence_removeTrigger(cAnimSequence* self, int id, float time)`
+/// (0x313b38): unlink and free the first trigger in `self->Triggers`
+/// (`self + 0xac`) with this id and time that is not an end trigger.
+pub fn animsequence_remove_trigger(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xac));
+        let empty = c.g[V0][0] == 0;
+        c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0xac));
+        'b_313b9c: {
+            if empty {
+                break 'b_313b9c;
+            }
+            c.cycles += 1;
+            'trigger_scan: loop {
+                'b_313b94: {
+                    'b_313b90: {
+                        c.cycles += 4;
+                        c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        let id_differs = c.g[V0][0] != c.g[A1][0];
+                        c.g[A0][0] = c.g[V1][0];
+                        if id_differs {
+                            break 'b_313b90;
+                        }
+                        c.cycles += 5;
+                        let node = c.g[A0][0] as u32;
+                        c.lwc1(0, node.wrapping_add(8));
+                        let same_time = FpuF32(c.f[0]).eq_s(FpuF32(c.f[12]));
+                        crate::abi::set_fcc(c, same_time);
+                        if !same_time {
+                            c.g[V0][0] = c.lw(node.wrapping_add(0xc));
+                            break 'b_313b94;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(node.wrapping_add(4));
+                        let is_end = c.g[V0][0] != 0;
+                        c.g[V0][0] = c.lw(node.wrapping_add(0xc));
+                        if is_end {
+                            break 'b_313b94;
+                        }
+                        c.cycles += 4;
+                        let next = c.g[V0][0];
+                        let link = c.g[A2][0] as u32;
+                        c.sw(link, next);
+                        Callee {
+                            addr: 0x0031_7e50,
+                            f: ee::s10::f_00317e50,
+                        }
+                        .call(c, 0x0031_3b88)?;
+                        frame.restore_ra(c, 0);
+                        c.cycles += 2;
+                        frame.close(c);
+                        return Ok(());
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                }
+                c.cycles += 2;
+                let more = c.g[V0][0] != 0;
+                c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_3b50);
+                    }
+                    continue 'trigger_scan;
+                }
+                break 'b_313b9c;
+            }
+        }
+        c.cycles += 1;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void cMdfArchive_loadArchive(cMdfArchive* self, int name, int flags)`
+/// (0x314a60): load the archive pack through `FILE_loadpack`, store its data
+/// pointer in `self`, and parse its header.
+pub fn mdffile_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        c.g[A1][0] = c.g[A2][0];
+        call_ptr(c, 0x003e_22f0, 0x0031_4a7c)?;
+        c.g[A0][0] = c.g[S0][0];
+        let archive = c.g[S0][0] as u32;
+        let data = c.g[V0][0];
+        c.sw(archive, data);
+        c.g[A1][0] = c.g[V0][0];
+        Callee {
+            addr: 0x0031_4aa0,
+            f: ee::s10::f_00314aa0,
+        }
+        .call(c, 0x0031_4a8c)?;
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `bool cMdfArchive_hasModel(cMdfArchive* self, const char* name)`
+/// (0x314ae0): whether one of the archive's model headers (0x60 bytes each,
+/// from `self->ModelHeaders`) has this name, case-insensitively.
+pub fn mdffile_has_model(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        c.g[S0][0] = 0;
+        frame.save(c, 19, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, 18, 0x20);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x4));
+        let t = (c.g[V0][0] as i64) <= 0;
+        c.g[S3][0] = c.g[A1][0];
+        'b_314b50: {
+            'b_314b4c: {
+                if t {
+                    break 'b_314b4c;
+                }
+                c.cycles += 2;
+                c.g[S2][0] = 0;
+                'model_loop: loop {
+                    'b_314b38: {
+                        c.cycles += 6;
+                        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                        c.g[A0][0] = c.g[S3][0];
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                        call_ptr(c, 0x0041_aa88, 0x0031_4b28)?;
+                        if c.g[V0][0] != 0 {
+                            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                            break 'b_314b38;
+                        }
+                        c.cycles += 2;
+                        c.g[V0][0] = 1;
+                        break 'b_314b50;
+                    }
+                    c.cycles += 5;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x60));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_4b18);
+                        }
+                        continue 'model_loop;
+                    }
+                    break 'b_314b4c;
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 7;
+        frame.restore(c, 16, 0x40);
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 19, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `const char* cMdfArchive_getModelPartPtr(cMdfArchive* self, const char* name)`
+/// (0x314b70): the model header with this name (case-insensitive), or null.
+pub fn mdffile_find_model(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 18, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 19, 0x10);
+        c.g[S2][0] = 0;
+        frame.save(c, 17, 0x30);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x4));
+        let t = (c.g[V0][0] as i64) <= 0;
+        c.g[S3][0] = c.g[A1][0];
+        'b_314be4: {
+            'b_314be0: {
+                if t {
+                    break 'b_314be0;
+                }
+                c.cycles += 2;
+                c.g[S1][0] = 0;
+                'model_loop: loop {
+                    'b_314bcc: {
+                        c.cycles += 6;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                        c.g[A0][0] = c.g[S3][0];
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        call_ptr(c, 0x0041_aa88, 0x0031_4bb8)?;
+                        if c.g[V0][0] != 0 {
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                            break 'b_314bcc;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        break 'b_314be4;
+                    }
+                    c.cycles += 5;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x60));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_4ba8);
+                        }
+                        continue 'model_loop;
+                    }
+                    break 'b_314be0;
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 7;
+        frame.restore(c, 16, 0x40);
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 19, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2271,6 +2527,182 @@ pub(crate) mod tests {
                 let mut r = oc431_machine(c, seed, 0x314a40, 1, 0x0031_4a40);
                 c.g[A0][0] = (OC431_BASE + 0x100) as u64;
                 c.bus.write32(OC431_BASE + 0x100, r.next_u32() | 1);
+            },
+        );
+    }
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// Gate word: the test fakes below act only when this holds MAGIC in the
+    /// machine's own RAM (each test writes it in its fixture).
+    pub(crate) const OC560_GATE: u32 = DATA + 0xf_f000;
+
+    pub(crate) const OC560_MAGIC: u32 = 0x560c_0de5;
+
+    pub(crate) static OC560_PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC560_PREV_LOADPACK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC560_PREV_PARSE_HEADER: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc560_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(OC560_GATE) != OC560_MAGIC {
+            return fakes::fall_back(c, &OC560_PREV_DELETE, ee::s10::f_00317e50__generated);
+        }
+        abi::ret(c);
+    }
+
+    pub(crate) fn oc560_fake_loadpack(c: &mut Cpu) {
+        if c.bus.read32(OC560_GATE) != OC560_MAGIC {
+            return fakes::fall_back(c, &OC560_PREV_LOADPACK, ee::s14::f_003e22f0__generated);
+        }
+        c.g[V0][0] = (DATA + 0x1000) as u64;
+        abi::ret(c);
+    }
+
+    pub(crate) fn oc560_fake_parse_header(c: &mut Cpu) {
+        if c.bus.read32(OC560_GATE) != OC560_MAGIC {
+            return fakes::fall_back(c, &OC560_PREV_PARSE_HEADER, ee::s10::f_00314aa0__generated);
+        }
+        abi::ret(c);
+    }
+
+    pub(crate) fn oc560_hook_delete() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc560_fake_delete,
+            &OC560_PREV_DELETE,
+        );
+    }
+
+    pub(crate) fn oc560_hook_loadpack() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E22F0),
+            oc560_fake_loadpack,
+            &OC560_PREV_LOADPACK,
+        );
+    }
+
+    pub(crate) fn oc560_hook_parse_header() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00314AA0),
+            oc560_fake_parse_header,
+            &OC560_PREV_PARSE_HEADER,
+        );
+    }
+
+    /// A NUL-terminated string at `addr`.
+    pub(crate) fn oc560_put_str(c: &mut Cpu, addr: u32, s: &[u8]) {
+        for (i, b) in s.iter().enumerate() {
+            c.bus.write8(addr + i as u32, *b);
+        }
+        c.bus.write8(addr + s.len() as u32, 0);
+    }
+
+    /// An archive at `DATA + 0x100` with three model headers (0x60 bytes each
+    /// at `DATA + 0x300`) and the name the caller searches for at `DATA + 0x400`.
+    pub(crate) fn oc560_model_fixture(c: &mut Cpu, query: &[u8]) {
+        let this = DATA + 0x100;
+        let arch = DATA + 0x200;
+        let names = DATA + 0x300;
+        c.bus.write32(this + 4, arch);
+        c.bus.write16(arch + 4, 3);
+        c.bus.write32(this + 8, names);
+        oc560_put_str(c, names, b"alpha");
+        oc560_put_str(c, names + 0x60, b"beta");
+        oc560_put_str(c, names + 0xc0, b"gamma");
+        oc560_put_str(c, DATA + 0x400, query);
+    }
+
+    #[test]
+    fn animsequence_remove_trigger_matches() {
+        oc560_hook_delete();
+        check(
+            ee::s10::f_00313b38__generated,
+            animsequence_remove_trigger,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x0031_3b38 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_3b38;
+                c.bus.write32(OC560_GATE, OC560_MAGIC);
+                let nodes = [DATA + 0x3000, DATA + 0x3100, DATA + 0x3200, DATA + 0x3300];
+                // (ID, IsEndTrigger, TriggerTime) for each trigger in the list.
+                let spec: [(u32, u32, f32); 4] =
+                    [(1, 0, 0.5), (2, 1, 0.5), (2, 0, 1.0), (3, 0, 0.5)];
+                for (k, &(id, end, time)) in spec.iter().enumerate() {
+                    let n = nodes[k];
+                    c.bus.write32(n, id);
+                    c.bus.write32(n + 0x4, end);
+                    c.bus.write32(n + 0x8, time.to_bits());
+                    let next = if k == 3 { 0 } else { nodes[k + 1] };
+                    c.bus.write32(n + 0xc, next);
+                }
+                c.bus.write32(DATA + 0xac, nodes[0]);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = [1u64, 2, 3, 4][(seed % 4) as usize];
+                c.f[12] = if seed % 2 == 0 {
+                    0.5f32.to_bits()
+                } else {
+                    0.75f32.to_bits()
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn mdffile_load_matches() {
+        oc560_hook_loadpack();
+        oc560_hook_parse_header();
+        check(
+            ee::s10::f_00314a60__generated,
+            mdffile_load,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x0031_4a60 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_4a60;
+                c.bus.write32(OC560_GATE, OC560_MAGIC);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn mdffile_has_model_matches() {
+        check(
+            ee::s10::f_00314ae0__generated,
+            mdffile_has_model,
+            80,
+            &|c, seed| {
+                let mut r = Rng(0x0031_4ae0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_4ae0;
+                // Case-insensitive hits and misses.
+                let queries: [&[u8]; 4] = [b"BETA", b"gamma", b"delta", b"alpha"];
+                oc560_model_fixture(c, queries[(seed % 4) as usize]);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x400) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn mdffile_find_model_matches() {
+        check(
+            ee::s10::f_00314b70__generated,
+            mdffile_find_model,
+            80,
+            &|c, seed| {
+                let mut r = Rng(0x0031_4b70 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_4b70;
+                let queries: [&[u8]; 4] = [b"Gamma", b"alpha", b"omega", b"BETA"];
+                oc560_model_fixture(c, queries[(seed % 4) as usize]);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x400) as u64;
             },
         );
     }
