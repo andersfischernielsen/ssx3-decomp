@@ -607,6 +607,9 @@ fn wait_sema(c: &mut Cpu, id: i32) {
     }
     s.waiters.push_back(cur);
     ret(c, id as i64);
+    if m!(c).kernel.trace_syscalls {
+        eprintln!("[block] thread {cur} sema {id} ra {:08x} cyc {}", c.g[31][0] as u32, c.cycles);
+    }
     block_current(c, WaitType::Sema, id);
 }
 

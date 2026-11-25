@@ -101,6 +101,66 @@ Once all threads are converted, the semaphore / thread / alarm syscalls are
 unreachable and are removed with `threads.rs`, `threads_switcher.rs`,
 `corosensei` and the generated trampoline code only they need.
 
+## What the trace says (decided design)
+
+Measured on the gate replay (`../investigation/thread-inventory.md`,
+`SSX3_TRACE_SYSCALLS=1 SSX3_TRACE_THREADS=1`, which now also logs every block):
+
+- Seven threads are created (ids 2-8) plus the main thread. In a race frame
+  only three run: the VSync thread 6 (the game tick, woken by the VBlank-End ISR),
+  the SND thread 8 (woken by the SIF command ISR, twice a frame) and main (1).
+  Threads 2, 3, 4 and 7 run once at boot and never again; worker 5 runs the
+  loading jobs.
+- **Nesting holds.** Every one of the 1.27 million switches in the replay is
+  last-in-first-out: a thread is preempted by a higher-priority one that runs to
+  its block point, then the preempted thread continues. The worker and main
+  share priority 100 and switch only cooperatively (`EAThread_Yield`).
+  A simulation over the trace finds no switch that resumes a preempted thread
+  other than the top of the stack.
+- **Mutexes never block.** There is no block on an `EAMutex_Lock`/`SND_MutexLock`
+  semaphore in the whole replay: they are counters only.
+- Only these blocks happen: the thread loop semaphores (VSync 18, SND 25, main's
+  frame sema 16, worker 17), main's `EAFile_DelayTicks` alarm waits (sema 13,
+  20 times, nothing else runs meanwhile) and the SND-init RPC waits (sema 24, 7
+  times, main runs meanwhile).
+
+So one host stack suffices: a thread is a function run nested, to its next block
+point, at the moment the scheduler would have switched to it.
+
+### Mechanism: native threads on the scheduler's decisions
+
+The kernel keeps making every scheduling decision (priorities, ready order, wait
+queues, alarms, ISR timing) exactly as now, so the order of effects and the
+cycle counts do not change. What changes is how a switch is carried out:
+
+1. A thread whose body is hand-written (loop head plus resume entries) is
+   **native**: switching to it runs it nested on the current host stack
+   (`run_guest`-style, `kernel::run_native`), and switching away from it is an
+   unwind to the runner (the `Flow`/`Unwound` protocol the ports already follow:
+   `call_ptr(WAIT_SEMA)` returns `Err`). Its context is saved at the wait and
+   restored on the next resume; the port re-enters at the wait's return address
+   (an arm of its `match pc`).
+2. Preemption of a native thread by a higher-priority one nests the new one on
+   top; when it blocks, the preempted one continues. A switch that would need to
+   resume a thread lower on the stack while a native thread is above it (a
+   non-LIFO switch) is a fatal error: it never happens in the replay, and the
+   scenarios will show if it does anywhere else.
+3. Blocking mid-body (the alarm waits, the RPC waits) becomes "run the event
+   loop until the semaphore is signalled" when nothing else may run meanwhile;
+   the SND-init RPC waits (main runs meanwhile) are completed synchronously by
+   the SIF HLE instead, which moves a few boot events (the gate baseline is
+   rebuilt for that step only, after comparing screenshots and the race).
+4. When every thread is native, no coroutine is created: `threads.rs`,
+   `corosensei`, the `StackSwitcher`, and the frame driver's baton handoff go. The
+   main loop becomes the step function the frontends call once per VBlank.
+
+## Port the thread paths first (wave 237)
+
+The unported functions the threads run (117 functions, 30 KB: SND driver and its
+mixer init, `PS2GraphicsMan`/`Renderer`, `EAFile`, `EAMutex`, libkernl, SIF/FS
+library, `ssx_*` boot) are one writer wave, `oc688`-`oc699`. Thread entries
+`PS2ExecMan_WorkerThread` and `PS2ExecMan_VSyncThread` are already hand-written.
+
 ## Verification
 
 - The gate after every thread.
@@ -114,9 +174,9 @@ unreachable and are removed with `threads.rs`, `threads_switcher.rs`,
 
 | step | status |
 | --- | --- |
-| Worktree on `main` with #78 | ⬜ |
-| Trace tool + inventory | ⬜ |
-| Port the thread paths | ⬜ |
+| Worktree on `main` with #78/#79 | ✅ |
+| Trace tool + inventory | ✅ (`thread-inventory.md`, `tools/thread_inventory.py`) |
+| Port the thread paths | 🟡 wave 237 (`oc688`-`oc699`) |
 | Convert workers | ⬜ |
 | Convert ISR-driven threads | ⬜ |
 | Convert main + the rest, delete `threads.rs` | ⬜ |
