@@ -49,6 +49,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_5280, mod_obj_ctor, "ModObj_ctor"),
     (0x0035_49e0, process_list_init, "ProcessList_Init"),
+    (
+        0x0035_4e78,
+        process_list_remove_and_unlink,
+        "ProcessList_RemoveAndUnlink",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -649,6 +654,32 @@ pub fn process_list_init(c: &mut Cpu) {
     })
 }
 
+/// `ProcessList_Remove(list, process)` (0x354e48).
+pub(crate) const OC588_PROCESS_LIST_REMOVE: Callee = Callee {
+    addr: 0x0035_4e48,
+    f: ee::s11::ProcessList_Remove,
+};
+
+/// `void ProcessList_RemoveAndUnlink(ProcessList* list, GameProcess* p)`
+/// (0x354e78): removes `p` from `list`, then clears its prev/next links.
+pub fn process_list_remove_and_unlink(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        OC588_PROCESS_LIST_REMOVE.call(c, 0x0035_4e8c)?;
+        let p = r32(c, S0);
+        Addr(p.wrapping_add(0x8)).sw(c, 0);
+        Addr(p.wrapping_add(0x4)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1010,6 +1041,27 @@ pub(crate) mod tests {
                 c.g[A0][0] = (DATA + 0x5_0000) as u64;
                 c.g[A1][0] = (r.next_u32() % 5) as u64;
                 let _ = seed;
+            },
+        );
+    }
+
+    use crate::difftest::RA as SENTINEL;
+
+    #[test]
+    fn process_list_remove_and_unlink_matches() {
+        use crate::game::object::objnode::tests::{oc286_heap_process, oc286_process_list};
+        check(
+            ee::s11::f_00354e78__generated,
+            process_list_remove_and_unlink,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x354e78, 0);
+                oc286_process_list(c, &mut r);
+                let this = oc286_heap_process(c, &mut r, seed);
+                c.g[A0][0] = sx(GAME_GP + 0x2898);
+                c.g[A1][0] = sx(this);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0035_4e78;
             },
         );
     }

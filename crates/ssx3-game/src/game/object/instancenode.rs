@@ -6,9 +6,11 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::beintplayer::lh;
@@ -71,6 +73,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0034_fe00,
         oc436_mod_obj_run_script_event_19b8,
         "ModObj_RunScriptEvent19b8",
+    ),
+    (
+        0x0034_fca0,
+        world_obj_run_instance_script_1a78,
+        "WorldObj_RunInstanceScript1a78",
+    ),
+    (
+        0x0034_fce0,
+        world_obj_run_update_script,
+        "WorldObj_RunUpdateScript",
     ),
 ];
 
@@ -1151,6 +1163,19 @@ pub fn oc436_mod_obj_run_script_event_19b8(c: &mut Cpu) {
     })
 }
 
+/// `void WorldObj_RunInstanceScript1a78(WorldObj *self)` (0x34fca0): run the
+/// script hook at `self+0x18` through `WScriptMan_RunObjScript0Hook`
+/// (0x2d1a78) and return.
+pub fn world_obj_run_instance_script_1a78(c: &mut Cpu) {
+    tail_wrapper(c, Some(0x18), Target::Table(0x002d_1a78), 0x0034_fcb0);
+}
+
+/// `void WorldObj_RunUpdateScript(WorldObj *self)` (0x34fce0): as the
+/// instance-script version, through the script hook at 0x2d1a30.
+pub fn world_obj_run_update_script(c: &mut Cpu) {
+    tail_wrapper(c, Some(0x18), Target::Table(0x002d_1a30), 0x0034_fcf0);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1561,6 +1586,49 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(root);
                 c.g[A2][0] = sx(out);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::object::instanceman::tests::gate_on;
+    pub(crate) use crate::game::object::instanceman::tests::SEEDS as SEEDS_2;
+
+    pub(crate) use crate::game::object::instanceman::tests::install_fakes;
+
+    #[test]
+    fn world_obj_run_instance_script_1a78_matches() {
+        check(
+            ee::s11::f_0034fca0__generated,
+            world_obj_run_instance_script_1a78,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x587_1a78 ^ seed as u64);
+                scramble(c, &mut r);
+                gate_on(c);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x0034_fca0;
+                let obj = DATA + 0x100 + (seed % 4) * 0x40;
+                c.g[A0][0] = sx(obj);
+                c.bus.write32(obj + 0x18, DATA + 0x200);
+            },
+        );
+    }
+
+    #[test]
+    fn world_obj_run_update_script_matches() {
+        install_fakes();
+        check(
+            ee::s11::f_0034fce0__generated,
+            world_obj_run_update_script,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x587_fce0 ^ seed as u64);
+                scramble(c, &mut r);
+                gate_on(c);
+                c.pc = 0x0034_fce0;
+                let obj = DATA + 0x100 + (seed % 4) * 0x40;
+                c.g[A0][0] = sx(obj);
+                c.bus.write32(obj + 0x18, DATA + 0x200);
             },
         );
     }

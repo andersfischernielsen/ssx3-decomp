@@ -9,6 +9,7 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events;
 use crate::events::deliver_event_here;
@@ -24,6 +25,7 @@ pub(crate) use crate::game::main::gamemode::sw_r;
 pub(crate) use crate::game::misc::lit;
 pub(crate) use crate::game::movie::movieplayer::add32;
 pub(crate) use crate::game::movie::movieplayer::word;
+pub(crate) use crate::game::object::floatingnode::oc604_ea;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::world::world::oc435_callee;
 pub(crate) use crate::game::wscript::wscriptman::p;
@@ -138,6 +140,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ModifierBlock_ClearTransformFinished",
     ),
     (0x0035_3cf0, sky_box_set_section_2, "SkyBox_SetSection"),
+    (
+        0x0035_2e98,
+        modifier_block_update_transform,
+        "ModifierBlock_UpdateTransform",
+    ),
+    (0x0035_3ae8, sky_box_dtor, "SkyBox_dtor"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -1790,6 +1798,419 @@ pub fn sky_box_set_section_2(c: &mut Cpu) {
     })
 }
 
+pub(crate) const GAME_PROCESS_DTOR_CALLEE: Callee = Callee {
+    addr: 0x0035_46c8,
+    f: ee::s11::f_003546c8,
+};
+
+/// `void ModifierBlock_UpdateTransform(ModifierBlock **self)` (0x352e98): when
+/// the block `*self` is set, call the hook at `*(*block) + 0x1c` with
+/// `a0 = block + lh(*(*block) + 0x18)` and `a1 = block`.
+pub fn modifier_block_update_transform(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(c.g[A0][0] as u32).lw(c);
+        let null = c.g[A1][0] == 0;
+        frame.restore_ra(c, 0);
+        if !null {
+            c.cycles += 6;
+            c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x18).lh(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x1c).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0035_2ec0)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SkyBox_dtor(SkyBox *self)` (0x353ae8): set the vtable word at
+/// `self+0xc` and run `GameProcess_dtor` (0x3546c8) on it.
+pub fn sky_box_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx(0x0049_0000u32.wrapping_sub(0xff8));
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        let vt = c.g[V0][0];
+        Addr((c.g[V1][0] as u32).wrapping_add(0xc)).sw(c, vt);
+        GAME_PROCESS_DTOR_CALLEE.call(c, 0x0035_3b04)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModifierBlock_Load (0x3536d8): not installed yet (see the note below).
+// ---------------------------------------------------------------------------
+
+/// `ModifierBlock_Load` (0x3536d8): reads the modifier type word of a block and
+/// builds the typed modifier objects it lists (spline, multi-spline, parent,
+/// position, roller, magnet, ava-spline, and the sub-lists: boost, particles,
+/// halo, rails), storing each into the block and pushing list entries.
+///
+/// Not in `OVERRIDES`: its eight constructors and the pool allocator
+/// (`0x317d70`) need a real heap in the fixture, and the constructors
+/// depend on the modifier table, so the differential test is not set up yet.
+/// The port is kept here, written from the generated body.
+pub fn modifier_block_load(c: &mut Cpu) {
+    guest(c, modifier_block_load_body)
+}
+
+/// The typed constructor of one modifier group: `size` bytes from the pool
+/// (`0x490000 - off` names the type), the constructor `ctor` on the block in
+/// `S1`, the result stored at `[S2 + store]`. `cyc` is the group's cycle
+/// charge on the allocation path.
+pub(crate) fn oc604_mb_make(
+    c: &mut Cpu,
+    size: u64,
+    off: u32,
+    alloc_ret: u32,
+    ctor: u32,
+    ctor_ret: u32,
+    store: u32,
+    cyc: u64,
+) -> Flow {
+    c.cycles += cyc;
+    c.g[A1][0] = 0x490000;
+    c.g[A0][0] = size;
+    c.g[A1][0] = sx(0x490000u32.wrapping_sub(off));
+    c.g[A2][0] = 0x2000_0000;
+    c.g[A3][0] = 0;
+    call_ptr(c, 0x0031_7d70, alloc_ret)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S1][0];
+    call_ptr(c, ctor, ctor_ret)?;
+    c.sw(oc604_ea(c.g[S2][0], store), c.g[V0][0]);
+    Ok(())
+}
+
+/// One group of the type chain: `V0` holds the type it compares with (set by
+/// the caller), `next` is what `V0` becomes. True when the group matched.
+pub(crate) fn oc604_mb_group(
+    c: &mut Cpu,
+    entry_cycles: u64,
+    next: u64,
+    size: u64,
+    off: u32,
+    alloc_ret: u32,
+    ctor: u32,
+    ctor_ret: u32,
+) -> Result<bool, Unwound> {
+    c.cycles += entry_cycles;
+    let other = c.g[V1][0] != c.g[V0][0];
+    c.g[V0][0] = next;
+    if other {
+        return Ok(false);
+    }
+    oc604_mb_make(c, size, off, alloc_ret, ctor, ctor_ret, 0, 11)?;
+    Ok(true)
+}
+
+pub(crate) fn modifier_block_load_body(c: &mut Cpu) -> Flow {
+    c.cycles += 28;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0xe0));
+    c.g[A2][0] = 0x34;
+    c.sq(18, sp(c).wrapping_add(0xb0));
+    c.sq(17, sp(c).wrapping_add(0xc0));
+    c.g[S2][0] = c.g[A0][0];
+    c.sq(16, sp(c).wrapping_add(0xd0));
+    c.g[S1][0] = c.g[A1][0];
+    c.sq(19, sp(c).wrapping_add(0xa0));
+    c.g[A1][0] = c.g[SP][0];
+    c.sq(20, sp(c).wrapping_add(0x90));
+    c.sq(21, sp(c).wrapping_add(0x80));
+    c.sq(22, sp(c).wrapping_add(0x70));
+    c.sq(23, sp(c).wrapping_add(0x60));
+    c.sq(30, sp(c).wrapping_add(0x50));
+    c.sd(sp(c).wrapping_add(0x40), c.g[RA][0]);
+    c.sw(c.g[S2][0] as u32, 0u64);
+    c.sw(oc604_ea(c.g[S2][0], 0x4), 0u64);
+    c.sw(oc604_ea(c.g[S2][0], 0x8), 0u64);
+    c.sw(oc604_ea(c.g[S2][0], 0xc), 0u64);
+    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+    c.g[A0][0] = c.lh(oc604_ea(c.g[V0][0], 0x10));
+    c.g[V1][0] = c.lw(oc604_ea(c.g[V0][0], 0x14));
+    let t = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x0035_3738)?;
+    c.g[V0][0] = c.lw(sp(c) as u32);
+    c.g[V0][0] &= 0x1;
+    let none = c.g[V0][0] == 0;
+    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x4));
+    let mut matched = false;
+    if !none {
+        // Group 1: the spline.
+        c.g[V0][0] = 0x1;
+        matched = oc604_mb_group(c, 3, 2, 0xf0, 0x1730, 0x0035_376c, 0x0035_95d8, 0x0035_3778)?;
+        if !matched {
+            // Group 2: the multi-spline.
+            matched = oc604_mb_group(c, 2, 4, 0x58, 0x1730, 0x0035_37a0, 0x0035_a118, 0x0035_37ac)?;
+        }
+        if !matched {
+            // Group 3: the parent (type 4 in the table).
+            matched = oc604_mb_group(c, 2, 3, 0xb0, 0x1720, 0x0035_37d4, 0x0035_7090, 0x0035_37e0)?;
+        }
+        if !matched {
+            // Group 4: the position modifier.
+            matched = oc604_mb_group(c, 2, 5, 0x90, 0x1710, 0x0035_3808, 0x0035_6f68, 0x0035_3814)?;
+        }
+        if !matched {
+            // Group 5: the roller.
+            matched = oc604_mb_group(
+                c,
+                2,
+                6,
+                0x2d0,
+                0x16f8,
+                0x0035_383c,
+                0x0035_df70,
+                0x0035_3848,
+            )?;
+        }
+        if !matched {
+            // Group 6: the magnet.
+            matched = oc604_mb_group(c, 2, 7, 0xb0, 0x16e8, 0x0035_3870, 0x0035_7358, 0x0035_387c)?;
+        }
+        if !matched {
+            // Group 7: the ava-spline (compares with 7).
+            c.cycles += 2;
+            let other = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = c.lw(sp(c) as u32);
+            if !other {
+                oc604_mb_make(
+                    c,
+                    0x90,
+                    0x16d8,
+                    0x0035_38a4,
+                    0x0035_7798,
+                    0x0035_38b0,
+                    0,
+                    10,
+                )?;
+                matched = true;
+            }
+        }
+    }
+    if none || matched {
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(sp(c) as u32);
+    }
+
+    // Stage 2: the sub-objects from the flags word (bit 1, 2, 3).
+    c.cycles += 3;
+    c.g[V0][0] &= 0x2;
+    let t = c.g[V0][0] == 0;
+    c.g[A0][0] = 0x50;
+    if !t {
+        oc604_mb_make(
+            c,
+            0x50,
+            0x16c0,
+            0x0035_38d8,
+            0x0035_f788,
+            0x0035_38e4,
+            0x4,
+            9,
+        )?;
+    }
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(sp(c) as u32);
+    c.g[V0][0] &= 0x4;
+    let t = c.g[V0][0] == 0;
+    c.g[A0][0] = 0xe8;
+    if !t {
+        oc604_mb_make(
+            c,
+            0xe8,
+            0x16a8,
+            0x0035_390c,
+            0x0035_f1a8,
+            0x0035_3918,
+            0x8,
+            9,
+        )?;
+    }
+
+    // Stage 3: boost (flag 8), with the second flag word.
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(sp(c) as u32) & 0x8;
+    let no_boost = c.g[V0][0] == 0;
+    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x8));
+    let mut boost_done = no_boost;
+    if !no_boost {
+        c.cycles += 3;
+        c.g[V0][0] = 0x1;
+        let skip = c.g[V1][0] != c.g[V0][0];
+        c.g[V0][0] = c.lw(sp(c).wrapping_add(0xc));
+        if !skip {
+            oc604_mb_make(
+                c,
+                0x50,
+                0x1698,
+                0x0035_3950,
+                0x0034_2808,
+                0x0035_395c,
+                0xc,
+                10,
+            )?;
+            boost_done = true;
+        }
+    }
+    if boost_done {
+        c.cycles += 1;
+    }
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(0xc));
+
+    // Stage 4: the object list (count at [sp+0xc]), particles, halo, then
+    // the rail list (count at [sp+0x10]).
+    c.cycles += 2;
+    let count = c.g[V0][0] as i64;
+    c.g[S0][0] = 0;
+    if count > 0 {
+        c.cycles += 7;
+        c.g[S3][0] = sx(sp(c).wrapping_add(0x14));
+        c.g[FP][0] = 0x490000;
+        c.g[S7][0] = 0x2;
+        c.g[S6][0] = 0x490000;
+        c.g[S5][0] = 0x3;
+        c.g[S4][0] = 0x490000;
+        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        loop {
+            let mut pushed = false;
+            c.cycles += 4;
+            c.g[V1][0] = 0x1;
+            c.g[V0][0] = c.lb(c.g[V0][0] as u32);
+            let other = c.g[V0][0] != c.g[V1][0];
+            c.g[A0][0] = 0x1f0;
+            if !other {
+                c.cycles += 9;
+                c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x1688));
+                c.g[A2][0] = 0x2000_0000;
+                c.g[RA][0] = sx(0x0035_39a8);
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0031_7d70, 0x0035_39a8)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S1][0];
+                call_ptr(c, 0x0034_59a8, 0x0035_39b4)?;
+                c.g[A1][0] = c.g[V0][0];
+                pushed = true;
+            }
+            if !pushed {
+                c.cycles += 2;
+                let other = c.g[V0][0] != c.g[S7][0];
+                c.g[A0][0] = 0x270;
+                if !other {
+                    c.cycles += 9;
+                    c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x1670));
+                    c.g[A2][0] = 0x2000_0000;
+                    c.g[RA][0] = sx(0x0035_39d4);
+                    c.g[A3][0] = 0;
+                    call_ptr(c, 0x0031_7d70, 0x0035_39d4)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x0034_5d80, 0x0035_39e0)?;
+                    c.g[A1][0] = c.g[V0][0];
+                    pushed = true;
+                }
+            }
+            if !pushed {
+                c.cycles += 2;
+                let other = c.g[V0][0] != c.g[S5][0];
+                c.g[V0][0] = 0;
+                if !other {
+                    c.cycles += 10;
+                    c.g[A0][0] = 0x40;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x1658));
+                    c.g[A2][0] = 0x2000_0000;
+                    c.g[RA][0] = sx(0x0035_3a04);
+                    c.g[A3][0] = 0;
+                    call_ptr(c, 0x0031_7d70, 0x0035_3a04)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x0034_61c0, 0x0035_3a10)?;
+                    c.g[A1][0] = c.g[V0][0];
+                    pushed = true;
+                }
+                if !pushed {
+                    c.cycles += 1;
+                    c.g[A1][0] = c.g[V0][0];
+                }
+            }
+            c.cycles += 7;
+            c.g[RA][0] = sx(0x0035_3a24);
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
+            call_ptr(c, 0x0034_5720, 0x0035_3a24)?;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = c.lw(sp(c).wrapping_add(0xc));
+            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0035_3988);
+            }
+        }
+    }
+    c.cycles += 3;
+    c.g[S0][0] = 0;
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(0x10));
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 3;
+        c.g[S3][0] = 0x490000;
+        c.g[A2][0] = 0x2000_0000;
+        loop {
+            c.cycles += 15;
+            c.g[A3][0] = 0;
+            c.g[A0][0] = 0x90;
+            c.g[RA][0] = sx(0x0035_3a60);
+            c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1648));
+            call_ptr(c, 0x0031_7d70, 0x0035_3a60)?;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0035_ba88, 0x0035_3a70)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1c));
+            call_ptr(c, 0x0035_b690, 0x0035_3a7c)?;
+            c.g[V0][0] = c.lw(sp(c).wrapping_add(0x10));
+            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A2][0] = 0x2000_0000;
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0035_3a50);
+            }
+        }
+    }
+    c.cycles += 12;
+    c.lq(16, sp(c).wrapping_add(0xd0));
+    c.lq(17, sp(c).wrapping_add(0xc0));
+    c.lq(18, sp(c).wrapping_add(0xb0));
+    c.lq(19, sp(c).wrapping_add(0xa0));
+    c.lq(20, sp(c).wrapping_add(0x90));
+    c.lq(21, sp(c).wrapping_add(0x80));
+    c.lq(22, sp(c).wrapping_add(0x70));
+    c.lq(23, sp(c).wrapping_add(0x60));
+    c.lq(30, sp(c).wrapping_add(0x50));
+    c.g[RA][0] = c.ld(sp(c).wrapping_add(0x40));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0xe0));
+    c.pc = t;
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2582,6 +3003,49 @@ pub(crate) mod tests {
                 c.bus
                     .write32(block, if seed % 4 == 0 { 0 } else { modifier });
                 c.g[A0][0] = sx(block);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::object::instanceman::tests::gate_on;
+    pub(crate) use crate::game::object::instanceman::tests::SEEDS as SEEDS_7;
+
+    pub(crate) use crate::game::object::instanceman::tests::install_fakes;
+    pub(crate) use crate::game::object::instanceman::tests::LEAF;
+
+    #[test]
+    fn modifier_block_update_transform_matches() {
+        check(
+            ee::s11::f_00352e98__generated,
+            modifier_block_update_transform,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = Rng(0x587_2e98 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0035_2e98;
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.bus
+                    .write32(DATA + 0x100, if seed % 3 == 0 { 0 } else { DATA + 0x200 });
+                c.bus.write32(DATA + 0x200, DATA + 0x300);
+                c.bus.write16(DATA + 0x318, ((seed % 4) * 0x10) as u16);
+                c.bus.write32(DATA + 0x31c, LEAF);
+            },
+        );
+    }
+
+    #[test]
+    fn sky_box_dtor_matches() {
+        install_fakes();
+        check(
+            ee::s11::f_00353ae8__generated,
+            sky_box_dtor,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = Rng(0x587_3ae8 ^ seed as u64);
+                scramble(c, &mut r);
+                gate_on(c);
+                c.pc = 0x0035_3ae8;
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 2) * 0x40);
             },
         );
     }

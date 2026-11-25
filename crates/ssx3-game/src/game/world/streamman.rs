@@ -49,6 +49,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cStreamMan_ParseChunks",
     ),
     (0x003a_6d50, c_stream_man_ctor, "cStreamMan_ctor"),
+    (0x003a_7010, stream_man_cancel, "cStreamMan_Cancel"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1142,6 +1143,40 @@ pub fn c_stream_man_ctor(c: &mut Cpu) {
     })
 }
 
+/// Called by `cStreamMan_Cancel` with the stream's callback arguments.
+pub(crate) const STREAM_CANCEL_CALL_ADDR: u32 = 0x003e_0e90;
+
+/// `cStreamMan_Cancel(stream)` (0x3a7010): when the stream has a pending
+/// request (`+0x90` non-zero), runs its cancel callback (0x3e0e90, with
+/// `+0x88` and `+0x9c`), then marks the request done: `+0x90 = 0`, `+0x94 = -1`.
+pub fn stream_man_cancel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let s0 = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(s0.wrapping_add(0x90)).lw(c);
+        if c.g[V0][0] != 0u64 {
+            c.cycles += 7;
+            c.g[A0][0] = Addr(s0.wrapping_add(0x88)).lw(c);
+            c.g[A1][0] = Addr(s0.wrapping_add(0x9c)).lw(c);
+            call_ptr(c, STREAM_CANCEL_CALL_ADDR, 0x003a_7038)?;
+            c.g[V0][0] = u64::MAX;
+            let s0 = c.g[S0][0] as u32;
+            Addr(s0.wrapping_add(0x90)).sw(c, 0);
+            let v = c.g[V0][0];
+            Addr(s0.wrapping_add(0x94)).sw(c, v);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1553,6 +1588,27 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _ = oc434_setup(c, seed, 0x3a6d50, 6, 0x003a_6d50);
                 c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn stream_man_cancel_matches() {
+        check(
+            ee::s13::f_003a7010__generated,
+            stream_man_cancel,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x003a_7010 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003a_7010;
+                c.g[A0][0] = sx(DATA);
+                c.bus.write32(
+                    DATA + 0x90,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                c.bus.write32(DATA + 0x88, DATA + 0x400);
+                c.bus.write32(DATA + 0x9c, r.next_u32());
             },
         );
     }

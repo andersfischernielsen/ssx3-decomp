@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -31,6 +32,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_4720, typed_process_ctor, "TypedProcess_ctor"),
     (0x0035_4808, typed_process_dtor, "TypedProcess_dtor"),
     (0x0035_4850, sync_process_ctor, "SyncProcess_ctor"),
+    (0x0035_4688, game_process_ctor_2, "GameProcess_ctor_2"),
+    (0x0035_49d0, process_list_ctor, "ProcessList_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -371,6 +374,50 @@ pub fn typed_process_ctor(c: &mut Cpu) {
     })
 }
 
+/// `ProcessList_Add(list, process, kind)` (0x354c08), called by the
+/// `GameProcess` constructors.
+pub(crate) const OC588_PROCESS_LIST_ADD: Callee = Callee {
+    addr: 0x0035_4c08,
+    f: ee::s11::ProcessList_Add,
+};
+
+/// `GameProcess* GameProcess_ctor_2(GameProcess* self, int kind)` (0x354688):
+/// installs the `GameProcess` vtable at `+0xc` and adds the process to the
+/// global process list; returns `self`.
+pub fn game_process_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x1f00));
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A1][0];
+        let vtable = c.g[V0][0];
+        Addr(r32(c, S0).wrapping_add(0xc)).sw(c, vtable);
+        c.g[A0][0] = sx(r32(c, GP).wrapping_add(0x2898));
+        c.g[A1][0] = c.g[S0][0];
+        OC588_PROCESS_LIST_ADD.call(c, 0x0035_46b4)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ProcessList_ctor(ProcessList* self)` (0x3549d0): an empty list
+/// (both head words cleared); returns `self`.
+pub fn process_list_ctor(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = c.g[A0][0];
+    let head = r32(c, A0);
+    Addr(head.wrapping_add(0x4)).sw(c, 0);
+    Addr(head).sw(c, 0);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -611,6 +658,45 @@ pub(crate) mod tests {
                 c.g[A2][0] = ty as u64 | ((r.next_u32() as u64) << 32);
                 c.g[RA][0] = SENTINEL as u64;
                 c.pc = 0x0035_4720;
+            },
+        );
+    }
+
+    use crate::game::object::spring::tests::oc300_process_list;
+
+    #[test]
+    fn game_process_ctor_2_matches() {
+        check(
+            ee::s11::f_00354688__generated,
+            game_process_ctor_2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3546_8800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                oc300_process_list(c, &mut r);
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0035_4688;
+            },
+        );
+    }
+
+    #[test]
+    fn process_list_ctor_matches() {
+        check(
+            ee::s11::f_003549d0__generated,
+            process_list_ctor,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3549d0, 0);
+                let list = DATA + 0x100;
+                c.bus.write32(list, r.next_u32());
+                c.bus.write32(list + 4, r.next_u32());
+                c.g[A0][0] = sx(list);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0035_49d0;
             },
         );
     }

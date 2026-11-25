@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -25,6 +26,7 @@ pub(crate) use crate::game::movie::movieplayer::at;
 pub(crate) use crate::game::movie::movieplayer::gp;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::object::deadfadenode::ctor_with_vtable;
+pub(crate) use crate::game::object::flexbridgenode::frail_at;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
 pub(crate) use crate::game::world::worldview::p_2 as p;
@@ -98,6 +100,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_flag_manager_group_add_flag,
         "cFlagManager_GroupAddFlag",
     ),
+    (
+        0x0034_8b90,
+        flex_rail_space_node_register,
+        "FlexRail_RegisterSpaceNode",
+    ),
+    (
+        0x0034_92a8,
+        float_rail_node_update_mats,
+        "cFloatRailNode_updateMats",
+    ),
+    (
+        0x0034_98e8,
+        float_rail_node_update_nodes,
+        "cFloatRailNode_updateNodes",
+    ),
+    (0x0034_a8c8, spring_rail_node_update_nodes, "SpringRail_v47"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1562,6 +1580,1185 @@ pub fn c_flag_manager_group_add_flag(c: &mut Cpu) {
     });
 }
 
+/// `World_GetInstance` (installed; returns the world object).
+pub(crate) const WORLD_GET_INSTANCE: u32 = 0x002d_1bd8;
+
+/// `World_GetSecondsPerTick` (installed; the update time in f0).
+pub(crate) const WORLD_SECONDS_PER_TICK: u32 = 0x002d_1c70;
+
+/// `cFloatRailNode_getPosition` (generated only, no override slot).
+pub(crate) const FLOAT_RAIL_NODE_GET_POSITION: Callee = Callee {
+    addr: 0x0034_9220,
+    f: ee::s11::f_00349220,
+};
+
+/// `base + off` as a guest address (the 32-bit wrap of a 64-bit register).
+#[inline]
+pub(crate) fn float_rail_ea(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// One Catmull-Rom component pass (generated shape): load four float fields
+/// (`loads`: fpu register, address), store the registers at `stack + off`
+/// (`stores`), load the gathered vector from `stack + vec` into vf8, load
+/// the basis matrix at `basis` into vf4..vf7, multiply on VU0 and store vf12
+/// to `stack + out`.
+pub(crate) fn float_rail_spline_pass(
+    c: &mut Cpu,
+    stack: u32,
+    basis: u32,
+    loads: &[(usize, u32)],
+    stores: &[(usize, u32)],
+    vec: u32,
+    out: u32,
+) {
+    for &(f, a) in loads {
+        c.lwc1(f, a);
+    }
+    for &(f, off) in stores {
+        c.swc1(f, stack.wrapping_add(off));
+    }
+    c.lqc2(8, stack.wrapping_add(vec));
+    c.lqc2(4, basis);
+    c.lqc2(5, basis.wrapping_add(0x10));
+    c.lqc2(6, basis.wrapping_add(0x20));
+    c.lqc2(7, basis.wrapping_add(0x30));
+    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+    c.sqc2(12, stack.wrapping_add(out));
+}
+
+/// Transpose the 4x4 matrix at `m` in place: load the four rows into `x`,
+/// interleave words and dwords through `t`, store the rows back.
+pub(crate) fn float_rail_transpose(c: &mut Cpu, m: u32, x: [usize; 4], t: [usize; 4]) {
+    for (i, &r) in x.iter().enumerate() {
+        c.lq(r, m.wrapping_add(0x10 * i as u32));
+    }
+    c.pextlw(t[0], x[1], x[0]);
+    c.pextuw(t[1], x[1], x[0]);
+    c.pextlw(t[2], x[3], x[2]);
+    c.pextuw(t[3], x[3], x[2]);
+    c.pcpyld(x[0], t[2], t[0]);
+    c.pcpyud(x[1], t[0], t[2]);
+    c.pcpyld(x[2], t[3], t[1]);
+    c.pcpyud(x[3], t[1], t[3]);
+    for (i, &r) in x.iter().enumerate() {
+        c.sq(r, m.wrapping_add(0x10 * i as u32));
+    }
+}
+
+/// Write the matrix rows `Mats[i]` from the stack: rows 0..2 are the x, y and
+/// z results, row 3 is (0, 0, 0, 1) (`one` holds 1.0), then transpose.
+pub(crate) fn float_rail_store_rows(
+    c: &mut Cpu,
+    stack: u32,
+    m: u32,
+    one: usize,
+    x: [usize; 4],
+    t: [usize; 4],
+) {
+    c.lq(2, stack.wrapping_add(0x40));
+    c.lq(3, stack);
+    c.sq(2, stack.wrapping_add(0x20));
+    c.sq(3, m);
+    c.lq(2, stack.wrapping_add(0x10));
+    c.sq(2, m.wrapping_add(0x10));
+    c.lq(3, stack.wrapping_add(0x20));
+    c.sq(3, m.wrapping_add(0x20));
+    c.sw(stack.wrapping_add(0x30), 0);
+    c.sw(stack.wrapping_add(0x34), 0);
+    c.sw(stack.wrapping_add(0x38), 0);
+    c.swc1(one, stack.wrapping_add(0x3c));
+    c.lq(2, stack.wrapping_add(0x30));
+    c.sq(2, m.wrapping_add(0x30));
+    float_rail_transpose(c, m, x, t);
+}
+
+/// `void cFloatRailNode_updateMats(cFloatRailNode* self)` (0x3492a8),
+/// `FloatRail_v48`: rebuilds `Mats[i]` for every node but the last two, from
+/// the positions of the four nodes `i-1 .. i+2`. The first matrix uses node 0
+/// twice, the last one repeats node `i+1`.
+///
+/// `self`: `NumNodes` at +0x20, `Mats` at +0x50, `Nodes` at +0x70. A node is
+/// 0x50 bytes with `Pos` at +0x20. Each component (x, y, z) of the four
+/// positions is gathered into one vector and multiplied on VU0 by the basis
+/// matrix in the game data at 0x4ffac0; the three results form the first
+/// three rows of the matrix, which is then transposed.
+///
+/// The generated code uses several scratch registers and stack slots, and
+/// those values are visible after the call, so the port keeps every write.
+pub fn float_rail_node_update_mats(c: &mut Cpu) {
+    c.cycles += 99;
+    c.g[T5][0] = c.g[A0][0];
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x50));
+    let stack = sp(c);
+    c.g[V1][0] = c.lw(float_rail_ea(c.g[T5][0], 0x70));
+    c.g[A1][0] = 0x500000;
+    c.g[A0][0] = c.lw(float_rail_ea(c.g[T5][0], 0x50));
+    c.g[T7][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x540));
+    c.g[T6][0] = 1;
+    let basis = c.g[T7][0] as u32;
+
+    // Node 0 (the first matrix): (P0, P0, P1, P2) per component.
+    let nodes = c.g[V1][0];
+    float_rail_spline_pass(
+        c,
+        stack,
+        basis,
+        &[
+            (2, float_rail_ea(nodes, 0x20)),
+            (0, float_rail_ea(nodes, 0x70)),
+            (1, float_rail_ea(nodes, 0xc0)),
+        ],
+        &[(2, 0x14), (0, 0x18), (1, 0x1c), (2, 0x10)],
+        0x10,
+        0x20,
+    );
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 3);
+    c.lq(2, stack.wrapping_add(0x20));
+    c.sq(2, stack);
+
+    float_rail_spline_pass(
+        c,
+        stack,
+        basis,
+        &[
+            (2, float_rail_ea(nodes, 0x24)),
+            (0, float_rail_ea(nodes, 0x74)),
+            (1, float_rail_ea(nodes, 0xc4)),
+        ],
+        &[(2, 0x24), (0, 0x28), (1, 0x2c), (2, 0x20)],
+        0x20,
+        0x30,
+    );
+    c.lq(2, stack.wrapping_add(0x30));
+    c.sq(2, stack.wrapping_add(0x10));
+
+    float_rail_spline_pass(
+        c,
+        stack,
+        basis,
+        &[
+            (2, float_rail_ea(nodes, 0xc8)),
+            (1, float_rail_ea(nodes, 0x28)),
+            (0, float_rail_ea(nodes, 0x78)),
+        ],
+        &[(1, 0x34), (0, 0x38), (2, 0x3c), (1, 0x30)],
+        0x30,
+        0x40,
+    );
+    let mats = c.g[A0][0] as u32;
+    float_rail_store_rows(c, stack, mats, 3, [12, 11, 10, 9], [8, 7, 6, 3]);
+
+    c.g[V0][0] = c.lw(float_rail_ea(c.g[T5][0], 0x20));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2));
+    c.g[V0][0] = ((c.g[T6][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    c.g[T8][0] = c.g[A1][0];
+
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        c.mov_s(4, 3);
+        c.g[T4][0] = 0x50;
+        loop {
+            // Node i (T6): the four neighbours i-1, i, i+1, i+2 in the three
+            // component passes; T3 = Mats[i], T4 = 0x50 * i.
+            c.cycles += 106;
+            c.g[V1][0] = c.lw(float_rail_ea(c.g[T5][0], 0x70));
+            c.g[T3][0] = sx((c.g[T6][0] as u32) << 6);
+            c.g[V0][0] = c.lw(float_rail_ea(c.g[T5][0], 0x50));
+            c.g[A2][0] = sx((c.g[T4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A0][0] = c.g[A2][0];
+            c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A1][0] = c.g[A0][0];
+            c.g[V1][0] = c.g[A0][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x70));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x30));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0xc0));
+
+            let (v1, a0, a1, a2) = (
+                c.g[V1][0] as u32,
+                c.g[A0][0] as u32,
+                c.g[A1][0] as u32,
+                c.g[A2][0] as u32,
+            );
+            float_rail_spline_pass(
+                c,
+                stack,
+                basis,
+                &[(1, v1), (3, a0), (0, a1), (2, a2)],
+                &[(3, 0x10), (0, 0x14), (1, 0x18), (2, 0x1c)],
+                0x10,
+                0x20,
+            );
+            c.lq(2, stack.wrapping_add(0x20));
+            c.sq(2, stack);
+
+            float_rail_spline_pass(
+                c,
+                stack,
+                basis,
+                &[
+                    (2, v1.wrapping_add(0x4)),
+                    (0, a0.wrapping_add(0x4)),
+                    (1, a1.wrapping_add(0x4)),
+                    (3, a2.wrapping_add(0x4)),
+                ],
+                &[(0, 0x20), (1, 0x24), (2, 0x28), (3, 0x2c)],
+                0x20,
+                0x30,
+            );
+            c.lq(2, stack.wrapping_add(0x30));
+            c.sq(2, stack.wrapping_add(0x10));
+
+            float_rail_spline_pass(
+                c,
+                stack,
+                basis,
+                &[
+                    (1, a0.wrapping_add(0x8)),
+                    (2, v1.wrapping_add(0x8)),
+                    (3, a2.wrapping_add(0x8)),
+                    (0, a1.wrapping_add(0x8)),
+                ],
+                &[(1, 0x30), (0, 0x34), (2, 0x38), (3, 0x3c)],
+                0x30,
+                0x40,
+            );
+            let t3 = c.g[T3][0] as u32;
+            float_rail_store_rows(c, stack, t3, 4, [10, 9, 8, 7], [6, 5, 4, 3]);
+
+            c.g[V0][0] = c.lw(float_rail_ea(c.g[T5][0], 0x20));
+            c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2));
+            c.g[V0][0] = ((c.g[T6][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(0x50));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_9440);
+            }
+        }
+    }
+
+    // Last matrix (T6 = NumNodes - 2): (P(i-1), P(i), P(i+1), P(i+1)).
+    c.cycles += 107;
+    c.g[V1][0] = 0x50;
+    c.g[V0][0] = c.lw(float_rail_ea(c.g[T5][0], 0x70));
+    c.mult(0, 3, 14, 3);
+    c.g[A1][0] = c.lw(float_rail_ea(c.g[T5][0], 0x50));
+    c.g[A0][0] = sx((c.g[T6][0] as u32) << 6);
+    c.g[T0][0] = sx((c.g[T8][0] as u32).wrapping_sub(0x540));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 4);
+    c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A1][0] = c.g[A3][0];
+    c.g[A2][0] = c.g[A1][0];
+    c.g[V1][0] = c.g[A1][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x70));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x30));
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x70));
+
+    let last_basis = c.g[T0][0] as u32;
+    let (v1, a1, a2, a3) = (
+        c.g[V1][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u32,
+        c.g[A3][0] as u32,
+    );
+    float_rail_spline_pass(
+        c,
+        stack,
+        last_basis,
+        &[(2, v1), (0, a1), (1, a2), (3, a3)],
+        &[(0, 0x10), (1, 0x14), (2, 0x18), (3, 0x1c)],
+        0x10,
+        0x20,
+    );
+    c.lq(2, stack.wrapping_add(0x20));
+    c.sq(2, stack);
+
+    float_rail_spline_pass(
+        c,
+        stack,
+        last_basis,
+        &[
+            (2, v1.wrapping_add(0x4)),
+            (0, a1.wrapping_add(0x4)),
+            (1, a2.wrapping_add(0x4)),
+            (3, a3.wrapping_add(0x4)),
+        ],
+        &[(0, 0x20), (1, 0x24), (2, 0x28), (3, 0x2c)],
+        0x20,
+        0x30,
+    );
+    c.lq(2, stack.wrapping_add(0x30));
+    c.sq(2, stack.wrapping_add(0x10));
+
+    float_rail_spline_pass(
+        c,
+        stack,
+        last_basis,
+        &[
+            (1, a1.wrapping_add(0x8)),
+            (2, v1.wrapping_add(0x8)),
+            (3, a3.wrapping_add(0x8)),
+            (0, a2.wrapping_add(0x8)),
+        ],
+        &[(1, 0x30), (0, 0x34), (2, 0x38), (3, 0x3c)],
+        0x30,
+        0x40,
+    );
+    let a0 = c.g[A0][0] as u32;
+    float_rail_store_rows(c, stack, a0, 4, [11, 10, 9, 8], [7, 6, 5, 3]);
+
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x50));
+    c.pc = ra;
+}
+
+/// The node loop's test `if (getRailInstance(n->InstId)->m_pActiveNode)
+/// cFloatRailNode_getPosition(self, n)` (the `0x349938` and `0x349990` blocks
+/// of the generated body). `S0` is the node, `S1` the rail node; the lookup
+/// tables are read as the generated body does.
+pub(crate) fn float_rail_refresh_node(c: &mut Cpu) -> Flow {
+    c.cycles += 11;
+    call_ptr(c, WORLD_GET_INSTANCE, 0x0034_9938)?;
+    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+    c.g[A1][0] = c.lw(float_rail_ea(c.g[S0][0], 0x40));
+    c.g[A0][0] = c.lw(float_rail_ea(c.g[V1][0], 0x8));
+    c.g[V0][0] = c.g[A1][0] & 0xff;
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+    let rail_missing = c.g[V1][0] == 0;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) >> 8);
+    let mut found = false;
+    if !rail_missing {
+        c.cycles += 7;
+        c.g[A0][0] = c.lw(float_rail_ea(c.g[V1][0], 0x1c));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+        c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+        let nonzero = c.g[V0][0] != 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        found = nonzero;
+    }
+    if !found {
+        c.cycles += 1;
+        c.g[V0][0] = 0;
+    }
+    // The `m_pActiveNode` field, read through the pointer in V0.
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(float_rail_ea(c.g[V0][0], 0xc));
+    let inactive = c.g[V0][0] == 0;
+    c.g[A0][0] = c.g[S1][0];
+    if !inactive {
+        c.cycles += 2;
+        c.g[A1][0] = c.g[S0][0];
+        FLOAT_RAIL_NODE_GET_POSITION.call(c, 0x0034_9990)?;
+    }
+    Ok(())
+}
+
+/// `void cFloatRailNode_updateNodes(cFloatRailNode* self)` (0x3498e8),
+/// `FloatRail_v47`: time-steps every node as a damped spring toward its
+/// rest position: `acc = -k * (Pos - OPos) + Force * ForceScale - Vel *
+/// LDamp`, then `Pos += Vel * dt`, `Vel += acc * dt`, and `Force = 0`. Before
+/// the step a node whose rail instance has an active node is refreshed with
+/// `cFloatRailNode_getPosition`.
+///
+/// `self`: `NumNodes` at +0x20, `Nodes` at +0x70, `LSpring` at +0x60,
+/// `LDamp` at +0x64, `ForceScale` at +0x68. A node is 0x50 bytes: `Force`
+/// +0x00, `Vel` +0x10, `Pos` +0x20, `OPos` +0x30, `InstId` +0x40. `dt` is
+/// `World_GetSecondsPerTick()`.
+pub fn float_rail_node_update_nodes(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, 17, 0x90);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, 16, 0xa0);
+        frame.save(c, 18, 0x80);
+        frame.save_fpr(c, 20, 0xb0);
+        frame.save(c, 19, 0x70);
+        frame.save(c, 20, 0x60);
+        frame.save_ra(c, 0x50);
+        c.g[S2][0] = 0;
+        call_ptr(c, WORLD_SECONDS_PER_TICK, 0x0034_9914)?;
+
+        c.g[V0][0] = c.lw(float_rail_ea(c.g[S1][0], 0x20));
+        c.mov_s(20, 0);
+        let no_nodes = (c.g[V0][0] as i64) <= 0;
+        c.g[S0][0] = c.lw(float_rail_ea(c.g[S1][0], 0x70));
+        if !no_nodes {
+            c.cycles += 3;
+            c.g[V0][0] = 0x500000;
+            c.g[S3][0] = sx(float_rail_ea(c.g[S1][0], 0x60));
+            c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xee0));
+            loop {
+                float_rail_refresh_node(c)?;
+
+                c.cycles += 71;
+                c.lwc1(0, float_rail_ea(c.g[S1][0], 0x60));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                c.lqc2(3, float_rail_ea(c.g[S0][0], 0x20));
+                c.lqc2(4, float_rail_ea(c.g[S0][0], 0x30));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, sp(c).wrapping_add(0x30));
+                c.lq(2, sp(c).wrapping_add(0x30));
+                c.neg_s(0, 0);
+                c.sq(2, sp(c).wrapping_add(0x20));
+                c.mfc1(3, 0);
+                c.lqc2(4, sp(c).wrapping_add(0x20));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c).wrapping_add(0x30));
+                c.lq(2, sp(c).wrapping_add(0x30));
+                c.lwc1(0, float_rail_ea(c.g[S3][0], 0x8));
+                c.sq(2, sp(c).wrapping_add(0x10));
+                c.mfc1(3, 0);
+                c.lqc2(4, float_rail_ea(c.g[S0][0], 0x0));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c).wrapping_add(0x40));
+                c.lq(2, sp(c).wrapping_add(0x40));
+                c.sq(2, sp(c).wrapping_add(0x30));
+                c.lqc2(3, sp(c).wrapping_add(0x10));
+                c.lqc2(4, sp(c).wrapping_add(0x30));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, sp(c).wrapping_add(0x40));
+                c.lwc1(0, float_rail_ea(c.g[S1][0], 0x64));
+                c.lq(2, sp(c).wrapping_add(0x40));
+                c.neg_s(0, 0);
+                c.sq(2, sp(c));
+                c.mfc1(3, 0);
+                c.lqc2(4, float_rail_ea(c.g[S0][0], 0x10));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c).wrapping_add(0x20));
+                c.lq(2, sp(c).wrapping_add(0x20));
+                c.sq(2, sp(c).wrapping_add(0x10));
+                c.lqc2(3, sp(c));
+                c.lqc2(4, sp(c).wrapping_add(0x10));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, sp(c));
+                c.mfc1(3, 20);
+                c.lqc2(4, float_rail_ea(c.g[S0][0], 0x10));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c).wrapping_add(0x20));
+                c.lq(2, sp(c).wrapping_add(0x20));
+                c.sq(2, sp(c).wrapping_add(0x10));
+                c.lqc2(3, float_rail_ea(c.g[S0][0], 0x20));
+                c.lqc2(4, sp(c).wrapping_add(0x10));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, float_rail_ea(c.g[S0][0], 0x20));
+                c.mfc1(3, 20);
+                c.lqc2(4, sp(c));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c).wrapping_add(0x20));
+                c.lq(2, sp(c).wrapping_add(0x20));
+                c.sq(2, sp(c).wrapping_add(0x10));
+                c.lqc2(3, float_rail_ea(c.g[S0][0], 0x10));
+                c.lqc2(4, sp(c).wrapping_add(0x10));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, float_rail_ea(c.g[S0][0], 0x10));
+                c.lq(2, c.g[S4][0] as u32);
+                c.sq(2, c.g[S0][0] as u32);
+
+                c.g[V0][0] = c.lw(float_rail_ea(c.g[S1][0], 0x20));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_9930);
+                }
+            }
+        }
+
+        c.cycles += 9;
+        frame.restore(c, 16, 0xa0);
+        frame.restore(c, 17, 0x90);
+        frame.restore(c, 18, 0x80);
+        frame.restore(c, 19, 0x70);
+        frame.restore(c, 20, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// cSpringRailNode field offsets (the node array is 0x60 bytes per node).
+pub(crate) const SR_NUM_NODES: u32 = 0x20;
+
+pub(crate) const SR_MATS: u32 = 0x50;
+
+pub(crate) const SR_SPRING: u32 = 0x60;
+
+pub(crate) const SR_DAMP: u32 = 0x64;
+
+pub(crate) const SR_NODES: u32 = 0x70;
+
+/// The VU0 matrix constant the segment transform multiplies by (0x500000 - 0x540).
+pub(crate) const SR_SEG_XFORM: u32 = 0x004f_ffc0;
+
+/// One VU0 pass of the segment build: loads the vector at `vec` into VF8,
+/// transforms it by the matrix at `SR_SEG_XFORM` (VF4..VF7) and stores the
+/// resulting quad to `dst` (VF12). The generated body spills the vector and the
+/// result to the stack; the caller keeps those stores.
+pub(crate) fn spring_rail_seg_xform(c: &mut Cpu, vec: u32, dst: u32) {
+    c.lqc2(8, vec);
+    c.lqc2(4, SR_SEG_XFORM);
+    c.lqc2(5, SR_SEG_XFORM.wrapping_add(0x10));
+    c.lqc2(6, SR_SEG_XFORM.wrapping_add(0x20));
+    c.lqc2(7, SR_SEG_XFORM.wrapping_add(0x30));
+    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+    c.sqc2(12, dst);
+}
+
+/// `void cSpringRailNode_updateMats(cSpringRailNode* self)` (0x34a0b0),
+/// `SpringRail_v48`: rebuilds the per-segment matrices (Mats, 0x40 bytes each,
+/// at self+0x50) from the node array (Nodes, 0x60 bytes each, at self+0x70):
+/// the first segment, then the middle segments while `i < NumNodes - 2`, then
+/// the last one (which ends the loop). Each segment is a VU0 transform of the
+/// node's offset vectors, and its intermediate quads are spilled to the 0x50
+/// byte frame in the generated order, because those bytes are observable.
+/// Leaf function: no calls, no saved RA.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn spring_rail_node_update_mats(c: &mut Cpu) {
+    c.cycles += 99;
+    c.g[T5][0] = c.g[A0][0];
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x50));
+    let st = sp(c);
+    c.g[V1][0] = c.lw((c.g[T5][0] as u32).wrapping_add(SR_NODES));
+    c.g[A1][0] = 0x500000;
+    c.g[A0][0] = c.lw((c.g[T5][0] as u32).wrapping_add(SR_MATS));
+    c.g[T7][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x540));
+    c.lwc1(2, c.g[V1][0] as u32);
+    c.g[T6][0] = 0x1;
+    c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(SR_SPRING));
+    c.lwc1(1, (c.g[V1][0] as u32).wrapping_add(0xc0));
+    c.swc1(2, st.wrapping_add(0x14));
+    c.swc1(0, st.wrapping_add(0x18));
+    c.swc1(1, st.wrapping_add(0x1c));
+    c.swc1(2, st.wrapping_add(0x10));
+    spring_rail_seg_xform(c, st.wrapping_add(0x10), st.wrapping_add(0x20));
+    c.g[AT][0] = 0x3f800000;
+    c.mtc1(1, 3);
+    c.lq(2, st.wrapping_add(0x20));
+    c.sq(2, st);
+    c.lwc1(2, (c.g[V1][0] as u32).wrapping_add(0x4));
+    c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(0x64));
+    c.lwc1(1, (c.g[V1][0] as u32).wrapping_add(0xc4));
+    c.swc1(2, st.wrapping_add(0x24));
+    c.swc1(0, st.wrapping_add(0x28));
+    c.swc1(1, st.wrapping_add(0x2c));
+    c.swc1(2, st.wrapping_add(0x20));
+    spring_rail_seg_xform(c, st.wrapping_add(0x20), st.wrapping_add(0x30));
+    c.lq(2, st.wrapping_add(0x30));
+    c.sq(2, st.wrapping_add(0x10));
+    c.lwc1(2, (c.g[V1][0] as u32).wrapping_add(0xc8));
+    c.lwc1(1, (c.g[V1][0] as u32).wrapping_add(0x8));
+    c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(0x68));
+    c.swc1(1, st.wrapping_add(0x34));
+    c.swc1(0, st.wrapping_add(0x38));
+    c.swc1(2, st.wrapping_add(0x3c));
+    c.swc1(1, st.wrapping_add(0x30));
+    spring_rail_seg_xform(c, st.wrapping_add(0x30), st.wrapping_add(0x40));
+    c.lq(2, st.wrapping_add(0x40));
+    c.lq(3, st);
+    c.sq(2, st.wrapping_add(0x20));
+    c.sq(3, c.g[A0][0] as u32);
+    c.lq(2, st.wrapping_add(0x10));
+    c.sq(2, (c.g[A0][0] as u32).wrapping_add(0x10));
+    c.lq(3, st.wrapping_add(0x20));
+    c.sq(3, (c.g[A0][0] as u32).wrapping_add(0x20));
+    c.sw(st.wrapping_add(0x30), 0u64);
+    c.sw(st.wrapping_add(0x34), 0u64);
+    c.sw(st.wrapping_add(0x38), 0u64);
+    c.swc1(3, st.wrapping_add(0x3c));
+    c.lq(2, st.wrapping_add(0x30));
+    c.sq(2, (c.g[A0][0] as u32).wrapping_add(0x30));
+    c.lq(12, c.g[A0][0] as u32);
+    c.lq(11, (c.g[A0][0] as u32).wrapping_add(0x10));
+    c.lq(10, (c.g[A0][0] as u32).wrapping_add(0x20));
+    c.lq(9, (c.g[A0][0] as u32).wrapping_add(0x30));
+    c.pextlw(8, 11, 12);
+    c.pextuw(7, 11, 12);
+    c.pextlw(6, 9, 10);
+    c.pextuw(3, 9, 10);
+    c.pcpyld(12, 6, 8);
+    c.pcpyud(11, 8, 6);
+    c.pcpyld(10, 3, 7);
+    c.pcpyud(9, 7, 3);
+    c.sq(12, c.g[A0][0] as u32);
+    c.sq(11, (c.g[A0][0] as u32).wrapping_add(0x10));
+    c.sq(10, (c.g[A0][0] as u32).wrapping_add(0x20));
+    c.sq(9, (c.g[A0][0] as u32).wrapping_add(0x30));
+    c.g[V0][0] = c.lw((c.g[T5][0] as u32).wrapping_add(SR_NUM_NODES));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2));
+    c.g[V0][0] = ((c.g[T6][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    let t = c.g[V0][0] == 0u64;
+    c.g[T8][0] = c.g[A1][0];
+    'b_34a3dc: {
+        if t {
+            break 'b_34a3dc;
+        }
+        c.cycles += 3;
+        c.mov_s(4, 3);
+        c.g[T4][0] = 0x60;
+        'l_34a248: loop {
+            c.cycles += 101;
+            c.g[V1][0] = c.lw((c.g[T5][0] as u32).wrapping_add(SR_NODES));
+            c.g[T3][0] = sx((c.g[T6][0] as u32) << 6);
+            c.g[V0][0] = c.lw((c.g[T5][0] as u32).wrapping_add(SR_MATS));
+            c.g[A0][0] = sx((c.g[T4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[V1][0] = c.g[A0][0];
+            c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x60));
+            c.lwc1(3, c.g[V1][0] as u32);
+            c.lwc1(1, (c.g[V1][0] as u32).wrapping_add(0x60));
+            c.lwc1(2, (c.g[V1][0] as u32).wrapping_add(0xc0));
+            c.lwc1(0, c.g[A0][0] as u32);
+            c.swc1(3, st.wrapping_add(0x14));
+            c.swc1(0, st.wrapping_add(0x10));
+            c.swc1(1, st.wrapping_add(0x18));
+            c.swc1(2, st.wrapping_add(0x1c));
+            spring_rail_seg_xform(c, st.wrapping_add(0x10), st.wrapping_add(0x20));
+            c.lq(2, st.wrapping_add(0x20));
+            c.sq(2, st);
+            c.lwc1(1, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.lwc1(2, (c.g[V1][0] as u32).wrapping_add(0x64));
+            c.lwc1(3, (c.g[V1][0] as u32).wrapping_add(0xc4));
+            c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+            c.swc1(1, st.wrapping_add(0x24));
+            c.swc1(0, st.wrapping_add(0x20));
+            c.swc1(2, st.wrapping_add(0x28));
+            c.swc1(3, st.wrapping_add(0x2c));
+            spring_rail_seg_xform(c, st.wrapping_add(0x20), st.wrapping_add(0x30));
+            c.lq(2, st.wrapping_add(0x30));
+            c.sq(2, st.wrapping_add(0x10));
+            c.lwc1(2, (c.g[V1][0] as u32).wrapping_add(0xc8));
+            c.lwc1(1, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(0x68));
+            c.swc1(1, st.wrapping_add(0x34));
+            c.swc1(0, st.wrapping_add(0x38));
+            c.swc1(2, st.wrapping_add(0x3c));
+            c.swc1(1, st.wrapping_add(0x30));
+            spring_rail_seg_xform(c, st.wrapping_add(0x30), st.wrapping_add(0x40));
+            c.lq(2, st.wrapping_add(0x40));
+            c.lq(3, st);
+            c.sq(2, st.wrapping_add(0x20));
+            c.sq(3, c.g[T3][0] as u32);
+            c.lq(2, st.wrapping_add(0x10));
+            c.sq(2, (c.g[T3][0] as u32).wrapping_add(0x10));
+            c.lq(3, st.wrapping_add(0x20));
+            c.sq(3, (c.g[T3][0] as u32).wrapping_add(0x20));
+            c.sw(st.wrapping_add(0x30), 0u64);
+            c.sw(st.wrapping_add(0x34), 0u64);
+            c.sw(st.wrapping_add(0x38), 0u64);
+            c.swc1(4, st.wrapping_add(0x3c));
+            c.lq(2, st.wrapping_add(0x30));
+            c.sq(2, (c.g[T3][0] as u32).wrapping_add(0x30));
+            c.lq(10, c.g[T3][0] as u32);
+            c.lq(9, (c.g[T3][0] as u32).wrapping_add(0x10));
+            c.lq(8, (c.g[T3][0] as u32).wrapping_add(0x20));
+            c.lq(7, (c.g[T3][0] as u32).wrapping_add(0x30));
+            c.pextlw(6, 9, 10);
+            c.pextuw(5, 9, 10);
+            c.pextlw(4, 7, 8);
+            c.pextuw(3, 7, 8);
+            c.pcpyld(10, 4, 6);
+            c.pcpyud(9, 6, 4);
+            c.pcpyld(8, 3, 5);
+            c.pcpyud(7, 5, 3);
+            c.sq(10, c.g[T3][0] as u32);
+            c.sq(9, (c.g[T3][0] as u32).wrapping_add(0x10));
+            c.sq(8, (c.g[T3][0] as u32).wrapping_add(0x20));
+            c.sq(7, (c.g[T3][0] as u32).wrapping_add(0x30));
+            c.g[V0][0] = c.lw((c.g[T5][0] as u32).wrapping_add(SR_NUM_NODES));
+            c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2));
+            c.g[V0][0] = ((c.g[T6][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let t = c.g[V0][0] != 0u64;
+            c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(0x60));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_a248);
+                }
+                continue 'l_34a248;
+            } else {
+                break 'b_34a3dc;
+            }
+        }
+    }
+    c.cycles += 99;
+    c.g[V1][0] = 0x60;
+    c.g[A2][0] = c.lw((c.g[T5][0] as u32).wrapping_add(SR_NODES));
+    c.mult(0, 3, 14, 3);
+    c.g[V0][0] = c.lw((c.g[T5][0] as u32).wrapping_add(SR_MATS));
+    c.g[A3][0] = sx((c.g[T8][0] as u32).wrapping_sub(0x540));
+    c.g[A0][0] = sx((c.g[T6][0] as u32) << 6);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[AT][0] = 0x3f800000;
+    c.mtc1(1, 3);
+    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.g[V1][0] = c.g[A1][0];
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x60));
+    c.lwc1(2, c.g[V1][0] as u32);
+    c.lwc1(1, (c.g[V1][0] as u32).wrapping_add(0x60));
+    c.lwc1(0, c.g[A1][0] as u32);
+    c.swc1(2, st.wrapping_add(0x14));
+    c.swc1(0, st.wrapping_add(0x10));
+    c.swc1(1, st.wrapping_add(0x1c));
+    c.swc1(1, st.wrapping_add(0x18));
+    spring_rail_seg_xform(c, st.wrapping_add(0x10), st.wrapping_add(0x20));
+    c.lq(2, st.wrapping_add(0x20));
+    c.sq(2, st);
+    c.lwc1(2, (c.g[V1][0] as u32).wrapping_add(0x4));
+    c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(0x64));
+    c.lwc1(1, (c.g[A1][0] as u32).wrapping_add(0x4));
+    c.swc1(2, st.wrapping_add(0x24));
+    c.swc1(1, st.wrapping_add(0x20));
+    c.swc1(0, st.wrapping_add(0x2c));
+    c.swc1(0, st.wrapping_add(0x28));
+    spring_rail_seg_xform(c, st.wrapping_add(0x20), st.wrapping_add(0x30));
+    c.lq(2, st.wrapping_add(0x30));
+    c.sq(2, st.wrapping_add(0x10));
+    c.lwc1(2, (c.g[V1][0] as u32).wrapping_add(0x68));
+    c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+    c.lwc1(1, (c.g[A1][0] as u32).wrapping_add(0x8));
+    c.swc1(0, st.wrapping_add(0x34));
+    c.swc1(1, st.wrapping_add(0x30));
+    c.swc1(2, st.wrapping_add(0x3c));
+    c.swc1(2, st.wrapping_add(0x38));
+    spring_rail_seg_xform(c, st.wrapping_add(0x30), st.wrapping_add(0x40));
+    c.lq(2, st.wrapping_add(0x40));
+    c.lq(3, st);
+    c.sq(2, st.wrapping_add(0x20));
+    c.sq(3, c.g[A0][0] as u32);
+    c.lq(2, st.wrapping_add(0x10));
+    c.sq(2, (c.g[A0][0] as u32).wrapping_add(0x10));
+    c.lq(3, st.wrapping_add(0x20));
+    c.sq(3, (c.g[A0][0] as u32).wrapping_add(0x20));
+    c.swc1(3, st.wrapping_add(0x3c));
+    c.sw(st.wrapping_add(0x30), 0u64);
+    c.sw(st.wrapping_add(0x34), 0u64);
+    c.sw(st.wrapping_add(0x38), 0u64);
+    c.lq(2, st.wrapping_add(0x30));
+    c.sq(2, (c.g[A0][0] as u32).wrapping_add(0x30));
+    c.lq(11, c.g[A0][0] as u32);
+    c.lq(10, (c.g[A0][0] as u32).wrapping_add(0x10));
+    c.lq(9, (c.g[A0][0] as u32).wrapping_add(0x20));
+    c.lq(8, (c.g[A0][0] as u32).wrapping_add(0x30));
+    c.pextlw(7, 10, 11);
+    c.pextuw(6, 10, 11);
+    c.pextlw(5, 8, 9);
+    c.pextuw(3, 8, 9);
+    c.pcpyld(11, 5, 7);
+    c.pcpyud(10, 7, 5);
+    c.pcpyld(9, 3, 6);
+    c.pcpyud(8, 6, 3);
+    c.sq(11, c.g[A0][0] as u32);
+    c.sq(10, (c.g[A0][0] as u32).wrapping_add(0x10));
+    c.sq(9, (c.g[A0][0] as u32).wrapping_add(0x20));
+    c.sq(8, (c.g[A0][0] as u32).wrapping_add(0x30));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x50));
+    c.pc = t;
+}
+
+/// `void cSpringRailNode_updateNodes(cSpringRailNode* self)` (0x34a8c8),
+/// `SpringRail_v47`: one physics step of the rail's nodes. It reads the update
+/// time (`cObjectInterface_getUpdateTime`, a real callee), then, for the
+/// NumNodes-1 segments: scales the spring and damping torques into a per-segment
+/// torque (0x90-byte scratch), integrates each node's orientation and angular
+/// velocity, accumulates the offset and places the next node's position from
+/// the segment vector (a normalised cross term); finally clears the node
+/// tangents. Frame: 0x100 bytes, RA at +0xe0, S0 at +0xf0.
+pub fn spring_rail_node_update_nodes(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[SP][0] = sx(sp(c).wrapping_sub(0x100));
+        c.sq(16, sp(c).wrapping_add(0xf0));
+        c.sd(sp(c).wrapping_add(0xe0), c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x002d_1c70, 0x0034_a8dc)?;
+        let st = sp(c);
+        c.mov_s(1, 0);
+        c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+        c.g[V0][0] = 0x7;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+        let t = (c.g[V0][0] as i64) <= 0;
+        c.g[A3][0] = 0u64;
+        'b_34a988: {
+            if t {
+                break 'b_34a988;
+            }
+            c.cycles += 2;
+            c.g[A2][0] = 0u64;
+            c.g[A1][0] = c.g[SP][0];
+            'l_34a900: loop {
+                c.cycles += 34;
+                c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(SR_SPRING));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.neg_s(0, 0);
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.mfc1(4, 0);
+                c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x20));
+                c.qmtc2(4, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, st.wrapping_add(0x90));
+                c.lq(3, st.wrapping_add(0x90));
+                c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(SR_DAMP));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.sq(3, st.wrapping_add(0x80));
+                c.neg_s(0, 0);
+                c.sq(3, c.g[A1][0] as u32);
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.mfc1(3, 0);
+                c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x30));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, st.wrapping_add(0x90));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x60));
+                c.lq(2, st.wrapping_add(0x90));
+                c.sq(2, st.wrapping_add(0x80));
+                c.lqc2(3, c.g[A1][0] as u32);
+                c.lqc2(4, st.wrapping_add(0x80));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, c.g[A1][0] as u32);
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0034_a900);
+                    }
+                    continue 'l_34a900;
+                } else {
+                    break 'b_34a988;
+                }
+            }
+        }
+        'b_34a9d4: {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[A0][0] = 0u64;
+            if t {
+                break 'b_34a9d4;
+            }
+            c.cycles += 2;
+            c.g[V1][0] = c.g[SP][0];
+            c.g[A1][0] = 0u64;
+            'l_34a9a0: loop {
+                c.cycles += 13;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.lqc2(3, c.g[V1][0] as u32);
+                c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x40));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, c.g[V1][0] as u32);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x60));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0034_a9a0);
+                    }
+                    continue 'l_34a9a0;
+                } else {
+                    break 'b_34a9d4;
+                }
+            }
+        }
+        'b_34aa80: {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[A3][0] = 0u64;
+            if t {
+                break 'b_34aa80;
+            }
+            c.cycles += 3;
+            c.g[A2][0] = 0u64;
+            c.g[A1][0] = c.g[SP][0];
+            'l_34a9f0: loop {
+                c.cycles += 36;
+                c.mfc1(2, 1);
+                c.lqc2(4, c.g[A1][0] as u32);
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, st.wrapping_add(0xa0));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+                c.lq(2, st.wrapping_add(0xa0));
+                c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sq(2, st.wrapping_add(0x90));
+                c.sq(2, st.wrapping_add(0x80));
+                c.mfc1(4, 1);
+                c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x30));
+                c.qmtc2(4, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, st.wrapping_add(0xa0));
+                c.lq(2, st.wrapping_add(0xa0));
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.sq(2, st.wrapping_add(0x90));
+                c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x20));
+                c.lqc2(4, st.wrapping_add(0x90));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, (c.g[V1][0] as u32).wrapping_add(0x20));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.lqc2(3, (c.g[V0][0] as u32).wrapping_add(0x30));
+                c.lqc2(4, st.wrapping_add(0x80));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, (c.g[V0][0] as u32).wrapping_add(0x30));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x60));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0034_a9f0);
+                    }
+                    continue 'l_34a9f0;
+                } else {
+                    break 'b_34aa80;
+                }
+            }
+        }
+        'b_34abbc: {
+            c.cycles += 8;
+            c.g[V0][0] = 0x500000;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xee0));
+            c.g[A2][0] = 0u64;
+            c.lq(4, c.g[V0][0] as u32);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+            let t = (c.g[V1][0] as i64) <= 0;
+            c.sq(4, st.wrapping_add(0x80));
+            if t {
+                break 'b_34abbc;
+            }
+            c.cycles += 2;
+            c.g[A1][0] = 0u64;
+            'l_34aaa8: loop {
+                c.cycles += 69;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.lqc2(3, st.wrapping_add(0x80));
+                c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x20));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, st.wrapping_add(0x80));
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.lqc2(3, (c.g[V0][0] as u32).wrapping_add(0x10));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.vu0().sqrt(4, 0);
+                c.vu0().waitq();
+                c.cfc2(4, 22);
+                c.mtc1(4, 0);
+                c.g[V1][0] = c.g[V0][0];
+                c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x10));
+                c.lqc2(5, st.wrapping_add(0x80));
+                c.vu0().opmula(4, 5);
+                c.vu0().opmsub(6, 5, 4);
+                c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+                c.sqc2(6, st.wrapping_add(0xd0));
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.lq(2, st.wrapping_add(0xd0));
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sq(2, st.wrapping_add(0xc0));
+                c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x10));
+                c.lqc2(4, st.wrapping_add(0xc0));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, st.wrapping_add(0xd0));
+                c.lq(2, st.wrapping_add(0xd0));
+                c.sq(2, st.wrapping_add(0xb0));
+                c.lqc2(3, st.wrapping_add(0xb0));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.vu0().rsqrt(0, 3, 4, 0);
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 5, 3, Src::Q);
+                c.sqc2(5, st.wrapping_add(0xd0));
+                c.lq(2, st.wrapping_add(0xd0));
+                c.sq(2, st.wrapping_add(0xa0));
+                c.mfc1(3, 0);
+                c.lqc2(4, st.wrapping_add(0xa0));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, st.wrapping_add(0xd0));
+                c.lq(2, st.wrapping_add(0xd0));
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.sq(2, st.wrapping_add(0x90));
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.lqc2(3, c.g[A0][0] as u32);
+                c.lqc2(4, st.wrapping_add(0x90));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, st.wrapping_add(0xb0));
+                c.lq(2, st.wrapping_add(0xb0));
+                c.sq(2, st.wrapping_add(0xa0));
+                c.sq(2, (c.g[A0][0] as u32).wrapping_add(0x60));
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                c.g[V1][0] = ((c.g[A2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                let t = c.g[V1][0] != 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x60));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0034_aaa8);
+                    }
+                    continue 'l_34aaa8;
+                } else {
+                    break 'b_34abbc;
+                }
+            }
+        }
+        'b_34abfc: {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[A0][0] = 0u64;
+            if t {
+                break 'b_34abfc;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = 0x500000;
+            c.g[A1][0] = 0u64;
+            c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xee0));
+            'l_34abd8: loop {
+                c.cycles += 9;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NODES));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                c.lq(2, c.g[A2][0] as u32);
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sq(2, (c.g[V1][0] as u32).wrapping_add(0x40));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SR_NUM_NODES));
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x60));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0034_abd8);
+                    }
+                    continue 'l_34abd8;
+                } else {
+                    break 'b_34abfc;
+                }
+            }
+        }
+        c.cycles += 4;
+        c.lq(16, st.wrapping_add(0xf0));
+        c.g[RA][0] = c.ld(st.wrapping_add(0xe0));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x100));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `void FlexRail_RegisterSpaceNode(self)` (0x348b90): allocate the space
+/// node (`0x10` bytes, `+0xc` = self, `+8` = type 3), store it at `self+0x54`
+/// and add it to the nash octant the bounding box falls in (x/y/z sign picks
+/// one of eight octants of the cell at offset 0x14 each).
+pub fn flex_rail_space_node_register(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 45;
+        let frame = Frame::open(c, 0x50);
+        c.g[A1][0] = 0x49_0000;
+        frame.save(c, S0, 0x40);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[A3][0] = 0;
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x17f8));
+        c.g[A0][0] = 0x10;
+        call_ptr(c, 0x0031_7d70, 0x0034_8bc0)?;
+        c.g[V1][0] = 0x3;
+        c.sw(frail_at(c.g[V0][0], 0xc), c.g[S0][0]);
+        c.sw(frail_at(c.g[V0][0], 0x8), c.g[V1][0]);
+        c.sw(frail_at(c.g[S0][0], 0x54), c.g[V0][0]);
+        call_ptr(c, 0x002d_1be0, 0x0034_8bd4)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A1][0] = sx(frail_at(c.g[S0][0], 0x30));
+        c.g[S2][0] = c.lw(frail_at(c.g[S0][0], 0x54));
+        c.g[A0][0] = c.g[SP][0];
+        call_ptr(c, 0x0032_8f28, 0x0034_8be8)?;
+        c.g[V0][0] = c.lw(frail_at(c.g[SP][0], 0x4));
+        c.g[A3][0] = u64::MAX;
+        c.g[V1][0] = sx(frail_at(c.g[S1][0], 0x50));
+        c.g[A1][0] = c.lw(frail_at(c.g[SP][0], 0x8));
+        c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        c.g[A2][0] = c.lw(frail_at(c.g[SP][0], 0xc));
+        if c.g[V0][0] != 0 {
+            c.g[V1][0] = c.g[S1][0];
+        }
+        c.g[A1][0] = ((c.g[A3][0] as i64) < (c.g[A1][0] as i64)) as u64;
+        c.g[A0][0] = sx(frail_at(c.g[V1][0], 0x28));
+        c.g[A3][0] = ((c.g[A3][0] as i64) < (c.g[A2][0] as i64)) as u64;
+        if c.g[A1][0] != 0 {
+            c.g[A0][0] = c.g[V1][0];
+        }
+        c.g[A2][0] = c.g[S2][0];
+        c.g[V0][0] = sx(frail_at(c.g[A0][0], 0x14));
+        c.g[A1][0] = 0x2;
+        if c.g[A3][0] == 0 {
+            c.g[A0][0] = c.g[V0][0];
+        }
+        c.g[A3][0] = c.g[SP][0];
+        call_ptr(c, 0x0032_8c20, 0x0034_8c2c)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2204,6 +3401,229 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(def);
                 c.g[A2][0] = sx(mesh);
+            },
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    use crate::difftest;
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::object::flexbridgenode::tests::OC603_CTRL;
+    pub(crate) use crate::game::object::flexbridgenode::tests::OC603_KEY;
+    pub(crate) use crate::game::object::flexbridgenode::tests::OC603_MAGIC;
+    pub(crate) use crate::game::object::flexbridgenode::tests::OC603_OBJ;
+
+    pub(crate) use crate::game::object::flexbridgenode::tests::oc603_install;
+
+    /// The rail node (`self`) and its node array, `Mats` and the lookup tables.
+    pub(crate) const SELF: u32 = DATA + 0x4000;
+
+    pub(crate) const MATS: u32 = DATA + 0x2000;
+
+    pub(crate) const NODES: u32 = DATA + 0x3000;
+
+    /// Gate for the fakes: a magic word in this machine's RAM.
+    pub(crate) const CTRL: u32 = DATA + 0x20000;
+
+    pub(crate) const MAGIC: u32 = 0x0596_0596;
+
+    pub(crate) const TBL: u32 = DATA + 0x6000;
+
+    pub(crate) const RAIL: u32 = DATA + 0x6400;
+
+    pub(crate) const TBL2: u32 = DATA + 0x6800;
+
+    pub(crate) const WORLD: u32 = DATA + 0x6c00;
+
+    pub(crate) const WORLD_OBJ: u32 = DATA + 0x6d00;
+
+    pub(crate) const ACTIVE: u32 = DATA + 0x9000;
+
+    pub(crate) static OC596_PREV_WORLD: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC596_PREV_DT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC596_PREV_MATRIX: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gated `World_GetInstance`: returns the fixture's world object.
+    pub(crate) fn oc596_fake_world_instance(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &OC596_PREV_WORLD, ee::s09::f_002d1bd8__generated);
+        }
+        c.g[V0][0] = WORLD as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Gated `World_GetSecondsPerTick`: the step is set in the fixture.
+    pub(crate) fn oc596_fake_seconds_per_tick(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &OC596_PREV_DT, ee::s09::f_002d1c70__generated);
+        }
+        c.f[0] = c.bus.read32(CTRL + 4);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Gated `Instance_GetNodeMatrix`: leaves the output on the stack alone.
+    pub(crate) fn oc596_fake_node_matrix(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &OC596_PREV_MATRIX, ee::s11::f_0034fed8__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn oc596_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D1BD8),
+            oc596_fake_world_instance,
+            &OC596_PREV_WORLD,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D1C70),
+            oc596_fake_seconds_per_tick,
+            &OC596_PREV_DT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0034FED8),
+            oc596_fake_node_matrix,
+            &OC596_PREV_MATRIX,
+        );
+    }
+
+    #[test]
+    fn float_rail_node_update_mats_matches() {
+        check(
+            ee::s11::f_003492a8__generated,
+            float_rail_node_update_mats,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x0034_92a8 ^ ((seed as u64) << 8) | 1);
+                scramble(c, &mut r);
+                elf_image(c);
+                fill(c, &mut r, MATS, 0x80);
+                fill(c, &mut r, NODES, 0x100);
+                // NumNodes 1..6: one and two nodes skip the loop.
+                c.bus.write32(SELF + 0x20, 1 + seed % 6);
+                c.bus.write32(SELF + 0x50, MATS);
+                c.bus.write32(SELF + 0x70, NODES);
+                c.g[A0][0] = sx(SELF);
+                c.pc = 0x0034_92a8;
+            },
+        );
+    }
+
+    #[test]
+    fn float_rail_node_update_nodes_matches() {
+        oc596_install();
+        check(
+            ee::s11::f_003498e8__generated,
+            float_rail_node_update_nodes,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0034_98e8 ^ ((seed as u64) << 8) | 1);
+                scramble(c, &mut r);
+                elf_image(c);
+                fill(c, &mut r, SELF, 0x40);
+                fill(c, &mut r, NODES, 0x100);
+                // NumNodes 1..5: one and two nodes skip the loop.
+                c.bus.write32(SELF + 0x20, 1 + seed % 5);
+                c.bus.write32(SELF + 0x70, NODES);
+                for i in 0..5u32 {
+                    // InstId: small ids, so the table index is InstId & 0xff.
+                    c.bus.write32(NODES + 0x50 * i + 0x40, (seed + i) % 4);
+                }
+                for id in 0..4u32 {
+                    let has_rail = (seed + id) % 5 != 0;
+                    c.bus
+                        .write32(TBL + 4 * id, if has_rail { RAIL + 0x40 * id } else { 0 });
+                    c.bus.write32(RAIL + 0x40 * id + 0x1c, TBL2);
+                }
+                // The second table entry decides the active node: none, or a
+                // pointer whose field at +0xc is zero or not.
+                let low = r.next_u32() & 0xff;
+                let second = if seed % 3 == 0 {
+                    low
+                } else {
+                    ((ACTIVE >> 2) << 8) | low
+                };
+                c.bus.write32(TBL2, second);
+                c.bus
+                    .write32(ACTIVE + 0xc, if seed % 4 == 0 { 0 } else { 0x1234 + seed });
+                c.bus.write32(WORLD, WORLD_OBJ);
+                c.bus.write32(WORLD_OBJ + 8, TBL);
+                c.bus.write32(CTRL, MAGIC);
+                c.bus.write32(CTRL + 4, 0x3c88_8889);
+                c.g[A0][0] = sx(SELF);
+                c.pc = 0x0034_98e8;
+            },
+        );
+    }
+
+    /// Fixture for both functions: a rail of `1..=5` nodes (the loops take every
+    /// branch), random node and matrix data, and the self pointer at `DATA`.
+    pub(crate) fn spring_rail_fixture(c: &mut Cpu, seed: u32, r: &mut Rng, entry: u32) {
+        scramble(c, r);
+        c.pc = entry;
+        c.g[RA][0] = sx(difftest::RA);
+        c.g[SP][0] = sx(difftest::SP);
+        c.g[GP][0] = sx(GAME_GP);
+        c.g[A0][0] = sx(DATA);
+        c.bus.write32(DATA + SR_NUM_NODES, seed % 5 + 1);
+        c.bus.write32(DATA + SR_MATS, DATA + 0x1000);
+        c.bus.write32(DATA + SR_NODES, DATA + 0x2000);
+        let edge = seed % 5 == 0;
+        // The two spring/damp floats; +0x70 holds the Nodes pointer, so stop at +0x64.
+        for k in 0..2 {
+            let v = if edge { r.edge_f32() } else { r.f32(2.0) };
+            c.bus.write32(DATA + SR_SPRING + 4 * k, v);
+        }
+        fill(c, r, DATA + 0x1000, 0x100);
+        fill(c, r, DATA + 0x2000, 0x180);
+        fill(c, r, SR_SEG_XFORM, 16);
+        fill(c, r, 0x004f_f120, 16);
+    }
+
+    #[test]
+    fn spring_rail_node_update_nodes_matches() {
+        check(
+            ee::s11::f_0034a8c8__generated,
+            spring_rail_node_update_nodes,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x34a8_c8aa ^ seed as u64);
+                spring_rail_fixture(c, seed, &mut r, 0x0034_a8c8);
+                // The update-time callee reads world->+0x14 through GP-0x848.
+                c.bus.write32(GAME_GP - 0x848, DATA + 0x4000);
+                c.bus.write32(DATA + 0x4014, r.f32(2.0));
+            },
+        );
+    }
+
+    #[test]
+    fn flex_rail_space_node_register_matches() {
+        oc603_install();
+        covered(
+            ee::s11::f_00348b90__generated,
+            flex_rail_space_node_register,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_8b90, 4);
+                c.pc = 0x0034_8b90;
+                c.bus.write32(OC603_CTRL, OC603_MAGIC);
+                // The octant is picked by the key's signs: each of x, y, z is
+                // negative on some seeds.
+                for k in 0..3u32 {
+                    let v = r.next_u32() & 0xff;
+                    let neg = (seed >> k) & 1 == 1;
+                    c.bus
+                        .write32(OC603_KEY + 4 * k, if neg { 0xffff_ff00 | v } else { v });
+                }
+                fill(c, &mut r, OC603_OBJ + 0x30, 6);
+                c.g[A0][0] = sx(OC603_OBJ);
             },
         );
     }

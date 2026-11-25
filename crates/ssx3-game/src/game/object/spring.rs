@@ -7,6 +7,8 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 use crate::guest::Addr;
@@ -34,6 +36,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "FlexBridge_SpringsSave",
     ),
     (0x0035_4648, game_process_ctor, "GameProcess_ctor"),
+    (
+        0x0035_3f00,
+        flex_bridge_alloc_spring_nodes,
+        "FlexBridge_AllocSpringNodes",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -720,6 +727,82 @@ pub fn game_process_ctor(c: &mut Cpu) {
     })
 }
 
+/// `void cSpring_setupNodes(cSpring* self)` (0x353f00; the FlexBridge spring
+/// setup). `self+0` holds the node count. The function allocates
+/// `count * 0x50` bytes (`operator new`, the block stored at `self+0x24`) and
+/// copies a 0x30-byte template into each node, clearing its words at
+/// +0x20, +0x24 and +0x40. A zero count leaves the block unused.
+pub fn flex_bridge_alloc_spring_nodes(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x40);
+        c.g[A1][0] = 0x0049_0000;
+        frame.save(c, S1, 0x20);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x50;
+        frame.save(c, S0, 0x30);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x1638));
+        c.g[S0][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A3][0] = 0;
+        c.mult(0, 0, S0, A0);
+        c.g[A0][0] = c.lo[0];
+        c.g[S2][0] = sx(r32(c, S1).wrapping_add(0x24));
+        call_ptr(c, 0x0031_7e30, 0x0035_3f40)?;
+        let empty = c.g[S0][0] == 0;
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if !empty {
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+        }
+        // Block 2: store the block, then fill the nodes.
+        c.cycles += 5;
+        let block = c.g[V0][0];
+        Addr(r32(c, S2)).sw(c, block);
+        c.g[A1][0] = 0;
+        c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+        let no_nodes = (c.g[V0][0] as i64) <= 0;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x24)).lw(c);
+        if !no_nodes {
+            c.cycles += 3;
+            c.g[V0][0] = 0x0050_0000;
+            c.g[A2][0] = sx(r32(c, V0).wrapping_sub(0xee0));
+            loop {
+                c.cycles += 14;
+                c.lq(V1, r32(c, A2));
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                c.sq(V1, r32(c, A0));
+                c.lq(V0, r32(c, A2));
+                c.sq(V0, r32(c, A0).wrapping_add(0x10));
+                c.lq(V1, r32(c, A2));
+                c.sw(r32(c, A0).wrapping_add(0x24), 0);
+                c.sq(V1, r32(c, A0).wrapping_add(0x30));
+                c.sw(r32(c, A0).wrapping_add(0x20), 0);
+                c.sw(r32(c, A0).wrapping_add(0x40), 0);
+                c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x50));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_3f70);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -833,6 +916,29 @@ pub(crate) mod tests {
                 c.g[A1][0] = (r.next_u32() % 4) as u64;
                 c.g[RA][0] = SENTINEL as u64;
                 c.pc = 0x0035_4648;
+            },
+        );
+    }
+
+    use crate::game::worldpainter::quadtree::tests::heap_init;
+    use crate::game::worldpainter::quadtree::tests::pool_allocator;
+
+    #[test]
+    fn flex_bridge_alloc_spring_nodes_matches() {
+        check(
+            ee::s11::f_00353f00__generated,
+            flex_bridge_alloc_spring_nodes,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x353f00, 1);
+                pool_allocator(c);
+                heap_init(c);
+                let this = DATA + 0x100;
+                c.bus.write32(this, seed % 5);
+                c.bus.write32(this + 0x24, r.next_u32());
+                c.g[A0][0] = sx(this);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0035_3f00;
             },
         );
     }

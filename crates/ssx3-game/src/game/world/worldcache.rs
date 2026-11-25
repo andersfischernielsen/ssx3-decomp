@@ -209,6 +209,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cworld_cache_streamer_ctor,
         "cWorldCache_StreamerCtor",
     ),
+    (
+        0x003a_7818,
+        section_allocator_free_all,
+        "SectionAllocator_FreeAll",
+    ),
+    (
+        0x003a_8230,
+        world_cache_free_section_table_2,
+        "cWorldCache_FreeSectionTable",
+    ),
+    (
+        0x003a_89c8,
+        cworld_cache_evict_lowest_priority_hull,
+        "cWorldCache_EvictLowestPriorityHull",
+    ),
+    (
+        0x003a_9180,
+        cworld_cache_streamer_dtor_stub,
+        "cWorldCache_StreamerDtorStub",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4162,6 +4182,233 @@ pub fn cworld_cache_streamer_ctor(c: &mut Cpu) {
     })
 }
 
+pub(crate) const WORLD_MEMMAN_FREE_SECTION_ALLOCATOR: Callee = Callee {
+    addr: 0x003a_7b98,
+    f: ee::s13::f_003a7b98,
+};
+
+pub(crate) const SECTION_TABLE_DTOR: Callee = Callee {
+    addr: 0x003a_7d80,
+    f: ee::s13::f_003a7d80,
+};
+
+/// `cWorldCache_FreeSectionTable(cache, index)` (0x3a8230): frees the
+/// section allocator of the cache (`+0xc`), then the section table at slot
+/// `index` of the cache's table (`+0x8`, 4 bytes per slot, `index << 2`), if
+/// there is one, and clears the word that slot points at.
+pub fn world_cache_free_section_table_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = sx((abi::arg(c, 1)) << 2);
+        c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0xc)).lw(c);
+        WORLD_MEMMAN_FREE_SECTION_ALLOCATOR.call(c, 0x003a_8250)?;
+        let s0 = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(s0.wrapping_add(0x8)).lw(c);
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        if c.g[A0][0] == 0u64 {
+            let s0 = c.g[S0][0] as u32;
+            c.g[V0][0] = Addr(s0.wrapping_add(0x8)).lw(c);
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = 3;
+            SECTION_TABLE_DTOR.call(c, 0x003a_826c)?;
+            let s0 = c.g[S0][0] as u32;
+            c.g[V0][0] = Addr(s0.wrapping_add(0x8)).lw(c);
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x20);
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        frame.restore_ra(c, 0);
+        frame.restore(c, S1, 0x10);
+        Addr(c.g[V0][0] as u32).sw(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cWorldCache_FreeHullPage(self, page)` (0x3a8528).
+pub(crate) const EVICT_FREE_HULL_PAGE: Callee = Callee {
+    addr: 0x003a_8528,
+    f: ee::s13::cWorldCache_FreeHullPage,
+};
+
+/// `void cWorldCache_EvictLowestPriorityHull(cWorldCache* self, int)` (0x3a89c8).
+///
+/// Scans the `count` (at +0x3ec) 0x18-byte slots from +0x3f0. A slot is a
+/// candidate when its state word is 3 or 4 and its lock word (+4) is zero;
+/// the one with the lowest float priority (+0xc, below 1.0) wins. The winner
+/// is marked state 4, its page freed through `cWorldCache_FreeHullPage`, and
+/// its state word cleared.
+pub fn cworld_cache_evict_lowest_priority_hull(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = u64::MAX;
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 1);
+        c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x3ec));
+        let empty = c.g[V0][0] == 0;
+        c.g[A3][0] = 0;
+        if !empty {
+            c.cycles += 3;
+            c.g[T0][0] = c.g[V0][0];
+            c.g[A2][0] = sx(r32(c, A0).wrapping_add(0x3fc));
+            loop {
+                c.cycles += 3;
+                c.g[V1][0] = c.lw(r32(c, A2).wrapping_sub(0xc));
+                'slot: {
+                    if c.g[V1][0] == 0 {
+                        c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                        break 'slot;
+                    }
+                    'cand: {
+                        c.cycles += 2;
+                        let nonpositive = (c.g[V1][0] as i64) <= 0;
+                        c.g[V0][0] = ((c.g[V1][0] as i64) < 3) as u64;
+                        if nonpositive {
+                            break 'cand;
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] != 0 {
+                            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                            break 'slot;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[V1][0] as i64) < 5) as u64;
+                        if c.g[V0][0] == 0 {
+                            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                            break 'slot;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(r32(c, A2).wrapping_sub(0x8));
+                        if c.g[V0][0] != 0 {
+                            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                            break 'slot;
+                        }
+                        c.cycles += 5;
+                        c.lwc1(0, r32(c, A2));
+                        c.c_lt_s(0, 1);
+                        if !c.fcc() {
+                            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                            break 'slot;
+                        }
+                        c.cycles += 2;
+                        c.mov_s(1, 0);
+                        c.g[A1][0] = c.g[A3][0];
+                    }
+                    c.cycles += 1;
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                }
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[A3][0] < c.g[T0][0]) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x18));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003a_89f8);
+                }
+            }
+        }
+        c.cycles += 2;
+        let none = (c.g[A1][0] as i64) < 0;
+        c.g[V0][0] = 0x18;
+        if !none {
+            c.cycles += 7;
+            c.g[S0][0] = sx(r32(c, A0).wrapping_add(0x3f0));
+            c.mult(0, 2, 5, 2);
+            c.g[V1][0] = 4;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+            c.g[RA][0] = sx(0x003a_8a78);
+            c.sw(r32(c, S0), c.g[V1][0]);
+            EVICT_FREE_HULL_PAGE.call(c, 0x003a_8a78)?;
+            c.sw(r32(c, S0), 0);
+        }
+        c.cycles += 4;
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cWorldView_purge(cWorldView*)` (0x3a9180): an empty stub.
+pub fn cworld_cache_streamer_dtor_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `SectionAllocator_FreeAll` (0x003a7818): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn section_allocator_free_all(c: &mut Cpu) {
+    if c.pc != 0x003a7818 {
+        return ee::s13::f_003a7818__generated(c);
+    }
+    guest(c, |c| {
+        'b_3a7864: {
+            c.cycles += 8;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S1][0] = c.g[A0][0];
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+            let t = c.g[V0][0] == 0u64;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            if t {
+                break 'b_3a7864;
+            } else {
+                'l_3a7838: loop {
+                    c.cycles += 10;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+                    c.g[RA][0] = sx(0x003a784c);
+                    c.g[A1][0] = c.g[V0][0];
+                    Callee {
+                        addr: 0x003a7790,
+                        f: ee::s13::WorldBlockPool_FreeBlock,
+                    }
+                    .call(c, 0x003a784c)?;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[S0][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[S0][0] != 0u64;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a7838);
+                        }
+                        continue 'l_3a7838;
+                    } else {
+                        c.cycles += 1;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        break 'b_3a7864;
+                    }
+                }
+            }
+        }
+        c.cycles += 4;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5850,6 +6097,92 @@ pub(crate) mod tests {
             cworld_cache_streamer_ctor,
             0x003a_8f80,
             &|_, _, _| {},
+        );
+    }
+
+    pub(crate) use crate::game::world::worldview::tests::machine_2;
+    pub(crate) use crate::game::world::worldview::tests::SEEDS_8 as SEEDS_11;
+
+    #[test]
+    fn world_cache_free_section_table_matches() {
+        check(
+            ee::s13::f_003a8230__generated,
+            world_cache_free_section_table_2,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x003a_8230 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003a_8230;
+                let table = DATA + 0x800;
+                let idx = seed % 4;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = idx as u64;
+                c.bus.write32(DATA + 0xc, DATA + 0x400);
+                c.bus.write32(DATA + 0x8, table);
+                let entry = if seed % 2 == 0 { 0 } else { DATA + 0xa00 };
+                c.bus.write32(table + 4 * idx, entry);
+            },
+        );
+    }
+
+    #[test]
+    fn cworld_cache_evict_lowest_priority_hull_matches() {
+        check(
+            ee::s13::f_003a89c8__generated,
+            cworld_cache_evict_lowest_priority_hull,
+            SEEDS_11,
+            &|c, seed| {
+                let mut r = machine_2(c, seed, 0x3a89, 0x003a_89c8);
+                let this = DATA + 0x100;
+                let count = seed % 6;
+                c.bus.write32(this + 0x3ec, count);
+                for i in 0..count {
+                    let rec = this + 0x3f0 + 0x18 * i;
+                    let state = match r.next_u32() % 8 {
+                        7 => u32::MAX,
+                        s => s,
+                    };
+                    c.bus.write32(rec, state);
+                    c.bus
+                        .write32(rec + 4, if r.next_u32() % 3 == 0 { 1 } else { 0 });
+                    // The page this slot holds (FreeHullPage reads it at +8).
+                    let page = DATA + 0x2000 + 0x100 * i;
+                    c.bus.write32(rec + 8, page);
+                    c.bus.write32(page, 0);
+                    c.bus.write32(page + 8, 0);
+                    c.bus.write32(page + 0xc, DATA + 0x3000);
+                    c.bus.write32(rec + 0xc, r.f32(1.5));
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = seed as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cworld_cache_streamer_dtor_stub_matches() {
+        check(
+            ee::s13::f_003a9180__generated,
+            cworld_cache_streamer_dtor_stub,
+            SEEDS_11,
+            &|c, seed| {
+                machine_2(c, seed, 0x3a91, 0x003a_9180);
+            },
+        );
+    }
+
+    #[test]
+    fn section_allocator_free_all_matches() {
+        check(
+            ee::s13::f_003a7818__generated,
+            section_allocator_free_all,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x7818, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x003a7818;
+            },
         );
     }
 }

@@ -156,6 +156,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MultiSplineModifier_InsertNodeInstances",
     ),
     (0x0035_bd70, rail_modifier_dtor, "RailModifier_v01"),
+    (
+        0x0035_a118,
+        multispline_modifier_ctor_2,
+        "MultiSplineModifier_ctor_2",
+    ),
+    (
+        0x0035_a780,
+        multi_spline_modifier_remove_node_instances,
+        "MultiSplineModifier_RemoveNodeInstances",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4138,6 +4148,452 @@ pub fn multi_spline_modifier_alloc_arrays(c: &mut Cpu) {
     })
 }
 
+/// `cMultiSplineModifier::cMultiSplineModifier(cBxReplayFrame *)` (0x35a118,
+/// `MultiSplineModifier_ctor_2`): builds a multi-spline from a replay frame.
+/// Sets the vtable and the defaults (spline id -1, no segment), reads the
+/// model count and spline header through the stream's vtable (slots 0x10,
+/// 0x18), loads the spline path, allocates the node arrays, then takes one
+/// instance id per model from the stream, allocates its instance, and clones,
+/// inserts and flags the root transform dirty. Returns `this`.
+pub fn multispline_modifier_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 41;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        c.g[V0][0] = sx(0x0049_0000u32.wrapping_sub(0xe98));
+        frame.save(c, S2, 0x40);
+        c.g[S0][0] = u64::MAX; // 0xffff_ffff_ffff_0000 | 0xffff
+        frame.save(c, S1, 0x50);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        c.g[A2][0] = 0x34;
+        frame.save_ra(c, 0x10);
+        c.g[S4][0] = c.g[A1][0];
+
+        // Defaults: vtable, spline id -1, no segment, zero length.
+        let this = c.g[S2][0] as u32;
+        let vtbl = c.g[V0][0];
+        Addr(this).sw(c, vtbl);
+        c.g[A1][0] = sx(this.wrapping_add(4));
+        let id = c.g[S0][0];
+        Addr(this.wrapping_add(0x48)).sw(c, id);
+        c.g[S1][0] = sx(this.wrapping_add(0x48));
+        Addr(this.wrapping_add(0x50)).sw(c, 0);
+        c.g[S3][0] = 0;
+        Addr(this.wrapping_add(0x4c)).sw(c, 0);
+        Addr(this.wrapping_add(0x54)).sw(c, 0);
+
+        // stream->read(&NumModels, 52): slot 0x10 of the stream's vtable.
+        let stream = c.g[S4][0] as u32;
+        c.g[V0][0] = Addr(stream).lw(c);
+        let vt = c.g[V0][0] as u32;
+        c.g[A0][0] = Addr(vt.wrapping_add(0x10)).lh(c);
+        c.g[V1][0] = Addr(vt.wrapping_add(0x14)).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0035_a184)?;
+
+        // cSpline_readFromReplayFrame(&this->Spline, stream).
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S4][0];
+        Callee {
+            addr: 0x0034_5570,
+            f: ee::s11::f_00345570,
+        }
+        .call(c, 0x0035_a190)?;
+
+        // stream->readReplayInstance(): slot 0x18 of the stream's vtable.
+        let stream = c.g[S4][0] as u32;
+        c.g[V1][0] = Addr(stream).lw(c);
+        let vt = c.g[V1][0] as u32;
+        c.g[A0][0] = Addr(vt.wrapping_add(0x18)).lh(c);
+        c.g[V0][0] = Addr(vt.wrapping_add(0x1c)).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0035_a1a4)?;
+        let instance = c.g[V0][0];
+        let this = c.g[S2][0] as u32;
+        Addr(this.wrapping_add(0x40)).sw(c, instance);
+
+        // cMultiSplineModifier_allocNodes(this).
+        c.g[A0][0] = c.g[S2][0];
+        Callee {
+            addr: 0x0035_a328,
+            f: ee::s11::f_0035a328,
+        }
+        .call(c, 0x0035_a1b0)?;
+
+        // for (i = 0; i < NumModels; i++) NodeInst[i] = allocInstance(man, id).
+        c.g[V0][0] = Addr(c.g[S2][0] as u32).off(4).lw(c);
+        let no_models = (c.g[V0][0] as i64) <= 0;
+        let id = c.g[S0][0];
+        Addr(frame.at(c, 0)).sw(c, id);
+        if !no_models {
+            c.cycles += 1;
+            c.g[V1][0] = Addr(c.g[S4][0] as u32).lw(c);
+            loop {
+                c.cycles += 20;
+                c.g[A1][0] = c.g[SP][0];
+                c.g[A2][0] = 4;
+                let v1 = c.g[V1][0] as u32;
+                c.g[A0][0] = Addr(v1.wrapping_add(0x10)).lh(c);
+                c.g[V0][0] = Addr(v1.wrapping_add(0x14)).lw(c);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0035_a1d8)?;
+                // cObjectInterface_getInstanceMan().
+                call_ptr(c, 0x002d_1ce0, 0x0035_a1e0)?;
+                c.g[A1][0] = Addr(sp(c)).lw(c);
+                c.g[A0][0] = c.g[V0][0];
+                Callee {
+                    addr: 0x0035_11d0,
+                    f: ee::s11::f_003511d0,
+                }
+                .call(c, 0x0035_a1ec)?;
+                let this = c.g[S2][0] as u32;
+                c.g[A0][0] = Addr(this.wrapping_add(0x44)).lw(c);
+                let s3 = c.g[S3][0] as u32;
+                c.g[V1][0] = sx(s3 << 2);
+                c.g[S3][0] = sx(s3.wrapping_add(1));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                let slot = c.g[V1][0] as u32;
+                let inst = c.g[V0][0];
+                Addr(slot).sw(c, inst);
+                c.g[V0][0] = Addr(this.wrapping_add(4)).lw(c);
+                c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[V1][0] = Addr(c.g[S4][0] as u32).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_a1c0);
+                }
+            }
+        }
+
+        // cMultiSplineModifier_CloneInstances(this); setupOverlapSystem(this).
+        c.cycles += 15;
+        c.g[A0][0] = c.g[S2][0];
+        Callee {
+            addr: 0x0035_a458,
+            f: ee::s11::f_0035a458,
+        }
+        .call(c, 0x0035_a218)?;
+        c.g[A0][0] = c.g[S2][0];
+        Callee {
+            addr: 0x0035_a5f8,
+            f: ee::s11::f_0035a5f8,
+        }
+        .call(c, 0x0035_a220)?;
+
+        // RootTransformDirty = 1; return this.
+        c.g[V1][0] = 1;
+        c.g[V0][0] = c.g[S2][0];
+        let this = c.g[S2][0] as u32;
+        Addr(this.wrapping_add(0x30)).sw(c, 1);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `MultiSplineModifier_RemoveNodeInstances` (0x0035a780): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn multi_spline_modifier_remove_node_instances(c: &mut Cpu) {
+    if c.pc != 0x0035a780 {
+        return ee::s11::f_0035a780__generated(c);
+    }
+    guest(c, |c| {
+        let mut pc: u32 = 0x0035a780;
+        loop {
+            match pc {
+                0x0035a780 => {
+                    c.cycles += 13;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S2][0] = 0x1;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.g[S3][0] = c.g[A0][0];
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S4][0] = 0xffffffffffffffff;
+                    if t {
+                        pc = 0x0035a8f4;
+                        continue;
+                    }
+                    pc = 0x0035a7b4;
+                    continue;
+                }
+                0x0035a7b4 => {
+                    c.cycles += 1;
+                    c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x44));
+                    pc = 0x0035a7b8;
+                    continue;
+                }
+                0x0035a7b8 => {
+                    c.cycles += 37;
+                    c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[RA][0] = sx(0x0035a7c8);
+                    c.g[S1][0] = c.lw(c.g[V0][0] as u32);
+                    call_ptr(c, 0x002d1be0, 0x0035a7c8)?;
+                    c.g[A1][0] = 0x60;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.mult(0, 5, 18, 5);
+                    c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x3c));
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa0));
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xa0), c.g[V0][0]);
+                    c.g[RA][0] = sx(0x0035a7f4);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x30));
+                    call_ptr(c, 0x00328f28, 0x0035a7f4)?;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = c.g[S0][0];
+                    }
+                    c.g[A0][0] = ((c.g[S4][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x28));
+                    c.g[T0][0] = ((c.g[S4][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                    if c.g[A0][0] != 0 {
+                        c.g[V0][0] = c.g[V1][0];
+                    }
+                    c.g[A1][0] = 0u64;
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x14));
+                    c.g[A3][0] = c.g[SP][0];
+                    if c.g[T0][0] != 0 {
+                        c.g[S0][0] = c.g[V0][0];
+                    }
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = sx(0x0035a83c);
+                    c.g[T0][0] = c.g[S0][0];
+                    call_ptr(c, 0x003284b8, 0x0035a83c)?;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        pc = 0x0035a8a0;
+                        continue;
+                    }
+                    pc = 0x0035a84c;
+                    continue;
+                }
+                0x0035a84c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        pc = 0x0035a8a0;
+                        continue;
+                    }
+                    pc = 0x0035a858;
+                    continue;
+                }
+                0x0035a858 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        pc = 0x0035a8a0;
+                        continue;
+                    }
+                    pc = 0x0035a864;
+                    continue;
+                }
+                0x0035a864 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        pc = 0x0035a8a0;
+                        continue;
+                    }
+                    pc = 0x0035a870;
+                    continue;
+                }
+                0x0035a870 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    if t {
+                        pc = 0x0035a8a0;
+                        continue;
+                    }
+                    pc = 0x0035a87c;
+                    continue;
+                }
+                0x0035a87c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+                    let t = c.g[V0][0] != 0u64;
+
+                    if t {
+                        pc = 0x0035a8a0;
+                        continue;
+                    }
+                    pc = 0x0035a888;
+                    continue;
+                }
+                0x0035a888 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0035a8cc;
+                        continue;
+                    }
+                    pc = 0x0035a894;
+                    continue;
+                }
+                0x0035a894 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                        pc = 0x0035a8a8;
+                        continue;
+                    }
+                    pc = 0x0035a8a0;
+                    continue;
+                }
+                0x0035a8a0 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0035a8cc;
+                        continue;
+                    }
+                    pc = 0x0035a8a8;
+                    continue;
+                }
+                0x0035a8a8 => {
+                    c.cycles += 2;
+                    c.g[A0][0] = 0u64;
+                    pc = 0x0035a8b0;
+                    continue;
+                }
+                0x0035a8b0 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if back_edge_unwinds(c, 0x0035a8a0) {
+                            return Ok(());
+                        }
+                        pc = 0x0035a8a0;
+                        continue;
+                    }
+                    pc = 0x0035a8bc;
+                    continue;
+                }
+                0x0035a8bc => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < 3i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if back_edge_unwinds(c, 0x0035a8b0) {
+                            return Ok(());
+                        }
+                        pc = 0x0035a8b0;
+                        continue;
+                    }
+                    pc = 0x0035a8c8;
+                    continue;
+                }
+                0x0035a8c8 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0x1;
+                    pc = 0x0035a8cc;
+                    continue;
+                }
+                0x0035a8cc => {
+                    c.cycles += 2;
+
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                        pc = 0x0035a8e4;
+                        continue;
+                    }
+                    pc = 0x0035a8d4;
+                    continue;
+                }
+                0x0035a8d4 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0035a8dc);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    call_ptr(c, 0x00317e50, 0x0035a8dc)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                    pc = 0x0035a8e4;
+                    continue;
+                }
+                0x0035a8e4 => {
+                    c.cycles += 4;
+                    c.g[S2][0] = c.g[S1][0];
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x44));
+                        if back_edge_unwinds(c, 0x0035a7b8) {
+                            return Ok(());
+                        }
+                        pc = 0x0035a7b8;
+                        continue;
+                    }
+                    pc = 0x0035a8f4;
+                    continue;
+                }
+                0x0035a8f4 => {
+                    c.cycles += 8;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0035a780, 0x0035a914);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -5566,6 +6022,155 @@ pub(crate) mod tests {
                     ],
                 );
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake_call;
+
+    /// The gated fakes answer only while this word is set in the machine's RAM.
+    pub(crate) const OC609_GATE: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC609_MAGIC: u32 = 0x0609_0609;
+
+    pub(crate) const OC609_THIS: u32 = DATA + 0x3000;
+
+    pub(crate) const OC609_STREAM: u32 = DATA + 0x1000;
+
+    pub(crate) const OC609_NODES: u32 = DATA + 0x3100;
+
+    pub(crate) static OC609_PREV_LOAD_PATH: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC609_PREV_ALLOC_ARRAYS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC609_PREV_CLONE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC609_PREV_INSERT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC609_PREV_ALLOC_INSTANCE: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gate-on: log the call as a fake; gate-off: the body the slot held.
+    pub(crate) fn oc609_gated(
+        c: &mut Cpu,
+        target: u32,
+        prev: &AtomicUsize,
+        generated: fn(&mut Cpu),
+    ) {
+        if c.bus.read32(OC609_GATE) != OC609_MAGIC {
+            return fall_back(c, prev, generated);
+        }
+        fake_call(c, target);
+    }
+
+    pub(crate) fn oc609_fake_load_path(c: &mut Cpu) {
+        oc609_gated(
+            c,
+            0x0034_5570,
+            &OC609_PREV_LOAD_PATH,
+            ssx3_ee::s11::f_00345570__generated,
+        )
+    }
+
+    pub(crate) fn oc609_fake_alloc_arrays(c: &mut Cpu) {
+        oc609_gated(
+            c,
+            0x0035_a328,
+            &OC609_PREV_ALLOC_ARRAYS,
+            ssx3_ee::s11::f_0035a328__generated,
+        )
+    }
+
+    pub(crate) fn oc609_fake_clone(c: &mut Cpu) {
+        oc609_gated(
+            c,
+            0x0035_a458,
+            &OC609_PREV_CLONE,
+            ssx3_ee::s11::f_0035a458__generated,
+        )
+    }
+
+    pub(crate) fn oc609_fake_insert(c: &mut Cpu) {
+        oc609_gated(
+            c,
+            0x0035_a5f8,
+            &OC609_PREV_INSERT,
+            ssx3_ee::s11::f_0035a5f8__generated,
+        )
+    }
+
+    pub(crate) fn oc609_fake_alloc_instance(c: &mut Cpu) {
+        oc609_gated(
+            c,
+            0x0035_11d0,
+            &OC609_PREV_ALLOC_INSTANCE,
+            ssx3_ee::s11::f_003511d0__generated,
+        )
+    }
+
+    pub(crate) fn oc609_hook_fakes() {
+        hook(
+            addr_of_mut!(ssx3_ee::s11::OVERRIDE_00345570),
+            oc609_fake_load_path,
+            &OC609_PREV_LOAD_PATH,
+        );
+        hook(
+            addr_of_mut!(ssx3_ee::s11::OVERRIDE_0035A328),
+            oc609_fake_alloc_arrays,
+            &OC609_PREV_ALLOC_ARRAYS,
+        );
+        hook(
+            addr_of_mut!(ssx3_ee::s11::OVERRIDE_0035A458),
+            oc609_fake_clone,
+            &OC609_PREV_CLONE,
+        );
+        hook(
+            addr_of_mut!(ssx3_ee::s11::OVERRIDE_0035A5F8),
+            oc609_fake_insert,
+            &OC609_PREV_INSERT,
+        );
+        hook(
+            addr_of_mut!(ssx3_ee::s11::OVERRIDE_003511D0),
+            oc609_fake_alloc_instance,
+            &OC609_PREV_ALLOC_INSTANCE,
+        );
+    }
+
+    /// Stream with a vtable whose slots 0x10 and 0x18 are fakes; the frame
+    /// with a random model count (0 skips the instance loop).
+    pub(crate) fn oc609_setup(c: &mut Cpu, seed: u32) {
+        oc609_hook_fakes();
+        let mut r = machine(c, seed, 0x0035_a118, 8);
+        c.bus.write32(OC609_GATE, OC609_MAGIC);
+        let vt = vtable(c, &mut r, &[0x10, 0x18]);
+        c.bus.write32(OC609_STREAM, vt);
+        c.g[A0][0] = sx(OC609_THIS);
+        c.g[A1][0] = sx(OC609_STREAM);
+        c.bus.write32(OC609_THIS + 4, seed % 4);
+        c.bus.write32(OC609_THIS + 0x44, OC609_NODES);
+        c.pc = 0x0035_a118;
+    }
+
+    #[test]
+    fn multispline_modifier_ctor_2_matches() {
+        covered(
+            ssx3_ee::s11::f_0035a118__generated,
+            multispline_modifier_ctor_2,
+            200,
+            &|c, seed| oc609_setup(c, seed),
+        );
+    }
+
+    #[test]
+    fn multi_spline_modifier_remove_node_instances_matches() {
+        check(
+            ee::s11::f_0035a780__generated,
+            multi_spline_modifier_remove_node_instances,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0xa780, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x0035a780;
             },
         );
     }

@@ -14,6 +14,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::sd;
@@ -394,6 +395,119 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0036_4cd0,
         defer_man_emit_material_setup,
         "DeferMan_EmitMaterialSetup",
+    ),
+    (
+        0x0035_cfe8,
+        roller_modifier_member_ctor_stub,
+        "RollerModifier_MemberCtorStub",
+    ),
+    (
+        0x0035_d340,
+        roller_modifier_integrate,
+        "RollerModifier_Integrate",
+    ),
+    (
+        0x0035_d4a0,
+        roller_modifier_resolve_contact,
+        "RollerModifier_ResolveContact",
+    ),
+    (
+        0x0035_d908,
+        roller_modifier_apply_impulse,
+        "RollerModifier_ApplyImpulse",
+    ),
+    (
+        0x0035_dde8,
+        roller_modifier_init_body,
+        "RollerModifier_InitBody",
+    ),
+    (
+        0x0035_e248,
+        roller_modifier_update_inertia,
+        "RollerModifier_UpdateInertia",
+    ),
+    (0x0035_f218, tex_flip_modifier_init, "TexFlipModifier_Init"),
+    (
+        0x0035_fe10,
+        world_objects_static_init,
+        "WorldObjects_StaticInit",
+    ),
+    (0x0036_0a28, dead_node_v01, "DeadNode_v01"),
+    (0x0036_0a70, hide_dtor, "Hide_dtor"),
+    (
+        0x0036_0c78,
+        dynamic_particle_modifier_v04,
+        "DynamicParticleModifier_v04",
+    ),
+    (
+        0x0036_0de8,
+        mod_obj_call_transform_v16,
+        "ModObj_CallTransformV16",
+    ),
+    (
+        0x0036_0ed0,
+        mod_obj_get_uv_scroll_matrix,
+        "ModObj_GetUVScrollMatrix",
+    ),
+    (
+        0x0036_0f20,
+        mod_obj_free_transform_modifier,
+        "ModObj_FreeTransformModifier",
+    ),
+    (
+        0x0036_0f48,
+        mod_obj_free_uv_scroll_modifier,
+        "ModObj_FreeUVScrollModifier",
+    ),
+    (
+        0x0036_0f70,
+        mod_obj_free_tex_flip_modifier,
+        "ModObj_FreeTexFlipModifier",
+    ),
+    (
+        0x0036_0f98,
+        mod_obj_free_boost_modifier,
+        "ModObj_FreeBoostModifier",
+    ),
+    (
+        0x0036_0fc0,
+        mod_obj_remove_dead_particles,
+        "ModObj_RemoveDeadParticles",
+    ),
+    (0x0036_0fe8, mod_obj_free_particles, "ModObj_FreeParticles"),
+    (
+        0x0036_1010,
+        mod_obj_reset_particles,
+        "ModObj_ResetParticles",
+    ),
+    (0x0036_11a0, intersect_info_ctor_4, "IntersectInfo_ctor_4"),
+    (
+        0x0036_1208,
+        intersect_info_get_neg_normal,
+        "IntersectInfo_GetNegNormal",
+    ),
+    (0x0036_1248, intersect_info_ctor_5, "IntersectInfo_ctor_5"),
+    (0x0036_1300, intersect_info_ctor_6, "IntersectInfo_ctor_6"),
+    (0x0036_1500, conveyor_node_ctor, "Conveyor_v01"),
+    (0x0036_1530, counter_node_ctor, "Counter_v01"),
+    (0x0036_1cd8, roller_modifier_v10, "RollerModifier_v10"),
+    (
+        0x0036_1e10,
+        world_objects_global_ctors,
+        "WorldObjects_GlobalCtors",
+    ),
+    (0x0036_1f40, intc_table_shutdown, "IntcTable_Shutdown"),
+    (0x0036_2120, intc_handler_save_regs, "IntcHandler_SaveRegs"),
+    (
+        0x0036_2230,
+        intc_handler_restore_regs,
+        "IntcHandler_RestoreRegs",
+    ),
+    (0x0036_2478, gs_pkt_add_alpha, "GsPkt_AddAlpha"),
+    (
+        0x0036_3c20,
+        defer_man_emit_state_change,
+        "DeferMan_EmitStateChange",
     ),
 ];
 
@@ -10619,6 +10733,3136 @@ break 'b_364db8;
     });
 }
 
+/// The member-constructor stub of `RollerModifier` (0x35cfe8): returns its
+/// first argument unchanged.
+pub fn roller_modifier_member_ctor_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
+/// `void cRollerModifier_updateMOI(cRollerModifier* self)` (0x35e248),
+/// `RollerModifier_UpdateInertia`: turns the body's orientation quaternion
+/// (Pose.Q, +0x40) into a rotation R and stores R * InvBodyMOI * R^T as the
+/// rigid body's world-space InvMOI (+0x80). InvBodyMOI is the 3x3 float block
+/// at +0x280; `self` arrives in a0.
+///
+/// The quaternion-to-matrix step runs on VU0 (issued as the generated
+/// `vu0()` ops), the 3x3 products on the FPU. Every intermediate is also
+/// written to a stack scratch slot, and those bytes are observable, so the
+/// port keeps each store in the generated order.
+pub fn roller_modifier_update_inertia(c: &mut Cpu) {
+    c.cycles += 329;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x160));
+    let stack = c.g[SP][0] as u32;
+    let obj = c.g[A0][0] as u32;
+    c.swc1(25, stack.wrapping_add(0x158));
+    c.swc1(24, stack.wrapping_add(0x150));
+    c.swc1(23, stack.wrapping_add(0x148));
+    c.swc1(22, stack.wrapping_add(0x140));
+    c.swc1(21, stack.wrapping_add(0x138));
+    c.swc1(20, stack.wrapping_add(0x130));
+    c.lqc2(4, obj.wrapping_add(0x40));
+    c.vu0().add(0b1110, 1, 0, Src::Bc(0, W));
+    c.vu0().add(0b1110, 5, 4, Src::Vec(4));
+    c.vu0().sub(0b0001, 10, 10, Src::Vec(10));
+    c.vu0().sub(0b0001, 11, 11, Src::Vec(11));
+    c.vu0().sub(0b0001, 12, 12, Src::Vec(12));
+    c.vu0().mul(0b1110, 6, 5, Src::Vec(4));
+    c.vu0().mul(0b1110, 7, 5, Src::Bc(4, W));
+    c.vu0().opmula(5, 4);
+    c.vu0().madd(0b1110, 8, 0, Src::Vec(0));
+    c.vu0().suba(0b1000, 1, Src::Bc(6, Y));
+    c.vu0().msub(0b1000, 10, 1, Src::Bc(6, Z));
+    c.vu0().suba(0b0100, 1, Src::Bc(6, Z));
+    c.vu0().msub(0b0100, 11, 1, Src::Bc(6, X));
+    c.vu0().suba(0b0010, 1, Src::Bc(6, X));
+    c.vu0().msub(0b0010, 12, 1, Src::Bc(6, Y));
+    c.vu0().adda(0b0100, 0, Src::Bc(8, Z));
+    c.vu0().madd(0b0100, 10, 1, Src::Bc(7, Z));
+    c.vu0().adda(0b0010, 0, Src::Bc(8, X));
+    c.vu0().madd(0b0010, 11, 1, Src::Bc(7, X));
+    c.vu0().adda(0b0100, 0, Src::Bc(8, X));
+    c.vu0().msub(0b0100, 12, 1, Src::Bc(7, X));
+    c.vu0().adda(0b0010, 0, Src::Bc(8, Y));
+    c.vu0().msub(0b0010, 10, 1, Src::Bc(7, Y));
+    c.vu0().adda(0b1000, 0, Src::Bc(8, Z));
+    c.vu0().msub(0b1000, 11, 1, Src::Bc(7, Z));
+    c.vu0().adda(0b1000, 0, Src::Bc(8, Y));
+    c.vu0().madd(0b1000, 12, 1, Src::Bc(7, Y));
+    c.sqc2(0, stack.wrapping_add(0x30));
+    c.sqc2(10, stack);
+    c.sqc2(11, stack.wrapping_add(0x10));
+    c.sqc2(12, stack.wrapping_add(0x20));
+    c.lwc1(0, stack);
+    c.lwc1(1, stack.wrapping_add(0x4));
+    c.lwc1(2, stack.wrapping_add(0x8));
+    c.lwc1(3, stack.wrapping_add(0x10));
+    c.lwc1(4, stack.wrapping_add(0x14));
+    c.lwc1(5, stack.wrapping_add(0x18));
+    c.lwc1(6, stack.wrapping_add(0x20));
+    c.lwc1(7, stack.wrapping_add(0x24));
+    c.lwc1(8, stack.wrapping_add(0x28));
+    c.swc1(0, stack.wrapping_add(0xd0));
+    c.swc1(1, stack.wrapping_add(0xd4));
+    c.swc1(2, stack.wrapping_add(0xd8));
+    c.swc1(3, stack.wrapping_add(0xdc));
+    c.swc1(4, stack.wrapping_add(0xe0));
+    c.swc1(5, stack.wrapping_add(0xe4));
+    c.swc1(6, stack.wrapping_add(0xe8));
+    c.swc1(7, stack.wrapping_add(0xec));
+    c.swc1(8, stack.wrapping_add(0xf0));
+    roller_inertia_copy_dwords(c, stack.wrapping_add(0xa0), stack.wrapping_add(0xd0));
+    roller_inertia_copy_word(c, stack.wrapping_add(0xc0), stack.wrapping_add(0xf0));
+    roller_inertia_copy_dwords(c, stack.wrapping_add(0x70), stack.wrapping_add(0xa0));
+    roller_inertia_copy_word(c, stack.wrapping_add(0x90), stack.wrapping_add(0xc0));
+    roller_inertia_copy_dwords(c, stack.wrapping_add(0x40), stack.wrapping_add(0x70));
+    roller_inertia_copy_word(c, stack.wrapping_add(0x60), stack.wrapping_add(0x90));
+    c.lwc1(17, stack.wrapping_add(0x74));
+    c.lwc1(2, stack.wrapping_add(0x7c));
+    c.swc1(17, stack.wrapping_add(0x7c));
+    c.lwc1(17, stack.wrapping_add(0x78));
+    c.lwc1(0, stack.wrapping_add(0x88));
+    c.swc1(17, stack.wrapping_add(0x88));
+    c.lwc1(1, stack.wrapping_add(0x8c));
+    c.swc1(2, stack.wrapping_add(0x74));
+    c.swc1(0, stack.wrapping_add(0x78));
+    c.lwc1(17, stack.wrapping_add(0x84));
+    c.swc1(1, stack.wrapping_add(0x84));
+    c.lwc1(15, obj.wrapping_add(0x28c));
+    c.lwc1(12, obj.wrapping_add(0x290));
+    c.lwc1(1, obj.wrapping_add(0x280));
+    c.lwc1(7, obj.wrapping_add(0x284));
+    c.lwc1(5, stack.wrapping_add(0x48));
+    c.lwc1(14, stack.wrapping_add(0x54));
+    c.lwc1(19, obj.wrapping_add(0x294));
+    c.mul_s(22, 5, 1);
+    c.lwc1(0, obj.wrapping_add(0x298));
+    c.mul_s(25, 14, 7);
+    c.lwc1(2, obj.wrapping_add(0x29c));
+    c.mul_s(24, 14, 12);
+    c.lwc1(8, obj.wrapping_add(0x288));
+    c.mul_s(21, 5, 15);
+    c.lwc1(9, obj.wrapping_add(0x2a0));
+    c.mul_s(14, 14, 2);
+    c.lwc1(3, stack.wrapping_add(0x40));
+    c.mul_s(5, 5, 0);
+    c.lwc1(10, stack.wrapping_add(0x4c));
+    c.add_s(22, 22, 25);
+    c.lwc1(4, stack.wrapping_add(0x44));
+    c.mul_s(18, 3, 0);
+    c.lwc1(11, stack.wrapping_add(0x50));
+    c.mul_s(23, 10, 2);
+    c.swc1(17, stack.wrapping_add(0x8c));
+    c.mul_s(6, 3, 1);
+    c.mul_s(17, 10, 7);
+    c.lwc1(13, stack.wrapping_add(0x58));
+    c.mul_s(2, 11, 2);
+    c.lwc1(20, stack.wrapping_add(0x60));
+    c.mul_s(7, 11, 7);
+    c.lwc1(16, stack.wrapping_add(0x5c));
+    c.mul_s(0, 4, 0);
+    c.mul_s(1, 4, 1);
+    c.mul_s(10, 10, 12);
+    c.mul_s(11, 11, 12);
+    c.mul_s(3, 3, 15);
+    c.mul_s(4, 4, 15);
+    c.add_s(1, 1, 7);
+    c.add_s(3, 3, 10);
+    c.add_s(4, 4, 11);
+    c.add_s(0, 0, 2);
+    c.mul_s(11, 20, 9);
+    c.mul_s(7, 13, 9);
+    c.mul_s(10, 20, 8);
+    c.mul_s(2, 13, 8);
+    c.mul_s(9, 16, 9);
+    c.mul_s(8, 16, 8);
+    c.mul_s(20, 20, 19);
+    c.mul_s(13, 13, 19);
+    c.mul_s(16, 16, 19);
+    c.add_s(6, 6, 17);
+    c.add_s(18, 18, 23);
+    c.add_s(21, 21, 24);
+    c.add_s(5, 5, 14);
+    c.add_s(6, 6, 2);
+    c.add_s(3, 3, 13);
+    c.add_s(18, 18, 7);
+    c.add_s(1, 1, 8);
+    c.swc1(6, stack.wrapping_add(0x100));
+    c.add_s(4, 4, 16);
+    c.swc1(3, stack.wrapping_add(0x10c));
+    c.add_s(0, 0, 9);
+    c.swc1(18, stack.wrapping_add(0x118));
+    c.add_s(22, 22, 10);
+    c.swc1(1, stack.wrapping_add(0x104));
+    c.add_s(21, 21, 20);
+    c.swc1(4, stack.wrapping_add(0x110));
+    c.add_s(5, 5, 11);
+    c.swc1(0, stack.wrapping_add(0x11c));
+    c.swc1(22, stack.wrapping_add(0x108));
+    c.swc1(21, stack.wrapping_add(0x114));
+    c.swc1(5, stack.wrapping_add(0x120));
+    roller_inertia_copy_dwords(c, stack.wrapping_add(0xd0), stack.wrapping_add(0x100));
+    roller_inertia_copy_word(c, stack.wrapping_add(0xf0), stack.wrapping_add(0x120));
+    c.lwc1(5, stack.wrapping_add(0xd0));
+    c.lwc1(6, stack.wrapping_add(0x70));
+    c.lwc1(11, stack.wrapping_add(0xdc));
+    c.lwc1(12, stack.wrapping_add(0x74));
+    c.mul_s(0, 5, 6);
+    c.lwc1(19, stack.wrapping_add(0xe8));
+    c.mul_s(2, 11, 12);
+    c.lwc1(20, stack.wrapping_add(0x78));
+    c.mul_s(1, 19, 20);
+    c.add_s(0, 0, 2);
+    c.add_s(0, 0, 1);
+    c.swc1(0, stack.wrapping_add(0x100));
+    c.lwc1(13, stack.wrapping_add(0x7c));
+    c.lwc1(14, stack.wrapping_add(0x80));
+    c.lwc1(3, stack.wrapping_add(0x88));
+    c.mul_s(17, 5, 13);
+    c.lwc1(8, stack.wrapping_add(0x8c));
+    c.mul_s(23, 11, 14);
+    c.lwc1(0, stack.wrapping_add(0xd4));
+    c.mul_s(5, 5, 3);
+    c.lwc1(4, stack.wrapping_add(0xe0));
+    c.mul_s(11, 11, 8);
+    c.lwc1(1, stack.wrapping_add(0xd8));
+    c.mul_s(18, 0, 3);
+    c.lwc1(2, stack.wrapping_add(0xe4));
+    c.mul_s(22, 4, 8);
+    c.mul_s(15, 1, 6);
+    c.lwc1(9, stack.wrapping_add(0x90));
+    c.mul_s(21, 2, 12);
+    c.lwc1(10, stack.wrapping_add(0xf0));
+    c.mul_s(8, 2, 8);
+    c.lwc1(7, stack.wrapping_add(0xec));
+    c.mul_s(12, 4, 12);
+    c.lwc1(16, stack.wrapping_add(0x84));
+    c.mul_s(3, 1, 3);
+    c.lwc1(25, stack.wrapping_add(0x158));
+    c.mul_s(6, 0, 6);
+    c.lwc1(24, stack.wrapping_add(0x150));
+    c.mul_s(2, 2, 14);
+    c.mul_s(4, 4, 14);
+    c.mul_s(1, 1, 13);
+    c.mul_s(0, 0, 13);
+    c.add_s(5, 5, 11);
+    c.add_s(1, 1, 2);
+    c.add_s(0, 0, 4);
+    c.mul_s(11, 10, 9);
+    c.mul_s(2, 19, 9);
+    c.mul_s(4, 10, 20);
+    c.mul_s(9, 7, 9);
+    c.mul_s(20, 7, 20);
+    c.add_s(17, 17, 23);
+    c.add_s(6, 6, 12);
+    c.lwc1(23, stack.wrapping_add(0x148));
+    c.add_s(18, 18, 22);
+    c.add_s(15, 15, 21);
+    c.lwc1(22, stack.wrapping_add(0x140));
+    c.add_s(3, 3, 8);
+    c.lwc1(21, stack.wrapping_add(0x138));
+    c.mul_s(10, 10, 16);
+    c.mul_s(19, 19, 16);
+    c.mul_s(7, 7, 16);
+    c.add_s(6, 6, 20);
+    c.add_s(17, 17, 19);
+    c.lwc1(20, stack.wrapping_add(0x130));
+    c.add_s(5, 5, 2);
+    c.add_s(0, 0, 7);
+    c.swc1(6, stack.wrapping_add(0x104));
+    c.add_s(18, 18, 9);
+    c.swc1(17, stack.wrapping_add(0x10c));
+    c.add_s(15, 15, 4);
+    c.swc1(5, stack.wrapping_add(0x118));
+    c.add_s(1, 1, 10);
+    c.swc1(0, stack.wrapping_add(0x110));
+    c.add_s(3, 3, 11);
+    c.swc1(18, stack.wrapping_add(0x11c));
+    c.swc1(15, stack.wrapping_add(0x108));
+    c.swc1(1, stack.wrapping_add(0x114));
+    c.swc1(3, stack.wrapping_add(0x120));
+    roller_inertia_copy_dwords(c, stack.wrapping_add(0xa0), stack.wrapping_add(0x100));
+    roller_inertia_copy_word(c, stack.wrapping_add(0xc0), stack.wrapping_add(0x120));
+    roller_inertia_copy_dwords(c, obj.wrapping_add(0x80), stack.wrapping_add(0xa0));
+    roller_inertia_copy_word(c, obj.wrapping_add(0xa0), stack.wrapping_add(0xc0));
+    c.g[SP][0] = sx(stack.wrapping_add(0x160));
+    ret(c);
+}
+
+/// Copies 32 bytes as four 8-byte chunks from `src` to `dst` (both 8-aligned),
+/// the way the generated body does it: the ldl/ldr pairs load each chunk into
+/// v0, v1, a1 and a2 (registers 2, 3, 5, 6), then the sdl/sdr pairs store them.
+/// Those registers keep the last chunk loaded.
+pub(crate) fn roller_inertia_copy_dwords(c: &mut Cpu, dst: u32, src: u32) {
+    c.ldl(2, src.wrapping_add(7));
+    c.ldr(2, src);
+    c.ldl(3, src.wrapping_add(15));
+    c.ldr(3, src.wrapping_add(8));
+    c.ldl(5, src.wrapping_add(23));
+    c.ldr(5, src.wrapping_add(16));
+    c.ldl(6, src.wrapping_add(31));
+    c.ldr(6, src.wrapping_add(24));
+    c.sdl(2, dst.wrapping_add(7));
+    c.sdr(2, dst);
+    c.sdl(3, dst.wrapping_add(15));
+    c.sdr(3, dst.wrapping_add(8));
+    c.sdl(5, dst.wrapping_add(23));
+    c.sdr(5, dst.wrapping_add(16));
+    c.sdl(6, dst.wrapping_add(31));
+    c.sdr(6, dst.wrapping_add(24));
+}
+
+/// One 32-bit copy through v0 (`lw` then `sw`), as the generated body does.
+pub(crate) fn roller_inertia_copy_word(c: &mut Cpu, dst: u32, src: u32) {
+    c.g[V0][0] = c.lw(src);
+    c.sw(dst, c.g[V0][0]);
+}
+
+/// A guest address for one of the body's memory operations: absolute, or
+/// relative to the stack pointer after the prologue.
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) enum WoMem {
+    Abs(u32),
+    Sp(u32),
+    Gp(u32),
+}
+
+/// One step of the static-init body, in the generated order. Registers are
+/// the generated body's values: a constant (`Gpr`), or the stack pointer plus
+/// an offset (`GprSp`). Float literals come from the literal pool at
+/// `gp - off` (`Lit`), so the test's pool contents decide the stored bits.
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) enum WoOp {
+    Gpr(usize, u64),
+    GprSp(usize, u32),
+    GprGp(usize, u32),
+    Fpr(usize, u32),
+    Lit(usize, u32),
+    Lwc1(usize, WoMem),
+    Swc1(usize, WoMem),
+    Sw(WoMem, u64),
+    Ldl(usize, WoMem),
+    Ldr(usize, WoMem),
+    Sdl(usize, WoMem),
+    Sdr(usize, WoMem),
+}
+
+pub(crate) fn wo_mem(c: &Cpu, m: WoMem) -> u32 {
+    match m {
+        WoMem::Abs(a) => a,
+        WoMem::Sp(off) => sp(c).wrapping_add(off),
+        WoMem::Gp(off) => (c.g[GP][0] as u32).wrapping_add(off),
+    }
+}
+
+/// Runs the body's ops in order (see `WoOp`).
+pub(crate) fn wo_run(c: &mut Cpu, ops: &[WoOp]) {
+    for &op in ops {
+        match op {
+            WoOp::Gpr(r, v) => c.g[r][0] = v,
+            WoOp::GprSp(r, off) => c.g[r][0] = sx(sp(c).wrapping_add(off)),
+            WoOp::GprGp(r, off) => c.g[r][0] = sx((c.g[GP][0] as u32).wrapping_add(off)),
+            WoOp::Fpr(f, bits) => c.f[f] = bits,
+            WoOp::Lit(f, off) => {
+                let a = (c.g[GP][0] as u32).wrapping_sub(off);
+                c.lwc1(f, a);
+            }
+            WoOp::Lwc1(f, m) => {
+                let a = wo_mem(c, m);
+                c.lwc1(f, a);
+            }
+            WoOp::Swc1(f, m) => {
+                let a = wo_mem(c, m);
+                c.swc1(f, a);
+            }
+            WoOp::Sw(m, v) => {
+                let a = wo_mem(c, m);
+                c.sw(a, v);
+            }
+            WoOp::Ldl(r, m) => {
+                let a = wo_mem(c, m);
+                c.ldl(r, a);
+            }
+            WoOp::Ldr(r, m) => {
+                let a = wo_mem(c, m);
+                c.ldr(r, a);
+            }
+            WoOp::Sdl(r, m) => {
+                let a = wo_mem(c, m);
+                c.sdl(r, a);
+            }
+            WoOp::Sdr(r, m) => {
+                let a = wo_mem(c, m);
+                c.sdr(r, a);
+            }
+        }
+    }
+}
+
+/// The body's straight-line part, from the generated `WorldObjects_StaticInit`
+/// (0x35fe10) after `c.cycles += 545`, up to its call. Generated by
+/// `target/gate/wave233/oc590/gen.py` from `generated/ee/s12`: the sV4 colour
+/// and light vectors at `D_004FF740..D_004FFB10` (four words each, read from
+/// the literal pool or set from constants), the Catmull-Rom basis
+/// `CatmullRom_m`, and the copy of `D_004FF7F0` into `D_004FFB10`.
+pub(crate) const WO_BODY: &[WoOp] = &[
+    WoOp::Lit(8, 0x29c8),
+    WoOp::Lit(9, 0x29c4),
+    WoOp::Gpr(T6, 0x500000),
+    WoOp::Lit(10, 0x29c0),
+    WoOp::Gpr(T4, 0x500000),
+    WoOp::Lit(6, 0x29bc),
+    WoOp::Gpr(V0, 0x4ff770),
+    WoOp::Swc1(8, WoMem::Abs(0x004ff750)), // D_004FF750_v
+    WoOp::Gpr(S0, 0x500000),
+    WoOp::Swc1(9, WoMem::Abs(0x004ff760)), // D_004FF760_v
+    WoOp::Gpr(S1, 0x500000),
+    WoOp::Swc1(10, WoMem::Abs(0x004ff770)), // D_004FF770_v
+    WoOp::Gpr(S2, 0x500000),
+    WoOp::Lit(7, 0x29b8),
+    WoOp::Gpr(A0, 0x4ff7a0),
+    WoOp::Lit(4, 0x29b4),
+    WoOp::Gpr(S4, 0x500000),
+    WoOp::Lit(5, 0x29b0),
+    WoOp::Gpr(S3, 0x500000),
+    WoOp::Swc1(6, WoMem::Abs(0x004ff77c)), // D_004FF770_v+0xc
+    WoOp::Gpr(T2, 0x500000),
+    WoOp::Lit(2, 0x29ac),
+    WoOp::Gpr(A1, 0x4ff740),
+    WoOp::Gpr(AT, 0x3f800000),
+    WoOp::Fpr(0, 0x3f800000),
+    WoOp::Gpr(T0, 0x4ff760),
+    WoOp::Swc1(7, WoMem::Abs(0x004ff780)), // D_004FF780_v
+    WoOp::Gpr(V1, 0x4ff780),
+    WoOp::Swc1(4, WoMem::Abs(0x004ff790)), // D_004FF790_v
+    WoOp::Gpr(A3, 0x4ff790),
+    WoOp::Swc1(5, WoMem::Abs(0x004ff7a0)), // D_004FF7A0_v
+    WoOp::Gpr(A2, 0x4ff7b0),
+    WoOp::Lit(3, 0x29a8),
+    WoOp::Gpr(T3, 0x4ff7c0),
+    WoOp::Lit(1, 0x29a4),
+    WoOp::Gpr(T9, 0x500000),
+    WoOp::Swc1(2, WoMem::Abs(0x004ff7ac)), // D_004FF7A0_v+0xc
+    WoOp::Gpr(T6, 0x500000),
+    WoOp::Gpr(AT, 0x3f000000),
+    WoOp::Fpr(15, 0x3f000000),
+    WoOp::Gpr(T5, 0x4ff7f0),
+    WoOp::Swc1(3, WoMem::Abs(0x004ff7b0)), // D_004FF7B0_v
+    WoOp::Gpr(T1, 0x4ff7d0),
+    WoOp::Swc1(1, WoMem::Abs(0x004ff7c0)), // D_004FF7C0_v
+    WoOp::Gpr(S7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff740)), // D_004FF740_v
+    WoOp::Gpr(T6, 0x4ff800),
+    WoOp::Swc1(15, WoMem::Abs(0x004ff74c)), // D_004FF740_v+0xc
+    WoOp::Gpr(T8, 0x500000),
+    WoOp::Lit(17, 0x29a0),
+    WoOp::Gpr(T4, 0x4ff7e0),
+    WoOp::Lit(18, 0x299c),
+    WoOp::Gpr(S6, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff76c), 0x0), // D_004FF760_v+0xc
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Lit(12, 0x2998),
+    WoOp::Gpr(S2, 0x4ff840),
+    WoOp::Lit(13, 0x2994),
+    WoOp::Gpr(S5, 0x500000),
+    WoOp::Swc1(17, WoMem::Abs(0x004ff774)), // D_004FF770_v+0x4
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Swc1(18, WoMem::Abs(0x004ff778)), // D_004FF770_v+0x8
+    WoOp::Gpr(S0, 0x4ff820),
+    WoOp::Swc1(12, WoMem::Abs(0x004ff784)), // D_004FF780_v+0x4
+    WoOp::Gpr(V0, 0x500000),
+    WoOp::Swc1(13, WoMem::Abs(0x004ff788)), // D_004FF780_v+0x8
+    WoOp::Gpr(T2, 0x4ff8b0),
+    WoOp::Sw(WoMem::Abs(0x004ff78c), 0x0), // D_004FF780_v+0xc
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Lit(14, 0x2990),
+    WoOp::Gpr(V1, 0x4ff890),
+    WoOp::Lit(16, 0x298c),
+    WoOp::Gpr(V0, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff79c), 0x0), // D_004FF790_v+0xc
+    WoOp::Gpr(S3, 0x4ff8c0),
+    WoOp::Swc1(14, WoMem::Abs(0x004ff7a4)), // D_004FF7A0_v+0x4
+    WoOp::Gpr(V0, 0x500000),
+    WoOp::Swc1(16, WoMem::Abs(0x004ff7a8)), // D_004FF7A0_v+0x8
+    WoOp::Gpr(S1, 0x4ff830),
+    WoOp::Lit(11, 0x2988),
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Gpr(S4, 0x4ff8a0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff7bc)),  // D_004FF7B0_v+0xc
+    WoOp::Swc1(11, WoMem::Abs(0x004ff7b4)), // D_004FF7B0_v+0x4
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff744)), // D_004FF740_v+0x4
+    WoOp::Gpr(A0, 0x4ff750),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff748)), // D_004FF740_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ff754)), // D_004FF750_v+0x4
+    WoOp::Swc1(0, WoMem::Abs(0x004ff758)), // D_004FF750_v+0x8
+    WoOp::Sw(WoMem::Abs(0x004ff75c), 0x0), // D_004FF750_v+0xc
+    WoOp::Swc1(0, WoMem::Abs(0x004ff764)), // D_004FF760_v+0x4
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff768)), // D_004FF760_v+0x8
+    WoOp::Gpr(A0, 0x4ff810),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff794)), // D_004FF790_v+0x4
+    WoOp::Gpr(T0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff798)), // D_004FF790_v+0x8
+    WoOp::Gpr(FP, 0x4ff920),
+    WoOp::Lit(19, 0x2984),
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff7b8)), // D_004FF7B0_v+0x8
+    WoOp::Lit(2, 0x2980),
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Swc1(19, WoMem::Abs(0x004ff7c4)), // D_004FF7C0_v+0x4
+    WoOp::Gpr(A1, 0x4ff8e0),
+    WoOp::Lit(1, 0x297c),
+    WoOp::Gpr(A2, 0x4ff8f0),
+    WoOp::Swc1(2, WoMem::Abs(0x004ff7d0)), // D_004FF7D0_v
+    WoOp::Gpr(A3, 0x4ff940),
+    WoOp::Lit(7, 0x2978),
+    WoOp::Gpr(V0, 0x500000),
+    WoOp::Swc1(1, WoMem::Abs(0x004ff7dc)), // D_004FF7D0_v+0xc
+    WoOp::Gpr(T0, 0x4ff9a0),
+    WoOp::Lit(3, 0x2974),
+    WoOp::Gpr(V0, 0x500000),
+    WoOp::Swc1(7, WoMem::Abs(0x004ff80c)), // D_004FF800_v+0xc
+    WoOp::Lit(4, 0x2970),
+    WoOp::Lit(5, 0x296c),
+    WoOp::Swc1(3, WoMem::Abs(0x004ff7c8)), // D_004FF7C0_v+0x8
+    WoOp::Sw(WoMem::Abs(0x004ff7cc), 0x0), // D_004FF7C0_v+0xc
+    WoOp::Swc1(4, WoMem::Abs(0x004ff7d4)), // D_004FF7D0_v+0x4
+    WoOp::Swc1(5, WoMem::Abs(0x004ff7d8)), // D_004FF7D0_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ff7e0)), // D_004FF7E0_v
+    WoOp::Swc1(0, WoMem::Abs(0x004ff7ec)), // D_004FF7E0_v+0xc
+    WoOp::Sw(WoMem::Abs(0x004ff7fc), 0x0), // D_004FF7F0_v+0xc
+    WoOp::Lit(6, 0x2968),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff800)), // D_004FF800_v
+    WoOp::Swc1(6, WoMem::Abs(0x004ff808)), // D_004FF800_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ff810)), // D_004FF810_v
+    WoOp::Swc1(0, WoMem::Abs(0x004ff81c)), // D_004FF810_v+0xc
+    WoOp::Swc1(0, WoMem::Abs(0x004ff820)), // D_004FF820_v
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff82c)), // D_004FF820_v+0xc
+    WoOp::Gpr(T3, 0x4ff9c0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff830)), // D_004FF830_v
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff83c), 0x0), // D_004FF830_v+0xc
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff840)), // D_004FF840_v
+    WoOp::Gpr(T1, 0x4ff9d0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff7e4)), // D_004FF7E0_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff7e8)), // D_004FF7E0_v+0x8
+    WoOp::Gpr(V0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff7f0)), // D_004FF7F0_v
+    WoOp::Sw(WoMem::Abs(0x004ff7f4), 0x0), // D_004FF7F0_v+0x4
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff7f8), 0x0), // D_004FF7F0_v+0x8
+    WoOp::Swc1(7, WoMem::Abs(0x004ff804)), // D_004FF800_v+0x4
+    WoOp::Gpr(T6, 0x500000),
+    WoOp::Lit(2, 0x2964),
+    WoOp::Gpr(T6, 0x4ff810),
+    WoOp::Lit(1, 0x2960),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff814)), // D_004FF810_v+0x4
+    WoOp::Swc1(0, WoMem::Abs(0x004ff818)), // D_004FF810_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ff824)), // D_004FF820_v+0x4
+    WoOp::Gpr(T6, 0x4ffa40),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff828)), // D_004FF820_v+0x8
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff834), 0x0), // D_004FF830_v+0x4
+    WoOp::Gpr(S0, 0x4ffa00),
+    WoOp::Sw(WoMem::Abs(0x004ff838), 0x0), // D_004FF830_v+0x8
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Gpr(S1, 0x4ffa20),
+    WoOp::Sw(WoMem::Abs(0x004ff844), 0x0), // D_004FF840_v+0x4
+    WoOp::Sw(WoMem::Abs(0x004ff848), 0x0), // D_004FF840_v+0x8
+    WoOp::Gpr(V0, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff84c), 0x0), // D_004FF840_v+0xc
+    WoOp::Gpr(T5, 0x4ffa50),
+    WoOp::Gpr(T4, 0x4ffa60),
+    WoOp::Swc1(2, WoMem::Abs(0x004ff89c)), // D_004FF890_v+0xc
+    WoOp::Gpr(V0, 0x4ffac0),
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(1, WoMem::Abs(0x004ff8b0)), // D_004FF8B0_v
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Gpr(S2, 0x4ffa70),
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff850)), // D_004FF850_v
+    WoOp::Gpr(A0, 0x4ff850),
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff85c)), // D_004FF850_v+0xc
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff860)), // D_004FF860_v
+    WoOp::Gpr(A0, 0x4ff860),
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(15, WoMem::Abs(0x004ff86c)), // D_004FF860_v+0xc
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff870)), // D_004FF870_v
+    WoOp::Gpr(A0, 0x4ff870),
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(15, WoMem::Abs(0x004ff87c)), // D_004FF870_v+0xc
+    WoOp::Gpr(A0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff880)), // D_004FF880_v
+    WoOp::Gpr(A0, 0x4ff880),
+    WoOp::Lit(7, 0x295c),
+    WoOp::Swc1(15, WoMem::Abs(0x004ff88c)), // D_004FF880_v+0xc
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Lit(6, 0x2958),
+    WoOp::GprGp(A0, 0x2898),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff890)), // D_004FF890_v
+    WoOp::Swc1(7, WoMem::Abs(0x004ff894)), // D_004FF890_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(6, WoMem::Abs(0x004ff898)), // D_004FF890_v+0x8
+    WoOp::Lit(5, 0x2954),
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8a0)), // D_004FF8A0_v
+    WoOp::Lit(4, 0x2950),
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Lit(3, 0x294c),
+    WoOp::Swc1(5, WoMem::Abs(0x004ff8a8)), // D_004FF8A0_v+0x8
+    WoOp::Sw(WoMem::Abs(0x004ff8ac), 0x0), // D_004FF8A0_v+0xc
+    WoOp::Swc1(4, WoMem::Abs(0x004ff8b4)), // D_004FF8B0_v+0x4
+    WoOp::Swc1(3, WoMem::Abs(0x004ff8b8)), // D_004FF8B0_v+0x8
+    WoOp::Sw(WoMem::Abs(0x004ff8bc), 0x0), // D_004FF8B0_v+0xc
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8c0)), // D_004FF8C0_v
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8cc)), // D_004FF8C0_v+0xc
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8d0)), // D_004FF8D0_v
+    WoOp::Gpr(T7, 0x4ff850),
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff854)), // D_004FF850_v+0x4
+    WoOp::Swc1(0, WoMem::Abs(0x004ff858)), // D_004FF850_v+0x8
+    WoOp::Gpr(V1, 0x4ff860),
+    WoOp::Swc1(15, WoMem::Abs(0x004ff864)), // D_004FF860_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff868)), // D_004FF860_v+0x8
+    WoOp::Gpr(T7, 0x4ff870),
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(15, WoMem::Abs(0x004ff874)), // D_004FF870_v+0x4
+    WoOp::Swc1(0, WoMem::Abs(0x004ff878)),  // D_004FF870_v+0x8
+    WoOp::Gpr(V1, 0x4ff880),
+    WoOp::Swc1(15, WoMem::Abs(0x004ff884)), // D_004FF880_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff888)), // D_004FF880_v+0x8
+    WoOp::Gpr(T7, 0x4ff8d0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8a4)), // D_004FF8A0_v+0x4
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Lit(2, 0x2948),
+    WoOp::Gpr(V1, 0x4ff910),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8c4)), // D_004FF8C0_v+0x4
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8c8)), // D_004FF8C0_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8d4)), // D_004FF8D0_v+0x4
+    WoOp::Lit(1, 0x2944),
+    WoOp::Swc1(2, WoMem::Abs(0x004ff8fc)), // D_004FF8F0_v+0xc
+    WoOp::Lit(3, 0x2940),
+    WoOp::Swc1(1, WoMem::Abs(0x004ff91c)), // D_004FF910_v+0xc
+    WoOp::Swc1(3, WoMem::Abs(0x004ff8d8)), // D_004FF8D0_v+0x8
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff8dc), 0x0), // D_004FF8D0_v+0xc
+    WoOp::Lit(4, 0x293c),
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Lit(5, 0x2938),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8e0)), // D_004FF8E0_v
+    WoOp::Swc1(4, WoMem::Abs(0x004ff8e4)), // D_004FF8E0_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(5, WoMem::Abs(0x004ff8e8)), // D_004FF8E0_v+0x8
+    WoOp::Sw(WoMem::Abs(0x004ff8ec), 0x0), // D_004FF8E0_v+0xc
+    WoOp::Lit(6, 0x2934),
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Lit(7, 0x2930),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff8f0)), // D_004FF8F0_v
+    WoOp::Swc1(6, WoMem::Abs(0x004ff8f4)), // D_004FF8F0_v+0x4
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(7, WoMem::Abs(0x004ff8f8)), // D_004FF8F0_v+0x8
+    WoOp::Gpr(V1, 0x4ff910),
+    WoOp::Lit(8, 0x292c),
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff900)), // D_004FF900_v
+    WoOp::Gpr(A2, 0x4ff900),
+    WoOp::Swc1(8, WoMem::Abs(0x004ff908)), // D_004FF900_v+0x8
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff90c)), // D_004FF900_v+0xc
+    WoOp::Lit(9, 0x2928),
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff910)), // D_004FF910_v
+    WoOp::Swc1(9, WoMem::Abs(0x004ff914)), // D_004FF910_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff920)), // D_004FF920_v
+    WoOp::Gpr(T7, 0x4ff930),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff92c)), // D_004FF920_v+0xc
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff930)), // D_004FF930_v
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff93c)), // D_004FF930_v+0xc
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Lit(10, 0x2924),
+    WoOp::Gpr(A2, 0x4ff900),
+    WoOp::Lit(11, 0x2920),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff940)),  // D_004FF940_v
+    WoOp::Swc1(11, WoMem::Abs(0x004ff948)), // D_004FF940_v+0x8
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(10, WoMem::Abs(0x004ff944)), // D_004FF940_v+0x4
+    WoOp::Gpr(V1, 0x4ff9b0),
+    WoOp::Sw(WoMem::Abs(0x004ff94c), 0x0), // D_004FF940_v+0xc
+    WoOp::Lit(12, 0x291c),
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff950)), // D_004FF950_v
+    WoOp::Gpr(A3, 0x4ff910),
+    WoOp::Swc1(12, WoMem::Abs(0x004ff904)), // D_004FF900_v+0x4
+    WoOp::Swc1(0, WoMem::Abs(0x004ff918)),  // D_004FF910_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ff924)),  // D_004FF920_v+0x4
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff928)), // D_004FF920_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ff934)), // D_004FF930_v+0x4
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff938)), // D_004FF930_v+0x8
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Lit(4, 0x2918),
+    WoOp::Gpr(T7, 0x4ff950),
+    WoOp::Lit(3, 0x2914),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff954)), // D_004FF950_v+0x4
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff958)), // D_004FF950_v+0x8
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff95c)), // D_004FF950_v+0xc
+    WoOp::Gpr(A2, 0x4ff960),
+    WoOp::Swc1(4, WoMem::Abs(0x004ff990)), // D_004FF990_v
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Lit(2, 0x2910),
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Swc1(3, WoMem::Abs(0x004ff9ac)), // D_004FF9A0_v+0xc
+    WoOp::Gpr(T7, 0x4ff970),
+    WoOp::Lit(1, 0x290c),
+    WoOp::Swc1(2, WoMem::Abs(0x004ff9bc)), // D_004FF9B0_v+0xc
+    WoOp::Swc1(1, WoMem::Abs(0x004ff9dc)), // D_004FF9D0_v+0xc
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Lit(5, 0x2908),
+    WoOp::Gpr(V1, 0x4ff980),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff960)), // D_004FF960_v
+    WoOp::Swc1(5, WoMem::Abs(0x004ff964)), // D_004FF960_v+0x4
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff96c), 0x0), // D_004FF960_v+0xc
+    WoOp::Gpr(A1, 0x4ff990),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff970)), // D_004FF970_v
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff97c)), // D_004FF970_v+0xc
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff980)), // D_004FF980_v
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff98c), 0x0), // D_004FF980_v+0xc
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff99c), 0x0), // D_004FF990_v+0xc
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Lit(6, 0x2904),
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Lit(7, 0x2900),
+    WoOp::Gpr(A1, 0x4ff960),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9a0)), // D_004FF9A0_v
+    WoOp::Swc1(6, WoMem::Abs(0x004ff9a4)), // D_004FF9A0_v+0x4
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Swc1(7, WoMem::Abs(0x004ff9a8)), // D_004FF9A0_v+0x8
+    WoOp::Gpr(A2, 0x4ff970),
+    WoOp::Lit(8, 0x28fc),
+    WoOp::Gpr(T0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9b0)), // D_004FF9B0_v
+    WoOp::Gpr(T0, 0x4ff9b0),
+    WoOp::Swc1(8, WoMem::Abs(0x004ff9b4)), // D_004FF9B0_v+0x4
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Lit(9, 0x28f8),
+    WoOp::Gpr(A3, 0x4ff980),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9c0)), // D_004FF9C0_v
+    WoOp::Gpr(T0, 0x500000),
+    WoOp::Swc1(9, WoMem::Abs(0x004ff9c8)), // D_004FF9C0_v+0x8
+    WoOp::Gpr(T0, 0x4ff990),
+    WoOp::Sw(WoMem::Abs(0x004ff9cc), 0x0), // D_004FF9C0_v+0xc
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Lit(10, 0x28f4),
+    WoOp::Gpr(T7, 0x4ff9b0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9d0)),  // D_004FF9D0_v
+    WoOp::Swc1(10, WoMem::Abs(0x004ff9d4)), // D_004FF9D0_v+0x4
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9e0)), // D_004FF9E0_v
+    WoOp::Gpr(FP, 0x4ff9e0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff968)), // D_004FF960_v+0x8
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff974)), // D_004FF970_v+0x4
+    WoOp::Gpr(V1, 0x4ff9f0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff978)), // D_004FF970_v+0x8
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff984)), // D_004FF980_v+0x4
+    WoOp::Gpr(A1, 0x4ffa30),
+    WoOp::Sw(WoMem::Abs(0x004ff988), 0x0), // D_004FF980_v+0x8
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff994), 0x0), // D_004FF990_v+0x4
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ff998), 0x0), // D_004FF990_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9b8)), // D_004FF9B0_v+0x8
+    WoOp::Gpr(T0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9c4)), // D_004FF9C0_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9d8)), // D_004FF9D0_v+0x8
+    WoOp::Gpr(T7, 0x4ffa10),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9e4)), // D_004FF9E0_v+0x4
+    WoOp::Lit(2, 0x28f0),
+    WoOp::Swc1(12, WoMem::Abs(0x004ff9fc)), // D_004FF9F0_v+0xc
+    WoOp::Lit(1, 0x28ec),
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(2, WoMem::Abs(0x004ffa3c)), // D_004FFA30_v+0xc
+    WoOp::Swc1(1, WoMem::Abs(0x004ffa4c)), // D_004FFA40_v+0xc
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9ec)), // D_004FF9E0_v+0xc
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9f0)), // D_004FF9F0_v
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa00)), // D_004FFA00_v
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ffa0c), 0x0), // D_004FFA00_v+0xc
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa10)), // D_004FFA10_v
+    WoOp::Sw(WoMem::Abs(0x004ffa1c), 0x0), // D_004FFA10_v+0xc
+    WoOp::Gpr(T0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa20)), // D_004FFA20_v
+    WoOp::Gpr(T0, 0x4ff9e0),
+    WoOp::Sw(WoMem::Abs(0x004ffa2c), 0x0), // D_004FFA20_v+0xc
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Lit(3, 0x28e8),
+    WoOp::Gpr(T7, 0x4ff9f0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa30)), // D_004FFA30_v
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Swc1(3, WoMem::Abs(0x004ffa34)), // D_004FFA30_v+0x4
+    WoOp::Gpr(FP, 0x4ffa10),
+    WoOp::Lit(4, 0x28e4),
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa40)), // D_004FFA40_v
+    WoOp::Gpr(V1, 0x4ffa30),
+    WoOp::Swc1(4, WoMem::Abs(0x004ffa48)), // D_004FFA40_v+0x8
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Lit(5, 0x28e0),
+    WoOp::Gpr(A1, 0x4ff750),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa50)), // D_004FFA50_v
+    WoOp::Swc1(5, WoMem::Abs(0x004ffa58)), // D_004FFA50_v+0x8
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ffa5c), 0x0), // D_004FFA50_v+0xc
+    WoOp::Gpr(A2, 0x4ffa80),
+    WoOp::Lit(6, 0x28dc),
+    WoOp::Lit(7, 0x28d8),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa60)), // D_004FFA60_v
+    WoOp::Swc1(6, WoMem::Abs(0x004ffa64)), // D_004FFA60_v+0x4
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Swc1(7, WoMem::Abs(0x004ffa68)), // D_004FFA60_v+0x8
+    WoOp::Gpr(A3, 0x4ffa90),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9e8)),  // D_004FF9E0_v+0x8
+    WoOp::Swc1(12, WoMem::Abs(0x004ff9f4)), // D_004FF9F0_v+0x4
+    WoOp::Gpr(T0, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ff9f8)), // D_004FF9F0_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa04)), // D_004FFA00_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ffa08), 0x0), // D_004FFA00_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa14)), // D_004FFA10_v+0x4
+    WoOp::Sw(WoMem::Abs(0x004ffa18), 0x0), // D_004FFA10_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa24)), // D_004FFA20_v+0x4
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ffa28), 0x0), // D_004FFA20_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa38)), // D_004FFA30_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa44)), // D_004FFA40_v+0x4
+    WoOp::Gpr(V1, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa54)), // D_004FFA50_v+0x4
+    WoOp::Gpr(T6, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ffa6c), 0x0), // D_004FFA60_v+0xc
+    WoOp::Gpr(V1, 0x4ffaa0),
+    WoOp::Lit(2, 0x28d4),
+    WoOp::Lwc1(3, WoMem::Abs(0x004ff75c)),
+    WoOp::Lit(1, 0x28d0),
+    WoOp::Gpr(A1, 0x500000),
+    WoOp::Swc1(2, WoMem::Abs(0x004ffa8c)), // D_004FFA80_v+0xc
+    WoOp::Swc1(1, WoMem::Abs(0x004ffa9c)), // D_004FFA90_v+0xc
+    WoOp::Lit(5, 0x28cc),
+    WoOp::Lit(6, 0x28c8),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa70)), // D_004FFA70_v
+    WoOp::Swc1(5, WoMem::Abs(0x004ffa74)), // D_004FFA70_v+0x4
+    WoOp::Gpr(T0, 0x500000),
+    WoOp::Swc1(6, WoMem::Abs(0x004ffa78)), // D_004FFA70_v+0x8
+    WoOp::Sw(WoMem::Abs(0x004ffa7c), 0x0), // D_004FFA70_v+0xc
+    WoOp::Lit(7, 0x28c4),
+    WoOp::Lit(8, 0x28c0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa80)), // D_004FFA80_v
+    WoOp::Swc1(7, WoMem::Abs(0x004ffa84)), // D_004FFA80_v+0x4
+    WoOp::Gpr(T6, 0x500000),
+    WoOp::Swc1(8, WoMem::Abs(0x004ffa88)), // D_004FFA80_v+0x8
+    WoOp::Gpr(T6, 0x4ffb00),
+    WoOp::Lit(9, 0x28bc),
+    WoOp::Gpr(A2, 0x500000),
+    WoOp::Lit(10, 0x28b8),
+    WoOp::Gpr(A2, 0x4ffab0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffa90)), // D_004FFA90_v
+    WoOp::Swc1(9, WoMem::Abs(0x004ffa94)), // D_004FFA90_v+0x4
+    WoOp::Gpr(T7, 0x500000),
+    WoOp::Swc1(10, WoMem::Abs(0x004ffa98)), // D_004FFA90_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ffaa0)),  // D_004FFAA0_v
+    WoOp::Gpr(A3, 0x500000),
+    WoOp::Sw(WoMem::Abs(0x004ffaac), 0x0), // D_004FFAA0_v+0xc
+    WoOp::Gpr(FP, 0x500000),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffab0)), // D_004FFAB0_v
+    WoOp::Gpr(AT, 0xffffffffbf000000),
+    WoOp::Fpr(4, 0xbf000000),
+    WoOp::Sw(WoMem::Abs(0x004ffabc), 0x0), // D_004FFAB0_v+0xc
+    WoOp::Gpr(AT, 0x3fc00000),
+    WoOp::Fpr(11, 0x3fc00000),
+    WoOp::Gpr(AT, 0xffffffffbfc00000),
+    WoOp::Fpr(12, 0xbfc00000),
+    WoOp::Gpr(AT, 0xffffffffc0200000),
+    WoOp::Fpr(13, 0xc0200000),
+    WoOp::Gpr(AT, 0x40000000),
+    WoOp::Fpr(14, 0x40000000),
+    WoOp::Swc1(4, WoMem::Abs(0x004ffac0)),
+    WoOp::Swc1(11, WoMem::Abs(0x004ffad0)),
+    WoOp::Swc1(12, WoMem::Abs(0x004ffae0)),
+    WoOp::Swc1(13, WoMem::Abs(0x004ffad4)),
+    WoOp::Swc1(14, WoMem::Abs(0x004ffae4)),
+    WoOp::Swc1(4, WoMem::Abs(0x004ffac8)),
+    WoOp::Sw(WoMem::Abs(0x004ffaa4), 0x0), // D_004FFAA0_v+0x4
+    WoOp::Swc1(0, WoMem::Abs(0x004ffaa8)), // D_004FFAA0_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ffab4)), // D_004FFAB0_v+0x4
+    WoOp::Sw(WoMem::Abs(0x004ffab8), 0x0), // D_004FFAB0_v+0x8
+    WoOp::Swc1(15, WoMem::Abs(0x004ffaf0)),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffac4)),
+    WoOp::Swc1(4, WoMem::Abs(0x004ffaf4)),
+    WoOp::Swc1(3, WoMem::Abs(0x004ffad8)),
+    WoOp::Swc1(15, WoMem::Abs(0x004ffae8)),
+    WoOp::Swc1(3, WoMem::Abs(0x004ffaf8)),
+    WoOp::Swc1(3, WoMem::Abs(0x004ffacc)),
+    WoOp::Swc1(3, WoMem::Abs(0x004ffafc)),
+    WoOp::Lit(1, 0x28b4),
+    WoOp::Lit(2, 0x28b0),
+    WoOp::Swc1(0, WoMem::Abs(0x004ffb00)),  // D_004FFB00_v
+    WoOp::Swc1(15, WoMem::Abs(0x004ffb0c)), // D_004FFB00_v+0xc
+    WoOp::Swc1(1, WoMem::Abs(0x004ffb04)),  // D_004FFB00_v+0x4
+    WoOp::Swc1(2, WoMem::Abs(0x004ffb08)),  // D_004FFB00_v+0x8
+    WoOp::Swc1(0, WoMem::Abs(0x004ffadc)),
+    WoOp::Swc1(3, WoMem::Abs(0x004ffaec)),
+    WoOp::Swc1(1, WoMem::Sp(0x0)),
+    WoOp::Swc1(2, WoMem::Sp(0x4)),
+    WoOp::Swc1(15, WoMem::Sp(0x8)),
+    WoOp::Gpr(A2, 0x4ff7f0),
+    WoOp::Gpr(A1, 0x4ffb10),
+    WoOp::Ldl(2, WoMem::Abs(0x004ff7f7)),
+    WoOp::Ldr(2, WoMem::Abs(0x004ff7f0)),
+    WoOp::Ldl(3, WoMem::Abs(0x004ff7ff)),
+    WoOp::Ldr(3, WoMem::Abs(0x004ff7f8)),
+    WoOp::Sdl(2, WoMem::Abs(0x004ffb17)),
+    WoOp::Sdr(2, WoMem::Abs(0x004ffb10)),
+    WoOp::Sdl(3, WoMem::Abs(0x004ffb1f)),
+    WoOp::Sdr(3, WoMem::Abs(0x004ffb18)),
+];
+
+/// `void WorldObjects_StaticInit(int initialize, int priority)` (0x35fe10).
+/// Does its work only for `priority == 0xffff` and a non-zero `initialize`:
+/// fills the world-object constant table (`WO_BODY`), then runs the bucket
+/// manager's constructor (0x3549d0) and restores the saved registers.
+pub fn world_objects_static_init(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        c.cycles += 13;
+        c.g[SP][0] = sx(sp(c).wrapping_sub(0xb0));
+        c.g[V0][0] = 0xffff;
+        c.sq(16, sp(c).wrapping_add(0xa0));
+        c.sq(17, sp(c).wrapping_add(0x90));
+        c.sq(18, sp(c).wrapping_add(0x80));
+        c.sq(19, sp(c).wrapping_add(0x70));
+        c.sq(20, sp(c).wrapping_add(0x60));
+        c.sq(21, sp(c).wrapping_add(0x50));
+        c.sq(22, sp(c).wrapping_add(0x40));
+        c.sq(23, sp(c).wrapping_add(0x30));
+        c.sq(30, sp(c).wrapping_add(0x20));
+        let run = c.g[A1][0] == c.g[V0][0];
+        c.sd(sp(c).wrapping_add(0x10), c.g[RA][0]);
+        if run {
+            c.cycles += 2;
+            let zero = c.g[A0][0] == 0;
+            c.g[T5][0] = 0x500000;
+            if !zero {
+                c.cycles += 545;
+                wo_run(c, WO_BODY);
+                call_ptr(c, 0x0035_49d0, 0x0036_06d0)?;
+            }
+        }
+        c.cycles += 12;
+        c.lq(16, sp(c).wrapping_add(0xa0));
+        c.lq(17, sp(c).wrapping_add(0x90));
+        c.lq(18, sp(c).wrapping_add(0x80));
+        c.lq(19, sp(c).wrapping_add(0x70));
+        c.lq(20, sp(c).wrapping_add(0x60));
+        c.lq(21, sp(c).wrapping_add(0x50));
+        c.lq(22, sp(c).wrapping_add(0x40));
+        c.lq(23, sp(c).wrapping_add(0x30));
+        c.lq(30, sp(c).wrapping_add(0x20));
+        c.g[RA][0] = c.ld(sp(c).wrapping_add(0x10));
+        c.g[SP][0] = sx(sp(c).wrapping_add(0xb0));
+        abi::ret(c);
+        Ok(())
+    });
+}
+
+/// `void cRigidBody_stepMotion(RigidBody* body, Vec4* force, Vec4* torque, float dt)`
+/// (0x35d340): one explicit step of a rigid body. Fields: `+0x00` position,
+/// `+0x10` orientation quaternion, `+0x20` linear momentum, `+0x30` angular
+/// momentum, `+0x80` velocity, `+0x90` angular velocity. Position moves by
+/// `V*dt`, the quaternion by its derivative (renormalised), the momenta by
+/// `force*dt` and `torque*dt`. The VU0 sequences are issued as the original.
+pub fn roller_modifier_integrate(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 87;
+        let body = r32(c, A0);
+        let force = r32(c, A1);
+        let torque = r32(c, A2);
+        let frame = Frame::open(c, 0x30);
+        let s = sp(c);
+        c.g[V1][0] = 0x3f00_0000; // 0.5 in the VU broadcast lanes
+                                  // step = V * dt, position += step (copied through the stack).
+        c.mfc1(2, 12);
+        c.lqc2(4, body + 0x80);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s + 0x10);
+        c.lq(2, s + 0x10);
+        c.sq(2, s);
+        c.lqc2(3, body);
+        c.lqc2(4, s);
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, body);
+        // Quaternion derivative from Q and W, scaled by dt, added to Q.
+        c.qmtc2(3, 1);
+        c.lqc2(4, body + 0x10);
+        c.lqc2(5, body + 0x90);
+        c.vu0().suba(0b0001, 0, Src::Vec(0));
+        c.vu0().msub(0b0001, 2, 0, Src::Bc(1, X));
+        c.vu0().mul(0b1110, 7, 4, Src::Vec(5));
+        c.vu0().mul(0b1110, 3, 5, Src::Bc(4, W));
+        c.vu0().opmula(5, 4);
+        c.vu0().opmsub(6, 4, 5);
+        c.vu0().mula(0b0001, 2, Src::Bc(7, X));
+        c.vu0().madda(0b0001, 2, Src::Bc(7, Y));
+        c.vu0().madd(0b0001, 8, 2, Src::Bc(7, Z));
+        c.vu0().mula(0b1110, 3, Src::Bc(1, X));
+        c.vu0().madd(0b1110, 8, 6, Src::Bc(1, X));
+        let dq = frame.at(c, 0x20);
+        c.sqc2(8, dq);
+        c.lq(2, dq);
+        c.sq(2, s + 0x10);
+        c.mfc1(3, 12);
+        c.lqc2(4, s + 0x10);
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, dq);
+        c.lq(2, dq);
+        c.lwc1(1, body + 0x10);
+        c.sq(2, s);
+        c.lwc1(4, s);
+        c.lwc1(5, s + 0x4);
+        c.lwc1(6, s + 0x8);
+        c.add_s(1, 1, 4);
+        c.lwc1(2, body + 0x14);
+        c.lwc1(3, body + 0x18);
+        c.lwc1(4, s + 0xc);
+        c.add_s(2, 2, 5);
+        c.lwc1(0, body + 0x1c);
+        c.add_s(3, 3, 6);
+        c.swc1(1, body + 0x10);
+        c.add_s(0, 0, 4);
+        c.swc1(2, body + 0x14);
+        c.swc1(3, body + 0x18);
+        c.swc1(0, body + 0x1c);
+        // Renormalise Q (rsqrt of its squared length).
+        c.lqc2(3, body + 0x10);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().rsqrt(0, 3, 4, 0);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 3, Src::Q);
+        c.sqc2(5, body + 0x10);
+        // Linear momentum += force * dt.
+        c.mfc1(3, 12);
+        c.lqc2(4, force);
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s + 0x10);
+        c.lq(2, s + 0x10);
+        c.sq(2, s);
+        c.lqc2(3, body + 0x20);
+        c.lqc2(4, s);
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, body + 0x20);
+        // Angular momentum += torque * dt.
+        c.mfc1(3, 12);
+        c.lqc2(4, torque);
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s + 0x10);
+        c.lq(2, s + 0x10);
+        c.sq(2, s);
+        c.lqc2(3, body + 0x30);
+        c.lqc2(4, s);
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, body + 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RollerModifier_ApplyImpulse(RollerModifier* self, Vec4* arm, Vec4* impulse)`
+/// (0x35d908). Adds the impulse to the linear momentum at `+0x20` and `arm x
+/// impulse` to the angular momentum at `+0x30`, then refreshes the derived
+/// state: `+0x80` = momentum * invMass (`+0x40`), `+0x90..0x9c` = the
+/// angular velocity from `+0x30` through the inverse inertia (`+0x50..+0x70`),
+/// `+0x9c` = copy of `+0x3c`.
+pub fn roller_modifier_apply_impulse(c: &mut Cpu) {
+    c.cycles += 62;
+    let body = r32(c, A0);
+    let arm = r32(c, A1);
+    let imp = r32(c, A2);
+    c.lqc2(3, body + 0x20);
+    c.lqc2(4, imp);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, body + 0x20);
+    let frame = Frame::open(c, 0x20);
+    let s = sp(c);
+    // torque = arm x impulse, stored at the scratch slot +0x10.
+    c.lqc2(4, arm);
+    c.lqc2(5, imp);
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+    c.sqc2(6, s + 0x10);
+    c.lq(2, s + 0x10);
+    c.sq(2, s);
+    c.lqc2(3, body + 0x30);
+    c.lqc2(4, s);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, body + 0x30);
+    // +0x80 = momentum * invMass.
+    c.lwc1(0, body + 0x40);
+    c.mfc1(2, 0);
+    c.lqc2(4, body + 0x20);
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s + 0x10);
+    // Angular velocity from the inverse inertia tensor and L (+0x30).
+    c.lwc1(3, body + 0x30);
+    c.lwc1(5, body + 0x34);
+    c.lwc1(2, body + 0x50);
+    c.lwc1(9, body + 0x5c);
+    c.lwc1(0, body + 0x54);
+    c.mul_s(2, 2, 3);
+    c.lwc1(7, body + 0x60);
+    c.mul_s(9, 9, 5);
+    c.lwc1(8, body + 0x64);
+    c.mul_s(0, 0, 3);
+    c.lwc1(1, body + 0x58);
+    c.mul_s(7, 7, 5);
+    c.lwc1(6, body + 0x38);
+    c.mul_s(8, 8, 5);
+    c.lwc1(4, body + 0x68);
+    c.mul_s(1, 1, 3);
+    c.lwc1(5, body + 0x6c);
+    c.add_s(2, 2, 9);
+    c.lwc1(3, body + 0x70);
+    c.mul_s(4, 4, 6);
+    c.add_s(0, 0, 7);
+    c.lq(2, s + 0x10);
+    c.mul_s(5, 5, 6);
+    c.add_s(1, 1, 8);
+    c.sq(2, body + 0x80);
+    c.mul_s(3, 3, 6);
+    c.add_s(2, 2, 4);
+    c.add_s(0, 0, 5);
+    c.add_s(1, 1, 3);
+    c.swc1(2, s + 0x10);
+    c.swc1(0, s + 0x14);
+    c.swc1(1, s + 0x18);
+    c.lwc1(0, body + 0x3c);
+    c.swc1(0, s + 0x1c);
+    c.lq(2, s + 0x10);
+    c.sq(2, body + 0x90);
+    c.sq(2, s);
+    frame.close(c);
+    ret(c);
+}
+
+/// `void cRigidBody_rigidImpact(RigidBody* body, Vec4* point, Vec4* n, float
+/// restitution, float mu)` (0x35d4a0): resolve one contact. Friction first
+/// (only when `mu != 0` and the tangential speed exceeds 0.001), then the
+/// normal impulse with `(restitution + 1)`. Each impulse is applied through
+/// `RollerModifier_ApplyImpulse`. A contact that still separates after the
+/// friction impulse returns early.
+pub fn roller_modifier_resolve_contact(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 51;
+        let frame = Frame::open(c, 0x100);
+        let s = sp(c);
+        c.mov_s(10, 13); // f10 = mu
+        c.sq(16, s + 0xe0);
+        c.sq(18, s + 0xc0);
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(17, s + 0xd0);
+        c.g[S2][0] = c.g[A1][0];
+        c.swc1(21, s + 0xf8);
+        c.g[S1][0] = c.g[A2][0];
+        c.swc1(20, s + 0xf0);
+        c.sd(s + 0xb0, c.g[RA][0]);
+        c.mov_s(20, 12); // f20 = restitution
+        let body = r32(c, S0);
+        let point = r32(c, S2);
+        let normal = r32(c, S1);
+        let gp = r32(c, GP);
+
+        let returned_early = 'friction: {
+            // arm = point - position (stored at s); dir = normal * normalVel
+            c.lqc2(3, point);
+            c.lqc2(4, body);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0x10);
+            c.mtc1(0, 21); // f21 = 0.0
+            c.lq(2, s + 0x10);
+            c.c_eq_s(10, 21); // mu == 0
+            c.sq(2, s);
+            c.lqc2(3, point);
+            c.lqc2(4, body);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0x40);
+            c.lq(2, s + 0x40);
+            c.sq(2, s + 0x30);
+            c.lqc2(4, body + 0x90);
+            c.lqc2(5, s + 0x30);
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, s + 0x40);
+            c.lq(2, s + 0x40);
+            c.sq(2, s + 0x20);
+            c.lqc2(3, body + 0x80);
+            c.lqc2(4, s + 0x20);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0x40);
+            c.lq(2, s + 0x40);
+            c.sq(2, s + 0x10);
+            c.lqc2(3, s + 0x10);
+            c.lqc2(5, normal);
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(3, 4);
+            c.mtc1(3, 12); // f12 = normalVel
+            if c.fcc() {
+                // mu == 0: no friction.
+                break 'friction false;
+            }
+            c.cycles += 27;
+            // tangent = arm - normal * normalVel (the scaled normal lands in s+0x40)
+            c.mfc1(2, 12);
+            c.lqc2(4, normal);
+            c.qmtc2(2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, s + 0x40);
+            c.lwc1(0, gp.wrapping_sub(0x2a00)); // 0.001
+            c.lq(2, s + 0x40);
+            c.sq(2, s + 0x30);
+            c.lqc2(3, s + 0x10);
+            c.lqc2(4, s + 0x30);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0x40);
+            c.lq(2, s + 0x40);
+            c.sq(2, s + 0x20);
+            c.lqc2(3, s + 0x20);
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().sqrt(4, 0);
+            c.vu0().waitq();
+            c.cfc2(3, 22);
+            c.mtc1(3, 13); // f13 = tangential speed
+            c.c_lt_s(0, 13); // 0.001 < speed
+            if !c.fcc() {
+                break 'friction false;
+            }
+            c.cycles += 117;
+            // dir = tangent / speed; j = -mu * speed / (invMass + ...)
+            c.mfc1(2, 13);
+            c.qmtc2(2, 3);
+            c.vu0().div(0, 3, 3, 0);
+            c.lqc2(4, s + 0x20);
+            c.vu0().waitq();
+            c.vu0().mul(0b1111, 4, 4, Src::Q);
+            c.sqc2(4, s + 0x40);
+            c.neg_s(10, 10);
+            c.lq(2, s + 0x40);
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A2][0] = sx(s.wrapping_add(0x40));
+            c.sq(2, s + 0x30);
+            c.mul_s(10, 10, 13);
+            c.lqc2(4, s);
+            c.lqc2(5, s + 0x30);
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, s + 0x70);
+            c.lq(2, s + 0x70);
+            c.lwc1(4, body + 0x50);
+            c.sq(2, s + 0x60);
+            c.lwc1(9, body + 0x5c);
+            c.lwc1(2, body + 0x54);
+            c.lwc1(8, body + 0x60);
+            c.lwc1(0, body + 0x58);
+            c.lwc1(3, body + 0x64);
+            c.lwc1(1, s + 0x60);
+            c.lwc1(5, s + 0x64);
+            c.mul_s(4, 4, 1);
+            c.lwc1(7, body + 0x68);
+            c.mul_s(8, 8, 5);
+            c.lwc1(6, s + 0x68);
+            c.mul_s(9, 9, 5);
+            c.mul_s(2, 2, 1);
+            c.mul_s(0, 0, 1);
+            c.mul_s(3, 3, 5);
+            c.lwc1(1, body + 0x70);
+            c.lwc1(5, body + 0x6c);
+            c.add_s(2, 2, 8);
+            c.mul_s(1, 1, 6);
+            c.lwc1(8, s + 0x6c);
+            c.add_s(4, 4, 9);
+            c.add_s(0, 0, 3);
+            c.swc1(8, s + 0x7c);
+            c.mul_s(7, 7, 6);
+            c.mul_s(5, 5, 6);
+            c.add_s(0, 0, 1);
+            c.add_s(4, 4, 7);
+            c.add_s(2, 2, 5);
+            c.swc1(0, s + 0x78);
+            c.swc1(4, s + 0x70);
+            c.swc1(2, s + 0x74);
+            c.lq(2, s + 0x70);
+            c.sq(2, s + 0x50);
+            c.lqc2(4, s + 0x50);
+            c.lqc2(5, s);
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, s + 0x70);
+            c.lq(2, s + 0x70);
+            c.sq(2, s + 0x40);
+            c.lwc1(0, body + 0x40);
+            c.lqc2(3, s + 0x30);
+            c.lqc2(5, s + 0x40);
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(2, 4);
+            c.mtc1(2, 1);
+            c.add_s(0, 0, 1);
+            c.div_s(10, 10, 0); // j
+            c.mfc1(3, 10);
+            c.lqc2(4, s + 0x30);
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, s + 0x50);
+            c.lq(2, s + 0x50);
+            c.sq(2, s + 0x40);
+            call_ptr(c, 0x0035_d908, 0x0035_d724)?; // ApplyImpulse(body, arm, friction impulse)
+                                                    // Relative velocity along the normal after the friction impulse.
+            c.lqc2(3, point);
+            c.lqc2(4, body);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0xa0);
+            c.lq(2, s + 0xa0);
+            c.sq(2, s + 0x90);
+            c.lqc2(4, body + 0x90);
+            c.lqc2(5, s + 0x90);
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, s + 0xa0);
+            c.lq(2, s + 0xa0);
+            c.sq(2, s + 0x80);
+            c.lqc2(3, body + 0x80);
+            c.lqc2(4, s + 0x80);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0xa0);
+            c.lq(2, s + 0xa0);
+            c.sq(2, s + 0x10);
+            c.sq(2, s + 0x50);
+            c.lqc2(3, s + 0x10);
+            c.lqc2(5, normal);
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(3, 4);
+            c.mtc1(3, 12);
+            c.c_lt_s(21, 12); // 0 < normalVel: separating, stop here
+            c.fcc()
+        };
+
+        if !returned_early {
+            c.cycles += 79;
+            c.lqc2(4, s);
+            c.lqc2(5, normal);
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, s + 0x50);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 9);
+            c.lq(2, s + 0x50);
+            c.g[A0][0] = c.g[S0][0];
+            c.lwc1(5, body + 0x50);
+            c.add_s(9, 20, 9); // 1 + restitution
+            c.sq(2, s + 0x40);
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A2][0] = sx(s.wrapping_add(0x20));
+            c.lwc1(10, body + 0x5c);
+            c.neg_s(9, 9);
+            c.lwc1(2, body + 0x54);
+            c.lwc1(8, body + 0x60);
+            c.lwc1(0, body + 0x58);
+            c.mul_s(9, 9, 12);
+            c.lwc1(3, body + 0x64);
+            c.lwc1(1, s + 0x40);
+            c.lwc1(4, s + 0x44);
+            c.mul_s(5, 5, 1);
+            c.lwc1(7, body + 0x68);
+            c.mul_s(8, 8, 4);
+            c.lwc1(6, s + 0x48);
+            c.mul_s(10, 10, 4);
+            c.mul_s(2, 2, 1);
+            c.mul_s(0, 0, 1);
+            c.mul_s(3, 3, 4);
+            c.lwc1(1, body + 0x70);
+            c.lwc1(4, body + 0x6c);
+            c.add_s(2, 2, 8);
+            c.mul_s(1, 1, 6);
+            c.lwc1(8, s + 0x4c);
+            c.add_s(5, 5, 10);
+            c.add_s(0, 0, 3);
+            c.swc1(8, s + 0x5c);
+            c.mul_s(7, 7, 6);
+            c.mul_s(4, 4, 6);
+            c.add_s(0, 0, 1);
+            c.add_s(5, 5, 7);
+            c.add_s(2, 2, 4);
+            c.swc1(0, s + 0x58);
+            c.swc1(5, s + 0x50);
+            c.swc1(2, s + 0x54);
+            c.lq(2, s + 0x50);
+            c.sq(2, s + 0x30);
+            c.lqc2(4, s + 0x30);
+            c.lqc2(5, s);
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, s + 0x50);
+            c.lq(2, s + 0x50);
+            c.lwc1(0, body + 0x40);
+            c.sq(2, s + 0x20);
+            c.lqc2(3, normal);
+            c.lqc2(5, s + 0x20);
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(3, 4);
+            c.mtc1(3, 1);
+            c.add_s(0, 0, 1);
+            c.div_s(9, 9, 0); // j
+            c.mfc1(3, 9);
+            c.lqc2(4, normal);
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, s + 0x30);
+            c.lq(2, s + 0x30);
+            c.sq(2, s + 0x20);
+            call_ptr(c, 0x0035_d908, 0x0035_d8e4)?; // ApplyImpulse(body, arm, normal impulse)
+        }
+        c.lq(16, s + 0xe0);
+        c.cycles += 7;
+        c.lq(17, s + 0xd0);
+        c.lq(18, s + 0xc0);
+        c.g[RA][0] = c.ld(s + 0xb0);
+        c.lwc1(21, s + 0xf8);
+        c.lwc1(20, s + 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RollerModifier_InitBody(RollerModifier* self, Vec4* a1)` (0x35dde8):
+/// sets up the body's derived terms: a clamped factor `min(100 + gp_const /
+/// self->+0x8, 600)` (f3), the inverse-inertia rows from `a1`'s vectors
+/// (`+0x10`, `+0x20`, `+0x30`), then `RollerModifier_SetAngularMomentum` and
+/// the two dot-product rows that fill `+0x4` and `+0x50..+0x70`.
+pub fn roller_modifier_init_body(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x90);
+        let s = sp(c);
+        let gp = r32(c, GP);
+        c.lwc1(0, gp.wrapping_sub(0x29f0));
+        c.sq(16, s + 0x80);
+        c.g[A3][0] = c.g[A1][0];
+        c.sd(s + 0x70, c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        let body = r32(c, S0);
+        let a1 = r32(c, A3);
+        // f3 = clamp(f0 / body[+8] + 100, <= 600)
+        c.g[AT][0] = 0x42c8_0000; // 100.0
+        c.mtc1(1, 2);
+        c.lwc1(1, body + 0x8);
+        c.div_s(0, 0, 1);
+        c.g[AT][0] = 0x4416_0000; // 600.0
+        c.mtc1(1, 1);
+        c.add_s(3, 0, 2);
+        c.c_lt_s(1, 3);
+        c.sw(body + 0x28, 0);
+        if c.fcc() {
+            c.cycles += 1;
+            c.mov_s(3, 1);
+        }
+        c.cycles += 79;
+        let v1 = body + 0x30;
+        c.lwc1(0, a1 + 0x30);
+        c.g[V1][0] = sx(v1);
+        c.mfc1(2, 0);
+        c.lqc2(4, a1 + 0x10);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s + 0x30);
+        c.g[AT][0] = 0x4000_0000; // 2.0
+        c.mtc1(1, 1);
+        c.lq(2, s + 0x30);
+        c.g[A0][0] = c.g[V1][0];
+        c.g[AT][0] = 0x4120_0000; // 10.0
+        c.mtc1(1, 2);
+        c.g[A1][0] = c.g[SP][0];
+        c.sq(2, s + 0x20);
+        c.mfc1(6, 1);
+        c.qmtc2(6, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, s + 0x20);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 4, 4, Src::Q);
+        c.sqc2(4, s + 0x30);
+        c.lq(2, s + 0x30);
+        c.swc1(3, s + 0x38);
+        c.sq(2, s + 0x10);
+        c.sw(s + 0x30, 0);
+        c.sw(s + 0x34, 0);
+        c.sw(s + 0x3c, 0);
+        c.lqc2(3, s + 0x10);
+        c.lqc2(4, s + 0x30);
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, s + 0x40);
+        c.lq(2, s + 0x40);
+        c.sq(2, s);
+        c.lwc1(0, v1 + 0x40);
+        c.mfc1(2, 0);
+        c.qmtc2(2, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, s);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 4, 4, Src::Q);
+        c.sqc2(4, s + 0x60);
+        c.lq(3, s + 0x60);
+        c.lq(2, s);
+        c.sq(3, body + 0x50);
+        c.sq(2, body + 0xb0);
+        c.sq(3, s + 0x50);
+        c.mfc1(6, 2);
+        c.lqc2(4, a1 + 0x20);
+        c.qmtc2(6, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s + 0x10);
+        c.lq(2, s + 0x10);
+        c.sq(2, s);
+        // SetAngularMomentum(body + 0x30, sp, 10.0)
+        call_ptr(c, 0x0035_cff0, 0x0035_df0c)?;
+        c.lqc2(3, body + 0xb0);
+        c.lqc2(5, body + 0x50);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.qmfc2(2, 4);
+        c.mtc1(2, 0);
+        c.lqc2(3, body + 0xc0);
+        c.lqc2(5, body + 0x60);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.qmfc2(3, 4);
+        c.mtc1(3, 1);
+        c.add_s(0, 0, 1);
+        c.g[RA][0] = c.ld(s + 0x70);
+        c.swc1(0, body + 0x4);
+        c.lq(16, s + 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void DeadNode_v01(DeadNode* self)` (0x360a28): install the DeadNode vtable
+/// (0x491b00) at `+0xc`, then run the base destructor 0x34fbf0 on `self`.
+pub fn dead_node_v01(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 0x0049_1b00;
+        c.g[V1][0] = c.g[A0][0];
+        let obj = r32(c, V1);
+        c.sw(obj.wrapping_add(0xc), c.g[V0][0]);
+        call_ptr(c, 0x0034_fbf0, 0x0036_0a44)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Hide_dtor(Hide* self)` (0x360a70): as `DeadNode_v01`, with the
+/// vtable 0x491800 and the base destructor 0x34fbf0.
+pub fn hide_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 0x0049_1800;
+        c.g[V1][0] = c.g[A0][0];
+        let obj = r32(c, V1);
+        c.sw(obj.wrapping_add(0xc), c.g[V0][0]);
+        call_ptr(c, 0x0034_fbf0, 0x0036_0a8c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void DynamicParticleModifier_v04(DynamicParticleModifier* self)`
+/// (0x360c78): the deleting-destructor step, `DynamicEmitter_dtor(self)`.
+pub fn dynamic_particle_modifier_v04(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x0037_0c08, 0x0036_0c88)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ModObj_CallTransformV16(ModObj* self)` (0x360de8): when the modifier
+/// chain `self->+0x1c -> *p -> *q` is set, call the vtable entry `+0x84` of
+/// `q` with `q + sext16(vtable[+0x80])`. Returns the callee's result, else 0.
+pub fn mod_obj_call_transform_v16(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let owner = r32(c, A0);
+        c.g[V1][0] = Addr(owner.wrapping_add(0x1c)).lw(c);
+        c.g[V0][0] = 0;
+        if c.g[V1][0] == 0 {
+            c.cycles += 1;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 3;
+            let p = r32(c, V1);
+            c.g[A1][0] = Addr(p).lw(c);
+            let q_null = c.g[A1][0] == 0;
+            frame.restore_ra(c, 0);
+            if !q_null {
+                c.cycles += 7;
+                let q = r32(c, A1);
+                c.g[V1][0] = Addr(q).lw(c);
+                let vt = r32(c, V1);
+                c.g[A0][0] = Addr(vt.wrapping_add(0x80)).lh(c);
+                c.g[V0][0] = Addr(vt.wrapping_add(0x84)).lw(c);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(q.wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0036_0e1c)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float* ModObj_GetUVScrollMatrix(ModObj* self)` (0x360ed0): when
+/// `self->+0x1c` and its `+0x4` are set and `*(+0x4)` is non-zero, forward to
+/// `UVScrollModifier_GetMatrix` on `self->+0x1c->+0x4`. Otherwise returns 0.
+pub fn mod_obj_get_uv_scroll_matrix(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let owner = r32(c, A0);
+        c.g[A0][0] = Addr(owner.wrapping_add(0x1c)).lw(c);
+        c.g[V0][0] = 0;
+        let mut positive = 0u64;
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            let obj = r32(c, A0);
+            c.g[V0][0] = Addr(obj.wrapping_add(0x4)).lw(c);
+            positive = (0u64 < c.g[V0][0]) as u64;
+        }
+        c.cycles += 2;
+        let t = positive == 0;
+        c.g[V0][0] = 0;
+        if t {
+            c.cycles += 1;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 3;
+            let obj = r32(c, A0);
+            c.g[A0][0] = Addr(obj.wrapping_add(0x4)).lw(c);
+            let scroll_null = c.g[A0][0] == 0;
+            frame.restore_ra(c, 0);
+            if !scroll_null {
+                c.cycles += 4;
+                call_ptr(c, 0x0035_fc20, 0x0036_0f08)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Shared shape of the `ModObj_Free*` helpers: when `self->+0x1c` is set, run
+/// its destructor `destructor` (returning to `ret`) on that child; otherwise
+/// only the frame is torn down.
+pub(crate) fn free_child_at_1c(c: &mut Cpu, destructor: u32, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let owner = r32(c, A0);
+        c.g[A0][0] = Addr(owner.wrapping_add(0x1c)).lw(c);
+        frame.restore_ra(c, 0);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, destructor, ret)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ModObj_FreeTransformModifier(ModObj* self)` (0x360f20).
+pub fn mod_obj_free_transform_modifier(c: &mut Cpu) {
+    free_child_at_1c(c, 0x0035_30d0, 0x0036_0f3c);
+}
+
+/// `void ModObj_FreeUVScrollModifier(ModObj* self)` (0x360f48).
+pub fn mod_obj_free_uv_scroll_modifier(c: &mut Cpu) {
+    free_child_at_1c(c, 0x0035_3118, 0x0036_0f64);
+}
+
+/// `void ModObj_FreeTexFlipModifier(ModObj* self)` (0x360f70).
+pub fn mod_obj_free_tex_flip_modifier(c: &mut Cpu) {
+    free_child_at_1c(c, 0x0035_3150, 0x0036_0f8c);
+}
+
+/// `void ModObj_FreeBoostModifier(ModObj* self)` (0x360f98).
+pub fn mod_obj_free_boost_modifier(c: &mut Cpu) {
+    free_child_at_1c(c, 0x0035_3188, 0x0036_0fb4);
+}
+
+/// `void ModObj_RemoveDeadParticles(ModObj* self)` (0x360fc0).
+pub fn mod_obj_remove_dead_particles(c: &mut Cpu) {
+    free_child_at_1c(c, 0x0035_3278, 0x0036_0fdc);
+}
+
+/// `void ModObj_FreeParticles(ModObj* self)` (0x360fe8).
+pub fn mod_obj_free_particles(c: &mut Cpu) {
+    free_child_at_1c(c, 0x0035_31d0, 0x0036_1004);
+}
+
+/// `void ModObj_ResetParticles(ModObj* self)` (0x361010).
+pub fn mod_obj_reset_particles(c: &mut Cpu) {
+    free_child_at_1c(c, 0x0035_3228, 0x0036_102c);
+}
+
+// Calls made with `call_ptr` (the original's `call_indirect`).
+
+/// `cAnimFrame_init(this)`.
+pub(crate) const CANIMFRAME_INIT_ADDR: u32 = 0x0035_13d0;
+
+/// Base constructor of the conveyor and counter nodes.
+pub(crate) const NODE_BASE_CTOR_ADDR: u32 = 0x0034_fbf0;
+
+/// Called by the roller modifier's collide wrapper.
+pub(crate) const ROLLER_CALL_ADDR: u32 = 0x0035_dde8;
+
+// Direct calls (the original's `jal`).
+
+pub(crate) const INTERSECT_RESET_MATRIX: Callee = Callee {
+    addr: 0x0036_12c0,
+    f: ee::s12::f_003612c0,
+};
+
+pub(crate) const WORLD_OBJECTS_STATIC_INIT: Callee = Callee {
+    addr: 0x0035_fe10,
+    f: ee::s12::f_0035fe10,
+};
+
+pub(crate) const INTC_REMOVE_VIF_VU_HANDLERS: Callee = Callee {
+    addr: 0x0036_1e80,
+    f: ee::s12::f_00361e80,
+};
+
+pub(crate) const VRAM_HEAP_FREE_BLOCK: Callee = Callee {
+    addr: 0x0036_63d8,
+    f: ee::s12::f_003663d8,
+};
+
+/// The `cAnimFrame` vtable the constructors store at `this+0x84` (0x490af0),
+/// and the `cMeshAnimFrame`/`cCamAnimFrame` variants' words (0x490ad0, 0x490ab0).
+pub(crate) const ANIMFRAME_VTBL: u32 = 0x0049_0af0;
+
+pub(crate) const MESHANIMFRAME_VTBL: u32 = 0x0049_0ad0;
+
+pub(crate) const CAMANIMFRAME_VTBL: u32 = 0x0049_0ab0;
+
+/// `IntersectInfo` (`cAnimFrame`-based) constructor (0x3611a0): stores the
+/// vtable word at `this+0x84`, runs `cAnimFrame_init(this)`, returns `this`.
+pub fn intersect_info_ctor_4(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        abi::set_word(c, V0, ANIMFRAME_VTBL);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let vt = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).off(0x84).sw(c, vt);
+        call_ptr(c, CANIMFRAME_INIT_ADDR, 0x0036_11c0)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cAnimFrame_getAngles` (0x361208): writes the negated normal as a
+/// quadword `(-f(+0x50), -f(+0x54), -f(+0x58), 0)` to the output at a1 (the
+/// three floats go through the stack frame first, as the original does).
+pub fn intersect_info_get_neg_normal(c: &mut Cpu) {
+    c.cycles += 15;
+    let frame = Frame::open(c, 0x10);
+    Addr(frame.at(c, 0xc)).sw(c, 0);
+    let src = Addr(abi::arg(c, 0));
+    let nx = -src.off(0x50).read_fpu(c);
+    let ny = -src.off(0x54).read_fpu(c);
+    let nz = -src.off(0x58).read_fpu(c);
+    abi::set_fpr(c, 1, nx);
+    abi::set_fpr(c, 2, ny);
+    abi::set_fpr(c, 0, nz);
+    Addr(frame.at(c, 0)).write_fpu(c, nx);
+    Addr(frame.at(c, 4)).write_fpu(c, ny);
+    Addr(frame.at(c, 8)).write_fpu(c, nz);
+    frame.restore(c, V0, 0);
+    let out = abi::arg(c, 1);
+    c.sq(V0, out);
+    frame.close(c);
+}
+
+/// `cMeshAnimFrame` constructor (0x361248): the `cAnimFrame` init, then the
+/// mesh vtable word, then `IntersectInfo_ResetMatrix(this)`. Returns `this`.
+pub fn intersect_info_ctor_5(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x20);
+        abi::set_word(c, V0, ANIMFRAME_VTBL);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let vt = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).off(0x84).sw(c, vt);
+        call_ptr(c, CANIMFRAME_INIT_ADDR, 0x0036_1268)?;
+        abi::set_word(c, V0, MESHANIMFRAME_VTBL);
+        c.g[A0][0] = c.g[S0][0];
+        let vt2 = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).off(0x84).sw(c, vt2);
+        INTERSECT_RESET_MATRIX.call(c, 0x0036_127c)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cCamAnimFrame` constructor (0x361300): the `cAnimFrame` init, then the
+/// camera vtable word (left in v1) stored at `this+0x84`. Returns `this`.
+pub fn intersect_info_ctor_6(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        abi::set_word(c, V0, ANIMFRAME_VTBL);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let vt = c.g[V0][0];
+        Addr(c.g[S0][0] as u32).off(0x84).sw(c, vt);
+        call_ptr(c, CANIMFRAME_INIT_ADDR, 0x0036_1320)?;
+        abi::set_word(c, V1, CAMANIMFRAME_VTBL);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        let vt2 = c.g[V1][0];
+        Addr(c.g[S0][0] as u32).off(0x84).sw(c, vt2);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Shared shape of the conveyor and counter node constructors: store the
+/// node's vtable word at `this+0xc` (`this` is kept in v1), then call the
+/// base constructor with a0 as it came in.
+pub(crate) fn node_ctor(c: &mut Cpu, vtbl: u32, ret_addr: u32) -> crate::call::Flow {
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[V1][0] = c.g[A0][0];
+    abi::set_word(c, V0, vtbl);
+    let this = c.g[V1][0] as u32;
+    let vt = c.g[V0][0];
+    Addr(this).off(0xc).sw(c, vt);
+    call_ptr(c, NODE_BASE_CTOR_ADDR, ret_addr)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cConveyorNode` constructor (0x361500).
+pub fn conveyor_node_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        node_ctor(c, 0x0049_0570, 0x0036_151c)
+    })
+}
+
+/// `cCounterNode` constructor (0x361530).
+pub fn counter_node_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        node_ctor(c, 0x0049_03f0, 0x0036_154c)
+    })
+}
+
+/// `cRollerModifier::collide` stub (0x361cd8): clears the word at +0x20 of
+/// the object, then calls the function at 0x35dde8 with the object as a0.
+pub fn roller_modifier_v10(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let obj = c.g[V0][0] as u32;
+        Addr(obj).off(0x20).sw(c, 0);
+        call_ptr(c, ROLLER_CALL_ADDR, 0x0036_1cec)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WorldObjects_GlobalCtors` (0x361e10): the static initialiser of the
+/// world objects, `WorldObjects_StaticInit(1, 0xffff)`.
+pub fn world_objects_global_ctors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 1;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xffff;
+        WORLD_OBJECTS_STATIC_INIT.call(c, 0x0036_1e24)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `IntcTable_Shutdown` (0x361f40): removes the VIF/VU interrupt handlers.
+pub fn intc_table_shutdown(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        INTC_REMOVE_VIF_VU_HANDLERS.call(c, 0x0036_1f50)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `IntcHandler_SaveRegs(u64 *buf)` (0x362120): stores the 32 FPU registers
+/// f0..f31 as sign-extended doublewords at buf[0..32] (`mfc1` each).
+pub fn intc_handler_save_regs(c: &mut Cpu) {
+    c.cycles += 67;
+    abi::set_gpr128(c, V0, 0);
+    let buf = abi::arg(c, 0);
+    for i in 0..32usize {
+        let v = abi::mfc1(FpuF32(c.f[i]));
+        abi::set_reg(c, V0, v);
+        Addr(buf).off(8 * i as u32).sd(c, v);
+    }
+    abi::ret(c);
+}
+
+/// `IntcHandler_RestoreRegs(u64 *buf)` (0x362230): the reverse of
+/// [`intc_handler_save_regs`]: loads buf[0..32] into f0..f31 (`mtc1`, the low
+/// word of each doubleword).
+pub fn intc_handler_restore_regs(c: &mut Cpu) {
+    c.cycles += 67;
+    abi::set_gpr128(c, V0, 0);
+    let buf = abi::arg(c, 0);
+    for i in 0..32usize {
+        let v = Addr(buf).off(8 * i as u32).ld(c);
+        abi::set_reg(c, V0, v);
+        abi::set_fpr(c, i, FpuF32(v as u32));
+    }
+    abi::ret(c);
+}
+
+/// `VramHeap_FreeTextureBlocks(heap, index)` (0x366e30): the block at slot
+/// `index` of the heap's table (at `heap+0x23e8`, 4 bytes per slot) is freed
+/// with `VramHeap_FreeBlock` for its first and then its second sub-block, when
+/// each sub-block's offset (`+0x30`, `+0x34`) is non-negative.
+/// Not installed: no passing test (see the wave notes).
+#[allow(dead_code)]
+pub fn vram_heap_free_texture_blocks_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x30);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let heap = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(heap.wrapping_add(0x23e8)).lw(c);
+        let slot = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] = slot;
+        c.g[S1][0] = Addr(slot as u32).lw(c);
+        let blk = c.g[S1][0] as u32;
+        c.g[A1][0] = Addr(blk.wrapping_add(0x30)).lw(c);
+        if (c.g[A1][0] as i64) < 0 {
+            let blk = c.g[S1][0] as u32;
+            c.g[A1][0] = Addr(blk.wrapping_add(0x34)).lw(c);
+        } else {
+            c.cycles += 3;
+            VRAM_HEAP_FREE_BLOCK.call(c, 0x0036_6e68)?;
+            let blk = c.g[S1][0] as u32;
+            c.g[A1][0] = Addr(blk.wrapping_add(0x34)).lw(c);
+        }
+        c.cycles += 2;
+        if (c.g[A1][0] as i64) < 0 {
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            VRAM_HEAP_FREE_BLOCK.call(c, 0x0036_6e7c)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The callees of the state emitter, each reached through its override slot.
+pub(crate) const CHG_MATERIAL_SETUP: Callee = Callee {
+    addr: 0x0036_4cd0,
+    f: ee::s12::DeferMan_EmitMaterialSetup,
+};
+
+pub(crate) const CHG_SCISSOR: Callee = Callee {
+    addr: 0x0036_23d8,
+    f: ee::s12::GsPkt_AddScissor,
+};
+
+pub(crate) const CHG_ZBUF: Callee = Callee {
+    addr: 0x0036_2660,
+    f: ee::s12::GsPkt_AddZbuf,
+};
+
+pub(crate) const CHG_TEST: Callee = Callee {
+    addr: 0x0036_26d8,
+    f: ee::s12::GsPkt_AddTest,
+};
+
+pub(crate) const CHG_CLAMP: Callee = Callee {
+    addr: 0x0036_25c0,
+    f: ee::s12::GsPkt_AddClamp,
+};
+
+pub(crate) const CHG_ALPHA: Callee = Callee {
+    addr: 0x0036_2478,
+    f: ee::s12::GsPkt_AddAlpha,
+};
+
+pub(crate) const CHG_FINISH: Callee = Callee {
+    addr: 0x0036_27a8,
+    f: ee::s12::GsPkt_Finish,
+};
+
+/// `void DeferMan_EmitStateChange(DeferMan* self, u32* state, int layer,
+/// void** pp)` (0x363c20): writes the packets that take the GS state from the
+/// last emitted one (the context block at `self + 0x68000`) to `state`. The
+/// material setup comes first (mode 0 when the material changed, mode 1 when
+/// only the layer changed, mode 2 when the key word changed), then one
+/// scissor, zbuffer, test, clamp and alpha packet for each field that
+/// differs, then the finish packet. `state` becomes the last state.
+pub fn defer_man_emit_state_change(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x80);
+        c.cycles += 32;
+        c.g[V1][0] = 0x1000_0001;
+        frame.save(c, S1, 0x60);
+        frame.save(c, S3, 0x40);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S4, 0x30);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S5, 0x20);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S0, 0x70);
+        c.g[S5][0] = c.g[A3][0];
+        frame.save(c, S2, 0x50);
+        c.g[A3][0] = 0x8000u64 << 45;
+        frame.save_ra(c, 0x10);
+
+        // The packet header: the GIF tag 0x10000001 at the write pointer, two
+        // zero quadwords, the A+D tag 0x1000000000000000 at +0x18, and the
+        // write pointer moved by 0x20.
+        c.g[V0][0] = c.lw(r32(c, S5));
+        c.sd(r32(c, V0), c.g[V1][0]);
+        c.g[V0][0] = c.lw(r32(c, S5));
+        c.sd(r32(c, V0).wrapping_add(0x8), 0);
+        c.g[V1][0] = c.lw(r32(c, S5));
+        c.sd(r32(c, V1).wrapping_add(0x10), 0);
+        c.g[A0][0] = c.lw(r32(c, S5));
+        c.sd(r32(c, A0).wrapping_add(0x18), c.g[A3][0]);
+        c.g[V0][0] = c.lw(r32(c, S5));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x20));
+        c.sw(r32(c, S5), c.g[V0][0]);
+
+        material_section(c)?;
+        scissor_section(c)?;
+        zbuf_section(c)?;
+        test_section(c)?;
+        clamp_wrap_s(c)?;
+        alpha_wrap_7c(c)?;
+        clamp_wrap_t(c)?;
+        alpha_wrap_f80(c)?;
+
+        // The last state becomes `state` (a 128-bit unaligned copy of its
+        // first quadword, then the words at +0x10), then the finish packet.
+        c.cycles += 25;
+        c.g[A1][0] = c.g[S5][0];
+        c.g[V0][0] = c.g[V0][0] | 0x8000;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+        c.ldl(V1, r32(c, S3).wrapping_add(0x7));
+        c.ldr(V1, r32(c, S3));
+        c.ldl(A3, r32(c, S3).wrapping_add(0xf));
+        c.ldr(A3, r32(c, S3).wrapping_add(0x8));
+        c.g[T0][0] = c.lw(r32(c, S3).wrapping_add(0x10));
+        c.sdl(V1, r32(c, V0).wrapping_add(0x1caf));
+        c.sdr(V1, r32(c, V0).wrapping_add(0x1ca8));
+        c.sdl(A3, r32(c, V0).wrapping_add(0x1cb7));
+        c.sdr(A3, r32(c, V0).wrapping_add(0x1cb0));
+        c.sw(r32(c, V0).wrapping_add(0x1cb8), c.g[T0][0]);
+        c.g[A2][0] = 0x1;
+        CHG_FINISH.call(c, 0x0036_402c)?;
+
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The material block: the material index is bits 6..9 of the state's first
+/// word. Nothing happens for material 0. Otherwise the last material key
+/// (`+0x69cbc`) and layer (`+0x69cc0`) decide which of the three setup modes
+/// runs.
+pub(crate) fn material_section(c: &mut Cpu) -> Flow {
+    'b_363d7c: {
+        c.g[V1][0] = c.lw(r32(c, S3));
+        c.g[V1][0] = c.g[V1][0] & 0x3c0;
+        c.g[A2][0] = sx(r32(c, V1) >> 6);
+        let t = c.g[A2][0] == 0u64;
+        c.g[V1][0] = 0x6_0000;
+        if t {
+            break 'b_363d7c;
+        }
+        'b_363d44: {
+            'b_363d04: {
+                c.cycles += 10;
+                c.g[A0][0] = 0x3fff_0000;
+                c.g[V1][0] = c.g[V1][0] | 0x9ca8;
+                c.g[A1][0] = c.lw(r32(c, S3).wrapping_add(0xc));
+                c.g[V1][0] = sx(r32(c, S4).wrapping_add(r32(c, V1)));
+                c.g[A0][0] = c.g[A0][0] | 0xffff;
+                c.g[V0][0] = c.lw(r32(c, V1));
+                c.g[V0][0] = c.g[V0][0] & 0x3c0;
+                c.g[V0][0] = sx(r32(c, V0) >> 6);
+                let t = c.g[V0][0] == c.g[A2][0];
+                c.g[S0][0] = c.g[A1][0] & c.g[A0][0];
+                if t {
+                    break 'b_363d04;
+                }
+                // Mode 0: the material changed.
+                c.cycles += 15;
+                c.g[V0][0] = 0x6_0000;
+                c.g[A0][0] = c.g[S4][0];
+                c.g[V0][0] = c.g[V0][0] | 0x8000;
+                c.g[A2][0] = 0u64;
+                c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+                c.g[A3][0] = c.g[S0][0];
+                c.sw(r32(c, V0).wrapping_add(0x1cbc), c.g[S0][0]);
+                c.g[T0][0] = c.g[S5][0];
+                c.sw(r32(c, V0).wrapping_add(0x1cc0), c.g[S1][0]);
+                c.g[A1][0] = c.lw(r32(c, S3));
+                c.g[A1][0] = c.g[A1][0] & 0x3c0;
+                c.g[A1][0] = sx(r32(c, A1) >> 6);
+                CHG_MATERIAL_SETUP.call(c, 0x0036_3cfc)?;
+                c.g[V0][0] = 0x6_0000;
+                break 'b_363d44;
+            }
+            'b_363d40: {
+                // Mode 1: the material kept, the layer changed.
+                c.cycles += 6;
+                c.g[V0][0] = 0x6_0000;
+                c.g[V0][0] = c.g[V0][0] | 0x8000;
+                c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+                c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x1cc0));
+                let t = c.g[S1][0] == c.g[V1][0];
+                c.g[A0][0] = c.g[S4][0];
+                if t {
+                    break 'b_363d40;
+                }
+                c.cycles += 9;
+                c.sw(r32(c, V0).wrapping_add(0x1cbc), c.g[S0][0]);
+                c.sw(r32(c, V0).wrapping_add(0x1cc0), c.g[S1][0]);
+                c.g[A2][0] = 0x1;
+                c.g[A3][0] = c.g[S0][0];
+                c.g[T0][0] = c.g[S5][0];
+                c.g[A1][0] = c.lw(r32(c, S3));
+                c.g[A1][0] = c.g[A1][0] & 0x3c0;
+                c.g[A1][0] = sx(r32(c, A1) >> 6);
+                CHG_MATERIAL_SETUP.call(c, 0x0036_3d40)?;
+                break 'b_363d40;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0x6_0000;
+        }
+        // Mode 2: the key word changed.
+        c.cycles += 5;
+        c.g[V0][0] = c.g[V0][0] | 0x8000;
+        c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x1cbc));
+        let t = c.g[V1][0] == c.g[S0][0];
+        c.g[A3][0] = c.g[S0][0];
+        if t {
+            break 'b_363d7c;
+        }
+        c.cycles += 9;
+        c.sw(r32(c, V0).wrapping_add(0x1cc0), c.g[S1][0]);
+        c.sw(r32(c, V0).wrapping_add(0x1cbc), c.g[S0][0]);
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A2][0] = 0x2;
+        c.g[T0][0] = c.g[S5][0];
+        c.g[A1][0] = c.lw(r32(c, S3));
+        c.g[A1][0] = c.g[A1][0] & 0x3c0;
+        c.g[A1][0] = sx(r32(c, A1) >> 6);
+        CHG_MATERIAL_SETUP.call(c, 0x0036_3d7c)?;
+    }
+    Ok(())
+}
+
+/// The scissor packet: the state's third word (its low five bits) indexes
+/// the scissor rectangle table at `self + 0x68000 + 8 * index`, used when the
+/// index differs from the last one (`+0x69cc4`).
+pub(crate) fn scissor_section(c: &mut Cpu) -> Flow {
+    'b_363de8: {
+        c.cycles += 13;
+        c.g[A0][0] = c.lw(r32(c, S5));
+        c.g[V0][0] = 0x6_0000;
+        c.sw(r32(c, SP), 0);
+        c.g[V0][0] = c.g[V0][0] | 0x8000;
+        c.g[V1][0] = sx(r32(c, A0).wrapping_add(0x30));
+        c.sw(r32(c, SP).wrapping_add(0x8), c.g[A0][0]);
+        c.sw(r32(c, SP).wrapping_add(0x4), c.g[V1][0]);
+        c.g[A1][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+        c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x8));
+        c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(0x1cc4));
+        c.g[V0][0] = c.g[V0][0] & 0x1f;
+        if c.g[V0][0] == c.g[V1][0] {
+            c.g[V0][0] = 0x6_0000;
+            break 'b_363de8;
+        }
+        'b_363de4: {
+            c.cycles += 2;
+            let t = (c.g[V0][0] as i64) < 0;
+            c.sw(r32(c, A1).wrapping_add(0x1cc4), c.g[V0][0]);
+            if t {
+                break 'b_363de4;
+            }
+            c.cycles += 11;
+            c.g[V0][0] = sx(r32(c, V0) << 3);
+            c.g[A0][0] = c.g[SP][0];
+            c.g[T1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+            c.g[V1][0] = c.g[T1][0];
+            c.g[T0][0] = c.lhu(r32(c, T1).wrapping_add(0x2eda));
+            c.g[A3][0] = c.g[V1][0];
+            c.g[V0][0] = c.g[V1][0];
+            c.g[A2][0] = c.lhu(r32(c, A3).wrapping_add(0x2ed8));
+            c.g[A1][0] = c.lhu(r32(c, V1).wrapping_add(0x2ed4));
+            c.g[A3][0] = c.lhu(r32(c, V0).wrapping_add(0x2ed6));
+            CHG_SCISSOR.call(c, 0x0036_3de4)?;
+        }
+        c.cycles += 1;
+        c.g[V0][0] = 0x6_0000;
+    }
+    Ok(())
+}
+
+/// The zbuffer packet, when the zbuffer-enable bit (0x400000 of word 1)
+/// changed: two `GsPkt_AddZbuf` calls, for context 0 and then 1, from the
+/// zbuffer object at `*(gp + 0x2a90)`.
+pub(crate) fn zbuf_section(c: &mut Cpu) -> Flow {
+    'b_363e44: {
+        c.cycles += 9;
+        c.g[V1][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+        c.g[V0][0] = c.g[V0][0] | 0x9ca8;
+        c.g[S1][0] = 0x40_0000;
+        c.g[S2][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = c.g[V1][0] & c.g[S1][0];
+        c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(0x4));
+        c.g[V0][0] = c.g[V0][0] & c.g[S1][0];
+        let t = c.g[V0][0] == c.g[V1][0];
+        c.g[A3][0] = sx(r32(c, V1) >> 22);
+        if t {
+            break 'b_363e44;
+        }
+        c.cycles += 14;
+        c.g[S0][0] = c.lw(r32(c, GP).wrapping_add(0x2a90));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[T0][0] = 0u64;
+        c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0x5a80));
+        c.g[A2][0] = c.lw(r32(c, S0).wrapping_add(0x5a40));
+        CHG_ZBUF.call(c, 0x0036_3e24)?;
+        c.g[A3][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = c.lw(r32(c, S0).wrapping_add(0x5a40));
+        c.g[T0][0] = 0x1;
+        c.g[A3][0] = c.g[A3][0] & c.g[S1][0];
+        c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0x5a80));
+        c.g[A3][0] = sx(r32(c, A3) >> 22);
+        CHG_ZBUF.call(c, 0x0036_3e44)?;
+    }
+    Ok(())
+}
+
+/// The test packets (alpha test and depth test fields of word 1, the two
+/// contexts), when the bits 0x1800000, 0x300000 or 0xff000 of word 1 differ
+/// from the last state. Nothing is written when none differ.
+pub(crate) fn test_section(c: &mut Cpu) -> Flow {
+    'b_363ef0: {
+        'b_363e90: {
+            c.cycles += 7;
+            c.g[A1][0] = c.lw(r32(c, S2).wrapping_add(0x4));
+            c.g[V0][0] = 0x180_0000;
+            c.g[A0][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+            c.g[V1][0] = c.g[A1][0] & c.g[V0][0];
+            c.g[V0][0] = c.g[A0][0] & c.g[V0][0];
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[A2][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+                break 'b_363e90;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = 0x30_0000;
+            c.g[V1][0] = c.g[A0][0] & c.g[V0][0];
+            c.g[V0][0] = c.g[A1][0] & c.g[V0][0];
+            if c.g[V0][0] != c.g[V1][0] {
+                c.g[A2][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+                break 'b_363e90;
+            }
+            c.cycles += 6;
+            c.g[V0][0] = 0xf0000;
+            c.g[V0][0] = c.g[V0][0] | 0xf000;
+            c.g[V1][0] = c.g[A0][0] & c.g[V0][0];
+            c.g[V0][0] = c.g[A1][0] & c.g[V0][0];
+            let t = c.g[V0][0] == c.g[V1][0];
+            c.g[V0][0] = 0x6_0000;
+            if t {
+                break 'b_363ef0;
+            }
+            c.cycles += 1;
+            c.g[A2][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+        }
+        c.cycles += 24;
+        c.g[S0][0] = 0xf0000;
+        c.g[S1][0] = 0x180_0000;
+        c.g[S0][0] = c.g[S0][0] | 0xf000;
+        c.g[A1][0] = c.g[A2][0] & c.g[S1][0];
+        c.g[A3][0] = c.g[A2][0] & c.g[S0][0];
+        c.g[S2][0] = 0x30_0000;
+        c.g[A1][0] = sx(r32(c, A1) >> 23);
+        c.g[A2][0] = c.g[A2][0] & c.g[S2][0];
+        c.g[A3][0] = sx(r32(c, A3) >> 12);
+        c.g[A2][0] = sx(r32(c, A2) >> 20);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[T0][0] = 0u64;
+        CHG_TEST.call(c, 0x0036_3ec4)?;
+        c.g[A2][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[T0][0] = 0x1;
+        c.g[S0][0] = c.g[A2][0] & c.g[S0][0];
+        c.g[S1][0] = c.g[A2][0] & c.g[S1][0];
+        c.g[A2][0] = c.g[A2][0] & c.g[S2][0];
+        c.g[A1][0] = sx(r32(c, S1) >> 23);
+        c.g[A2][0] = sx(r32(c, A2) >> 20);
+        c.g[A3][0] = sx(r32(c, S0) >> 12);
+        CHG_TEST.call(c, 0x0036_3eec)?;
+        c.g[V0][0] = 0x6_0000;
+    }
+    Ok(())
+}
+
+/// The first wrap-mode clamp packet (word 0, bits 2..3), when it differs.
+pub(crate) fn clamp_wrap_s(c: &mut Cpu) -> Flow {
+    'b_363f1c: {
+        c.cycles += 8;
+        c.g[V1][0] = c.lw(r32(c, S3));
+        c.g[V0][0] = c.g[V0][0] | 0x9ca8;
+        c.g[S0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = c.g[V1][0] & 0xc;
+        c.g[V0][0] = c.lw(r32(c, S0));
+        c.g[V0][0] = c.g[V0][0] & 0xc;
+        let t = c.g[V0][0] == c.g[V1][0];
+        c.g[A1][0] = sx(r32(c, V1) >> 2);
+        if t {
+            break 'b_363f1c;
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = 0u64;
+        CHG_CLAMP.call(c, 0x0036_3f1c)?;
+    }
+    Ok(())
+}
+
+/// The first alpha packet (word 1 bits 2..6 and word 0 bits 12..19): the
+/// first check compares the alpha bits; the second skips the packet when the
+/// alpha value also matches.
+pub(crate) fn alpha_wrap_7c(c: &mut Cpu) -> Flow {
+    'b_363f70: {
+        'b_363f54: {
+            c.cycles += 6;
+            c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x4));
+            c.g[V0][0] = c.g[V0][0] & 0x7c;
+            c.g[V1][0] = c.g[V1][0] & 0x7c;
+            let t = c.g[V1][0] != c.g[V0][0];
+            c.g[A1][0] = sx(r32(c, V0) >> 2);
+            if t {
+                break 'b_363f54;
+            }
+            c.cycles += 8;
+            c.g[V1][0] = c.lw(r32(c, S0));
+            c.g[V0][0] = c.lw(r32(c, S3));
+            c.g[V1][0] = sx(r32(c, V1) >> 12);
+            c.g[V0][0] = sx(r32(c, V0) >> 12);
+            c.g[V1][0] = c.g[V1][0] & 0xff;
+            c.g[V0][0] = c.g[V0][0] & 0xff;
+            let t = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x6_0000;
+            if t {
+                break 'b_363f70;
+            }
+        }
+        c.cycles += 7;
+        c.g[A2][0] = c.lw(r32(c, S3));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A3][0] = 0u64;
+        c.g[A2][0] = sx(r32(c, A2) >> 12);
+        c.g[A2][0] = c.g[A2][0] & 0xff;
+        CHG_ALPHA.call(c, 0x0036_3f6c)?;
+        c.g[V0][0] = 0x6_0000;
+    }
+    Ok(())
+}
+
+/// The second wrap-mode clamp packet (word 0, bits 4..5), when it differs.
+pub(crate) fn clamp_wrap_t(c: &mut Cpu) -> Flow {
+    'b_363f9c: {
+        c.cycles += 8;
+        c.g[V1][0] = c.lw(r32(c, S3));
+        c.g[V0][0] = c.g[V0][0] | 0x9ca8;
+        c.g[S0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = c.g[V1][0] & 0x30;
+        c.g[V0][0] = c.lw(r32(c, S0));
+        c.g[V0][0] = c.g[V0][0] & 0x30;
+        let t = c.g[V0][0] == c.g[V1][0];
+        c.g[A1][0] = sx(r32(c, V1) >> 4);
+        if t {
+            break 'b_363f9c;
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = 0x1;
+        CHG_CLAMP.call(c, 0x0036_3f9c)?;
+    }
+    Ok(())
+}
+
+/// The second alpha packet (word 1 bits 7..11 and word 0 bits 20..27), with
+/// the same two checks as `alpha_wrap_7c`.
+pub(crate) fn alpha_wrap_f80(c: &mut Cpu) -> Flow {
+    'b_363fec: {
+        'b_363fd4: {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x4));
+            c.g[V0][0] = c.g[V0][0] & 0xf80;
+            c.g[A2][0] = c.lw(r32(c, S3));
+            c.g[V1][0] = c.g[V1][0] & 0xf80;
+            let t = c.g[V1][0] != c.g[V0][0];
+            c.g[A1][0] = sx(r32(c, V0) >> 7);
+            if t {
+                break 'b_363fd4;
+            }
+            c.cycles += 7;
+            c.g[V0][0] = c.lw(r32(c, S0));
+            c.g[V1][0] = sx(r32(c, A2) >> 20);
+            c.g[V1][0] = c.g[V1][0] & 0xff;
+            c.g[V0][0] = sx(r32(c, V0) >> 20);
+            c.g[V0][0] = c.g[V0][0] & 0xff;
+            let t = c.g[V0][0] == c.g[V1][0];
+            c.g[V0][0] = 0x6_0000;
+            if t {
+                break 'b_363fec;
+            }
+        }
+        c.cycles += 6;
+        c.g[A2][0] = sx(r32(c, A2) >> 20);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = c.g[A2][0] & 0xff;
+        c.g[A3][0] = 0x1;
+        CHG_ALPHA.call(c, 0x0036_3fe8)?;
+        c.g[V0][0] = 0x6_0000;
+    }
+    Ok(())
+}
+
+/// `TexFlipModifier_Init` (0x0035f218): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn tex_flip_modifier_init(c: &mut Cpu) {
+    if c.pc != 0x0035f218 {
+        return ee::s12::f_0035f218__generated(c);
+    }
+    guest(c, |c| {
+        let mut pc: u32 = 0x0035f218;
+        loop {
+            match pc {
+                0x0035f218 => {
+                    c.cycles += 11;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.g[A2][0] = 0u64;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x20), 0u64);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x94));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    let t = (c.g[V1][0] as i64) <= 0;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
+                    if t {
+                        pc = 0x0035f284;
+                        continue;
+                    }
+                    pc = 0x0035f244;
+                    continue;
+                }
+                0x0035f244 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x94));
+                    if t {
+                        pc = 0x0035f26c;
+                        continue;
+                    }
+                    pc = 0x0035f24c;
+                    continue;
+                }
+                0x0035f24c => {
+                    c.cycles += 1;
+                    pc = 0x0035f250;
+                    continue;
+                }
+                0x0035f250 => {
+                    c.cycles += 4;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = sx((c.g[A2][0] as u32) << 2);
+                    if t {
+                        pc = 0x0035f284;
+                        continue;
+                    }
+                    pc = 0x0035f260;
+                    continue;
+                }
+                0x0035f260 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x94));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    pc = 0x0035f26c;
+                    continue;
+                }
+                0x0035f26c => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                        if back_edge_unwinds(c, 0x0035f250) {
+                            return Ok(());
+                        }
+                        pc = 0x0035f250;
+                        continue;
+                    }
+                    pc = 0x0035f27c;
+                    continue;
+                }
+                0x0035f27c => {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                    pc = 0x0035f284;
+                    continue;
+                }
+                0x0035f284 => {
+                    c.cycles += 11;
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    c.g[RA][0] = sx(0x0035f290);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x0035f378,
+                        f: ee::s12::TexFlipModifier_SetFrame,
+                    }
+                    .call(c, 0x0035f290)?;
+                    c.g[A2][0] = 0xc4;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
+                    c.g[RA][0] = sx(0x0035f2a0);
+                    c.g[A1][0] = 0u64;
+                    call_ptr(c, 0x003e6448, 0x0035f2a0)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                    c.g[A2][0] = 0u64;
+                    let t = (c.g[V0][0] as i64) <= 0;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+                    if t {
+                        pc = 0x0035f368;
+                        continue;
+                    }
+                    pc = 0x0035f2b0;
+                    continue;
+                }
+                0x0035f2b0 => {
+                    c.cycles += 4;
+                    c.g[T3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x28));
+                    c.g[T4][0] = 0x14;
+                    c.g[T5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x48));
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    pc = 0x0035f2c0;
+                    continue;
+                }
+                0x0035f2c0 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = sx((c.g[A2][0] as u32) << 2);
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x94));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[T0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
+                    let t = c.g[V0][0] == 0u64;
+                    c.mult(0, 3, 6, 12);
+                    if t {
+                        pc = 0x0035f348;
+                        continue;
+                    }
+                    pc = 0x0035f2dc;
+                    continue;
+                }
+                0x0035f2dc => {
+                    c.cycles += 11;
+                    c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    c.g[T2][0] = 0xffffffffffffffff;
+                    c.g[A1][0] = sx((c.g[T5][0] as u32).wrapping_add(0x2));
+                    c.g[A3][0] = 0x2;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x48));
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[A0][0] as u32, c.g[V1][0]);
+                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0xc));
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    pc = 0x0035f308;
+                    continue;
+                }
+                0x0035f308 => {
+                    c.cycles += 7;
+                    c.sh(c.g[A1][0] as u32, c.g[T2][0]);
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
+                    let t = (c.g[A3][0] as i64) >= 0;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2));
+                    if t {
+                        if back_edge_unwinds(c, 0x0035f308) {
+                            return Ok(());
+                        }
+                        pc = 0x0035f308;
+                        continue;
+                    }
+                    pc = 0x0035f324;
+                    continue;
+                }
+                0x0035f324 => {
+                    c.cycles += 9;
+                    c.mult(0, 2, 6, 12);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x4));
+                    let t = true;
+                    c.sh((c.g[A1][0] as u32).wrapping_add(0x48), c.g[V1][0]);
+                    if t {
+                        pc = 0x0035f354;
+                        continue;
+                    }
+                    pc = 0x0035f348;
+                    continue;
+                }
+                0x0035f348 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    c.sw(c.g[V0][0] as u32, c.g[T0][0]);
+                    pc = 0x0035f354;
+                    continue;
+                }
+                0x0035f354 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                    c.g[A2][0] = c.g[T1][0];
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                        if back_edge_unwinds(c, 0x0035f2c0) {
+                            return Ok(());
+                        }
+                        pc = 0x0035f2c0;
+                        continue;
+                    }
+                    pc = 0x0035f368;
+                    continue;
+                }
+                0x0035f368 => {
+                    c.cycles += 4;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0035f218, 0x0035f378);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `GsPkt_AddAlpha` (0x00362478): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn gs_pkt_add_alpha(c: &mut Cpu) {
+    if c.pc != 0x00362478 {
+        return ee::s12::f_00362478__generated(c);
+    }
+    guest(c, |c| {
+        'b_36249c: {
+            'b_362498: {
+                'b_362494: {
+                    c.cycles += 2;
+                    let t = c.g[A3][0] == 0u64;
+                    c.g[T0][0] = c.g[A0][0];
+                    if t {
+                        break 'b_362494;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x1;
+                        let t = c.g[A3][0] != c.g[V0][0];
+                        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                        if t {
+                            break 'b_362498;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+                            c.g[V0][0] = 0x43;
+                            if t {
+                                break 'b_36249c;
+                            } else {
+                                break 'b_362494;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                break 'b_362498;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0x42;
+            break 'b_36249c;
+        }
+        'b_3625a0: {
+            c.cycles += 4;
+            c.sd((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            c.g[V0][0] = (c.g[A1][0] < 0x16u64) as u64;
+            let t = c.g[V0][0] == 0u64;
+            c.g[V0][0] = 0x490000;
+            if t {
+                break 'b_3625a0;
+            } else {
+                'b_36259c: {
+                    'b_362594: {
+                        'b_362588: {
+                            'b_36257c: {
+                                'b_362568: {
+                                    'b_36255c: {
+                                        'b_362550: {
+                                            'b_362540: {
+                                                'b_362530: {
+                                                    'b_362524: {
+                                                        'b_362518: {
+                                                            'b_36250c: {
+                                                                'b_362500: {
+                                                                    'b_3624f4: {
+                                                                        'b_3624e8: {
+                                                                            'b_3624dc: {
+                                                                                'b_3624d0: {
+                                                                                    c.cycles += 6;
+                                                                                    c.g[V1][0] = sx(
+                                                                                        (c.g[A1][0]
+                                                                                            as u32)
+                                                                                            << 2,
+                                                                                    );
+                                                                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1fb0));
+                                                                                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                                                                    c.g[A0][0] = c
+                                                                                        .lw(
+                                                                                        c.g[V1][0]
+                                                                                            as u32,
+                                                                                    );
+                                                                                    let t = c.g[A0]
+                                                                                        [0]
+                                                                                        as u32;
+                                                                                    match t {
+0x003624c4 => {
+c.cycles += 3;
+c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+let t = true;
+c.g[V0][0] = 0xaa;
+if t {
+break 'b_36259c;
+} else {
+break 'b_3624d0;
+}
+}
+0x003624d0 => {
+break 'b_3624d0;
+}
+0x003624dc => {
+break 'b_3624dc;
+}
+0x003624e8 => {
+break 'b_3624e8;
+}
+0x003624f4 => {
+break 'b_3624f4;
+}
+0x00362500 => {
+break 'b_362500;
+}
+0x0036250c => {
+break 'b_36250c;
+}
+0x00362518 => {
+break 'b_362518;
+}
+0x00362524 => {
+break 'b_362524;
+}
+0x00362530 => {
+break 'b_362530;
+}
+0x00362540 => {
+break 'b_362540;
+}
+0x00362550 => {
+break 'b_362550;
+}
+0x00362568 => {
+break 'b_362568;
+}
+0x0036257c => {
+break 'b_36257c;
+}
+0x00362588 => {
+break 'b_362588;
+}
+0x00362594 => {
+break 'b_362594;
+}
+0x003625a0 => {
+break 'b_3625a0;
+}
+_ => { c.jump_out(t, 0x00362478, 0x003625bc); return Ok(()); }
+}
+                                                                                }
+                                                                                c.cycles += 3;
+                                                                                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                                                                                let t = true;
+                                                                                c.g[V0][0] = 0x2a;
+                                                                                if t {
+                                                                                    break 'b_36259c;
+                                                                                } else {
+                                                                                    break 'b_3624dc;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 3;
+                                                                            c.g[V1][0] = c.lw((c.g
+                                                                                [T0][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                            let t = true;
+                                                                            c.g[V0][0] = 0x44;
+                                                                            if t {
+                                                                                break 'b_36259c;
+                                                                            } else {
+                                                                                break 'b_3624e8;
+                                                                            }
+                                                                        }
+                                                                        c.cycles += 3;
+                                                                        c.g[V1][0] = c
+                                                                            .lw((c.g[T0][0]
+                                                                                as u32)
+                                                                                .wrapping_add(0x4));
+                                                                        let t = true;
+                                                                        c.g[V0][0] = 0x46;
+                                                                        if t {
+                                                                            break 'b_36259c;
+                                                                        } else {
+                                                                            break 'b_3624f4;
+                                                                        }
+                                                                    }
+                                                                    c.cycles += 3;
+                                                                    c.g[V1][0] = c
+                                                                        .lw((c.g[T0][0] as u32)
+                                                                            .wrapping_add(0x4));
+                                                                    let t = true;
+                                                                    c.g[V0][0] = 0x48;
+                                                                    if t {
+                                                                        break 'b_36259c;
+                                                                    } else {
+                                                                        break 'b_362500;
+                                                                    }
+                                                                }
+                                                                c.cycles += 3;
+                                                                c.g[V1][0] = c
+                                                                    .lw((c.g[T0][0] as u32)
+                                                                        .wrapping_add(0x4));
+                                                                let t = true;
+                                                                c.g[V0][0] = 0x81;
+                                                                if t {
+                                                                    break 'b_36259c;
+                                                                } else {
+                                                                    break 'b_36250c;
+                                                                }
+                                                            }
+                                                            c.cycles += 3;
+                                                            c.g[V1][0] = c.lw((c.g[T0][0] as u32)
+                                                                .wrapping_add(0x4));
+                                                            let t = true;
+                                                            c.g[V0][0] = 0x42;
+                                                            if t {
+                                                                break 'b_36259c;
+                                                            } else {
+                                                                break 'b_362518;
+                                                            }
+                                                        }
+                                                        c.cycles += 3;
+                                                        c.g[V1][0] = c
+                                                            .lw((c.g[T0][0] as u32)
+                                                                .wrapping_add(0x4));
+                                                        let t = true;
+                                                        c.g[V0][0] = 0x89;
+                                                        if t {
+                                                            break 'b_36259c;
+                                                        } else {
+                                                            break 'b_362524;
+                                                        }
+                                                    }
+                                                    c.cycles += 3;
+                                                    c.g[V1][0] =
+                                                        c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                                                    let t = true;
+                                                    c.g[V0][0] = 0x6a;
+                                                    if t {
+                                                        break 'b_36259c;
+                                                    } else {
+                                                        break 'b_362530;
+                                                    }
+                                                }
+                                                c.cycles += 4;
+                                                c.g[V0][0] = c.g[A2][0] << 32;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                                                let t = true;
+                                                c.g[V1][0] = 0x64;
+                                                if t {
+                                                    break 'b_36255c;
+                                                } else {
+                                                    break 'b_362540;
+                                                }
+                                            }
+                                            c.cycles += 4;
+                                            c.g[V0][0] = c.g[A2][0] << 32;
+                                            c.g[A0][0] =
+                                                c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                                            let t = true;
+                                            c.g[V1][0] = 0x68;
+                                            if t {
+                                                break 'b_36255c;
+                                            } else {
+                                                break 'b_362550;
+                                            }
+                                        }
+                                        c.cycles += 3;
+                                        c.g[V0][0] = c.g[A2][0] << 32;
+                                        c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                                        c.g[V1][0] = 0x88;
+                                        break 'b_36255c;
+                                    }
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+                                    let t = true;
+                                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
+                                    if t {
+                                        break 'b_3625a0;
+                                    } else {
+                                        break 'b_362568;
+                                    }
+                                }
+                                c.cycles += 5;
+                                c.g[V0][0] = 0x80;
+                                c.g[V0][0] = c.g[V0][0] << 32;
+                                c.g[V0][0] = c.g[V0][0] | 0x68;
+                                let t = true;
+                                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                                if t {
+                                    break 'b_36259c;
+                                } else {
+                                    break 'b_36257c;
+                                }
+                            }
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                            let t = true;
+                            c.g[V0][0] = 0x98;
+                            if t {
+                                break 'b_36259c;
+                            } else {
+                                break 'b_362588;
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                        let t = true;
+                        c.g[V0][0] = 0x58;
+                        if t {
+                            break 'b_36259c;
+                        } else {
+                            break 'b_362594;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = 0x49;
+                    break 'b_36259c;
+                }
+                c.cycles += 1;
+                c.sd(c.g[V1][0] as u32, c.g[V0][0]);
+                break 'b_3625a0;
+            }
+        }
+        c.cycles += 7;
+        c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+        c.g[V1][0] = c.lw(c.g[T0][0] as u32);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+        c.sw((c.g[T0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+        let t = c.g[RA][0] as u32;
+        c.sw(c.g[T0][0] as u32, c.g[V1][0]);
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13731,6 +16975,747 @@ pub(crate) mod tests {
             defer_man_emit_material_setup,
             200,
             &setup,
+        );
+    }
+
+    use crate::difftest;
+
+    use crate::game::fe::fepopup::tests::base_14;
+
+    #[test]
+    fn roller_modifier_member_ctor_stub_matches() {
+        check(
+            ee::s11::f_0035cfe8__generated,
+            roller_modifier_member_ctor_stub,
+            20,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35cfe8, 0);
+                c.g[A0][0] = sx(DATA + 0x100 + (r.next_u32() & 0xf0));
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0035_cfe8;
+                let _ = seed;
+            },
+        );
+    }
+
+    /// The body is straight-line code, so one fixture covers every path; the
+    /// object's quaternion and InvBodyMOI are random (or edge-case floats on
+    /// every fifth seed), and the stored InvMOI starts random too, so a
+    /// missing store shows.
+    #[test]
+    fn roller_modifier_update_inertia_matches() {
+        check(
+            ee::s11::f_0035e248__generated,
+            roller_modifier_update_inertia,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x35e2_48aa ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0035_e248;
+                c.g[RA][0] = sx(difftest::RA);
+                c.g[SP][0] = sx(difftest::SP);
+                c.g[A0][0] = sx(DATA);
+                let edge = seed % 5 == 0;
+                for k in 0..4 {
+                    let v = if edge { r.edge_f32() } else { r.f32(2.0) };
+                    c.bus.write32(DATA + 0x40 + 4 * k, v);
+                }
+                for k in 0..9 {
+                    let v = if edge { r.edge_f32() } else { r.f32(2.0) };
+                    c.bus.write32(DATA + 0x280 + 4 * k, v);
+                }
+                fill(c, &mut r, DATA + 0x80, 9);
+            },
+        );
+    }
+
+    /// The fixture's literal pool (gp-relative floats) gets random words, so
+    /// the table's `Lit` offsets are tested too.
+    #[test]
+    fn world_objects_static_init_matches() {
+        check(
+            ssx3_ee::s12::f_0035fe10__generated,
+            world_objects_static_init,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0035_fe10 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0035_fe10;
+                for k in 0..0x180u32 {
+                    c.bus.write32(
+                        GAME_GP.wrapping_sub(0x2a00).wrapping_add(4 * k),
+                        r.next_u32(),
+                    );
+                }
+                c.g[A0][0] = if seed % 4 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() as u64
+                };
+                c.g[A1][0] = if seed % 3 == 0 {
+                    r.next_u32() as u64
+                } else {
+                    0xffff
+                };
+            },
+        );
+    }
+
+    /// Gate word in the machine's RAM: the leaf fakes below act only where it
+    /// was written, and fall back to the real body everywhere else.
+    pub(crate) const GATE: u32 = DATA + 0x0020_0000;
+
+    pub(crate) const GATE_MAGIC: u32 = 0x0591_0591;
+
+    /// A leaf callee that returns at once; installed in the callee's override
+    /// slot, so the generated and the replacement side both reach it.
+    macro_rules! oc591_leaf {
+        ($fake:ident, $generated:path) => {
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(GATE) != GATE_MAGIC {
+                    return fakes::fall_back(c, fakes::prev_cell($fake), $generated);
+                }
+                ret(c)
+            }
+        };
+    }
+
+    oc591_leaf!(oc591_leaf_34fbf0, ee::s11::f_0034fbf0);
+
+    oc591_leaf!(oc591_leaf_35cff0, ee::s11::f_0035cff0);
+
+    oc591_leaf!(oc591_leaf_370c08, ee::s12::f_00370c08);
+
+    oc591_leaf!(oc591_leaf_35fc20, ee::s12::f_0035fc20);
+
+    oc591_leaf!(oc591_leaf_3530d0, ee::s11::f_003530d0);
+
+    oc591_leaf!(oc591_leaf_353118, ee::s11::f_00353118);
+
+    oc591_leaf!(oc591_leaf_353150, ee::s11::f_00353150);
+
+    oc591_leaf!(oc591_leaf_353188, ee::s11::f_00353188);
+
+    oc591_leaf!(oc591_leaf_353278, ee::s11::f_00353278);
+
+    oc591_leaf!(oc591_leaf_3531d0, ee::s11::f_003531d0);
+
+    oc591_leaf!(oc591_leaf_353228, ee::s11::f_00353228);
+
+    pub(crate) fn install_leaves() {
+        use std::ptr::addr_of_mut;
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0034FBF0),
+            oc591_leaf_34fbf0,
+            fakes::prev_cell(oc591_leaf_34fbf0),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0035CFF0),
+            oc591_leaf_35cff0,
+            fakes::prev_cell(oc591_leaf_35cff0),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00370C08),
+            oc591_leaf_370c08,
+            fakes::prev_cell(oc591_leaf_370c08),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0035FC20),
+            oc591_leaf_35fc20,
+            fakes::prev_cell(oc591_leaf_35fc20),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003530D0),
+            oc591_leaf_3530d0,
+            fakes::prev_cell(oc591_leaf_3530d0),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00353118),
+            oc591_leaf_353118,
+            fakes::prev_cell(oc591_leaf_353118),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00353150),
+            oc591_leaf_353150,
+            fakes::prev_cell(oc591_leaf_353150),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00353188),
+            oc591_leaf_353188,
+            fakes::prev_cell(oc591_leaf_353188),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00353278),
+            oc591_leaf_353278,
+            fakes::prev_cell(oc591_leaf_353278),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003531D0),
+            oc591_leaf_3531d0,
+            fakes::prev_cell(oc591_leaf_3531d0),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00353228),
+            oc591_leaf_353228,
+            fakes::prev_cell(oc591_leaf_353228),
+        );
+    }
+
+    pub(crate) fn gate_on(c: &mut Cpu) {
+        c.bus.write32(GATE, GATE_MAGIC);
+    }
+
+    #[test]
+    fn roller_modifier_integrate_matches() {
+        check(
+            ee::s11::f_0035d340__generated,
+            roller_modifier_integrate,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0d340, 0);
+                c.pc = 0x0035_d340;
+                fill(c, &mut r, DATA, 0x80);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                c.g[A2][0] = sx(DATA + 0x140);
+                c.f[12] = r.f32(2.0);
+            },
+        );
+    }
+
+    #[test]
+    fn roller_modifier_apply_impulse_matches() {
+        check(
+            ee::s11::f_0035d908__generated,
+            roller_modifier_apply_impulse,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0d908, 0);
+                c.pc = 0x0035_d908;
+                fill(c, &mut r, DATA, 0x80);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                c.g[A2][0] = sx(DATA + 0x140);
+            },
+        );
+    }
+
+    #[test]
+    fn roller_modifier_resolve_contact_matches() {
+        install_leaves();
+        check(
+            ee::s11::f_0035d4a0__generated,
+            roller_modifier_resolve_contact,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0d4a0, 0);
+                c.pc = 0x0035_d4a0;
+                fill(c, &mut r, DATA, 0x80);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                c.g[A2][0] = sx(DATA + 0x140);
+                c.f[12] = r.f32(1.0);
+                c.f[13] = if seed % 4 == 0 { 0 } else { r.f32(1.0) };
+            },
+        );
+    }
+
+    #[test]
+    fn roller_modifier_init_body_matches() {
+        install_leaves();
+        check(
+            ee::s11::f_0035dde8__generated,
+            roller_modifier_init_body,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0dde8, 0);
+                gate_on(c);
+                c.pc = 0x0035_dde8;
+                fill(c, &mut r, DATA, 0x80);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+            },
+        );
+    }
+
+    /// The leaf-callee dtor family: DeadNode_v01 and Hide_dtor share 0x34fbf0.
+    #[test]
+    fn dead_node_v01_matches() {
+        install_leaves();
+        check(
+            ee::s12::f_00360a28__generated,
+            dead_node_v01,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0a28, 0);
+                gate_on(c);
+                c.pc = 0x0036_0a28;
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    #[test]
+    fn hide_dtor_matches() {
+        install_leaves();
+        check(ee::s12::f_00360a70__generated, hide_dtor, 60, &|c, seed| {
+            let _ = machine(c, seed, 0x0a70, 0);
+            gate_on(c);
+            c.pc = 0x0036_0a70;
+            c.g[A0][0] = sx(DATA);
+        });
+    }
+
+    #[test]
+    fn dynamic_particle_modifier_v04_matches() {
+        install_leaves();
+        check(
+            ee::s12::f_00360c78__generated,
+            dynamic_particle_modifier_v04,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0c78, 0);
+                gate_on(c);
+                c.pc = 0x0036_0c78;
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    #[test]
+    fn mod_obj_call_transform_v16_matches() {
+        check(
+            ee::s12::f_00360de8__generated,
+            mod_obj_call_transform_v16,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0de8, 1);
+                c.pc = 0x0036_0de8;
+                c.g[A0][0] = sx(DATA);
+                c.bus
+                    .write32(DATA + 0x1c, if seed % 5 == 0 { 0 } else { DATA + 0x100 });
+                c.bus
+                    .write32(DATA + 0x100, if seed % 7 == 0 { 0 } else { DATA + 0x200 });
+                c.bus.write32(DATA + 0x200, DATA + 0x300);
+                c.bus.write32(DATA + 0x380, r.next_u32());
+                c.bus.write32(DATA + 0x384, fakes::FAKE);
+            },
+        );
+    }
+
+    #[test]
+    fn mod_obj_get_uv_scroll_matrix_matches() {
+        install_leaves();
+        check(
+            ee::s12::f_00360ed0__generated,
+            mod_obj_get_uv_scroll_matrix,
+            120,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0ed0, 0);
+                gate_on(c);
+                c.pc = 0x0036_0ed0;
+                c.g[A0][0] = sx(DATA);
+                c.bus
+                    .write32(DATA + 0x1c, if seed % 4 == 0 { 0 } else { DATA + 0x100 });
+                c.bus.write32(
+                    DATA + 0x100 + 0x4,
+                    if seed % 3 == 0 { 0 } else { DATA + 0x200 },
+                );
+                c.bus.write32(
+                    DATA + 0x200 + 0x4,
+                    if seed % 5 == 0 { 0 } else { DATA + 0x300 },
+                );
+            },
+        );
+    }
+
+    /// The `ModObj_Free*` family: one child set or null (seed % 3), the
+    /// child's destructor replaced by the leaf fake.
+    pub(crate) fn check_free_child(generated: GuestFn, hand: GuestFn, entry: u32, salt: u64) {
+        install_leaves();
+        check(generated, hand, 120, &|c, seed| {
+            let _ = machine(c, seed, salt, 0);
+            gate_on(c);
+            c.pc = entry;
+            c.g[A0][0] = sx(DATA);
+            c.bus
+                .write32(DATA + 0x1c, if seed % 3 == 0 { 0 } else { DATA + 0x100 });
+        });
+    }
+
+    #[test]
+    fn mod_obj_free_transform_modifier_matches() {
+        check_free_child(
+            ee::s12::f_00360f20__generated,
+            mod_obj_free_transform_modifier,
+            0x0036_0f20,
+            0x0f20,
+        );
+    }
+
+    #[test]
+    fn mod_obj_free_uv_scroll_modifier_matches() {
+        check_free_child(
+            ee::s12::f_00360f48__generated,
+            mod_obj_free_uv_scroll_modifier,
+            0x0036_0f48,
+            0x0f48,
+        );
+    }
+
+    #[test]
+    fn mod_obj_free_tex_flip_modifier_matches() {
+        check_free_child(
+            ee::s12::f_00360f70__generated,
+            mod_obj_free_tex_flip_modifier,
+            0x0036_0f70,
+            0x0f70,
+        );
+    }
+
+    #[test]
+    fn mod_obj_free_boost_modifier_matches() {
+        check_free_child(
+            ee::s12::f_00360f98__generated,
+            mod_obj_free_boost_modifier,
+            0x0036_0f98,
+            0x0f98,
+        );
+    }
+
+    #[test]
+    fn mod_obj_remove_dead_particles_matches() {
+        check_free_child(
+            ee::s12::f_00360fc0__generated,
+            mod_obj_remove_dead_particles,
+            0x0036_0fc0,
+            0x0fc0,
+        );
+    }
+
+    #[test]
+    fn mod_obj_free_particles_matches() {
+        check_free_child(
+            ee::s12::f_00360fe8__generated,
+            mod_obj_free_particles,
+            0x0036_0fe8,
+            0x0fe8,
+        );
+    }
+
+    #[test]
+    fn mod_obj_reset_particles_matches() {
+        check_free_child(
+            ee::s12::f_00361010__generated,
+            mod_obj_reset_particles,
+            0x0036_1010,
+            0x1010,
+        );
+    }
+
+    #[test]
+    fn intersect_info_ctor_4_matches() {
+        check(
+            ee::s12::f_003611a0__generated,
+            intersect_info_ctor_4,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_11a0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_11a0;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 3));
+                c.bus
+                    .write32(DATA + 0x100 * (seed % 3) + 0x84, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn intersect_info_get_neg_normal_matches() {
+        check(
+            ee::s12::f_00361208__generated,
+            intersect_info_get_neg_normal,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1208 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1208;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x200);
+                for off in [0x50, 0x54, 0x58] {
+                    c.bus.write32(DATA + off, r.next_u32());
+                }
+                if seed % 4 == 0 {
+                    c.bus.write32(DATA + 0x54, 0x8000_0000);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn intersect_info_ctor_5_matches() {
+        check(
+            ee::s12::f_00361248__generated,
+            intersect_info_ctor_5,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1248 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1248;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
+                c.bus
+                    .write32(DATA + 0x100 * (seed % 2) + 0x84, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn intersect_info_ctor_6_matches() {
+        check(
+            ee::s12::f_00361300__generated,
+            intersect_info_ctor_6,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1300 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1300;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
+                c.bus
+                    .write32(DATA + 0x100 * (seed % 2) + 0x84, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn conveyor_node_ctor_matches() {
+        check(
+            ee::s12::f_00361500__generated,
+            conveyor_node_ctor,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1500 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1500;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
+            },
+        );
+    }
+
+    #[test]
+    fn counter_node_ctor_matches() {
+        check(
+            ee::s12::f_00361530__generated,
+            counter_node_ctor,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1530 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1530;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
+            },
+        );
+    }
+
+    #[test]
+    fn roller_modifier_v10_matches() {
+        check(
+            ee::s12::f_00361cd8__generated,
+            roller_modifier_v10,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1cd8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1cd8;
+                c.g[A0][0] = sx(DATA + 0x100 * (seed % 2));
+                c.bus
+                    .write32(DATA + 0x100 * (seed % 2) + 0x20, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn world_objects_global_ctors_matches() {
+        check(
+            ee::s12::f_00361e10__generated,
+            world_objects_global_ctors,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1e10 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1e10;
+            },
+        );
+    }
+
+    #[test]
+    fn intc_table_shutdown_matches() {
+        check(
+            ee::s12::f_00361f40__generated,
+            intc_table_shutdown,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0036_1f40 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0036_1f40;
+            },
+        );
+    }
+
+    #[test]
+    fn intc_handler_save_regs_matches() {
+        check(
+            ee::s12::f_00362120__generated,
+            intc_handler_save_regs,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0036_2120 ^ seed as u64);
+                scramble(c, &mut r);
+                for i in 0..32 {
+                    c.f[i] = r.next_u32();
+                }
+                c.pc = 0x0036_2120;
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    #[test]
+    fn intc_handler_restore_regs_matches() {
+        check(
+            ee::s12::f_00362230__generated,
+            intc_handler_restore_regs,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0036_2230 ^ seed as u64);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA, 64);
+                c.pc = 0x0036_2230;
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    /// The render state (`this`): its context block is at `this + 0x68000`.
+    pub(crate) const THIS: u32 = DATA;
+
+    /// The three words of the state (param 2).
+    pub(crate) const STATE: u32 = DATA + 0x7_0000;
+
+    /// The write pointer slot (`pp`) and the packet buffer it points at.
+    pub(crate) const PP_2: u32 = DATA + 0x7_1000;
+
+    pub(crate) const PKT_2: u32 = DATA + 0x7_2000;
+
+    /// The zbuffer object that `*(gp + 0x2a90)` points at.
+    pub(crate) const ZBUF_OBJ: u32 = DATA + 0x7_3000;
+
+    /// The jump table of `DeferMan_EmitMaterialSetup` (0x492040).
+    pub(crate) const MATERIAL_TABLE: [u32; 9] = [
+        0x365e20, 0x364d3c, 0x364e38, 0x365190, 0x365314, 0x365624, 0x3658d4, 0x365d7c, 0x365e20,
+    ];
+
+    /// Random render state, last-state words equal to the new ones in some
+    /// fields and random in others, every material index 0..=8 (0 takes the
+    /// early exit), every layer, and the three setup modes.
+    pub(crate) fn setup_2(c: &mut Cpu, seed: u32) {
+        let mut r = base_14(c, seed, 0x363c20, 0);
+        for (i, t) in MATERIAL_TABLE.iter().enumerate() {
+            c.bus.write32(0x0049_2040 + 4 * i as u32, *t);
+        }
+        for i in 0..0x400u32 {
+            c.bus.write32(THIS + 0x69_cc0 + 4 * i, r.next_u32());
+        }
+        for i in 0..0x80u32 {
+            c.bus
+                .write32(THIS + 0x68000 + 0x2ec0 + 4 * i, r.next_u32() & 0xffff);
+        }
+        c.bus.write32(GAME_GP + 0x2a90, ZBUF_OBJ);
+
+        let mat = seed % 9;
+        let mut state = [0u32; 5];
+        for w in state.iter_mut() {
+            *w = r.next_u32();
+        }
+        state[0] = (state[0] & !0x3c0) | (mat << 6);
+        put_words(c, STATE, &state);
+        for k in 0..5u32 {
+            let v = if (seed >> k) & 1 == 0 {
+                state[k as usize]
+            } else {
+                r.next_u32()
+            };
+            c.bus.write32(THIS + 0x69ca8 + 4 * k, v);
+        }
+        let layer = (seed / 2) % 3;
+        c.bus.write32(
+            THIS + 0x69cbc,
+            if seed % 3 == 0 {
+                state[3] & 0x3fff_ffff
+            } else {
+                r.next_u32()
+            },
+        );
+        c.bus.write32(
+            THIS + 0x69cc0,
+            if seed % 4 < 2 {
+                layer
+            } else {
+                r.next_u32() % 3
+            },
+        );
+        c.bus.write32(
+            THIS + 0x69cc4,
+            if seed % 5 < 2 {
+                state[2] & 0x1f
+            } else {
+                r.next_u32() % 32
+            },
+        );
+        c.bus.write32(PP_2, PKT_2);
+        c.g[A0][0] = sx(THIS);
+        c.g[A1][0] = sx(STATE);
+        c.g[A2][0] = layer as u64;
+        c.g[A3][0] = sx(PP_2);
+        c.pc = 0x0036_3c20;
+    }
+
+    #[test]
+    fn defer_man_emit_state_change_matches() {
+        check(
+            ee::s12::f_00363c20__generated,
+            defer_man_emit_state_change,
+            200,
+            &setup_2,
+        );
+    }
+
+    #[test]
+    fn tex_flip_modifier_init_matches() {
+        check(
+            ee::s12::f_0035f218__generated,
+            tex_flip_modifier_init,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0xf218, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x0035f218;
+            },
+        );
+    }
+
+    #[test]
+    fn gs_pkt_add_alpha_matches() {
+        check(
+            ee::s12::f_00362478__generated,
+            gs_pkt_add_alpha,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x2478, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x00362478;
+            },
         );
     }
 }

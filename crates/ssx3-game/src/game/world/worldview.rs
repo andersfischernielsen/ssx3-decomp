@@ -41,6 +41,10 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -177,6 +181,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003a_a2f0,
         c_ps2_chunk_resolve_ctor,
         "cPS2ChunkResolve_ctor",
+    ),
+    (
+        0x003a_9958,
+        cworld_cache_streamer_release_section,
+        "cWorldCache_StreamerReleaseSection",
+    ),
+    (
+        0x003a_9ac0,
+        cworld_cache_streamer_are_box_hulls_resident,
+        "cWorldCache_StreamerAreBoxHullsResident",
+    ),
+    (
+        0x003a_9bb8,
+        cworld_cache_streamer_check_node_box,
+        "cWorldCache_StreamerCheckNodeBox",
+    ),
+    (
+        0x003a_ace0,
+        cps2_chunk_resolve_calc_percent,
+        "cPS2ChunkResolve_CalcPercent",
+    ),
+    (
+        0x003a_ae60,
+        cps2_chunk_resolve_dtor_stub,
+        "cPS2ChunkResolve_DtorStub",
     ),
 ];
 
@@ -4299,6 +4328,453 @@ pub fn c_ps2_chunk_resolve_ctor(c: &mut Cpu) {
     })
 }
 
+/// `cWorldCache_IsHullResident(cache, id)` (0x3a8618).
+pub(crate) const IS_HULL_RESIDENT: Callee = Callee {
+    addr: 0x003a_8618,
+    f: ee::s13::cWorldCache_IsHullResident,
+};
+
+/// `cWorldCache_StreamerCheckNodeBox(view, node, box, ok)` (0x3a9bb8).
+pub(crate) const CHECK_NODE_BOX: Callee = Callee {
+    addr: 0x003a_9bb8,
+    f: ee::s13::cWorldCache_StreamerCheckNodeBox,
+};
+
+/// `int cWorldView_unloadSection(cWorldView* view, int section)` (0x3a9958).
+///
+/// Looks up the section's state word in the table at +0x14 (8-byte entries).
+/// A state below 7 selects a case through the function table at 0x494f30:
+/// state 0 returns 0 at once, state 1 and 3 store a state word of 3 or 0 at
+/// the entry, and any other target leaves through `jump_out`.
+pub fn cworld_cache_streamer_release_section(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x4));
+    let t = c.g[V0][0] == 0;
+    'end: {
+        if t {
+            break 'end;
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(r32(c, V0).wrapping_add(0x8));
+        c.g[V0][0] = (c.g[A1][0] < c.g[V0][0]) as u64;
+        let t = c.g[V0][0] == 0;
+        c.g[V0][0] = sx(r32(c, A1) << 3);
+        if t {
+            break 'end;
+        }
+        c.cycles += 8;
+        c.g[V1][0] = sx(r32(c, A0).wrapping_add(0x14));
+        c.g[A1][0] = c.g[V1][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = c.lw(r32(c, V1));
+        c.g[V0][0] = (c.g[V1][0] < 0x7) as u64;
+        let t = c.g[V0][0] == 0;
+        c.g[V0][0] = 0x490000;
+        if t {
+            break 'end;
+        }
+        'case: {
+            c.cycles += 6;
+            c.g[V1][0] = sx(r32(c, V1) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x4f30));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = c.lw(r32(c, V1));
+            let target = r32(c, A0);
+            match target {
+                0x003a_99ac => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    ret(c);
+                    return;
+                }
+                0x003a_99b4 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, A2)));
+                    c.g[V0][0] = 3;
+                    c.sw(r32(c, V1), c.g[V0][0]);
+                    break 'end;
+                }
+                0x003a_99c4 => break 'case,
+                0x003a_99cc => break 'end,
+                _ => {
+                    c.jump_out(target, 0x003a_9958, 0x003a_99d4);
+                    return;
+                }
+            }
+        }
+        c.cycles += 2;
+        c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, A2)));
+        c.sw(r32(c, V0), 0);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+
+/// `bool cWorldView_isBoxValid(cWorldView* view, box)` (0x3a9ac0): the box
+/// is valid when the global hull of the current section is resident, and
+/// every section in state 6 passes the recursive node-box test. Returns the
+/// `ok` flag (0 if the global hull is not resident).
+pub fn cworld_cache_streamer_are_box_hulls_resident(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x80);
+        c.g[V1][0] = 0x44;
+        frame.save(c, 16, 0x70);
+        frame.save(c, 20, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 17, 0x60);
+        frame.save(c, 18, 0x50);
+        frame.save(c, 19, 0x40);
+        frame.save(c, 21, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[A2][0] = c.lw(r32(c, S0).wrapping_add(0x8));
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+        c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x18));
+        c.mult(0, 2, 2, 3);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        c.g[V1][0] = c.lhu(r32(c, V0));
+        let no_hull = c.g[V1][0] == 0;
+        c.g[S4][0] = c.g[A1][0];
+        'end: {
+            if no_hull {
+                c.cycles += 1;
+                c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x4));
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = c.lw(r32(c, A2).wrapping_add(0x18));
+                c.g[A0][0] = c.lw(r32(c, S0));
+                IS_HULL_RESIDENT.call(c, 0x003a_9b14)?;
+                if c.g[V0][0] != 0 {
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x4));
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    break 'end;
+                }
+            }
+            // Loop over the sections (`'b_3a9b8c`).
+            c.cycles += 5;
+            c.g[V1][0] = 0x1;
+            c.sw(sp(c), c.g[V1][0]);
+            c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x8));
+            let no_sections = c.g[V1][0] == 0;
+            c.g[S2][0] = 0;
+            if !no_sections {
+                c.cycles += 3;
+                c.g[S5][0] = 0x6;
+                c.g[S3][0] = 0;
+                c.g[S1][0] = sx(r32(c, S0).wrapping_add(0x14));
+                loop {
+                    'item: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(r32(c, S1));
+                        if c.g[V0][0] != c.g[S5][0] {
+                            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x4));
+                            break 'item;
+                        }
+                        c.cycles += 8;
+                        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x8));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S4][0];
+                        c.g[A3][0] = c.g[SP][0];
+                        c.g[V0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+                        c.g[A1][0] = c.lw(r32(c, V0).wrapping_add(0x1c));
+                        CHECK_NODE_BOX.call(c, 0x003a_9b70)?;
+                        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x4));
+                    }
+                    c.cycles += 6;
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(0x1));
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
+                    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x8));
+                    c.g[V0][0] = (c.g[S2][0] < c.g[V0][0]) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(0x8));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_9b48);
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(sp(c));
+        }
+        c.cycles += 9;
+        frame.restore(c, 16, 0x70);
+        frame.restore(c, 17, 0x60);
+        frame.restore(c, 18, 0x50);
+        frame.restore(c, 19, 0x40);
+        frame.restore(c, 20, 0x30);
+        frame.restore(c, 21, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Node-box overlap of the generated code (`'b_3a9c68`): the six axis tests
+/// `box.min <= node.max` and `node.min <= box.max`, stopping at the first
+/// failure. Leaves the last comparison's flag in fcc.
+pub(crate) fn node_box_overlap(c: &mut Cpu, node: u32, bx: u32) -> bool {
+    c.cycles += 6;
+    c.lwc1(1, bx);
+    c.lwc1(0, node.wrapping_add(0x10));
+    c.c_le_s(1, 0);
+    if !c.fcc() {
+        return false;
+    }
+    c.cycles += 5;
+    c.lwc1(1, bx.wrapping_add(0x10));
+    c.lwc1(0, node);
+    c.c_le_s(0, 1);
+    if !c.fcc() {
+        return false;
+    }
+    c.cycles += 5;
+    c.lwc1(1, bx.wrapping_add(0x4));
+    c.lwc1(0, node.wrapping_add(0x14));
+    c.c_le_s(1, 0);
+    if !c.fcc() {
+        return false;
+    }
+    c.cycles += 5;
+    c.lwc1(1, bx.wrapping_add(0x14));
+    c.lwc1(0, node.wrapping_add(0x4));
+    c.c_le_s(0, 1);
+    if !c.fcc() {
+        return false;
+    }
+    c.cycles += 5;
+    c.lwc1(1, bx.wrapping_add(0x8));
+    c.lwc1(0, node.wrapping_add(0x18));
+    c.c_le_s(1, 0);
+    if !c.fcc() {
+        return false;
+    }
+    c.cycles += 6;
+    c.lwc1(1, bx.wrapping_add(0x18));
+    c.lwc1(0, node.wrapping_add(0x8));
+    c.c_le_s(0, 1);
+    c.fcc()
+}
+
+/// Split-plane test of the generated VU0 code (`'b_3a9cf0`): dot the plane
+/// at `plane` (vf3) with the box corner at `point` (vf5) and return whether
+/// the result is below zero (fcc of `f1 < f0`, with f0 = 0).
+pub(crate) fn node_split_dot_negative(c: &mut Cpu, plane: u32, point: u32) -> bool {
+    c.cycles += 14;
+    c.mtc1(0, 0);
+    c.lqc2(3, plane);
+    c.lqc2(5, point);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(2, 4);
+    c.mtc1(2, 1);
+    c.c_lt_s(1, 0);
+    c.fcc()
+}
+
+/// `void cWorldView_recursiveIsValid(cWorldView* view, node, box, bool* ok)`
+/// (0x3a9bb8): clear `*ok` when the node's page is not resident, and descend
+/// into the children whose split plane the box reaches.
+pub fn cworld_cache_streamer_check_node_box(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, 18, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, 19, 0x10);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(r32(c, S2));
+        let ok_clear = c.g[V0][0] == 0;
+        c.g[S3][0] = c.g[A0][0];
+        // `plus_one`: whether the exit runs the `cycles += 1` tail (the
+        // generated `'b_3a9d40` block); the early exits skip it.
+        let plus_one = 'body: {
+            if ok_clear {
+                break 'body true;
+            }
+            let node = r32(c, S0);
+            let bx = r32(c, S1);
+            let overlap = node_box_overlap(c, node, bx);
+            c.g[V0][0] = overlap as u64;
+            c.cycles += 2;
+            if !overlap {
+                break 'body false;
+            }
+            // Hull of the node: resident, or clear `*ok`.
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(node.wrapping_add(0x58));
+            if c.g[V0][0] == 0 {
+                c.g[A1][0] = c.lw(node.wrapping_add(0x50));
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = c.lhu(r32(c, V0).wrapping_add(0x2));
+                c.g[A0][0] = c.lw(r32(c, S3));
+                IS_HULL_RESIDENT.call(c, 0x003a_9c88)?;
+                if c.g[V0][0] != 0 {
+                    c.g[A1][0] = c.lw(node.wrapping_add(0x50));
+                } else {
+                    c.cycles += 2;
+                    c.sw(r32(c, S2), 0);
+                    break 'body true;
+                }
+            }
+            // In child (`'b_3a9cf4`).
+            c.cycles += 2;
+            if c.g[A1][0] == 0 {
+                c.g[A1][0] = c.lw(node.wrapping_add(0x54));
+            } else {
+                let below = node_split_dot_negative(c, node.wrapping_add(0x20), bx);
+                c.g[A0][0] = c.g[S3][0];
+                if below {
+                    c.cycles += 6;
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[A3][0] = c.g[S2][0];
+                    CHECK_NODE_BOX.call(c, 0x003a_9ce4)?;
+                    c.g[V0][0] = c.lw(r32(c, S2));
+                    if c.g[V0][0] == 0 {
+                        // `*ok` cleared below: exit without the tail.
+                        break 'body false;
+                    }
+                }
+                c.cycles += 1;
+                c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0x54));
+            }
+            // Out child.
+            c.cycles += 2;
+            if c.g[A1][0] == 0 {
+                break 'body false;
+            }
+            let node = r32(c, S0);
+            let below = node_split_dot_negative(c, node.wrapping_add(0x30), bx.wrapping_add(0x10));
+            c.g[A0][0] = c.g[S3][0];
+            if !below {
+                break 'body true;
+            }
+            c.cycles += 3;
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = c.g[S2][0];
+            CHECK_NODE_BOX.call(c, 0x003a_9d40)?;
+            true
+        };
+        if plus_one {
+            c.cycles += 1;
+        }
+        frame.restore(c, 16, 0x40);
+        c.cycles += 6;
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 19, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float cChunkResolve_calcMaxLightDistance(self, light, divisor)`
+/// (0x3aace0): the light's max distance from `a * b / divisor` shaped by the
+/// falloff kind byte at +0x64: 1 linear, 2 square root, 3 `exp(log(r) / 3)`,
+/// otherwise 1e7. The linear, root and exponential forms are scaled by 100.
+pub fn cps2_chunk_resolve_calc_percent(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 2;
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x10);
+        let light = r32(c, A1);
+        c.lwc1(0, light.wrapping_add(0x14));
+        c.lwc1(1, light.wrapping_add(0x18));
+        c.g[V1][0] = c.lb(light.wrapping_add(0x64));
+        c.mul_s(0, 0, 1);
+        c.div_s(12, 0, 12);
+        let kind = c.g[V1][0];
+        let is_root = kind == c.g[V0][0];
+        c.g[V0][0] = ((kind as i64) < 3) as u64;
+        enum Arm {
+            Linear,
+            Root,
+            LogExp,
+            Other,
+        }
+        let arm = if is_root {
+            Arm::Root
+        } else {
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[V0][0] = 3;
+                if kind == 3 {
+                    Arm::LogExp
+                } else {
+                    c.cycles += 2;
+                    Arm::Other
+                }
+            } else {
+                c.g[V0][0] = 1;
+                c.cycles += 2;
+                if kind == 1 {
+                    Arm::Linear
+                } else {
+                    c.cycles += 2;
+                    Arm::Other
+                }
+            }
+        };
+        match arm {
+            Arm::Linear => {
+                c.cycles += 4;
+                c.g[AT][0] = 0x42c8_0000;
+                c.mtc1(1, 0);
+                c.mul_s(0, 12, 0);
+            }
+            Arm::Root => {
+                c.cycles += 5;
+                c.g[AT][0] = 0x42c8_0000;
+                c.mtc1(1, 1);
+                c.sqrt_s(0, 12);
+                c.mul_s(0, 0, 1);
+            }
+            Arm::LogExp => {
+                c.cycles += 9;
+                c.lwc1(20, (c.g[GP][0] as u32).wrapping_sub(0x23b4));
+                call_ptr(c, 0x0040_da10, 0x003a_ad68)?;
+                c.mul_s(12, 0, 20);
+                call_ptr(c, 0x0040_d758, 0x003a_ad70)?;
+                c.g[AT][0] = 0x42c8_0000;
+                c.mtc1(1, 1);
+                c.mul_s(0, 0, 1);
+            }
+            Arm::Other => {
+                c.cycles += 1;
+                c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x23b0));
+            }
+        }
+        c.cycles += 4;
+        frame.restore_fpr(c, 20, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPS2ChunkResolve_purge(void*)` (0x3aae60): an empty stub.
+pub fn cps2_chunk_resolve_dtor_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6289,6 +6765,153 @@ pub(crate) mod tests {
             &|c, _r, seed| {
                 oc433_gp(c, 0x2978, seed % 2);
                 c.g[A0][0] = sx(OC433_FIX + 0x1000);
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_8: u32 = 200;
+
+    /// Scrambled registers, the fake hooks and the entry `pc`.
+    pub(crate) fn machine_2(c: &mut Cpu, seed: u32, salt: u64, entry: u32) -> Rng {
+        let r = fakes::machine(c, seed, salt, 0);
+        c.pc = entry;
+        r
+    }
+
+    #[test]
+    fn cworld_cache_streamer_release_section_matches() {
+        check(
+            ee::s13::f_003a9958__generated,
+            cworld_cache_streamer_release_section,
+            SEEDS_8,
+            &|c, seed| {
+                let mut r = machine_2(c, seed, 0x3a99, 0x003a_9958);
+                let view = DATA + 0x1000;
+                let hdr = DATA + 0x2000;
+                c.bus.write32(view + 4, hdr);
+                c.bus.write32(hdr + 8, 1 + seed % 4);
+                // The case targets the generated code reads from 0x494f30.
+                let targets = [
+                    0x003a_99ac,
+                    0x003a_99b4,
+                    0x003a_99c4,
+                    0x003a_99cc,
+                    0x003a_99b4,
+                    0x003a_99c4,
+                    0x0012_3450,
+                ];
+                for (i, t) in targets.iter().enumerate() {
+                    c.bus.write32(0x0049_4f30 + 4 * i as u32, *t);
+                }
+                for i in 0..6 {
+                    c.bus.write32(view + 0x14 + 8 * i, r.next_u32() % 8);
+                }
+                c.g[A0][0] = sx(view);
+                c.g[A1][0] = (seed % 5) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cworld_cache_streamer_are_box_hulls_resident_matches() {
+        check(
+            ee::s13::f_003a9ac0__generated,
+            cworld_cache_streamer_are_box_hulls_resident,
+            SEEDS_8,
+            &|c, seed| {
+                let mut r = machine_2(c, seed, 0x3a9a, 0x003a_9ac0);
+                let view = DATA + 0x1000;
+                let hdr = DATA + 0x2000;
+                let section = DATA + 0x3000;
+                let hulls = DATA + 0x4000;
+                c.bus.write32(view, DATA + 0x7000);
+                c.bus.write32(view + 4, hdr);
+                c.bus.write32(view + 8, section);
+                c.bus.write32(view + 0x10, hulls);
+                c.bus.write32(hdr + 8, seed % 3);
+                c.bus.write32(section + 0x18, seed % 4);
+                c.bus.write16(hulls + 0x44 * (seed % 4), (seed % 2) as u16);
+                for i in 0..4 {
+                    c.bus.write32(view + 0x14 + 8 * i, r.next_u32() % 8);
+                }
+                for w in 0..24 {
+                    c.bus.write32(DATA + 0x8000 + 4 * w, r.f32(4.0));
+                }
+                c.g[A0][0] = sx(view);
+                c.g[A1][0] = sx(DATA + 0x8000);
+            },
+        );
+    }
+
+    #[test]
+    fn cworld_cache_streamer_check_node_box_matches() {
+        check(
+            ee::s13::f_003a9bb8__generated,
+            cworld_cache_streamer_check_node_box,
+            SEEDS_8,
+            &|c, seed| {
+                let mut r = machine_2(c, seed, 0x3a9b, 0x003a_9bb8);
+                let world = DATA + 0x5000;
+                let node = DATA + 0x4000;
+                let child = DATA + 0x4100;
+                let bx = DATA + 0x6000;
+                let ok = DATA + 0x6100;
+                c.bus.write32(world, DATA + 0x7000);
+                c.bus.write32(ok, 1);
+                for n in [node, child] {
+                    for k in 0..8 {
+                        c.bus.write32(n + 4 * k, r.f32(3.0));
+                    }
+                    for k in 0..8 {
+                        c.bus.write32(n + 0x10 + 4 * k, r.f32(3.0));
+                    }
+                    c.bus.write32(n + 0x20, 0);
+                }
+                for k in 0..8 {
+                    c.bus.write32(bx + 4 * k, r.f32(3.0));
+                    c.bus.write32(node + 0x20 + 4 * k % 0x10, r.f32(1.0));
+                }
+                c.bus
+                    .write32(node + 0x50, if seed % 2 == 0 { child } else { 0 });
+                c.bus
+                    .write32(node + 0x54, if seed % 3 == 0 { child } else { 0 });
+                c.bus.write32(node + 0x58, 0);
+                c.g[A0][0] = sx(world);
+                c.g[A1][0] = sx(node);
+                c.g[A2][0] = sx(bx);
+                c.g[A3][0] = sx(ok);
+            },
+        );
+    }
+
+    #[test]
+    fn cps2_chunk_resolve_calc_percent_matches() {
+        check(
+            ee::s13::f_003aace0__generated,
+            cps2_chunk_resolve_calc_percent,
+            SEEDS_8,
+            &|c, seed| {
+                let mut r = machine_2(c, seed, 0x3aac, 0x003a_ace0);
+                let light = DATA + 0x100;
+                c.bus.write32(light + 0x14, r.f32(4.0));
+                c.bus.write32(light + 0x18, r.f32(4.0));
+                c.bus.write8(light + 0x64, (seed % 6) as u8);
+                c.f[12] = r.f32(3.0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(light);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cps2_chunk_resolve_dtor_stub_matches() {
+        check(
+            ee::s13::f_003aae60__generated,
+            cps2_chunk_resolve_dtor_stub,
+            SEEDS_8,
+            &|c, seed| {
+                machine_2(c, seed, 0x3aae, 0x003a_ae60);
             },
         );
     }
