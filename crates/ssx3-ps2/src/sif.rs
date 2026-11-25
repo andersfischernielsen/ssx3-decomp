@@ -167,6 +167,9 @@ pub fn pump(c: &mut Cpu) {
     m!(c).hw.d_stat |= 1 << 5;
     m!(c).hw.irq_dirty = true;
     c.next_event = c.cycles;
+    if m!(c).kernel.trace_threads {
+        eprintln!("[thread] force cyc {}", c.cycles);
+    }
 }
 
 pub fn packet_processed(c: &mut Cpu) {

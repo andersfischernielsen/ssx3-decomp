@@ -312,11 +312,22 @@ pub fn service_events(c: &mut Cpu) -> bool {
     // Poll at least every ~20k cycles so pending I/O interrupts get delivered.
     next = next.min(c.cycles + 20_000);
     c.next_event = next;
+    if m!(c).kernel.trace_threads {
+        eprintln!(
+            "[thread] svc cyc {} next {} cur {}",
+            c.cycles,
+            next,
+            m!(c).kernel.current
+        );
+    }
     let want_frame = m!(c).sched.frame_ready && !m!(c).kernel.in_handler;
     if m!(c).kernel.host_threads {
         // Return the baton to the frame driver; resume here next frame.
         if want_frame && m!(c).kernel.current != 0 {
             let me = crate::threads::my_token();
+            if m!(c).kernel.trace_threads {
+                eprintln!("[thread] frame-boundary me {me} cyc {}", c.cycles);
+            }
             if me != 0 {
                 crate::threads::handoff(me, 0);
             }
@@ -364,10 +375,19 @@ pub fn run_frame(c: &mut Cpu) -> bool {
 fn run_frame_threads(c: &mut Cpu) {
     loop {
         if m!(c).kernel.halted.is_some() || m!(c).sched.frame_ready {
+            if m!(c).kernel.trace_threads {
+                eprintln!("[thread] frame returns to host cyc {}", c.cycles);
+            }
             return;
         }
         if m!(c).kernel.current == 0 {
             // Idle: no runnable guest thread. Jump to the next event.
+            if m!(c).kernel.trace_threads {
+                eprintln!(
+                    "[thread] driver idle cyc {} next_event {}",
+                    c.cycles, c.next_event
+                );
+            }
             c.pc = IDLE;
             if c.cycles < c.next_event {
                 c.cycles = c.next_event;

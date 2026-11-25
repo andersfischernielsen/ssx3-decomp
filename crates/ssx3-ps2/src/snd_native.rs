@@ -77,6 +77,9 @@ pub fn rpc(c: &mut Cpu, fno: u32, args: u32, size: u32) {
     s.drv.init(p);
     s.next_tick = Some(now);
     c.next_event = c.cycles;
+    if m!(c).kernel.trace_threads {
+        eprintln!("[thread] force cyc {}", c.cycles);
+    }
 }
 
 /// SIF user command 0 (`packet` = the command packet bytes).

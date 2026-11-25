@@ -102,6 +102,9 @@ pub struct Thread {
     /// The coroutine (baton token) whose stack holds a native thread's frames
     /// while it is running or preempted.
     pub host_token: i32,
+    /// Resumes after a block: the syscall stub's tail (a due-event check) still
+    /// has to run before the body continues.
+    pub resume_tail: bool,
 }
 
 #[derive(Clone, Default)]
@@ -362,6 +365,7 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
                         // it resumes at the body's return address, as if the stub
                         // had returned (the stub's tail costs no cycles).
                         t.ctx.pc = t.ctx.g[31][0] as u32;
+                        t.resume_tail = true;
                     }
                 }
                 c.pc |= UNWIND;
@@ -421,6 +425,15 @@ fn run_native(c: &mut Cpu, id: i32, from: i32) {
     if let Some(t) = m!(c).kernel.threads.get_mut(&id) {
         t.host_token = from;
         t.on_stack = false;
+    }
+    if m!(c).kernel.threads.get(&id).is_some_and(|t| t.resume_tail) {
+        m!(c).kernel.threads.get_mut(&id).unwrap().resume_tail = false;
+        // The syscall stub's tail: one due-event check, result ignored.
+        if c.cycles >= c.next_event {
+            let pc = c.pc;
+            c.event();
+            c.pc = pc;
+        }
     }
     loop {
         if m!(c).kernel.current != id || m!(c).kernel.halted.is_some() {
@@ -684,6 +697,7 @@ pub fn start_main_thread(c: &mut Cpu, entry: u32, argc: u32, argv: u32) {
         native: false,
         on_stack: false,
         host_token: 0,
+        resume_tail: false,
     };
     m!(c).kernel.threads.insert(1, t);
     m!(c).kernel.current = 1;
@@ -772,6 +786,7 @@ fn create_thread(c: &mut Cpu) -> i32 {
         native: false,
         on_stack: false,
         host_token: 0,
+        resume_tail: false,
     };
     if m!(c).kernel.trace_threads {
         eprintln!(

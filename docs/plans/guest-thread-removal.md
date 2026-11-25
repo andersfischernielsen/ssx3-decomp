@@ -161,6 +161,23 @@ mixer init, `PS2GraphicsMan`/`Renderer`, `EAFile`, `EAMutex`, libkernl, SIF/FS
 library, `ssx_*` boot) are one writer wave, `oc688`-`oc699`. Thread entries
 `PS2ExecMan_WorkerThread` and `PS2ExecMan_VSyncThread` are already hand-written.
 
+## Open: where the outer event service ends
+
+Found while converting the SND thread (`SSX3_TRACE_THREADS=1` now also logs every
+`service_events` call, forced events and frame boundaries). In coroutine mode the
+`service_events` call that wakes a thread from the frame driver's idle loop runs the
+thread inline (`handoff(0, token)`), and the tail that recomputes `next_event`
+runs when the baton comes back. For the VSync thread (wakes, runs, hands to main,
+main idles) nested execution reproduces this exactly. For the SND thread (wakes,
+runs, blocks, idle) the original shows no tail after the slice, nested execution
+does, and the next idle tick moves by the cycles between the last event check and
+the block (31). Until that is explained (what makes the original skip the tail:
+how `handoff` and `run_from_driver` return when the thread blocks straight to
+idle), the SND thread stays a coroutine. The explanation decides how the main
+loop and the worker (which also run across frame boundaries) can be converted
+without moving host-visible events; if exactness cannot be kept, the fallback is
+a re-based gate for that step only (compare race outcome and screenshots).
+
 ## Verification
 
 - The gate after every thread.
@@ -179,5 +196,5 @@ library, `ssx_*` boot) are one writer wave, `oc688`-`oc699`. Thread entries
 | Port the thread paths | 🟡 wave 237 (`oc688`-`oc699`) |
 | Native-thread mechanism in the kernel (nested run, unwind at the wait) | ✅ gate identical with the VSync thread native (`SSX3_NATIVE_THREADS=0` turns it off) |
 | Convert workers | ⬜ |
-| Convert ISR-driven threads | 🟡 VSync (6) done; SND (8) next |
+| Convert ISR-driven threads | 🟡 VSync (6) done and exact. SND (8): schedule exact, but the outer `service_events` that wakes it ends at a different point than in coroutine mode (one idle tick 31 cycles later): see "Open: where the outer event service ends" |
 | Convert main + the rest, delete `threads.rs` | ⬜ |
