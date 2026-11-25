@@ -52,5 +52,20 @@ equivalence is defined anew (step 1) before anything changes.
 | step | status |
 | --- | --- |
 | Worktree on `main` | ✅ |
-| 1 Acceptance | ⬜ |
+| 1 Acceptance | ✅ `tools/accept.py record/compare` (per-frame page hashes with `SSX3_STATE_LOG`, screenshots, final RAM); recorded twice on this tree: identical |
 | 2-7 | ⬜ |
+
+## Step 1: acceptance (done)
+
+`SSX3_STATE_LOG=path` (headless) writes, every `SSX3_STATE_EVERY` frames, a hash of each
+4 KiB page of EE RAM with the guest thread stacks and `InitMainThread`'s stack left
+out (`crates/ssx3/src/state_log.rs`). `tools/accept.py record DIR` runs the gate replay
+with it, takes screenshots every 250 frames and keeps the final RAM; `compare A B`
+says "RAM identical", or reports the first differing frame and pages, how the number of
+differing pages evolves, and the screenshot differences. A change of schedule is
+accepted when the last logged frame differs in at most `PAGE_TOL` pages and every
+screenshot is within `SHOT_TOL` (defaults 64 pages, 2.0). Both runs of the unchanged
+tree compare identical, and a corrupted log is found.
+
+Baseline of the byte-identical tree: `target/accept/base0` (not in git; record it again
+with `tools/accept.py record` on the last commit before a behaviour change).

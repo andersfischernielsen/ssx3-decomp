@@ -31,6 +31,7 @@ mod png;
 mod present;
 mod screenshot;
 mod settings;
+mod state_log;
 
 use present::Presenter;
 use ssx3_ps2::gpu_wait::{self, Site};

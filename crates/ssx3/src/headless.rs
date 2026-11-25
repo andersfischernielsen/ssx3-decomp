@@ -13,6 +13,7 @@ use std::time::Instant;
 use ssx3_engine::{Audio, Engine, EngineConfig, EnvSettings};
 
 use crate::png;
+use crate::state_log;
 
 /// Run the game without a window; `plugins` are the Rust plugins linked into
 /// this build.
@@ -48,6 +49,17 @@ pub fn run(plugins: Vec<Box<dyn ssx3_engine::ssx3_plugin::Plugin>>) {
     let shot_from: u64 = ssx3_core::config::var("SSX3_SHOT_FROM")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    // SSX3_STATE_LOG=path: per frame, a hash of every 64 KiB page of EE RAM (see
+    // `state_log`); SSX3_STATE_EVERY=N logs every Nth frame only.
+    let mut state_log = ssx3_core::config::var("SSX3_STATE_LOG").and_then(|p| {
+        let every = ssx3_core::config::var("SSX3_STATE_EVERY")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1u64)
+            .max(1);
+        state_log::StateLog::create(&p, every)
+            .map_err(|e| eprintln!("SSX3_STATE_LOG {p}: {e}"))
+            .ok()
+    });
     let shot_dir = ssx3_core::config::var("SSX3_SHOTS").unwrap_or_else(|| "/tmp/ssx3-shots".into());
     let _ = std::fs::create_dir_all(&shot_dir);
 
@@ -210,6 +222,20 @@ pub fn run(plugins: Vec<Box<dyn ssx3_engine::ssx3_plugin::Plugin>>) {
         // Test knob for host clock mode: a host this many ms slower per frame.
         if let Some(ms) = slow_ms {
             std::thread::sleep(std::time::Duration::from_micros((ms * 1000.0) as u64));
+        }
+        if let Some(log) = &mut state_log {
+            // Guest thread stacks are scheduler state; the main thread's is the
+            // top of RAM under its stack pointer.
+            let c = engine.cpu_mut();
+            let mut skip: Vec<(usize, usize)> = ssx3_ps2::m!(c)
+                .kernel
+                .threads
+                .values()
+                .filter(|t| t.stack != 0)
+                .map(|t| (t.stack as usize, (t.stack + t.stack_size) as usize))
+                .collect();
+            skip.push((0x01fe_0000, 0x0200_0000)); // InitMainThread's stack
+            log.frame(f, &c.bus.ram, &skip);
         }
         if ssx3_ps2::gifstats::enabled() && f % 50 == 0 {
             let (pk, v, adc, far) = ssx3_ps2::gifstats::take();
