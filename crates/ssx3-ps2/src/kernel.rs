@@ -165,6 +165,10 @@ pub struct Kernel {
     pub nest: Vec<i32>,
     /// Threads whose in-place wait is idling the machine right now (innermost last).
     pub idle_owners: Vec<i32>,
+    /// Host-thread mode (the booted game): threads run natively on the frame
+    /// driver's stack. Off in unit tests, where a thread switch just unwinds the
+    /// function under test (`c.pc |= UNWIND`).
+    pub host_threads: bool,
     /// Locks (semaphores created with count 1) each thread holds: a native thread that
     /// holds one is not preempted (the thread that preempted it could block on it
     /// with the holder buried below it on the host stack).
@@ -207,6 +211,7 @@ impl Kernel {
             last_switch: 0,
             nest: Vec::new(),
             idle_owners: Vec::new(),
+            host_threads: false,
             held: BTreeMap::new(),
         }
     }
@@ -382,6 +387,10 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
             }
         }
     }
+    if !m!(c).kernel.host_threads {
+        c.pc |= UNWIND;
+        return;
+    }
     if cur_native {
         let exited = m!(c)
             .kernel
@@ -534,7 +543,7 @@ fn run_native_loop(c: &mut Cpu, id: i32) {
 /// own stack, until it blocks or is replaced. False when it is not native.
 pub fn run_current_native(c: &mut Cpu) -> bool {
     let cur = m!(c).kernel.current;
-    if !native_thread(c, cur) {
+    if !m!(c).kernel.host_threads || !native_thread(c, cur) {
         return false;
     }
     run_native(c, cur);
@@ -557,7 +566,8 @@ pub fn reschedule(c: &mut Cpu) {
         return;
     }
     let cur = m!(c).kernel.current;
-    if m!(c).kernel.held.get(&cur).is_some_and(|&n| n > 0)
+    if m!(c).kernel.host_threads
+        && m!(c).kernel.held.get(&cur).is_some_and(|&n| n > 0)
         && m!(c)
             .kernel
             .threads
@@ -567,7 +577,7 @@ pub fn reschedule(c: &mut Cpu) {
         // A native thread inside a lock is not preempted.
         return;
     }
-    let unwinds = cur_unwinds(c, cur);
+    let unwinds = m!(c).kernel.host_threads && cur_unwinds(c, cur);
     let best = m!(c).kernel.best_eligible(cur, unwinds);
     if best == Some(cur)
         && m!(c)
@@ -824,7 +834,8 @@ fn signal_sema(c: &mut Cpu, id: i32, interrupt: bool) {
         m!(c).kernel.release(w, id as i64);
     }
     // A lock released by the running thread ends its protection from preemption.
-    if !interrupt && (waiter.is_some() || (lock && prev_owner == Some(cur))) {
+    let released_lock = m!(c).kernel.host_threads && lock && prev_owner == Some(cur);
+    if !interrupt && (waiter.is_some() || released_lock) {
         reschedule(c);
     }
 }

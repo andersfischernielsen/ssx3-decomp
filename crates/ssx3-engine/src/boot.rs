@@ -112,6 +112,7 @@ pub(crate) fn boot(
     #[cfg(not(target_arch = "wasm32"))]
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
     let mut c = ssx3_ps2::new_cpu();
+    ssx3_ps2::m!(c).kernel.host_threads = ssx3_ee::HOST_THREADS;
     for &(entry, sites) in ssx3_game::NATIVE_THREAD_ENTRIES {
         ssx3_ps2::kernel::register_native_entry(entry, sites);
     }

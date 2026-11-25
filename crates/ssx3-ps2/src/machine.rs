@@ -350,15 +350,21 @@ fn service_events_inner(c: &mut Cpu) -> bool {
         );
     }
     let want_frame = m!(c).sched.frame_ready && !m!(c).kernel.in_handler;
-    if want_frame && m!(c).kernel.current != 0 && m!(c).sched.native_slices > 0 {
-        if m!(c).kernel.trace_threads {
-            eprintln!("[thread] frame-boundary cyc {}", c.cycles);
+    if m!(c).kernel.host_threads {
+        if want_frame && m!(c).kernel.current != 0 && m!(c).sched.native_slices > 0 {
+            if m!(c).kernel.trace_threads {
+                eprintln!("[thread] frame-boundary cyc {}", c.cycles);
+            }
+            // A thread's slice cannot hand control to the host mid-way: the
+            // driver loop returns when the slice has unwound.
+            m!(c).sched.boundary_in_native = true;
         }
-        // A thread's slice cannot hand control to the host mid-way: the driver
-        // loop returns when the slice has unwound.
-        m!(c).sched.boundary_in_native = true;
+        return false;
     }
-    false
+    if want_frame {
+        c.pc |= UNWIND;
+    }
+    c.pc & UNWIND != 0
 }
 
 /// SetGsCrt(interlace, mode, field/frame).
@@ -374,7 +380,10 @@ pub fn set_gs_crt(c: &mut Cpu, interlace: u32, mode: u32, ffmd: u32) {
 /// Run until the next VBlank (one video field) or until the machine halts.
 /// Returns false once halted.
 pub fn run_frame(c: &mut Cpu) -> bool {
-    if m!(c).sched.frames > m!(c).sched.host_frames && m!(c).kernel.halted.is_none() {
+    if m!(c).kernel.host_threads
+        && m!(c).sched.frames > m!(c).sched.host_frames
+        && m!(c).kernel.halted.is_none()
+    {
         // The guest already ran through this VBlank inside an in-place wait.
         m!(c).sched.host_frames += 1;
         return true;
@@ -383,7 +392,11 @@ pub fn run_frame(c: &mut Cpu) -> bool {
     // presenting them (the host skips frames; the game catches up itself).
     for _ in 0..8 {
         m!(c).sched.frame_ready = false;
-        run_frame_threads(c);
+        if m!(c).kernel.host_threads {
+            run_frame_threads(c);
+        } else {
+            trampoline(c, None);
+        }
         if m!(c).kernel.halted.is_some() || !host_clock_behind(c) {
             break;
         }
@@ -461,7 +474,15 @@ pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
         c.pc = pc;
         return;
     }
-    // No depth cap: there is no trampoline to defer to.
-    c.pc = pc;
+    if m!(c).kernel.host_threads {
+        // No depth cap in host-thread mode: there is no trampoline to defer to.
+        c.pc = pc;
+        call_indirect(c, pc);
+        return;
+    }
+    if !c.enter(pc) {
+        return;
+    }
     call_indirect(c, pc);
+    c.leave();
 }
