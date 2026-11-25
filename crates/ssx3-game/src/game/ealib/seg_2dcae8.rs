@@ -5757,6 +5757,23 @@ pub(crate) mod tests {
         );
     }
 
+    /// Deadline one tick in the future (ticks read 0 from [0x450dcc]):
+    /// elapsed == -1, so orig (-1 < -1) is 0 while the `<=` mutant is 1.
+    /// Kills 3915.
+    #[test]
+    fn ea_timer_deadline_passed_future_matches() {
+        check(
+            gen_ea_timer_deadline_passed,
+            hand_ea_timer_deadline_passed,
+            32,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3e_4f80, 0);
+                c.bus.write32(0x0045_0de8, 1);
+                c.pc = 0x003e_4f80;
+            },
+        );
+    }
+
     /// Pure cached-word load.
     #[test]
     fn ea_timer_get_tick_rate_matches() {
@@ -5915,6 +5932,48 @@ pub(crate) mod tests {
                     1 => 0xffff_ffff_ffff_ffff,
                     _ => sx(DATA + 0x500),
                 };
+                c.pc = 0x003e_5440;
+            },
+        );
+    }
+
+    /// Forced thread id 3 with [S0+4]=2: X = 3^2 = 1. Kills 4307 (`^`: orig
+    /// 1 vs mutant 0, since A0&C = 3&2 != 0) and both 4308 `<=` rows (orig
+    /// (1<1)=0 vs mutant (1<=1)=1).
+    #[test]
+    fn ea_thread_is_current_exact_matches() {
+        check(
+            gen_ea_thread_is_current,
+            hand_ea_thread_is_current,
+            16,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3e_5440, 0);
+                zero_block(c, DATA + 0x500, 8);
+                c.bus.write32(DATA + 0x504, 2);
+                // Force GET_THREAD_ID (first fake call) to return 3.
+                c.bus.write32(crate::difftest::fakes::LOG_RESULTS, 3);
+                c.g[A0][0] = sx(DATA + 0x500);
+                c.pc = 0x003e_5440;
+            },
+        );
+    }
+
+    /// Forced thread id equal to the cached id (cur==cand!=0): X = 0.
+    /// Kills 4307 (`^ with |`: orig (0<1)=1 via X=0 vs mutant (C<1)=0
+    /// for C!=0; the `<=` rows need X==1 instead — separate fixture).
+    #[test]
+    fn ea_thread_is_current_equal_matches() {
+        check(
+            gen_ea_thread_is_current,
+            hand_ea_thread_is_current,
+            16,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3e_5440, 0);
+                zero_block(c, DATA + 0x500, 8);
+                c.bus.write32(DATA + 0x504, 0x1234);
+                // Force GET_THREAD_ID (first fake call) to 0x1234.
+                c.bus.write32(crate::difftest::fakes::LOG_RESULTS, 0x1234);
+                c.g[A0][0] = sx(DATA + 0x500);
                 c.pc = 0x003e_5440;
             },
         );
@@ -6094,6 +6153,24 @@ pub(crate) mod tests {
         );
     }
 
+    /// Live timer (mem word != 0) with RAM[0] preset nonzero: orig stores
+    /// 0 to the HW word [0x10000810] (ignored), the `&` mutant stores 0 to
+    /// RAM[0] instead. Kills 3773 `&`.
+    #[test]
+    fn ea_timer_shutdown_live_ram0_matches() {
+        check(
+            gen_ea_timer_shutdown,
+            hand_ea_timer_shutdown,
+            32,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3e_4d68, 0);
+                c.bus.write32(0x0045_0ddc, 1);
+                c.bus.write32(0, 0xA5A5_A5A5);
+                c.pc = 0x003e_4d68;
+            },
+        );
+    }
+
     driven!(hand_stream_file_calc_mem_size, stream_file_calc_mem_size);
 
     /// Channel counts and buffer sizes across the shift range.
@@ -6200,6 +6277,34 @@ pub(crate) mod tests {
                     .write32(DATA + 0x700 + 4 * (seed as u32 / 16 % 4), 0x1234 + seed % 4);
                 c.g[A0][0] = base as u64;
                 c.g[A1][0] = (seed * 13 % 300) as u64;
+                c.pc = 0x003d_fdd0;
+            },
+        );
+    }
+
+    /// Matching nonzero entry word: A1 hits the entry key (entry =
+    /// table + (A1&0xff)*0x124; the mult writes V0=LO as the index scale)
+    /// and the status word is nonzero, so orig keeps the request pointer
+    /// while the `==` mutant nulls it. Kills 1836.
+    #[test]
+    fn stream_file_lookup_request_hit_matches() {
+        check(
+            gen_stream_file_lookup_request,
+            hand_stream_file_lookup_request,
+            32,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3d_fdd0, 0);
+                let base = DATA + 0x600;
+                for i in 0..16u32 {
+                    c.bus.write32(base + 4 * i, 0);
+                }
+                c.bus.write32(base + 0x18, 4);
+                c.bus.write32(base + 0x14, DATA + 0x700);
+                // Entry for key index 2 (A1&0xff): key matches, status != 0.
+                c.bus.write32(DATA + 0x700 + 2 * 0x124, 2);
+                c.bus.write32(DATA + 0x700 + 2 * 0x124 + 4, 1);
+                c.g[A0][0] = base as u64;
+                c.g[A1][0] = 2;
                 c.pc = 0x003d_fdd0;
             },
         );
@@ -7194,6 +7299,32 @@ pub(crate) mod tests {
             &[40, 41, 110, 111, 112, 113, 117, 187, 225],
             &|c, seed| {
                 wait_for_exit_setup(c, seed, false);
+            },
+        );
+    }
+
+    /// Status word flips to 0x11 mid-iteration: the other-thread hook
+    /// writes it after n fires (n swept by seed), so the final load reads
+    /// V0==0x11 while the dead-check saw a live status. Kills 4458
+    /// (`< with <=`: orig (1<1)=0 vs mutant (1<=1)=1).
+    #[test]
+    fn ea_thread_wait_for_exit_status_11_matches() {
+        check(
+            gen_ea_thread_wait_for_exit,
+            hand_ea_thread_wait_for_exit,
+            16,
+            &|c, seed| {
+                let r = machine(c, seed, 0x3e_55e0, 0);
+                zero_block(c, DATA + 0x500, 8);
+                c.bus.write32(DATA + 0x504, 0x1234);
+                c.bus.write32(EA_TIMER_TICKS, 0x500);
+                c.g[A0][0] = sx(DATA + 0x500);
+                let status_at = c.g[SP][0] as u32 - 0x70;
+                c.bus.write32(status_at, 0x20);
+                other_setup(c, 1 + seed % 8, status_at, 0x11, 0, 0);
+                c.g[A1][0] = 0x7fff_ffff;
+                c.pc = 0x003e_55e0;
+                let _ = r;
             },
         );
     }

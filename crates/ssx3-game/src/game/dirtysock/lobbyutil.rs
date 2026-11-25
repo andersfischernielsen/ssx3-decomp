@@ -6499,6 +6499,27 @@ pub(crate) mod tests {
         );
     }
 
+    /// STATUS 0 takes the `V1 <= 0` path, where `A1` (service tag masked
+    /// with the prefix mask) survives to return. `check` under
+    /// args-strictness ignores caller-saved regs, so this asserts `A1`
+    /// directly (`triaged G rows`: `&`/`^` on the mask).
+    #[test]
+    fn socket_lookup_done_masked_service_matches() {
+        let mut c = fresh();
+        let mut rng = net_clock_fixture(&mut c, 1, 0x003f_3860);
+        c.pc = 0x003f_3860;
+        c.g[A0][0] = sx(LOOKUP_TEST_OBJECT);
+        fill(&mut c, &mut rng, LOOKUP_TEST_OBJECT, LOOKUP_SIZE / 4);
+        c.bus.write32(LOOKUP_TEST_OBJECT + LOOKUP_REMOTE_HANDLE, 1);
+        c.bus.write32(LOOKUP_TEST_OBJECT + LOOKUP_STATUS, 0);
+        socket_lookup_done(&mut c);
+        assert_eq!(
+            c.g[A1][0],
+            LOOKUP_RPC_SERVICE & SELECTOR_PREFIX_MASK,
+            "a1 must carry the masked lookup service tag"
+        );
+    }
+
     pub(crate) const CIPHER_TEST_INPUT: u32 = DATA + 0x300;
 
     pub(crate) const CIPHER_TEST_OUTPUT: u32 = DATA + 0x400;
@@ -8546,6 +8567,27 @@ pub(crate) mod tests {
             &[19, 24, 43, 57, 70, 102, 114, 93],
             &|c, seed| {
                 list_sort_fixture(c, seed);
+            },
+        );
+    }
+
+    /// The two filter keys read equal, so the real `strcmp` filter returns
+    /// exactly 0: `visible` flips and the partition routes the entry to the
+    /// hidden half (`triaged G row`).
+    #[test]
+    fn lobby_list_sort_hidden_matches() {
+        lobby_list_test_hooks();
+        check(
+            ee::s14::f_003ee620__generated,
+            lobby_list_sort,
+            8,
+            &|c, seed| {
+                list_sort_fixture(c, seed);
+                c.bus.write8(STRING_KEY, b'm');
+                c.bus.write8(STRING_KEY + 1, 0);
+                c.bus.write8(OTHER_KEY, b'm');
+                c.bus.write8(OTHER_KEY + 1, 0);
+                c.bus.write32(TABLE + LIST_FILTER, STRCMP_CALLBACK);
             },
         );
     }

@@ -4615,6 +4615,33 @@ pub(crate) mod tests {
         );
     }
 
+    /// Query with no free SIF packet: the real CallRpc finds no packet and
+    /// returns -1 normally, so query_heap takes the RPC-failure arm
+    /// (`V0 = 0xffff0000 | 0xffff`, i.e. -1). Pins that arm differentially;
+    /// the `| with ^` mutant there is value-identical (disjoint consts).
+    #[test]
+    fn sce_sif_query_mem_size_rpc_failure_matches() {
+        check(
+            ee::s15::f_0042ae18__generated,
+            sce_sif_query_mem_size,
+            SEEDS,
+            &|c, seed| {
+                // calls=0: no fake unwinds anywhere on this path.
+                machine(c, seed, 121408, 0);
+                c.pc = 0x0042_ae18;
+                // Gate word clear: even-seed path takes the query (CALL_RPC)
+                // branch rather than the early V0=0 exit.
+                c.bus.write32(0x0045_5224, 0);
+                c.bus.write32(0x0052_ef00, 0x7a00_7a00);
+                // Packet table present but with zero packets: GetPacket
+                // claims nothing, CallRpc returns -1 without unwinding.
+                c.bus.write32(0x0052_d680, 0);
+                c.bus.write32(0x0052_d684, DATA + 0x700);
+                c.bus.write32(0x0052_d688, 0);
+            },
+        );
+    }
+
     #[test]
     fn sce_sif_load_iop_heap_matches() {
         check(

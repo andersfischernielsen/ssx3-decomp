@@ -2638,6 +2638,59 @@ pub(crate) mod tests {
         );
     }
 
+    /// Syscall hook modelling real kernel register discipline for the
+    /// counter-driven walks below: the default fake clobbers every
+    /// caller-saved register (including the T9 loop counter), so exact
+    /// loop bounds never bind in-harness although they do in-game (the
+    /// kernel preserves everything but V0/V1 across a syscall). Preserve
+    /// AT/T0-T9, keep the fake's V0/V1/A-reg/cycle/unwind behaviour.
+    fn syscall_preserve_t(c: &mut Cpu, at: u32) {
+        let t = [
+            c.g[1][0], c.g[8][0], c.g[9][0], c.g[10][0], c.g[11][0], c.g[12][0], c.g[13][0],
+            c.g[14][0], c.g[15][0], c.g[24][0], c.g[25][0],
+        ];
+        crate::difftest::fakes::fake_syscall(c, at);
+        c.g[1][0] = t[0];
+        for (i, r) in [8usize, 9, 10, 11, 12, 13, 14, 15, 24, 25]
+            .iter()
+            .enumerate()
+        {
+            c.g[*r][0] = t[i + 1];
+        }
+    }
+
+    /// Seed-classed walks with preserved T-regs: every entry-list loop
+    /// completes, so the exact-boundary mutants bind. Classes (seed%8):
+    /// 40/46 with default bounds (3,2) kill the loop-check rows (1592,
+    /// 1644, 1667-==, 1702) and the S1==49 second bound (1607);
+    /// count 49 + V0_2=0 makes T9==S1==49 in the overflow arm (1627);
+    /// count 46 + V0_2=1 makes the third-list S1==49 (1665);
+    /// count 46 + V0_2=1 + V0_3=1 lands S0==48 into the final table (1717).
+    #[test]
+    fn libkernl_setup_tlb_exact_bounds_matches() {
+        check(
+            ee::s15::f_0042cd98__generated,
+            libkernl_setup_tlb,
+            16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121002, 0);
+                c.hooks.syscall = syscall_preserve_t;
+                c.pc = 0x0042_cd98;
+                setup_tlb_tables(c, &mut r, seed);
+                let (count, v2, v3) = match seed % 8 {
+                    2 => (49, 0, 2),
+                    3 => (46, 1, 2),
+                    4 | 7 => (46, 1, 1),
+                    _ => (if seed % 2 == 0 { 40 } else { 46 }, 3, 2),
+                };
+                c.bus.write32(0x0045_67f0, count);
+                c.bus.write32(0x0045_67f4, v2);
+                c.bus.write32(0x0045_67f8, v3);
+                let _ = r;
+            },
+        );
+    }
+
     #[test]
     fn init_sys_matches() {
         let setup = &|c: &mut Cpu, seed: u32| {

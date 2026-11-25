@@ -12325,6 +12325,92 @@ pub(crate) mod tests {
         );
     }
 
+    /// Gate + model callees for the `u_str_format_float` digit-loop bound
+    /// fixture below. In-harness FCVT/STRLEN never produce a real digit
+    /// string (strlen answers 0 and a callee clobbers the K slot), so the
+    /// exact `no_more` equality never binds. FCVT answers a fixed 5-digit
+    /// string with nonzero last digit and STRLEN answers its length; both
+    /// leave the caller's stack slot and callee-saved registers alone.
+    /// Gate off falls back, so no other test changes behaviour.
+    pub(crate) const QT_GATE: u32 = DATA + 0x8_0004;
+    pub(crate) const QT_GATE_MAGIC: u32 = 0x0f46_6374;
+    pub(crate) const QT_DIGITS: u32 = DATA + 0x8_0000;
+    pub(crate) static QT_PREV_FCVT: AtomicUsize = AtomicUsize::new(0);
+    pub(crate) static QT_PREV_STRLEN: AtomicUsize = AtomicUsize::new(0);
+
+    fn qt_fake_fcvt(c: &mut Cpu) {
+        if c.bus.read32(QT_GATE) != QT_GATE_MAGIC {
+            return fakes::fall_back(c, &QT_PREV_FCVT, ee::s15::f_00418d48__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        for (i, &b) in b"11945".iter().enumerate() {
+            c.bus.write8(QT_DIGITS + i as u32, b);
+        }
+        c.bus.write8(QT_DIGITS + 5, 0);
+        c.g[V0][0] = QT_DIGITS as u64;
+        c.pc = ra;
+    }
+
+    fn qt_fake_strlen(c: &mut Cpu) {
+        if c.bus.read32(QT_GATE) != QT_GATE_MAGIC {
+            return fakes::fall_back(c, &QT_PREV_STRLEN, ee::s15::f_00416810__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let mut len = 0u32;
+        while len < 64 && c.bus.read8((c.g[A0][0] as u32).wrapping_add(len)) != 0 {
+            len += 1;
+        }
+        c.g[V0][0] = len as u64;
+        c.pc = ra;
+    }
+
+    /// Hooks the model callees into their override slots (once per process).
+    pub(crate) fn qt_install_fakes() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00418D48),
+            qt_fake_fcvt,
+            &QT_PREV_FCVT,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00416810),
+            qt_fake_strlen,
+            &QT_PREV_STRLEN,
+        );
+    }
+
+    /// Sweep precisions 0..7, pinning the saved stack word to K=0x100 so
+    /// the remaining-count V1 sweeps a wide window that always binds the
+    /// exact no_more equality (A2==V1). The model FCVT/STRLEN fakes above
+    /// answer a fixed 5-digit string with nonzero last digit (`qt_install_fakes`
+    /// + gate; the harness callees answer 0 and clobber the K slot).
+    /// Kills 6844 (`<=`: orig takes no_more at the bound, mutant loops once
+    /// more). The nonzero digit bytes kill 6851 (`>>` zeroes what `<<`
+    /// sign-extends).
+    #[test]
+    fn u_str_format_float_exact_matches() {
+        check(
+            gen_u_str_format_float,
+            hand_u_str_format_float,
+            32,
+            &|c, seed| {
+                qt_install_fakes();
+                let _r = machine(c, seed, 0x3d_c068, 0);
+                for i in 0..48u32 {
+                    c.bus.write16(DATA + 2 * i, 0xbeef);
+                }
+                c.bus.write32(QT_GATE, QT_GATE_MAGIC);
+                // Pin the saved word the prologue loads (V0=lw(SP)): shifts
+                // the V1 window up so the exact boundary always binds. The
+                // model fakes leave this slot alone.
+                c.bus.write32(c.g[SP][0] as u32 - 0x70, 0x100);
+                c.g[A0][0] = sx(DATA + 96);
+                c.g[A1][0] = 0x42f6_e979u64;
+                c.g[A2][0] = (seed % 8) as u64;
+                c.pc = 0x003d_c068;
+            },
+        );
+    }
+
     /// Events delivered at the row loop's back edge (0x2c2fa0), delivered
     /// and unwind-requesting.
     #[test]

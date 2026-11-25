@@ -10357,6 +10357,36 @@ pub(crate) mod tests {
         );
     }
 
+    /// Queue-open succeeds with a zero status word: the request word equals
+    /// the handle low 24 (inner mask zero -> V1path), and the status word
+    /// is zero, so GET_STATUS returns 0. Kills 4250 `< with <=`
+    /// (status^1==1: orig S2=0 vs mutant S2=1; S2 is returned).
+    /// Deterministic: the lbu reads the handle's top byte (0x00), fixing
+    /// both the inner word (base+0) and the status word (base+8).
+    #[test]
+    fn ea_file_open_zero_status_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _r = machine(c, seed, 0x3d_ebf0, 0);
+            ea_install_fakes();
+            req_fixture(c);
+            let slot = DATA + 0x1000;
+            // Request word == EAF_REQ low 24 (inner mask zero).
+            c.bus.write32(slot, EAF_REQ);
+            c.bus.write32(slot + 8, 0);
+            // Zero the table window every scratch-derived address reads.
+            zero_block(c, slot + 0x10, 64);
+            put_ascii(c, DATA + 0x400, "file.dat");
+            c.bus.write32(EAF_REQ + 0x8, 2);
+            ea_set_type_rets(c, EAF_REQ);
+            c.g[A0][0] = sx(DATA + 0x400);
+            c.g[A1][0] = (seed % 4) as u64;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = sx(DATA + 0x500);
+            c.pc = 0x003d_ebf0;
+        };
+        check(gen_ea_file_open, hand_ea_file_open, 32, setup);
+    }
+
     driven!(gen_ea_file_read, ee::s14::f_003dec60__generated);
 
     driven!(hand_ea_file_read, ea_file_read);
@@ -10886,6 +10916,23 @@ pub(crate) mod tests {
         );
     }
 
+    /// Size word 0: S1==0 takes the `V0`-store arm. Kills the 4873
+    /// `< with <=` pair (orig V1=0 vs mutant V1=1: S1 stays 0 vs becomes
+    /// 0x7fffffff).
+    #[test]
+    fn ea_file_load_file_into_worker_zero_size_matches() {
+        crate::difftest::check(
+            gen_ea_file_load_file_into_worker,
+            hand_ea_file_load_file_into_worker,
+            32,
+            &|c, seed| {
+                load_worker_setup(c, seed, 0x3e_1ad0, 0x003e_1ad0, 1);
+                // Params block: [path, buf, size, ...]; force size 0.
+                c.bus.write32(DATA + 0x400 + 8, 0);
+            },
+        );
+    }
+
     driven!(
         gen_ea_file_load_file_into_ex,
         ee::s14::f_003e1b68__generated
@@ -11058,6 +11105,41 @@ pub(crate) mod tests {
         );
     }
 
+    /// Priority-call worker returns 1: the real LoadFilesWorker is driven
+    /// (worker fn 0x3e1c00), and its per-file results come from the EAF_SEQ
+    /// cells, so forcing those nonzero makes every V1 check pass and the
+    /// worker return 1 (X = 1^1 = 0). Kills 5061 `^ with |` (orig X=0 vs
+    /// mutant X=1) and 5062 `< with >` (orig (0<1)=1 vs mutant (0>1)=0).
+    #[test]
+    fn ea_file_load_files_ex_worker_one_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _r = machine(c, seed, 0x3e_1c98, 0);
+            ea_install_fakes();
+            ea_install_worker_fakes();
+            ea_null_results(c);
+            c.bus.write32(0x0045_0c38, 0x99 + seed);
+            c.bus.write32(EAF_RET_SVCQ, (seed / 2 % 2) as u32);
+            // Arm the load-worker fakes so LoadFile answers EAF_SEQ.
+            c.bus.write32(EAF_WORKER, EAF_MAGIC);
+            // LoadFile answers nonzero for every file in the list.
+            for i in 0..4u32 {
+                c.bus.write32(EAF_SEQ + 4 * i, 0x4400 + i);
+            }
+            put_ascii(c, DATA + 0x400, "f.dat");
+            c.g[A0][0] = 1 + (seed % 4) as u64;
+            c.g[A1][0] = sx(DATA + 0x400);
+            c.g[A2][0] = sx(DATA + 0x500);
+            c.g[A3][0] = sx(DATA + 0x600);
+            c.pc = 0x003e_1c98;
+        };
+        check(
+            gen_ea_file_load_files_ex,
+            hand_ea_file_load_files_ex,
+            32,
+            setup,
+        );
+    }
+
     driven!(gen_ea_file_load_files, ee::s14::f_003e1d00__generated);
 
     driven!(hand_ea_file_load_files, ea_file_load_files);
@@ -11085,6 +11167,33 @@ pub(crate) mod tests {
             &[11, 177, 505],
             setup,
         );
+    }
+
+    /// Same EAF_SEQ forcing for the non-Ex form. Kills 5101 `^ with |`
+    /// and 5102 `< with >` (same X=0 divergence).
+    #[test]
+    fn ea_file_load_files_worker_one_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _r = machine(c, seed, 0x3e_1d00, 0);
+            ea_install_fakes();
+            ea_install_worker_fakes();
+            ea_null_results(c);
+            c.bus.write32(0x0045_0c38, 0x99 + seed);
+            c.bus.write32(EAF_RET_SVCQ, (seed / 2 % 2) as u32);
+            // Arm the load-worker fakes so LoadFile answers EAF_SEQ.
+            c.bus.write32(EAF_WORKER, EAF_MAGIC);
+            // LoadFile answers nonzero for every file in the list.
+            for i in 0..4u32 {
+                c.bus.write32(EAF_SEQ + 4 * i, 0x4400 + i);
+            }
+            put_ascii(c, DATA + 0x400, "f.dat");
+            c.g[A0][0] = 1 + (seed % 4) as u64;
+            c.g[A1][0] = sx(DATA + 0x400);
+            c.g[A2][0] = sx(DATA + 0x500);
+            c.g[A3][0] = sx(DATA + 0x600);
+            c.pc = 0x003e_1d00;
+        };
+        check(gen_ea_file_load_files, hand_ea_file_load_files, 32, setup);
     }
 
     driven!(

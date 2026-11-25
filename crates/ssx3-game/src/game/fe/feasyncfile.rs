@@ -27495,6 +27495,27 @@ pub(crate) mod tests {
         );
     }
 
+    /// Block remaining 0x9000 (> 0x8000) with a non-empty block: orig
+    /// clamps A3 to 0x8000, the `==` mutant keeps A2. Kills 18791.
+    #[test]
+    fn async_file_on_size_big_block_matches() {
+        check(
+            gen_async_file_on_size,
+            hand_async_file_on_size,
+            32,
+            &|c, seed| {
+                async_file_on_size_matches_setup(c, seed);
+                let blk = DATA + 0x600 + 0x80;
+                c.bus.write32(blk + 0x10, 0);
+                // The clamp reads [blk+0x28] AFTER RELEASE overwrites it
+                // with its own return, so force that cell instead: A2
+                // becomes 0x9000 (> 0x8000), orig clamps A3, mutant keeps A2.
+                c.bus.write32(EAF_RET_RELEASE, 0x9000);
+                c.bus.write32(blk + 0x28, 0x9000);
+            },
+        );
+    }
+
     fn async_file_on_size_matches_setup(c: &mut Cpu, seed: u32) {
         let _r = machine(c, seed, 0x3d_f1e0, 0);
         ea_install_fakes();
