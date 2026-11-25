@@ -2,14 +2,27 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
+use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
+use crate::abi::sll;
+use crate::abi::slt;
+use crate::abi::sltu;
+use crate::abi::sra;
+use crate::abi::subu;
 use crate::call;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+use crate::events::Resume;
 pub(crate) use crate::game::fe::splashmanager::at;
 pub(crate) use crate::game::lib::gcc::frame_ld;
 pub(crate) use crate::game::lib::gcc::frame_sd;
@@ -125,6 +138,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_18d8, fcvtbuf, "fcvtbuf"),
     (0x0042_1a50, ecvtbuf, "ecvtbuf"),
     (0x0042_2560, quorem, "quorem"),
+    (0x0041_af88, vfprintf_float_to_str, "vfprintf_FloatToStr"),
+    (0x0041_b728, vfprintf_r, "_vfprintf_r"),
+    (0x0041_dbf8, malloc_r, "_malloc_r"),
+    (0x0042_0510, balloc, "_Balloc"),
+    (0x0042_05f0, multadd, "__multadd"),
+    (0x0042_06f8, s2b, "__s2b"),
+    (0x0042_09b0, multiply, "__multiply"),
+    (0x0042_0bc8, pow5mult, "__pow5mult"),
+    (0x0042_0cc8, lshift, "__lshift"),
+    (0x0042_0e90, mdiff, "__mdiff"),
+    (0x0042_10e8, b2d, "__b2d"),
+    (0x0042_1280, d2b, "__d2b"),
+    (0x0042_1400, ratio, "__ratio"),
+    (0x0042_1f20, realloc_r, "_realloc_r"),
+    (0x0042_2780, dtoa_r, "_dtoa_r"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -189,6 +217,11 @@ pub(crate) mod callee {
         addr: 0x0041_1538,
         f: ee::s15::__udivdi3,
     };
+    pub(crate) use crate::game::lib::gcc::ADDDF3;
+    pub(crate) use crate::game::lib::gcc::FLOATDIDF;
+    pub(crate) use crate::game::lib::gcc::FLOATSIDF;
+    pub(crate) use crate::game::lib::gcc::IEEE_LOG_DIVDF3 as DIVDF3;
+    pub(crate) use crate::game::lib::gcc::MULDF3;
     pub(crate) use crate::game::misc::callee::BALLOC;
     pub(crate) use crate::game::misc::callee::BUFFERED_WRITE as VFPRINTF_BUFFERED_WRITE;
     pub(crate) use crate::game::misc::callee::CMPDF2;
@@ -238,6 +271,114 @@ pub(crate) mod callee {
     pub(crate) use crate::game::misc::callee::TRUNCDFSF2;
     pub(crate) use crate::game::misc::callee::VFPRINTF_DISPATCH;
     pub(crate) use crate::game::misc::callee::WRITE;
+    pub(crate) use crate::game::seg::seg_316fb8::STRTOD_FIXDFSI as FIXDFSI;
+
+    /// `void _Bfree(reent*, Bigint*)`: back onto the reent's free list.
+    pub(crate) use crate::game::seg::seg_316fb8::STRTOD_BFREE as BFREE;
+
+    /// `Bigint* __multadd(reent*, Bigint* b, int m, int a)`: `b * m + a`.
+    pub const MULTADD: Callee = Callee {
+        addr: 0x0042_05f0,
+        f: ee::s15::__multadd,
+    };
+
+    /// `int __hi0bits(ULong)`: leading zero bits.
+    pub const HI0BITS: Callee = Callee {
+        addr: 0x0042_0830,
+        f: ee::s15::__hi0bits,
+    };
+
+    /// `Bigint* __i2b(reent*, int)`: a one-word Bigint.
+    pub(crate) use crate::game::seg::seg_316fb8::STRTOD_I2B as I2B;
+
+    /// `Bigint* __multiply(reent*, Bigint*, Bigint*)`.
+    pub(crate) use crate::game::seg::seg_316fb8::STRTOD_MULTIPLY as MULTIPLY;
+
+    /// `Bigint* __pow5mult(reent*, Bigint* b, int k)`: `b * 5^k`.
+    pub(crate) use crate::game::seg::seg_316fb8::STRTOD_POW5MULT as POW5MULT;
+
+    /// `Bigint* __lshift(reent*, Bigint* b, int k)`: `b << k`.
+    pub(crate) use crate::game::seg::seg_316fb8::STRTOD_LSHIFT as LSHIFT;
+
+    /// `Bigint* __mdiff(reent*, Bigint* a, Bigint* b)`: `|a - b|`, sign set.
+    pub(crate) use crate::game::seg::seg_316fb8::STRTOD_MDIFF as MDIFF;
+
+    /// `Bigint* __d2b(reent*, double, int* e, int* bits)`.
+    pub(crate) use crate::game::seg::seg_316fb8::STRTOD_D2B as D2B;
+
+    /// `int quorem(Bigint* b, Bigint* S)`: the next decimal digit of `b / S`.
+    pub const QUOREM: Callee = Callee {
+        addr: 0x0042_2560,
+        f: ee::s15::quorem,
+    };
+
+    /// `struct lconv *localeconv(void)` (hand port).
+    pub const LOCALECONV: Callee = Callee {
+        addr: 0x0041_ec48,
+        f: ee::s15::localeconv,
+    };
+
+    /// `char *vfprintf_FloatToStr(double x, int prec, char style, int trim, char *sign)`:
+    /// the digits of a float conversion.
+    pub const VFPRINTF_FLOAT_TO_STR: Callee = Callee {
+        addr: 0x0041_af88,
+        f: ee::s15::vfprintf_FloatToStr,
+    };
+
+    /// `double __ieee754_log10(double)`.
+    pub const IEEE754_LOG10: Callee = Callee {
+        addr: 0x0041_f9d8,
+        f: ee::s15::__ieee754_log10,
+    };
+
+    /// `void *malloc_extend_top(struct _reent *r, size_t nb)` (0x41d990): grow
+    /// the top chunk through `_sbrk_r`.
+    pub(crate) const MALLOC_EXTEND_TOP: Callee = Callee {
+        addr: 0x0041_d990,
+        f: ee::s15::malloc_extend_top,
+    };
+
+    /// `double floor(double)` (fdlibm, generated).
+    pub const FLOOR: Callee = Callee {
+        addr: 0x0041_ed60,
+        f: ee::s15::floor,
+    };
+
+    /// `double __ieee754_fmod(double, double)` (fdlibm, generated).
+    pub const IEEE754_FMOD: Callee = Callee {
+        addr: 0x0041_ef50,
+        f: ee::s15::__ieee754_fmod,
+    };
+
+    /// `int vfprintf_RoundDigits(char *digits, int len)` (hand port).
+    pub const VFPRINTF_ROUND_DIGITS: Callee = Callee {
+        addr: 0x0041_ae00,
+        f: ee::s15::vfprintf_RoundDigits,
+    };
+
+    /// `char *vfprintf_IntToStr(int value, char *buf, int base)` (hand port).
+    pub const VFPRINTF_INT_TO_STR: Callee = Callee {
+        addr: 0x0041_aee8,
+        f: ee::s15::vfprintf_IntToStr,
+    };
+
+    /// `void *_calloc_r(struct _reent *r, size_t n, size_t size)`.
+    pub(crate) const CALLOC_R: Callee = Callee {
+        addr: 0x0042_24a0,
+        f: ee::s15::_calloc_r,
+    };
+
+    /// `int __lo0bits(unsigned long *y)`.
+    pub(crate) const LO0BITS: Callee = Callee {
+        addr: 0x0042_08b8,
+        f: ee::s15::__lo0bits,
+    };
+
+    /// `double __b2d(_Bigint *a, int *e)`.
+    pub(crate) const B2D: Callee = Callee {
+        addr: 0x0042_10e8,
+        f: ee::s15::__b2d,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -11517,6 +11658,8450 @@ pub fn quorem(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod vfprintf_r_arm {
+
+    /// `' '`
+    pub(crate) const SPACE: u32 = 0x0041_b8d4;
+
+    /// `'#'`
+    pub(crate) const ALT: u32 = 0x0041_b8ec;
+
+    /// `'\''`
+    pub(crate) const GROUP: u32 = 0x0041_b8f4;
+
+    /// `'*'`
+    pub(crate) const STAR: u32 = 0x0041_b8fc;
+
+    /// `'-'`
+    pub(crate) const MINUS: u32 = 0x0041_b914;
+
+    /// `'+'`
+    pub(crate) const PLUS: u32 = 0x0041_b91c;
+
+    /// `'.'`
+    pub(crate) const DOT: u32 = 0x0041_b928;
+
+    /// `'0'`
+    pub(crate) const ZERO: u32 = 0x0041_b99c;
+
+    /// `'1'..='9'`
+    pub(crate) const DIGIT: u32 = 0x0041_b9a4;
+
+    /// `'L'`
+    pub(crate) const LONG_DOUBLE: u32 = 0x0041_b9d8;
+
+    /// `'h'`
+    pub(crate) const SHORT: u32 = 0x0041_b9e0;
+
+    /// `'l'`
+    pub(crate) const LONG: u32 = 0x0041_b9e8;
+
+    /// `'q'`
+    pub(crate) const QUAD: u32 = 0x0041_b9fc;
+
+    /// `'c'`
+    pub(crate) const CHAR: u32 = 0x0041_ba04;
+
+    /// `'D'`
+    pub(crate) const LONG_DECIMAL: u32 = 0x0041_ba30;
+
+    /// `'d'`, `'i'`
+    pub(crate) const DECIMAL: u32 = 0x0041_ba34;
+
+    /// `'e'`, `'E'`, `'f'`, `'g'`, `'G'`
+    pub(crate) const FLOAT: u32 = 0x0041_ba84;
+
+    /// `'n'`
+    pub(crate) const COUNT: u32 = 0x0041_bbb0;
+
+    /// `'O'`
+    pub(crate) const LONG_OCTAL: u32 = 0x0041_bc18;
+
+    /// `'o'`
+    pub(crate) const OCTAL: u32 = 0x0041_bc1c;
+
+    /// `'p'`
+    pub(crate) const POINTER: u32 = 0x0041_bc5c;
+
+    /// `'s'`
+    pub(crate) const STRING: u32 = 0x0041_bc80;
+
+    /// `'U'`
+    pub(crate) const LONG_UNSIGNED: u32 = 0x0041_bce4;
+
+    /// `'u'`
+    pub(crate) const UNSIGNED: u32 = 0x0041_bce8;
+
+    /// `'X'`
+    pub(crate) const HEX_UPPER: u32 = 0x0041_bd28;
+
+    /// `'x'`
+    pub(crate) const HEX_LOWER: u32 = 0x0041_bd34;
+
+    /// Every other character, `'%'` and NUL included.
+    pub(crate) const OTHER: u32 = 0x0041_bf28;
+}
+
+// ---------------------------------------------------------------------------
+// `_dtoa_r`: layout. Variable names are newlib `dtoa.c`'s, matched to the
+// generated body by what each slot holds.
+
+/// Entry and end of the original (for the out-of-range `pc` hook).
+pub(crate) const DTOA_R_ENTRY: u32 = 0x0042_2780;
+
+pub(crate) const DTOA_R_END: u32 = 0x0042_3964;
+
+// Loop heads with an event check on their back edge: the trampoline re-enters
+// the function there after an unwind.
+
+/// `for (j = 4; 20 + j <= i; j <<= 1) result_k++`.
+pub(crate) const DTOA_R_HEAD_RESULT_K: u32 = 0x0042_2c40;
+
+/// Quick path, `k > 0`: `ds *= bigtens[i]` per set bit of `k >> 4`.
+pub(crate) const DTOA_R_HEAD_QUICK_DIVISOR: u32 = 0x0042_2ce8;
+
+/// Quick path, `k < 0`: `d *= bigtens[i]` per set bit of `-k >> 4`.
+pub(crate) const DTOA_R_HEAD_QUICK_SCALE: u32 = 0x0042_2d60;
+
+/// Quick path, shortest digits (Steele & White): `eps *= 10; d *= 10`.
+pub(crate) const DTOA_R_HEAD_QUICK_SHORTEST: u32 = 0x0042_2ed0;
+
+/// Quick path, `ilim` digits.
+pub(crate) const DTOA_R_HEAD_QUICK_FIXED: u32 = 0x0042_2fa0;
+
+/// Quick path, `while (*--s == '0')`.
+pub(crate) const DTOA_R_HEAD_QUICK_TRIM: u32 = 0x0042_3028;
+
+/// Small integer: one digit per `d / ds`.
+pub(crate) const DTOA_R_HEAD_SMALL_INT: u32 = 0x0042_30f4;
+
+/// `bump_up: while (*--s == '9')`.
+pub(crate) const DTOA_R_HEAD_BUMP_UP: u32 = 0x0042_3188;
+
+/// Bignum shortest digits (`leftright`): `b`, `mlo`, `mhi` times 10.
+pub(crate) const DTOA_R_HEAD_SHORTEST: u32 = 0x0042_3608;
+
+/// Bignum `ilim` digits: `b` times 10.
+pub(crate) const DTOA_R_HEAD_FIXED: u32 = 0x0042_37c8;
+
+/// `roundoff: while (*--s == '9')`.
+pub(crate) const DTOA_R_HEAD_ROUND_OFF: u32 = 0x0042_3860;
+
+/// `while (*--s == '0')` after the last bignum digit.
+pub(crate) const DTOA_R_HEAD_TRIM_ZEROS: u32 = 0x0042_38ac;
+
+/// The jump table's targets for `switch (mode)` (modes 0..5, the table at
+/// `DTOA_R_MODE_TABLE`).
+pub(crate) const DTOA_R_CASE_SHORTEST: u32 = 0x0042_2bc4;
+
+/// Mode 2: `leftright = 0`, then mode 4.
+pub(crate) const DTOA_R_CASE_DIGITS: u32 = 0x0042_2bdc;
+
+/// Mode 4: `ndigits` significant digits.
+pub(crate) const DTOA_R_CASE_DIGITS_LR: u32 = 0x0042_2be0;
+
+/// Mode 3: `leftright = 0`, then mode 5.
+pub(crate) const DTOA_R_CASE_DECIMALS: u32 = 0x0042_2c00;
+
+/// Mode 5: `ndigits` digits after the decimal point.
+pub(crate) const DTOA_R_CASE_DECIMALS_LR: u32 = 0x0042_2c04;
+
+/// Stack frame and the callee-saved slots.
+pub(crate) const DTOA_R_FRAME: u32 = 0x100;
+
+pub(crate) const DTOA_R_SAVE_RA: u32 = 0x60;
+
+pub(crate) const DTOA_R_SAVE_FP: u32 = 0x70;
+
+pub(crate) const DTOA_R_SAVE_S7: u32 = 0x80;
+
+pub(crate) const DTOA_R_SAVE_S6: u32 = 0x90;
+
+pub(crate) const DTOA_R_SAVE_S5: u32 = 0xa0;
+
+pub(crate) const DTOA_R_SAVE_S4: u32 = 0xb0;
+
+pub(crate) const DTOA_R_SAVE_S3: u32 = 0xc0;
+
+pub(crate) const DTOA_R_SAVE_S2: u32 = 0xd0;
+
+pub(crate) const DTOA_R_SAVE_S1: u32 = 0xe0;
+
+pub(crate) const DTOA_R_SAVE_S0: u32 = 0xf0;
+
+// Locals in the frame (dtoa.c names).
+
+/// `be` (written by `d2b`).
+pub(crate) const DTOA_R_SLOT_BE: u32 = 0x0;
+
+/// `bbits` (written by `d2b`).
+pub(crate) const DTOA_R_SLOT_BBITS: u32 = 0x4;
+
+/// The arguments `mode`, `ndigits`, `decpt`, `rve`.
+pub(crate) const DTOA_R_SLOT_MODE: u32 = 0x8;
+
+pub(crate) const DTOA_R_SLOT_NDIGITS: u32 = 0xc;
+
+pub(crate) const DTOA_R_SLOT_DECPT: u32 = 0x10;
+
+pub(crate) const DTOA_R_SLOT_RVE: u32 = 0x14;
+
+/// Powers of 2 and 5 in `b`.
+pub(crate) const DTOA_R_SLOT_B2: u32 = 0x18;
+
+pub(crate) const DTOA_R_SLOT_B5: u32 = 0x1c;
+
+/// `ilim`, `ilim0` (the quick path's copy), `ilim1`, `k0`.
+pub(crate) const DTOA_R_SLOT_ILIM: u32 = 0x20;
+
+pub(crate) const DTOA_R_SLOT_ILIM0: u32 = 0x24;
+
+pub(crate) const DTOA_R_SLOT_ILIM1: u32 = 0x28;
+
+pub(crate) const DTOA_R_SLOT_K0: u32 = 0x2c;
+
+pub(crate) const DTOA_R_SLOT_K_CHECK: u32 = 0x30;
+
+pub(crate) const DTOA_R_SLOT_LEFTRIGHT: u32 = 0x34;
+
+/// Powers of 2 and 5 in `S`.
+pub(crate) const DTOA_R_SLOT_S2: u32 = 0x38;
+
+pub(crate) const DTOA_R_SLOT_S5: u32 = 0x3c;
+
+/// `spec_case` (left unwritten for modes 2..5, as in dtoa.c).
+pub(crate) const DTOA_R_SLOT_SPEC_CASE: u32 = 0x40;
+
+pub(crate) const DTOA_R_SLOT_DENORM: u32 = 0x44;
+
+/// The Bigints `b`, `mlo`, `mhi`, `S`.
+pub(crate) const DTOA_R_SLOT_B: u32 = 0x48;
+
+pub(crate) const DTOA_R_SLOT_MLO: u32 = 0x4c;
+
+pub(crate) const DTOA_R_SLOT_MHI: u32 = 0x50;
+
+pub(crate) const DTOA_R_SLOT_BIG_S: u32 = 0x54;
+
+/// `s0`: the result string (the reent's `_result` Bigint).
+pub(crate) const DTOA_R_SLOT_DIGITS: u32 = 0x58;
+
+/// `struct _reent` fields: `_result`, `_result_k`.
+pub(crate) const DTOA_R_REENT_RESULT: u32 = 0x40;
+
+pub(crate) const DTOA_R_REENT_RESULT_K: u32 = 0x44;
+
+/// `Bigint` fields: `k`, `maxwds`, `sign`, `wds`, `x[]` (`next` at 0).
+pub(crate) const DTOA_R_BIGINT_K: u32 = 0x4;
+
+pub(crate) const DTOA_R_BIGINT_MAXWDS: u32 = 0x8;
+
+pub(crate) const DTOA_R_BIGINT_SIGN: u32 = 0xc;
+
+pub(crate) const DTOA_R_BIGINT_WDS: u32 = 0x10;
+
+pub(crate) const DTOA_R_BIGINT_X: u32 = 0x14;
+
+/// `Bcopy` copies `sign` and `wds` with the words.
+pub(crate) const DTOA_R_BIGINT_COPY_HEADER: u32 = 0x8;
+
+/// The `lui` the original materialises before each table address.
+pub(crate) const DTOA_R_DATA_PAGE: u64 = 0x004a_0000;
+
+/// `tens[0..=22]`, `bigtens[0..5]` (1e16 .. 1e256) and its last entry.
+pub(crate) const DTOA_R_TENS: u32 = 0x0049_a8f8;
+
+pub(crate) const DTOA_R_BIGTENS: u32 = 0x0049_a9c0;
+
+pub(crate) const DTOA_R_BIGTEN_LAST: u32 = 0x0049_a9e0;
+
+/// `switch (mode)` jump table (six words).
+pub(crate) const DTOA_R_MODE_TABLE: u32 = 0x0049_aac0;
+
+/// `"Infinity"`, `"NaN"`, `"0"`.
+pub(crate) const DTOA_R_STR_INFINITY: u32 = 0x0049_aaa0;
+
+pub(crate) const DTOA_R_STR_NAN: u32 = 0x0049_aab0;
+
+pub(crate) const DTOA_R_STR_ZERO: u32 = 0x0049_aab8;
+
+/// `*rve = s[3] ? s + 8 : s + 3` for the two special strings.
+pub(crate) const DTOA_R_NAN_LEN: u32 = 3;
+
+pub(crate) const DTOA_R_INFINITY_LEN: u32 = 8;
+
+/// `*decpt` for Infinity and NaN.
+pub(crate) const DTOA_R_SPECIAL_DECPT: u64 = 9999;
+
+// IEEE double fields (high word unless noted).
+pub(crate) const DTOA_R_LOW_WORD: u64 = 0xffff_ffff;
+
+pub(crate) const DTOA_R_SIGN_CLEAR: u64 = 0x7fff_ffff;
+
+pub(crate) const DTOA_R_EXP_MASK: u64 = 0x7ff0_0000;
+
+pub(crate) const DTOA_R_EXP_SHIFT: u32 = 20;
+
+pub(crate) const DTOA_R_EXP_FIELD: u64 = 0x7ff;
+
+/// `Frac_mask1` and `Exp_11` (1.0's high word).
+pub(crate) const DTOA_R_FRAC_MASK1: u64 = 0x000f_ffff;
+
+pub(crate) const DTOA_R_EXP_11: u64 = 0x3ff0_0000;
+
+/// The 52 fraction bits of the whole double.
+pub(crate) const DTOA_R_MANTISSA: u64 = 0x000f_ffff_ffff_ffff;
+
+/// `Bias`, `Bias + P - 1`, `Bias + P - 2` and that minus 32.
+pub(crate) const DTOA_R_BIAS: u64 = 0x3ff;
+
+pub(crate) const DTOA_R_BIAS_P: u32 = 0x433;
+
+pub(crate) const DTOA_R_DENORM_BIAS: u32 = 0x432;
+
+pub(crate) const DTOA_R_DENORM_HI_SHIFT: u32 = 0x412;
+
+/// A denormal's `x` fits one word below 33 bits.
+pub(crate) const DTOA_R_WORD_BITS_PLUS1: u64 = 33;
+
+/// `-31 * Exp_msk1` and `-(P - 1) * Exp_msk1` on the high word.
+pub(crate) const DTOA_R_DENORM_EXP_ADJUST: u64 = 0xffff_ffff_fe10_0000;
+
+pub(crate) const DTOA_R_EPS_EXP_ADJUST: u64 = 0xffff_ffff_fcc0_0000;
+
+/// `1 + P` (the `i` of a normal number in mode 0/1).
+pub(crate) const DTOA_R_ONE_PLUS_P: u64 = 54;
+
+/// `Log2P`.
+pub(crate) const DTOA_R_LOG2P: u32 = 1;
+
+/// `Ten_pmax + 1`, `Quick_max + 1`, `Int_max + 1` (exclusive bounds).
+pub(crate) const DTOA_R_TEN_PMAX_END: u64 = 23;
+
+pub(crate) const DTOA_R_QUICK_MAX_END: u64 = 15;
+
+pub(crate) const DTOA_R_INT_MAX_END: u64 = 15;
+
+/// `Bletch` (`k >> 4` bit for the 1e256 pre-division).
+pub(crate) const DTOA_R_BLETCH: u64 = 0x10;
+
+/// `mode < 0 || mode > 9` becomes 0; `mode > 5` drops 4 and the quick path.
+pub(crate) const DTOA_R_MODES: u64 = 10;
+
+pub(crate) const DTOA_R_QUICK_MODES: u64 = 6;
+
+pub(crate) const DTOA_R_MODE_FOLD: u64 = 4;
+
+/// The `switch (mode)` cases.
+pub(crate) const DTOA_R_SWITCH_CASES: u64 = 6;
+
+/// `i = 18` for modes 0 and 1.
+pub(crate) const DTOA_R_SHORTEST_I: u64 = 18;
+
+/// `sizeof(Bigint) - sizeof(ULong)` and `sizeof(ULong)`.
+pub(crate) const DTOA_R_BIGINT_HEADER: u32 = 0x14;
+
+pub(crate) const DTOA_R_ULONG_SIZE: u64 = 4;
+
+pub(crate) const DTOA_R_DOUBLE_SIZE: u32 = 8;
+
+/// `ieps` start values: 2 (conservative), 3 after the 1e256 division.
+pub(crate) const DTOA_R_IEPS: u64 = 2;
+
+/// A quotient needs 4 leading zero bits in the top word of `S`.
+pub(crate) const DTOA_R_WORD_BITS: u64 = 32;
+
+pub(crate) const DTOA_R_WORD_BIT_MASK: u64 = 0x1f;
+
+pub(crate) const DTOA_R_LEAD_ZEROS: u64 = 4;
+
+/// `mode < 2`, `mode > 2`.
+pub(crate) const DTOA_R_MODE_BIG: u64 = 2;
+
+pub(crate) const DTOA_R_MODE_FCVT: u64 = 3;
+
+/// Digits.
+pub(crate) const DTOA_R_CHAR_0: u64 = 0x30;
+
+pub(crate) const DTOA_R_CHAR_1: u64 = 0x31;
+
+pub(crate) const DTOA_R_CHAR_9: u64 = 0x39;
+
+// Doubles the original builds in registers.
+pub(crate) const DTOA_R_HALF: u64 = 0x3fe0_0000_0000_0000;
+
+pub(crate) const DTOA_R_ONE: u64 = 0x3ff0_0000_0000_0000;
+
+pub(crate) const DTOA_R_ONE_AND_HALF: u64 = 0x3ff8_0000_0000_0000;
+
+pub(crate) const DTOA_R_FIVE: u64 = 0x4014_0000_0000_0000;
+
+pub(crate) const DTOA_R_SEVEN: u64 = 0x401c_0000_0000_0000;
+
+pub(crate) const DTOA_R_TEN: u64 = 0x4024_0000_0000_0000;
+
+/// `log10(x) ~ (x - 1.5) * 0.289529654602168 + 0.1760912590558` near 1.5,
+/// plus `i * log10(2)` (0.301029995663981).
+pub(crate) const DTOA_R_LOG10_SLOPE: u64 = 0x3fd2_87a7_636f_4361;
+
+pub(crate) const DTOA_R_LOG10_AT_1_5: u64 = 0x3fc6_8a28_8b60_c8b3;
+
+pub(crate) const DTOA_R_LOG10_OF_2: u64 = 0x3fd3_4413_509f_79fb;
+
+/// Where the function goes next: the joins of the original's control flow
+/// (dtoa.c's labels) and the loop heads it can be re-entered at.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum DtoaRStep {
+    /// `result_k` loop (head).
+    ResultKLoop,
+    /// `Balloc` the result string, then the quick path or not.
+    AllocResult,
+    /// Quick path loops (heads).
+    QuickDivisorLoop,
+    QuickScaleLoop,
+    /// Quick path: the `k_check` fix-up and `eps`.
+    QuickEps,
+    /// Quick path digit loops (heads); `scale` enters at the head.
+    QuickShortest {
+        scale: bool,
+    },
+    QuickFixed,
+    QuickTrimZeros,
+    /// "Do we have a small integer?"
+    SmallInt,
+    SmallIntLoop,
+    /// `bump_up`, with `v1 = '9'`.
+    BumpUp,
+    BumpUpLoop,
+    /// The Bignum set-up.
+    Bignum,
+    /// `no_digits`, `one_digit` (with `v0 = '1'`, `v1 = s0`).
+    NoDigits,
+    OneDigit,
+    /// The Bignum digit loops; `scale` enters at the head.
+    Digits,
+    ShortestLoop {
+        scale: bool,
+    },
+    FixedLoop {
+        scale: bool,
+    },
+    /// "Round off last digit" (with `a1 = b`).
+    RoundLast,
+    /// `roundoff` and its loop (head).
+    RoundOff,
+    RoundOffLoop,
+    /// `while (*--s == '0')` (head).
+    TrimZeros,
+    /// `s++`, then `ret`.
+    RetAfterDigit,
+    /// `ret` (free `S`, `mlo`, `mhi`) and `ret1` (free `b`, finish).
+    Ret,
+    Ret1 {
+        b_loaded: bool,
+    },
+    /// Returned to the caller.
+    Done,
+}
+
+/// A step's outcome: the next step, or unwind now.
+pub(crate) type DtoaRFlow = Result<DtoaRStep, Unwound>;
+
+/// What follows a digit of the Bignum shortest-digits loop.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum DtoaRDigit {
+    /// Stored the final digit (then `s++; goto ret`).
+    Stored,
+    /// `round_9_up` (sets `v1 = '9'` first).
+    RoundNine,
+    /// `round_9_up` with `v1 = '9'` already set.
+    RoundNineLoaded,
+    /// Store the digit and go on (or round off after `ilim` digits).
+    Next,
+}
+
+/// `char *_dtoa_r(struct _reent *ptr, double d, int mode, int ndigits,
+/// int *decpt, int *sign, char **rve)` (0x422780, newlib): converts `d` to
+/// a string of decimal digits in the reent's `_result` Bigint (freeing the
+/// previous one) and returns it, `*decpt` the decimal point position
+/// (9999 for Infinity/NaN), `*sign` the sign and `*rve` the end. Modes 0/1
+/// give the shortest digits that read back as `d`, 2/4 `ndigits`
+/// significant digits and 3/5 `ndigits` after the point (6..9 as 2..5
+/// without the floating-point shortcut). Tries double arithmetic first,
+/// then exact Bignum arithmetic (the mprec helpers), with correct
+/// rounding. Resumable at its twelve loop heads (event checks).
+pub fn dtoa_r(c: &mut Cpu) {
+    use DtoaRStep::*;
+    guest(c, |c| {
+        let mut step = match c.pc {
+            DTOA_R_ENTRY => dtoa_r_begin(c)?,
+            pc => match dtoa_r_resume_step(pc) {
+                Some(step) => step,
+                None => {
+                    c.jump_out(pc, DTOA_R_ENTRY, DTOA_R_END);
+                    return Ok(());
+                }
+            },
+        };
+        loop {
+            step = match step {
+                ResultKLoop => dtoa_r_result_k_loop(c)?,
+                AllocResult => dtoa_r_alloc_result(c)?,
+                QuickDivisorLoop => dtoa_r_quick_divisor_loop(c)?,
+                QuickScaleLoop => dtoa_r_quick_scale_loop(c)?,
+                QuickEps => dtoa_r_quick_eps(c)?,
+                QuickShortest { scale } => dtoa_r_quick_shortest(c, scale)?,
+                QuickFixed => dtoa_r_quick_fixed(c)?,
+                QuickTrimZeros => dtoa_r_quick_trim_zeros(c)?,
+                SmallInt => dtoa_r_small_int(c)?,
+                SmallIntLoop => dtoa_r_small_int_loop(c)?,
+                BumpUp => dtoa_r_bump_up(c)?,
+                BumpUpLoop => dtoa_r_bump_up_loop(c)?,
+                Bignum => dtoa_r_bignum(c)?,
+                NoDigits => dtoa_r_no_digits(c),
+                OneDigit => dtoa_r_one_digit(c),
+                Digits => dtoa_r_digits(c)?,
+                ShortestLoop { scale } => dtoa_r_shortest_loop(c, scale)?,
+                FixedLoop { scale } => dtoa_r_fixed_loop(c, scale)?,
+                RoundLast => dtoa_r_round_last(c)?,
+                RoundOff => dtoa_r_round_off(c)?,
+                RoundOffLoop => dtoa_r_round_off_loop(c)?,
+                TrimZeros => dtoa_r_trim_zeros(c)?,
+                RetAfterDigit => {
+                    c.cycles += 1;
+                    c.g[S5][0] = addu(c.g[S5][0], 1);
+                    Ret
+                }
+                Ret => dtoa_r_ret(c)?,
+                Ret1 { b_loaded } => dtoa_r_ret1(c, b_loaded)?,
+                Done => return Ok(()),
+            };
+        }
+    })
+}
+
+/// The step a resume address (a loop head) continues with.
+pub(crate) fn dtoa_r_resume_step(pc: u32) -> Option<DtoaRStep> {
+    use DtoaRStep::*;
+    Some(match pc {
+        DTOA_R_HEAD_RESULT_K => ResultKLoop,
+        DTOA_R_HEAD_QUICK_DIVISOR => QuickDivisorLoop,
+        DTOA_R_HEAD_QUICK_SCALE => QuickScaleLoop,
+        DTOA_R_HEAD_QUICK_SHORTEST => QuickShortest { scale: true },
+        DTOA_R_HEAD_QUICK_FIXED => QuickFixed,
+        DTOA_R_HEAD_QUICK_TRIM => QuickTrimZeros,
+        DTOA_R_HEAD_SMALL_INT => SmallIntLoop,
+        DTOA_R_HEAD_BUMP_UP => BumpUpLoop,
+        DTOA_R_HEAD_SHORTEST => ShortestLoop { scale: true },
+        DTOA_R_HEAD_FIXED => FixedLoop { scale: true },
+        DTOA_R_HEAD_ROUND_OFF => RoundOffLoop,
+        DTOA_R_HEAD_TRIM_ZEROS => TrimZeros,
+        _ => return None,
+    })
+}
+
+// ---------------------------------------------------------------- helpers
+
+/// `lw slot(sp)`.
+pub(crate) fn dtoa_r_lw(c: &mut Cpu, slot: u32) -> u64 {
+    let at = sp(c).wrapping_add(slot);
+    c.lw(at)
+}
+
+/// `sw v, slot(sp)`.
+pub(crate) fn dtoa_r_sw(c: &mut Cpu, slot: u32, v: u64) {
+    let at = sp(c).wrapping_add(slot);
+    c.sw(at, v);
+}
+
+/// `*s = digit` (the low byte of `v`) at the cursor `s5`.
+pub(crate) fn dtoa_r_put(c: &mut Cpu, v: u64) {
+    let at = r32(c, S5);
+    c.sb(at, v);
+}
+
+/// A double's high word (`word0`, `dsra32`).
+pub(crate) fn dtoa_r_word0(x: u64) -> u64 {
+    ((x as i64) >> 32) as u64
+}
+
+/// A double's low word, sign-extended (`word1`, `dsll32; dsra32`).
+pub(crate) fn dtoa_r_word1(x: u64) -> u64 {
+    (((x << 32) as i64) >> 32) as u64
+}
+
+/// A soft-float call `op(a, b)` returning `v0`.
+pub(crate) fn dtoa_r_float(
+    c: &mut Cpu,
+    op: Callee,
+    a: u64,
+    b: u64,
+    ret: u32,
+) -> Result<u64, Unwound> {
+    c.g[A0][0] = a;
+    c.g[A1][0] = b;
+    op.call(c, ret)?;
+    Ok(c.g[V0][0])
+}
+
+/// A one-argument soft-float call `op(a)` (`a1` left alone).
+pub(crate) fn dtoa_r_float1(c: &mut Cpu, op: Callee, a: u64, ret: u32) -> Result<u64, Unwound> {
+    c.g[A0][0] = a;
+    op.call(c, ret)?;
+    Ok(c.g[V0][0])
+}
+
+/// `multadd(ptr, b, m, 0)`.
+pub(crate) fn dtoa_r_multadd(c: &mut Cpu, b: u64, m: u64, ret: u32) -> Result<u64, Unwound> {
+    c.g[A1][0] = b;
+    c.g[A0][0] = c.g[S7][0];
+    c.g[A2][0] = m;
+    c.g[A3][0] = 0;
+    callee::MULTADD.call(c, ret)?;
+    Ok(c.g[V0][0])
+}
+
+/// `ptr, b, n` for `lshift`/`pow5mult` (`a1` already set): returns `v0`.
+pub(crate) fn dtoa_r_big_n(c: &mut Cpu, op: Callee, n: u64, ret: u32) -> Result<u64, Unwound> {
+    c.g[A2][0] = n;
+    c.g[A0][0] = c.g[S7][0];
+    op.call(c, ret)?;
+    Ok(c.g[V0][0])
+}
+
+// ------------------------------------------- prologue and special values
+
+/// Prologue, the old result, the sign, Infinity/NaN/zero, then the
+/// estimate of `k` and the mode set-up.
+pub(crate) fn dtoa_r_begin(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 20;
+    let frame = Frame::open(c, DTOA_R_FRAME);
+    frame.save(c, S0, DTOA_R_SAVE_S0);
+    frame.save(c, S3, DTOA_R_SAVE_S3);
+    c.g[S0][0] = c.g[T1][0]; // sign
+    frame.save(c, S7, DTOA_R_SAVE_S7);
+    c.g[S3][0] = c.g[A1][0]; // d
+    frame.save(c, S1, DTOA_R_SAVE_S1);
+    c.g[S7][0] = c.g[A0][0]; // ptr
+    frame.save(c, S2, DTOA_R_SAVE_S2);
+    frame.save(c, S4, DTOA_R_SAVE_S4);
+    frame.save(c, S5, DTOA_R_SAVE_S5);
+    frame.save(c, S6, DTOA_R_SAVE_S6);
+    frame.save(c, FP, DTOA_R_SAVE_FP);
+    frame.save_ra(c, DTOA_R_SAVE_RA);
+    let (mode, ndigits, decpt, rve) = (c.g[A2][0], c.g[A3][0], c.g[T0][0], c.g[T2][0]);
+    dtoa_r_sw(c, DTOA_R_SLOT_MODE, mode);
+    let ptr = r32(c, S7);
+    c.g[V1][0] = c.lw(ptr.wrapping_add(DTOA_R_REENT_RESULT));
+    dtoa_r_sw(c, DTOA_R_SLOT_NDIGITS, ndigits);
+    dtoa_r_sw(c, DTOA_R_SLOT_DECPT, decpt);
+    dtoa_r_sw(c, DTOA_R_SLOT_RVE, rve);
+    if c.g[V1][0] != 0 {
+        dtoa_r_free_result(c)?;
+    }
+    dtoa_r_sign(c);
+
+    c.cycles += 5;
+    let d = c.g[S3][0];
+    c.g[S0][0] = dtoa_r_word0(d);
+    c.g[V1][0] = DTOA_R_EXP_MASK;
+    c.g[V0][0] = c.g[S0][0] & DTOA_R_EXP_MASK;
+    c.g[A0][0] = d;
+    if c.g[V0][0] == DTOA_R_EXP_MASK {
+        return Ok(dtoa_r_inf_nan(c));
+    }
+    // if (!d) ...
+    c.cycles += 4;
+    c.g[A1][0] = 0;
+    callee::CMPDF2.call(c, 0x0042_289c)?;
+    let nonzero = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S7][0];
+    if !nonzero {
+        return Ok(dtoa_r_zero(c));
+    }
+    dtoa_r_estimate_k(c)?;
+    dtoa_r_choose_mode(c)
+}
+
+/// `ptr->_result->_k = ptr->_result_k; ->_maxwds = 1 << _result_k;
+/// Bfree(ptr, ptr->_result); ptr->_result = 0` (`v1` = the result).
+pub(crate) fn dtoa_r_free_result(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 10;
+    let ptr = r32(c, S7);
+    let result = r32(c, V1);
+    c.g[A1][0] = c.lw(ptr.wrapping_add(DTOA_R_REENT_RESULT_K));
+    c.g[V0][0] = 1;
+    let k = c.g[A1][0];
+    c.sw(result.wrapping_add(DTOA_R_BIGINT_K), k);
+    c.g[V1][0] = c.lw(ptr.wrapping_add(DTOA_R_REENT_RESULT_K));
+    c.g[A1][0] = c.lw(ptr.wrapping_add(DTOA_R_REENT_RESULT));
+    c.g[V0][0] = sx(1u32 << (c.g[V1][0] as u32 & 31));
+    let (result, maxwds) = (r32(c, A1), c.g[V0][0]);
+    c.sw(result.wrapping_add(DTOA_R_BIGINT_MAXWDS), maxwds);
+    c.g[A1][0] = c.lw(ptr.wrapping_add(DTOA_R_REENT_RESULT));
+    callee::BFREE.call(c, 0x0042_27f4)?;
+    let ptr = r32(c, S7);
+    c.sw(ptr.wrapping_add(DTOA_R_REENT_RESULT), 0);
+    Ok(())
+}
+
+/// `*sign` from the sign bit, which is then cleared in `d`.
+pub(crate) fn dtoa_r_sign(c: &mut Cpu) {
+    c.cycles += 3;
+    let word0 = dtoa_r_word0(c.g[S3][0]);
+    c.g[A0][0] = word0;
+    let sign = r32(c, S0);
+    if (word0 as i64) >= 0 {
+        c.sw(sign, 0);
+        return;
+    }
+    c.cycles += 10;
+    c.g[V0][0] = (word0 & DTOA_R_SIGN_CLEAR) << 32;
+    c.g[V1][0] = 1;
+    c.sw(sign, 1);
+    c.g[S3][0] = c.g[S3][0] & DTOA_R_LOW_WORD | c.g[V0][0];
+}
+
+/// Infinity or NaN: `*decpt = 9999`, the string and its end.
+pub(crate) fn dtoa_r_inf_nan(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 7;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_DECPT);
+    c.g[V1][0] = DTOA_R_SPECIAL_DECPT;
+    c.g[V0][0] = c.g[S3][0] & DTOA_R_MANTISSA;
+    let decpt = r32(c, A0);
+    c.sw(decpt, DTOA_R_SPECIAL_DECPT);
+    let text = if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        DTOA_R_STR_NAN
+    } else {
+        c.cycles += 3;
+        DTOA_R_STR_INFINITY
+    };
+    c.g[V0][0] = DTOA_R_DATA_PAGE;
+    c.g[S5][0] = sx(text);
+    c.cycles += 3;
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_RVE);
+    c.g[A0][0] = sx(text.wrapping_add(DTOA_R_INFINITY_LEN));
+    if c.g[V0][0] != 0 {
+        c.cycles += 6;
+        c.g[V0][0] = c.lb(text.wrapping_add(DTOA_R_NAN_LEN));
+        c.g[V1][0] = sx(text.wrapping_add(DTOA_R_NAN_LEN));
+        if c.g[V0][0] != 0 {
+            c.g[V1][0] = c.g[A0][0];
+        }
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_RVE);
+        let (rve, end) = (r32(c, A0), c.g[V1][0]);
+        c.sw(rve, end);
+    }
+    dtoa_r_return_string(c)
+}
+
+/// Zero: `*decpt = 1`, `"0"`.
+pub(crate) fn dtoa_r_zero(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 7;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_DECPT);
+    c.g[V0][0] = 1;
+    c.g[V1][0] = DTOA_R_DATA_PAGE;
+    let decpt = r32(c, A0);
+    c.sw(decpt, 1);
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_RVE);
+    c.g[S5][0] = sx(DTOA_R_STR_ZERO);
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_RVE);
+        c.g[V0][0] = addu(c.g[S5][0], 1);
+        let (rve, end) = (r32(c, V1), c.g[V0][0]);
+        c.sw(rve, end);
+    }
+    dtoa_r_return_string(c)
+}
+
+/// Return the constant string in `s5`.
+pub(crate) fn dtoa_r_return_string(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[S5][0];
+    dtoa_r_epilogue(c)
+}
+
+/// Restore the saved registers and return (`v0` = the string).
+pub(crate) fn dtoa_r_epilogue(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 12;
+    let frame = Frame { size: DTOA_R_FRAME };
+    frame.restore(c, S0, DTOA_R_SAVE_S0);
+    frame.restore(c, S1, DTOA_R_SAVE_S1);
+    frame.restore(c, S2, DTOA_R_SAVE_S2);
+    frame.restore(c, S3, DTOA_R_SAVE_S3);
+    frame.restore(c, S4, DTOA_R_SAVE_S4);
+    frame.restore(c, S5, DTOA_R_SAVE_S5);
+    frame.restore(c, S6, DTOA_R_SAVE_S6);
+    frame.restore(c, S7, DTOA_R_SAVE_S7);
+    frame.restore(c, FP, DTOA_R_SAVE_FP);
+    frame.restore_ra(c, DTOA_R_SAVE_RA);
+    frame.close(c);
+    DtoaRStep::Done
+}
+
+// ------------------------------------- d2b and the estimate of k
+
+/// `b = d2b(d, &be, &bbits)`; `d2` = `d` scaled to [1, 2) with its binary
+/// exponent `i` (s4), `k` (fp) = floor(log10(d)) estimated from it, `k_check`,
+/// and the powers of 2 and 5 in `b` and `S`.
+pub(crate) fn dtoa_r_estimate_k(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 8;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[SP][0];
+    c.g[A3][0] = c.g[SP][0] | DTOA_R_SLOT_BBITS as u64;
+    callee::D2B.call(c, 0x0042_28e4)?;
+    c.g[V1][0] = sx(r32(c, S0) >> DTOA_R_EXP_SHIFT);
+    c.g[S4][0] = c.g[V1][0] & DTOA_R_EXP_FIELD;
+    let b = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_B, b);
+    if c.g[S4][0] != 0 {
+        dtoa_r_normal_d2(c);
+    } else {
+        dtoa_r_denormal_d2(c)?;
+    }
+
+    // ds = (d2 - 1.5) * 0.289529654602168 + 0.1760912590558 + i * log10(2)
+    c.cycles += 46;
+    let d2 = c.g[S6][0];
+    let t = dtoa_r_float(c, callee::SUBDF3, d2, DTOA_R_ONE_AND_HALF, 0x0042_2a10)?;
+    let t = dtoa_r_float(c, callee::MULDF3, t, DTOA_R_LOG10_SLOPE, 0x0042_2a34)?;
+    c.g[S0][0] = dtoa_r_float(c, callee::ADDDF3, t, DTOA_R_LOG10_AT_1_5, 0x0042_2a58)?;
+    let i = c.g[S4][0];
+    let fi = dtoa_r_float1(c, callee::FLOATSIDF, i, 0x0042_2a64)?;
+    let t = dtoa_r_float(c, callee::MULDF3, fi, DTOA_R_LOG10_OF_2, 0x0042_2a88)?;
+    let near = c.g[S0][0];
+    c.g[S2][0] = dtoa_r_float(c, callee::ADDDF3, near, t, 0x0042_2a94)?;
+    let ds = c.g[S2][0];
+    c.g[FP][0] = dtoa_r_float1(c, callee::FIXDFSI, ds, 0x0042_2aa0)?;
+    let ds = c.g[S2][0];
+    let order = dtoa_r_float(c, callee::CMPDF2, ds, 0, 0x0042_2ab0)?;
+    c.g[V0][0] = 1;
+    if (order as i64) < 0 {
+        // if (ds < 0. && ds != k) k--;
+        c.cycles += 8;
+        let k = c.g[FP][0];
+        let fk = dtoa_r_float1(c, callee::FLOATSIDF, k, 0x0042_2ac0)?;
+        let ds = c.g[S2][0];
+        let inexact = dtoa_r_float(c, callee::CMPDF2, ds, fk, 0x0042_2acc)?;
+        c.g[V1][0] = subu(c.g[FP][0], 1);
+        if inexact != 0 {
+            c.g[FP][0] = c.g[V1][0];
+        }
+        c.g[V0][0] = 1;
+    }
+
+    // k_check = 1; if (k >= 0 && k <= Ten_pmax) { if (d < tens[k]) k--; k_check = 0; }
+    c.cycles += 4;
+    let one = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_K_CHECK, one);
+    let k = c.g[FP][0];
+    c.g[V0][0] = DTOA_R_DATA_PAGE;
+    if k < DTOA_R_TEN_PMAX_END {
+        c.cycles += 11;
+        c.g[V0][0] = sx(DTOA_R_TENS);
+        c.g[V1][0] = addu(sll(k, 3), c.g[V0][0]);
+        c.g[A0][0] = c.g[S3][0];
+        dtoa_r_sw(c, DTOA_R_SLOT_K_CHECK, 0);
+        let at = r32(c, V1);
+        c.g[A1][0] = c.ld(at);
+        callee::CMPDF2.call(c, 0x0042_2b04)?;
+        c.g[V1][0] = (-1 < c.g[V0][0] as i64) as u64;
+        c.g[A0][0] = subu(c.g[FP][0], 1);
+        if c.g[V1][0] == 0 {
+            c.g[FP][0] = c.g[A0][0];
+        }
+    }
+
+    // j = bbits - i - 1: the powers of 2 (b2, s2); then of 5 (b5, s5).
+    c.cycles += 4;
+    c.g[V0][0] = subu(c.g[S1][0], c.g[S4][0]);
+    c.g[S0][0] = subu(c.g[V0][0], 1);
+    if (c.g[S0][0] as i64) < 0 {
+        c.g[S0][0] = subu(0, c.g[S0][0]);
+        c.cycles += 2;
+        dtoa_r_sw(c, DTOA_R_SLOT_S2, 0);
+        let b2 = c.g[S0][0];
+        dtoa_r_sw(c, DTOA_R_SLOT_B2, b2);
+    } else {
+        c.cycles += 3;
+        let s2 = c.g[S0][0];
+        dtoa_r_sw(c, DTOA_R_SLOT_S2, s2);
+        dtoa_r_sw(c, DTOA_R_SLOT_B2, 0);
+    }
+    c.cycles += 2;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+    let k = c.g[FP][0];
+    if (k as i64) < 0 {
+        c.cycles += 6;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+        c.g[V0][0] = subu(0, k);
+        let b5 = c.g[V0][0];
+        dtoa_r_sw(c, DTOA_R_SLOT_B5, b5);
+        c.g[A0][0] = subu(c.g[A0][0], k);
+        dtoa_r_sw(c, DTOA_R_SLOT_S5, 0);
+        let b2 = c.g[A0][0];
+        dtoa_r_sw(c, DTOA_R_SLOT_B2, b2);
+    } else {
+        c.cycles += 5;
+        dtoa_r_sw(c, DTOA_R_SLOT_B5, 0);
+        c.g[V1][0] = addu(c.g[V1][0], k);
+        dtoa_r_sw(c, DTOA_R_SLOT_S5, k);
+        let s2 = c.g[V1][0];
+        dtoa_r_sw(c, DTOA_R_SLOT_S2, s2);
+    }
+    Ok(())
+}
+
+/// Normal `d`: `d2 = d` with the exponent of 1.0, `i -= Bias`, `denorm = 0`.
+pub(crate) fn dtoa_r_normal_d2(c: &mut Cpu) {
+    c.cycles += 20;
+    let d = c.g[S3][0];
+    c.g[V1][0] = (dtoa_r_word0(d) & DTOA_R_FRAC_MASK1) << 32;
+    c.g[A1][0] = DTOA_R_LOW_WORD;
+    let d2 = d & DTOA_R_LOW_WORD | c.g[V1][0];
+    c.g[A0][0] = DTOA_R_EXP_11;
+    c.g[V0][0] = (dtoa_r_word0(d2) | DTOA_R_EXP_11) << 32;
+    c.g[S4][0] = subu(c.g[S4][0], DTOA_R_BIAS);
+    dtoa_r_sw(c, DTOA_R_SLOT_DENORM, 0);
+    c.g[S6][0] = d2 & DTOA_R_LOW_WORD | c.g[V0][0];
+    c.g[S1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BBITS);
+}
+
+/// Denormal `d`: `i = bbits + be + 1074`, `x` = the top 32 significant
+/// bits, `d2 = x` with the exponent lowered by 31, `i -= 1075`, `denorm = 1`.
+pub(crate) fn dtoa_r_denormal_d2(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 8;
+    let bbits = dtoa_r_lw(c, DTOA_R_SLOT_BBITS);
+    c.g[V0][0] = bbits;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BE);
+    c.g[S1][0] = bbits;
+    c.g[V1][0] = addu(bbits, c.g[V1][0]);
+    c.g[S4][0] = addu(c.g[V1][0], DTOA_R_DENORM_BIAS as u64);
+    c.g[V0][0] = slt(c.g[S4][0], DTOA_R_WORD_BITS_PLUS1);
+    let word1 = dtoa_r_word1(c.g[S3][0]);
+    if c.g[V0][0] != 0 {
+        // x = word1(d) << (32 - i)
+        c.g[V1][0] = subu(0, c.g[S4][0]);
+        c.cycles += 5;
+        c.g[V0][0] = sx((word1 as u32) << (c.g[V1][0] as u32 & 31)) << 32;
+        c.g[A0][0] = c.g[V0][0] >> 32;
+    } else {
+        // x = word0(d) << (64 - i) | word1(d) >> (i - 32)
+        c.cycles += 10;
+        c.g[V0][0] = addu(c.g[V1][0], DTOA_R_DENORM_HI_SHIFT as u64);
+        c.g[V1][0] = subu(0, c.g[S4][0]);
+        c.g[A0][0] = sx((word1 as u32) >> (c.g[V0][0] as u32 & 31));
+        c.g[V1][0] = (sx(r32(c, S0) << (c.g[V1][0] as u32 & 31)) | c.g[A0][0]) << 32;
+        c.g[A0][0] = c.g[V1][0] >> 32;
+    }
+    // d2 = (double) x (unsigned: the halving arm never runs, x < 2^32).
+    c.cycles += 2;
+    let x = c.g[A0][0];
+    c.g[V0][0] = x >> 1;
+    if (x as i64) < 0 {
+        c.cycles += 7;
+        c.g[A0][0] = x & 1 | c.g[V0][0];
+        callee::FLOATDIDF.call(c, 0x0042_29c4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[V0][0];
+        callee::ADDDF3.call(c, 0x0042_29d0)?;
+    } else {
+        c.cycles += 4;
+        callee::FLOATDIDF.call(c, 0x0042_29b0)?;
+    }
+    c.g[S6][0] = c.g[V0][0];
+    c.cycles += 11;
+    c.g[A0][0] = DTOA_R_LOW_WORD;
+    c.g[V0][0] = DTOA_R_DENORM_EXP_ADJUST;
+    let d2 = c.g[S6][0];
+    c.g[V1][0] = addu(dtoa_r_word0(d2), DTOA_R_DENORM_EXP_ADJUST) << 32;
+    c.g[A0][0] = 1;
+    dtoa_r_sw(c, DTOA_R_SLOT_DENORM, 1);
+    c.g[S4][0] = subu(c.g[S4][0], DTOA_R_BIAS_P as u64);
+    c.g[S6][0] = d2 & DTOA_R_LOW_WORD | c.g[V1][0];
+    Ok(())
+}
+
+// --------------------------------------------------- mode and result_k
+
+/// Clamp `mode`, `try_quick` (s2), `leftright`, the `switch (mode)` (`ilim`,
+/// `ilim1`, `i` in s4), then the result's size class.
+pub(crate) fn dtoa_r_choose_mode(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 7;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MODE);
+    c.g[S2][0] = 1;
+    c.g[V1][0] = (c.g[A0][0] < DTOA_R_MODES) as u64;
+    if c.g[V1][0] == 0 {
+        c.g[A0][0] = 0;
+    }
+    c.g[V0][0] = slt(c.g[A0][0], DTOA_R_QUICK_MODES);
+    let mode = c.g[A0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_MODE, mode);
+    if c.g[V0][0] == 0 {
+        c.cycles += 3;
+        c.g[A0][0] = subu(mode, DTOA_R_MODE_FOLD);
+        c.g[S2][0] = 0;
+        let mode = c.g[A0][0];
+        dtoa_r_sw(c, DTOA_R_SLOT_MODE, mode);
+    }
+    c.cycles += 6;
+    c.g[V0][0] = 1;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MODE);
+    dtoa_r_sw(c, DTOA_R_SLOT_LEFTRIGHT, 1);
+    let in_switch = c.g[V1][0] < DTOA_R_SWITCH_CASES;
+    c.g[V0][0] = DTOA_R_DATA_PAGE;
+    if in_switch {
+        c.cycles += 6;
+        c.g[V0][0] = sx(DTOA_R_MODE_TABLE);
+        c.g[V1][0] = addu(sll(c.g[V1][0], 2), c.g[V0][0]);
+        let at = r32(c, V1);
+        c.g[A0][0] = c.lw(at);
+        match r32(c, A0) {
+            DTOA_R_CASE_SHORTEST => {
+                c.cycles += 6;
+                c.g[A0][0] = u64::MAX;
+                c.g[S4][0] = DTOA_R_SHORTEST_I;
+                dtoa_r_sw(c, DTOA_R_SLOT_ILIM1, u64::MAX);
+                dtoa_r_sw(c, DTOA_R_SLOT_ILIM, u64::MAX);
+                dtoa_r_sw(c, DTOA_R_SLOT_NDIGITS, 0);
+            }
+            DTOA_R_CASE_DIGITS => {
+                c.cycles += 1;
+                dtoa_r_sw(c, DTOA_R_SLOT_LEFTRIGHT, 0);
+                dtoa_r_mode_digits(c);
+            }
+            DTOA_R_CASE_DIGITS_LR => dtoa_r_mode_digits(c),
+            DTOA_R_CASE_DECIMALS => {
+                c.cycles += 1;
+                dtoa_r_sw(c, DTOA_R_SLOT_LEFTRIGHT, 0);
+                dtoa_r_mode_decimals(c);
+            }
+            DTOA_R_CASE_DECIMALS_LR => dtoa_r_mode_decimals(c),
+            target => {
+                c.jump_out(target, DTOA_R_ENTRY, DTOA_R_END);
+                return Err(Unwound);
+            }
+        }
+    }
+    // for (ptr->_result_k = 0; 20 + j <= i; j <<= 1) ptr->_result_k++;
+    c.cycles += 6;
+    let ptr = r32(c, S7);
+    c.sw(ptr.wrapping_add(DTOA_R_REENT_RESULT_K), 0);
+    c.g[S0][0] = DTOA_R_ULONG_SIZE;
+    c.g[V0][0] = (c.g[S4][0] < DTOA_R_BIGINT_HEADER as u64 + DTOA_R_ULONG_SIZE) as u64;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+    c.g[S1][0] = (c.g[V1][0] < DTOA_R_QUICK_MAX_END) as u64;
+    if c.g[V0][0] != 0 {
+        return Ok(DtoaRStep::AllocResult);
+    }
+    c.cycles += 1;
+    c.g[V1][0] = 0;
+    Ok(DtoaRStep::ResultKLoop)
+}
+
+/// Modes 2/4: `if (ndigits <= 0) ndigits = 1; ilim = ilim1 = i = ndigits`.
+pub(crate) fn dtoa_r_mode_digits(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_NDIGITS);
+    c.g[S4][0] = 1;
+    c.g[V0][0] = slt(0, c.g[V1][0]);
+    if c.g[V0][0] != 0 {
+        c.g[S4][0] = c.g[V1][0];
+    }
+    let i = c.g[S4][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_NDIGITS, i);
+    dtoa_r_sw(c, DTOA_R_SLOT_ILIM1, i);
+    dtoa_r_sw(c, DTOA_R_SLOT_ILIM, i);
+}
+
+/// Modes 3/5: `i = ndigits + k + 1; ilim = i; ilim1 = i - 1; if (i <= 0) i = 1`.
+pub(crate) fn dtoa_r_mode_decimals(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_NDIGITS);
+    c.g[V1][0] = 1;
+    c.g[V0][0] = addu(c.g[A0][0], c.g[FP][0]);
+    c.g[S4][0] = addu(c.g[V0][0], 1);
+    let ilim1 = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_ILIM1, ilim1);
+    let ilim = c.g[S4][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_ILIM, ilim);
+    c.g[V0][0] = slt(0, c.g[S4][0]);
+    if c.g[V0][0] == 0 {
+        c.g[S4][0] = c.g[V1][0];
+    }
+}
+
+/// `result_k++` while `20 + j <= i` (j in s0, the count in v1).
+pub(crate) fn dtoa_r_result_k_loop(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 7;
+        c.g[S0][0] = sll(c.g[S0][0], 1);
+        c.g[V0][0] = addu(c.g[S0][0], DTOA_R_BIGINT_HEADER as u64);
+        c.g[V0][0] = (c.g[S4][0] < c.g[V0][0]) as u64;
+        c.g[V1][0] = addu(c.g[V1][0], 1);
+        if c.g[V0][0] != 0 {
+            break;
+        }
+        if back_edge_unwinds(c, DTOA_R_HEAD_RESULT_K) {
+            return Err(Unwound);
+        }
+    }
+    c.cycles += 1;
+    let (ptr, result_k) = (r32(c, S7), c.g[V1][0]);
+    c.sw(ptr.wrapping_add(DTOA_R_REENT_RESULT_K), result_k);
+    Ok(DtoaRStep::AllocResult)
+}
+
+/// `ptr->_result = Balloc(ptr, ptr->_result_k); s = s0 = _result`, then the
+/// quick path when `0 <= ilim <= Quick_max` (s1) and `try_quick` (s2).
+pub(crate) fn dtoa_r_alloc_result(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 7;
+    let ptr = r32(c, S7);
+    c.g[A1][0] = c.lw(ptr.wrapping_add(DTOA_R_REENT_RESULT_K));
+    c.g[A0][0] = c.g[S7][0];
+    callee::BALLOC.call(c, 0x0042_2c6c)?;
+    let digits = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_DIGITS, digits);
+    let ptr = r32(c, S7);
+    c.sw(ptr.wrapping_add(DTOA_R_REENT_RESULT), digits);
+    c.g[S5][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+    if c.g[S1][0] == 0 {
+        return Ok(DtoaRStep::SmallInt);
+    }
+    c.cycles += 2;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+    if c.g[S2][0] == 0 {
+        return Ok(DtoaRStep::SmallInt);
+    }
+    dtoa_r_quick_start(c)
+}
+
+// ------------------------------------------------- the quick path
+
+/// "Try to get by with floating-point arithmetic": keep `d2 = d` (s6),
+/// `k0`, `ilim0`, `ieps = 2` (s4), and scale `d` (s3) by `10^-k`.
+pub(crate) fn dtoa_r_quick_start(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 5;
+    c.g[S6][0] = c.g[S3][0];
+    let k = c.g[FP][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_K0, k);
+    c.g[S4][0] = DTOA_R_IEPS;
+    let ilim = c.g[A0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_ILIM0, ilim);
+    if (k as i64) > 0 {
+        // ds = tens[k & 0xf]; j = k >> 4
+        c.cycles += 9;
+        c.g[V0][0] = sx(DTOA_R_TENS);
+        c.g[V1][0] = addu(sll(k & 0xf, 3), c.g[V0][0]);
+        c.g[S0][0] = sra(k, 4);
+        c.g[V0][0] = c.g[S0][0] & DTOA_R_BLETCH;
+        let at = r32(c, V1);
+        c.g[S2][0] = c.ld(at);
+        if c.g[V0][0] != 0 {
+            // prevent overflows: d /= bigtens[n_bigtens - 1]
+            c.cycles += 7;
+            c.g[V0][0] = DTOA_R_DATA_PAGE;
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = c.ld(DTOA_R_BIGTEN_LAST);
+            c.g[S0][0] &= DTOA_R_BLETCH - 1;
+            c.g[S4][0] = DTOA_R_IEPS + 1;
+            callee::DIVDF3.call(c, 0x0042_2cd4)?;
+            c.g[S3][0] = c.g[V0][0];
+        }
+        c.cycles += 2;
+        c.g[V0][0] = DTOA_R_DATA_PAGE;
+        if c.g[S0][0] == 0 {
+            return dtoa_r_quick_divide(c);
+        }
+        c.cycles += 2;
+        c.g[S1][0] = sx(DTOA_R_BIGTENS);
+        return Ok(DtoaRStep::QuickDivisorLoop);
+    }
+    // j1 = -k: d *= tens[j1 & 0xf], then bigtens per bit of j1 >> 4.
+    c.cycles += 3;
+    c.g[S1][0] = subu(0, k);
+    c.g[V1][0] = DTOA_R_DATA_PAGE;
+    if c.g[S1][0] == 0 {
+        return Ok(DtoaRStep::QuickEps);
+    }
+    c.cycles += 10;
+    let j1 = c.g[S1][0];
+    c.g[V1][0] = sx(DTOA_R_TENS);
+    c.g[V0][0] = addu(sll(j1 & 0xf, 3), c.g[V1][0]);
+    c.g[A1][0] = c.g[S3][0];
+    let at = r32(c, V0);
+    c.g[A0][0] = c.ld(at);
+    c.g[S0][0] = sra(j1, 4);
+    callee::MULDF3.call(c, 0x0042_2d50)?;
+    c.g[S3][0] = c.g[V0][0];
+    if c.g[S0][0] == 0 {
+        return Ok(DtoaRStep::QuickEps);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = DTOA_R_DATA_PAGE;
+    c.g[S1][0] = sx(DTOA_R_BIGTENS);
+    Ok(DtoaRStep::QuickScaleLoop)
+}
+
+/// `for (; j; j >>= 1, i++) if (j & 1) { ieps++; ds *= bigtens[i]; }`
+/// (j in s0, `&bigtens[i]` in s1, ds in s2), then `d /= ds`.
+pub(crate) fn dtoa_r_quick_divisor_loop(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S0][0] & 1;
+        c.g[A0][0] = c.g[S2][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            let at = r32(c, S1);
+            c.g[A1][0] = c.ld(at);
+            c.g[S4][0] = addu(c.g[S4][0], 1);
+            callee::MULDF3.call(c, 0x0042_2d00)?;
+            c.g[S2][0] = c.g[V0][0];
+        }
+        c.cycles += 3;
+        c.g[S0][0] = sra(c.g[S0][0], 1);
+        c.g[S1][0] = addu(c.g[S1][0], DTOA_R_DOUBLE_SIZE as u64);
+        if c.g[S0][0] == 0 {
+            break;
+        }
+        if back_edge_unwinds(c, DTOA_R_HEAD_QUICK_DIVISOR) {
+            return Err(Unwound);
+        }
+    }
+    dtoa_r_quick_divide(c)
+}
+
+/// `d /= ds`.
+pub(crate) fn dtoa_r_quick_divide(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 5;
+    let (d, ds) = (c.g[S3][0], c.g[S2][0]);
+    c.g[S3][0] = dtoa_r_float(c, callee::DIVDF3, d, ds, 0x0042_2d1c)?;
+    Ok(DtoaRStep::QuickEps)
+}
+
+/// `for (j = j1 >> 4; j; j >>= 1, i++) if (j & 1) { ieps++; d *= bigtens[i]; }`.
+pub(crate) fn dtoa_r_quick_scale_loop(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S0][0] & 1;
+        c.g[A1][0] = c.g[S3][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            let at = r32(c, S1);
+            c.g[A0][0] = c.ld(at);
+            c.g[S4][0] = addu(c.g[S4][0], 1);
+            callee::MULDF3.call(c, 0x0042_2d78)?;
+            c.g[S3][0] = c.g[V0][0];
+        }
+        c.cycles += 3;
+        c.g[S0][0] = sra(c.g[S0][0], 1);
+        c.g[S1][0] = addu(c.g[S1][0], DTOA_R_DOUBLE_SIZE as u64);
+        if c.g[S0][0] == 0 {
+            break;
+        }
+        if back_edge_unwinds(c, DTOA_R_HEAD_QUICK_SCALE) {
+            return Err(Unwound);
+        }
+    }
+    Ok(DtoaRStep::QuickEps)
+}
+
+/// `if (k_check && d < 1. && ilim > 0)` (fast_failed when `ilim1 <= 0`, else
+/// one digit less), `eps = ieps * d + 7` less `P - 1` in the exponent (s2),
+/// then the digit loop by `ilim` and `leftright`.
+pub(crate) fn dtoa_r_quick_eps(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 3;
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_K_CHECK);
+    if c.g[V0][0] != 0 {
+        c.cycles += 6;
+        let d = c.g[S3][0];
+        let order = dtoa_r_float(c, callee::CMPDF2, d, DTOA_R_ONE, 0x0042_2da4)?;
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        if (order as i64) < 0 {
+            c.cycles += 2;
+            if (c.g[V1][0] as i64) > 0 {
+                c.cycles += 3;
+                c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM1);
+                c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM1);
+                if (c.g[A0][0] as i64) <= 0 {
+                    return dtoa_r_fast_failed(c, true);
+                }
+                // ilim = ilim1; k--; d *= 10.; ieps++;
+                c.cycles += 8;
+                c.g[A1][0] = c.g[S3][0];
+                c.g[A0][0] = DTOA_R_TEN;
+                c.g[FP][0] = subu(c.g[FP][0], 1);
+                let ilim1 = c.g[V0][0];
+                dtoa_r_sw(c, DTOA_R_SLOT_ILIM, ilim1);
+                c.g[S4][0] = addu(c.g[S4][0], 1);
+                callee::MULDF3.call(c, 0x0042_2ddc)?;
+                c.g[S3][0] = c.g[V0][0];
+            }
+        }
+    }
+    c.cycles += 21;
+    let ieps = c.g[S4][0];
+    let f = dtoa_r_float1(c, callee::FLOATSIDF, ieps, 0x0042_2de8)?;
+    let d = c.g[S3][0];
+    let t = dtoa_r_float(c, callee::MULDF3, f, d, 0x0042_2df4)?;
+    let eps = dtoa_r_float(c, callee::ADDDF3, t, DTOA_R_SEVEN, 0x0042_2e04)?;
+    c.g[A0][0] = DTOA_R_LOW_WORD;
+    c.g[V0][0] = DTOA_R_EPS_EXP_ADJUST;
+    c.g[V1][0] = addu(dtoa_r_word0(eps), DTOA_R_EPS_EXP_ADJUST) << 32;
+    c.g[S2][0] = eps & DTOA_R_LOW_WORD | c.g[V1][0];
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+    if c.g[V1][0] == 0 {
+        return dtoa_r_quick_ilim_zero(c);
+    }
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_LEFTRIGHT);
+    c.cycles += 2;
+    c.g[V1][0] = DTOA_R_DATA_PAGE;
+    if c.g[A0][0] == 0 {
+        return dtoa_r_quick_fixed_start(c);
+    }
+    dtoa_r_quick_shortest_start(c)
+}
+
+/// `ilim == 0`: `S = mhi = 0; d -= 5`; one digit if `d > eps`, none if
+/// `d < -eps`, else fast_failed.
+pub(crate) fn dtoa_r_quick_ilim_zero(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 12;
+    dtoa_r_sw(c, DTOA_R_SLOT_MHI, 0);
+    dtoa_r_sw(c, DTOA_R_SLOT_BIG_S, 0);
+    let d = c.g[S3][0];
+    c.g[S0][0] = dtoa_r_float(c, callee::SUBDF3, d, DTOA_R_FIVE, 0x0042_2e4c)?;
+    let (rest, eps) = (c.g[S0][0], c.g[S2][0]);
+    let above = dtoa_r_float(c, callee::CMPDF2, rest, eps, 0x0042_2e5c)?;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+    if (above as i64) > 0 {
+        return Ok(dtoa_r_one_char(c));
+    }
+    c.cycles += 8;
+    let eps = c.g[S2][0];
+    let minus_eps = dtoa_r_float(c, callee::SUBDF3, 0, eps, 0x0042_2e70)?;
+    let rest = c.g[S0][0];
+    let below = dtoa_r_float(c, callee::CMPDF2, rest, minus_eps, 0x0042_2e7c)?;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM0);
+    if (below as i64) < 0 {
+        return Ok(DtoaRStep::NoDigits);
+    }
+    dtoa_r_fast_failed(c, false)
+}
+
+/// `fast_failed: s = s0; d = d2; k = k0; ilim = ilim0` (`ilim0` already in
+/// `v1` unless `reload`).
+pub(crate) fn dtoa_r_fast_failed(c: &mut Cpu, reload: bool) -> DtoaRFlow {
+    c.cycles += 2;
+    if reload {
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM0);
+    }
+    c.g[S3][0] = c.g[S6][0];
+    c.cycles += 3;
+    c.g[FP][0] = dtoa_r_lw(c, DTOA_R_SLOT_K0);
+    let ilim0 = c.g[V1][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_ILIM, ilim0);
+    c.g[S5][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+    Ok(DtoaRStep::SmallInt)
+}
+
+/// `one_digit` comes next: `v0 = '1'`.
+pub(crate) fn dtoa_r_one_char(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 1;
+    c.g[V0][0] = DTOA_R_CHAR_1;
+    DtoaRStep::OneDigit
+}
+
+/// `bump_up` comes next: `v1 = '9'`.
+pub(crate) fn dtoa_r_nine_ahead(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 1;
+    c.g[V1][0] = DTOA_R_CHAR_9;
+    DtoaRStep::BumpUp
+}
+
+/// Steele & White: `eps = 0.5 / tens[ilim - 1] - eps; i = 0` (s4).
+pub(crate) fn dtoa_r_quick_shortest_start(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 15;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+    c.g[V1][0] = sx(DTOA_R_TENS);
+    c.g[S4][0] = 0;
+    c.g[V0][0] = addu(sll(subu(c.g[A0][0], 1), 3), c.g[V1][0]);
+    let at = r32(c, V0);
+    let ten_ilim = c.ld(at);
+    let q = dtoa_r_float(c, callee::DIVDF3, DTOA_R_HALF, ten_ilim, 0x0042_2ebc)?;
+    let eps = c.g[S2][0];
+    c.g[S2][0] = dtoa_r_float(c, callee::SUBDF3, q, eps, 0x0042_2ec8)?;
+    Ok(DtoaRStep::QuickShortest { scale: false })
+}
+
+/// `L = d; d -= L; *s++ = '0' + L;` ret1 if `d < eps`, bump_up if
+/// `1 - d < eps`, fast_failed after `ilim` digits, else `eps *= 10; d *= 10`
+/// (the head; d in s3, the remainder in s0).
+pub(crate) fn dtoa_r_quick_shortest(c: &mut Cpu, mut scale: bool) -> DtoaRFlow {
+    loop {
+        if scale {
+            c.cycles += 10;
+            let eps = c.g[S2][0];
+            c.g[S2][0] = dtoa_r_float(c, callee::MULDF3, DTOA_R_TEN, eps, 0x0042_2ee0)?;
+            let rest = c.g[S0][0];
+            c.g[S3][0] = dtoa_r_float(c, callee::MULDF3, DTOA_R_TEN, rest, 0x0042_2ef4)?;
+        }
+        scale = true;
+        c.cycles += 17;
+        let d = c.g[S3][0];
+        c.g[S1][0] = dtoa_r_float1(c, callee::FIXDFSI, d, 0x0042_2f00)?;
+        let l = c.g[S1][0];
+        let fl = dtoa_r_float1(c, callee::FLOATSIDF, l, 0x0042_2f0c)?;
+        let d = c.g[S3][0];
+        c.g[S0][0] = dtoa_r_float(c, callee::SUBDF3, d, fl, 0x0042_2f18)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[V0][0] = addu(c.g[S1][0], DTOA_R_CHAR_0);
+        c.g[A0][0] = c.g[S0][0];
+        let digit = c.g[V0][0];
+        dtoa_r_put(c, digit);
+        c.g[S5][0] = addu(c.g[S5][0], 1);
+        callee::CMPDF2.call(c, 0x0042_2f34)?;
+        let below = c.g[V0][0];
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+        if (below as i64) < 0 {
+            return Ok(DtoaRStep::Ret1 { b_loaded: true });
+        }
+        c.cycles += 9;
+        let rest = c.g[S0][0];
+        let gap = dtoa_r_float(c, callee::SUBDF3, DTOA_R_ONE, rest, 0x0042_2f4c)?;
+        let eps = c.g[S2][0];
+        let close = dtoa_r_float(c, callee::CMPDF2, gap, eps, 0x0042_2f58)?;
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        if (close as i64) < 0 {
+            return Ok(dtoa_r_nine_ahead(c));
+        }
+        c.cycles += 4;
+        c.g[S4][0] = addu(c.g[S4][0], 1);
+        c.g[V0][0] = slt(c.g[S4][0], c.g[V1][0]);
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM0);
+        if c.g[V0][0] == 0 {
+            return dtoa_r_fast_failed(c, false);
+        }
+        if back_edge_unwinds(c, DTOA_R_HEAD_QUICK_SHORTEST) {
+            return Err(Unwound);
+        }
+    }
+}
+
+/// `ilim` digits: `eps *= tens[ilim - 1]; i = 1` (s4).
+pub(crate) fn dtoa_r_quick_fixed_start(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 10;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+    c.g[V1][0] = sx(DTOA_R_TENS);
+    c.g[S4][0] = 1;
+    c.g[V0][0] = addu(sll(subu(c.g[A0][0], 1), 3), c.g[V1][0]);
+    let at = r32(c, V0);
+    let ten_ilim = c.ld(at);
+    let eps = c.g[S2][0];
+    c.g[S2][0] = dtoa_r_float(c, callee::MULDF3, ten_ilim, eps, 0x0042_2f9c)?;
+    Ok(DtoaRStep::QuickFixed)
+}
+
+/// `L = d; d -= L; *s++ = '0' + L;` at `i == ilim`: bump_up if
+/// `d > 0.5 + eps`, strip zeros and ret1 if `d < 0.5 - eps`, else
+/// fast_failed; otherwise `d *= 10` (the head).
+pub(crate) fn dtoa_r_quick_fixed(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 14;
+        let d = c.g[S3][0];
+        c.g[S1][0] = dtoa_r_float1(c, callee::FIXDFSI, d, 0x0042_2fa8)?;
+        let l = c.g[S1][0];
+        let fl = dtoa_r_float1(c, callee::FLOATSIDF, l, 0x0042_2fb4)?;
+        let d = c.g[S3][0];
+        c.g[S0][0] = dtoa_r_float(c, callee::SUBDF3, d, fl, 0x0042_2fc0)?;
+        c.g[V0][0] = addu(c.g[S1][0], DTOA_R_CHAR_0);
+        let digit = c.g[V0][0];
+        dtoa_r_put(c, digit);
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        let last = c.g[S4][0] == c.g[V0][0];
+        c.g[S5][0] = addu(c.g[S5][0], 1);
+        if last {
+            c.cycles += 9;
+            let eps = c.g[S2][0];
+            let high = dtoa_r_float(c, callee::ADDDF3, DTOA_R_HALF, eps, 0x0042_2fe8)?;
+            let rest = c.g[S0][0];
+            let above = dtoa_r_float(c, callee::CMPDF2, rest, high, 0x0042_2ff4)?;
+            c.g[V1][0] = DTOA_R_CHAR_9;
+            if (above as i64) > 0 {
+                return Ok(DtoaRStep::BumpUp);
+            }
+            c.cycles += 9;
+            let eps = c.g[S2][0];
+            let low = dtoa_r_float(c, callee::SUBDF3, DTOA_R_HALF, eps, 0x0042_300c)?;
+            let rest = c.g[S0][0];
+            let below = dtoa_r_float(c, callee::CMPDF2, rest, low, 0x0042_3018)?;
+            c.g[V1][0] = DTOA_R_CHAR_0;
+            if (below as i64) >= 0 {
+                return dtoa_r_fast_failed(c, true);
+            }
+            c.cycles += 2;
+            c.g[S5][0] = subu(c.g[S5][0], 1);
+            return Ok(DtoaRStep::QuickTrimZeros);
+        }
+        c.cycles += 7;
+        let rest = c.g[S0][0];
+        c.g[S4][0] = addu(c.g[S4][0], 1);
+        c.g[S3][0] = dtoa_r_float(c, callee::MULDF3, DTOA_R_TEN, rest, 0x0042_3060)?;
+        if back_edge_unwinds(c, DTOA_R_HEAD_QUICK_FIXED) {
+            return Err(Unwound);
+        }
+    }
+}
+
+/// `while (*--s == '0'); s++;` then ret1 (`v1 = '0'`, s5 at the last digit).
+pub(crate) fn dtoa_r_quick_trim_zeros(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 7;
+        let at = r32(c, S5);
+        c.g[V0][0] = c.lb(at);
+        if c.g[V0][0] != c.g[V1][0] {
+            break;
+        }
+        c.g[S5][0] = subu(c.g[S5][0], 1);
+        if back_edge_unwinds(c, DTOA_R_HEAD_QUICK_TRIM) {
+            return Err(Unwound);
+        }
+    }
+    c.cycles += 2;
+    c.g[S5][0] = addu(c.g[S5][0], 1);
+    Ok(DtoaRStep::Ret1 { b_loaded: false })
+}
+
+// ------------------------------------------------- small integers
+
+/// `if (be >= 0 && k <= Int_max)`: `ds = tens[k]` (s2); with `ndigits < 0
+/// && ilim <= 0` no digits or one; else the digit loop (`i` = 1 in s4).
+pub(crate) fn dtoa_r_small_int(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 3;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BE);
+    c.g[V0][0] = slt(c.g[FP][0], DTOA_R_INT_MAX_END);
+    if (c.g[V1][0] as i64) < 0 {
+        return Ok(DtoaRStep::Bignum);
+    }
+    c.cycles += 2;
+    let small_k = c.g[V0][0] != 0;
+    c.g[V0][0] = DTOA_R_DATA_PAGE;
+    if !small_k {
+        return Ok(DtoaRStep::Bignum);
+    }
+    c.cycles += 6;
+    c.g[V0][0] = sx(DTOA_R_TENS);
+    c.g[V1][0] = addu(sll(c.g[FP][0], 3), c.g[V0][0]);
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_NDIGITS);
+    let at = r32(c, V1);
+    c.g[S2][0] = c.ld(at);
+    if (c.g[A0][0] as i64) >= 0 {
+        c.cycles += 1;
+        c.g[S4][0] = 1;
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        c.g[S4][0] = 1;
+        if (c.g[V0][0] as i64) <= 0 {
+            // S = mhi = 0; if (ilim < 0 || d <= 5 * ds) goto no_digits;
+            c.cycles += 3;
+            dtoa_r_sw(c, DTOA_R_SLOT_MHI, 0);
+            dtoa_r_sw(c, DTOA_R_SLOT_BIG_S, 0);
+            if (c.g[V0][0] as i64) < 0 {
+                return Ok(DtoaRStep::NoDigits);
+            }
+            c.cycles += 9;
+            let ds = c.g[S2][0];
+            let five_ds = dtoa_r_float(c, callee::MULDF3, ds, DTOA_R_FIVE, 0x0042_30d0)?;
+            let d = c.g[S3][0];
+            let above = dtoa_r_float(c, callee::CMPDF2, d, five_ds, 0x0042_30dc)?;
+            c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+            if (above as i64) <= 0 {
+                return Ok(DtoaRStep::NoDigits);
+            }
+            c.cycles += 2;
+            c.g[V0][0] = DTOA_R_CHAR_1;
+            return Ok(DtoaRStep::OneDigit);
+        }
+    }
+    c.cycles += 1;
+    c.g[A1][0] = c.g[S2][0];
+    Ok(DtoaRStep::SmallIntLoop)
+}
+
+/// `L = d / ds; d -= L * ds; *s++ = '0' + L;` at `i == ilim` round
+/// (`d + d` against `ds`, ties to even); stop when `d *= 10` is 0 (the
+/// remainder stays in a1, `ds` in s2).
+pub(crate) fn dtoa_r_small_int_loop(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 19;
+        c.g[A0][0] = c.g[S3][0];
+        callee::DIVDF3.call(c, 0x0042_30fc)?;
+        let q = c.g[V0][0];
+        c.g[S1][0] = dtoa_r_float1(c, callee::FIXDFSI, q, 0x0042_3104)?;
+        let l = c.g[S1][0];
+        let fl = dtoa_r_float1(c, callee::FLOATSIDF, l, 0x0042_3110)?;
+        let ds = c.g[S2][0];
+        let l_ds = dtoa_r_float(c, callee::MULDF3, fl, ds, 0x0042_311c)?;
+        let d = c.g[S3][0];
+        c.g[A1][0] = dtoa_r_float(c, callee::SUBDF3, d, l_ds, 0x0042_3128)?;
+        c.g[V0][0] = addu(c.g[S1][0], DTOA_R_CHAR_0);
+        let digit = c.g[V0][0];
+        dtoa_r_put(c, digit);
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        let last = c.g[S4][0] == c.g[V1][0];
+        c.g[S5][0] = addu(c.g[S5][0], 1);
+        if last {
+            c.cycles += 8;
+            c.g[A0][0] = c.g[A1][0];
+            callee::ADDDF3.call(c, 0x0042_3148)?;
+            c.g[S0][0] = c.g[V0][0];
+            let (twice, ds) = (c.g[S0][0], c.g[S2][0]);
+            let above = dtoa_r_float(c, callee::CMPDF2, twice, ds, 0x0042_3158)?;
+            c.g[V1][0] = DTOA_R_CHAR_9;
+            if (above as i64) > 0 {
+                return Ok(DtoaRStep::BumpUp);
+            }
+            c.cycles += 5;
+            let (twice, ds) = (c.g[S0][0], c.g[S2][0]);
+            let unequal = dtoa_r_float(c, callee::CMPDF2, twice, ds, 0x0042_316c)?;
+            c.g[V0][0] = c.g[S1][0] & 1;
+            if unequal != 0 {
+                return Ok(DtoaRStep::Ret1 { b_loaded: false });
+            }
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+                return Ok(DtoaRStep::Ret1 { b_loaded: true });
+            }
+            return Ok(dtoa_r_nine_ahead(c));
+        }
+        c.cycles += 10;
+        c.g[A0][0] = DTOA_R_TEN;
+        callee::MULDF3.call(c, 0x0042_31d0)?;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[S3][0] = c.g[V0][0];
+        callee::CMPDF2.call(c, 0x0042_31e0)?;
+        let zero = c.g[V0][0] == 0;
+        c.g[S4][0] = addu(c.g[S4][0], 1);
+        if zero {
+            return Ok(DtoaRStep::Ret1 { b_loaded: false });
+        }
+        c.cycles += 2;
+        c.g[A1][0] = c.g[S2][0];
+        if back_edge_unwinds(c, DTOA_R_HEAD_SMALL_INT) {
+            return Err(Unwound);
+        }
+    }
+}
+
+/// `bump_up: while (*--s == '9') if (s == s0) { k++; *s = '0'; break; }
+/// ++*s++;` then ret1 (`v1 = '9'`).
+pub(crate) fn dtoa_r_bump_up(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 2;
+    c.g[A0][0] = DTOA_R_CHAR_0;
+    c.g[S5][0] = subu(c.g[S5][0], 1);
+    dtoa_r_bump_up_loop(c)
+}
+
+/// The `bump_up` loop (head; `a0 = '0'`, `v1 = '9'`).
+pub(crate) fn dtoa_r_bump_up_loop(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 3;
+        let at = r32(c, S5);
+        c.g[V0][0] = c.lb(at);
+        let not_nine = c.g[V0][0] != c.g[V1][0];
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+        if not_nine {
+            break;
+        }
+        c.cycles += 4;
+        if c.g[S5][0] != c.g[V0][0] {
+            c.g[S5][0] = subu(c.g[S5][0], 1);
+            if back_edge_unwinds(c, DTOA_R_HEAD_BUMP_UP) {
+                return Err(Unwound);
+            }
+            continue;
+        }
+        // All nines: k++, *s = '0' (made '1' below).
+        c.cycles += 2;
+        let (first, zero) = (r32(c, V0), c.g[A0][0]);
+        c.sb(first, zero);
+        c.g[FP][0] = addu(c.g[FP][0], 1);
+        break;
+    }
+    c.cycles += 5;
+    let at = r32(c, S5);
+    c.g[V0][0] = addu(c.lbu(at), 1);
+    let digit = c.g[V0][0];
+    dtoa_r_put(c, digit);
+    c.g[S5][0] = addu(c.g[S5][0], 1);
+    Ok(DtoaRStep::Ret1 { b_loaded: false })
+}
+
+// ------------------------------------------------- the Bignum set-up
+
+/// `m2 = b2` (s1), `m5 = b5` (s2), `mhi = mlo = 0`, `mode < 2` (s6); `mhi`
+/// for leftright, the shared powers of 2, the 5s into `b` and `S`,
+/// `spec_case`, the normalising shift and the `k_check` fix-up; then
+/// `no_digits`, `one_digit` or the digit loops.
+pub(crate) fn dtoa_r_bignum(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 8;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MODE);
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_LEFTRIGHT);
+    c.g[S1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+    c.g[S6][0] = slt(c.g[A0][0], DTOA_R_MODE_BIG);
+    c.g[S2][0] = dtoa_r_lw(c, DTOA_R_SLOT_B5);
+    dtoa_r_sw(c, DTOA_R_SLOT_MLO, 0);
+    dtoa_r_sw(c, DTOA_R_SLOT_MHI, 0);
+    if c.g[V0][0] != 0 {
+        dtoa_r_bignum_mhi(c)?;
+    }
+    dtoa_r_bignum_share_twos(c);
+    dtoa_r_bignum_fives(c)?;
+    dtoa_r_bignum_divisor(c)?;
+    dtoa_r_bignum_spec_case(c);
+    dtoa_r_bignum_normalise(c)?;
+    dtoa_r_bignum_check_k(c)
+}
+
+/// leftright: `i` = the bits of `mhi` (s4) (mode < 2: `denorm ? be + 1075
+/// : 1 + P - bbits`; else `ilim` with `m5`/`s5`/`b5` balanced against
+/// `ilim - 1`), `b2 += i; s2 += i; mhi = i2b(1)` (`v1` = `be`).
+pub(crate) fn dtoa_r_bignum_mhi(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 2;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_DENORM);
+    if c.g[S6][0] != 0 {
+        c.cycles += 2;
+        c.g[S4][0] = addu(c.g[V1][0], DTOA_R_BIAS_P as u64);
+        if c.g[A0][0] == 0 {
+            c.cycles += 4;
+            c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BBITS);
+            c.g[V0][0] = DTOA_R_ONE_PLUS_P;
+            c.g[S4][0] = subu(c.g[V0][0], c.g[V1][0]);
+        }
+        c.cycles += 1;
+        c.g[A0][0] = c.g[S7][0];
+    } else {
+        // j = ilim - 1; if (m5 >= j) m5 -= j; else { s5 += j -= m5; b5 += j; m5 = 0; }
+        c.cycles += 6;
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B5);
+        c.g[S0][0] = subu(c.g[V0][0], 1);
+        c.g[V0][0] = slt(c.g[V1][0], c.g[S0][0]);
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B5);
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[S2][0] = subu(c.g[V1][0], c.g[S0][0]);
+        } else {
+            c.cycles += 7;
+            c.g[S2][0] = 0;
+            c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_S5);
+            c.g[S0][0] = subu(c.g[S0][0], c.g[A0][0]);
+            c.g[A0][0] = addu(c.g[A0][0], c.g[S0][0]);
+            c.g[V0][0] = addu(c.g[V0][0], c.g[S0][0]);
+            let (b5, s5) = (c.g[A0][0], c.g[V0][0]);
+            dtoa_r_sw(c, DTOA_R_SLOT_B5, b5);
+            dtoa_r_sw(c, DTOA_R_SLOT_S5, s5);
+        }
+        // if ((i = ilim) < 0) { m2 -= i; i = 0; }
+        c.cycles += 3;
+        c.g[S4][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        c.g[A0][0] = c.g[S7][0];
+        if (c.g[S4][0] as i64) < 0 {
+            c.cycles += 3;
+            c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+            c.g[S1][0] = subu(c.g[V1][0], c.g[S4][0]);
+            c.g[S4][0] = 0;
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S7][0];
+        }
+    }
+    c.cycles += 9;
+    c.g[A1][0] = 1;
+    callee::I2B.call(c, 0x0042_3290)?;
+    let mhi = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_MHI, mhi);
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+    c.g[A0][0] = addu(c.g[A0][0], c.g[S4][0]);
+    c.g[V0][0] = addu(c.g[V0][0], c.g[S4][0]);
+    let (s2, b2) = (c.g[A0][0], c.g[V0][0]);
+    dtoa_r_sw(c, DTOA_R_SLOT_S2, s2);
+    dtoa_r_sw(c, DTOA_R_SLOT_B2, b2);
+    Ok(())
+}
+
+/// `if (m2 > 0 && s2 > 0) { i = min(m2, s2); b2 -= i; m2 -= i; s2 -= i; }`.
+pub(crate) fn dtoa_r_bignum_share_twos(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+    if (c.g[S1][0] as i64) <= 0 {
+        return;
+    }
+    c.cycles += 2;
+    c.g[S4][0] = c.g[V1][0];
+    if (c.g[V1][0] as i64) <= 0 {
+        return;
+    }
+    c.cycles += 8;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+    c.g[V0][0] = slt(c.g[S1][0], c.g[S4][0]);
+    if c.g[V0][0] != 0 {
+        c.g[S4][0] = c.g[S1][0];
+    }
+    c.g[V1][0] = subu(c.g[V1][0], c.g[S4][0]);
+    c.g[A0][0] = subu(c.g[A0][0], c.g[S4][0]);
+    let s2 = c.g[V1][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_S2, s2);
+    c.g[S1][0] = subu(c.g[S1][0], c.g[S4][0]);
+    let b2 = c.g[A0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_B2, b2);
+}
+
+/// `if (b5 > 0)`: leftright multiplies `mhi` by `5^m5` and `b` by it, then
+/// `b` by `5^(b5 - m5)`; otherwise `b = pow5mult(b, b5)`.
+pub(crate) fn dtoa_r_bignum_fives(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B5);
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_LEFTRIGHT);
+    if (c.g[V0][0] as i64) <= 0 {
+        return Ok(());
+    }
+    c.cycles += 2;
+    if c.g[V1][0] == 0 {
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S7][0];
+        c.g[A2][0] = dtoa_r_lw(c, DTOA_R_SLOT_B5);
+    } else {
+        c.cycles += 2;
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+        if (c.g[S2][0] as i64) > 0 {
+            // mhi = pow5mult(mhi, m5); b1 = mult(mhi, b); Bfree(b); b = b1;
+            c.cycles += 12;
+            let m5 = c.g[S2][0];
+            let mhi = dtoa_r_big_n(c, callee::POW5MULT, m5, 0x0042_3304)?;
+            dtoa_r_sw(c, DTOA_R_SLOT_MHI, mhi);
+            c.g[A0][0] = c.g[S7][0];
+            c.g[A2][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+            c.g[A1][0] = mhi;
+            callee::MULTIPLY.call(c, 0x0042_3318)?;
+            c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+            c.g[A0][0] = c.g[S7][0];
+            let b1 = c.g[V0][0];
+            dtoa_r_sw(c, DTOA_R_SLOT_B, b1);
+            callee::BFREE.call(c, 0x0042_3328)?;
+        }
+        c.cycles += 4;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B5);
+        c.g[S0][0] = subu(c.g[A0][0], c.g[S2][0]);
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+        if c.g[S0][0] == 0 {
+            return Ok(());
+        }
+        c.cycles += 3;
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S7][0];
+    }
+    c.cycles += 3;
+    callee::POW5MULT.call(c, 0x0042_3354)?;
+    let b = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_B, b);
+    Ok(())
+}
+
+/// `S = i2b(1); if (s5 > 0) S = pow5mult(S, s5)`.
+pub(crate) fn dtoa_r_bignum_divisor(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 7;
+    c.g[A0][0] = c.g[S7][0];
+    c.g[A1][0] = 1;
+    callee::I2B.call(c, 0x0042_3364)?;
+    let s = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_BIG_S, s);
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_S5);
+    c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 4;
+        let s5 = c.g[V0][0];
+        let s = dtoa_r_big_n(c, callee::POW5MULT, s5, 0x0042_3380)?;
+        dtoa_r_sw(c, DTOA_R_SLOT_BIG_S, s);
+    }
+    Ok(())
+}
+
+/// Modes 0/1: `spec_case` = `d` is a normalised power of 2 (then
+/// `b2++, s2++`); leaves `v1 = s5`.
+pub(crate) fn dtoa_r_bignum_spec_case(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_S5);
+    if c.g[S6][0] == 0 {
+        return;
+    }
+    c.cycles += 5;
+    c.g[V0][0] = c.g[S3][0] & DTOA_R_MANTISSA;
+    if c.g[V0][0] != 0 {
+        dtoa_r_sw(c, DTOA_R_SLOT_SPEC_CASE, 0);
+    } else {
+        c.cycles += 5;
+        c.g[V0][0] = dtoa_r_word0(c.g[S3][0]) & DTOA_R_EXP_MASK;
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            dtoa_r_sw(c, DTOA_R_SLOT_SPEC_CASE, 0);
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = 1;
+            c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+            c.g[V1][0] = addu(c.g[V1][0], DTOA_R_LOG2P as u64);
+            dtoa_r_sw(c, DTOA_R_SLOT_SPEC_CASE, 1);
+            c.g[A0][0] = addu(c.g[A0][0], DTOA_R_LOG2P as u64);
+            let (b2, s2) = (c.g[V1][0], c.g[A0][0]);
+            dtoa_r_sw(c, DTOA_R_SLOT_B2, b2);
+            dtoa_r_sw(c, DTOA_R_SLOT_S2, s2);
+        }
+    }
+    c.cycles += 1;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_S5);
+}
+
+/// Shift `b`, `S` (and `m2`) so `S`'s top word has 4 leading zero bits:
+/// `i = ((s5 ? 32 - hi0bits(S->x[S->wds - 1]) : 1) + s2) & 0x1f` (taken
+/// from 32 when not 0), then `b <<= b2`, `S <<= s2`.
+pub(crate) fn dtoa_r_bignum_normalise(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 2;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+    if c.g[V1][0] != 0 {
+        c.cycles += 9;
+        let s = r32(c, A0);
+        c.g[V0][0] = c.lw(s.wrapping_add(DTOA_R_BIGINT_WDS));
+        c.g[V0][0] = addu(c.g[A0][0], sll(subu(c.g[V0][0], 1), 2));
+        let top = r32(c, V0).wrapping_add(DTOA_R_BIGINT_X);
+        c.g[A0][0] = c.lw(top);
+        callee::HI0BITS.call(c, 0x0042_33fc)?;
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+        c.g[V0][0] = subu(c.g[V1][0], c.g[V0][0]);
+    } else {
+        c.cycles += 2;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+        c.g[V0][0] = addu(c.g[A0][0], 1);
+    }
+    c.cycles += 3;
+    c.g[S4][0] = c.g[V0][0] & DTOA_R_WORD_BIT_MASK;
+    c.g[V0][0] = DTOA_R_WORD_BITS;
+    if c.g[S4][0] != 0 {
+        c.cycles += 1;
+        c.g[S4][0] = subu(c.g[V0][0], c.g[S4][0]);
+    }
+    c.cycles += 3;
+    let over = slt(c.g[S4][0], DTOA_R_LEAD_ZEROS + 1) == 0;
+    c.g[V0][0] = slt(c.g[S4][0], DTOA_R_LEAD_ZEROS);
+    if over {
+        // i > 4: i -= 4
+        c.cycles += 9;
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+        c.g[S4][0] = subu(c.g[S4][0], DTOA_R_LEAD_ZEROS);
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+        c.g[S1][0] = addu(c.g[S1][0], c.g[S4][0]);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[S4][0]);
+        c.g[V1][0] = addu(c.g[V1][0], c.g[S4][0]);
+        let (s2, b2) = (c.g[V0][0], c.g[V1][0]);
+        dtoa_r_sw(c, DTOA_R_SLOT_S2, s2);
+        dtoa_r_sw(c, DTOA_R_SLOT_B2, b2);
+    } else {
+        c.cycles += 2;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+        if c.g[V0][0] != 0 {
+            // i < 4: i += 28
+            c.cycles += 7;
+            c.g[S4][0] = addu(c.g[S4][0], (DTOA_R_WORD_BITS - DTOA_R_LEAD_ZEROS) as u64);
+            c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+            c.g[S1][0] = addu(c.g[S1][0], c.g[S4][0]);
+            c.g[A0][0] = addu(c.g[A0][0], c.g[S4][0]);
+            c.g[V0][0] = addu(c.g[V0][0], c.g[S4][0]);
+            let (s2, b2) = (c.g[A0][0], c.g[V0][0]);
+            dtoa_r_sw(c, DTOA_R_SLOT_S2, s2);
+            dtoa_r_sw(c, DTOA_R_SLOT_B2, b2);
+        }
+    }
+    c.cycles += 3;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B2);
+    c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+    if (c.g[V1][0] as i64) > 0 {
+        c.cycles += 4;
+        let b2 = c.g[V1][0];
+        let b = dtoa_r_big_n(c, callee::LSHIFT, b2, 0x0042_348c)?;
+        dtoa_r_sw(c, DTOA_R_SLOT_B, b);
+    }
+    c.cycles += 3;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_S2);
+    c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+    if (c.g[A0][0] as i64) > 0 {
+        c.cycles += 4;
+        let s2 = c.g[A0][0];
+        let s = dtoa_r_big_n(c, callee::LSHIFT, s2, 0x0042_34a8)?;
+        dtoa_r_sw(c, DTOA_R_SLOT_BIG_S, s);
+    }
+    Ok(())
+}
+
+/// `if (k_check && cmp(b, S) < 0) { k--; b *= 10; mhi *= 10 (leftright);
+/// ilim = ilim1; }`, then for `ilim <= 0 && mode > 2` no digits unless
+/// `b > 5 * S` (one digit); else the digit loops (`a0` = leftright).
+pub(crate) fn dtoa_r_bignum_check_k(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 3;
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_K_CHECK);
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+    if c.g[V0][0] == 0 {
+        c.cycles += 1;
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+    } else {
+        c.cycles += 4;
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+        callee::MCMP.call(c, 0x0042_34c0)?;
+        let below = (c.g[V0][0] as i64) < 0;
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        if below {
+            c.cycles += 9;
+            let b = dtoa_r_lw(c, DTOA_R_SLOT_B);
+            let b = dtoa_r_multadd(c, b, 10, 0x0042_34dc)?;
+            c.g[FP][0] = subu(c.g[FP][0], 1);
+            c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_LEFTRIGHT);
+            dtoa_r_sw(c, DTOA_R_SLOT_B, b);
+            if c.g[V1][0] != 0 {
+                c.cycles += 6;
+                let mhi = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+                let mhi = dtoa_r_multadd(c, mhi, 10, 0x0042_3500)?;
+                dtoa_r_sw(c, DTOA_R_SLOT_MHI, mhi);
+            }
+            c.cycles += 2;
+            c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM1);
+            let ilim1 = c.g[A0][0];
+            dtoa_r_sw(c, DTOA_R_SLOT_ILIM, ilim1);
+            c.cycles += 1;
+            c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        }
+    }
+    c.cycles += 2;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_LEFTRIGHT);
+    if (c.g[V0][0] as i64) > 0 {
+        return Ok(DtoaRStep::Digits);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MODE);
+    c.g[V0][0] = slt(c.g[V1][0], DTOA_R_MODE_FCVT);
+    if c.g[V0][0] != 0 {
+        return Ok(DtoaRStep::Digits);
+    }
+    c.cycles += 3;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+    c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+    if (c.g[A0][0] as i64) < 0 {
+        return Ok(DtoaRStep::NoDigits);
+    }
+    // if (cmp(b, S = multadd(S, 5, 0)) <= 0) goto no_digits;
+    c.cycles += 10;
+    c.g[A0][0] = c.g[S7][0];
+    c.g[A2][0] = 5;
+    c.g[A3][0] = 0;
+    callee::MULTADD.call(c, 0x0042_3544)?;
+    let s = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_BIG_S, s);
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+    c.g[A1][0] = s;
+    callee::MCMP.call(c, 0x0042_3554)?;
+    let above = (c.g[V0][0] as i64) > 0;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+    if above {
+        return Ok(dtoa_r_one_char(c));
+    }
+    Ok(DtoaRStep::NoDigits)
+}
+
+/// `no_digits: k = -1 - ndigits; goto ret`.
+pub(crate) fn dtoa_r_no_digits(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 3;
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_NDIGITS);
+    c.g[FP][0] = !c.g[V0][0];
+    DtoaRStep::Ret
+}
+
+/// `one_digit: *s++ = '1'; k++; goto ret` (`v0 = '1'`, `v1 = s0`).
+pub(crate) fn dtoa_r_one_digit(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 4;
+    c.g[FP][0] = addu(c.g[FP][0], 1);
+    c.g[S5][0] = addu(c.g[V1][0], 1);
+    let (first, one) = (r32(c, V1), c.g[V0][0]);
+    c.sb(first, one);
+    DtoaRStep::Ret
+}
+
+// ------------------------------------------------- Bignum digits
+
+/// `i = 1` (s4); without leftright the plain loop; else `mhi <<= m2`,
+/// `mlo = mhi` (a copy shifted once more for `spec_case`), the low bit of
+/// `word1(d)` in s6, and the shortest-digits loop.
+pub(crate) fn dtoa_r_digits(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 2;
+    c.g[S4][0] = 1;
+    if c.g[A0][0] == 0 {
+        return Ok(DtoaRStep::FixedLoop { scale: false });
+    }
+    c.cycles += 2;
+    c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+    if (c.g[S1][0] as i64) > 0 {
+        c.cycles += 4;
+        let m2 = c.g[S1][0];
+        let mhi = dtoa_r_big_n(c, callee::LSHIFT, m2, 0x0042_3598)?;
+        dtoa_r_sw(c, DTOA_R_SLOT_MHI, mhi);
+    }
+    c.cycles += 4;
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_SPEC_CASE);
+    let mhi = c.g[V0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_MLO, mhi);
+    if c.g[V1][0] != 0 {
+        // mhi = Balloc(mhi->k); Bcopy(mhi, mlo); mhi = lshift(mhi, Log2P);
+        c.cycles += 17;
+        let mlo = r32(c, V0);
+        c.g[A1][0] = c.lw(mlo.wrapping_add(DTOA_R_BIGINT_K));
+        c.g[A0][0] = c.g[S7][0];
+        callee::BALLOC.call(c, 0x0042_35b8)?;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MLO);
+        let mlo = r32(c, A0);
+        c.g[A2][0] = c.lw(mlo.wrapping_add(DTOA_R_BIGINT_WDS));
+        let mhi = c.g[V0][0];
+        dtoa_r_sw(c, DTOA_R_SLOT_MHI, mhi);
+        c.g[A2][0] = sll(c.g[A2][0], 2);
+        c.g[A0][0] = addu(mhi, DTOA_R_BIGINT_SIGN as u64);
+        c.g[A2][0] = addu(c.g[A2][0], DTOA_R_BIGINT_COPY_HEADER as u64);
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MLO);
+        c.g[A1][0] = addu(c.g[V0][0], DTOA_R_BIGINT_SIGN as u64);
+        callee::MEMCPY.call(c, 0x0042_35dc)?;
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+        let mhi = dtoa_r_big_n(c, callee::LSHIFT, DTOA_R_LOG2P as u64, 0x0042_35ec)?;
+        dtoa_r_sw(c, DTOA_R_SLOT_MHI, mhi);
+    }
+    c.cycles += 5;
+    c.g[V0][0] = dtoa_r_word1(c.g[S3][0]);
+    c.g[S4][0] = 1;
+    c.g[S6][0] = c.g[V0][0] & 1;
+    Ok(DtoaRStep::ShortestLoop { scale: false })
+}
+
+/// `for (i = 1;; i++)`: `dig = quorem(b, S) + '0'` (s3), `j = cmp(b, mlo)`
+/// (s0), `j1 = delta->sign ? 1 : cmp(b, delta)` (s1) with `delta = diff(S,
+/// mhi)`; stop at the shortest digits that round back to `d`, else store
+/// the digit, round off after `ilim` digits or `b`, `mlo`, `mhi` times 10
+/// (the head).
+pub(crate) fn dtoa_r_shortest_loop(c: &mut Cpu, mut scale: bool) -> DtoaRFlow {
+    loop {
+        if scale {
+            dtoa_r_shortest_scale(c)?;
+        }
+        scale = true;
+        c.cycles += 16;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+        callee::QUOREM.call(c, 0x0042_368c)?;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+        c.g[S3][0] = addu(c.g[V0][0], DTOA_R_CHAR_0);
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MLO);
+        callee::MCMP.call(c, 0x0042_369c)?;
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A2][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+        c.g[A0][0] = c.g[S7][0];
+        callee::MDIFF.call(c, 0x0042_36b0)?;
+        c.g[S2][0] = c.g[V0][0];
+        let delta = r32(c, S2);
+        c.g[V0][0] = c.lw(delta.wrapping_add(DTOA_R_BIGINT_SIGN));
+        let negative = c.g[V0][0] != 0;
+        c.g[S1][0] = 1;
+        if !negative {
+            c.cycles += 4;
+            c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+            c.g[A1][0] = c.g[S2][0];
+            callee::MCMP.call(c, 0x0042_36cc)?;
+            c.g[S1][0] = c.g[V0][0];
+        }
+        c.cycles += 5;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S7][0];
+        callee::BFREE.call(c, 0x0042_36dc)?;
+        c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MODE);
+        match dtoa_r_shortest_digit(c)? {
+            DtoaRDigit::Stored => return Ok(DtoaRStep::RetAfterDigit),
+            DtoaRDigit::RoundNine => {
+                c.cycles += 1;
+                c.g[V1][0] = DTOA_R_CHAR_9;
+                return Ok(dtoa_r_round_nine(c));
+            }
+            DtoaRDigit::RoundNineLoaded => return Ok(dtoa_r_round_nine(c)),
+            DtoaRDigit::Next => {}
+        }
+        c.cycles += 4;
+        let digit = c.g[S3][0];
+        dtoa_r_put(c, digit);
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        let last = c.g[S4][0] == c.g[A0][0];
+        c.g[S5][0] = addu(c.g[S5][0], 1);
+        if last {
+            c.cycles += 2;
+            c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+            return Ok(DtoaRStep::RoundLast);
+        }
+        if back_edge_unwinds(c, DTOA_R_HEAD_SHORTEST) {
+            return Err(Unwound);
+        }
+    }
+}
+
+/// `b = multadd(b, 10, 0)`; `mlo = mhi = multadd(mhi, 10, 0)` when they
+/// are one Bigint, else both; `i++`.
+pub(crate) fn dtoa_r_shortest_scale(c: &mut Cpu) -> Result<(), Unwound> {
+    c.cycles += 9;
+    let b = dtoa_r_lw(c, DTOA_R_SLOT_B);
+    let b = dtoa_r_multadd(c, b, 10, 0x0042_361c)?;
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MLO);
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+    let shared = c.g[V1][0] == c.g[A0][0];
+    dtoa_r_sw(c, DTOA_R_SLOT_B, b);
+    if shared {
+        c.cycles += 8;
+        let mhi = c.g[A0][0];
+        let m = dtoa_r_multadd(c, mhi, 10, 0x0042_3640)?;
+        dtoa_r_sw(c, DTOA_R_SLOT_MHI, m);
+        dtoa_r_sw(c, DTOA_R_SLOT_MLO, m);
+    } else {
+        c.cycles += 12;
+        let mlo = dtoa_r_lw(c, DTOA_R_SLOT_MLO);
+        let mlo = dtoa_r_multadd(c, mlo, 10, 0x0042_3660)?;
+        let mhi = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+        dtoa_r_sw(c, DTOA_R_SLOT_MLO, mlo);
+        let mhi = dtoa_r_multadd(c, mhi, 10, 0x0042_3678)?;
+        dtoa_r_sw(c, DTOA_R_SLOT_MHI, mhi);
+    }
+    c.cycles += 1;
+    c.g[S4][0] = addu(c.g[S4][0], 1);
+    Ok(())
+}
+
+/// The tests on `j` (s0) and `j1` (s1) after a digit (v0 = `mode`):
+/// - `j1 == 0 && mode == 0 && !(word1(d) & 1)`: round to even on the tie;
+/// - `j < 0 || (j == 0 && mode == 0 && even)`: `b <<= 1` and round the
+///   digit by `cmp(b, S)` when `j1 > 0`;
+/// - `j1 > 0`: the digit plus one;
+/// - otherwise store the digit and go on.
+pub(crate) fn dtoa_r_shortest_digit(c: &mut Cpu) -> Result<DtoaRDigit, Unwound> {
+    'general: {
+        if c.g[S1][0] != 0 {
+            break 'general;
+        }
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            break 'general;
+        }
+        c.cycles += 2;
+        c.g[V1][0] = DTOA_R_CHAR_9;
+        if c.g[S6][0] != 0 {
+            break 'general;
+        }
+        c.cycles += 2;
+        let nine = c.g[S3][0] == c.g[V1][0];
+        c.g[V0][0] = slt(0, c.g[S0][0]);
+        if nine {
+            return Ok(DtoaRDigit::RoundNine);
+        }
+        // if (j > 0) dig++; *s++ = dig; goto ret;
+        c.cycles += 3;
+        c.g[S3][0] = addu(c.g[V0][0], c.g[S3][0]);
+        let digit = c.g[S3][0];
+        dtoa_r_put(c, digit);
+        return Ok(DtoaRDigit::Stored);
+    }
+    c.cycles += 2;
+    let low = 'low: {
+        if (c.g[S0][0] as i64) < 0 {
+            break 'low true;
+        }
+        c.cycles += 2;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MODE);
+        if c.g[S0][0] != 0 {
+            break 'low false;
+        }
+        c.cycles += 2;
+        if c.g[A0][0] != 0 {
+            break 'low false;
+        }
+        c.cycles += 2;
+        c.g[S6][0] == 0
+    };
+    if !low {
+        c.cycles += 2;
+        c.g[V0][0] = DTOA_R_CHAR_9;
+        if (c.g[S1][0] as i64) <= 0 {
+            return Ok(DtoaRDigit::Next);
+        }
+        // j1 > 0: if (dig == '9') goto round_9_up; *s++ = dig + 1; goto ret;
+        c.cycles += 2;
+        let nine = c.g[S3][0] == c.g[V0][0];
+        c.g[V0][0] = addu(c.g[S3][0], 1);
+        if nine {
+            return Ok(DtoaRDigit::RoundNine);
+        }
+        c.cycles += 2;
+        let digit = c.g[V0][0];
+        dtoa_r_put(c, digit);
+        return Ok(DtoaRDigit::Stored);
+    }
+    c.cycles += 2;
+    c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+    if (c.g[S1][0] as i64) > 0 {
+        // b = lshift(b, 1); j1 = cmp(b, S);
+        // if ((j1 > 0 || (j1 == 0 && dig & 1)) && dig++ == '9') goto round_9_up;
+        c.cycles += 10;
+        let b = dtoa_r_big_n(c, callee::LSHIFT, 1, 0x0042_373c)?;
+        dtoa_r_sw(c, DTOA_R_SLOT_B, b);
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+        c.g[A0][0] = b;
+        callee::MCMP.call(c, 0x0042_374c)?;
+        c.g[S1][0] = c.g[V0][0];
+        if (c.g[S1][0] as i64) > 0 {
+            c.g[S3][0] = addu(c.g[S3][0], 1);
+        } else {
+            c.cycles += 2;
+            if c.g[S1][0] != 0 {
+                let digit = c.g[S3][0];
+                dtoa_r_put(c, digit);
+                return Ok(DtoaRDigit::Stored);
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.g[S3][0] & 1;
+            if c.g[V0][0] == 0 {
+                let digit = c.g[S3][0];
+                dtoa_r_put(c, digit);
+                return Ok(DtoaRDigit::Stored);
+            }
+            c.cycles += 1;
+            c.g[S3][0] = addu(c.g[S3][0], 1);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = DTOA_R_CHAR_9 + 1;
+        let overflow = c.g[S3][0] == c.g[V0][0];
+        c.g[V1][0] = DTOA_R_CHAR_9;
+        if overflow {
+            return Ok(DtoaRDigit::RoundNineLoaded);
+        }
+    }
+    c.cycles += 2;
+    let digit = c.g[S3][0];
+    dtoa_r_put(c, digit);
+    Ok(DtoaRDigit::Stored)
+}
+
+/// `round_9_up: *s++ = '9'; goto roundoff` (`v1 = '9'`).
+pub(crate) fn dtoa_r_round_nine(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 3;
+    let nine = c.g[V1][0];
+    dtoa_r_put(c, nine);
+    c.g[S5][0] = addu(c.g[S5][0], 1);
+    c.cycles += 1;
+    c.g[S5][0] = subu(c.g[S5][0], 1);
+    DtoaRStep::RoundOff
+}
+
+/// `for (i = 1;; i++) { *s++ = dig = quorem(b, S) + '0'; if (i >= ilim)
+/// break; b = multadd(b, 10, 0); }` (the multiply is the head).
+pub(crate) fn dtoa_r_fixed_loop(c: &mut Cpu, mut scale: bool) -> DtoaRFlow {
+    loop {
+        if scale {
+            c.cycles += 7;
+            let b = dtoa_r_lw(c, DTOA_R_SLOT_B);
+            let b = dtoa_r_multadd(c, b, 10, 0x0042_37dc)?;
+            c.g[S4][0] = addu(c.g[S4][0], 1);
+            dtoa_r_sw(c, DTOA_R_SLOT_B, b);
+        }
+        scale = true;
+        c.cycles += 9;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+        callee::QUOREM.call(c, 0x0042_37f0)?;
+        c.g[S3][0] = addu(c.g[V0][0], DTOA_R_CHAR_0);
+        c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_ILIM);
+        let digit = c.g[S3][0];
+        dtoa_r_put(c, digit);
+        c.g[V0][0] = slt(c.g[S4][0], c.g[V1][0]);
+        c.g[S5][0] = addu(c.g[S5][0], 1);
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+            return Ok(DtoaRStep::RoundLast);
+        }
+        if back_edge_unwinds(c, DTOA_R_HEAD_FIXED) {
+            return Err(Unwound);
+        }
+    }
+}
+
+/// "Round off last digit": `b = lshift(b, 1); j = cmp(b, S)`; roundoff when
+/// `j > 0 || (j == 0 && dig & 1)`, else strip trailing zeros (`a1 = b`).
+pub(crate) fn dtoa_r_round_last(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 10;
+    let b = dtoa_r_big_n(c, callee::LSHIFT, 1, 0x0042_3818)?;
+    dtoa_r_sw(c, DTOA_R_SLOT_B, b);
+    c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+    c.g[A0][0] = b;
+    callee::MCMP.call(c, 0x0042_3828)?;
+    c.g[S0][0] = c.g[V0][0];
+    if (c.g[S0][0] as i64) > 0 {
+        c.g[S5][0] = subu(c.g[S5][0], 1);
+        return Ok(DtoaRStep::RoundOff);
+    }
+    c.cycles += 2;
+    c.g[V1][0] = DTOA_R_CHAR_0;
+    if c.g[S0][0] != 0 {
+        c.cycles += 1;
+        c.g[S5][0] = subu(c.g[S5][0], 1);
+        return Ok(DtoaRStep::TrimZeros);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[S3][0] & 1;
+    if c.g[V0][0] == 0 {
+        c.g[S5][0] = subu(c.g[S5][0], 1);
+        return Ok(DtoaRStep::TrimZeros);
+    }
+    c.cycles += 1;
+    c.g[S5][0] = subu(c.g[S5][0], 1);
+    Ok(DtoaRStep::RoundOff)
+}
+
+/// `roundoff: while (*--s == '9') if (s == s0) { k++; *s++ = '1'; goto
+/// ret; } ++*s++;` (s5 already at the last digit).
+pub(crate) fn dtoa_r_round_off(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 4;
+    c.g[V1][0] = DTOA_R_CHAR_9;
+    let at = r32(c, S5);
+    c.g[V0][0] = c.lb(at);
+    if c.g[V0][0] != c.g[V1][0] {
+        c.g[V0][0] = c.lbu(at);
+        return Ok(dtoa_r_round_bump(c));
+    }
+    c.cycles += 1;
+    dtoa_r_round_off_loop(c)
+}
+
+/// The `roundoff` loop (head; `v1 = '9'`).
+pub(crate) fn dtoa_r_round_off_loop(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 3;
+        c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+        let at_start = c.g[S5][0] == c.g[A0][0];
+        c.g[S5][0] = subu(c.g[S5][0], 1);
+        if at_start {
+            c.cycles += 6;
+            c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+            c.g[V0][0] = DTOA_R_CHAR_1;
+            c.g[FP][0] = addu(c.g[FP][0], 1);
+            let (first, one) = (r32(c, V1), c.g[V0][0]);
+            c.sb(first, one);
+            c.g[S5][0] = addu(c.g[V1][0], 1);
+            return Ok(DtoaRStep::Ret);
+        }
+        c.cycles += 4;
+        let at = r32(c, S5);
+        c.g[V0][0] = c.lb(at);
+        if c.g[V0][0] != c.g[V1][0] {
+            c.cycles += 1;
+            c.g[V0][0] = c.lbu(at);
+            return Ok(dtoa_r_round_bump(c));
+        }
+        if back_edge_unwinds(c, DTOA_R_HEAD_ROUND_OFF) {
+            return Err(Unwound);
+        }
+    }
+}
+
+/// `++*s++` (the digit in v0).
+pub(crate) fn dtoa_r_round_bump(c: &mut Cpu) -> DtoaRStep {
+    c.cycles += 3;
+    c.g[V0][0] = addu(c.g[V0][0], 1);
+    let digit = c.g[V0][0];
+    dtoa_r_put(c, digit);
+    DtoaRStep::RetAfterDigit
+}
+
+/// `while (*--s == '0'); s++;` (head; `v1 = '0'`, s5 at the last digit).
+pub(crate) fn dtoa_r_trim_zeros(c: &mut Cpu) -> DtoaRFlow {
+    loop {
+        c.cycles += 7;
+        let at = r32(c, S5);
+        c.g[V0][0] = c.lb(at);
+        if c.g[V0][0] != c.g[V1][0] {
+            break;
+        }
+        c.g[S5][0] = subu(c.g[S5][0], 1);
+        if back_edge_unwinds(c, DTOA_R_HEAD_TRIM_ZEROS) {
+            return Err(Unwound);
+        }
+    }
+    Ok(DtoaRStep::RetAfterDigit)
+}
+
+// ------------------------------------------------- return
+
+/// `ret: Bfree(S); if (mhi) { if (mlo && mlo != mhi) Bfree(mlo); Bfree(mhi); }`.
+pub(crate) fn dtoa_r_ret(c: &mut Cpu) -> DtoaRFlow {
+    c.cycles += 6;
+    c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_BIG_S);
+    c.g[A0][0] = c.g[S7][0];
+    callee::BFREE.call(c, 0x0042_38d8)?;
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_MLO);
+    if c.g[A0][0] != 0 {
+        c.cycles += 2;
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            let shared = c.g[V0][0] == c.g[A0][0];
+            c.g[A1][0] = c.g[V0][0];
+            if !shared {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S7][0];
+                callee::BFREE.call(c, 0x0042_38fc)?;
+            }
+            c.cycles += 1;
+            c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_MHI);
+        }
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S7][0];
+        callee::BFREE.call(c, 0x0042_3908)?;
+    }
+    Ok(DtoaRStep::Ret1 { b_loaded: false })
+}
+
+/// `ret1: Bfree(b); *s = 0; *decpt = k + 1; if (rve) *rve = s; return s0`
+/// (`a1 = b` already when `b_loaded`).
+pub(crate) fn dtoa_r_ret1(c: &mut Cpu, b_loaded: bool) -> DtoaRFlow {
+    if !b_loaded {
+        c.cycles += 1;
+        c.g[A1][0] = dtoa_r_lw(c, DTOA_R_SLOT_B);
+    }
+    c.cycles += 9;
+    c.g[A0][0] = c.g[S7][0];
+    callee::BFREE.call(c, 0x0042_3914)?;
+    dtoa_r_put(c, 0);
+    c.g[V0][0] = addu(c.g[FP][0], 1);
+    c.g[V1][0] = dtoa_r_lw(c, DTOA_R_SLOT_DECPT);
+    let (decpt, point) = (r32(c, V1), c.g[V0][0]);
+    c.sw(decpt, point);
+    c.g[A0][0] = dtoa_r_lw(c, DTOA_R_SLOT_RVE);
+    if c.g[A0][0] != 0 {
+        let (rve, end) = (r32(c, A0), c.g[S5][0]);
+        c.sw(rve, end);
+    }
+    c.cycles += 1;
+    c.g[V0][0] = dtoa_r_lw(c, DTOA_R_SLOT_DIGITS);
+    Ok(dtoa_r_epilogue(c))
+}
+
+// ---------------------------------------------------------------------------
+// 0x0041b728 _vfprintf_r
+
+/// Entry of `_vfprintf_r`; every other address inside it resumes the
+/// generated body.
+pub(crate) const VFPRINTF_R_ENTRY: u32 = 0x0041_b728;
+
+/// First address past `_vfprintf_r` (for `jump_out`).
+pub(crate) const VFPRINTF_R_END: u32 = 0x0041_c788;
+
+/// Stack frame size.
+pub(crate) const VFPRINTF_R_FRAME: u32 = 0x250;
+
+/// Callee-saved registers and their quadword slots.
+pub(crate) const VFPRINTF_R_SAVED: [(usize, u32); 9] = [
+    (S0, 0x240),
+    (S1, 0x230),
+    (S2, 0x220),
+    (S3, 0x210),
+    (S4, 0x200),
+    (S5, 0x1f0),
+    (S6, 0x1e0),
+    (S7, 0x1d0),
+    (FP, 0x1c0),
+];
+
+/// Saved `ra`.
+pub(crate) const VFPRINTF_R_SLOT_RA: u32 = 0x1b0;
+
+// Frame slots (offsets from `sp`).
+/// One-character fields (`%c`, an unknown conversion) and the output of the
+/// thousands grouping of a decimal.
+pub(crate) const VFPRINTF_R_SLOT_BUF: u32 = 0x10;
+
+/// Integer digits are written backwards from here.
+pub(crate) const VFPRINTF_R_SLOT_NUM_END: u32 = 0x16c;
+
+/// The `0x`/`0X` prefix (two bytes).
+pub(crate) const VFPRINTF_R_SLOT_PREFIX: u32 = 0x170;
+
+/// The second prefix byte (the conversion character).
+pub(crate) const VFPRINTF_R_SLOT_PREFIX_X: u32 = VFPRINTF_R_SLOT_PREFIX + 1;
+
+/// `wchar_t` converted from the format by `_mbtowc_r` (read as a halfword).
+pub(crate) const VFPRINTF_R_SLOT_WC: u32 = 0x180;
+
+/// Sign character: `'-'`, `'+'`, `' '` or 0.
+pub(crate) const VFPRINTF_R_SLOT_SIGN: u32 = 0x182;
+
+/// `mbstate_t` for `_mbtowc_r`.
+pub(crate) const VFPRINTF_R_SLOT_MBSTATE: u32 = 0x184;
+
+/// Length of the converted string (`size`).
+pub(crate) const VFPRINTF_R_SLOT_SIZE: u32 = 0x188;
+
+/// Characters written so far (the return value).
+pub(crate) const VFPRINTF_R_SLOT_RET: u32 = 0x18c;
+
+/// Field width.
+pub(crate) const VFPRINTF_R_SLOT_WIDTH: u32 = 0x190;
+
+/// Precision of an integer conversion (`dprec`; 0 for the others).
+pub(crate) const VFPRINTF_R_SLOT_DPREC: u32 = 0x194;
+
+/// Width of the field without padding: `max(size, dprec)` plus sign/prefix.
+pub(crate) const VFPRINTF_R_SLOT_REALSZ: u32 = 0x198;
+
+/// Digit table of a hex conversion.
+pub(crate) const VFPRINTF_R_SLOT_XDIGS: u32 = 0x19c;
+
+/// `flags & LEFT`, kept for the trailing padding.
+pub(crate) const VFPRINTF_R_SLOT_LEFT: u32 = 0x1a0;
+
+/// `&wc` and `&mbstate`, reloaded for every `_mbtowc_r` call.
+pub(crate) const VFPRINTF_R_SLOT_PWC: u32 = 0x1a4;
+
+pub(crate) const VFPRINTF_R_SLOT_PMBSTATE: u32 = 0x1a8;
+
+// `FILE` fields (the file is in `s1`).
+pub(crate) const VFPRINTF_R_FILE_P: u32 = 0x0;
+
+pub(crate) const VFPRINTF_R_FILE_W: u32 = 0x8;
+
+pub(crate) const VFPRINTF_R_FILE_FLAGS: u32 = 0xc;
+
+pub(crate) const VFPRINTF_R_FILE_FD: u32 = 0xe;
+
+pub(crate) const VFPRINTF_R_FILE_BF_SIZE: u32 = 0x14;
+
+/// `__SSTR`: a string buffer (sprintf), filled in place; any other file
+/// goes through `vfprintf_BufferedWrite`.
+pub(crate) const VFPRINTF_R_SSTR: u64 = 0x200;
+
+/// `'L'`: long double (parsed, never read).
+pub(crate) const VFPRINTF_R_LONGDBL: u64 = 0x8;
+
+/// `flags & (LEFT | ZEROPAD)`, kept in `s7` once the field is formatted;
+/// it equals `ZEROPAD` for a zero-padded right-justified field.
+pub(crate) const VFPRINTF_R_PADDING: u64 = LEFT | ZEROPAD;
+
+// Integer bases (`s2`).
+pub(crate) const VFPRINTF_R_OCT: u64 = 0;
+
+pub(crate) const VFPRINTF_R_DEC: u64 = 1;
+
+pub(crate) const VFPRINTF_R_HEX: u64 = 2;
+
+/// Each `va_list` argument takes one 8-byte slot.
+pub(crate) const VFPRINTF_R_ARG_SLOT: u32 = 8;
+
+/// Padding is written 16 characters at a time.
+pub(crate) const VFPRINTF_R_PAD_CHUNK: u32 = 16;
+
+/// `_impure_ptr`, the reent handed to `_mbtowc_r`.
+pub(crate) const VFPRINTF_R_IMPURE_PTR: u32 = 0x0045_4944;
+
+/// The byte limit handed to `_mbtowc_r` (newlib passes `MB_CUR_MAX` there).
+pub(crate) const VFPRINTF_R_MB_CUR_MAX: u32 = 0x0045_5140;
+
+/// `lui 0x4a`: the high half the read-only tables below are addressed from.
+pub(crate) const VFPRINTF_R_RODATA_HI: u32 = 0x004a_0000;
+
+/// The conversion jump table (one word per character `' '..='x'`).
+pub(crate) const VFPRINTF_R_SPEC_TABLE: u32 = VFPRINTF_R_RODATA_HI - 0x5bd0;
+
+pub(crate) const VFPRINTF_R_SPEC_FIRST: u32 = b' ' as u32;
+
+pub(crate) const VFPRINTF_R_SPEC_COUNT: u64 = 0x59;
+
+/// 16 blanks / 16 zeros for padding.
+pub(crate) const VFPRINTF_R_BLANKS: u32 = VFPRINTF_R_RODATA_HI - 0x5c50;
+
+pub(crate) const VFPRINTF_R_ZEROS: u32 = VFPRINTF_R_RODATA_HI - 0x5c40;
+
+/// `"0123456789abcdef"` / `"0123456789ABCDEF"`.
+pub(crate) const VFPRINTF_R_DIGITS_LOWER: u32 = VFPRINTF_R_RODATA_HI - 0x5c30;
+
+pub(crate) const VFPRINTF_R_DIGITS_UPPER: u32 = VFPRINTF_R_RODATA_HI - 0x5c10;
+
+/// `"(null)"` for a null `%s`.
+pub(crate) const VFPRINTF_R_NULL_STR: u32 = VFPRINTF_R_RODATA_HI - 0x5c18;
+
+/// `"bug in vfprintf: bad base"`.
+pub(crate) const VFPRINTF_R_BAD_BASE: u32 = VFPRINTF_R_RODATA_HI - 0x5bf8;
+
+/// The doubles 1.0 (the `%g` exponent of zero) and -4.0.
+pub(crate) const VFPRINTF_R_DOUBLE_ONE: u64 = 0x3ff0_0000_0000_0000;
+
+pub(crate) const VFPRINTF_R_DOUBLE_MINUS_FOUR: u64 = 0xc010_0000_0000_0000;
+
+// Back-edge heads (event checks).
+pub(crate) const VFPRINTF_R_HEAD_FORMAT: u32 = 0x0041_b780;
+
+pub(crate) const VFPRINTF_R_HEAD_SCAN: u32 = 0x0041_b788;
+
+pub(crate) const VFPRINTF_R_HEAD_READ: u32 = 0x0041_b8a4;
+
+pub(crate) const VFPRINTF_R_HEAD_ADVANCE: u32 = 0x0041_b8a8;
+
+pub(crate) const VFPRINTF_R_HEAD_DISPATCH: u32 = 0x0041_b8ac;
+
+pub(crate) const VFPRINTF_R_HEAD_PREC_DIGITS: u32 = 0x0041_b968;
+
+pub(crate) const VFPRINTF_R_HEAD_WIDTH_DIGITS: u32 = 0x0041_b9b0;
+
+pub(crate) const VFPRINTF_R_HEAD_OCT: u32 = 0x0041_bdf0;
+
+pub(crate) const VFPRINTF_R_HEAD_DEC: u32 = 0x0041_be40;
+
+pub(crate) const VFPRINTF_R_HEAD_HEX: u32 = 0x0041_be98;
+
+/// Return addresses of one inlined write (the `__sfvwrite` fast path):
+/// copying the run, filling the rest of the buffer, `vfprintf_BufferedWrite`.
+#[derive(Clone, Copy)]
+pub(crate) struct VfprintfRWrite {
+    copy: u32,
+    fill: u32,
+    buffered: u32,
+}
+
+pub(crate) const VFPRINTF_R_LITERAL_WRITE: VfprintfRWrite = VfprintfRWrite {
+    copy: 0x0041_b7f8,
+    fill: 0x0041_b820,
+    buffered: 0x0041_b85c,
+};
+
+/// One of the four padding loops; they differ in the table, the registers
+/// gcc gave the inline 16-byte copy, and whether a register holds 1 for the
+/// `_file` fix-up.
+pub(crate) struct VfprintfRPad {
+    table: u32,
+    setup_cycles: u64,
+    one: Option<usize>,
+    chunk_base: usize,
+    chunk_regs: [usize; 2],
+    head: u32,
+    chunk_copy: u32,
+    chunk_buffered: u32,
+    rest: VfprintfRWrite,
+}
+
+/// Blanks before a right-justified field.
+pub(crate) const VFPRINTF_R_PAD_BLANKS_BEFORE: VfprintfRPad = VfprintfRPad {
+    table: VFPRINTF_R_BLANKS,
+    setup_cycles: 2,
+    one: None,
+    chunk_base: A2,
+    chunk_regs: [V1, A0],
+    head: 0x0041_bfb0,
+    chunk_copy: 0x0041_c018,
+    chunk_buffered: 0x0041_c054,
+    rest: VfprintfRWrite {
+        copy: 0x0041_c090,
+        fill: 0x0041_c0b8,
+        buffered: 0x0041_c0f4,
+    },
+};
+
+/// Zeros up to the width (`%0`).
+pub(crate) const VFPRINTF_R_PAD_ZEROS_WIDTH: VfprintfRPad = VfprintfRPad {
+    table: VFPRINTF_R_ZEROS,
+    setup_cycles: 3,
+    one: Some(S5),
+    chunk_base: V1,
+    chunk_regs: [A0, A1],
+    head: 0x0041_c250,
+    chunk_copy: 0x0041_c2b8,
+    chunk_buffered: 0x0041_c2ec,
+    rest: VfprintfRWrite {
+        copy: 0x0041_c328,
+        fill: 0x0041_c350,
+        buffered: 0x0041_c38c,
+    },
+};
+
+/// Zeros up to the precision of an integer.
+pub(crate) const VFPRINTF_R_PAD_ZEROS_PREC: VfprintfRPad = VfprintfRPad {
+    table: VFPRINTF_R_ZEROS,
+    setup_cycles: 2,
+    one: Some(S5),
+    chunk_base: A0,
+    chunk_regs: [A1, A2],
+    head: 0x0041_c3b0,
+    chunk_copy: 0x0041_c418,
+    chunk_buffered: 0x0041_c44c,
+    rest: VfprintfRWrite {
+        copy: 0x0041_c488,
+        fill: 0x0041_c4b0,
+        buffered: 0x0041_c4ec,
+    },
+};
+
+/// Blanks after a left-justified field.
+pub(crate) const VFPRINTF_R_PAD_BLANKS_AFTER: VfprintfRPad = VfprintfRPad {
+    table: VFPRINTF_R_BLANKS,
+    setup_cycles: 3,
+    one: Some(S4),
+    chunk_base: A2,
+    chunk_regs: [V1, A0],
+    head: 0x0041_c5b0,
+    chunk_copy: 0x0041_c618,
+    chunk_buffered: 0x0041_c64c,
+    rest: VfprintfRWrite {
+        copy: 0x0041_c688,
+        fill: 0x0041_c6b0,
+        buffered: 0x0041_c6ec,
+    },
+};
+
+/// How the literal run before a conversion ended.
+pub(crate) enum VfprintfRLiteralEnd {
+    /// A `%`: parse the conversion.
+    Conversion,
+    /// The end of the format (`v0` holds the file flags).
+    EndOfFormat,
+    /// A full string buffer: return the count (`v0`) at once.
+    BufferFull,
+}
+
+/// Where the conversion parser continues after a flag or modifier.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum VfprintfRParse {
+    /// Read the next format character, then advance.
+    ReadChar,
+    /// The character is already in `s6`: advance past it.
+    Advance,
+    /// `s6` holds a character the pointer is already past: dispatch it.
+    Dispatch,
+}
+
+impl VfprintfRParse {
+    fn head(self) -> u32 {
+        match self {
+            VfprintfRParse::ReadChar => VFPRINTF_R_HEAD_READ,
+            VfprintfRParse::Advance => VFPRINTF_R_HEAD_ADVANCE,
+            VfprintfRParse::Dispatch => VFPRINTF_R_HEAD_DISPATCH,
+        }
+    }
+}
+
+/// What a conversion produced.
+pub(crate) enum VfprintfRConverted {
+    /// A string at `s4` of `size` characters to pad and write.
+    Field,
+    /// `%n` stored the count.
+    Stored,
+    /// A NUL after the `%`: the format ends.
+    EndOfFormat,
+}
+
+/// The outcome of one conversion-table arm.
+pub(crate) enum VfprintfRSpec {
+    Next(VfprintfRParse),
+    Done(VfprintfRConverted),
+}
+
+/// `int _vfprintf_r(struct _reent *r, FILE *fp, const char *fmt, va_list ap)`
+/// (0x41b728): newlib's printf engine as this build has it. Copies the
+/// literal runs of `fmt`, parses each `%` conversion (flags, width,
+/// precision, length) and formats its argument from `ap` (8-byte slots):
+/// integers in octal, decimal or hex, `%c`, `%s`, `%p`, `%n`, and floats
+/// through `vfprintf_FloatToStr` (`%g` picks `%e` or `%f` from `log10|x|`).
+/// Then it pads the field, writes the sign or `0x` prefix and the digits. A
+/// `__SSTR` file (sprintf) is filled in place; any other goes through
+/// `vfprintf_BufferedWrite` and is flushed at the end. Returns the number of
+/// characters, or `_bf._size` once a string buffer is full.
+///
+/// Entered anywhere but its start, it resumes in the generated body.
+pub fn vfprintf_r(c: &mut Cpu) {
+    use VfprintfRConverted::{EndOfFormat, Field, Stored};
+    if c.pc != VFPRINTF_R_ENTRY {
+        return ee::s15::f_0041b728__entries(c);
+    }
+    guest(c, |c| {
+        vfprintf_r_prologue(c)?;
+        loop {
+            // The next literal run starts at `fmt`; it ends at a '%'.
+            c.cycles += 2;
+            c.g[S4][0] = c.g[FP][0];
+            c.g[S2][0] = b'%' as u64;
+            vfprintf_r_scan_literal(c)?;
+            vfprintf_r_write_literal(c)?;
+            match vfprintf_r_literal_end(c) {
+                VfprintfRLiteralEnd::Conversion => {}
+                VfprintfRLiteralEnd::EndOfFormat => return vfprintf_r_finish(c),
+                VfprintfRLiteralEnd::BufferFull => {
+                    vfprintf_r_epilogue(c);
+                    return Ok(());
+                }
+            }
+            match vfprintf_r_conversion(c)? {
+                Field => vfprintf_r_emit(c)?,
+                Stored => {}
+                EndOfFormat => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+                    return vfprintf_r_finish(c);
+                }
+            }
+            vfprintf_r_back_edge(c, VFPRINTF_R_HEAD_FORMAT);
+        }
+    })
+}
+
+/// Address of a frame slot.
+#[inline]
+pub(crate) fn vfprintf_r_slot(c: &Cpu, slot: u32) -> u32 {
+    sp(c).wrapping_add(slot)
+}
+
+/// Address of a field of the output `FILE` (`s1`).
+#[inline]
+pub(crate) fn vfprintf_r_file(c: &Cpu, field: u32) -> u32 {
+    (c.g[S1][0] as u32).wrapping_add(field)
+}
+
+/// `ap += 8`: take the next argument slot.
+#[inline]
+pub(crate) fn vfprintf_r_next_arg(c: &mut Cpu) {
+    c.g[S3][0] = addu(c.g[S3][0], VFPRINTF_R_ARG_SLOT as u64);
+}
+
+/// The slot just taken (`-8(ap)`).
+#[inline]
+pub(crate) fn vfprintf_r_arg(c: &Cpu) -> u32 {
+    (c.g[S3][0] as u32).wrapping_sub(VFPRINTF_R_ARG_SLOT)
+}
+
+/// The event check at a loop's back edge (the generated loop carries on
+/// whatever the event asks).
+#[inline]
+pub(crate) fn vfprintf_r_back_edge(c: &mut Cpu, head: u32) {
+    if event_due(c) {
+        deliver_event_here(c, head);
+    }
+}
+
+/// Push the frame, save `s0`-`s7`, `fp` and `ra`; `s1` = the file, `s3` =
+/// `ap`, `fp` = `fmt`; call `localeconv` (result unused); clear the count
+/// and the multibyte state.
+pub(crate) fn vfprintf_r_prologue(c: &mut Cpu) -> Flow {
+    c.cycles += 22;
+    let frame = Frame::open(c, VFPRINTF_R_FRAME);
+    for (reg, slot) in VFPRINTF_R_SAVED {
+        frame.save(c, reg, slot);
+    }
+    frame.save_ra(c, VFPRINTF_R_SLOT_RA);
+    c.g[S1][0] = c.g[A1][0];
+    c.g[S3][0] = c.g[A3][0];
+    c.g[FP][0] = c.g[A2][0];
+    callee::LOCALECONV.call(c, 0x0041_b764)?;
+    c.g[V0][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WC));
+    c.g[V1][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_MBSTATE));
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET), 0);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PWC), c.g[V0][0]);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PMBSTATE), c.g[V1][0]);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_MBSTATE), 0);
+    Ok(())
+}
+
+/// Step `fmt` over multibyte characters until a `'%'` (left on it) or the
+/// end (`s0 = n <= 0`).
+pub(crate) fn vfprintf_r_scan_literal(c: &mut Cpu) -> Flow {
+    loop {
+        c.cycles += 11;
+        c.g[A0][0] = c.lw(VFPRINTF_R_IMPURE_PTR);
+        c.g[A3][0] = c.lw(VFPRINTF_R_MB_CUR_MAX);
+        c.g[A1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PWC));
+        c.g[A2][0] = c.g[FP][0];
+        c.g[T0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PMBSTATE));
+        callee::MBTOWC_R.call(c, 0x0041_b7a8)?;
+        c.g[S0][0] = c.g[V0][0];
+        let stop = (c.g[S0][0] as i64) <= 0;
+        c.g[V0][0] = c.lhu(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WC));
+        if stop {
+            return Ok(());
+        }
+        c.cycles += 2;
+        let percent = c.g[V0][0] == c.g[S2][0];
+        let n = c.g[S0][0] as u32;
+        c.g[FP][0] = addu(c.g[FP][0], n as u64);
+        if percent {
+            c.cycles += 1;
+            c.g[FP][0] = subu(c.g[FP][0], 1);
+            return Ok(());
+        }
+        vfprintf_r_back_edge(c, VFPRINTF_R_HEAD_SCAN);
+    }
+}
+
+/// Write the run `s4..fmt` (length in `s2`) and count it.
+pub(crate) fn vfprintf_r_write_literal(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    c.g[S2][0] = subu(c.g[FP][0], c.g[S4][0]);
+    if c.g[S2][0] == 0 {
+        return Ok(());
+    }
+    let start = c.g[S4][0];
+    vfprintf_r_write(c, start, S2, VFPRINTF_R_LITERAL_WRITE)?;
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+    let n = c.g[S2][0] as u32;
+    c.g[V0][0] = addu(c.g[V0][0], n as u64);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET), c.g[V0][0]);
+    Ok(())
+}
+
+/// After a literal run: the end of the format, a full string buffer, or a
+/// conversion (with the sign cleared).
+pub(crate) fn vfprintf_r_literal_end(c: &mut Cpu) -> VfprintfRLiteralEnd {
+    c.cycles += 2;
+    if (c.g[S0][0] as i64) <= 0 {
+        c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+        return VfprintfRLiteralEnd::EndOfFormat;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+    if (c.g[V0][0] as i64) <= 0 {
+        c.cycles += 4;
+        c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS)) & VFPRINTF_R_SSTR;
+        let string = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+        if string {
+            return VfprintfRLiteralEnd::BufferFull;
+        }
+        c.cycles += 1;
+    }
+    c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN), 0);
+    VfprintfRLiteralEnd::Conversion
+}
+
+/// Write `n` (register `len`) bytes from `src`: copied into a string
+/// buffer (as much as fits), or through `vfprintf_BufferedWrite`.
+pub(crate) fn vfprintf_r_write(c: &mut Cpu, src: u64, len: usize, at: VfprintfRWrite) -> Flow {
+    c.cycles += 4;
+    c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS)) & VFPRINTF_R_SSTR;
+    if c.g[V0][0] == 0 {
+        c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+        vfprintf_r_buffered_fd(c);
+        c.cycles += 4;
+        c.g[A1][0] = src;
+        c.g[A2][0] = c.g[len][0];
+        c.g[A3][0] = 0;
+        return callee::VFPRINTF_BUFFERED_WRITE.call(c, at.buffered);
+    }
+    c.cycles += 4;
+    c.g[A2][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+    c.g[V0][0] = slt(c.g[len][0], c.g[A2][0]);
+    let fits = c.g[V0][0] != 0;
+    c.g[A1][0] = src;
+    if fits {
+        c.cycles += 10;
+        c.g[A0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+        c.g[A2][0] = c.g[len][0];
+        callee::MEMCPY.call(c, at.copy)?;
+        let n = c.g[len][0] as u32;
+        vfprintf_r_advance(c, n);
+    } else {
+        c.cycles += 9;
+        c.g[A0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+        c.g[A1][0] = src;
+        callee::MEMCPY.call(c, at.fill)?;
+        vfprintf_r_fill(c);
+    }
+    Ok(())
+}
+
+/// `a0 = _file` for `vfprintf_BufferedWrite`; when the whole flags/file
+/// word (in `v0`) is 0, `_file` is set to 1 first.
+pub(crate) fn vfprintf_r_buffered_fd(c: &mut Cpu) {
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        c.sh(vfprintf_r_file(c, VFPRINTF_R_FILE_FD), c.g[V0][0]);
+    }
+    c.g[A0][0] = c.lh(vfprintf_r_file(c, VFPRINTF_R_FILE_FD));
+}
+
+/// `_p += n; _w -= n` after copying `n` bytes (both fields reloaded).
+pub(crate) fn vfprintf_r_advance(c: &mut Cpu, n: u32) {
+    c.g[V1][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+    c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+    c.g[V1][0] = addu(c.g[V1][0], n as u64);
+    c.g[V0][0] = subu(c.g[V0][0], n as u64);
+    c.sw(vfprintf_r_file(c, VFPRINTF_R_FILE_P), c.g[V1][0]);
+    c.sw(vfprintf_r_file(c, VFPRINTF_R_FILE_W), c.g[V0][0]);
+}
+
+/// `_p += _w; _w = 0` after filling the rest of the buffer.
+pub(crate) fn vfprintf_r_fill(c: &mut Cpu) {
+    c.g[V1][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+    c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+    c.sw(vfprintf_r_file(c, VFPRINTF_R_FILE_W), 0);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(vfprintf_r_file(c, VFPRINTF_R_FILE_P), c.g[V1][0]);
+}
+
+/// Parse one conversion: reset flags (`s5`), width, precision (`s7` = -1)
+/// and walk the flag/modifier characters until a conversion arm finishes.
+pub(crate) fn vfprintf_r_conversion(c: &mut Cpu) -> Result<VfprintfRConverted, Unwound> {
+    use VfprintfRParse::{Advance, ReadChar};
+    use VfprintfRSpec::{Done, Next};
+    c.cycles += 5;
+    c.g[FP][0] = addu(c.g[FP][0], 1);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_DPREC), 0);
+    c.g[S5][0] = 0;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH), 0);
+    c.g[S7][0] = u64::MAX;
+    let mut at = ReadChar;
+    loop {
+        if at == ReadChar {
+            c.cycles += 1;
+            c.g[S6][0] = c.lb(c.g[FP][0] as u32);
+            at = Advance;
+        }
+        if at == Advance {
+            c.cycles += 1;
+            c.g[FP][0] = addu(c.g[FP][0], 1);
+        }
+        match vfprintf_r_spec(c)? {
+            Next(next) => {
+                vfprintf_r_back_edge(c, next.head());
+                at = next;
+            }
+            Done(done) => return Ok(done),
+        }
+    }
+}
+
+/// Dispatch the character in `s6` through the game's conversion table.
+pub(crate) fn vfprintf_r_spec(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    use vfprintf_r_arm as arm;
+    use VfprintfRParse::ReadChar;
+    use VfprintfRSpec::Next;
+    c.cycles += 4;
+    c.g[V1][0] = sx((c.g[S6][0] as u32).wrapping_sub(VFPRINTF_R_SPEC_FIRST));
+    let in_table = c.g[V1][0] < VFPRINTF_R_SPEC_COUNT;
+    c.g[V0][0] = VFPRINTF_R_RODATA_HI as u64;
+    if !in_table {
+        return Ok(vfprintf_r_spec_other(c));
+    }
+    c.cycles += 6;
+    let index = c.g[V1][0] as u32;
+    c.g[V0][0] = sx(VFPRINTF_R_SPEC_TABLE);
+    c.g[V1][0] = sx(VFPRINTF_R_SPEC_TABLE.wrapping_add(index << 2));
+    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+    let target = c.g[A0][0] as u32;
+    Ok(match target {
+        arm::SPACE => vfprintf_r_flag_space(c),
+        arm::ALT => vfprintf_r_flag(c, ALT),
+        arm::GROUP => vfprintf_r_flag(c, GROUP),
+        arm::STAR => vfprintf_r_width_arg(c),
+        arm::MINUS => vfprintf_r_flag(c, LEFT),
+        arm::PLUS => {
+            c.cycles += 3;
+            c.g[V0][0] = b'+' as u64;
+            c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN), c.g[V0][0]);
+            Next(ReadChar)
+        }
+        arm::DOT => vfprintf_r_precision(c),
+        arm::ZERO => vfprintf_r_flag(c, ZEROPAD),
+        arm::DIGIT => vfprintf_r_width_digits(c),
+        arm::LONG_DOUBLE => vfprintf_r_flag(c, VFPRINTF_R_LONGDBL),
+        arm::SHORT => vfprintf_r_flag(c, SHORTINT),
+        arm::LONG => vfprintf_r_long(c),
+        arm::QUAD => vfprintf_r_flag(c, LONGLONG),
+        arm::CHAR => vfprintf_r_char(c),
+        arm::LONG_DECIMAL => {
+            c.cycles += 1;
+            c.g[S5][0] |= LONGINT;
+            vfprintf_r_signed(c)?
+        }
+        arm::DECIMAL => vfprintf_r_signed(c)?,
+        arm::FLOAT => vfprintf_r_float(c)?,
+        arm::COUNT => vfprintf_r_store_count(c),
+        arm::LONG_OCTAL => {
+            c.cycles += 1;
+            c.g[S5][0] |= LONGINT;
+            vfprintf_r_unsigned(c, VFPRINTF_R_OCT)?
+        }
+        arm::OCTAL => vfprintf_r_unsigned(c, VFPRINTF_R_OCT)?,
+        arm::POINTER => vfprintf_r_pointer(c)?,
+        arm::STRING => vfprintf_r_string(c)?,
+        arm::LONG_UNSIGNED => {
+            c.cycles += 1;
+            c.g[S5][0] |= LONGINT;
+            vfprintf_r_unsigned(c, VFPRINTF_R_DEC)?
+        }
+        arm::UNSIGNED => vfprintf_r_unsigned(c, VFPRINTF_R_DEC)?,
+        arm::HEX_UPPER => {
+            c.cycles += 3;
+            c.g[V0][0] = sx(VFPRINTF_R_DIGITS_UPPER);
+            vfprintf_r_hex(c)?
+        }
+        arm::HEX_LOWER => {
+            c.cycles += 2;
+            c.g[V0][0] = sx(VFPRINTF_R_DIGITS_LOWER);
+            vfprintf_r_hex(c)?
+        }
+        arm::OTHER => vfprintf_r_spec_other(c),
+        _ => {
+            c.jump_out(target, VFPRINTF_R_ENTRY, VFPRINTF_R_END);
+            return Err(Unwound);
+        }
+    })
+}
+
+/// A flag that only sets a bit.
+pub(crate) fn vfprintf_r_flag(c: &mut Cpu, flag: u64) -> VfprintfRSpec {
+    use VfprintfRParse::ReadChar;
+    use VfprintfRSpec::Next;
+    c.cycles += 2;
+    c.g[S5][0] |= flag;
+    Next(ReadChar)
+}
+
+/// `' '`: a blank sign unless one is set (then the next character is
+/// read here).
+pub(crate) fn vfprintf_r_flag_space(c: &mut Cpu) -> VfprintfRSpec {
+    use VfprintfRParse::{Advance, ReadChar};
+    use VfprintfRSpec::Next;
+    c.cycles += 3;
+    c.g[V0][0] = c.lb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN));
+    if c.g[V0][0] != 0 {
+        c.g[S6][0] = c.lb(c.g[FP][0] as u32);
+        return Next(Advance);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = b' ' as u64;
+    c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN), c.g[V0][0]);
+    Next(ReadChar)
+}
+
+/// `'*'`: the width from the next argument; a negative one means `'-'`.
+pub(crate) fn vfprintf_r_width_arg(c: &mut Cpu) -> VfprintfRSpec {
+    use VfprintfRParse::ReadChar;
+    use VfprintfRSpec::Next;
+    c.cycles += 4;
+    vfprintf_r_next_arg(c);
+    c.g[V1][0] = c.lw(vfprintf_r_arg(c));
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH), c.g[V1][0]);
+    if (c.g[V1][0] as i64) >= 0 {
+        return Next(ReadChar);
+    }
+    c.cycles += 2;
+    c.g[V1][0] = sx(0u32.wrapping_sub(c.g[V1][0] as u32));
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH), c.g[V1][0]);
+    vfprintf_r_flag(c, LEFT)
+}
+
+/// `prec = s0 > -2 ? s0 : -1` (a negative precision means none).
+pub(crate) fn vfprintf_r_set_precision(c: &mut Cpu) {
+    c.g[S7][0] = u64::MAX;
+    c.g[V0][0] = slt(c.g[V0][0], c.g[S0][0]);
+    if c.g[V0][0] != 0 {
+        c.g[S7][0] = c.g[S0][0];
+    }
+}
+
+/// `v0 = (s6 - '0') < 10`.
+pub(crate) fn vfprintf_r_is_digit(c: &mut Cpu) -> bool {
+    c.g[V0][0] = sx((c.g[S6][0] as u32).wrapping_sub(b'0' as u32));
+    c.g[V0][0] = (c.g[V0][0] < 10) as u64;
+    c.g[V0][0] != 0
+}
+
+/// `'.'`: the precision, from the next argument (`.*`) or the digits.
+pub(crate) fn vfprintf_r_precision(c: &mut Cpu) -> VfprintfRSpec {
+    use VfprintfRParse::{Dispatch, ReadChar};
+    use VfprintfRSpec::Next;
+    c.cycles += 4;
+    c.g[S6][0] = c.lb(c.g[FP][0] as u32);
+    c.g[V0][0] = b'*' as u64;
+    let star = c.g[S6][0] == c.g[V0][0];
+    c.g[FP][0] = addu(c.g[FP][0], 1);
+    if star {
+        c.cycles += 7;
+        vfprintf_r_next_arg(c);
+        c.g[V0][0] = -2i64 as u64;
+        c.g[S0][0] = c.lw(vfprintf_r_arg(c));
+        vfprintf_r_set_precision(c);
+        return Next(ReadChar);
+    }
+    c.cycles += 4;
+    let digit = vfprintf_r_is_digit(c);
+    c.g[S0][0] = 0;
+    if digit {
+        c.cycles += 1;
+        c.g[V1][0] = 10;
+        vfprintf_r_decimal_digits(c, VFPRINTF_R_HEAD_PREC_DIGITS);
+    }
+    c.cycles += 5;
+    c.g[V0][0] = -2i64 as u64;
+    vfprintf_r_set_precision(c);
+    Next(Dispatch)
+}
+
+/// `s0 = s0 * 10 + digit` over the digits from `s6` on (`v1` = 10); `s6`
+/// ends on the first non-digit, `fmt` one past it.
+pub(crate) fn vfprintf_r_decimal_digits(c: &mut Cpu, head: u32) {
+    loop {
+        c.cycles += 8;
+        c.mult(0, V0, S0, V1);
+        c.g[V0][0] = subu(c.g[V0][0], b'0' as u64);
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S6][0] as u32));
+        c.g[S6][0] = c.lb(c.g[FP][0] as u32);
+        let more = vfprintf_r_is_digit(c);
+        c.g[FP][0] = addu(c.g[FP][0], 1);
+        if !more {
+            return;
+        }
+        vfprintf_r_back_edge(c, head);
+    }
+}
+
+/// `'1'..='9'`: the width digits.
+pub(crate) fn vfprintf_r_width_digits(c: &mut Cpu) -> VfprintfRSpec {
+    use VfprintfRParse::Dispatch;
+    use VfprintfRSpec::Next;
+    c.cycles += 3;
+    c.g[S0][0] = 0;
+    c.g[V1][0] = 10;
+    vfprintf_r_decimal_digits(c, VFPRINTF_R_HEAD_WIDTH_DIGITS);
+    c.cycles += 2;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH), c.g[S0][0]);
+    Next(Dispatch)
+}
+
+/// `'l'`: long, or `"ll"` (long long, as `'q'`).
+pub(crate) fn vfprintf_r_long(c: &mut Cpu) -> VfprintfRSpec {
+    use VfprintfRParse::ReadChar;
+    use VfprintfRSpec::Next;
+    c.cycles += 4;
+    c.g[V1][0] = c.lb(c.g[FP][0] as u32);
+    c.g[V0][0] = b'l' as u64;
+    if c.g[V1][0] != c.g[V0][0] {
+        c.g[S5][0] |= LONGINT;
+        return Next(ReadChar);
+    }
+    c.cycles += 1;
+    c.g[FP][0] = addu(c.g[FP][0], 1);
+    vfprintf_r_flag(c, LONGLONG)
+}
+
+/// `'c'`: the argument's low byte, staged in the frame.
+pub(crate) fn vfprintf_r_char(c: &mut Cpu) -> VfprintfRSpec {
+    use VfprintfRConverted::Field;
+    use VfprintfRSpec::Done;
+    c.cycles += 11;
+    vfprintf_r_next_arg(c);
+    c.g[V0][0] = 1;
+    c.g[V1][0] = c.lbu(vfprintf_r_arg(c));
+    c.g[A0][0] = c.g[S5][0] & LEFT;
+    c.g[S4][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_BUF));
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE), c.g[V0][0]);
+    c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+    c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_BUF), c.g[V1][0]);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[A0][0]);
+    c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN), 0);
+    Done(Field)
+}
+
+/// Fetch an integer argument into `s0`: the whole slot for long and long
+/// long, a halfword for short, else a word (sign- or zero-extended).
+pub(crate) fn vfprintf_r_fetch_int(c: &mut Cpu, signed: bool) {
+    c.cycles += 3;
+    c.g[V0][0] = c.g[S5][0] & LONGLONG;
+    let mut wide = c.g[V0][0] != 0;
+    if wide {
+        vfprintf_r_next_arg(c);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S5][0] & LONGINT;
+        wide = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[S5][0] & SHORTINT;
+        if wide {
+            c.cycles += 1;
+            vfprintf_r_next_arg(c);
+        }
+    }
+    if wide {
+        c.cycles += 2;
+        c.g[S0][0] = c.ld(vfprintf_r_arg(c));
+        return;
+    }
+    c.cycles += 2;
+    let short = c.g[V0][0] != 0;
+    vfprintf_r_next_arg(c);
+    let arg = vfprintf_r_arg(c);
+    c.g[S0][0] = match (short, signed) {
+        (true, true) => {
+            c.cycles += 2;
+            c.lh(arg)
+        }
+        (true, false) => {
+            c.cycles += 2;
+            c.lhu(arg)
+        }
+        (false, true) => {
+            c.cycles += 1;
+            c.lw(arg)
+        }
+        (false, false) => {
+            c.cycles += 1;
+            c.lwu(arg)
+        }
+    };
+}
+
+/// `'d'`, `'i'`: a signed decimal; a negative value gets a `'-'` and is
+/// negated.
+pub(crate) fn vfprintf_r_signed(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    vfprintf_r_fetch_int(c, true);
+    c.cycles += 2;
+    let negative = (c.g[S0][0] as i64) < 0;
+    c.g[S2][0] = VFPRINTF_R_DEC;
+    if negative {
+        c.cycles += 4;
+        c.g[V0][0] = b'-' as u64;
+        c.g[S0][0] = c.g[S0][0].wrapping_neg();
+        c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN), c.g[V0][0]);
+    }
+    vfprintf_r_number(c)
+}
+
+/// `'o'`, `'u'`: an unsigned integer in `base`.
+pub(crate) fn vfprintf_r_unsigned(c: &mut Cpu, base: u64) -> Result<VfprintfRSpec, Unwound> {
+    vfprintf_r_fetch_int(c, false);
+    c.cycles += 2;
+    c.g[S2][0] = base;
+    vfprintf_r_unsigned_number(c)
+}
+
+/// `'x'`, `'X'` (digit table in `v0`): hex, with the `0x` prefix for `'#'`
+/// and a non-zero value.
+pub(crate) fn vfprintf_r_hex(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    c.cycles += 1;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_XDIGS), c.g[V0][0]);
+    vfprintf_r_fetch_int(c, false);
+    c.cycles += 3;
+    c.g[V1][0] = c.g[S5][0] & ALT;
+    let alt = c.g[V1][0] != 0;
+    c.g[S2][0] = VFPRINTF_R_HEX;
+    if alt {
+        c.cycles += 2;
+        c.g[V0][0] = c.g[S5][0] | HASHX;
+        if c.g[S0][0] != 0 {
+            c.g[S5][0] = c.g[V0][0];
+        }
+    }
+    vfprintf_r_unsigned_number(c)
+}
+
+/// `'p'`: the pointer (a sign-extended word) as `%#x`.
+pub(crate) fn vfprintf_r_pointer(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    c.cycles += 9;
+    vfprintf_r_next_arg(c);
+    c.g[V0][0] = sx(VFPRINTF_R_DIGITS_LOWER);
+    c.g[S2][0] = VFPRINTF_R_HEX;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_XDIGS), c.g[V0][0]);
+    c.g[S5][0] |= HASHX;
+    c.g[S6][0] = b'x' as u64;
+    c.g[S0][0] = c.lw(vfprintf_r_arg(c));
+    vfprintf_r_unsigned_number(c)
+}
+
+/// An unsigned conversion has no sign.
+pub(crate) fn vfprintf_r_unsigned_number(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    c.cycles += 1;
+    c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN), 0);
+    vfprintf_r_number(c)
+}
+
+/// Format the integer `s0` in base `s2` backwards from `NUM_END` into `s4`
+/// (`dprec` = the precision, which also cancels `'0'`); a zero with
+/// precision 0 has no digits.
+pub(crate) fn vfprintf_r_number(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    c.cycles += 2;
+    let precision = (c.g[S7][0] as i64) >= 0;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_DPREC), c.g[S7][0]);
+    if precision {
+        c.cycles += 2;
+        c.g[V0][0] = !ZEROPAD;
+        c.g[S5][0] &= c.g[V0][0];
+    }
+    c.cycles += 2;
+    let nonzero = c.g[S0][0] != 0;
+    c.g[S4][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_NUM_END));
+    if !nonzero {
+        c.cycles += 5;
+        c.g[V0][0] = c.g[S5][0] & LEFT;
+        c.g[V1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_DPREC));
+        c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+        let no_digits = c.g[V1][0] == 0;
+        c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[V0][0]);
+        if no_digits {
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+            return vfprintf_r_number_size(c);
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = VFPRINTF_R_DEC;
+    let decimal = c.g[S2][0] == c.g[V0][0];
+    c.g[A1][0] = c.g[S5][0] & LEFT;
+    if decimal {
+        vfprintf_r_decimal(c)?;
+        return vfprintf_r_number_size(c);
+    }
+    c.cycles += 2;
+    let octal = c.g[S2][0] == VFPRINTF_R_OCT;
+    c.g[V0][0] = VFPRINTF_R_HEX;
+    if octal {
+        vfprintf_r_octal(c);
+        return vfprintf_r_number_size(c);
+    }
+    c.cycles += 2;
+    let hex = c.g[S2][0] == c.g[V0][0];
+    c.g[V0][0] = VFPRINTF_R_RODATA_HI as u64;
+    if hex {
+        vfprintf_r_hexadecimal(c);
+        return vfprintf_r_number_size(c);
+    }
+    c.cycles += 2;
+    c.g[A0][0] = c.g[S5][0] & LEFT;
+    vfprintf_r_bad_base(c)
+}
+
+/// Octal digits; `'#'` adds a leading `'0'` unless there is one.
+pub(crate) fn vfprintf_r_octal(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S5][0] & LEFT;
+    c.g[V1][0] = c.g[S5][0] & ALT;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[A0][0]);
+    c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = c.g[S0][0] & 7;
+        c.g[S4][0] = subu(c.g[S4][0], 1);
+        c.g[V0][0] = c.g[V0][0].wrapping_add(b'0' as u64) & 0xff;
+        c.g[S0][0] >>= 3;
+        let more = c.g[S0][0] != 0;
+        c.sb(c.g[S4][0] as u32, c.g[V0][0]);
+        if !more {
+            break;
+        }
+        vfprintf_r_back_edge(c, VFPRINTF_R_HEAD_OCT);
+    }
+    c.cycles += 2;
+    let alt = c.g[V1][0] != 0;
+    c.g[V1][0] = b'0' as u64;
+    if !alt {
+        c.cycles += 1;
+        c.g[V0][0] = 1;
+        return;
+    }
+    c.cycles += 2;
+    let leading_zero = c.g[V0][0] == c.g[V1][0];
+    c.g[V0][0] = 1;
+    if !leading_zero {
+        c.cycles += 3;
+        c.g[S4][0] = subu(c.g[S4][0], 1);
+        c.sb(c.g[S4][0] as u32, c.g[V1][0]);
+    }
+}
+
+/// Decimal digits (64-bit, through `__umoddi3`/`__udivdi3` while `s0 >= 10`).
+pub(crate) fn vfprintf_r_decimal(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[V0][0] = (c.g[S0][0] < 10) as u64;
+    c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+    let single = c.g[V0][0] != 0;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[A1][0]);
+    if !single {
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S0][0];
+        loop {
+            c.cycles += 13;
+            c.g[A1][0] = 10;
+            callee::UMODDI3.call(c, 0x0041_be48)?;
+            c.g[S4][0] = subu(c.g[S4][0], 1);
+            c.g[V0][0] = c.g[V0][0].wrapping_add(b'0' as u64);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[V0][0] &= 0xff;
+            c.g[A1][0] = 10;
+            c.sb(c.g[S4][0] as u32, c.g[V0][0]);
+            callee::UDIVDI3.call(c, 0x0041_be64)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V0][0] = (c.g[S0][0] < 10) as u64;
+            let more = c.g[V0][0] == 0;
+            c.g[A0][0] = c.g[S0][0];
+            if !more {
+                break;
+            }
+            vfprintf_r_back_edge(c, VFPRINTF_R_HEAD_DEC);
+        }
+    }
+    c.cycles += 5;
+    c.g[V0][0] = c.g[S0][0].wrapping_add(b'0' as u64) & 0xff;
+    c.g[S4][0] = subu(c.g[S4][0], 1);
+    c.sb(c.g[S4][0] as u32, c.g[V0][0]);
+    c.cycles += 1;
+    c.g[V0][0] = 1;
+    Ok(())
+}
+
+/// Hex digits through the table at `XDIGS`.
+pub(crate) fn vfprintf_r_hexadecimal(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A2][0] = c.g[S5][0] & LEFT;
+    c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[A2][0]);
+    loop {
+        c.cycles += 10;
+        c.g[V1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_XDIGS));
+        // The nibble, sign-extended from 32 bits (`dsll32`/`dsra32`).
+        c.g[V0][0] = sx((c.g[S0][0] & 0xf) as u32);
+        c.g[S4][0] = subu(c.g[S4][0], 1);
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] >>= 4;
+        c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+        let more = c.g[S0][0] != 0;
+        c.sb(c.g[S4][0] as u32, c.g[V1][0]);
+        if !more {
+            break;
+        }
+        vfprintf_r_back_edge(c, VFPRINTF_R_HEAD_HEX);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+}
+
+/// A base other than 0/1/2 (never set): the field is the error message.
+pub(crate) fn vfprintf_r_bad_base(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    use VfprintfRConverted::Field;
+    use VfprintfRSpec::Done;
+    c.cycles += 7;
+    c.g[S4][0] = sx(VFPRINTF_R_BAD_BASE);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[A0][0]);
+    c.g[A0][0] = c.g[S4][0];
+    c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+    callee::STRLEN.call(c, 0x0041_bedc)?;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE), c.g[V0][0]);
+    Ok(Done(Field))
+}
+
+/// `size = NUM_END - s4` (`v0` = 1 on entry); a grouped (`'\''`) decimal
+/// is copied with separators into `BUF` instead.
+pub(crate) fn vfprintf_r_number_size(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    use VfprintfRConverted::Field;
+    use VfprintfRSpec::Done;
+    c.cycles += 2;
+    let decimal = c.g[S2][0] == c.g[V0][0];
+    c.g[V0][0] = sx(sp(c).wrapping_sub(c.g[S4][0] as u32));
+    if decimal {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S5][0] & GROUP;
+        let grouped = c.g[V0][0] != 0;
+        c.g[A1][0] = c.g[S4][0];
+        if grouped {
+            c.cycles += 3;
+            c.g[A2][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_NUM_END));
+            c.g[A0][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_BUF));
+            c.g[A3][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE));
+            vfprintf_r_insert_thousands(c)?;
+            return Ok(Done(Field));
+        }
+        c.cycles += 1;
+        c.g[V0][0] = sx(sp(c).wrapping_sub(c.g[S4][0] as u32));
+    }
+    c.cycles += 3;
+    c.g[V0][0] = addu(c.g[V0][0], VFPRINTF_R_SLOT_NUM_END as u64);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE), c.g[V0][0]);
+    Ok(Done(Field))
+}
+
+/// `s4 = vfprintf_InsertThousandsSep(a0, a1, a2, &size)`.
+pub(crate) fn vfprintf_r_insert_thousands(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    callee::INSERT_THOUSANDS_SEP.call(c, 0x0041_bf10)?;
+    c.g[S4][0] = c.g[V0][0];
+    Ok(())
+}
+
+/// `'e'`, `'E'`, `'f'`, `'g'`, `'G'`: the double in the next slot, precision
+/// 6 by default, through `vfprintf_FloatToStr` (`a3` = trim trailing zeros:
+/// set by `%g`, cleared by `'#'`, which also turns precision 0 into 1).
+pub(crate) fn vfprintf_r_float(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    use VfprintfRConverted::Field;
+    use VfprintfRSpec::Done;
+    c.cycles += 8;
+    c.g[V0][0] = !c.g[S7][0];
+    c.g[V1][0] = 6;
+    vfprintf_r_next_arg(c);
+    if c.g[V0][0] == 0 {
+        c.g[S7][0] = c.g[V1][0];
+    }
+    c.g[S4][0] = c.ld(vfprintf_r_arg(c));
+    c.g[V0][0] = b'g' as u64;
+    let mut general = c.g[S6][0] == c.g[V0][0];
+    c.g[A3][0] = 0;
+    if !general {
+        c.cycles += 3;
+        c.g[V0][0] = b'G' as u64;
+        general = c.g[S6][0] == c.g[V0][0];
+        c.g[V0][0] = c.g[S5][0] & ALT;
+    }
+    if general {
+        vfprintf_r_float_general(c)?;
+    }
+    c.cycles += 2;
+    let alt = c.g[V0][0] != 0;
+    c.g[V0][0] = 1;
+    if alt {
+        c.cycles += 2;
+        c.g[A3][0] = 0;
+        if c.g[S7][0] == 0 {
+            c.g[S7][0] = c.g[V0][0];
+        }
+    }
+    c.cycles += 14;
+    c.g[A1][0] = c.g[S7][0];
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A2][0] = c.g[S6][0];
+    c.g[T0][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN));
+    callee::VFPRINTF_FLOAT_TO_STR.call(c, 0x0041_bb78)?;
+    c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+    c.g[A1][0] = c.g[S5][0] & LEFT;
+    c.g[S4][0] = c.g[V0][0];
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[A1][0]);
+    c.g[A0][0] = c.g[S4][0];
+    callee::STRLEN.call(c, 0x0041_bb90)?;
+    c.g[V1][0] = c.g[S5][0] & GROUP;
+    let grouped = c.g[V1][0] != 0;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE), c.g[V0][0]);
+    if grouped {
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A3][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE));
+        c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] = c.g[A0][0];
+        vfprintf_r_insert_thousands(c)?;
+    }
+    Ok(Done(Field))
+}
+
+/// `%g`: `%e` style (`'e'`/`'E'` in `s6`) when `log10|x|` (1.0 for zero) is
+/// below -4 or not below the precision, else `%f`; trims zeros (`a3` = 1).
+pub(crate) fn vfprintf_r_float_general(c: &mut Cpu) -> Flow {
+    c.cycles += 6;
+    c.g[S2][0] = 0;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = c.g[S2][0];
+    callee::CMPDF2.call(c, 0x0041_bac0)?;
+    let zero = c.g[V0][0] == 0;
+    c.g[S0][0] = c.g[S4][0];
+    if zero {
+        c.cycles += 2;
+        c.g[S0][0] = VFPRINTF_R_DOUBLE_ONE;
+    } else {
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S2][0];
+        callee::CMPDF2.call(c, 0x0041_bad4)?;
+        let negative = (c.g[V0][0] as i64) < 0;
+        c.g[A0][0] = c.g[S2][0];
+        if negative {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S4][0];
+            callee::SUBDF3.call(c, 0x0041_bae4)?;
+            c.g[S0][0] = c.g[V0][0];
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S0][0];
+        callee::IEEE754_LOG10.call(c, 0x0041_baf0)?;
+        c.g[S0][0] = c.g[V0][0];
+    }
+    c.cycles += 6;
+    c.g[A1][0] = VFPRINTF_R_DOUBLE_MINUS_FOUR;
+    c.g[A0][0] = c.g[S0][0];
+    callee::CMPDF2.call(c, 0x0041_bb10)?;
+    let mut exponential = (c.g[V0][0] as i64) < 0;
+    c.g[A0][0] = c.g[S6][0] ^ b'g' as u64;
+    if !exponential {
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S7][0];
+        callee::FLOATSIDF.call(c, 0x0041_bb20)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        callee::CMPDF2.call(c, 0x0041_bb2c)?;
+        exponential = (c.g[V0][0] as i64) >= 0;
+        c.g[A0][0] = c.g[S6][0] ^ b'g' as u64;
+    }
+    if exponential {
+        c.cycles += 5;
+        c.g[V0][0] = b'e' as u64;
+        c.g[V1][0] = b'E' as u64;
+        c.g[S6][0] = c.g[V0][0];
+        if c.g[A0][0] != 0 {
+            c.g[S6][0] = c.g[V1][0];
+        }
+    } else {
+        c.cycles += 1;
+        c.g[S6][0] = b'f' as u64;
+    }
+    c.cycles += 2;
+    c.g[A3][0] = 1;
+    c.g[V0][0] = c.g[S5][0] & ALT;
+    Ok(())
+}
+
+/// `'s'`: the string (`"(null)"` for NULL), its length bounded by the
+/// precision through `memchr`.
+pub(crate) fn vfprintf_r_string(c: &mut Cpu) -> Result<VfprintfRSpec, Unwound> {
+    use VfprintfRConverted::Field;
+    use VfprintfRSpec::Done;
+    c.cycles += 4;
+    vfprintf_r_next_arg(c);
+    c.g[S4][0] = c.lw(vfprintf_r_arg(c));
+    let null = c.g[S4][0] == 0;
+    c.g[V0][0] = VFPRINTF_R_RODATA_HI as u64;
+    if null {
+        c.cycles += 1;
+        c.g[S4][0] = sx(VFPRINTF_R_NULL_STR);
+    }
+    c.cycles += 2;
+    let unbounded = (c.g[S7][0] as i64) < 0;
+    c.g[A0][0] = c.g[S4][0];
+    if unbounded {
+        c.cycles += 3;
+        callee::STRLEN.call(c, 0x0041_bccc)?;
+        c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE), c.g[V0][0]);
+    } else {
+        c.cycles += 5;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = c.g[S7][0];
+        callee::MEMCHR.call(c, 0x0041_bca8)?;
+        let no_nul = c.g[V0][0] == 0;
+        c.g[V0][0] = subu(c.g[V0][0], c.g[S4][0]);
+        let mut clip = no_nul;
+        if !no_nul {
+            c.cycles += 3;
+            c.g[V1][0] = slt(c.g[S7][0], c.g[V0][0]);
+            clip = c.g[V1][0] != 0;
+            c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE), c.g[V0][0]);
+        }
+        if clip {
+            c.cycles += 2;
+            c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE), c.g[S7][0]);
+        }
+    }
+    c.cycles += 5;
+    c.g[A2][0] = c.g[S5][0] & LEFT;
+    c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN), 0);
+    c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[A2][0]);
+    Ok(Done(Field))
+}
+
+/// `'n'`: store the count through the pointer argument (doubleword for
+/// long and long long, halfword for short, else word).
+pub(crate) fn vfprintf_r_store_count(c: &mut Cpu) -> VfprintfRSpec {
+    use VfprintfRConverted::Stored;
+    use VfprintfRSpec::Done;
+    c.cycles += 3;
+    c.g[V0][0] = c.g[S5][0] & LONGLONG;
+    let long_long = c.g[V0][0] != 0;
+    c.g[A2][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+    if long_long {
+        c.cycles += 4;
+        vfprintf_r_next_arg(c);
+        c.g[V0][0] = c.lw(vfprintf_r_arg(c));
+        c.sd(c.g[V0][0] as u32, c.g[A2][0]);
+        return Done(Stored);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[S5][0] & LONGINT;
+    let long = c.g[V0][0] != 0;
+    c.g[V1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+    if long {
+        c.cycles += 4;
+        vfprintf_r_next_arg(c);
+        c.g[V0][0] = c.lw(vfprintf_r_arg(c));
+        c.sd(c.g[V0][0] as u32, c.g[V1][0]);
+        return Done(Stored);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[S5][0] & SHORTINT;
+    let short = c.g[V0][0] != 0;
+    c.g[A0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+    if short {
+        c.cycles += 4;
+        vfprintf_r_next_arg(c);
+        c.g[V0][0] = c.lw(vfprintf_r_arg(c));
+        c.sh(c.g[V0][0] as u32, c.g[A0][0]);
+        return Done(Stored);
+    }
+    c.cycles += 5;
+    vfprintf_r_next_arg(c);
+    c.g[A1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+    c.g[V0][0] = c.lw(vfprintf_r_arg(c));
+    c.sw(c.g[V0][0] as u32, c.g[A1][0]);
+    Done(Stored)
+}
+
+/// Any other character: NUL ends the format, anything else (`'%'` too) is
+/// printed as a one-character field.
+pub(crate) fn vfprintf_r_spec_other(c: &mut Cpu) -> VfprintfRSpec {
+    use VfprintfRConverted::{EndOfFormat, Field};
+    use VfprintfRSpec::Done;
+    c.cycles += 2;
+    let end = c.g[S6][0] == 0;
+    c.g[V0][0] = 1;
+    if end {
+        return Done(EndOfFormat);
+    }
+    c.cycles += 7;
+    c.g[A1][0] = c.g[S5][0] & LEFT;
+    c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_BUF), c.g[S6][0]);
+    c.g[S4][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_BUF));
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE), c.g[V0][0]);
+    c.g[S7][0] = c.g[S5][0] & VFPRINTF_R_PADDING;
+    c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN), 0);
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT), c.g[A1][0]);
+    Done(Field)
+}
+
+/// Write a formatted field: blanks (right-justified), sign or prefix,
+/// zeros (`'0'`), zeros to the precision, the string, blanks
+/// (left-justified), then count `max(width, realsz)`.
+pub(crate) fn vfprintf_r_emit(c: &mut Cpu) -> Flow {
+    c.cycles += 7;
+    c.g[A2][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE));
+    c.g[A0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_DPREC));
+    c.g[V1][0] = c.lb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN));
+    c.g[V0][0] = slt(c.g[A2][0], c.g[A0][0]);
+    if c.g[V0][0] == 0 {
+        c.g[A0][0] = c.g[A2][0];
+    }
+    let signed = c.g[V1][0] != 0;
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_REALSZ), c.g[A0][0]);
+    if signed {
+        c.cycles += 3;
+        c.g[A0][0] = addu(c.g[A0][0], 1);
+        c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_REALSZ), c.g[A0][0]);
+    } else {
+        c.cycles += 4;
+        c.g[A1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_REALSZ));
+        c.g[V0][0] = c.g[S5][0] & HASHX;
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_REALSZ), c.g[A1][0]);
+    }
+
+    c.cycles += 2;
+    let right_blanks = c.g[S7][0] == 0;
+    c.g[V0][0] = c.lb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN));
+    if right_blanks {
+        c.cycles += 5;
+        c.g[A2][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH));
+        c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_REALSZ));
+        vfprintf_r_pad_gap(c, A2, V0, &VFPRINTF_R_PAD_BLANKS_BEFORE)?;
+        c.cycles += 1;
+        c.g[V0][0] = c.lb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN));
+    }
+
+    vfprintf_r_sign_and_prefix(c)?;
+
+    c.cycles += 2;
+    let zero_padded = c.g[S7][0] == c.g[V0][0];
+    c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE));
+    if zero_padded {
+        c.cycles += 5;
+        c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH));
+        c.g[V1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_REALSZ));
+        vfprintf_r_pad_gap(c, V0, V1, &VFPRINTF_R_PAD_ZEROS_WIDTH)?;
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE));
+    }
+
+    c.cycles += 4;
+    c.g[A0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_DPREC));
+    vfprintf_r_pad_gap(c, A0, V0, &VFPRINTF_R_PAD_ZEROS_PREC)?;
+
+    vfprintf_r_write_field(c)?;
+
+    c.cycles += 3;
+    c.g[A1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_LEFT));
+    let left = c.g[A1][0] != 0;
+    c.g[A2][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH));
+    if left {
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_REALSZ));
+        vfprintf_r_pad_gap(c, A2, V0, &VFPRINTF_R_PAD_BLANKS_AFTER)?;
+    }
+
+    vfprintf_r_count_field(c);
+    Ok(())
+}
+
+/// `s0 = want - have`; pad `s0` characters when positive (`v0 = s0 < 17`).
+pub(crate) fn vfprintf_r_pad_gap(
+    c: &mut Cpu,
+    want: usize,
+    have: usize,
+    pad: &VfprintfRPad,
+) -> Flow {
+    c.g[S0][0] = subu(c.g[want][0], c.g[have][0]);
+    let none = (c.g[S0][0] as i64) <= 0;
+    c.g[V0][0] = slt(c.g[S0][0], (VFPRINTF_R_PAD_CHUNK + 1) as u64);
+    if none {
+        return Ok(());
+    }
+    vfprintf_r_pad(c, pad)
+}
+
+/// A pad table addressed from `s2` (`lui 0x4a` in the loop's setup).
+pub(crate) fn vfprintf_r_pad_table(c: &Cpu, table: u32) -> u64 {
+    sx((c.g[S2][0] as u32).wrapping_sub(VFPRINTF_R_RODATA_HI - table))
+}
+
+/// Write `s0` (> 0) pad characters: 16 at a time while more than 16 are
+/// left, then the rest.
+pub(crate) fn vfprintf_r_pad(c: &mut Cpu, pad: &VfprintfRPad) -> Flow {
+    c.cycles += 2;
+    let short = c.g[V0][0] != 0;
+    c.g[S2][0] = VFPRINTF_R_RODATA_HI as u64;
+    if !short {
+        c.cycles += pad.setup_cycles;
+        if let Some(one) = pad.one {
+            c.g[one][0] = 1;
+        }
+        c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+        loop {
+            vfprintf_r_pad_chunk(c, pad)?;
+            c.cycles += 4;
+            c.g[S0][0] = subu(c.g[S0][0], VFPRINTF_R_PAD_CHUNK as u64);
+            c.g[V0][0] = slt(c.g[S0][0], (VFPRINTF_R_PAD_CHUNK + 1) as u64);
+            if c.g[V0][0] != 0 {
+                break;
+            }
+            c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+            vfprintf_r_back_edge(c, pad.head);
+        }
+    }
+    let table = vfprintf_r_pad_table(c, pad.table);
+    vfprintf_r_write(c, table, S0, pad.rest)
+}
+
+/// One 16-character chunk (`v0` = the file flags): through
+/// `vfprintf_BufferedWrite`, `memcpy` when it fills the buffer, else an
+/// inline unaligned 16-byte copy.
+pub(crate) fn vfprintf_r_pad_chunk(c: &mut Cpu, pad: &VfprintfRPad) -> Flow {
+    c.cycles += 3;
+    c.g[V0][0] &= VFPRINTF_R_SSTR;
+    if c.g[V0][0] == 0 {
+        c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+        match pad.one {
+            None => {
+                vfprintf_r_buffered_fd(c);
+                c.cycles += 4;
+            }
+            Some(one) => {
+                c.cycles += 2;
+                if c.g[V0][0] == 0 {
+                    c.sh(vfprintf_r_file(c, VFPRINTF_R_FILE_FD), c.g[one][0]);
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.lh(vfprintf_r_file(c, VFPRINTF_R_FILE_FD));
+            }
+        }
+        c.g[A1][0] = vfprintf_r_pad_table(c, pad.table);
+        c.g[A2][0] = VFPRINTF_R_PAD_CHUNK as u64;
+        c.g[A3][0] = 0;
+        return callee::VFPRINTF_BUFFERED_WRITE.call(c, pad.chunk_buffered);
+    }
+    c.cycles += 4;
+    c.g[A2][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+    c.g[V0][0] = slt(c.g[A2][0], (VFPRINTF_R_PAD_CHUNK + 1) as u64);
+    if c.g[V0][0] != 0 {
+        c.g[A0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+        c.cycles += 8;
+        c.g[A1][0] = vfprintf_r_pad_table(c, pad.table);
+        callee::MEMCPY.call(c, pad.chunk_copy)?;
+        vfprintf_r_fill(c);
+        return Ok(());
+    }
+    c.cycles += 17;
+    c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+    c.g[pad.chunk_base][0] = vfprintf_r_pad_table(c, pad.table);
+    let src = c.g[pad.chunk_base][0] as u32;
+    let dst = c.g[V0][0] as u32;
+    let [lo, hi] = pad.chunk_regs;
+    // Two unaligned doublewords (`ldl`/`ldr` at +7/+0 and +15/+8).
+    c.ldl(lo, src.wrapping_add(7));
+    c.ldr(lo, src);
+    c.ldl(hi, src.wrapping_add(15));
+    c.ldr(hi, src.wrapping_add(8));
+    c.sdl(lo, dst.wrapping_add(7));
+    c.sdr(lo, dst);
+    c.sdl(hi, dst.wrapping_add(15));
+    c.sdr(hi, dst.wrapping_add(8));
+    vfprintf_r_advance(c, VFPRINTF_R_PAD_CHUNK);
+    Ok(())
+}
+
+/// The sign (`v0` = it, sign-extended), or else the `0x`/`0X` prefix of a
+/// `HASHX` field; leaves `v0 = ZEROPAD` for the zero-padding test.
+pub(crate) fn vfprintf_r_sign_and_prefix(c: &mut Cpu) -> Flow {
+    c.cycles += 2;
+    let signed = c.g[V0][0] != 0;
+    c.g[V1][0] = c.lbu(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN));
+    if signed {
+        c.cycles += 4;
+        c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS)) & VFPRINTF_R_SSTR;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+            vfprintf_r_buffered_fd(c);
+            c.cycles += 6;
+            c.g[A1][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN));
+            c.g[A2][0] = 1;
+            c.g[A3][0] = 0;
+            callee::VFPRINTF_BUFFERED_WRITE.call(c, 0x0041_c168)?;
+            c.g[V0][0] = ZEROPAD;
+            return Ok(());
+        }
+        c.cycles += 4;
+        c.g[A2][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+        c.g[V0][0] = slt(c.g[A2][0], 2);
+        if c.g[V0][0] != 0 {
+            c.g[A0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+            c.cycles += 2;
+            c.g[A1][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIGN));
+            vfprintf_r_fill_prefix(c)?;
+        } else {
+            // The byte, then the shared 3-cycle store of `_p`/`_w`.
+            c.cycles += 7 + 3;
+            c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+            c.sb(c.g[V0][0] as u32, c.g[V1][0]);
+            vfprintf_r_advance(c, 1);
+        }
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S5][0] & HASHX;
+        let prefix = c.g[V0][0] != 0;
+        c.g[V0][0] = b'0' as u64;
+        if prefix {
+            c.cycles += 5;
+            c.g[V1][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+            c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PREFIX), c.g[V0][0]);
+            c.g[V1][0] &= VFPRINTF_R_SSTR;
+            let buffered = c.g[V1][0] == 0;
+            c.sb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PREFIX_X), c.g[S6][0]);
+            if buffered {
+                c.cycles += 1;
+                c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+                vfprintf_r_buffered_fd(c);
+                c.cycles += 4;
+                c.g[A1][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PREFIX));
+                c.g[A2][0] = 2;
+                c.g[A3][0] = 0;
+                callee::VFPRINTF_BUFFERED_WRITE.call(c, 0x0041_c21c)?;
+            } else {
+                c.cycles += 4;
+                c.g[A2][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+                c.g[V0][0] = slt(c.g[A2][0], 3);
+                if c.g[V0][0] != 0 {
+                    c.g[A0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+                    c.cycles += 1;
+                    c.g[A1][0] = sx(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PREFIX));
+                    vfprintf_r_fill_prefix(c)?;
+                } else {
+                    // Two bytes, then the shared 3-cycle store of `_p`/`_w`.
+                    c.cycles += 9 + 3;
+                    c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+                    c.g[V1][0] = c.lb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PREFIX));
+                    c.g[A0][0] = c.lb(vfprintf_r_slot(c, VFPRINTF_R_SLOT_PREFIX_X));
+                    c.sb(c.g[V0][0] as u32, c.g[V1][0]);
+                    c.sb((c.g[V0][0] as u32).wrapping_add(1), c.g[A0][0]);
+                    vfprintf_r_advance(c, 2);
+                }
+            }
+        }
+    }
+    c.cycles += 1;
+    c.g[V0][0] = ZEROPAD;
+    Ok(())
+}
+
+/// The sign or prefix fills the rest of a string buffer (`a0` = `_p`,
+/// `a1` = the bytes, `a2` = `_w`).
+pub(crate) fn vfprintf_r_fill_prefix(c: &mut Cpu) -> Flow {
+    c.cycles += 8;
+    callee::MEMCPY.call(c, 0x0041_c1dc)?;
+    vfprintf_r_fill(c);
+    Ok(())
+}
+
+/// Write the field's `size` characters from `s4`.
+pub(crate) fn vfprintf_r_write_field(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS)) & VFPRINTF_R_SSTR;
+    let buffered = c.g[V0][0] == 0;
+    c.g[A2][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE));
+    if buffered {
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS));
+        vfprintf_r_buffered_fd(c);
+        c.cycles += 4;
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A2][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE));
+        c.g[A3][0] = 0;
+        return callee::VFPRINTF_BUFFERED_WRITE.call(c, 0x0041_c580);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+    c.g[V0][0] = slt(c.g[A2][0], c.g[V1][0]);
+    let fits = c.g[V0][0] != 0;
+    c.g[A0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_P));
+    if fits {
+        c.cycles += 10;
+        c.g[A1][0] = c.g[S4][0];
+        callee::MEMCPY.call(c, 0x0041_c514)?;
+        c.g[A0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_SIZE));
+        let n = c.g[A0][0] as u32;
+        vfprintf_r_advance(c, n);
+    } else {
+        c.cycles += 9;
+        c.g[A2][0] = c.g[V1][0];
+        c.g[A1][0] = c.g[S4][0];
+        callee::MEMCPY.call(c, 0x0041_c540)?;
+        vfprintf_r_fill(c);
+    }
+    Ok(())
+}
+
+/// Count the field: `ret += max(width, realsz)`, or `ret = _bf._size` once a
+/// string buffer has no room left.
+pub(crate) fn vfprintf_r_count_field(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_W));
+    let room = (c.g[V0][0] as i64) > 0;
+    c.g[V1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_REALSZ));
+    if room {
+        c.cycles += 1;
+        c.g[A0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH));
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = c.lhu(vfprintf_r_file(c, VFPRINTF_R_FILE_FLAGS)) & VFPRINTF_R_SSTR;
+        let string = c.g[V0][0] != 0;
+        c.g[A0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_WIDTH));
+        if string {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(vfprintf_r_file(c, VFPRINTF_R_FILE_BF_SIZE));
+            c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET), c.g[V0][0]);
+            return;
+        }
+    }
+    c.cycles += 6;
+    c.g[A1][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+    c.g[V0][0] = slt(c.g[V1][0], c.g[A0][0]);
+    if c.g[V0][0] == 0 {
+        c.g[A0][0] = c.g[V1][0];
+    }
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.sw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET), c.g[A1][0]);
+}
+
+/// The end (`v0` = the file flags): flush a buffered file
+/// (`vfprintf_BufferedWrite(_file, 0, 0, 1)`), return the count.
+pub(crate) fn vfprintf_r_finish(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    c.g[V0][0] &= VFPRINTF_R_SSTR;
+    let string = c.g[V0][0] != 0;
+    c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+    if !string {
+        c.cycles += 6;
+        c.g[A0][0] = c.lh(vfprintf_r_file(c, VFPRINTF_R_FILE_FD));
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 1;
+        callee::VFPRINTF_BUFFERED_WRITE.call(c, 0x0041_c754)?;
+        c.g[V0][0] = c.lw(vfprintf_r_slot(c, VFPRINTF_R_SLOT_RET));
+    }
+    vfprintf_r_epilogue(c);
+    Ok(())
+}
+
+/// Restore the saved registers and return (`v0` = the count).
+pub(crate) fn vfprintf_r_epilogue(c: &mut Cpu) {
+    c.cycles += 12;
+    let frame = Frame {
+        size: VFPRINTF_R_FRAME,
+    };
+    for (reg, slot) in VFPRINTF_R_SAVED {
+        frame.restore(c, reg, slot);
+    }
+    frame.restore_ra(c, VFPRINTF_R_SLOT_RA);
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// newlib's malloc state (`mallocr.c`, dlmalloc 2.6 with 16-byte alignment).
+
+/// High half of the malloc state's addresses (the `lui 0x45` the code keeps
+/// in s4 and t6).
+pub(crate) const MALLOC_STATE_HI: u32 = 0x0045_0000;
+
+/// `av_`, the bin array: `bin_at(i)` is the fake chunk at `av_ + 8 * i`, whose
+/// `fd`/`bk` head the bin's circular list.
+pub(crate) const MALLOC_AV: u32 = 0x0045_4ce8;
+
+/// `av_` as an offset from [`MALLOC_STATE_HI`].
+pub(crate) const MALLOC_AV_LO: u32 = MALLOC_AV - MALLOC_STATE_HI;
+
+/// Bytes per bin (`fd` and `bk` of the fake chunk).
+pub(crate) const MALLOC_BIN_STRIDE: u32 = 8;
+
+/// `bin_at(i)` is `av_ + (i << MALLOC_BIN_SHIFT)`.
+pub(crate) const MALLOC_BIN_SHIFT: u32 = 3;
+
+/// `last_remainder` is `bin_at(1)`.
+pub(crate) const MALLOC_LAST_REMAINDER: u32 = MALLOC_AV + MALLOC_BIN_STRIDE;
+
+/// `last_remainder` as an offset from [`MALLOC_STATE_HI`].
+pub(crate) const MALLOC_LAST_REMAINDER_LO: u32 = MALLOC_LAST_REMAINDER - MALLOC_STATE_HI;
+
+/// `struct malloc_chunk`: `prev_size` (the free predecessor's size, the
+/// chunk's foot), `size` (with [`MALLOC_PREV_INUSE`]), and the bin links.
+pub(crate) const MCHUNK_PREV_SIZE: u32 = 0x0;
+
+pub(crate) const MCHUNK_SIZE: u32 = 0x4;
+
+pub(crate) const MCHUNK_FD: u32 = 0x8;
+
+pub(crate) const MCHUNK_BK: u32 = 0xc;
+
+/// `chunk2mem`: the user pointer starts past `prev_size` and `size`.
+pub(crate) const MCHUNK_MEM: u32 = 0x8;
+
+/// `top` is `bin_at(0)->fd`.
+#[cfg(test)]
+pub(crate) const MALLOC_TOP: u32 = MALLOC_AV + MCHUNK_FD;
+
+/// `binblocks` (one bit per block of [`MALLOC_BINBLOCKWIDTH`] bins that may
+/// hold chunks) is `bin_at(0)->size`.
+#[cfg(test)]
+pub(crate) const MALLOC_BINBLOCKS: u32 = MALLOC_AV + MCHUNK_SIZE;
+
+/// The previous chunk is in use (bit 0 of `size`).
+pub(crate) const MALLOC_PREV_INUSE: u64 = 0x1;
+
+/// `chunksize` mask, `~(PREV_INUSE | IS_MMAPPED)`, as the `lui`/`ori` pair
+/// leaves it in a register (sign-extended).
+pub(crate) const MALLOC_SIZE_MASK: u64 = 0xffff_ffff_ffff_fffc;
+
+/// The smallest chunk (`MINSIZE`), and the remainder below which a chunk is
+/// used whole instead of split.
+pub(crate) const MALLOC_MINSIZE: u64 = 0x10;
+
+/// `MALLOC_ALIGN_MASK` (16-byte chunks).
+pub(crate) const MALLOC_ALIGN_MASK: u64 = 0xf;
+
+/// `request2size`: `bytes + SIZE_SZ + MALLOC_ALIGN_MASK`, then aligned down.
+pub(crate) const MALLOC_REQUEST_PAD: u64 = 4 + MALLOC_ALIGN_MASK;
+
+/// `MAX_SMALLBIN_SIZE`: chunks below it go to the exact-size bins.
+pub(crate) const MALLOC_MAX_SMALLBIN_SIZE: u64 = 0x200;
+
+/// `SMALLBIN_WIDTH`: `is_small_request(nb)` is `nb < MAX_SMALLBIN_SIZE -
+/// SMALLBIN_WIDTH`.
+pub(crate) const MALLOC_SMALLBIN_WIDTH: u64 = 8;
+
+/// `smallbin_index(sz)` is `sz >> MALLOC_SMALLBIN_SHIFT`.
+pub(crate) const MALLOC_SMALLBIN_SHIFT: u32 = 3;
+
+/// `MAX_SMALLBIN`: below this index the block scan steps two bins at a time
+/// (16-byte chunks only fill the even small bins).
+pub(crate) const MALLOC_MAX_SMALLBIN: i64 = 63;
+
+/// `BINBLOCKWIDTH`: bins per `binblocks` bit.
+pub(crate) const MALLOC_BINBLOCKWIDTH: u64 = 4;
+
+/// `idx2binblock(i)` is `1 << (i / BINBLOCKWIDTH)`, `i / 4` as a shift.
+pub(crate) const MALLOC_BINBLOCK_SHIFT: u32 = 2;
+
+/// The small path scans `bin_at(idx)` and `bin_at(idx + 1)` before the block
+/// scan (`idx += 2`).
+pub(crate) const MALLOC_R_SMALL_BINS_SCANNED: u64 = 2;
+
+/// `bin_index(size)` classes: `size >> MALLOC_R_BIN_CLASS_SHIFT` is 0 for
+/// the small bins (`size >> 3`); below a row's `limit` the index is `base +
+/// (size >> shift)`.
+pub(crate) const MALLOC_R_BIN_CLASS_SHIFT: u32 = 9;
+
+pub(crate) const MALLOC_R_BIN_CLASSES: [(u64, u32, u64); 5] = [
+    (5, 6, 56),
+    (21, MALLOC_R_BIN_CLASS_SHIFT, 91),
+    (85, 12, 110),
+    (341, 15, 119),
+    (1365, 18, 124),
+];
+
+/// `bin_index` for sizes past every class.
+pub(crate) const MALLOC_R_LAST_BIN: u64 = 126;
+
+// ---------------------------------------------------------------------------
+// `_malloc_r`'s own addresses and frame.
+
+pub(crate) const MALLOC_R_ENTRY: u32 = 0x0041_dbf8;
+
+pub(crate) const MALLOC_R_END: u32 = 0x0041_e33c;
+
+/// Loop heads (resume entries after an unwind at their back edge).
+pub(crate) const MALLOC_R_LARGE_BIN_NEXT: u32 = 0x0041_dd30;
+
+pub(crate) const MALLOC_R_FRONTLINK_WALK: u32 = 0x0041_df88;
+
+pub(crate) const MALLOC_R_FIRST_BLOCK: u32 = 0x0041_e010;
+
+pub(crate) const MALLOC_R_BLOCK: u32 = 0x0041_e040;
+
+pub(crate) const MALLOC_R_BIN: u32 = 0x0041_e050;
+
+pub(crate) const MALLOC_R_VICTIM: u32 = 0x0041_e068;
+
+pub(crate) const MALLOC_R_BACKTRACK: u32 = 0x0041_e0d8;
+
+pub(crate) const MALLOC_R_NEXT_BLOCK: u32 = 0x0041_e0f4;
+
+pub(crate) const MALLOC_R_NEXT_BLOCK_SEARCH: u32 = 0x0041_e120;
+
+/// Return addresses of the calls.
+pub(crate) const MALLOC_R_RET_LOCK: u32 = 0x0041_dc40;
+
+pub(crate) const MALLOC_R_RET_EXTEND_TOP: u32 = 0x0041_e1d8;
+
+pub(crate) const MALLOC_R_RET_FAIL_UNLOCK: u32 = 0x0041_e240;
+
+pub(crate) const MALLOC_R_RET_UNLOCK: u32 = 0x0041_e318;
+
+/// Frame and saved-register slots.
+pub(crate) const MALLOC_R_FRAME: Frame = Frame { size: 0x60 };
+
+pub(crate) const MALLOC_R_SLOT_RA: u32 = 0x00;
+
+pub(crate) const MALLOC_R_SLOT_S4: u32 = 0x10;
+
+pub(crate) const MALLOC_R_SLOT_S3: u32 = 0x20;
+
+pub(crate) const MALLOC_R_SLOT_S2: u32 = 0x30;
+
+pub(crate) const MALLOC_R_SLOT_S1: u32 = 0x40;
+
+pub(crate) const MALLOC_R_SLOT_S0: u32 = 0x50;
+
+/// Stages of `_malloc_r`, after the dlmalloc phases. The state lives in the
+/// registers throughout: s1 `nb`, s3 the reent, s0 the victim, s4/t6 the
+/// state page, t2 the bin index, a3 the remainder size, t0/a2 the bin links
+/// and a2/a1 the block bit and `binblocks` in the block scan.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum MallocRStage {
+    /// Normalise the request to `nb`, take the lock (the entry).
+    Request,
+    /// A small request: an exact fit from `bin_at(nb >> 3)`.
+    SmallBin,
+    /// A large request: `bin_index(nb)` and the first victim of that bin.
+    LargeBin,
+    /// The large bin's later victims (loop head 0x41dd30).
+    LargeBinNext,
+    /// The last remainder: re-split it, use it whole, or bin it.
+    LastRemainder,
+    /// `frontlink` of the old remainder into a sorted large bin (loop head
+    /// 0x41df88).
+    FrontlinkWalk,
+    /// Is a block at or past the request's bin marked in `binblocks`?
+    BinBlocks,
+    /// Find the first marked block (loop head 0x41e010).
+    FirstBlock,
+    /// Start scanning a block (loop head 0x41e040).
+    Block,
+    /// Start scanning a bin of the block (loop head 0x41e050).
+    Bin,
+    /// The bin's victims (loop head 0x41e068).
+    Victim,
+    /// The block held nothing: backtrack over its bins to see whether its
+    /// bit can be cleared (loop head 0x41e0d8).
+    Backtrack,
+    /// Move on to the next block (loop head 0x41e0f4).
+    NextBlock,
+    /// Find the next marked block (loop head 0x41e120).
+    NextBlockSearch,
+    /// Split the top chunk, extending it first if it is too small.
+    Top,
+}
+
+/// `void *_malloc_r(struct _reent *r, size_t bytes)` (0x41dbf8): newlib's
+/// dlmalloc 2.6 allocator. Under `__malloc_lock` it rounds the request to a
+/// chunk size `nb`, then takes the first of: an exact fit from the small bin,
+/// a fit from the request's large bin, the last remainder (re-split, used
+/// whole, or put back in its bin), the best chunk of the first marked
+/// `binblocks` block at or past the request's bin (split, the remainder
+/// becoming the last remainder), and finally the top chunk, grown with
+/// `malloc_extend_top` when it is too small. Returns the chunk's memory, or
+/// NULL when the heap cannot grow.
+///
+/// The original is a `match pc` dispatcher whose loops return on an unwind
+/// request, so their heads are entry points too; other addresses inside the
+/// function go to `jump_out` as there. A few register writes the generated
+/// code overwrites before any call, event check or return are left out (the
+/// list is below).
+//
+// Register writes left out, by generated block, with where each is
+// overwritten. None of the stretches in between has a call or an event check:
+// - 0x41dc38: v0 = nb < 0x1f8, overwritten by v0 = 0x450000 in its delay slot.
+// - 0x41dc64: v0 = the size mask, overwritten by v0 = next head | 1 in the
+//   same block; a1 = the raw head, overwritten by a1 &= mask in the same
+//   block (the port writes the masked value once).
+// - 0x41dd44, 0x41dda8, 0x41e068, the 0x41e1d8 tail of 0x41e1d0: the delay
+//   slot's v0 = nb - size, and the v0 = head load at 0x41dd44/0x41dda8,
+//   v0 = size < nb at 0x41e1d8. Both remainder arms overwrite v0
+//   (0x41dd60/70, 0x41ddc4/d4, 0x41e078/88, 0x41e1f0/0x41e200).
+// - 0x41dd90: v0 = 0x450000 and v0 = last_remainder, overwritten by v0 = -1
+//   in the same block.
+// - 0x41dda8: a0 = size < nb, overwritten by a0 = last_remainder at 0x41dde0
+//   (delay slot, both arms). v1 = the size mask, overwritten on every path:
+//   v1 = head at 0x41ddec, v1 = next chunk at 0x41de44, v1 = av_ at 0x41dfbc
+//   (small frontlink, via 0x41de64/0x41dfa8) and v1 = size >> 9 at 0x41dea8
+//   (large frontlink).
+// - 0x41ddec: v0 = nb | 1 (overwritten by v0 = foot), v1 = 1 and
+//   v1 = a3 | 1 (overwritten by v1 = sign-extended head), all in the block.
+// - 0x41de58: v0 = size < 0x200. Small: overwritten by v0 = -1 at 0x41dfa8;
+//   large: by the 0x41dea8 ladder.
+// - 0x41de64 (small frontlink) and 0x41df30 (empty large bin): v0, v1, a0 and
+//   a1 (the `-1 < idx` test, idx + 3, idx / 4, the bit, av_, binblocks, the
+//   bin offset). Overwritten by v0 = -1 at 0x41dfa8 and by v1 = av_,
+//   a1 = binblocks, a0 = idx / 4 at 0x41dfbc. Only the binblocks store, t0,
+//   t1 and a2 stay.
+// - 0x41df18: v0 = idx << 3; 0x41df64: v0 = the size mask and
+//   v1 = size < chunksize(fd). Overwritten by v0 = -1 at 0x41dfa8, v1 = av_
+//   at 0x41dfbc, or on the walk by v1 = mask at 0x41df7c and v0 = the compare
+//   at 0x41df90, both before the 0x41df88 edge's check.
+// - 0x41dfbc: v0 = -1 < idx and v0 = 1. Overwritten by the top's remainder
+//   (0x41e184/98) or by v0 = 0x450000 at 0x41dfe8. Also v1 = binblocks <
+//   block, overwritten by v1 = av_ in its delay slot. a0's intermediates
+//   (idx + 3, the conditional idx): only the final idx / 4 is written.
+// - 0x41dfe8: v0 = block & binblocks, overwritten by v0 = 0x450000 in its
+//   delay slot.
+// - 0x41dff4: v0 = ~3 and v0 = idx & ~3. Overwritten by v0 = 0x450000 at
+//   0x41e02c, or at 0x41e010 (v0 = block & binblocks) before its edge's check.
+// - 0x41e068: v1 = size < nb. Overwritten by v1 = victim + size at 0x41e0a0
+//   or v1 = last_remainder at 0x41e268.
+// - 0x41e0f4: v0 = binblocks < block. Overwritten by the top's remainder or
+//   by v0 = block & binblocks at 0x41e108.
+// - 0x41e164: v0 = the size mask, a0 = top, v1 = head, v0 = size and
+//   a0 = size < nb. Overwritten by the remainder (v0) and at 0x41e1a0
+//   (v1 = top, v0 = size < nb, a0 = reent).
+// - 0x41e1d8: v0 = top and v1 = size. Overwritten by the remainder (v0) and
+//   by v1 = the size mask at 0x41e20c.
+// - 0x41e20c: v0 = av_, overwritten by v0 = a3 < 16 in the same block.
+// - 0x41e268: a0 = nb | 1 (overwritten by a0 = reent), v0 = 1 and
+//   v0 = a3 | 1 (overwritten by v0 = sign-extended head), all in the block.
+// - 0x41e2e4: v0 = 1 and v0 = a3 | 1, overwritten by v0 = sign-extended head
+//   in the same block.
+// - The bin_index ladders (0x41dcd0/e4/f8, 0x41ded8/ec, 0x41df00): v0 =
+//   class < limit, overwritten by v0 = size >> shift in the delay slot.
+pub fn malloc_r(c: &mut Cpu) {
+    use MallocRStage as St;
+    let mut stage = match c.pc {
+        MALLOC_R_ENTRY => St::Request,
+        MALLOC_R_LARGE_BIN_NEXT => St::LargeBinNext,
+        MALLOC_R_FRONTLINK_WALK => St::FrontlinkWalk,
+        MALLOC_R_FIRST_BLOCK => St::FirstBlock,
+        MALLOC_R_BLOCK => St::Block,
+        MALLOC_R_BIN => St::Bin,
+        MALLOC_R_VICTIM => St::Victim,
+        MALLOC_R_BACKTRACK => St::Backtrack,
+        MALLOC_R_NEXT_BLOCK => St::NextBlock,
+        MALLOC_R_NEXT_BLOCK_SEARCH => St::NextBlockSearch,
+        pc => {
+            c.jump_out(pc, MALLOC_R_ENTRY, MALLOC_R_END);
+            return;
+        }
+    };
+    loop {
+        let next = match stage {
+            St::Request => malloc_r_request(c),
+            St::SmallBin => malloc_r_small_bin(c),
+            St::LargeBin => malloc_r_large_bin(c),
+            St::LargeBinNext => malloc_r_large_bin_next(c),
+            St::LastRemainder => malloc_r_last_remainder(c),
+            St::FrontlinkWalk => malloc_r_frontlink_walk(c),
+            St::BinBlocks => malloc_r_bin_blocks(c),
+            St::FirstBlock => malloc_r_first_block(c),
+            St::Block => malloc_r_block(c),
+            St::Bin => malloc_r_bin(c),
+            St::Victim => malloc_r_victim(c),
+            St::Backtrack => malloc_r_backtrack(c),
+            St::NextBlock => malloc_r_next_block(c),
+            St::NextBlockSearch => malloc_r_next_block_search(c),
+            St::Top => malloc_r_top(c),
+        };
+        match next {
+            Resume::Go(s) => stage = s,
+            Resume::Done | Resume::Unwind => return,
+        }
+    }
+}
+
+/// The word at `base + off` (`lw`, sign-extended).
+pub(crate) fn malloc_r_lw(c: &mut Cpu, base: u64, off: u32) -> u64 {
+    Addr(base as u32).off(off).lw(c)
+}
+
+/// `sw v, off(base)`.
+pub(crate) fn malloc_r_sw(c: &mut Cpu, base: u64, off: u32, v: u64) {
+    Addr(base as u32).off(off).sw(c, v)
+}
+
+/// `av_`, from the state page held in register `page`.
+pub(crate) fn malloc_r_av(c: &Cpu, page: usize) -> u64 {
+    addu(reg(c, page), MALLOC_AV_LO as u64)
+}
+
+/// `remainder_size = long_sub_size_t(size, nb)` into a3, as a signed 64-bit
+/// value (v0 keeps the shifted difference the generated code leaves).
+/// `short_cycles`/`fit_cycles` are the two arms' charges.
+pub(crate) fn malloc_r_remainder(c: &mut Cpu, size: u64, short_cycles: u64, fit_cycles: u64) {
+    let nb = reg(c, S1);
+    if size < nb {
+        c.cycles += short_cycles;
+        let shortfall = (nb as u32).wrapping_sub(size as u32) as u64;
+        set_reg(c, V0, shortfall);
+        set_reg(c, A3, 0u64.wrapping_sub(shortfall));
+    } else {
+        c.cycles += fit_cycles;
+        let spare = sx((size as u32).wrapping_sub(nb as u32)) << 32;
+        set_reg(c, V0, spare);
+        set_reg(c, A3, spare >> 32);
+    }
+}
+
+/// `bin_index(size)` for a large size in register `size`: the class
+/// (`size >> 9`) in `class`, the compares in v0, the index in `dest`. The
+/// first two classes have shapes of their own; the rest share one.
+pub(crate) fn malloc_r_bin_index(c: &mut Cpu, size: usize, class: usize, dest: usize) {
+    let classes = MALLOC_R_BIN_CLASSES;
+    let [(limit_1, shift_1, base_1), (limit_2, _, base_2), ..] = classes;
+    let size = r32(c, size);
+    c.cycles += 3;
+    let size_class = sx(size >> MALLOC_R_BIN_CLASS_SHIFT);
+    set_reg(c, class, size_class);
+    set_reg(c, V0, (size_class < limit_1) as u64);
+    if size_class == 0 {
+        c.cycles += 2;
+        set_reg(c, dest, sx(size >> MALLOC_SMALLBIN_SHIFT));
+        return;
+    }
+    c.cycles += 2;
+    let below_1 = reg(c, V0) != 0;
+    set_reg(c, V0, sx(size >> shift_1));
+    if below_1 {
+        c.cycles += 2;
+        set_reg(c, dest, addu(reg(c, V0), base_1));
+        return;
+    }
+    c.cycles += 3;
+    set_reg(c, V0, (size_class < limit_2) as u64);
+    set_reg(c, dest, addu(size_class, base_2));
+    if reg(c, V0) != 0 {
+        return;
+    }
+    for &(limit, shift, base) in &classes[2..] {
+        c.cycles += 3;
+        let below = size_class < limit;
+        set_reg(c, V0, sx(size >> shift));
+        if below {
+            c.cycles += 2;
+            set_reg(c, dest, addu(reg(c, V0), base));
+            return;
+        }
+    }
+    c.cycles += 1;
+    set_reg(c, dest, MALLOC_R_LAST_BIN);
+}
+
+/// `idx / BINBLOCKWIDTH` as the code computes the signed division (`idx +
+/// 3` first unless `minus_one < idx`; `minus_one` is -1 at every use).
+pub(crate) fn malloc_r_block_of(idx: u64, minus_one: u64) -> u64 {
+    let rounded = if (minus_one as i64) < (idx as i64) {
+        idx
+    } else {
+        addu(idx, MALLOC_BINBLOCKWIDTH - 1)
+    };
+    sx((((rounded as u32) as i32) >> MALLOC_BINBLOCK_SHIFT) as u32)
+}
+
+/// `mark_binblock(idx)`: set the block's bit in `binblocks` (`av_` in
+/// `av`), the bit sign-extended from 32 bits as `sll` leaves it.
+pub(crate) fn malloc_r_mark_binblock(c: &mut Cpu, av: u64, idx: u64) {
+    let blocks = malloc_r_lw(c, av, MCHUNK_SIZE);
+    let bit = sx((1u64 << (malloc_r_block_of(idx, u64::MAX) & 63)) as u32);
+    malloc_r_sw(c, av, MCHUNK_SIZE, blocks | bit);
+}
+
+/// The `unlink` stores, `FD->bk = BK; BK->fd = FD`, with FD in a2 and BK in
+/// t0.
+pub(crate) fn malloc_r_unlink_links(c: &mut Cpu) {
+    let (fd, bk) = (reg(c, A2), reg(c, T0));
+    malloc_r_sw(c, fd, MCHUNK_BK, bk);
+    malloc_r_sw(c, bk, MCHUNK_FD, fd);
+}
+
+/// The prologue, `nb = request2size(bytes)` and `MALLOC_LOCK`.
+pub(crate) fn malloc_r_request(c: &mut Cpu) -> Resume<MallocRStage> {
+    let frame = MALLOC_R_FRAME;
+    c.cycles += 11;
+    Frame::open(c, frame.size);
+    let padded = addu(reg(c, A1), MALLOC_REQUEST_PAD);
+    set_reg(c, A1, padded);
+    frame.save(c, S3, MALLOC_R_SLOT_S3);
+    let tiny = padded < MALLOC_MINSIZE + MALLOC_ALIGN_MASK;
+    set_reg(c, V0, tiny as u64);
+    frame.save(c, S0, MALLOC_R_SLOT_S0);
+    let reent = reg(c, A0);
+    set_reg(c, S3, reent);
+    frame.save(c, S1, MALLOC_R_SLOT_S1);
+    frame.save(c, S2, MALLOC_R_SLOT_S2);
+    frame.save(c, S4, MALLOC_R_SLOT_S4);
+    frame.save_ra(c, MALLOC_R_SLOT_RA);
+    let nb = if tiny {
+        c.cycles += 1;
+        MALLOC_MINSIZE
+    } else {
+        c.cycles += 4;
+        set_reg(c, V0, !MALLOC_ALIGN_MASK);
+        padded & !MALLOC_ALIGN_MASK
+    };
+    set_reg(c, S1, nb);
+    c.cycles += 5;
+    set_reg(c, A0, reent);
+    if callee::MALLOC_LOCK.call(c, MALLOC_R_RET_LOCK).is_err() {
+        return Resume::Unwind;
+    }
+    let small = reg(c, S1) < MALLOC_MAX_SMALLBIN_SIZE - MALLOC_SMALLBIN_WIDTH;
+    set_reg(c, V0, MALLOC_STATE_HI as u64);
+    Resume::Go(if small {
+        MallocRStage::SmallBin
+    } else {
+        MallocRStage::LargeBin
+    })
+}
+
+/// A small request: take `last(bin_at(nb >> 3))` if the bin holds one (all
+/// its chunks are `nb` bytes).
+pub(crate) fn malloc_r_small_bin(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 6;
+    let nb = reg(c, S1);
+    set_reg(c, T2, sx((nb as u32) >> MALLOC_SMALLBIN_SHIFT));
+    let av = malloc_r_av(c, V0);
+    set_reg(c, V1, av);
+    let bin = addu(nb, av);
+    set_reg(c, T1, bin);
+    let victim = malloc_r_lw(c, bin, MCHUNK_BK);
+    set_reg(c, S0, victim);
+    let page = reg(c, V0);
+    set_reg(c, S4, page);
+    if victim == bin {
+        c.cycles += 2;
+        let idx = reg(c, T2);
+        set_reg(c, T2, addu(idx, MALLOC_R_SMALL_BINS_SCANNED));
+        return Resume::Go(MallocRStage::LastRemainder);
+    }
+    c.cycles += 13;
+    let bk = malloc_r_lw(c, victim, MCHUNK_BK);
+    set_reg(c, T0, bk);
+    let fd = malloc_r_lw(c, victim, MCHUNK_FD);
+    set_reg(c, A2, fd);
+    let head = malloc_r_lw(c, victim, MCHUNK_SIZE);
+    set_reg(c, A0, reg(c, S3));
+    malloc_r_unlink_links(c);
+    let size = head & MALLOC_SIZE_MASK;
+    set_reg(c, A1, size);
+    malloc_r_mark_next_in_use(c, victim, size)
+}
+
+/// `set_inuse_bit_at_offset(victim, size)`: v1 the next chunk, v0 its head
+/// with `PREV_INUSE`, stored by the shared tail.
+pub(crate) fn malloc_r_mark_next_in_use(
+    c: &mut Cpu,
+    victim: u64,
+    size: u64,
+) -> Resume<MallocRStage> {
+    let next = addu(victim, size);
+    set_reg(c, V1, next);
+    let head = malloc_r_lw(c, next, MCHUNK_SIZE) | MALLOC_PREV_INUSE;
+    set_reg(c, V0, head);
+    malloc_r_store_head_and_return(c)
+}
+
+/// A large request: `bin_index(nb)`, then the bin's last (smallest) victim.
+pub(crate) fn malloc_r_large_bin(c: &mut Cpu) -> Resume<MallocRStage> {
+    malloc_r_bin_index(c, S1, A0, T2);
+    c.cycles += 7;
+    set_reg(c, V0, MALLOC_STATE_HI as u64);
+    let offset = sx(r32(c, T2) << MALLOC_BIN_SHIFT);
+    set_reg(c, A0, offset);
+    let av = malloc_r_av(c, V0);
+    set_reg(c, V1, av);
+    let bin = addu(offset, av);
+    set_reg(c, T0, bin);
+    let victim = malloc_r_lw(c, bin, MCHUNK_BK);
+    set_reg(c, S0, victim);
+    set_reg(c, S4, MALLOC_STATE_HI as u64);
+    match malloc_r_large_bin_victim(c) {
+        Some(next) => Resume::Go(next),
+        None if back_edge_unwinds(c, MALLOC_R_LARGE_BIN_NEXT) => Resume::Unwind,
+        None => Resume::Go(MallocRStage::LargeBinNext),
+    }
+}
+
+/// Size up the large-bin victim in s0 (0x41dd3c). `None` while the scan goes
+/// on (a fit or a too-small chunk); else the bin is done (`idx + 1`) or the
+/// chunk is too big to use whole (`--idx; ++idx`: the block scan splits it).
+pub(crate) fn malloc_r_large_bin_victim(c: &mut Cpu) -> Option<MallocRStage> {
+    c.cycles += 2;
+    let victim = reg(c, S0);
+    if victim == reg(c, T0) {
+        let idx = reg(c, T2);
+        set_reg(c, T2, addu(idx, 1));
+        return Some(MallocRStage::LastRemainder);
+    }
+    c.cycles += 7;
+    let head = malloc_r_lw(c, victim, MCHUNK_SIZE);
+    set_reg(c, V1, MALLOC_SIZE_MASK);
+    let size = head & MALLOC_SIZE_MASK;
+    set_reg(c, A1, size);
+    set_reg(c, A0, (size < reg(c, S1)) as u64);
+    malloc_r_remainder(c, size, 4, 3);
+    c.cycles += 3;
+    let usable = (reg(c, A3) as i64) < MALLOC_MINSIZE as i64;
+    set_reg(c, V0, usable as u64);
+    if usable {
+        return None;
+    }
+    c.cycles += 2;
+    let idx = sx(r32(c, T2).wrapping_sub(1));
+    set_reg(c, T2, addu(idx, 1));
+    Some(MallocRStage::LastRemainder)
+}
+
+/// The large bin's later victims (loop head 0x41dd30): a fit (remainder in
+/// `0..MINSIZE`) is unlinked and used whole; a too-small one moves to its
+/// `bk`.
+pub(crate) fn malloc_r_large_bin_next(c: &mut Cpu) -> Resume<MallocRStage> {
+    loop {
+        c.cycles += 2;
+        let victim = reg(c, S0);
+        if (reg(c, A3) as i64) >= 0 {
+            let bk = malloc_r_lw(c, victim, MCHUNK_BK);
+            set_reg(c, T0, bk);
+            // The exact fit (0x41e248).
+            c.cycles += 8;
+            let size = reg(c, A1);
+            let fd = malloc_r_lw(c, victim, MCHUNK_FD);
+            set_reg(c, A2, fd);
+            set_reg(c, A0, reg(c, S3));
+            malloc_r_unlink_links(c);
+            return malloc_r_mark_next_in_use(c, victim, size);
+        }
+        c.cycles += 1;
+        let bk = malloc_r_lw(c, victim, MCHUNK_BK);
+        set_reg(c, S0, bk);
+        if let Some(next) = malloc_r_large_bin_victim(c) {
+            return Resume::Go(next);
+        }
+        if back_edge_unwinds(c, MALLOC_R_LARGE_BIN_NEXT) {
+            return Resume::Unwind;
+        }
+    }
+}
+
+/// The last remainder (`last_remainder->fd`): re-split it when it leaves at
+/// least `MINSIZE`, use it whole when it fits, else clear it and `frontlink`
+/// it into its bin before the block scan.
+pub(crate) fn malloc_r_last_remainder(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 6;
+    set_reg(c, T6, MALLOC_STATE_HI as u64);
+    let lr = addu(reg(c, T6), MALLOC_LAST_REMAINDER_LO as u64);
+    let victim = malloc_r_lw(c, lr, MCHUNK_FD);
+    set_reg(c, S0, victim);
+    set_reg(c, V0, u64::MAX);
+    if victim == lr {
+        return Resume::Go(MallocRStage::BinBlocks);
+    }
+    c.cycles += 7;
+    let size = malloc_r_lw(c, victim, MCHUNK_SIZE) & MALLOC_SIZE_MASK;
+    set_reg(c, A1, size);
+    malloc_r_remainder(c, size, 4, 3);
+    c.cycles += 3;
+    let usable = (reg(c, A3) as i64) < MALLOC_MINSIZE as i64;
+    set_reg(c, V0, usable as u64);
+    let lr = addu(reg(c, T6), MALLOC_LAST_REMAINDER_LO as u64);
+    set_reg(c, A0, lr);
+    if !usable {
+        return malloc_r_resplit_last_remainder(c);
+    }
+    // clear_last_remainder.
+    c.cycles += 3;
+    malloc_r_sw(c, lr, MCHUNK_BK, lr);
+    malloc_r_sw(c, lr, MCHUNK_FD, lr);
+    if (reg(c, A3) as i64) < 0 {
+        return malloc_r_frontlink(c);
+    }
+    // Exhaust: use the remainder whole.
+    c.cycles += 5;
+    set_reg(c, A0, reg(c, S3));
+    malloc_r_mark_next_in_use(c, victim, size)
+}
+
+/// Re-split the last remainder (0x41ddec): the victim gets `nb`, the rest
+/// stays the last remainder with its head and foot.
+pub(crate) fn malloc_r_resplit_last_remainder(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 19;
+    let (victim, nb, spare) = (reg(c, S0), reg(c, S1), reg(c, A3));
+    malloc_r_sw(c, victim, MCHUNK_SIZE, nb | MALLOC_PREV_INUSE);
+    let remainder = addu(victim, nb);
+    set_reg(c, T0, remainder);
+    let lr = addu(reg(c, T6), MALLOC_LAST_REMAINDER_LO as u64);
+    set_reg(c, A1, lr);
+    let head = sx((spare | MALLOC_PREV_INUSE) as u32);
+    malloc_r_sw(c, lr, MCHUNK_BK, remainder);
+    let foot = sx(spare as u32);
+    set_reg(c, V0, foot);
+    malloc_r_sw(c, lr, MCHUNK_FD, remainder);
+    set_reg(c, V1, head);
+    let next = addu(remainder, foot);
+    set_reg(c, A2, next);
+    malloc_r_sw(c, remainder, MCHUNK_FD, lr);
+    malloc_r_sw(c, remainder, MCHUNK_SIZE, head);
+    set_reg(c, A0, reg(c, S3));
+    malloc_r_sw(c, remainder, MCHUNK_BK, lr);
+    malloc_r_sw(c, next, MCHUNK_PREV_SIZE, foot);
+    malloc_r_unlock_and_return(c)
+}
+
+/// `frontlink(victim, size)` of the old remainder (0x41de58): a small bin
+/// takes it at the head; a large bin keeps its chunks sorted (largest first).
+pub(crate) fn malloc_r_frontlink(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 3;
+    let size = reg(c, A1);
+    let small_idx = sx((size as u32) >> MALLOC_SMALLBIN_SHIFT);
+    set_reg(c, A3, small_idx);
+    if size < MALLOC_MAX_SMALLBIN_SIZE {
+        c.cycles += 17;
+        // `av_` is the last-remainder bin (in a0) minus one bin.
+        let av = addu(reg(c, A0), 0u64.wrapping_sub(MALLOC_BIN_STRIDE as u64));
+        malloc_r_mark_binblock(c, av, small_idx);
+        let bin = addu(sx((small_idx as u32) << MALLOC_BIN_SHIFT), av);
+        set_reg(c, T0, bin);
+        let fd = malloc_r_lw(c, bin, MCHUNK_FD);
+        set_reg(c, A2, fd);
+        return malloc_r_frontlink_link(c);
+    }
+    malloc_r_bin_index(c, A1, V1, A3);
+    c.cycles += 6;
+    let idx = reg(c, A3);
+    let av = malloc_r_av(c, S4);
+    set_reg(c, T1, av);
+    let bin = addu(sx((idx as u32) << MALLOC_BIN_SHIFT), av);
+    set_reg(c, T0, bin);
+    let fd = malloc_r_lw(c, bin, MCHUNK_FD);
+    set_reg(c, A2, fd);
+    if fd == bin {
+        // An empty large bin: mark its block.
+        c.cycles += 13;
+        malloc_r_mark_binblock(c, av, idx);
+        return malloc_r_frontlink_link(c);
+    }
+    let fd_head = malloc_r_lw(c, fd, MCHUNK_SIZE);
+    c.cycles += 6;
+    if size >= (fd_head & MALLOC_SIZE_MASK) {
+        let bk = malloc_r_lw(c, fd, MCHUNK_BK);
+        set_reg(c, T0, bk);
+        return malloc_r_frontlink_link(c);
+    }
+    c.cycles += 3;
+    set_reg(c, V1, MALLOC_SIZE_MASK);
+    let fd = malloc_r_lw(c, fd, MCHUNK_FD);
+    set_reg(c, A2, fd);
+    Resume::Go(MallocRStage::FrontlinkWalk)
+}
+
+/// The sorted insert (loop head 0x41df88): walk `fd` while the old remainder
+/// (size in a1) is smaller than the chunk, stopping at the bin itself.
+pub(crate) fn malloc_r_frontlink_walk(c: &mut Cpu) -> Resume<MallocRStage> {
+    loop {
+        c.cycles += 2;
+        let fd = reg(c, A2);
+        if fd == reg(c, T0) {
+            let bk = malloc_r_lw(c, fd, MCHUNK_BK);
+            set_reg(c, T0, bk);
+            break;
+        }
+        c.cycles += 5;
+        let fd_size = malloc_r_lw(c, fd, MCHUNK_SIZE) & reg(c, V1);
+        let smaller = reg(c, A1) < fd_size;
+        set_reg(c, V0, smaller as u64);
+        if smaller {
+            let next = malloc_r_lw(c, fd, MCHUNK_FD);
+            set_reg(c, A2, next);
+            if back_edge_unwinds(c, MALLOC_R_FRONTLINK_WALK) {
+                return Resume::Unwind;
+            }
+            continue;
+        }
+        c.cycles += 1;
+        let bk = malloc_r_lw(c, fd, MCHUNK_BK);
+        set_reg(c, T0, bk);
+        break;
+    }
+    malloc_r_frontlink_link(c)
+}
+
+/// The `frontlink` stores (0x41dfa8): the old remainder in s0 goes between
+/// BK (t0) and FD (a2).
+pub(crate) fn malloc_r_frontlink_link(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 5;
+    let (p, bk, fd) = (reg(c, S0), reg(c, T0), reg(c, A2));
+    malloc_r_sw(c, p, MCHUNK_BK, bk);
+    malloc_r_sw(c, p, MCHUNK_FD, fd);
+    malloc_r_sw(c, bk, MCHUNK_FD, p);
+    malloc_r_sw(c, fd, MCHUNK_BK, p);
+    set_reg(c, V0, u64::MAX);
+    Resume::Go(MallocRStage::BinBlocks)
+}
+
+/// `block = idx2binblock(idx)`: none past `binblocks` goes to the top;
+/// otherwise start at the request's block if it is marked, else at the next
+/// marked one (`idx` forced to a block boundary).
+pub(crate) fn malloc_r_bin_blocks(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 11;
+    let idx = reg(c, T2);
+    let av = malloc_r_av(c, S4);
+    let blocks = Addr(av as u32).off(MCHUNK_SIZE).lwu(c);
+    set_reg(c, A1, blocks);
+    // v0 holds -1 from every predecessor.
+    let shift = malloc_r_block_of(idx, reg(c, V0));
+    set_reg(c, A0, shift);
+    let block = 1u64 << (shift & 63);
+    set_reg(c, A2, block);
+    set_reg(c, V1, av);
+    if blocks < block {
+        return Resume::Go(MallocRStage::Top);
+    }
+    c.cycles += 3;
+    let marked = (block & blocks) != 0;
+    set_reg(c, V0, MALLOC_STATE_HI as u64);
+    if marked {
+        return malloc_r_scan_setup(c);
+    }
+    // Force `idx` to the next block boundary.
+    c.cycles += 6;
+    let block = block << 1;
+    set_reg(c, A2, block);
+    let aligned = idx & !(MALLOC_BINBLOCKWIDTH - 1);
+    set_reg(c, V1, block & blocks);
+    set_reg(c, T2, addu(aligned, MALLOC_BINBLOCKWIDTH));
+    if (block & blocks) != 0 {
+        c.cycles += 1;
+        set_reg(c, V0, MALLOC_STATE_HI as u64);
+        return malloc_r_scan_setup(c);
+    }
+    c.cycles += 1;
+    set_reg(c, V1, blocks);
+    Resume::Go(MallocRStage::FirstBlock)
+}
+
+/// One step of a marked-block search (0x41e010 / 0x41e120): `block <<= 1;
+/// idx += BINBLOCKWIDTH`, `binblocks` in v1. True when the block is marked.
+pub(crate) fn malloc_r_block_step(c: &mut Cpu) -> bool {
+    c.cycles += 7;
+    let block = reg(c, A2) << 1;
+    set_reg(c, A2, block);
+    set_reg(c, V0, block & reg(c, V1));
+    let idx = reg(c, T2);
+    set_reg(c, T2, addu(idx, MALLOC_BINBLOCKWIDTH));
+    reg(c, V0) != 0
+}
+
+/// Find the first marked block (loop head 0x41e010).
+pub(crate) fn malloc_r_first_block(c: &mut Cpu) -> Resume<MallocRStage> {
+    while !malloc_r_block_step(c) {
+        if back_edge_unwinds(c, MALLOC_R_FIRST_BLOCK) {
+            return Resume::Unwind;
+        }
+    }
+    c.cycles += 1;
+    set_reg(c, V0, MALLOC_STATE_HI as u64);
+    malloc_r_scan_setup(c)
+}
+
+/// The block scan's registers (0x41e030): `av_` in t4 and t5, the bin
+/// offset in v0.
+pub(crate) fn malloc_r_scan_setup(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 4;
+    let av = malloc_r_av(c, V0);
+    set_reg(c, T4, av);
+    set_reg(c, T5, av);
+    set_reg(c, V0, sx(r32(c, T2) << MALLOC_BIN_SHIFT));
+    Resume::Go(MallocRStage::Block)
+}
+
+/// Start a block (loop head 0x41e040): `startidx` in t3, `q = bin =
+/// bin_at(idx)` in t1 and t0, the bin's last victim in s0.
+pub(crate) fn malloc_r_block(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 4;
+    set_reg(c, T3, reg(c, T2));
+    let bin = addu(reg(c, V0), reg(c, T4));
+    set_reg(c, T1, bin);
+    set_reg(c, T0, bin);
+    let victim = malloc_r_lw(c, bin, MCHUNK_BK);
+    set_reg(c, S0, victim);
+    Resume::Go(MallocRStage::Bin)
+}
+
+/// Start a bin (loop head 0x41e050): an empty one moves to the next bin.
+pub(crate) fn malloc_r_bin(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 2;
+    let empty = reg(c, S0) == reg(c, T0);
+    set_reg(c, V0, ((reg(c, T2) as i64) < MALLOC_MAX_SMALLBIN) as u64);
+    if empty {
+        return malloc_r_next_bin(c);
+    }
+    c.cycles += 4;
+    set_reg(c, A0, MALLOC_SIZE_MASK);
+    let victim = reg(c, S0);
+    let head = malloc_r_lw(c, victim, MCHUNK_SIZE);
+    set_reg(c, V0, head);
+    Resume::Go(MallocRStage::Victim)
+}
+
+/// The bin's victims (loop head 0x41e068), smallest first: split the first
+/// one leaving at least `MINSIZE`, take one that fits, skip the too small.
+pub(crate) fn malloc_r_victim(c: &mut Cpu) -> Resume<MallocRStage> {
+    loop {
+        c.cycles += 4;
+        let size = reg(c, V0) & reg(c, A0);
+        set_reg(c, A1, size);
+        malloc_r_remainder(c, size, 4, 3);
+        c.cycles += 3;
+        let usable = (reg(c, A3) as i64) < MALLOC_MINSIZE as i64;
+        set_reg(c, V0, usable as u64);
+        let victim = reg(c, S0);
+        if !usable {
+            let bk = malloc_r_lw(c, victim, MCHUNK_BK);
+            set_reg(c, T0, bk);
+            return malloc_r_split_victim(c);
+        }
+        c.cycles += 2;
+        set_reg(c, V1, addu(victim, size));
+        if (reg(c, A3) as i64) >= 0 {
+            return malloc_r_take_victim(c);
+        }
+        c.cycles += 3;
+        let bk = malloc_r_lw(c, victim, MCHUNK_BK);
+        set_reg(c, S0, bk);
+        if bk != reg(c, T0) {
+            let head = malloc_r_lw(c, bk, MCHUNK_SIZE);
+            set_reg(c, V0, head);
+            if back_edge_unwinds(c, MALLOC_R_VICTIM) {
+                return Resume::Unwind;
+            }
+            continue;
+        }
+        c.cycles += 1;
+        set_reg(c, V0, ((reg(c, T2) as i64) < MALLOC_MAX_SMALLBIN) as u64);
+        return malloc_r_next_bin(c);
+    }
+}
+
+/// `bin = next_bin(bin)` (two bins below `MAX_SMALLBIN`, v0 holding that
+/// test), then the next bin of the block or, at the block's end, the
+/// backtrack.
+pub(crate) fn malloc_r_next_bin(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 2;
+    let below_smallbins = reg(c, V0) != 0;
+    let bin = addu(reg(c, T0), MALLOC_BIN_STRIDE as u64);
+    set_reg(c, T0, bin);
+    if below_smallbins {
+        c.cycles += 2;
+        set_reg(c, T0, addu(bin, MALLOC_BIN_STRIDE as u64));
+        let idx = reg(c, T2);
+        set_reg(c, T2, addu(idx, 1));
+    }
+    c.cycles += 4;
+    let idx = addu(reg(c, T2), 1);
+    set_reg(c, T2, idx);
+    set_reg(c, V0, idx & (MALLOC_BINBLOCKWIDTH - 1));
+    if reg(c, V0) != 0 {
+        let bin = reg(c, T0);
+        let victim = malloc_r_lw(c, bin, MCHUNK_BK);
+        set_reg(c, S0, victim);
+        if back_edge_unwinds(c, MALLOC_R_BIN) {
+            return Resume::Unwind;
+        }
+        return Resume::Go(MallocRStage::Bin);
+    }
+    Resume::Go(MallocRStage::Backtrack)
+}
+
+/// Backtrack (loop head 0x41e0d8): from `startidx` back to the block start,
+/// `q = prev_bin(q)` while `first(q) == q`; reaching the start clears the
+/// block's bit.
+pub(crate) fn malloc_r_backtrack(c: &mut Cpu) -> Resume<MallocRStage> {
+    loop {
+        c.cycles += 3;
+        let start = reg(c, T3);
+        set_reg(c, V0, start & (MALLOC_BINBLOCKWIDTH - 1));
+        let q = sx(r32(c, T1).wrapping_sub(MALLOC_BIN_STRIDE));
+        set_reg(c, T1, q);
+        if reg(c, V0) == 0 {
+            // binblocks &= ~block.
+            c.cycles += 7;
+            let av = reg(c, T4);
+            let blocks = malloc_r_lw(c, av, MCHUNK_SIZE);
+            let keep = !sx(r32(c, A2));
+            set_reg(c, V0, keep);
+            set_reg(c, V1, blocks & keep);
+            malloc_r_sw(c, av, MCHUNK_SIZE, blocks & keep);
+            if back_edge_unwinds(c, MALLOC_R_NEXT_BLOCK) {
+                return Resume::Unwind;
+            }
+            return Resume::Go(MallocRStage::NextBlock);
+        }
+        c.cycles += 4;
+        let first = malloc_r_lw(c, q, MCHUNK_FD);
+        set_reg(c, V0, first);
+        set_reg(c, T3, sx((start as u32).wrapping_sub(1)));
+        if first != q {
+            return Resume::Go(MallocRStage::NextBlock);
+        }
+        if back_edge_unwinds(c, MALLOC_R_BACKTRACK) {
+            return Resume::Unwind;
+        }
+    }
+}
+
+/// The next block (loop head 0x41e0f4): past `binblocks` (or shifted out)
+/// goes to the top; a marked one is scanned next, else search on.
+pub(crate) fn malloc_r_next_block(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 5;
+    let blocks = Addr(r32(c, T4)).off(MCHUNK_SIZE).lwu(c);
+    set_reg(c, V1, blocks);
+    let block = reg(c, A2) << 1;
+    set_reg(c, A2, block);
+    if blocks < block {
+        set_reg(c, V1, malloc_r_av(c, S4));
+        return Resume::Go(MallocRStage::Top);
+    }
+    c.cycles += 2;
+    set_reg(c, V0, block & blocks);
+    if block == 0 {
+        c.cycles += 1;
+        set_reg(c, V1, malloc_r_av(c, S4));
+        return Resume::Go(MallocRStage::Top);
+    }
+    c.cycles += 2;
+    let marked = reg(c, V0) != 0;
+    set_reg(c, V0, sx(r32(c, T2) << MALLOC_BIN_SHIFT));
+    if marked {
+        if back_edge_unwinds(c, MALLOC_R_BLOCK) {
+            return Resume::Unwind;
+        }
+        return Resume::Go(MallocRStage::Block);
+    }
+    c.cycles += 2;
+    let blocks = Addr(r32(c, T5)).off(MCHUNK_SIZE).lwu(c);
+    set_reg(c, V1, blocks);
+    Resume::Go(MallocRStage::NextBlockSearch)
+}
+
+/// Find the next marked block (loop head 0x41e120), then scan it.
+pub(crate) fn malloc_r_next_block_search(c: &mut Cpu) -> Resume<MallocRStage> {
+    while !malloc_r_block_step(c) {
+        if back_edge_unwinds(c, MALLOC_R_NEXT_BLOCK_SEARCH) {
+            return Resume::Unwind;
+        }
+    }
+    c.cycles += 2;
+    set_reg(c, V0, sx(r32(c, T2) << MALLOC_BIN_SHIFT));
+    if back_edge_unwinds(c, MALLOC_R_BLOCK) {
+        return Resume::Unwind;
+    }
+    Resume::Go(MallocRStage::Block)
+}
+
+/// Split the block scan's victim (0x41e268): unlink it, give it `nb`, and
+/// make the rest the last remainder (head and foot).
+pub(crate) fn malloc_r_split_victim(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 22;
+    let (victim, nb, spare) = (reg(c, S0), reg(c, S1), reg(c, A3));
+    let fd = malloc_r_lw(c, victim, MCHUNK_FD);
+    set_reg(c, A2, fd);
+    malloc_r_sw(c, victim, MCHUNK_SIZE, nb | MALLOC_PREV_INUSE);
+    let lr = addu(reg(c, T6), MALLOC_LAST_REMAINDER_LO as u64);
+    set_reg(c, V1, lr);
+    malloc_r_unlink_links(c);
+    let foot = sx(spare as u32);
+    set_reg(c, A1, foot);
+    let remainder = addu(victim, nb);
+    set_reg(c, T0, remainder);
+    let head = sx((spare | MALLOC_PREV_INUSE) as u32);
+    set_reg(c, V0, head);
+    malloc_r_sw(c, lr, MCHUNK_BK, remainder);
+    let next = addu(remainder, foot);
+    set_reg(c, A2, next);
+    malloc_r_sw(c, lr, MCHUNK_FD, remainder);
+    set_reg(c, A0, reg(c, S3));
+    malloc_r_sw(c, remainder, MCHUNK_SIZE, head);
+    malloc_r_sw(c, remainder, MCHUNK_FD, lr);
+    malloc_r_sw(c, remainder, MCHUNK_BK, lr);
+    malloc_r_sw(c, next, MCHUNK_PREV_SIZE, foot);
+    malloc_r_unlock_and_return(c)
+}
+
+/// Take the block scan's victim whole (0x41e2c0): set the next chunk's
+/// `PREV_INUSE` (v1 the next chunk), unlink it.
+pub(crate) fn malloc_r_take_victim(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 9;
+    set_reg(c, A0, reg(c, S3));
+    let next = reg(c, V1);
+    let head = malloc_r_lw(c, next, MCHUNK_SIZE) | MALLOC_PREV_INUSE;
+    set_reg(c, V0, head);
+    malloc_r_sw(c, next, MCHUNK_SIZE, head);
+    let victim = reg(c, S0);
+    let bk = malloc_r_lw(c, victim, MCHUNK_BK);
+    set_reg(c, T0, bk);
+    let fd = malloc_r_lw(c, victim, MCHUNK_FD);
+    set_reg(c, A2, fd);
+    malloc_r_unlink_links(c);
+    malloc_r_unlock_and_return(c)
+}
+
+/// Is the top chunk (`av_->fd`, the bin in v1) at least `nb + MINSIZE`?
+/// Split it; else `malloc_extend_top` and check again; still too small
+/// fails with NULL.
+pub(crate) fn malloc_r_top(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 8;
+    let top = malloc_r_lw(c, reg(c, V1), MCHUNK_FD);
+    let size = malloc_r_lw(c, top, MCHUNK_SIZE) & MALLOC_SIZE_MASK;
+    malloc_r_remainder(c, size, 5, 2);
+    c.cycles += 9;
+    let av = malloc_r_av(c, S4);
+    set_reg(c, S2, av);
+    set_reg(c, S0, MALLOC_SIZE_MASK);
+    let top = malloc_r_lw(c, av, MCHUNK_FD);
+    set_reg(c, V1, top);
+    let short = (malloc_r_lw(c, top, MCHUNK_SIZE) & MALLOC_SIZE_MASK) < reg(c, S1);
+    set_reg(c, V0, short as u64);
+    set_reg(c, A0, reg(c, S3));
+    if !short {
+        c.cycles += 3;
+        let thin = (reg(c, A3) as i64) < MALLOC_MINSIZE as i64;
+        set_reg(c, V0, thin as u64);
+        set_reg(c, A2, malloc_r_av(c, S4));
+        if !thin {
+            return malloc_r_split_top(c);
+        }
+    }
+    c.cycles += 8;
+    set_reg(c, A1, reg(c, S1));
+    if callee::MALLOC_EXTEND_TOP
+        .call(c, MALLOC_R_RET_EXTEND_TOP)
+        .is_err()
+    {
+        return Resume::Unwind;
+    }
+    let top = malloc_r_lw(c, reg(c, S2), MCHUNK_FD);
+    let size = malloc_r_lw(c, top, MCHUNK_SIZE) & reg(c, S0);
+    malloc_r_remainder(c, size, 4, 3);
+    c.cycles += 9;
+    let av = malloc_r_av(c, S4);
+    set_reg(c, V1, MALLOC_SIZE_MASK);
+    let top = malloc_r_lw(c, av, MCHUNK_FD);
+    set_reg(c, A0, top);
+    let size = malloc_r_lw(c, top, MCHUNK_SIZE) & MALLOC_SIZE_MASK;
+    let short = size < reg(c, S1);
+    let thin = (reg(c, A3) as i64) < MALLOC_MINSIZE as i64;
+    set_reg(c, V0, thin as u64);
+    if !short {
+        c.cycles += 2;
+        set_reg(c, A2, malloc_r_av(c, S4));
+        if !thin {
+            return malloc_r_split_top(c);
+        }
+    }
+    // Out of memory: unlock, return NULL.
+    c.cycles += 4;
+    set_reg(c, A0, reg(c, S3));
+    if callee::MALLOC_UNLOCK
+        .call(c, MALLOC_R_RET_FAIL_UNLOCK)
+        .is_err()
+    {
+        return Resume::Unwind;
+    }
+    set_reg(c, V0, 0);
+    malloc_r_epilogue(c)
+}
+
+/// Split the top chunk (0x41e2e4, `av_` in a2): the victim gets `nb`, the
+/// rest is the new top, whose head the shared tail stores.
+pub(crate) fn malloc_r_split_top(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 10;
+    let (nb, spare, av) = (reg(c, S1), reg(c, A3), reg(c, A2));
+    set_reg(c, A1, nb | MALLOC_PREV_INUSE);
+    let victim = malloc_r_lw(c, av, MCHUNK_FD);
+    set_reg(c, S0, victim);
+    set_reg(c, A0, reg(c, S3));
+    malloc_r_sw(c, victim, MCHUNK_SIZE, nb | MALLOC_PREV_INUSE);
+    let remainder = addu(victim, nb);
+    set_reg(c, V1, remainder);
+    set_reg(c, V0, sx((spare | MALLOC_PREV_INUSE) as u32));
+    malloc_r_sw(c, av, MCHUNK_FD, remainder);
+    malloc_r_store_head_and_return(c)
+}
+
+/// The shared tail (0x41e30c): store the head in v0 at chunk v1 (the next
+/// chunk's `PREV_INUSE`, or the new top's head), then unlock and return.
+pub(crate) fn malloc_r_store_head_and_return(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 1;
+    let (chunk, head) = (reg(c, V1), reg(c, V0));
+    malloc_r_sw(c, chunk, MCHUNK_SIZE, head);
+    malloc_r_unlock_and_return(c)
+}
+
+/// `MALLOC_UNLOCK; return chunk2mem(victim)` (0x41e310, the reent already in
+/// a0).
+pub(crate) fn malloc_r_unlock_and_return(c: &mut Cpu) -> Resume<MallocRStage> {
+    c.cycles += 3;
+    if callee::MALLOC_UNLOCK.call(c, MALLOC_R_RET_UNLOCK).is_err() {
+        return Resume::Unwind;
+    }
+    set_reg(c, V0, addu(reg(c, S0), MCHUNK_MEM as u64));
+    malloc_r_epilogue(c)
+}
+
+/// Restore s0..s4 and ra, pop the frame, return.
+pub(crate) fn malloc_r_epilogue(c: &mut Cpu) -> Resume<MallocRStage> {
+    let frame = MALLOC_R_FRAME;
+    c.cycles += 8;
+    frame.restore(c, S0, MALLOC_R_SLOT_S0);
+    frame.restore(c, S1, MALLOC_R_SLOT_S1);
+    frame.restore(c, S2, MALLOC_R_SLOT_S2);
+    frame.restore(c, S3, MALLOC_R_SLOT_S3);
+    frame.restore(c, S4, MALLOC_R_SLOT_S4);
+    frame.restore_ra(c, MALLOC_R_SLOT_RA);
+    frame.close(c);
+    Resume::Done
+}
+
+// ---------------------------------------------------------------------------
+// 0x0041af88 vfprintf_FloatToStr
+
+/// Entry of `vfprintf_FloatToStr`.
+#[cfg(test)]
+pub(crate) const FLOAT_TO_STR_ENTRY: u32 = 0x0041_af88;
+
+/// Stack frame size, the callee-saved registers and their quadword slots,
+/// and the saved `ra`.
+pub(crate) const FLOAT_TO_STR_FRAME: u32 = 0xb0;
+
+pub(crate) const FLOAT_TO_STR_SAVED: [(usize, u32); 9] = [
+    (S0, 0xa0),
+    (S1, 0x90),
+    (S2, 0x80),
+    (S3, 0x70),
+    (S4, 0x60),
+    (S5, 0x50),
+    (S6, 0x40),
+    (S7, 0x30),
+    (FP, 0x20),
+];
+
+pub(crate) const FLOAT_TO_STR_SLOT_RA: u32 = 0x10;
+
+// Frame slots holding the arguments (reloaded where the original reloads them).
+/// `prec` (`a1`).
+pub(crate) const FLOAT_TO_STR_SLOT_PREC: u32 = 0x0;
+
+/// `style` (`a2`, sign-extended from its low byte).
+pub(crate) const FLOAT_TO_STR_SLOT_STYLE: u32 = 0x4;
+
+/// `trim` (`a3`): drop trailing zeros (and a bare point).
+pub(crate) const FLOAT_TO_STR_SLOT_TRIM: u32 = 0x8;
+
+/// The static result buffer (.bss) and the `lui` page it is addressed from.
+pub(crate) const FLOAT_TO_STR_BUF_PAGE: u64 = 0x0053_0000;
+
+pub(crate) const FLOAT_TO_STR_BUF: u32 = 0x0052_adf0;
+
+/// `"-Inf"`, `"Inf"` and `"NaN"` (.rodata) and their `lui` page.
+pub(crate) const FLOAT_TO_STR_STR_PAGE: u64 = 0x004a_0000;
+
+pub(crate) const FLOAT_TO_STR_STR_NEG_INF: u32 = 0x0049_a300;
+
+pub(crate) const FLOAT_TO_STR_STR_INF: u32 = 0x0049_a308;
+
+pub(crate) const FLOAT_TO_STR_STR_NAN: u32 = 0x0049_a310;
+
+/// `"-Inf"` is copied as a word and its NUL byte.
+pub(crate) const FLOAT_TO_STR_WORD: u32 = 4;
+
+// IEEE double fields, on the high word shifted right by 20.
+pub(crate) const FLOAT_TO_STR_EXP_SHIFT: u32 = 20;
+
+pub(crate) const FLOAT_TO_STR_SIGN_BIT: u64 = 0x800;
+
+pub(crate) const FLOAT_TO_STR_EXP_FIELD: u64 = 0x7ff;
+
+/// The fraction bits in the high word.
+pub(crate) const FLOAT_TO_STR_FRAC_HI: u64 = 0x000f_ffff;
+
+// Doubles the original builds in registers.
+pub(crate) const FLOAT_TO_STR_HALF: u64 = 0x3fe0_0000_0000_0000;
+
+pub(crate) const FLOAT_TO_STR_ONE: u64 = 0x3ff0_0000_0000_0000;
+
+pub(crate) const FLOAT_TO_STR_TEN: u64 = 0x4024_0000_0000_0000;
+
+/// 2^-54: the starting error bound of the fraction digits (times 10 per digit).
+pub(crate) const FLOAT_TO_STR_EPS: u64 = 0x3c90_0000_0000_0000;
+
+/// At most this many integer digits are produced.
+pub(crate) const FLOAT_TO_STR_MAX_INT_DIGITS: u64 = 163;
+
+/// Scaling a number below one by 10 stops below this exponent.
+pub(crate) const FLOAT_TO_STR_MIN_EXP10: u64 = -1020i64 as u64;
+
+/// Exponents from these on print without a padding zero.
+pub(crate) const FLOAT_TO_STR_EXP_TWO_DIGITS: u64 = 10;
+
+pub(crate) const FLOAT_TO_STR_NEG_EXP_TWO_DIGITS: u64 = -9i64 as u64;
+
+pub(crate) const FLOAT_TO_STR_EXP_RADIX: u64 = 10;
+
+/// The style that prints without an exponent.
+pub(crate) const FLOAT_TO_STR_STYLE_FIXED: u64 = b'f' as u64;
+
+pub(crate) const FLOAT_TO_STR_CHAR_0: u64 = b'0' as u64;
+
+pub(crate) const FLOAT_TO_STR_CHAR_1: u64 = b'1' as u64;
+
+pub(crate) const FLOAT_TO_STR_MINUS: u64 = b'-' as u64;
+
+pub(crate) const FLOAT_TO_STR_PLUS: u64 = b'+' as u64;
+
+pub(crate) const FLOAT_TO_STR_POINT: u64 = b'.' as u64;
+
+/// Loop heads (back-edge event checks).
+pub(crate) const FLOAT_TO_STR_HEAD_INT_DIGITS: u32 = 0x0041_b0f8;
+
+pub(crate) const FLOAT_TO_STR_HEAD_REVERSE: u32 = 0x0041_b178;
+
+pub(crate) const FLOAT_TO_STR_HEAD_SCALE: u32 = 0x0041_b1c8;
+
+pub(crate) const FLOAT_TO_STR_HEAD_FRACTION: u32 = 0x0041_b280;
+
+pub(crate) const FLOAT_TO_STR_HEAD_PAD: u32 = 0x0041_b350;
+
+pub(crate) const FLOAT_TO_STR_HEAD_SHIFT: u32 = 0x0041_b3c8;
+
+pub(crate) const FLOAT_TO_STR_HEAD_TRIM: u32 = 0x0041_b420;
+
+/// `lw slot(sp)`.
+pub(crate) fn float_to_str_slot(c: &mut Cpu, slot: u32) -> u64 {
+    let at = sp(c).wrapping_add(slot);
+    c.lw(at)
+}
+
+/// `char *vfprintf_FloatToStr(double x, int prec, char style, int trim,
+/// char *sign)` (0x41af88): the digits of a `%e`/`%f`/`%g` conversion,
+/// written into a static buffer that is returned. Infinities and NaNs copy
+/// `"Inf"`, `"-Inf"` or `"NaN"`. Otherwise a negative `x` puts `'-'` in
+/// `*sign` (or at the start of the buffer when `sign` is null) and the
+/// magnitude is converted with soft-float arithmetic: integer digits by
+/// `fmod(ip, 10)` (at most 163), then fraction digits by repeated `* 10`
+/// until `prec` places (after the point for `'f'`, after the first digit
+/// otherwise), the remainder is below an error bound growing from 2^-54,
+/// or above one minus it; one more digit is rounded from the remainder and
+/// `vfprintf_RoundDigits` carries it (a carry out of the first digit makes
+/// it `'1'` and moves the point or exponent). The point is inserted unless
+/// `prec` is 0, `trim` drops trailing zeros and a bare point, and styles
+/// other than `'f'` append `style`, the exponent's sign and at least two
+/// digits. A number below one in those styles is first scaled by 10 into
+/// [1, 10) and then divided by 10, so its digits come from the fraction
+/// loop. Not newlib's `cvt()`: no `_dtoa_r`.
+///
+/// Registers kept across the calls: `s2` the value still to convert
+/// (after splitting, the fraction), `s6` the digit buffer, `s4` the digits
+/// written, `s3` 10.0 and then the decimal exponent (the integer digit
+/// count for numbers from one on), `s1` the integer part and then the
+/// index of the last character, `s5` `prec` and then the error bound,
+/// `s0` `sign` and then the current digit, `s7` 10.0, `fp` the length
+/// handed to `vfprintf_RoundDigits`.
+pub fn vfprintf_float_to_str(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = float_to_str_prologue(c);
+        if float_to_str_unpack(c) {
+            float_to_str_special(c);
+            float_to_str_join(c);
+        } else {
+            float_to_str_sign(c)?;
+            float_to_str_integer_digits(c)?;
+            float_to_str_below_one(c)?;
+            float_to_str_digit_count(c);
+            float_to_str_fraction_digits(c)?;
+            float_to_str_round(c)?;
+            float_to_str_point(c);
+            float_to_str_trim(c);
+            float_to_str_finish(c)?;
+        }
+        float_to_str_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+/// The frame, the saved registers and the argument slots; `s2 = x`.
+pub(crate) fn float_to_str_prologue(c: &mut Cpu) -> Frame {
+    c.cycles += 30;
+    let frame = Frame::open(c, FLOAT_TO_STR_FRAME);
+    for (reg, off) in FLOAT_TO_STR_SAVED {
+        frame.save(c, reg, off);
+    }
+    frame.save_ra(c, FLOAT_TO_STR_SLOT_RA);
+    c.g[A2][0] = sx(c.g[A2][0] as u8 as i8 as i32 as u32);
+    c.sw(frame.at(c, FLOAT_TO_STR_SLOT_PREC), c.g[A1][0]);
+    c.sw(frame.at(c, FLOAT_TO_STR_SLOT_TRIM), c.g[A3][0]);
+    c.sw(frame.at(c, FLOAT_TO_STR_SLOT_STYLE), c.g[A2][0]);
+    c.g[S2][0] = c.g[A0][0];
+    frame
+}
+
+/// Splits `x` into its words and fields (`a2` the low word, `v1` the high
+/// fraction bits, `a1` the sign bit, `a0` the exponent); `s0 = sign`.
+/// True for an infinity or NaN.
+pub(crate) fn float_to_str_unpack(c: &mut Cpu) -> bool {
+    let x = c.g[S2][0];
+    c.g[A2][0] = ((x << 32) as i64 >> 32) as u64;
+    let high = ((x as i64) >> 32) as u64;
+    let fields = sx((high as u32) >> FLOAT_TO_STR_EXP_SHIFT);
+    c.g[A1][0] = fields & FLOAT_TO_STR_SIGN_BIT;
+    c.g[V1][0] = high & FLOAT_TO_STR_FRAC_HI;
+    c.g[A0][0] = fields & FLOAT_TO_STR_EXP_FIELD;
+    c.g[V0][0] = FLOAT_TO_STR_EXP_FIELD;
+    c.g[S0][0] = c.g[T0][0];
+    c.g[A0][0] == c.g[V0][0]
+}
+
+/// Infinity or NaN: copies `"NaN"`, `"Inf"` or `"-Inf"` into the buffer.
+pub(crate) fn float_to_str_special(c: &mut Cpu) {
+    c.cycles += 2;
+    let nan_high = c.g[V1][0] != 0;
+    c.g[V0][0] = FLOAT_TO_STR_STR_PAGE;
+    let text = if nan_high {
+        c.cycles += 2;
+        c.g[V1][0] = FLOAT_TO_STR_BUF_PAGE;
+        FLOAT_TO_STR_STR_NAN
+    } else {
+        c.cycles += 2;
+        let nan_low = c.g[A2][0] != 0;
+        c.g[V1][0] = FLOAT_TO_STR_BUF_PAGE;
+        if nan_low {
+            c.cycles += 1;
+            FLOAT_TO_STR_STR_NAN
+        } else {
+            c.cycles += 2;
+            let negative = c.g[A1][0] != 0;
+            c.g[V1][0] = FLOAT_TO_STR_STR_PAGE;
+            if negative {
+                c.cycles += 8;
+                c.g[V0][0] = FLOAT_TO_STR_BUF_PAGE;
+                c.g[A1][0] = c.lw(FLOAT_TO_STR_STR_NEG_INF);
+                c.g[A0][0] = sx(FLOAT_TO_STR_STR_NEG_INF);
+                c.g[A2][0] = c.lbu(FLOAT_TO_STR_STR_NEG_INF + FLOAT_TO_STR_WORD);
+                c.g[V1][0] = sx(FLOAT_TO_STR_BUF);
+                c.sw(FLOAT_TO_STR_BUF, c.g[A1][0]);
+                c.sb(FLOAT_TO_STR_BUF + FLOAT_TO_STR_WORD, c.g[A2][0]);
+                return;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = FLOAT_TO_STR_STR_PAGE;
+            c.g[V1][0] = FLOAT_TO_STR_BUF_PAGE;
+            FLOAT_TO_STR_STR_INF
+        }
+    };
+    c.g[A0][0] = c.lw(text);
+    c.cycles += 2;
+    c.sw(FLOAT_TO_STR_BUF, c.g[A0][0]);
+}
+
+/// `x < 0`: the minus goes to `*sign` (digits at the buffer start) or, for
+/// a null `sign`, into the buffer (digits after it); then `x = 0 - x`.
+/// Sets `s6` (digits), `s5 = prec`, `s4 = 0`.
+pub(crate) fn float_to_str_sign(c: &mut Cpu) -> Flow {
+    c.cycles += 7;
+    c.g[S5][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_PREC);
+    c.g[S4][0] = 0;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = 0;
+    callee::CMPDF2.call(c, 0x0041_b06c)?;
+    let negative = (c.g[V0][0] as i64) < 0;
+    c.g[V0][0] = FLOAT_TO_STR_BUF_PAGE;
+    if !negative {
+        c.cycles += 1;
+        c.g[S6][0] = sx(FLOAT_TO_STR_BUF);
+        return Ok(());
+    }
+    c.cycles += 2;
+    let sign = c.g[S0][0];
+    c.g[V1][0] = FLOAT_TO_STR_BUF_PAGE;
+    c.cycles += 4;
+    if sign != 0 {
+        c.g[V0][0] = FLOAT_TO_STR_MINUS;
+        c.sb(sign as u32, FLOAT_TO_STR_MINUS);
+        c.g[S6][0] = sx(FLOAT_TO_STR_BUF);
+    } else {
+        c.g[V1][0] = FLOAT_TO_STR_MINUS;
+        c.g[A0][0] = sx(FLOAT_TO_STR_BUF);
+        c.sb(FLOAT_TO_STR_BUF, FLOAT_TO_STR_MINUS);
+        c.g[S6][0] = addu(c.g[A0][0], 1);
+    }
+    c.cycles += 5;
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A0][0] = 0;
+    callee::SUBDF3.call(c, 0x0041_b0a8)?;
+    c.g[S2][0] = c.g[V0][0];
+    Ok(())
+}
+
+/// `x >= 1`: `s1 = floor(x)`, `x -= s1`, then the integer digits, least
+/// significant first (`digit = (int)fmod(s1, 10)`, `s1 = (s1 - digit) / 10`
+/// while `s1 >= 1`, at most 163), reversed in place. `s3` = their count
+/// (0 for `x < 1`).
+pub(crate) fn float_to_str_integer_digits(c: &mut Cpu) -> Flow {
+    c.cycles += 6;
+    c.g[A1][0] = FLOAT_TO_STR_ONE;
+    c.g[A0][0] = c.g[S2][0];
+    callee::CMPDF2.call(c, 0x0041_b0c4)?;
+    let below_one = (c.g[V0][0] as i64) < 0;
+    c.g[S3][0] = c.g[S4][0];
+    if below_one {
+        return Ok(());
+    }
+    c.cycles += 11;
+    c.g[S3][0] = FLOAT_TO_STR_TEN;
+    c.g[A0][0] = c.g[S2][0];
+    callee::FLOOR.call(c, 0x0041_b0dc)?;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S1][0];
+    callee::SUBDF3.call(c, 0x0041_b0ec)?;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[V0][0] = slt(c.g[S4][0], FLOAT_TO_STR_MAX_INT_DIGITS);
+    loop {
+        c.cycles += 2;
+        let room = c.g[V0][0] != 0;
+        c.g[A1][0] = c.g[S3][0];
+        if !room {
+            break;
+        }
+        c.cycles += 24;
+        c.g[A0][0] = c.g[S1][0];
+        callee::IEEE754_FMOD.call(c, 0x0041_b108)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::FIXDFSI.call(c, 0x0041_b110)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[V1][0] = addu(c.g[S0][0], FLOAT_TO_STR_CHAR_0);
+        c.g[V0][0] = addu(c.g[S6][0], c.g[S4][0]);
+        c.sb(c.g[V0][0] as u32, c.g[V1][0]);
+        c.g[A0][0] = c.g[S0][0];
+        callee::FLOATSIDF.call(c, 0x0041_b128)?;
+        c.g[S4][0] = addu(c.g[S4][0], 1);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[V0][0];
+        callee::SUBDF3.call(c, 0x0041_b138)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S3][0];
+        callee::DIVDF3.call(c, 0x0041_b144)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A1][0] = FLOAT_TO_STR_ONE;
+        c.g[A0][0] = c.g[S1][0];
+        callee::CMPDF2.call(c, 0x0041_b158)?;
+        let more = (c.g[V0][0] as i64) >= 0;
+        c.g[V0][0] = slt(c.g[S4][0], FLOAT_TO_STR_MAX_INT_DIGITS);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, FLOAT_TO_STR_HEAD_INT_DIGITS);
+        }
+    }
+    float_to_str_reverse_digits(c);
+    c.cycles += 1;
+    c.g[S3][0] = c.g[S4][0];
+    Ok(())
+}
+
+/// Reverses the `s4` integer digits in place (an inlined `StrReverse`:
+/// `a1` from the front, `a2` from the back, `s0` swaps done).
+pub(crate) fn float_to_str_reverse_digits(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[A3][0] = subu(c.g[S4][0], 1);
+    let single = (c.g[A3][0] as i64) <= 0;
+    c.g[S0][0] = 0;
+    if single {
+        return;
+    }
+    c.cycles += 3;
+    c.g[A2][0] = addu(c.g[A3][0], c.g[S6][0]);
+    c.g[A1][0] = c.g[S6][0];
+    loop {
+        c.cycles += 10;
+        let (front, back) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
+        c.g[V0][0] = c.lbu(back);
+        c.g[S0][0] = addu(c.g[S0][0], 1);
+        c.g[V1][0] = c.lb(front);
+        c.g[A3][0] = subu(c.g[A3][0], 1);
+        c.sb(front, c.g[V0][0]);
+        c.g[A0][0] = slt(c.g[S0][0], c.g[A3][0]);
+        c.sb(back, c.g[V1][0]);
+        c.g[A1][0] = addu(c.g[A1][0], 1);
+        let more = c.g[A0][0] != 0;
+        c.g[A2][0] = subu(c.g[A2][0], 1);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, FLOAT_TO_STR_HEAD_REVERSE);
+        }
+    }
+}
+
+/// No integer digits (`s3 == 0`): `'f'` writes the `'0'` before the point.
+/// Other styles scale a non-zero `x` by 10 into [1, 10) (`s3` = minus the
+/// multiplications, stopping below -1020), then, unless `x` stayed below
+/// one, divide it by 10 and take one more digit (`s5 = prec + 1`).
+pub(crate) fn float_to_str_below_one(c: &mut Cpu) -> Flow {
+    c.cycles += 2;
+    let has_integer = c.g[S3][0] != 0;
+    c.g[V1][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_STYLE);
+    if has_integer {
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[V0][0] = FLOAT_TO_STR_STYLE_FIXED;
+    let fixed = c.g[V1][0] == c.g[V0][0];
+    c.g[A0][0] = c.g[S2][0];
+    if fixed {
+        c.cycles += 3;
+        c.g[V0][0] = FLOAT_TO_STR_CHAR_0;
+        c.g[S4][0] = 1;
+        c.sb(c.g[S6][0] as u32, FLOAT_TO_STR_CHAR_0);
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[A1][0] = 0;
+    callee::CMPDF2.call(c, 0x0041_b1c0)?;
+    if c.g[V0][0] != 0 {
+        loop {
+            c.cycles += 11;
+            c.g[A1][0] = FLOAT_TO_STR_TEN;
+            c.g[A0][0] = c.g[S2][0];
+            callee::MULDF3.call(c, 0x0041_b1d8)?;
+            c.g[S2][0] = c.g[V0][0];
+            c.g[A1][0] = FLOAT_TO_STR_ONE;
+            c.g[A0][0] = c.g[S2][0];
+            callee::CMPDF2.call(c, 0x0041_b1ec)?;
+            let scaled = (c.g[V0][0] as i64) >= 0;
+            c.g[V0][0] = slt(c.g[S3][0], FLOAT_TO_STR_MIN_EXP10);
+            if scaled {
+                break;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                break;
+            }
+            c.g[S3][0] = subu(c.g[S3][0], 1);
+            if event_due(c) {
+                deliver_event_here(c, FLOAT_TO_STR_HEAD_SCALE);
+            }
+        }
+        c.cycles += 1;
+        c.g[S3][0] = subu(c.g[S3][0], 1);
+    }
+    c.cycles += 6;
+    c.g[A1][0] = FLOAT_TO_STR_ONE;
+    c.g[A0][0] = c.g[S2][0];
+    callee::CMPDF2.call(c, 0x0041_b210)?;
+    let below_one = (c.g[V0][0] as i64) < 0;
+    c.g[V0][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_PREC);
+    if !below_one {
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = FLOAT_TO_STR_TEN;
+        c.g[S5][0] = addu(c.g[V0][0], 1);
+        callee::DIVDF3.call(c, 0x0041_b22c)?;
+        c.g[S2][0] = c.g[V0][0];
+    }
+    Ok(())
+}
+
+/// `s1`, the index of the rounding digit: `s5` for a negative exponent,
+/// `s5 + max(s3, 1)` for `'f'`, `s5 + 1` otherwise.
+pub(crate) fn float_to_str_digit_count(c: &mut Cpu) {
+    c.cycles += 2;
+    let negative_exp = (c.g[S3][0] as i64) < 0;
+    c.g[V1][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_STYLE);
+    if negative_exp {
+        c.cycles += 2;
+        c.g[S1][0] = c.g[S5][0];
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = FLOAT_TO_STR_STYLE_FIXED;
+    let fixed = c.g[V1][0] == c.g[V0][0];
+    c.g[S1][0] = addu(c.g[S5][0], 1);
+    if fixed {
+        c.cycles += 4;
+        c.g[V0][0] = 1;
+        c.g[V1][0] = slt(0, c.g[S3][0]);
+        if c.g[V1][0] != 0 {
+            c.g[V0][0] = c.g[S3][0];
+        }
+        c.g[S1][0] = addu(c.g[S5][0], c.g[V0][0]);
+    }
+}
+
+/// Fraction digits: `x *= 10`, `digit = (int)x`, `x -= digit`, the bound
+/// `s5 *= 10`; stops before storing when `s1` digits are written or the
+/// remainder is below the bound or above one minus it. `fp = s1 + 1`.
+pub(crate) fn float_to_str_fraction_digits(c: &mut Cpu) -> Flow {
+    c.cycles += 5;
+    c.g[S5][0] = FLOAT_TO_STR_EPS;
+    c.g[FP][0] = addu(c.g[S1][0], 1);
+    c.g[S7][0] = FLOAT_TO_STR_TEN;
+    loop {
+        c.cycles += 20;
+        c.g[A1][0] = c.g[S7][0];
+        c.g[A0][0] = c.g[S2][0];
+        callee::MULDF3.call(c, 0x0041_b28c)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S2][0];
+        callee::FIXDFSI.call(c, 0x0041_b298)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        callee::FLOATSIDF.call(c, 0x0041_b2a4)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[V0][0];
+        callee::SUBDF3.call(c, 0x0041_b2b0)?;
+        c.g[A0][0] = c.g[S5][0];
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S7][0];
+        callee::MULDF3.call(c, 0x0041_b2c0)?;
+        c.g[S5][0] = c.g[V0][0];
+        c.g[V0][0] = slt(c.g[S4][0], c.g[S1][0]);
+        let room = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[S2][0];
+        if !room {
+            break;
+        }
+        c.cycles += 4;
+        c.g[A1][0] = c.g[S5][0];
+        callee::CMPDF2.call(c, 0x0041_b2d8)?;
+        if (c.g[V0][0] as i64) < 0 {
+            break;
+        }
+        c.cycles += 9;
+        c.g[A0][0] = FLOAT_TO_STR_ONE;
+        c.g[A1][0] = c.g[S5][0];
+        callee::SUBDF3.call(c, 0x0041_b2f0)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S2][0];
+        callee::CMPDF2.call(c, 0x0041_b2fc)?;
+        let near_one = (c.g[V0][0] as i64) > 0;
+        c.g[V0][0] = addu(c.g[S6][0], c.g[S4][0]);
+        if near_one {
+            break;
+        }
+        c.cycles += 4;
+        c.g[V1][0] = addu(c.g[S0][0], FLOAT_TO_STR_CHAR_0);
+        c.sb(c.g[V0][0] as u32, c.g[V1][0]);
+        c.g[S4][0] = addu(c.g[S4][0], 1);
+        if event_due(c) {
+            deliver_event_here(c, FLOAT_TO_STR_HEAD_FRACTION);
+        }
+    }
+    Ok(())
+}
+
+/// The last digit, plus one when the remainder is at least 0.5 (a 10
+/// prints as `':'`), zeros up to index `s1`, then
+/// `vfprintf_RoundDigits(digits, fp)`; when its carry runs out of the first
+/// digit, that digit becomes `'1'`, `s1 = fp` and `s3 += 1`.
+pub(crate) fn float_to_str_round(c: &mut Cpu) -> Flow {
+    c.cycles += 13;
+    c.g[A1][0] = FLOAT_TO_STR_HALF;
+    c.g[A0][0] = c.g[S2][0];
+    callee::CMPDF2.call(c, 0x0041_b324)?;
+    c.g[V0][0] = ((c.g[V0][0] as i64) < 0) as u64;
+    c.g[V1][0] = addu(c.g[S0][0], 1);
+    if c.g[V0][0] == 0 {
+        c.g[S0][0] = c.g[V1][0];
+    }
+    c.g[A0][0] = addu(c.g[S6][0], c.g[S4][0]);
+    c.g[V1][0] = addu(c.g[S0][0], FLOAT_TO_STR_CHAR_0);
+    c.g[S4][0] = addu(c.g[S4][0], 1);
+    c.g[V0][0] = slt(c.g[S1][0], c.g[S4][0]);
+    let full = c.g[V0][0] != 0;
+    c.sb(c.g[A0][0] as u32, c.g[V1][0]);
+    if !full {
+        c.cycles += 2;
+        c.g[A0][0] = FLOAT_TO_STR_CHAR_0;
+        loop {
+            c.cycles += 7;
+            c.g[V1][0] = addu(c.g[S6][0], c.g[S4][0]);
+            c.g[S4][0] = addu(c.g[S4][0], 1);
+            c.g[V0][0] = slt(c.g[S1][0], c.g[S4][0]);
+            let more = c.g[V0][0] == 0;
+            c.sb(c.g[V1][0] as u32, c.g[A0][0]);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, FLOAT_TO_STR_HEAD_PAD);
+            }
+        }
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S6][0];
+    c.g[A1][0] = c.g[FP][0];
+    callee::VFPRINTF_ROUND_DIGITS.call(c, 0x0041_b378)?;
+    let kept = c.g[V0][0] != 0;
+    c.g[V0][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_PREC);
+    if !kept {
+        c.cycles += 5;
+        c.g[V0][0] = FLOAT_TO_STR_CHAR_1;
+        c.g[S1][0] = c.g[FP][0];
+        c.sb(c.g[S6][0] as u32, FLOAT_TO_STR_CHAR_1);
+        c.g[S3][0] = addu(c.g[S3][0], 1);
+        c.g[V0][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_PREC);
+    }
+    Ok(())
+}
+
+/// The point (`v0 = prec`): none for `prec == 0` (the rounding digit is
+/// dropped: `s1 -= 1`); else the digits from index `max(s3, 1)` (`'f'`) or 1
+/// move up one over the rounding digit and `'.'` goes in.
+pub(crate) fn float_to_str_point(c: &mut Cpu) {
+    c.cycles += 2;
+    let no_point = c.g[V0][0] == 0;
+    c.g[V1][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_STYLE);
+    if no_point {
+        c.cycles += 1;
+        c.g[S1][0] = subu(c.g[S1][0], 1);
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = FLOAT_TO_STR_STYLE_FIXED;
+    let fixed = c.g[V1][0] == c.g[V0][0];
+    c.g[A1][0] = 1;
+    if fixed {
+        c.cycles += 2;
+        c.g[V0][0] = slt(c.g[S3][0], 1);
+        if c.g[V0][0] == 0 {
+            c.g[A1][0] = c.g[S3][0];
+        }
+    }
+    c.cycles += 4;
+    c.g[S4][0] = c.g[S1][0];
+    c.g[V0][0] = slt(c.g[A1][0], c.g[S1][0]);
+    let shift = c.g[V0][0] != 0;
+    c.g[A2][0] = addu(c.g[S6][0], c.g[A1][0]);
+    if shift {
+        c.cycles += 2;
+        c.g[A0][0] = addu(c.g[S1][0], c.g[S6][0]);
+        loop {
+            c.cycles += 7;
+            let to = c.g[A0][0] as u32;
+            c.g[V0][0] = c.lbu(to.wrapping_sub(1));
+            c.g[S4][0] = subu(c.g[S4][0], 1);
+            c.g[V1][0] = slt(c.g[A1][0], c.g[S4][0]);
+            c.sb(to, c.g[V0][0]);
+            let more = c.g[V1][0] != 0;
+            c.g[A0][0] = subu(c.g[A0][0], 1);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, FLOAT_TO_STR_HEAD_SHIFT);
+            }
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = FLOAT_TO_STR_POINT;
+    c.sb(c.g[A2][0] as u32, FLOAT_TO_STR_POINT);
+}
+
+/// `trim`: drops trailing `'0'`s (down to index 0), then a `'.'` left
+/// last. Leaves `v1 = style`.
+pub(crate) fn float_to_str_trim(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_TRIM);
+    let keep = c.g[V0][0] == 0;
+    c.g[V1][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_STYLE);
+    if keep {
+        return;
+    }
+    c.cycles += 2;
+    let at_start = c.g[S1][0] == 0;
+    c.g[V0][0] = addu(c.g[S6][0], c.g[S1][0]);
+    // Whether the last character must be loaded again (`v1` = it and
+    // `a0` = its index - 1 otherwise).
+    let reload = at_start || {
+        c.cycles += 4;
+        c.g[A0][0] = FLOAT_TO_STR_CHAR_0;
+        c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+        if c.g[V1][0] != c.g[A0][0] {
+            c.g[A0][0] = subu(c.g[S1][0], 1);
+            false
+        } else {
+            c.cycles += 2;
+            c.g[S1][0] = subu(c.g[S1][0], 1);
+            loop {
+                c.cycles += 2;
+                let at_start = c.g[S1][0] == 0;
+                c.g[V0][0] = addu(c.g[S6][0], c.g[S1][0]);
+                if at_start {
+                    break;
+                }
+                c.cycles += 5;
+                c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+                if c.g[V1][0] != c.g[A0][0] {
+                    break;
+                }
+                c.g[S1][0] = subu(c.g[S1][0], 1);
+                if event_due(c) {
+                    deliver_event_here(c, FLOAT_TO_STR_HEAD_TRIM);
+                }
+            }
+            true
+        }
+    };
+    if reload {
+        c.cycles += 3;
+        c.g[V0][0] = addu(c.g[S6][0], c.g[S1][0]);
+        c.g[A0][0] = subu(c.g[S1][0], 1);
+        c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+    }
+    c.cycles += 3;
+    c.g[V1][0] ^= FLOAT_TO_STR_POINT;
+    if c.g[V1][0] == 0 {
+        c.g[S1][0] = c.g[A0][0];
+    }
+    c.g[V1][0] = float_to_str_slot(c, FLOAT_TO_STR_SLOT_STYLE);
+}
+
+/// `'f'`: the NUL. Otherwise `style`, the exponent's sign (`s3 - 1` from
+/// `s3 > 0`, 0 for `s3 == 0`, `-s3` below), a padding `'0'` below 10, and
+/// `vfprintf_IntToStr(exponent, end, 10)` (which ends the string).
+pub(crate) fn float_to_str_finish(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    c.g[V0][0] = FLOAT_TO_STR_STYLE_FIXED;
+    let fixed = c.g[V1][0] == c.g[V0][0];
+    c.g[V0][0] = addu(c.g[S1][0], c.g[S6][0]);
+    if fixed {
+        c.cycles += 1;
+        c.sb((c.g[V0][0] as u32).wrapping_add(1), 0);
+        float_to_str_join(c);
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[S1][0] = addu(c.g[S1][0], 1);
+    c.g[V0][0] = addu(c.g[S6][0], c.g[S1][0]);
+    let negative = (c.g[S3][0] as i64) < 0;
+    c.sb(c.g[V0][0] as u32, c.g[V1][0]);
+    if !negative {
+        c.cycles += 8;
+        c.g[V0][0] = subu(c.g[S3][0], 1);
+        c.g[S1][0] = addu(c.g[S1][0], 1);
+        if c.g[S3][0] != 0 {
+            c.g[S3][0] = c.g[V0][0];
+        }
+        c.g[A0][0] = addu(c.g[S6][0], c.g[S1][0]);
+        c.g[V0][0] = FLOAT_TO_STR_PLUS;
+        c.g[V1][0] = slt(c.g[S3][0], FLOAT_TO_STR_EXP_TWO_DIGITS);
+        let one_digit = c.g[V1][0] != 0;
+        c.sb(c.g[A0][0] as u32, FLOAT_TO_STR_PLUS);
+        if one_digit {
+            c.cycles += 5;
+            float_to_str_pad_zero(c);
+        }
+    } else {
+        c.cycles += 6;
+        c.g[S1][0] = addu(c.g[S1][0], 1);
+        c.g[V0][0] = FLOAT_TO_STR_MINUS;
+        c.g[V1][0] = addu(c.g[S6][0], c.g[S1][0]);
+        c.g[A0][0] = slt(c.g[S3][0], FLOAT_TO_STR_NEG_EXP_TWO_DIGITS);
+        let two_digits = c.g[A0][0] != 0;
+        c.sb(c.g[V1][0] as u32, FLOAT_TO_STR_MINUS);
+        if !two_digits {
+            c.cycles += 4;
+            float_to_str_pad_zero(c);
+        }
+        c.cycles += 1;
+        c.g[S3][0] = subu(0, c.g[S3][0]);
+    }
+    c.cycles += 7;
+    c.g[S1][0] = addu(c.g[S1][0], 1);
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A1][0] = addu(c.g[S6][0], c.g[S1][0]);
+    c.g[A2][0] = FLOAT_TO_STR_EXP_RADIX;
+    callee::VFPRINTF_INT_TO_STR.call(c, 0x0041_b4e4)?;
+    c.g[V1][0] = FLOAT_TO_STR_BUF_PAGE;
+    Ok(())
+}
+
+/// The exponent's padding `'0'` at the next index.
+pub(crate) fn float_to_str_pad_zero(c: &mut Cpu) {
+    c.g[S1][0] = addu(c.g[S1][0], 1);
+    c.g[V1][0] = FLOAT_TO_STR_CHAR_0;
+    c.g[V0][0] = addu(c.g[S6][0], c.g[S1][0]);
+    c.sb(c.g[V0][0] as u32, FLOAT_TO_STR_CHAR_0);
+}
+
+/// The join before the epilogue of the paths without an exponent.
+pub(crate) fn float_to_str_join(c: &mut Cpu) {
+    c.cycles += 1;
+    c.g[V1][0] = FLOAT_TO_STR_BUF_PAGE;
+}
+
+/// Returns the buffer; restores the saved registers.
+pub(crate) fn float_to_str_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 13;
+    c.g[V0][0] = sx(FLOAT_TO_STR_BUF);
+    for (reg, off) in FLOAT_TO_STR_SAVED {
+        frame.restore(c, reg, off);
+    }
+    frame.restore_ra(c, FLOAT_TO_STR_SLOT_RA);
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// `_realloc_r`'s own addresses, frame and constants.
+
+#[cfg(test)]
+pub(crate) const REALLOC_R_ENTRY: u32 = 0x0042_1f20;
+
+/// Return addresses of the calls: `realloc(NULL, n)`'s malloc, the lock, the
+/// unlock after growing into the top, the two backward copies' memcpy, the
+/// fallback malloc and its failure unlock, the fallback's memcpy and free,
+/// the unlock returning newmem, the free of a split-off remainder and the
+/// final unlock.
+pub(crate) const REALLOC_R_RET_MALLOC_NULL: u32 = 0x0042_1f64;
+
+pub(crate) const REALLOC_R_RET_LOCK: u32 = 0x0042_1f78;
+
+pub(crate) const REALLOC_R_RET_TOP_UNLOCK: u32 = 0x0042_2048;
+
+pub(crate) const REALLOC_R_RET_BACK_TOP_MEMCPY: u32 = 0x0042_2190;
+
+pub(crate) const REALLOC_R_RET_BACK_MEMCPY: u32 = 0x0042_22d0;
+
+pub(crate) const REALLOC_R_RET_MALLOC: u32 = 0x0042_22e4;
+
+pub(crate) const REALLOC_R_RET_MALLOC_FAIL_UNLOCK: u32 = 0x0042_22f8;
+
+pub(crate) const REALLOC_R_RET_COPY_MEMCPY: u32 = 0x0042_23d8;
+
+pub(crate) const REALLOC_R_RET_COPY_FREE: u32 = 0x0042_23e4;
+
+pub(crate) const REALLOC_R_RET_NEWMEM_UNLOCK: u32 = 0x0042_23f0;
+
+pub(crate) const REALLOC_R_RET_SPLIT_FREE: u32 = 0x0042_243c;
+
+pub(crate) const REALLOC_R_RET_UNLOCK: u32 = 0x0042_2468;
+
+/// Frame and saved-register slots (ra, then fp and s7..s0 as quadwords).
+pub(crate) const REALLOC_R_FRAME: Frame = Frame { size: 0xa0 };
+
+pub(crate) const REALLOC_R_SLOT_RA: u32 = 0x00;
+
+pub(crate) const REALLOC_R_SLOT_FP: u32 = 0x10;
+
+pub(crate) const REALLOC_R_SLOT_S7: u32 = 0x20;
+
+pub(crate) const REALLOC_R_SLOT_S6: u32 = 0x30;
+
+pub(crate) const REALLOC_R_SLOT_S5: u32 = 0x40;
+
+pub(crate) const REALLOC_R_SLOT_S4: u32 = 0x50;
+
+pub(crate) const REALLOC_R_SLOT_S3: u32 = 0x60;
+
+pub(crate) const REALLOC_R_SLOT_S2: u32 = 0x70;
+
+pub(crate) const REALLOC_R_SLOT_S1: u32 = 0x80;
+
+pub(crate) const REALLOC_R_SLOT_S0: u32 = 0x90;
+
+/// `SIZE_SZ`: `MALLOC_COPY` moves `oldsize - SIZE_SZ` bytes (the old user
+/// area, including the next chunk's `prev_size` word it may have used).
+pub(crate) const REALLOC_R_SIZE_SZ: u64 = 4;
+
+/// `next_chunk(p)` steps by `size & ~PREV_INUSE` (sign-extended, as the
+/// `lui`/`ori` pair leaves it; `IS_MMAPPED` stays in).
+pub(crate) const REALLOC_R_NEXT_CHUNK_MASK: u64 = !MALLOC_PREV_INUSE;
+
+/// `MALLOC_COPY` copies up to `9 * SIZE_SZ` bytes with inline word moves;
+/// more goes to `memcpy`.
+pub(crate) const REALLOC_R_COPY_INLINE_MAX: u64 = 9 * REALLOC_R_SIZE_SZ;
+
+/// The inline copy moves one more word pair from each of these sizes on
+/// (5, 7 and 9 words), then the last three words.
+pub(crate) const REALLOC_R_COPY_PAIRS: [u64; 3] = [
+    5 * REALLOC_R_SIZE_SZ,
+    7 * REALLOC_R_SIZE_SZ,
+    9 * REALLOC_R_SIZE_SZ,
+];
+
+/// Cycles of the inline copy's word pairs (the last pair's charge differs
+/// per copy site and is passed in) and of its three-word tail.
+pub(crate) const REALLOC_R_COPY_PAIR_CYCLES: u64 = 8;
+
+pub(crate) const REALLOC_R_COPY_TAIL_CYCLES: u64 = 9;
+
+/// The 9-word pair's charge in the two backward copies and in the
+/// malloc-copy-free fallback.
+pub(crate) const REALLOC_R_COPY_LAST_PAIR_CYCLES_BACKWARD: u64 = 7;
+
+pub(crate) const REALLOC_R_COPY_LAST_PAIR_CYCLES_FALLBACK: u64 = 6;
+
+/// How a phase ends.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum ReallocRStep {
+    /// `goto split` through 0x4223f8 (one cycle, a0 = newsize - nb).
+    Split,
+    /// `goto split` straight into 0x4223fc: a memcpy's delay slot already put
+    /// newsize - nb in a0.
+    SplitAfterCopy,
+    /// v0 holds the result: restore and return.
+    Return,
+}
+
+/// `void *_realloc_r(struct _reent *r, void *oldmem, size_t bytes)`
+/// (0x421f20): newlib's dlmalloc 2.6 `realloc`. A NULL `oldmem` is
+/// `malloc(bytes)`. Otherwise, under `__malloc_lock`, it rounds `bytes` to a
+/// chunk size `nb`; a chunk already that big keeps its place. A smaller one
+/// grows forward into the top chunk (keeping at least `MINSIZE` of top) or
+/// into a free next chunk; failing that backward into a free previous chunk,
+/// with the top or the free next chunk too when those make it big enough,
+/// moving the contents down with `MALLOC_COPY`. When nothing next to it is
+/// free and big enough it mallocs a new chunk, copies, frees the old one
+/// (unless the new chunk is the old one's neighbour, which is then merged
+/// in). The grown or kept chunk gives back anything `MINSIZE` or more past
+/// `nb` through `_free_r`. Returns the user pointer, or NULL when malloc
+/// fails (the old block is left alone).
+///
+/// Registers through the body: fp the reent, s0 oldmem, s2 bytes and then
+/// newmem, s5 oldp, s3 oldsize, s6 nb, s7 newsize, s1 newp, s4 the previous
+/// chunk; a2 the next chunk (0 when it is in use), a3 its size, a0 the
+/// previous chunk's size.
+//
+// Register writes left out, overwritten in the same block (or the next, with
+// no call in between): v0 = oldsize < nb (by v0 = 0x450000 in its delay
+// slot); v0 = head, head & ~1 and v1 = ~1 on the way to next_chunk(next);
+// v0 = nb + MINSIZE before the compare that replaces it (both top checks);
+// v1 = 0x450000 in the backward top check and before the backward top set;
+// the halves of each new top head (subtraction, then `| PREV_INUSE`); v0 =
+// spare < MINSIZE in the split test (by the delay-slot head load); v0 =
+// `set_head_size`'s value in the remainder split (by the next chunk's head).
+pub fn realloc_r(c: &mut Cpu) {
+    guest(c, |c| {
+        realloc_r_prologue(c);
+        if reg(c, S0) == 0 {
+            // realloc(NULL, bytes) is malloc(bytes).
+            c.cycles += 4;
+            set_reg(c, A1, reg(c, S2));
+            callee::MALLOC_R.call(c, REALLOC_R_RET_MALLOC_NULL)?;
+            REALLOC_R_FRAME.restore(c, S0, REALLOC_R_SLOT_S0);
+            realloc_r_epilogue(c);
+            return Ok(());
+        }
+        realloc_r_request(c)?;
+        c.cycles += 3;
+        let grow = reg(c, S3) < reg(c, S6);
+        set_reg(c, V0, MALLOC_STATE_HI as u64);
+        let step = if !grow {
+            ReallocRStep::Split
+        } else if let Some(step) = realloc_r_forward(c)? {
+            step
+        } else if let Some(step) = realloc_r_backward(c)? {
+            step
+        } else {
+            realloc_r_malloc_copy(c)?
+        };
+        match step {
+            ReallocRStep::Split => {
+                c.cycles += 1;
+                let spare = subu(reg(c, S7), reg(c, S6));
+                set_reg(c, A0, spare);
+                realloc_r_split(c)?;
+            }
+            ReallocRStep::SplitAfterCopy => realloc_r_split(c)?,
+            ReallocRStep::Return => {}
+        }
+        c.cycles += 1;
+        REALLOC_R_FRAME.restore(c, S0, REALLOC_R_SLOT_S0);
+        realloc_r_epilogue(c);
+        Ok(())
+    })
+}
+
+/// The word at `base + off` (`lw`, sign-extended).
+pub(crate) fn realloc_r_lw(c: &mut Cpu, base: u64, off: u32) -> u64 {
+    Addr(base as u32).off(off).lw(c)
+}
+
+/// `sw v, off(base)`.
+pub(crate) fn realloc_r_sw(c: &mut Cpu, base: u64, off: u32, v: u64) {
+    Addr(base as u32).off(off).sw(c, v)
+}
+
+/// Open the frame, save s0..s7, fp and ra; s0 = oldmem, s2 = bytes, fp =
+/// the reent.
+pub(crate) fn realloc_r_prologue(c: &mut Cpu) {
+    c.cycles += 15;
+    let frame = Frame::open(c, REALLOC_R_FRAME.size);
+    frame.save(c, S0, REALLOC_R_SLOT_S0);
+    frame.save(c, S2, REALLOC_R_SLOT_S2);
+    set_reg(c, S0, reg(c, A1));
+    frame.save(c, FP, REALLOC_R_SLOT_FP);
+    set_reg(c, S2, reg(c, A2));
+    frame.save(c, S1, REALLOC_R_SLOT_S1);
+    set_reg(c, FP, reg(c, A0));
+    frame.save(c, S3, REALLOC_R_SLOT_S3);
+    frame.save(c, S4, REALLOC_R_SLOT_S4);
+    frame.save(c, S5, REALLOC_R_SLOT_S5);
+    frame.save(c, S6, REALLOC_R_SLOT_S6);
+    frame.save(c, S7, REALLOC_R_SLOT_S7);
+    frame.save_ra(c, REALLOC_R_SLOT_RA);
+}
+
+/// Restore s1..s7, fp and ra (s0 is restored before), pop the frame, return.
+pub(crate) fn realloc_r_epilogue(c: &mut Cpu) {
+    let frame = REALLOC_R_FRAME;
+    c.cycles += 11;
+    frame.restore(c, S1, REALLOC_R_SLOT_S1);
+    frame.restore(c, S2, REALLOC_R_SLOT_S2);
+    frame.restore(c, S3, REALLOC_R_SLOT_S3);
+    frame.restore(c, S4, REALLOC_R_SLOT_S4);
+    frame.restore(c, S5, REALLOC_R_SLOT_S5);
+    frame.restore(c, S6, REALLOC_R_SLOT_S6);
+    frame.restore(c, S7, REALLOC_R_SLOT_S7);
+    frame.restore(c, FP, REALLOC_R_SLOT_FP);
+    frame.restore_ra(c, REALLOC_R_SLOT_RA);
+    frame.close(c);
+}
+
+/// `MALLOC_LOCK`, then oldp = `mem2chunk(oldmem)` (s1, s5), oldsize =
+/// newsize = `chunksize(oldp)` (s3, s7) and nb = `request2size(bytes)` (s6).
+pub(crate) fn realloc_r_request(c: &mut Cpu) -> Flow {
+    c.cycles += 12;
+    set_reg(c, A0, reg(c, FP));
+    let oldp = subu(reg(c, S0), MCHUNK_MEM as u64);
+    set_reg(c, S1, oldp);
+    callee::MALLOC_LOCK.call(c, REALLOC_R_RET_LOCK)?;
+    let oldp = reg(c, S1);
+    set_reg(c, S5, oldp);
+    let head = realloc_r_lw(c, oldp, MCHUNK_SIZE);
+    set_reg(c, V0, head);
+    set_reg(c, V1, MALLOC_SIZE_MASK);
+    let padded = addu(reg(c, S2), MALLOC_REQUEST_PAD);
+    set_reg(c, A1, padded);
+    let oldsize = head & MALLOC_SIZE_MASK;
+    set_reg(c, S7, oldsize);
+    let tiny = padded < MALLOC_MINSIZE + MALLOC_ALIGN_MASK;
+    set_reg(c, A0, tiny as u64);
+    set_reg(c, S3, oldsize);
+    let nb = if tiny {
+        c.cycles += 1;
+        MALLOC_MINSIZE
+    } else {
+        c.cycles += 4;
+        set_reg(c, V0, !MALLOC_ALIGN_MASK);
+        padded & !MALLOC_ALIGN_MASK
+    };
+    set_reg(c, S6, nb);
+    Ok(())
+}
+
+/// The `prev_inuse(oldp)` head load the forward arms leave in v0 for the
+/// backward phase.
+pub(crate) fn realloc_r_load_old_head(c: &mut Cpu) {
+    let head = realloc_r_lw(c, reg(c, S5), MCHUNK_SIZE);
+    set_reg(c, V0, head);
+}
+
+/// `unlink(p)`: `FD = p->fd; BK = p->bk; FD->bk = BK; BK->fd = FD`, FD in
+/// a1 and BK in v0.
+pub(crate) fn realloc_r_unlink(c: &mut Cpu, chunk: u64) {
+    let fd = realloc_r_lw(c, chunk, MCHUNK_FD);
+    set_reg(c, A1, fd);
+    let bk = realloc_r_lw(c, chunk, MCHUNK_BK);
+    set_reg(c, V0, bk);
+    realloc_r_sw(c, fd, MCHUNK_BK, bk);
+    realloc_r_sw(c, bk, MCHUNK_FD, fd);
+}
+
+/// `set_head_size(p, size)`: keep `p`'s `PREV_INUSE`, store `size` (the
+/// new head in v0).
+pub(crate) fn realloc_r_set_head_size(c: &mut Cpu, chunk: u64, size: u64) {
+    let head = (realloc_r_lw(c, chunk, MCHUNK_SIZE) & MALLOC_PREV_INUSE) | size;
+    set_reg(c, V0, head);
+    realloc_r_sw(c, chunk, MCHUNK_SIZE, head);
+}
+
+/// Expand forward (0x421fb0). next = `chunk_at_offset(oldp, oldsize)` (a2,
+/// top in a0, `av_` in a1). Into the top only with `MINSIZE` to spare:
+/// the old chunk takes nb and the rest is the new top, and the function
+/// returns. Into a free next chunk when the two make nb: unlink it and split.
+/// `None` goes on to the backward phase (a2 = 0 when next is in use).
+pub(crate) fn realloc_r_forward(c: &mut Cpu) -> Result<Option<ReallocRStep>, Unwound> {
+    c.cycles += 5;
+    let next = addu(reg(c, S5), reg(c, S3));
+    set_reg(c, A2, next);
+    let av = addu(reg(c, V0), MALLOC_AV_LO as u64);
+    set_reg(c, A1, av);
+    let top = realloc_r_lw(c, av, MCHUNK_FD);
+    set_reg(c, A0, top);
+    if next != top {
+        // `inuse(next)`: the PREV_INUSE bit of the chunk after it.
+        c.cycles += 9;
+        let head = realloc_r_lw(c, next, MCHUNK_SIZE);
+        let after = addu(next, head & REALLOC_R_NEXT_CHUNK_MASK);
+        set_reg(c, V0, after);
+        let in_use = realloc_r_lw(c, after, MCHUNK_SIZE) & MALLOC_PREV_INUSE;
+        set_reg(c, V1, in_use);
+        if in_use != 0 {
+            // `next = 0; nextsize = 0;`
+            set_reg(c, A2, 0);
+            c.cycles += 2;
+            set_reg(c, A3, 0);
+            realloc_r_load_old_head(c);
+            return Ok(None);
+        }
+        c.cycles += 1;
+    }
+    let next_head = realloc_r_lw(c, next, MCHUNK_SIZE);
+    set_reg(c, V1, next_head);
+    c.cycles += 4;
+    set_reg(c, V0, MALLOC_SIZE_MASK);
+    let nextsize = next_head & MALLOC_SIZE_MASK;
+    set_reg(c, A3, nextsize);
+    let newsize = addu(nextsize, reg(c, S3));
+    set_reg(c, V1, newsize);
+    let nb = reg(c, S6);
+    if next != top {
+        c.cycles += 4;
+        let short = newsize < nb;
+        set_reg(c, V0, short as u64);
+        if short {
+            realloc_r_load_old_head(c);
+            return Ok(None);
+        }
+        c.cycles += 6;
+        set_reg(c, S7, newsize);
+        realloc_r_unlink(c, next);
+        return Ok(Some(ReallocRStep::Split));
+    }
+    c.cycles += 5;
+    let short = newsize < addu(nb, MALLOC_MINSIZE);
+    set_reg(c, V0, short as u64);
+    if short {
+        realloc_r_load_old_head(c);
+        return Ok(None);
+    }
+    // Into the top: `top = chunk_at_offset(oldp, nb)`.
+    c.cycles += 13;
+    set_reg(c, A0, reg(c, FP));
+    let oldp = reg(c, S5);
+    let new_top = addu(oldp, nb);
+    set_reg(c, V1, new_top);
+    let top_head = subu(newsize, nb) | MALLOC_PREV_INUSE;
+    set_reg(c, V0, top_head);
+    realloc_r_sw(c, av, MCHUNK_FD, new_top);
+    realloc_r_sw(c, new_top, MCHUNK_SIZE, top_head);
+    realloc_r_set_head_size(c, oldp, nb);
+    callee::MALLOC_UNLOCK.call(c, REALLOC_R_RET_TOP_UNLOCK)?;
+    set_reg(c, V0, addu(reg(c, S5), MCHUNK_MEM as u64));
+    Ok(Some(ReallocRStep::Return))
+}
+
+/// Shift backward (0x422080, oldp's head in v0, a1 = bytes for the malloc).
+/// With a free previous chunk (s4, its size in a0): first previous + top
+/// (with `MINSIZE` to spare) or previous + free next, else previous alone.
+/// `None` goes on to malloc.
+pub(crate) fn realloc_r_backward(c: &mut Cpu) -> Result<Option<ReallocRStep>, Unwound> {
+    c.cycles += 3;
+    let prev_in_use = reg(c, V0) & MALLOC_PREV_INUSE;
+    set_reg(c, V0, prev_in_use);
+    set_reg(c, A1, reg(c, S2));
+    if prev_in_use != 0 {
+        return Ok(None);
+    }
+    c.cycles += 7;
+    let oldp = reg(c, S5);
+    let prev_size = realloc_r_lw(c, oldp, MCHUNK_PREV_SIZE);
+    set_reg(c, V0, prev_size);
+    set_reg(c, V1, MALLOC_SIZE_MASK);
+    let prev = subu(oldp, prev_size);
+    set_reg(c, S4, prev);
+    let prevsize = realloc_r_lw(c, prev, MCHUNK_SIZE) & MALLOC_SIZE_MASK;
+    set_reg(c, A0, prevsize);
+    let next = reg(c, A2);
+    if next != 0 {
+        c.cycles += 5;
+        let av = addu(MALLOC_STATE_HI as u64, MALLOC_AV_LO as u64);
+        set_reg(c, V0, av);
+        let top = realloc_r_lw(c, av, MCHUNK_FD);
+        set_reg(c, V1, top);
+        let next_and_prev = addu(reg(c, A3), prevsize);
+        set_reg(c, V0, next_and_prev);
+        let (oldsize, nb) = (reg(c, S3), reg(c, S6));
+        if next != top {
+            c.cycles += 4;
+            let newsize = addu(next_and_prev, oldsize);
+            set_reg(c, A3, newsize);
+            let short = newsize < nb;
+            set_reg(c, V1, short as u64);
+            set_reg(c, S1, prev);
+            if !short {
+                // Previous + old + next.
+                c.cycles += 9;
+                set_reg(c, S7, newsize);
+                set_reg(c, S2, addu(prev, MCHUNK_MEM as u64));
+                realloc_r_unlink(c, next);
+                return realloc_r_take_prev(c).map(Some);
+            }
+        } else {
+            c.cycles += 6;
+            set_reg(c, V1, next_and_prev);
+            let newsize = addu(next_and_prev, oldsize);
+            set_reg(c, S7, newsize);
+            let short = newsize < addu(nb, MALLOC_MINSIZE);
+            set_reg(c, V0, short as u64);
+            set_reg(c, S1, prev);
+            if !short {
+                return realloc_r_take_prev_into_top(c).map(Some);
+            }
+        }
+    }
+    realloc_r_backward_only(c)
+}
+
+/// The previous chunk alone (0x4221f8), newsize = prevsize + oldsize in v1.
+/// `None` (a1 = bytes) goes on to malloc; the `prev != 0` test is the
+/// compiled `prev != 0 &&` (true unless `prev_size` points it at 0).
+pub(crate) fn realloc_r_backward_only(c: &mut Cpu) -> Result<Option<ReallocRStep>, Unwound> {
+    c.cycles += 2;
+    let prev = reg(c, S4);
+    let newsize = addu(reg(c, A0), reg(c, S3));
+    set_reg(c, V1, newsize);
+    if prev == 0 {
+        c.cycles += 1;
+        set_reg(c, A1, reg(c, S2));
+        return Ok(None);
+    }
+    c.cycles += 3;
+    let short = newsize < reg(c, S6);
+    set_reg(c, V0, short as u64);
+    set_reg(c, A1, reg(c, S2));
+    if short {
+        return Ok(None);
+    }
+    c.cycles += 5;
+    set_reg(c, S1, prev);
+    set_reg(c, S7, newsize);
+    set_reg(c, S2, addu(prev, MCHUNK_MEM as u64));
+    realloc_r_take_prev(c).map(Some)
+}
+
+/// a2 = `oldsize - SIZE_SZ`, the bytes `MALLOC_COPY` moves.
+pub(crate) fn realloc_r_copy_bytes(c: &mut Cpu) -> u64 {
+    let nbytes = subu(reg(c, S3), REALLOC_R_SIZE_SZ);
+    set_reg(c, A2, nbytes);
+    nbytes
+}
+
+/// v0 = whether `MALLOC_COPY` copies `nbytes` inline.
+pub(crate) fn realloc_r_copy_inline(c: &mut Cpu, nbytes: u64) -> bool {
+    let inline = nbytes <= REALLOC_R_COPY_INLINE_MAX;
+    set_reg(c, V0, inline as u64);
+    inline
+}
+
+/// Unlink the previous chunk and copy the old contents down into it
+/// (0x422220: previous + next, or previous alone), then split.
+pub(crate) fn realloc_r_take_prev(c: &mut Cpu) -> Result<ReallocRStep, Unwound> {
+    c.cycles += 6;
+    let prev = reg(c, S4);
+    realloc_r_unlink(c, prev);
+    let nbytes = realloc_r_copy_bytes(c);
+    let inline = realloc_r_copy_inline(c, nbytes);
+    set_reg(c, A1, reg(c, S2));
+    if !inline {
+        c.cycles += 5;
+        set_reg(c, A0, reg(c, S2));
+        set_reg(c, A1, reg(c, S0));
+        callee::MEMCPY.call(c, REALLOC_R_RET_BACK_MEMCPY)?;
+        let spare = subu(reg(c, S7), reg(c, S6));
+        set_reg(c, A0, spare);
+        return Ok(ReallocRStep::SplitAfterCopy);
+    }
+    c.cycles += 3;
+    set_reg(c, A3, reg(c, S0));
+    realloc_r_copy_words(c, REALLOC_R_COPY_LAST_PAIR_CYCLES_BACKWARD);
+    Ok(ReallocRStep::Split)
+}
+
+/// Previous + old + top: unlink the previous chunk, copy the
+/// contents down, newp takes nb and the rest is the new top; returns newmem.
+pub(crate) fn realloc_r_take_prev_into_top(c: &mut Cpu) -> Result<ReallocRStep, Unwound> {
+    c.cycles += 8;
+    let prev = reg(c, S4);
+    realloc_r_unlink(c, prev);
+    let nbytes = realloc_r_copy_bytes(c);
+    let inline = realloc_r_copy_inline(c, nbytes);
+    set_reg(c, S2, addu(reg(c, S1), MCHUNK_MEM as u64));
+    if inline {
+        c.cycles += 4;
+        set_reg(c, A3, reg(c, S0));
+        set_reg(c, A1, reg(c, S2));
+        realloc_r_copy_words(c, REALLOC_R_COPY_LAST_PAIR_CYCLES_BACKWARD);
+    } else {
+        c.cycles += 3;
+        set_reg(c, A1, reg(c, S0));
+        set_reg(c, A0, reg(c, S2));
+        callee::MEMCPY.call(c, REALLOC_R_RET_BACK_TOP_MEMCPY)?;
+    }
+    c.cycles += 13;
+    let (newp, nb) = (reg(c, S4), reg(c, S6));
+    let new_top = addu(newp, nb);
+    set_reg(c, A1, new_top);
+    let av = addu(MALLOC_STATE_HI as u64, MALLOC_AV_LO as u64);
+    set_reg(c, V0, av);
+    set_reg(c, A0, reg(c, FP));
+    let top_head = subu(reg(c, S7), nb) | MALLOC_PREV_INUSE;
+    set_reg(c, V1, top_head);
+    realloc_r_sw(c, av, MCHUNK_FD, new_top);
+    realloc_r_sw(c, new_top, MCHUNK_SIZE, top_head);
+    realloc_r_set_head_size(c, newp, nb);
+    realloc_r_unlock_newmem(c)
+}
+
+/// `MALLOC_COPY`'s inline moves for up to 9 words (a2 bytes, a3 = oldmem,
+/// a1 = newmem): word pairs from 5, 7 and 9 words, then the last three
+/// words (v0/v1 the words, a3/a1 left past the first of the three).
+/// `last_pair_cycles` is the 9-word pair's charge at the copy's site.
+pub(crate) fn realloc_r_copy_words(c: &mut Cpu, last_pair_cycles: u64) {
+    let word = REALLOC_R_SIZE_SZ as u32;
+    let nbytes = reg(c, A2);
+    let (src, dst) = (reg(c, A3), reg(c, A1));
+    set_reg(c, V0, (nbytes < REALLOC_R_COPY_PAIRS[0]) as u64);
+    for (pair, &from) in REALLOC_R_COPY_PAIRS.iter().enumerate() {
+        if nbytes < from {
+            break;
+        }
+        let next_from = REALLOC_R_COPY_PAIRS.get(pair + 1).copied();
+        c.cycles += if next_from.is_some() {
+            REALLOC_R_COPY_PAIR_CYCLES
+        } else {
+            last_pair_cycles
+        };
+        let off = 2 * word * pair as u32;
+        let (first, second) = if next_from.is_some() {
+            (V0, V1)
+        } else {
+            (V1, V0)
+        };
+        let value = realloc_r_lw(c, src, off);
+        set_reg(c, first, value);
+        set_reg(c, A3, addu(src, (off + 2 * word) as u64));
+        set_reg(c, A1, addu(dst, (off + 2 * word) as u64));
+        if let Some(next_from) = next_from {
+            set_reg(c, A0, (nbytes < next_from) as u64);
+        }
+        realloc_r_sw(c, dst, off, value);
+        let value = realloc_r_lw(c, src, off + word);
+        set_reg(c, second, value);
+        realloc_r_sw(c, dst, off + word, value);
+    }
+    c.cycles += REALLOC_R_COPY_TAIL_CYCLES;
+    let (src, dst) = (reg(c, A3), reg(c, A1));
+    let value = realloc_r_lw(c, src, 0);
+    set_reg(c, V0, value);
+    set_reg(c, A3, addu(src, word as u64));
+    realloc_r_sw(c, dst, 0, value);
+    set_reg(c, A1, addu(dst, word as u64));
+    let value = realloc_r_lw(c, src, word);
+    set_reg(c, V0, value);
+    realloc_r_sw(c, dst, word, value);
+    let value = realloc_r_lw(c, src, 2 * word);
+    set_reg(c, V1, value);
+    realloc_r_sw(c, dst, 2 * word, value);
+}
+
+/// `MALLOC_UNLOCK; return newmem` (0x4223e8, a0 = the reent).
+pub(crate) fn realloc_r_unlock_newmem(c: &mut Cpu) -> Result<ReallocRStep, Unwound> {
+    c.cycles += 4;
+    callee::MALLOC_UNLOCK.call(c, REALLOC_R_RET_NEWMEM_UNLOCK)?;
+    set_reg(c, V0, reg(c, S2));
+    Ok(ReallocRStep::Return)
+}
+
+/// Must allocate (0x4222dc, a1 = bytes): NULL unlocks and returns NULL; a
+/// new chunk right after the old one (a grown top) is merged in and split;
+/// any other is copied into, the old chunk freed, newmem returned.
+pub(crate) fn realloc_r_malloc_copy(c: &mut Cpu) -> Result<ReallocRStep, Unwound> {
+    c.cycles += 5;
+    set_reg(c, A0, reg(c, FP));
+    callee::MALLOC_R.call(c, REALLOC_R_RET_MALLOC)?;
+    let newmem = reg(c, V0);
+    set_reg(c, S2, newmem);
+    if newmem == 0 {
+        c.cycles += 4;
+        set_reg(c, A0, reg(c, FP));
+        callee::MALLOC_UNLOCK.call(c, REALLOC_R_RET_MALLOC_FAIL_UNLOCK)?;
+        set_reg(c, V0, 0);
+        return Ok(ReallocRStep::Return);
+    }
+    let oldp = reg(c, S5);
+    let old_head = realloc_r_lw(c, oldp, MCHUNK_SIZE);
+    c.cycles += 7;
+    set_reg(c, V0, REALLOC_R_NEXT_CHUNK_MASK);
+    let newp = subu(newmem, MCHUNK_MEM as u64);
+    set_reg(c, S1, newp);
+    let next = addu(oldp, old_head & REALLOC_R_NEXT_CHUNK_MASK);
+    set_reg(c, V1, next);
+    let nbytes = realloc_r_copy_bytes(c);
+    if newp == next {
+        // `newsize += chunksize(newp); newp = oldp; goto split;`
+        c.cycles += 7;
+        let size = realloc_r_lw(c, newp, MCHUNK_SIZE) & MALLOC_SIZE_MASK;
+        set_reg(c, V1, size);
+        set_reg(c, V0, MALLOC_SIZE_MASK);
+        set_reg(c, S1, oldp);
+        set_reg(c, S7, addu(reg(c, S3), size));
+        return Ok(ReallocRStep::Split);
+    }
+    c.cycles += 3;
+    let inline = realloc_r_copy_inline(c, nbytes);
+    set_reg(c, A3, reg(c, S0));
+    if inline {
+        c.cycles += 3;
+        set_reg(c, A1, reg(c, S2));
+        realloc_r_copy_words(c, REALLOC_R_COPY_LAST_PAIR_CYCLES_FALLBACK);
+    } else {
+        c.cycles += 3;
+        set_reg(c, A0, reg(c, S2));
+        set_reg(c, A1, reg(c, S0));
+        callee::MEMCPY.call(c, REALLOC_R_RET_COPY_MEMCPY)?;
+    }
+    c.cycles += 4;
+    set_reg(c, A1, reg(c, S0));
+    set_reg(c, A0, reg(c, FP));
+    callee::FREE_R.call(c, REALLOC_R_RET_COPY_FREE)?;
+    set_reg(c, A0, reg(c, FP));
+    realloc_r_unlock_newmem(c)
+}
+
+/// `split:` (0x4223fc, newsize - nb in a0): a remainder of `MINSIZE` or
+/// more becomes its own chunk (newp takes nb, the remainder is marked
+/// in use and handed to `_free_r`); else newp keeps all of newsize and the
+/// next chunk is marked in use. Then unlock; v0 = `chunk2mem(newp)`.
+pub(crate) fn realloc_r_split(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    let spare = reg(c, A0);
+    let newp = reg(c, S1);
+    let head = realloc_r_lw(c, newp, MCHUNK_SIZE);
+    set_reg(c, V0, head);
+    if spare < MALLOC_MINSIZE {
+        c.cycles += 7;
+        let newsize = reg(c, S7);
+        let next = addu(newp, newsize);
+        set_reg(c, A0, next);
+        let new_head = (head & MALLOC_PREV_INUSE) | newsize;
+        set_reg(c, V0, new_head);
+        realloc_r_sw(c, newp, MCHUNK_SIZE, new_head);
+        let next_head = realloc_r_lw(c, next, MCHUNK_SIZE) | MALLOC_PREV_INUSE;
+        set_reg(c, V1, next_head);
+        realloc_r_sw(c, next, MCHUNK_SIZE, next_head);
+    } else {
+        c.cycles += 15;
+        let nb = reg(c, S6);
+        let remainder = addu(newp, nb);
+        set_reg(c, V1, remainder);
+        let remainder_head = spare | MALLOC_PREV_INUSE;
+        set_reg(c, A3, remainder_head);
+        let after = addu(remainder, spare);
+        set_reg(c, A2, after);
+        set_reg(c, A1, addu(remainder, MCHUNK_MEM as u64));
+        set_reg(c, A0, reg(c, FP));
+        realloc_r_sw(c, newp, MCHUNK_SIZE, (head & MALLOC_PREV_INUSE) | nb);
+        realloc_r_sw(c, remainder, MCHUNK_SIZE, remainder_head);
+        let after_head = realloc_r_lw(c, after, MCHUNK_SIZE) | MALLOC_PREV_INUSE;
+        set_reg(c, V0, after_head);
+        realloc_r_sw(c, after, MCHUNK_SIZE, after_head);
+        callee::FREE_R.call(c, REALLOC_R_RET_SPLIT_FREE)?;
+    }
+    c.cycles += 3;
+    set_reg(c, A0, reg(c, FP));
+    callee::MALLOC_UNLOCK.call(c, REALLOC_R_RET_UNLOCK)?;
+    set_reg(c, V0, addu(reg(c, S1), MCHUNK_MEM as u64));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// newlib `mprec.c` Bignum helpers. Layouts checked against the generated loads.
+
+/// `_Bigint::next`: free-list link.
+pub(crate) const BIGINT_NEXT: u32 = 0x0;
+
+/// `_Bigint::k`: size class (`maxwds == 1 << k`), the free-list bucket.
+pub(crate) const BIGINT_K: u32 = 0x4;
+
+/// `_Bigint::maxwds`: words allocated in `x`.
+pub(crate) const BIGINT_MAXWDS: u32 = 0x8;
+
+/// `_Bigint::sign`.
+pub(crate) const BIGINT_SIGN: u32 = 0xc;
+
+/// `_Bigint::wds`: words in use.
+pub(crate) const BIGINT_WDS: u32 = 0x10;
+
+/// `_Bigint::x[]`: the words, least significant first. Also the header size
+/// that `_Balloc` adds to `4 * maxwds`.
+pub(crate) const BIGINT_X: u32 = 0x14;
+
+/// `struct _reent::_p5s`: cached `5^(4 * 2^i)` Bigints, linked by `next`.
+pub(crate) const REENT_P5S: u32 = 0x48;
+
+/// `struct _reent::_freelist`: 16 bucket heads, allocated on first use.
+pub(crate) const REENT_FREELIST: u32 = 0x4c;
+
+/// Bucket heads in `_freelist` (`_calloc_r(r, sizeof(Bigint *), 16)`).
+pub(crate) const FREELIST_HEADS: u64 = 16;
+
+/// Size of one bucket head.
+pub(crate) const FREELIST_HEAD_SIZE: u64 = 4;
+
+/// The high word of the double 1.0 (`Exp_1`).
+pub(crate) const DOUBLE_EXP_1: u64 = 0x3ff0_0000;
+
+/// Sign and exponent bits of a double's high word (`Ebits`).
+pub(crate) const DOUBLE_EBITS: u32 = 11;
+
+/// Fraction bits of a double's high word (`Frac_mask`).
+pub(crate) const DOUBLE_FRAC_MASK: u64 = 0xf_ffff;
+
+/// The high word without its sign bit.
+pub(crate) const DOUBLE_ABS_MASK: u64 = 0x7fff_ffff;
+
+/// The implicit leading fraction bit in the high word (`Exp_msk1`).
+pub(crate) const DOUBLE_EXP_MSK1: u64 = 0x10_0000;
+
+/// Mantissa bits (`P`).
+pub(crate) const DOUBLE_P: u32 = 53;
+
+/// `Bias + P - 1`: the biased exponent of the units bit of the mantissa.
+pub(crate) const DOUBLE_UNIT_EXP: u32 = 1023 + DOUBLE_P - 1;
+
+/// Shift of the exponent field in a whole double.
+pub(crate) const DOUBLE_EXP_SHIFT: u32 = 52;
+
+/// Shift of `k * Exp_msk1` (an exponent step in the high word).
+pub(crate) const DOUBLE_EXP_SHIFT_HI: u32 = 20;
+
+/// The low 32 bits of a 64-bit register.
+pub(crate) const LOW_WORD: u64 = u64::MAX >> 32;
+
+/// The high 32 bits of a 64-bit register.
+pub(crate) const HIGH_WORD: u64 = u64::MAX << 32;
+
+/// The value of the word at `reg + off` (`lw`).
+#[inline]
+pub(crate) fn mprec_lw(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    Addr(r32(c, reg).wrapping_add(off)).lw(c)
+}
+
+/// Store register `val` at `reg + off` (`sw`).
+#[inline]
+pub(crate) fn mprec_sw(c: &mut Cpu, reg: usize, off: u32, val: usize) {
+    let v = c.g[val][0];
+    Addr(r32(c, reg).wrapping_add(off)).sw(c, v);
+}
+
+/// The sign-extended 32-bit sum `reg + off` (`addiu`).
+#[inline]
+pub(crate) fn mprec_add(c: &Cpu, reg: usize, off: u32) -> u64 {
+    sx(r32(c, reg).wrapping_add(off))
+}
+
+// ---------------------------------------------------------------------------
+// _Balloc (0x420510)
+
+/// `_Balloc` frame: s0 at +0x20, s1 at +0x10, ra at 0.
+pub(crate) const BALLOC_FRAME: u32 = 0x30;
+
+/// `_Bigint *_Balloc(struct _reent *r, int k)` (0x420510): a Bigint of
+/// `1 << k` words, taken from the free list `r->_freelist[k]` or else
+/// `_calloc_r`'d (the 16 bucket heads are themselves allocated on first
+/// use). Clears `sign` and `wds`; returns NULL when an allocation fails.
+pub fn balloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, BALLOC_FRAME);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0]; // r
+        frame.save_ra(c, 0);
+        c.g[V0][0] = mprec_lw(c, S0, REENT_FREELIST);
+        let have_heads = c.g[V0][0] != 0;
+        c.g[S1][0] = c.g[A1][0]; // k
+        let allocated = 'take: {
+            if !have_heads {
+                c.cycles += 5;
+                c.g[A1][0] = FREELIST_HEAD_SIZE;
+                c.g[A2][0] = FREELIST_HEADS;
+                callee::CALLOC_R.call(c, 0x0042_053c)?;
+                let failed = c.g[V0][0] == 0;
+                mprec_sw(c, S0, REENT_FREELIST, V0);
+                if failed {
+                    break 'take false;
+                }
+            }
+            c.cycles += 6;
+            c.g[V1][0] = mprec_lw(c, S0, REENT_FREELIST);
+            c.g[V0][0] = sx(r32(c, S1) << 2);
+            c.g[A0][0] = addu(c.g[V0][0], c.g[V1][0]); // &freelist[k]
+            c.g[V1][0] = mprec_lw(c, A0, 0); // rv
+            let bucket_empty = c.g[V1][0] == 0;
+            c.g[V0][0] = 1;
+            if !bucket_empty {
+                // Unlink the first free Bigint.
+                c.cycles += 3;
+                c.g[V0][0] = mprec_lw(c, V1, BIGINT_NEXT);
+                mprec_sw(c, A0, 0, V0);
+            } else {
+                c.cycles += 9;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S0][0] = sx(r32(c, V0) << (r32(c, S1) & 31)); // x = 1 << k
+                c.g[A1][0] = 1;
+                c.g[A2][0] = sx(r32(c, S0) << 2);
+                c.g[A2][0] = mprec_add(c, A2, BIGINT_X);
+                callee::CALLOC_R.call(c, 0x0042_0580)?;
+                c.g[V1][0] = c.g[V0][0];
+                if c.g[V1][0] == 0 {
+                    break 'take false;
+                }
+                mprec_sw(c, V1, BIGINT_K, S1);
+                c.cycles += 1;
+                mprec_sw(c, V1, BIGINT_MAXWDS, S0);
+            }
+            c.cycles += 3;
+            Addr(r32(c, V1).wrapping_add(BIGINT_WDS)).sw(c, 0);
+            c.g[V0][0] = c.g[V1][0];
+            Addr(r32(c, V1).wrapping_add(BIGINT_SIGN)).sw(c, 0);
+            true
+        };
+        if !allocated {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// __multadd (0x4205f0)
+
+/// `__multadd` frame: s0..s4 at 0x50, 0x40, 0x30, 0x20, 0x10; ra at 0.
+pub(crate) const MULTADD_FRAME: u32 = 0x60;
+
+/// Head of the word loop (event check).
+pub(crate) const MULTADD_WORD_LOOP: u32 = 0x0042_0628;
+
+/// `Bcopy` of a Bigint copies `sign` and `wds` (8 bytes) besides the words.
+pub(crate) const MULTADD_COPY_HEADER: u32 = 8;
+
+/// `_Bigint *__multadd(struct _reent *r, _Bigint *b, int m, int a)`
+/// (0x4205f0): `b = b * m + a` in place, 16 bits at a time. A carry out of
+/// the top word becomes a new word; a full `b` first moves to a Bigint of
+/// the next size (`_Balloc(k + 1)`, copy, `_Bfree`). Returns `b`.
+pub fn multadd(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, MULTADD_FRAME);
+        c.g[T0][0] = c.g[A2][0]; // m
+        frame.save(c, S1, 0x40);
+        c.g[T1][0] = 0; // i
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A1][0]; // b
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A3][0]; // carry
+        frame.save(c, S0, 0x50);
+        c.g[S4][0] = c.g[A0][0]; // r
+        frame.save_ra(c, 0);
+        c.g[A3][0] = mprec_add(c, S1, BIGINT_X); // x
+        frame.save(c, S2, 0x30);
+        c.g[S2][0] = mprec_lw(c, S1, BIGINT_WDS); // wds
+        loop {
+            c.cycles += 17;
+            c.g[V1][0] = mprec_lw(c, A3, 0); // xi
+            c.g[T1][0] = mprec_add(c, T1, 1);
+            c.g[A2][0] = slt(c.g[T1][0], c.g[S2][0]);
+            c.g[A0][0] = c.g[V1][0] & 0xffff;
+            c.mult(0, V0, A0, T0); // (xi & 0xffff) * m
+            c.g[V1][0] = sx(r32(c, V1) >> 16);
+            c.mult(0, V1, V1, T0); // (xi >> 16) * m
+            c.g[A0][0] = addu(c.g[V0][0], c.g[S3][0]); // y
+            c.g[A1][0] = sx(r32(c, A0) >> 16);
+            c.g[V1][0] = addu(c.g[V1][0], c.g[A1][0]); // z
+            c.g[A0][0] &= 0xffff;
+            c.g[V0][0] = sx(r32(c, V1) << 16);
+            c.g[S3][0] = sx(r32(c, V1) >> 16); // carry = z >> 16
+            c.g[V0][0] = addu(c.g[V0][0], c.g[A0][0]);
+            mprec_sw(c, A3, 0, V0);
+            let more = c.g[A2][0] != 0;
+            c.g[A3][0] = mprec_add(c, A3, 4);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, MULTADD_WORD_LOOP);
+            }
+        }
+        c.cycles += 2;
+        let no_carry = c.g[S3][0] == 0;
+        c.g[V0][0] = c.g[S1][0];
+        if !no_carry {
+            c.cycles += 4;
+            c.g[V0][0] = mprec_lw(c, S1, BIGINT_MAXWDS);
+            c.g[V0][0] = slt(c.g[S2][0], c.g[V0][0]);
+            let room = c.g[V0][0] != 0;
+            c.g[V0][0] = sx(r32(c, S2) << 2);
+            if !room {
+                // Move `b` into a Bigint twice the size.
+                c.cycles += 16;
+                c.g[A1][0] = mprec_lw(c, S1, BIGINT_K);
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = mprec_add(c, A1, 1);
+                callee::BALLOC.call(c, 0x0042_0694)?;
+                c.g[A2][0] = mprec_lw(c, S1, BIGINT_WDS);
+                c.g[S0][0] = c.g[V0][0]; // b1
+                c.g[A1][0] = mprec_add(c, S1, BIGINT_SIGN);
+                c.g[A0][0] = mprec_add(c, S0, BIGINT_SIGN);
+                c.g[A2][0] = sx(r32(c, A2) << 2);
+                c.g[A2][0] = mprec_add(c, A2, MULTADD_COPY_HEADER);
+                callee::MEMCPY.call(c, 0x0042_06b0)?;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A0][0] = c.g[S4][0];
+                callee::BFREE.call(c, 0x0042_06bc)?;
+                c.g[S1][0] = c.g[S0][0];
+                c.g[V0][0] = sx(r32(c, S2) << 2);
+            }
+            // b->x[wds++] = carry; b->wds = wds.
+            c.cycles += 5;
+            c.g[V0][0] = addu(c.g[S1][0], c.g[V0][0]);
+            c.g[S2][0] = mprec_add(c, S2, 1);
+            mprec_sw(c, V0, BIGINT_X, S3);
+            mprec_sw(c, S1, BIGINT_WDS, S2);
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// __s2b (0x4206f8)
+
+/// `__s2b` frame: s0..s5 at 0x60, 0x50, 0x40, 0x30, 0x20, 0x10; ra at 0.
+pub(crate) const S2B_FRAME: u32 = 0x70;
+
+/// Digits per Bigint word estimate, and the count already in `y9`.
+pub(crate) const S2B_DIGITS_PER_WORD: u64 = 9;
+
+/// Head of the size loop (event check).
+pub(crate) const S2B_SIZE_LOOP: u32 = 0x0042_0758;
+
+/// Head of the loop over the digits before the decimal point (event check).
+pub(crate) const S2B_INT_LOOP: u32 = 0x0042_07a0;
+
+/// Head of the loop over the remaining digits (event check).
+pub(crate) const S2B_FRAC_LOOP: u32 = 0x0042_07e0;
+
+/// `_Bigint *__s2b(struct _reent *r, const char *s, int nd0, int nd,
+/// unsigned long y9)` (0x4206f8): the decimal digit string `s` (`nd`
+/// digits, `nd0` of them before the decimal point, which is skipped) as a
+/// Bigint, starting from `y9`, the value of the first nine digits. The
+/// Bigint is sized for `(nd + 8) / 9` words and grown by `__multadd`.
+pub fn s2b(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, S2B_FRAME);
+        c.g[V0][0] = S2B_DIGITS_PER_WORD;
+        frame.save(c, S4, 0x20);
+        c.g[S4][0] = c.g[A3][0]; // nd
+        frame.save(c, S0, 0x60);
+        c.g[V1][0] = mprec_add(c, S4, 8);
+        frame.save(c, S2, 0x40);
+        c.div(0, V1, V0); // x = (nd + 8) / 9
+        frame.save(c, S3, 0x30);
+        frame.save(c, S5, 0x10);
+        c.g[A3][0] = 1; // y
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A1][0]; // s
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A0][0]; // r
+                                 // (gcc's divide-by-zero check: both arms continue here.)
+        c.cycles += 6;
+        c.g[S2][0] = c.g[A2][0]; // nd0
+        c.g[S5][0] = c.g[T0][0]; // y9
+        c.g[V1][0] = c.lo[0];
+        c.g[V0][0] = slt(c.g[A3][0], c.g[V1][0]);
+        let one_word = c.g[V0][0] == 0;
+        c.g[A1][0] = 0; // k
+        if !one_word {
+            // for (k = 0, y = 1; x > y; y <<= 1, k++)
+            c.cycles += 1;
+            loop {
+                c.cycles += 7;
+                c.g[A3][0] = sx(r32(c, A3) << 1);
+                c.g[V0][0] = slt(c.g[A3][0], c.g[V1][0]);
+                let more = c.g[V0][0] != 0;
+                c.g[A1][0] = mprec_add(c, A1, 1);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, S2B_SIZE_LOOP);
+                }
+            }
+        }
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[S1][0] = S2B_DIGITS_PER_WORD; // i
+        callee::BALLOC.call(c, 0x0042_0780)?;
+        c.g[A1][0] = c.g[V0][0]; // b
+        c.g[V1][0] = 1;
+        mprec_sw(c, A1, BIGINT_X, S5); // b->x[0] = y9
+        c.g[V0][0] = ((c.g[S2][0] as i64) < 10) as u64;
+        let no_int_digits = c.g[V0][0] != 0;
+        mprec_sw(c, A1, BIGINT_WDS, V1); // b->wds = 1
+        if no_int_digits {
+            c.cycles += 1;
+            c.g[S0][0] = mprec_add(c, S0, 10);
+        } else {
+            c.cycles += 2;
+            c.g[S0][0] = mprec_add(c, S0, 9);
+            c.g[A3][0] = Addr(r32(c, S0)).lb(c);
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A2][0] = 10;
+                c.g[S1][0] = mprec_add(c, S1, 1);
+                c.g[A3][0] = sx(r32(c, A3).wrapping_sub(b'0' as u32));
+                c.g[S0][0] = mprec_add(c, S0, 1);
+                callee::MULTADD.call(c, 0x0042_07b8)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V0][0] = slt(c.g[S1][0], c.g[S2][0]);
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A3][0] = Addr(r32(c, S0)).lb(c);
+                if event_due(c) {
+                    deliver_event_here(c, S2B_INT_LOOP);
+                }
+            }
+            c.cycles += 2;
+            c.g[S0][0] = mprec_add(c, S0, 1); // the decimal point
+        }
+        c.cycles += 3;
+        c.g[V0][0] = slt(c.g[S1][0], c.g[S4][0]);
+        let done = c.g[V0][0] == 0;
+        c.g[S1][0] = subu(c.g[S4][0], c.g[S1][0]); // digits left
+        if !done {
+            loop {
+                c.cycles += 9;
+                c.g[A3][0] = Addr(r32(c, S0)).lb(c);
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A2][0] = 10;
+                c.g[S0][0] = mprec_add(c, S0, 1);
+                c.g[A3][0] = sx(r32(c, A3).wrapping_sub(b'0' as u32));
+                c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+                callee::MULTADD.call(c, 0x0042_07fc)?;
+                let more = c.g[S1][0] != 0;
+                c.g[A1][0] = c.g[V0][0];
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, S2B_FRAC_LOOP);
+                }
+            }
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0x60);
+        c.g[V0][0] = c.g[A1][0];
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// __multiply (0x4209b0)
+
+/// `__multiply` frame: s0..s6 at 0x70 down to 0x10; ra at 0.
+pub(crate) const MULTIPLY_FRAME: u32 = 0x80;
+
+/// Head of the loop clearing the product's words (event check).
+pub(crate) const MULTIPLY_CLEAR_LOOP: u32 = 0x0042_0a40;
+
+/// Head of the loop over the shorter operand's words (event check).
+pub(crate) const MULTIPLY_DIGIT_LOOP: u32 = 0x0042_0a88;
+
+/// Head of the inner loop for a low half-word digit (event check).
+pub(crate) const MULTIPLY_LOW_LOOP: u32 = 0x0042_0aa8;
+
+/// Head of the inner loop for a high half-word digit (event check).
+pub(crate) const MULTIPLY_HIGH_LOOP: u32 = 0x0042_0b18;
+
+/// Head of the loop trimming zero top words (event check).
+pub(crate) const MULTIPLY_TRIM_LOOP: u32 = 0x0042_0b78;
+
+/// `__multiply` inner loop for the low half `y = *xb & 0xffff` (t4): adds
+/// `xa[] * y` into the product from `xc0` (t7) on, 16 bits at a time,
+/// storing the final carry after the last word.
+pub(crate) fn multiply_low_half(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[T2][0] = c.g[T9][0]; // x = xa
+    c.g[T0][0] = c.g[T7][0]; // xc = xc0
+    c.g[T5][0] = 0; // carry
+    loop {
+        c.cycles += 20;
+        c.g[V1][0] = mprec_lw(c, T2, 0);
+        c.g[A0][0] = mprec_lw(c, T0, 0);
+        c.g[T2][0] = mprec_add(c, T2, 4);
+        c.g[V0][0] = c.g[V1][0] & 0xffff;
+        c.g[A2][0] = sltu(c.g[T2][0], c.g[S0][0]);
+        c.mult(0, V0, V0, T4);
+        c.g[V1][0] = sx(r32(c, V1) >> 16);
+        c.mult(0, V1, V1, T4);
+        c.g[A1][0] = c.g[A0][0] & 0xffff;
+        c.g[A0][0] = sx(r32(c, A0) >> 16);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[A1][0]);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[T5][0]); // z
+        c.g[V1][0] = addu(c.g[V1][0], c.g[A0][0]);
+        c.g[T5][0] = sx(r32(c, V0) >> 16);
+        let z = c.g[V0][0];
+        Addr(r32(c, T0)).sh(c, z);
+        c.g[A1][0] = addu(c.g[V1][0], c.g[T5][0]); // z2
+        let z2 = c.g[A1][0];
+        Addr(r32(c, T0).wrapping_add(2)).sh(c, z2);
+        c.g[T5][0] = sx(r32(c, A1) >> 16);
+        let more = c.g[A2][0] != 0;
+        c.g[T0][0] = mprec_add(c, T0, 4);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, MULTIPLY_LOW_LOOP);
+        }
+    }
+    c.cycles += 1;
+    mprec_sw(c, T0, 0, T5);
+}
+
+/// `__multiply` inner loop for the high half `y = *xb >> 16` (t4), the
+/// product words shifted by 16 bits; stores the last word after the loop.
+pub(crate) fn multiply_high_half(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[T2][0] = c.g[T9][0]; // x = xa
+    c.g[A1][0] = mprec_lw(c, T0, 0); // z2 = *xc
+    c.g[T5][0] = 0; // carry
+    loop {
+        c.cycles += 18;
+        c.g[V0][0] = Addr(r32(c, T2)).lhu(c);
+        c.g[V1][0] = Addr(r32(c, T0).wrapping_add(2)).lhu(c);
+        c.mult(0, V0, V0, T4);
+        let z2 = c.g[A1][0];
+        Addr(r32(c, T0)).sh(c, z2);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[V1][0]);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[T5][0]); // z
+        let z = c.g[V0][0];
+        Addr(r32(c, T0).wrapping_add(2)).sh(c, z);
+        c.g[T5][0] = sx(r32(c, V0) >> 16);
+        c.g[T0][0] = mprec_add(c, T0, 4);
+        c.g[V0][0] = Addr(r32(c, T2).wrapping_add(2)).lhu(c);
+        c.g[V1][0] = Addr(r32(c, T0)).lhu(c);
+        c.g[T2][0] = mprec_add(c, T2, 4);
+        c.mult(0, V0, V0, T4);
+        c.g[A0][0] = sltu(c.g[T2][0], c.g[S0][0]);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[V1][0]);
+        c.g[A1][0] = addu(c.g[V0][0], c.g[T5][0]); // z2
+        let more = c.g[A0][0] != 0;
+        c.g[T5][0] = sx(r32(c, A1) >> 16);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, MULTIPLY_HIGH_LOOP);
+        }
+    }
+    c.cycles += 1;
+    mprec_sw(c, T0, 0, A1);
+}
+
+/// `_Bigint *__multiply(struct _reent *r, _Bigint *a, _Bigint *b)`
+/// (0x4209b0): the product `a * b` in a new Bigint (one size up when
+/// `a->wds + b->wds` exceeds the longer operand's `maxwds`), schoolbook
+/// multiplication by 16-bit digits of the shorter operand, then trimmed of
+/// zero top words.
+pub fn multiply(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, MULTIPLY_FRAME);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        c.g[S0][0] = c.g[A1][0]; // a
+        frame.save(c, S2, 0x50);
+        c.g[S1][0] = c.g[A2][0]; // b
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save(c, S5, 0x20);
+        frame.save(c, S6, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = mprec_lw(c, S0, BIGINT_WDS);
+        c.g[V1][0] = mprec_lw(c, S1, BIGINT_WDS);
+        c.g[V0][0] = slt(c.g[V0][0], c.g[V1][0]);
+        let swap = c.g[V0][0] != 0;
+        c.g[T8][0] = c.g[S0][0];
+        if swap {
+            // The longer operand goes first.
+            c.cycles += 2;
+            c.g[S0][0] = c.g[S1][0];
+            c.g[S1][0] = c.g[T8][0];
+        }
+        c.cycles += 16;
+        c.g[S5][0] = mprec_lw(c, S0, BIGINT_WDS); // wa
+        c.g[S3][0] = mprec_lw(c, S1, BIGINT_WDS); // wb
+        c.g[A1][0] = mprec_lw(c, S0, BIGINT_MAXWDS);
+        c.g[V0][0] = mprec_lw(c, S0, BIGINT_K);
+        c.g[S2][0] = addu(c.g[S5][0], c.g[S3][0]); // wc
+        c.g[A1][0] = slt(c.g[A1][0], c.g[S2][0]);
+        c.g[A1][0] = addu(c.g[V0][0], c.g[A1][0]); // k + (wc > maxwds)
+        callee::BALLOC.call(c, 0x0042_0a18)?;
+        c.g[T8][0] = c.g[V0][0]; // the product
+        c.g[V1][0] = sx(r32(c, S2) << 2);
+        c.g[T2][0] = mprec_add(c, T8, BIGINT_X);
+        c.g[T9][0] = mprec_add(c, S0, BIGINT_X); // xa
+        c.g[V1][0] = addu(c.g[T2][0], c.g[V1][0]); // product x + wc
+        c.g[V0][0] = sltu(c.g[T2][0], c.g[V1][0]);
+        let no_words = c.g[V0][0] == 0;
+        c.g[A2][0] = mprec_add(c, S1, BIGINT_X); // xb
+        if !no_words {
+            c.cycles += 2;
+            Addr(r32(c, T2)).sw(c, 0);
+            loop {
+                c.cycles += 7;
+                c.g[T2][0] = mprec_add(c, T2, 4);
+                c.g[V0][0] = sltu(c.g[T2][0], c.g[V1][0]);
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                Addr(r32(c, T2)).sw(c, 0);
+                if event_due(c) {
+                    deliver_event_here(c, MULTIPLY_CLEAR_LOOP);
+                }
+            }
+        }
+        c.cycles += 10;
+        c.g[T6][0] = c.g[A2][0]; // xb
+        c.g[V0][0] = sx(r32(c, S3) << 2);
+        c.g[V1][0] = sx(r32(c, S5) << 2);
+        c.g[S4][0] = addu(c.g[T6][0], c.g[V0][0]); // xbe
+        c.g[T7][0] = mprec_add(c, T8, BIGINT_X); // xc0
+        c.g[S0][0] = addu(c.g[T9][0], c.g[V1][0]); // xae
+        c.g[S6][0] = c.g[T7][0];
+        c.g[V0][0] = sltu(c.g[T6][0], c.g[S4][0]);
+        let no_digits = c.g[V0][0] == 0;
+        c.g[S5][0] = sx(r32(c, S2) << 2);
+        if !no_digits {
+            c.cycles += 1;
+            loop {
+                c.cycles += 4;
+                c.g[T4][0] = Addr(r32(c, T6)).lhu(c);
+                c.g[S3][0] = mprec_add(c, T6, 4);
+                let low_zero = c.g[T4][0] == 0;
+                c.g[S1][0] = mprec_add(c, T7, 4);
+                if !low_zero {
+                    multiply_low_half(c);
+                }
+                c.cycles += 3;
+                c.g[T4][0] = Addr(r32(c, T6).wrapping_add(2)).lhu(c);
+                let high_zero = c.g[T4][0] == 0;
+                c.g[T0][0] = c.g[T7][0];
+                if !high_zero {
+                    multiply_high_half(c);
+                }
+                c.cycles += 4;
+                c.g[T6][0] = c.g[S3][0];
+                c.g[V0][0] = sltu(c.g[T6][0], c.g[S4][0]);
+                let more = c.g[V0][0] != 0;
+                c.g[T7][0] = c.g[S1][0];
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, MULTIPLY_DIGIT_LOOP);
+                }
+            }
+        }
+        // for (xc = c->x + wc; wc > 0 && !*--xc; --wc);
+        c.cycles += 1;
+        c.g[T0][0] = addu(c.g[S6][0], c.g[S5][0]);
+        loop {
+            c.cycles += 2;
+            if (c.g[S2][0] as i64) <= 0 {
+                mprec_sw(c, T8, BIGINT_WDS, S2);
+                break;
+            }
+            c.cycles += 5;
+            c.g[T0][0] = sx(r32(c, T0).wrapping_sub(4));
+            c.g[V0][0] = mprec_lw(c, T0, 0);
+            if c.g[V0][0] != 0 {
+                c.cycles += 1;
+                mprec_sw(c, T8, BIGINT_WDS, S2);
+                break;
+            }
+            c.g[S2][0] = sx(r32(c, S2).wrapping_sub(1));
+            if event_due(c) {
+                deliver_event_here(c, MULTIPLY_TRIM_LOOP);
+            }
+        }
+        c.cycles += 11;
+        c.g[V0][0] = c.g[T8][0];
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// __pow5mult (0x420bc8)
+
+pub(crate) const POW5MULT_ENTRY: u32 = 0x0042_0bc8;
+
+/// Loop head (`v0 = p5->next` loaded): take the next cached power or square
+/// `p5` into it. The event check here can unwind, so it is a resume entry.
+pub(crate) const POW5MULT_NEXT_POWER: u32 = 0x0042_0c50;
+
+/// `__pow5mult` frame: s0..s3 at 0x40, 0x30, 0x20, 0x10; ra at 0.
+pub(crate) const POW5MULT_FRAME: u32 = 0x50;
+
+/// `static int p05[3] = { 5, 25, 125 }` (0x4a0000 - 0x5718).
+pub(crate) const POW5MULT_P05: u32 = 0x0049_a8e8;
+
+/// `5^4`, the first cached power.
+pub(crate) const POW5MULT_FIRST_POWER: u64 = 625;
+
+/// `_Bigint *__pow5mult(struct _reent *r, _Bigint *b, int k)` (0x420bc8):
+/// `b * 5^k`. The `k & 3` part is one `__multadd` by `p05[]`; the rest
+/// multiplies by the powers `5^(4 * 2^i)` for the set bits of `k >> 2`,
+/// cached in `r->_p5s` (built with `__i2b(625)` and squaring on first use).
+/// Each replaced `b` is freed.
+pub fn pow5mult(c: &mut Cpu) {
+    if c.pc != POW5MULT_ENTRY {
+        return pow5mult_resume(c);
+    }
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, POW5MULT_FRAME);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A2][0]; // k
+        frame.save(c, S3, 0x10);
+        c.g[V1][0] = c.g[S1][0] & 3;
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A0][0]; // r
+        frame.save_ra(c, 0);
+        let no_small = c.g[V1][0] == 0;
+        c.g[S2][0] = c.g[A1][0]; // b
+        if !no_small {
+            // b = multadd(b, p05[(k & 3) - 1], 0)
+            c.cycles += 9;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            c.g[V0][0] = sx(POW5MULT_P05);
+            c.g[V1][0] = sx(r32(c, V1) << 2);
+            c.g[V1][0] = addu(c.g[V1][0], c.g[V0][0]);
+            c.g[A2][0] = mprec_lw(c, V1, 0);
+            c.g[A3][0] = 0;
+            callee::MULTADD.call(c, 0x0042_0c14)?;
+            c.g[S2][0] = c.g[V0][0];
+        }
+        c.cycles += 3;
+        c.g[S1][0] = sra(c.g[S1][0], 2);
+        let done = c.g[S1][0] == 0;
+        c.g[V0][0] = c.g[S2][0];
+        if !done {
+            c.cycles += 3;
+            c.g[S0][0] = mprec_lw(c, S3, REENT_P5S); // p5
+            let cached = c.g[S0][0] != 0;
+            c.g[V0][0] = c.g[S1][0] & 1;
+            if !cached {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = POW5MULT_FIRST_POWER;
+                callee::I2B.call(c, 0x0042_0c3c)?;
+                c.g[S0][0] = c.g[V0][0];
+                mprec_sw(c, S3, REENT_P5S, V0);
+                Addr(r32(c, S0).wrapping_add(BIGINT_NEXT)).sw(c, 0);
+                c.cycles += 1;
+                c.g[V0][0] = c.g[S1][0] & 1;
+            }
+            if !pow5mult_bits(c, false)? {
+                return Ok(());
+            }
+        }
+        pow5mult_return(c);
+        Ok(())
+    })
+}
+
+/// `__pow5mult` re-entered after an unwind at the loop head.
+pub(crate) fn pow5mult_resume(c: &mut Cpu) {
+    match c.pc {
+        POW5MULT_NEXT_POWER => guest(c, |c| {
+            if pow5mult_bits(c, true)? {
+                pow5mult_return(c);
+            }
+            Ok(())
+        }),
+        // Not a resume entry of the original: its own dispatcher.
+        _ => ee::s15::f_00420bc8__generated(c),
+    }
+}
+
+/// The `__pow5mult` loop over the bits of `k >> 2` (s1), with `b` in s2, the
+/// current power `p5` in s0 and `r` in s3. Starts at the multiply test
+/// (`v0 = k & 1`), or at the loop head (`v0 = p5->next`) when `at_head`.
+/// `Ok(true)` when done (`v0 = b`), `Ok(false)` when an event unwound at the
+/// head.
+pub(crate) fn pow5mult_bits(c: &mut Cpu, mut at_head: bool) -> Result<bool, crate::call::Unwound> {
+    loop {
+        if at_head {
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                c.g[S0][0] = c.g[V0][0];
+            } else {
+                // p5->next = mult(p5, p5); its next = 0.
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = c.g[S0][0];
+                callee::MULTIPLY.call(c, 0x0042_0c68)?;
+                mprec_sw(c, S0, BIGINT_NEXT, V0);
+                Addr(r32(c, V0).wrapping_add(BIGINT_NEXT)).sw(c, 0);
+                c.g[S0][0] = c.g[V0][0];
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S1][0] & 1;
+        }
+        c.cycles += 2;
+        let bit_clear = c.g[V0][0] == 0;
+        c.g[A1][0] = c.g[S2][0];
+        if !bit_clear {
+            // b1 = mult(b, p5); Bfree(b); b = b1.
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S0][0];
+            callee::MULTIPLY.call(c, 0x0042_0c8c)?;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A0][0] = c.g[S3][0];
+            c.g[S2][0] = c.g[V0][0];
+            callee::BFREE.call(c, 0x0042_0c9c)?;
+        }
+        c.cycles += 3;
+        c.g[S1][0] = sra(c.g[S1][0], 1);
+        if c.g[S1][0] == 0 {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+            return Ok(true);
+        }
+        c.g[V0][0] = mprec_lw(c, S0, BIGINT_NEXT);
+        if back_edge_unwinds(c, POW5MULT_NEXT_POWER) {
+            return Ok(false);
+        }
+        at_head = true;
+    }
+}
+
+/// `__pow5mult` epilogue.
+pub(crate) fn pow5mult_return(c: &mut Cpu) {
+    let frame = Frame {
+        size: POW5MULT_FRAME,
+    };
+    c.cycles += 7;
+    frame.restore(c, S0, 0x40);
+    frame.restore(c, S1, 0x30);
+    frame.restore(c, S2, 0x20);
+    frame.restore(c, S3, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// __lshift (0x420cc8)
+
+/// `__lshift` frame: s0..s5 at 0x60 down to 0x10; ra at 0.
+pub(crate) const LSHIFT_FRAME: u32 = 0x70;
+
+/// Head of the loop doubling the size class (event check).
+pub(crate) const LSHIFT_GROW_LOOP: u32 = 0x0042_0d18;
+
+/// Head of the loop storing the whole zero words (event check).
+pub(crate) const LSHIFT_ZERO_LOOP: u32 = 0x0042_0d58;
+
+/// Head of the loop shifting the words by `k & 31` (event check).
+pub(crate) const LSHIFT_SHIFT_LOOP: u32 = 0x0042_0d98;
+
+/// Head of the loop copying the words when `k & 31 == 0` (event check).
+pub(crate) const LSHIFT_COPY_LOOP: u32 = 0x0042_0dd0;
+
+/// `_Bigint *__lshift(struct _reent *r, _Bigint *b, int k)` (0x420cc8):
+/// `b << k` in a new Bigint (sized for `k / 32 + b->wds + 1` words), then
+/// frees `b`. Whole words become zero words; the rest shifts across word
+/// boundaries, a carry out of the top word adding one more word.
+pub fn lshift(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, LSHIFT_FRAME);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S4, 0x20);
+        c.g[S2][0] = c.g[A1][0]; // b
+        frame.save(c, S5, 0x10);
+        c.g[S4][0] = c.g[A2][0]; // k
+        frame.save(c, S3, 0x30);
+        c.g[S1][0] = sra(c.g[S4][0], 5); // n = k >> 5
+        frame.save_ra(c, 0);
+        c.g[S5][0] = c.g[A0][0]; // r
+        c.g[V1][0] = mprec_lw(c, S2, BIGINT_WDS);
+        c.g[A3][0] = mprec_lw(c, S2, BIGINT_MAXWDS); // i
+        c.g[V1][0] = addu(c.g[S1][0], c.g[V1][0]);
+        c.g[S0][0] = mprec_add(c, V1, 1); // n1 = n + wds + 1
+        c.g[V0][0] = slt(c.g[A3][0], c.g[S0][0]);
+        let fits = c.g[V0][0] == 0;
+        c.g[A1][0] = mprec_lw(c, S2, BIGINT_K); // k1
+        if !fits {
+            // for (i = maxwds; n1 > i; i <<= 1) k1++;
+            c.cycles += 1;
+            loop {
+                c.cycles += 7;
+                c.g[A3][0] = sx(r32(c, A3) << 1);
+                c.g[V0][0] = slt(c.g[A3][0], c.g[S0][0]);
+                let more = c.g[V0][0] != 0;
+                c.g[A1][0] = mprec_add(c, A1, 1);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LSHIFT_GROW_LOOP);
+                }
+            }
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S5][0];
+        callee::BALLOC.call(c, 0x0042_0d3c)?;
+        c.g[S3][0] = c.g[V0][0]; // b1
+        c.g[A2][0] = c.g[S4][0] & 0x1f; // k &= 31
+        c.g[V1][0] = mprec_add(c, S2, BIGINT_X); // x
+        let no_zero_words = (c.g[S1][0] as i64) <= 0;
+        c.g[T0][0] = mprec_add(c, S3, BIGINT_X); // x1
+        if !no_zero_words {
+            c.cycles += 2;
+            c.g[A3][0] = c.g[S1][0];
+            loop {
+                c.cycles += 7;
+                Addr(r32(c, T0)).sw(c, 0);
+                c.g[A3][0] = sx(r32(c, A3).wrapping_sub(1));
+                let more = c.g[A3][0] != 0;
+                c.g[T0][0] = mprec_add(c, T0, 4);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LSHIFT_ZERO_LOOP);
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[V0][0] = mprec_lw(c, S2, BIGINT_WDS);
+        c.g[A0][0] = c.g[V1][0];
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        let whole_words = c.g[A2][0] == 0;
+        c.g[A3][0] = addu(c.g[A0][0], c.g[V0][0]); // xe
+        if !whole_words {
+            c.cycles += 4;
+            c.g[V0][0] = 32;
+            c.g[V1][0] = 0; // z
+            c.g[A1][0] = sx(32u32.wrapping_sub(r32(c, A2))); // 32 - k
+            c.g[T1][0] = mprec_add(c, S0, 1);
+            loop {
+                c.cycles += 10;
+                c.g[V0][0] = mprec_lw(c, A0, 0);
+                c.g[V0][0] = sx(r32(c, V0) << (r32(c, A2) & 31));
+                c.g[V0][0] |= c.g[V1][0];
+                mprec_sw(c, T0, 0, V0); // *x1++ = *x << k | z
+                c.g[T0][0] = mprec_add(c, T0, 4);
+                c.g[V1][0] = mprec_lw(c, A0, 0);
+                c.g[A0][0] = mprec_add(c, A0, 4);
+                c.g[V0][0] = sltu(c.g[A0][0], c.g[A3][0]);
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = sx(r32(c, V1) >> (r32(c, A1) & 31)); // z = *x++ >> (32 - k)
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LSHIFT_SHIFT_LOOP);
+                }
+            }
+            c.cycles += 3;
+            if c.g[V1][0] != 0 {
+                c.g[S0][0] = c.g[T1][0]; // ++n1
+            }
+            mprec_sw(c, T0, 0, V1);
+        } else {
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = mprec_lw(c, A0, 0);
+                c.g[A0][0] = mprec_add(c, A0, 4);
+                mprec_sw(c, T0, 0, V0);
+                c.g[V1][0] = sltu(c.g[A0][0], c.g[A3][0]);
+                let more = c.g[V1][0] != 0;
+                c.g[T0][0] = mprec_add(c, T0, 4);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LSHIFT_COPY_LOOP);
+                }
+            }
+        }
+        c.cycles += 15;
+        c.g[V0][0] = sx(r32(c, S0).wrapping_sub(1));
+        c.g[A0][0] = c.g[S5][0];
+        mprec_sw(c, S3, BIGINT_WDS, V0); // b1->wds = n1 - 1
+        c.g[A1][0] = c.g[S2][0];
+        callee::BFREE.call(c, 0x0042_0e00)?;
+        c.g[V0][0] = c.g[S3][0];
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// __mdiff (0x420e90)
+
+/// `__mdiff` frame: s0..s3 at 0x40, 0x30, 0x20, 0x10; ra at 0.
+pub(crate) const MDIFF_FRAME: u32 = 0x50;
+
+/// Head of the loop subtracting the shorter operand's words (event check).
+pub(crate) const MDIFF_SUB_LOOP: u32 = 0x0042_0f40;
+
+/// Head of the loop propagating the borrow through the rest (event check).
+pub(crate) const MDIFF_BORROW_LOOP: u32 = 0x0042_0f98;
+
+/// Head of the loop dropping zero top words (event check).
+pub(crate) const MDIFF_TRIM_LOOP: u32 = 0x0042_0fe0;
+
+/// `_Bigint *__mdiff(struct _reent *r, _Bigint *a, _Bigint *b)` (0x420e90):
+/// `|a - b|` in a new Bigint whose `sign` says whether `a < b` (0 for
+/// equal values, as a one-word zero). Subtracts 16 bits at a time with an
+/// arithmetic borrow, then trims zero top words.
+pub fn mdiff(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, MDIFF_FRAME);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A1][0]; // a
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A2][0]; // b
+        c.g[S3][0] = c.g[A0][0]; // r
+        frame.save(c, S0, 0x40);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S1][0];
+        callee::MCMP.call(c, 0x0042_0ec0)?;
+        c.g[S0][0] = c.g[V0][0]; // i = cmp(a, b)
+        let equal = c.g[S0][0] == 0;
+        c.g[A0][0] = c.g[S3][0];
+        if equal {
+            c.cycles += 7;
+            c.g[A1][0] = 0;
+            callee::BALLOC.call(c, 0x0042_0ed4)?;
+            c.g[T3][0] = c.g[V0][0];
+            c.g[V0][0] = 1;
+            Addr(r32(c, T3).wrapping_add(BIGINT_X)).sw(c, 0);
+            mprec_sw(c, T3, BIGINT_WDS, V0);
+        } else {
+            c.cycles += 2;
+            let a_larger = (c.g[S0][0] as i64) >= 0;
+            c.g[S0][0] = 0; // sign
+            if !a_larger {
+                c.cycles += 4;
+                c.g[T3][0] = c.g[S1][0];
+                c.g[S0][0] = 1;
+                c.g[S1][0] = c.g[S2][0];
+                c.g[S2][0] = c.g[T3][0];
+            }
+            c.cycles += 16;
+            c.g[A1][0] = mprec_lw(c, S1, BIGINT_K);
+            c.g[A0][0] = c.g[S3][0];
+            callee::BALLOC.call(c, 0x0042_0f0c)?;
+            c.g[T3][0] = c.g[V0][0]; // the difference
+            c.g[T0][0] = mprec_add(c, S1, BIGINT_X); // xa
+            mprec_sw(c, T3, BIGINT_SIGN, S0);
+            c.g[T1][0] = mprec_add(c, S2, BIGINT_X); // xb
+            c.g[A3][0] = mprec_add(c, T3, BIGINT_X); // xc
+            c.g[T2][0] = 0; // borrow
+            c.g[T4][0] = mprec_lw(c, S1, BIGINT_WDS); // wa
+            c.g[V0][0] = mprec_lw(c, S2, BIGINT_WDS); // wb
+            c.g[V1][0] = sx(r32(c, T4) << 2);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[T5][0] = addu(c.g[T0][0], c.g[V1][0]); // xae
+            c.g[A2][0] = addu(c.g[T1][0], c.g[V0][0]); // xbe
+            loop {
+                c.cycles += 19;
+                c.g[A1][0] = mprec_lw(c, T0, 0);
+                c.g[V0][0] = mprec_lw(c, T1, 0);
+                c.g[T0][0] = mprec_add(c, T0, 4);
+                c.g[V1][0] = c.g[A1][0] & 0xffff;
+                c.g[T1][0] = mprec_add(c, T1, 4);
+                c.g[A0][0] = c.g[V0][0] & 0xffff;
+                c.g[A1][0] = sx(r32(c, A1) >> 16);
+                c.g[V1][0] = subu(c.g[V1][0], c.g[A0][0]);
+                c.g[V0][0] = sx(r32(c, V0) >> 16);
+                c.g[V1][0] = addu(c.g[V1][0], c.g[T2][0]); // y
+                c.g[A1][0] = subu(c.g[A1][0], c.g[V0][0]);
+                c.g[T2][0] = sra(c.g[V1][0], 16);
+                let low = c.g[V1][0];
+                Addr(r32(c, A3)).sh(c, low);
+                c.g[A1][0] = addu(c.g[A1][0], c.g[T2][0]); // z
+                c.g[V0][0] = sltu(c.g[T1][0], c.g[A2][0]);
+                let high = c.g[A1][0];
+                Addr(r32(c, A3).wrapping_add(2)).sh(c, high);
+                c.g[T2][0] = sra(c.g[A1][0], 16);
+                let more = c.g[V0][0] != 0;
+                c.g[A3][0] = mprec_add(c, A3, 4);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, MDIFF_SUB_LOOP);
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = sltu(c.g[T0][0], c.g[T5][0]);
+            if c.g[V0][0] == 0 {
+                c.g[A3][0] = sx(r32(c, A3).wrapping_sub(4));
+            } else {
+                loop {
+                    c.cycles += 13;
+                    c.g[V0][0] = mprec_lw(c, T0, 0);
+                    c.g[T0][0] = mprec_add(c, T0, 4);
+                    c.g[V1][0] = c.g[V0][0] & 0xffff;
+                    c.g[A0][0] = sltu(c.g[T0][0], c.g[T5][0]);
+                    c.g[V1][0] = addu(c.g[V1][0], c.g[T2][0]);
+                    c.g[V0][0] = sx(r32(c, V0) >> 16);
+                    c.g[T2][0] = sra(c.g[V1][0], 16);
+                    let low = c.g[V1][0];
+                    Addr(r32(c, A3)).sh(c, low);
+                    c.g[A1][0] = addu(c.g[V0][0], c.g[T2][0]);
+                    let high = c.g[A1][0];
+                    Addr(r32(c, A3).wrapping_add(2)).sh(c, high);
+                    c.g[T2][0] = sra(c.g[A1][0], 16);
+                    let more = c.g[A0][0] != 0;
+                    c.g[A3][0] = mprec_add(c, A3, 4);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, MDIFF_BORROW_LOOP);
+                    }
+                }
+                c.cycles += 1;
+                c.g[A3][0] = sx(r32(c, A3).wrapping_sub(4));
+            }
+            // while (!*--xc) wa--;
+            c.cycles += 3;
+            c.g[V0][0] = mprec_lw(c, A3, 0);
+            if c.g[V0][0] != 0 {
+                mprec_sw(c, T3, BIGINT_WDS, T4);
+            } else {
+                c.cycles += 1;
+                loop {
+                    c.cycles += 7;
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_sub(4));
+                    c.g[V0][0] = mprec_lw(c, A3, 0);
+                    let zero = c.g[V0][0] == 0;
+                    c.g[T4][0] = sx(r32(c, T4).wrapping_sub(1));
+                    if !zero {
+                        c.cycles += 1;
+                        mprec_sw(c, T3, BIGINT_WDS, T4);
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, MDIFF_TRIM_LOOP);
+                    }
+                }
+            }
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[T3][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// __b2d (0x4210e8)
+
+/// `__b2d` frame: s0..s4 at 0x50 down to 0x10; ra at 0.
+pub(crate) const B2D_FRAME: u32 = 0x60;
+
+/// `double __b2d(_Bigint *a, int *e)` (0x4210e8): the top 53 bits of `a`
+/// as a double in [1, 2) (built in s1, high word `Exp_1 | ...`), with
+/// `*e` = the bit length of the top word, so `a ~= d * 2^(32 * (wds - 1)
+/// + *e - 1)`. Words below the top come from `x[]` while there are any,
+/// else 0.
+pub fn b2d(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, B2D_FRAME);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S2, 0x30);
+        c.g[S0][0] = c.g[A1][0]; // e
+        frame.save(c, S4, 0x10);
+        frame.save(c, S1, 0x40);
+        c.g[S4][0] = mprec_add(c, A0, BIGINT_X); // xa0
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = mprec_lw(c, A0, BIGINT_WDS);
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[S2][0] = addu(c.g[S4][0], c.g[V0][0]);
+        c.g[S2][0] = sx(r32(c, S2).wrapping_sub(4)); // xa: the top word
+        c.g[S3][0] = mprec_lw(c, S2, 0); // y
+        c.g[A0][0] = c.g[S3][0];
+        callee::HI0BITS.call(c, 0x0042_1128)?;
+        c.g[A2][0] = c.g[V0][0]; // k
+        c.g[V1][0] = ((c.g[A2][0] as i64) < DOUBLE_EBITS as i64) as u64;
+        c.g[V0][0] = sx(32u32.wrapping_sub(r32(c, A2)));
+        let wide_top = c.g[V1][0] == 0;
+        mprec_sw(c, S0, 0, V0); // *e = 32 - k
+        if !wide_top {
+            // d0 = Exp_1 | y >> (Ebits - k); w = next word or 0;
+            // d1 = y << (32 - Ebits + k) | w >> (Ebits - k).
+            c.cycles += 13;
+            c.g[A0][0] = DOUBLE_EXP_1;
+            c.g[V0][0] = sx(DOUBLE_EBITS.wrapping_sub(r32(c, A2)));
+            c.g[V1][0] = LOW_WORD;
+            c.g[V0][0] = sx(r32(c, S3) >> (r32(c, V0) & 31));
+            c.g[S1][0] &= c.g[V1][0];
+            c.g[V0][0] |= c.g[A0][0];
+            c.g[V1][0] = sltu(c.g[S4][0], c.g[S2][0]);
+            c.g[V0][0] <<= 32;
+            c.g[S1][0] |= c.g[V0][0];
+            let more = c.g[V1][0] != 0;
+            c.g[A0][0] = 0;
+            if more {
+                c.cycles += 1;
+                c.g[A0][0] = mprec_lw(c, S2, 4u32.wrapping_neg());
+            }
+            c.cycles += 12;
+            c.g[V1][0] = mprec_add(c, A2, 32 - DOUBLE_EBITS);
+            c.g[V0][0] = sx(DOUBLE_EBITS.wrapping_sub(r32(c, A2)));
+            c.g[V1][0] = sx(r32(c, S3) << (r32(c, V1) & 31));
+            c.g[V0][0] = sx(r32(c, A0) >> (r32(c, V0) & 31));
+            c.g[V1][0] |= c.g[V0][0];
+            c.g[A0][0] = HIGH_WORD;
+            c.g[V1][0] <<= 32;
+            c.g[S1][0] &= c.g[A0][0];
+            c.g[V1][0] >>= 32;
+        } else {
+            // z = next word or 0.
+            c.cycles += 3;
+            c.g[V0][0] = sltu(c.g[S4][0], c.g[S2][0]);
+            let more = c.g[V0][0] != 0;
+            c.g[A3][0] = 0;
+            if more {
+                c.cycles += 2;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_sub(4));
+                c.g[A3][0] = mprec_lw(c, S2, 0);
+            }
+            c.cycles += 3;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(DOUBLE_EBITS)); // k -= Ebits
+            let aligned = c.g[A2][0] == 0;
+            c.g[V0][0] = sx(0u32.wrapping_sub(r32(c, A2)));
+            if !aligned {
+                // d0 = Exp_1 | y << k | z >> (32 - k); y = next word or 0;
+                // d1 = z << k | y >> (32 - k).
+                c.cycles += 13;
+                c.g[A1][0] = DOUBLE_EXP_1;
+                c.g[V0][0] = sx(r32(c, A3) >> (r32(c, V0) & 31));
+                c.g[V1][0] = sx(r32(c, S3) << (r32(c, A2) & 31));
+                c.g[V0][0] |= c.g[A1][0];
+                c.g[A0][0] = LOW_WORD;
+                c.g[V1][0] |= c.g[V0][0];
+                c.g[S1][0] &= c.g[A0][0];
+                c.g[V1][0] <<= 32;
+                c.g[V0][0] = sltu(c.g[S4][0], c.g[S2][0]);
+                c.g[S1][0] |= c.g[V1][0];
+                let more = c.g[V0][0] != 0;
+                c.g[S3][0] = 0;
+                if more {
+                    c.cycles += 1;
+                    c.g[S3][0] = mprec_lw(c, S2, 4u32.wrapping_neg());
+                }
+                c.cycles += 10;
+                c.g[V0][0] = sx(0u32.wrapping_sub(r32(c, A2)));
+                c.g[V1][0] = sx(r32(c, A3) << (r32(c, A2) & 31));
+                c.g[V0][0] = sx(r32(c, S3) >> (r32(c, V0) & 31));
+                c.g[A0][0] = HIGH_WORD;
+                c.g[V1][0] |= c.g[V0][0];
+                c.g[S1][0] &= c.g[A0][0];
+                c.g[V1][0] <<= 32;
+                c.g[V1][0] >>= 32;
+            } else {
+                // d0 = Exp_1 | y; d1 = z.
+                c.cycles += 12;
+                c.g[V0][0] = DOUBLE_EXP_1;
+                c.g[V1][0] = LOW_WORD;
+                c.g[V0][0] |= c.g[S3][0];
+                c.g[S1][0] &= c.g[V1][0];
+                c.g[V0][0] <<= 32;
+                c.g[V1][0] = c.g[A3][0] << 32;
+                c.g[S1][0] |= c.g[V0][0];
+                c.g[A0][0] = HIGH_WORD;
+                c.g[V1][0] >>= 32;
+                c.g[S1][0] &= c.g[A0][0];
+            }
+        }
+        c.cycles += 10;
+        c.g[S1][0] |= c.g[V1][0];
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// __d2b (0x421280)
+
+/// `__d2b` frame: s0..s5 at 0x70 down to 0x20; ra at 0x10; the locals `y`
+/// (low word) at 0 and `z` (high fraction word) at 4.
+pub(crate) const D2B_FRAME: u32 = 0x80;
+
+pub(crate) const D2B_SLOT_Y: u32 = 0x0;
+
+pub(crate) const D2B_SLOT_Z: u32 = 0x4;
+
+/// `_Bigint *__d2b(struct _reent *r, double d, int *e, int *bits)`
+/// (0x421280): the mantissa of `|d|` as a one- or two-word Bigint with its
+/// trailing zero bits shifted out, `*e` the binary exponent of its units
+/// bit and `*bits` its significant bit count (denormals: from the top
+/// word's leading zeros).
+pub fn d2b(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, D2B_FRAME);
+        frame.save(c, S0, 0x70);
+        c.g[S0][0] = c.g[A1][0]; // d
+        frame.save(c, S4, 0x30);
+        frame.save(c, S5, 0x20);
+        c.g[A1][0] = 1;
+        frame.save(c, S1, 0x60);
+        c.g[S4][0] = c.g[A2][0]; // e
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save_ra(c, 0x10);
+        c.g[S5][0] = c.g[A3][0]; // bits
+        callee::BALLOC.call(c, 0x0042_12b4)?;
+        c.g[S1][0] = c.g[V0][0]; // b
+        c.g[A1][0] = ((c.g[S0][0] as i64) >> 32) as u64; // d0
+        c.g[V0][0] = DOUBLE_ABS_MASK;
+        c.g[V1][0] = DOUBLE_FRAC_MASK;
+        c.g[A0][0] = LOW_WORD;
+        c.g[V0][0] &= c.g[A1][0];
+        c.g[S0][0] &= c.g[A0][0];
+        c.g[V0][0] <<= 32;
+        c.g[S0][0] |= c.g[V0][0]; // d0 &= 0x7fffffff
+        c.g[A1][0] &= c.g[V1][0]; // z = d0 & Frac_mask
+        c.g[S3][0] = mprec_add(c, S1, BIGINT_X); // x
+        c.g[S2][0] = c.g[S0][0] >> DOUBLE_EXP_SHIFT; // de
+        let denormal = c.g[S2][0] == 0;
+        let z_slot = frame.at(c, D2B_SLOT_Z);
+        let z = c.g[A1][0];
+        Addr(z_slot).sw(c, z);
+        if !denormal {
+            c.cycles += 3;
+            c.g[V0][0] = c.g[A1][0] | DOUBLE_EXP_MSK1;
+            let z = c.g[V0][0];
+            Addr(z_slot).sw(c, z);
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.g[S0][0] << 32;
+        c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64; // y = d1
+        let y_zero = c.g[V0][0] == 0;
+        let y_slot = frame.at(c, D2B_SLOT_Y);
+        let y = c.g[V0][0];
+        Addr(y_slot).sw(c, y);
+        if !y_zero {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[SP][0];
+            callee::LO0BITS.call(c, 0x0042_131c)?;
+            c.g[A1][0] = c.g[V0][0]; // k
+            let odd = c.g[A1][0] == 0;
+            c.g[V0][0] = Addr(frame.at(c, D2B_SLOT_Z)).lw(c);
+            if !odd {
+                // x[0] = y | z << (32 - k); z >>= k.
+                c.cycles += 9;
+                c.g[A0][0] = sx(0u32.wrapping_sub(r32(c, A1)));
+                c.g[V1][0] = Addr(frame.at(c, D2B_SLOT_Y)).lw(c);
+                c.g[V0][0] = sx(r32(c, V0) << (r32(c, A0) & 31));
+                c.g[V1][0] |= c.g[V0][0];
+                mprec_sw(c, S1, BIGINT_X, V1);
+                c.g[V0][0] = Addr(frame.at(c, D2B_SLOT_Z)).lw(c);
+                c.g[V0][0] = sx(r32(c, V0) >> (r32(c, A1) & 31));
+                let z = c.g[V0][0];
+                Addr(frame.at(c, D2B_SLOT_Z)).sw(c, z);
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(frame.at(c, D2B_SLOT_Y)).lw(c);
+                mprec_sw(c, S1, BIGINT_X, V0);
+            }
+            // i = b->wds = (x[1] = z) ? 2 : 1.
+            c.cycles += 8;
+            c.g[V0][0] = Addr(frame.at(c, D2B_SLOT_Z)).lw(c);
+            c.g[V1][0] = 1;
+            c.g[A0][0] = 2;
+            if c.g[V0][0] != 0 {
+                c.g[V1][0] = c.g[A0][0];
+            }
+            mprec_sw(c, S3, 4, V0);
+            c.g[S0][0] = c.g[V1][0]; // i
+            mprec_sw(c, S1, BIGINT_WDS, V1);
+        } else {
+            // k = lo0bits(&z) + 32; x[0] = z; i = b->wds = 1.
+            c.cycles += 8;
+            c.g[A0][0] = c.g[SP][0] | D2B_SLOT_Z as u64;
+            c.g[S0][0] = 1; // i
+            callee::LO0BITS.call(c, 0x0042_1380)?;
+            c.g[A0][0] = Addr(frame.at(c, D2B_SLOT_Z)).lw(c);
+            c.g[V1][0] = 1;
+            mprec_sw(c, S1, BIGINT_WDS, V1);
+            c.g[A1][0] = mprec_add(c, V0, 32);
+            mprec_sw(c, S1, BIGINT_X, A0);
+        }
+        c.cycles += 2;
+        let denormal = c.g[S2][0] == 0;
+        c.g[V0][0] = sx(r32(c, A1).wrapping_sub(DOUBLE_UNIT_EXP)); // k - 1075
+        if !denormal {
+            // *e = de - 1075 + k; *bits = P - k.
+            c.cycles += 5;
+            c.g[V0][0] = addu(c.g[S2][0], c.g[V0][0]);
+            c.g[V1][0] = sx(DOUBLE_P.wrapping_sub(r32(c, A1)));
+            mprec_sw(c, S4, 0, V0);
+        } else {
+            // *e = k - 1074; *bits = 32 * i - hi0bits(x[i - 1]).
+            c.cycles += 8;
+            c.g[V1][0] = sx(r32(c, A1).wrapping_sub(DOUBLE_UNIT_EXP - 1));
+            c.g[V0][0] = sx(r32(c, S0) << 2);
+            mprec_sw(c, S4, 0, V1);
+            c.g[V0][0] = addu(c.g[V0][0], c.g[S3][0]);
+            c.g[A0][0] = mprec_lw(c, V0, 4u32.wrapping_neg());
+            callee::HI0BITS.call(c, 0x0042_13c8)?;
+            c.g[V1][0] = sx(r32(c, S0) << 5);
+            c.g[V1][0] = subu(c.g[V1][0], c.g[V0][0]);
+        }
+        c.cycles += 11;
+        mprec_sw(c, S5, 0, V1);
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// __ratio (0x421400)
+
+/// `__ratio` frame: s0..s2 at 0x40, 0x30, 0x20; ra at 0x10; `ka` at 0 and
+/// `kb` at 4.
+pub(crate) const RATIO_FRAME: u32 = 0x50;
+
+pub(crate) const RATIO_SLOT_KA: u32 = 0x0;
+
+pub(crate) const RATIO_SLOT_KB: u32 = 0x4;
+
+/// `double __ratio(_Bigint *a, _Bigint *b)` (0x421400): `a / b` as a
+/// double: both through `__b2d`, the exponent difference
+/// `ka - kb + 32 * (a->wds - b->wds)` folded into the larger one's high
+/// word, then a soft-float divide.
+pub fn ratio(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, RATIO_FRAME);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0]; // a
+        c.g[S1][0] = c.g[A1][0]; // b
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = c.g[SP][0]; // &ka
+        callee::B2D.call(c, 0x0042_1424)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0] | RATIO_SLOT_KB as u64; // &kb
+        c.g[S2][0] = c.g[V0][0]; // da
+        callee::B2D.call(c, 0x0042_1434)?;
+        c.g[V1][0] = mprec_lw(c, S0, BIGINT_WDS);
+        c.g[A2][0] = c.g[V0][0]; // db
+        c.g[A0][0] = mprec_lw(c, S1, BIGINT_WDS);
+        c.g[V0][0] = Addr(frame.at(c, RATIO_SLOT_KA)).lw(c);
+        c.g[A1][0] = Addr(frame.at(c, RATIO_SLOT_KB)).lw(c);
+        c.g[V1][0] = subu(c.g[V1][0], c.g[A0][0]);
+        c.g[V1][0] = sx(r32(c, V1) << 5);
+        c.g[V0][0] = subu(c.g[V0][0], c.g[A1][0]);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[V1][0]); // k
+        let scale_b = (c.g[V0][0] as i64) <= 0;
+        c.g[V0][0] = sx(r32(c, V0) << DOUBLE_EXP_SHIFT_HI); // k * Exp_msk1
+        if !scale_b {
+            // word0(da) += k * Exp_msk1.
+            c.cycles += 8;
+            c.g[V1][0] = ((c.g[S2][0] as i64) >> 32) as u64;
+            c.g[V1][0] = addu(c.g[V1][0], c.g[V0][0]);
+            c.g[A0][0] = LOW_WORD;
+            c.g[V1][0] <<= 32;
+            c.g[S2][0] &= c.g[A0][0];
+            c.g[S2][0] |= c.g[V1][0];
+        } else {
+            // word0(db) += -k * Exp_msk1.
+            c.cycles += 7;
+            c.g[V1][0] = ((c.g[A2][0] as i64) >> 32) as u64;
+            c.g[V1][0] = subu(c.g[V1][0], c.g[V0][0]);
+            c.g[A0][0] = LOW_WORD;
+            c.g[V1][0] <<= 32;
+            c.g[A2][0] &= c.g[A0][0];
+            c.g[A2][0] |= c.g[V1][0];
+        }
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[A2][0];
+        callee::DIVDF3.call(c, 0x0042_14a8)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16017,4 +24602,4301 @@ pub(crate) mod tests {
 
     /// `va_list` slots for the `v*` wrappers.
     pub(crate) const ARGS_2: u32 = DATA + 0x1c00;
+    use crate::difftest::check_paths_lohi;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::UNWIND;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::prev_cell;
+    use crate::difftest::fresh;
+
+    use crate::difftest::run_generated;
+    use crate::difftest::CYCLE_BUDGET;
+    use crate::game::misc::tests::event_at;
+    use std::cell::RefCell;
+    use std::collections::BTreeSet;
+    use std::ptr::addr_of_mut;
+    use VfprintfRArg::Count;
+    use VfprintfRArg::Double;
+    use VfprintfRArg::Int;
+    use VfprintfRArg::Null;
+    use VfprintfRArg::Str;
+
+    /// The generated body.
+    pub(crate) const DTOA_R_GENERATED: GuestFn = ee::s15::f_00422780__generated;
+
+    /// Every loop head (resume point) of the original.
+    pub(crate) const DTOA_R_HEADS: [u32; 12] = [
+        DTOA_R_HEAD_RESULT_K,
+        DTOA_R_HEAD_QUICK_DIVISOR,
+        DTOA_R_HEAD_QUICK_SCALE,
+        DTOA_R_HEAD_QUICK_SHORTEST,
+        DTOA_R_HEAD_QUICK_FIXED,
+        DTOA_R_HEAD_QUICK_TRIM,
+        DTOA_R_HEAD_SMALL_INT,
+        DTOA_R_HEAD_BUMP_UP,
+        DTOA_R_HEAD_SHORTEST,
+        DTOA_R_HEAD_FIXED,
+        DTOA_R_HEAD_ROUND_OFF,
+        DTOA_R_HEAD_TRIM_ZEROS,
+    ];
+
+    /// `struct _reent` fields the mprec helpers use: `_p5s`, `_freelist`.
+    pub(crate) const DTOA_R_TEST_REENT_P5S: u32 = 0x48;
+
+    pub(crate) const DTOA_R_TEST_REENT_FREELIST: u32 = 0x4c;
+
+    /// Outputs (`*decpt`, `*sign`, `*rve`), pre-filled.
+    pub(crate) const DTOA_R_TEST_DECPT: u32 = DATA + 0x1004;
+
+    pub(crate) const DTOA_R_TEST_SIGN: u32 = DATA + 0x1008;
+
+    pub(crate) const DTOA_R_TEST_RVE: u32 = DATA + 0x100c;
+
+    pub(crate) const DTOA_R_TEST_FILL: u32 = 0x5a5a_5a5a;
+
+    /// `_freelist[16]` and the Bigints on it: `DEPTH` per size class
+    /// `k < KS` (`Balloc` pops them; larger ones come from the real heap).
+    pub(crate) const DTOA_R_TEST_FREELIST: u32 = DATA + 0x3004;
+
+    pub(crate) const DTOA_R_TEST_POOL: u32 = DATA + 0x4004;
+
+    pub(crate) const DTOA_R_TEST_POOL_KS: u32 = 8;
+
+    pub(crate) const DTOA_R_TEST_POOL_DEPTH: u32 = 12;
+
+    pub(crate) const DTOA_R_TEST_WORD_FILL: u32 = 0xa5a5_a5a5;
+
+    /// Gate word for `dtoa_r_fake_cmpdf2` in the machine's RAM.
+    pub(crate) const DTOA_R_TEST_CMP_GATE: u32 = DATA + 0x2004;
+
+    pub(crate) const DTOA_R_TEST_CMP_MAGIC: u32 = 0xd70a_c3f2;
+
+    pub(crate) static DTOA_R_PREV_CMPDF2: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    /// `__cmpdf2` comparing denormals as IEEE doubles do, for fixtures that
+    /// set the gate word. This build's soft-float reads a zero exponent field
+    /// as zero, so `_dtoa_r` takes every denormal for `!d` and its denormal
+    /// arm (`floatdidf`, `denorm = 1`, `i = be + 1075`) is dead in the game;
+    /// with the fake the arm runs on the real `d2b` and Bignum helpers.
+    pub(crate) fn dtoa_r_fake_cmpdf2(c: &mut Cpu) {
+        if c.bus.read32(DTOA_R_TEST_CMP_GATE) != DTOA_R_TEST_CMP_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &DTOA_R_PREV_CMPDF2,
+                ee::s15::f_00412500__generated,
+            );
+        }
+        let (a, b) = (f64::from_bits(c.g[A0][0]), f64::from_bits(c.g[A1][0]));
+        let order: i32 = if a < b {
+            -1
+        } else if a == b {
+            0
+        } else {
+            1
+        };
+        c.cycles += 10;
+        c.g[V0][0] = sx(order as u32);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// A denormal double (zero exponent field, non-zero fraction).
+    pub(crate) fn dtoa_r_test_is_denormal(bits: u64) -> bool {
+        bits & 0x7ff0_0000_0000_0000 == 0 && bits & DTOA_R_MANTISSA != 0
+    }
+
+    /// A previous result for `_result` (freed first), and its size class.
+    pub(crate) const DTOA_R_TEST_OLD: u32 = DATA + 0x3804;
+
+    pub(crate) const DTOA_R_TEST_OLD_K: u32 = 3;
+
+    /// The machine's poll interval after a delivered event (`service_events`).
+    pub(crate) const DTOA_R_TEST_POLL: u64 = 20_000;
+
+    /// (value, mode, ndigits) for `dtoa_r_matches`, by the arms they reach.
+    pub(crate) const DTOA_R_CASES: [(f64, u64, u64); 93] = [
+        // Infinity, NaN, zero.
+        (f64::INFINITY, 0, 0),
+        (f64::NAN, 3, 2),
+        (0.0, 0, 0),
+        (0.0, 3, 5),
+        // Shortest digits (modes 0, 1): the Bignum loop with mlo/mhi.
+        (0.1, 0, 0),
+        (0.12, 0, 0),
+        (123.456, 0, 0),
+        (0.3333333333333333, 0, 0),
+        (0.6666666666666666, 1, 0),
+        (3.141592653589793, 0, 0),
+        (2.718281828459045, 1, 0),
+        (1e22, 0, 0),
+        (1e23, 0, 0),
+        (0.3, 0, 0),
+        (0.5, 2, 100),
+        (1.7976931348623157e308, 2, 30),
+        (7.0e-10, 0, 0),
+        (6.02214076e23, 0, 0),
+        (1.602176634e-19, 1, 0),
+        (33.3, 0, 0),
+        (0.007, 0, 0),
+        (1e-5, 0, 0),
+        (5e-5, 1, 0),
+        (98765.4321, 1, 0),
+        (1.5e300, 0, 0),
+        (1.2345678901234567e-300, 0, 0),
+        (123456789012345680.0, 0, 0),
+        // Denormals (x in one word, x over a word; the denormal-aware
+        // `__cmpdf2` fake lets them past the zero test) and the extremes.
+        (5e-324, 0, 0),
+        (1e-323, 0, 0),
+        (2.2250738585072009e-308, 0, 0),
+        (4.35e-310, 1, 0),
+        (1.7976931348623157e308, 0, 0),
+        // Powers of two (spec_case); integers above Int_max.
+        (0.5, 0, 0),
+        (2.2250738585072014e-308, 1, 0),
+        (1.152921504606847e18, 0, 0),
+        (9007199254740992.0, 0, 0),
+        (9.5, 0, 0),
+        // Modes outside 0..9, and a mode with junk in the high word.
+        (123.456, u64::MAX, 0),
+        (123.456, 10, 3),
+        (0.1, 0x7fff_ffff, 0),
+        (123.456, 0xffff_ffff_0000_0003, 2),
+        // The quick path: ilim digits, Steele & White, scaling, failures.
+        (123.456, 2, 5),
+        (123.456, 3, 2),
+        (123.456, 4, 5),
+        (123.456, 5, 3),
+        (1.996, 2, 3),
+        (9.9996, 2, 4),
+        (1.5, 2, 4),
+        (1.2345, 4, 5),
+        (0.999999, 4, 3),
+        (2.5, 2, 1),
+        (3.5, 2, 1),
+        (0.25, 4, 1),
+        (1e300, 2, 5),
+        (1e35, 2, 3),
+        (1e-35, 2, 3),
+        (1.234e-5, 2, 4),
+        (0.09999999999999999, 3, 1),
+        (0.09999999999999999, 2, 3),
+        (0.6, 3, 0),
+        (0.4, 3, 0),
+        (0.5, 3, 0),
+        (0.5000000000000001, 3, 0),
+        (0.001, 3, 0),
+        // Small integers.
+        (1.0, 0, 0),
+        (123.0, 7, (-3i64) as u64),
+        (623.0, 7, (-3i64) as u64),
+        (123.0, 7, (-4i64) as u64),
+        (123.0, 7, (-1i64) as u64),
+        (135.0, 6, 2),
+        (999.0, 6, 2),
+        // Bignum digits for modes 2..5.
+        (0.1996, 6, 3),
+        (0.5, 6, 4),
+        (1.234e-10, 8, 5),
+        (123.456, 9, (-5i64) as u64),
+        // Boundaries no earlier row hits: the result_k loop at i == 24
+        // and i == 20 + j, the quick path at ilim == 15.
+        (0.1, 2, 24),
+        (0.1, 2, 15),
+        (0.1, 2, 28),
+        // The quick path with k estimated as -1, d < 1 and ilim == 0.
+        (0.09999999999999999, 3, 0),
+        // The shortest/fast-fail ties: r == eps, 1 - r == eps, r == 0.5 + eps.
+        (1.4999999999999978, 4, 1),
+        (1.5000000000000022, 4, 1),
+        (1.5000000000000022, 2, 1),
+        // The small-int tie with an even last digit.
+        (125.0, 6, 2),
+        // The fives step with m5 == 0 (b5 == ilim - 1, no runaway).
+        (0.0123, 8, 3),
+        (123.456, 9, (-3i64) as u64),
+        // The normalise shift with i == 4, b2 == 0, s2 == 0, m2 == 0.
+        (0.003, 0, 0),
+        (1e53, 6, 3),
+        (16.000000059604645, 6, 3),
+        // The shortest loop with j == 0, and the low arm with j1 == 0.
+        (18014398509481992.0, 0, 0),
+        (18014398509481992.0, 1, 0),
+        (9007199254740994.0, 0, 0),
+        // The `lshift` tie-break (even, then odd).
+        (1125899906842624.25, 0, 0),
+        (1125899906842624.75, 0, 0),
+    ];
+
+    /// The pool of free Bigints: size classes `k < KS`, `DEPTH` each, their
+    /// words filled so a missing store or terminator shows.
+    pub(crate) fn dtoa_r_test_pool(c: &mut Cpu) {
+        let mut at = DTOA_R_TEST_POOL;
+        for k in 0..DTOA_R_TEST_POOL_KS {
+            let maxwds = 1u32 << k;
+            let mut head = 0;
+            for _ in 0..DTOA_R_TEST_POOL_DEPTH {
+                c.bus.write32(at, head);
+                c.bus.write32(at + DTOA_R_BIGINT_K, k);
+                c.bus.write32(at + DTOA_R_BIGINT_MAXWDS, maxwds);
+                c.bus.write32(at + DTOA_R_BIGINT_SIGN, DTOA_R_TEST_FILL);
+                c.bus.write32(at + DTOA_R_BIGINT_WDS, DTOA_R_TEST_FILL);
+                for w in 0..maxwds {
+                    c.bus
+                        .write32(at + DTOA_R_BIGINT_X + 4 * w, DTOA_R_TEST_WORD_FILL);
+                }
+                head = at;
+                at += DTOA_R_BIGINT_X + 4 * maxwds;
+            }
+            c.bus.write32(DTOA_R_TEST_FREELIST + 4 * k, head);
+        }
+    }
+
+    /// One `_dtoa_r(REENT_3, value, mode, ndigits, decpt, sign, rve)` call on
+    /// a real heap with a primed Bigint free list; `old` puts a previous
+    /// result in `_result`, `rve` passes the end pointer. The frame's
+    /// unwritten slots (`spec_case` for modes 2..5) hold non-zero junk.
+    pub(crate) fn dtoa_r_setup(
+        c: &mut Cpu,
+        salt: u32,
+        value: u64,
+        mode: u64,
+        ndigits: u64,
+        negative: bool,
+        old: bool,
+        rve: bool,
+    ) -> Rng {
+        let mut r = Rng(0x0042_2780 ^ (salt as u64) << 20);
+        heap_init(c, &mut r);
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00412500),
+            dtoa_r_fake_cmpdf2,
+            &DTOA_R_PREV_CMPDF2,
+        );
+        if dtoa_r_test_is_denormal(value) {
+            c.bus.write32(DTOA_R_TEST_CMP_GATE, DTOA_R_TEST_CMP_MAGIC);
+        }
+        c.pc = DTOA_R_ENTRY;
+        c.g[RA][0] = crate::difftest::RA as u64;
+        dtoa_r_test_pool(c);
+        c.bus.write32(
+            REENT_3 + DTOA_R_REENT_RESULT,
+            if old { DTOA_R_TEST_OLD } else { 0 },
+        );
+        c.bus
+            .write32(REENT_3 + DTOA_R_REENT_RESULT_K, DTOA_R_TEST_OLD_K);
+        c.bus.write32(REENT_3 + DTOA_R_TEST_REENT_P5S, 0);
+        c.bus
+            .write32(REENT_3 + DTOA_R_TEST_REENT_FREELIST, DTOA_R_TEST_FREELIST);
+        for w in 0..8 {
+            c.bus.write32(DTOA_R_TEST_OLD + 4 * w, DTOA_R_TEST_FILL);
+        }
+        for out in [DTOA_R_TEST_DECPT, DTOA_R_TEST_SIGN, DTOA_R_TEST_RVE] {
+            c.bus.write32(out, DTOA_R_TEST_FILL);
+        }
+        let sp = c.g[SP][0] as u32;
+        for w in 0..DTOA_R_FRAME / 4 {
+            c.bus
+                .write32(sp - DTOA_R_FRAME + 4 * w, DTOA_R_TEST_FILL ^ w);
+        }
+        c.g[A0][0] = REENT_3 as u64;
+        c.g[A1][0] = value | (negative as u64) << 63;
+        c.g[A2][0] = mode;
+        c.g[A3][0] = ndigits;
+        c.g[T0][0] = DTOA_R_TEST_DECPT as u64;
+        c.g[T1][0] = DTOA_R_TEST_SIGN as u64;
+        c.g[T2][0] = if rve { DTOA_R_TEST_RVE as u64 } else { 0 };
+        r
+    }
+
+    /// The main fixture: case `seed / 4`, sign `seed % 2`, and on `seed / 2
+    /// % 2` an old result with no end pointer.
+    pub(crate) fn dtoa_r_case(c: &mut Cpu, seed: u32) {
+        let (value, mode, ndigits) = DTOA_R_CASES[(seed / 4) as usize % DTOA_R_CASES.len()];
+        let old = seed / 2 % 2 == 1;
+        dtoa_r_setup(
+            c,
+            seed,
+            value.to_bits(),
+            mode,
+            ndigits,
+            seed % 2 == 1,
+            old,
+            !old,
+        );
+    }
+
+    /// `_dtoa_r` against the generated body over values, modes and digit
+    /// counts that take every phase (special values, quick path, small
+    /// integers, Bignum digits, rounding), signs and an old result.
+    #[test]
+    fn dtoa_r_matches() {
+        check(
+            DTOA_R_GENERATED,
+            dtoa_r,
+            4 * DTOA_R_CASES.len() as u32,
+            &|c, seed| dtoa_r_case(c, seed),
+        );
+    }
+
+    /// Infinity and NaN make no call but the old result's `Bfree`: each
+    /// combination of kind, sign, old result and end pointer is one total
+    /// (Infinity 55 cycles, NaN 54; +6 with `rve`, +10 negative, +23 for the
+    /// old result).
+    #[test]
+    fn dtoa_r_special_paths() {
+        const PATHS: [u64; 16] = [
+            55, 61, 65, 71, 78, 84, 88, 94, 54, 60, 64, 70, 77, 83, 87, 93,
+        ];
+        let kinds: [u64; 4] = [
+            f64::INFINITY.to_bits(),
+            f64::NAN.to_bits(),
+            0x7ff0_0000_0000_0001,
+            0x7ff8_0000_0000_0000 | 0x0004_0000_0000,
+        ];
+        // Modes (in range, folded, out of range) never change these paths.
+        let modes: [u64; 4] = [0, 3, 9, u64::MAX];
+        check_paths(DTOA_R_GENERATED, dtoa_r, 128, &PATHS, &|c, seed| {
+            let value = kinds[(seed / 8) as usize % kinds.len()];
+            dtoa_r_setup(
+                c,
+                seed,
+                value,
+                modes[(seed / 32) as usize % modes.len()],
+                3,
+                seed % 2 == 1,
+                seed / 2 % 2 == 1,
+                seed / 4 % 2 == 0,
+            );
+        });
+    }
+
+    /// The boundary rows, pinned with the generated body's cycle totals:
+    /// one (value, mode, ndigits) per result_k, quick-path, tie, fives,
+    /// normalise and shortest-digit arm the main fixture misses. (`ds == 0`
+    /// is unreachable: the k-estimate walk is monotonic and skips the
+    /// exact value, so no fixture kills it.)
+    #[test]
+    fn dtoa_r_boundary_paths() {
+        #[rustfmt::skip]
+        let cases: &[(f64, u64, u64, u64)] = &[
+            (0.1, 2, 24, 6454),
+            (0.1, 2, 15, 4864),
+            (0.1, 2, 28, 7257),
+            (0.09999999999999999, 3, 0, 4482),
+            (1.4999999999999978, 4, 1, 6929),
+            (1.5000000000000022, 4, 1, 6915),
+            (1.5000000000000022, 2, 1, 6457),
+            (125.0, 6, 2, 6323),
+            (123.456, 9, (-3i64) as u64, 3025),
+            (0.0123, 8, 3, 5612),
+            (0.003, 0, 0, 4061),
+            (1e53, 6, 3, 5250),
+            (16.000000059604645, 6, 3, 3276),
+            (18014398509481992.0, 0, 0, 10600),
+            (18014398509481992.0, 1, 0, 11228),
+            (9007199254740994.0, 0, 0, 10621),
+            (1125899906842624.25, 0, 0, 11265),
+            (1125899906842624.75, 0, 0, 11271),
+        ];
+        let totals: Vec<u64> = cases.iter().map(|&(_, _, _, t)| t).collect();
+        check_paths(
+            DTOA_R_GENERATED,
+            dtoa_r,
+            cases.len() as u32,
+            &totals,
+            &|c, seed| {
+                let (value, mode, ndigits, _) = cases[seed as usize];
+                dtoa_r_setup(c, seed, value.to_bits(), mode, ndigits, false, false, true);
+            },
+        );
+    }
+
+    thread_local! {
+        /// (pc, cycles) of each event check of a dry run.
+        static DTOA_R_CHECKS: RefCell<Vec<(u32, u64)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// Event hook of a dry run: record the check, never deliver.
+    pub(crate) fn dtoa_r_record_check(c: &mut Cpu) -> bool {
+        assert!(
+            c.cycles < CYCLE_BUDGET,
+            "dry run past the cycle budget at {:#x}",
+            c.pc
+        );
+        DTOA_R_CHECKS.with(|v| v.borrow_mut().push((c.pc, c.cycles)));
+        false
+    }
+
+    /// Run the generated body with every event check (its own and its
+    /// callees') recorded as (pc, cycles), in order.
+    pub(crate) fn dtoa_r_check_sites(c: &mut Cpu) -> Vec<(u32, u64)> {
+        DTOA_R_CHECKS.with(|v| v.borrow_mut().clear());
+        c.next_event = 0;
+        c.hooks.event = dtoa_r_record_check;
+        DTOA_R_GENERATED(c);
+        DTOA_R_CHECKS.with(|v| std::mem::take(&mut *v.borrow_mut()))
+    }
+
+    /// The main fixture reaches every loop head's back edge and the arms
+    /// visible in the calls: the old result freed, a denormal (`floatdidf`),
+    /// the 1e256 pre-division, `S *= 5` (`ilim == 0`, mode 3), the
+    /// `spec_case` copy (`memcpy` then `lshift(mhi, 1)`), `mdiff` (shortest
+    /// Bignum digits) and `quorem`.
+    #[test]
+    fn dtoa_r_reaches_arms() {
+        let mut heads = BTreeSet::new();
+        let mut arms = BTreeSet::new();
+        for seed in 0..4 * DTOA_R_CASES.len() as u32 {
+            let mut c = fresh();
+            dtoa_r_case(&mut c, seed);
+            ssx3_ee_rt::prof::trace::start();
+            let sites = dtoa_r_check_sites(&mut c);
+            let calls = ssx3_ee_rt::prof::trace::take();
+            heads.extend(
+                sites
+                    .iter()
+                    .map(|s| s.0)
+                    .filter(|pc| DTOA_R_HEADS.contains(pc)),
+            );
+            for (i, k) in calls.iter().enumerate() {
+                let (target, a1, a2) = (k[0] as u32, k[2], k[3]);
+                let next = calls.get(i + 1).map(|n| (n[0] as u32, n[3]));
+                if target == callee::BFREE.addr && a1 == DTOA_R_TEST_OLD as u64 {
+                    arms.insert("old result");
+                }
+                if target == callee::FLOATDIDF.addr {
+                    arms.insert("denormal");
+                }
+                if target == callee::DIVDF3.addr && a1 == 1e256f64.to_bits() {
+                    arms.insert("bletch");
+                }
+                if target == callee::MULTADD.addr && a2 == 5 {
+                    arms.insert("S times 5");
+                }
+                if target == callee::MEMCPY.addr && next == Some((callee::LSHIFT.addr, 1)) {
+                    arms.insert("spec_case copy");
+                }
+                if target == callee::MDIFF.addr {
+                    arms.insert("mdiff");
+                }
+                if target == callee::QUOREM.addr {
+                    arms.insert("quorem");
+                }
+            }
+        }
+        for head in DTOA_R_HEADS {
+            assert!(heads.contains(&head), "loop head {head:#x} never looped");
+        }
+        for arm in [
+            "old result",
+            "denormal",
+            "bletch",
+            "S times 5",
+            "spec_case copy",
+            "mdiff",
+            "quorem",
+        ] {
+            assert!(arms.contains(arm), "arm `{arm}` never reached");
+        }
+    }
+
+    /// Inputs that loop at one head each (the head the first event is aimed
+    /// at): (value, mode, ndigits, head).
+    pub(crate) const DTOA_R_EVENT_CASES: [(f64, u64, u64, u32); 12] = [
+        (2.0, 2, 30, DTOA_R_HEAD_RESULT_K),
+        (1e35, 2, 3, DTOA_R_HEAD_QUICK_DIVISOR),
+        (1e-35, 2, 3, DTOA_R_HEAD_QUICK_SCALE),
+        (1.2345, 4, 5, DTOA_R_HEAD_QUICK_SHORTEST),
+        (1.25, 2, 3, DTOA_R_HEAD_QUICK_FIXED),
+        (1.5, 2, 4, DTOA_R_HEAD_QUICK_TRIM),
+        (123.0, 0, 0, DTOA_R_HEAD_SMALL_INT),
+        (1.996, 2, 3, DTOA_R_HEAD_BUMP_UP),
+        (0.12, 0, 0, DTOA_R_HEAD_SHORTEST),
+        (0.1, 6, 3, DTOA_R_HEAD_FIXED),
+        (0.1996, 6, 3, DTOA_R_HEAD_ROUND_OFF),
+        (0.5, 6, 4, DTOA_R_HEAD_TRIM_ZEROS),
+    ];
+
+    /// The event fixture before the event is aimed: case `seed / 3 % 12`,
+    /// sign `seed / 36 % 2`, the schedule by `seed % 3`.
+    pub(crate) fn dtoa_r_event_base(c: &mut Cpu, seed: u32) -> (Events, u32) {
+        let (value, mode, ndigits, head) = DTOA_R_EVENT_CASES[(seed / 3) as usize % 12];
+        let negative = seed / 36 % 2 == 1;
+        let mut r = dtoa_r_setup(
+            c,
+            seed,
+            value.to_bits(),
+            mode,
+            ndigits,
+            negative,
+            false,
+            true,
+        );
+        (heap_schedule(c, &mut r, seed, DTOA_R_ENTRY), head)
+    }
+
+    /// After an unwind at check `first`, the machine polls again
+    /// `DTOA_R_TEST_POLL` cycles later, and with a frame ready every later
+    /// delivery unwinds: true when each of those lands on one of the
+    /// function's own heads (a callee unwinding mid-call cannot be resumed
+    /// by the test driver).
+    pub(crate) fn dtoa_r_unwinds_at_heads(sites: &[(u32, u64)], first: usize) -> bool {
+        let (mut i, mut at) = (first, sites[first].1);
+        loop {
+            match sites[i + 1..]
+                .iter()
+                .position(|s| s.1 >= at + DTOA_R_TEST_POLL)
+            {
+                None => return true,
+                Some(j) => {
+                    i += 1 + j;
+                    if !DTOA_R_HEADS.contains(&sites[i].0) {
+                        return false;
+                    }
+                    at = sites[i].1;
+                }
+            }
+        }
+    }
+
+    /// The event fixture: a dry run finds the case's head's first check and
+    /// the check before it, and the event is made due in between, so it is
+    /// delivered at that head (an unwind there when the schedule asks for
+    /// one, unless a later poll would land in a callee: then delivered
+    /// without unwinding).
+    pub(crate) fn dtoa_r_event_setup(c: &mut Cpu, seed: u32) -> Events {
+        let (mode, head) = dtoa_r_event_base(c, seed);
+        if mode == Events::Off {
+            return mode;
+        }
+        let mut dry = fresh();
+        dtoa_r_event_base(&mut dry, seed);
+        let sites = dtoa_r_check_sites(&mut dry);
+        let first = sites
+            .iter()
+            .position(|s| s.0 == head)
+            .unwrap_or_else(|| panic!("seed {seed}: head {head:#x} not reached"));
+        c.next_event = if first == 0 {
+            c.cycles
+        } else {
+            sites[first - 1].1 + 1
+        };
+        if mode == Events::Unwind && !dtoa_r_unwinds_at_heads(&sites, first) {
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 1 << 40;
+            return Events::Deliver;
+        }
+        mode
+    }
+
+    crate::difftest::events::driven!(dtoa_r_gen_driven, ee::s15::f_00422780__generated);
+
+    thread_local! {
+        /// Heads the hand side was re-entered at (this test thread).
+        static DTOA_R_RESUMED: RefCell<BTreeSet<u32>> = const { RefCell::new(BTreeSet::new()) };
+    }
+
+    /// `dtoa_r`, noting every re-entry (`drive` calls it again at the head
+    /// after an unwind).
+    pub(crate) fn dtoa_r_noting_resumes(c: &mut Cpu) {
+        if c.pc != DTOA_R_ENTRY {
+            let head = c.pc;
+            DTOA_R_RESUMED.with(|r| r.borrow_mut().insert(head));
+        }
+        dtoa_r(c);
+    }
+
+    crate::difftest::events::driven!(dtoa_r_hand_driven, dtoa_r_noting_resumes);
+
+    /// Events due at each loop head in turn: off, delivered, and unwinding.
+    /// Each seed aims its first event at its head; a seed whose later polls
+    /// would land in a callee is downgraded to delivered, so a head's
+    /// observed resume may come from another row's later unwind. The test
+    /// requires every head resumed at least once across the rows.
+    #[test]
+    fn dtoa_r_events() {
+        DTOA_R_RESUMED.with(|r| r.borrow_mut().clear());
+        check_events(
+            dtoa_r_gen_driven,
+            dtoa_r_hand_driven,
+            72,
+            &dtoa_r_event_setup,
+        );
+        let resumed = DTOA_R_RESUMED.with(|r| std::mem::take(&mut *r.borrow_mut()));
+        for head in DTOA_R_HEADS {
+            assert!(
+                resumed.contains(&head),
+                "no resume at {head:#x} (resumed at {resumed:x?})"
+            );
+        }
+    }
+
+    /// The `FILE` written through.
+    pub(crate) const VFPRINTF_R_TEST_FILE: u32 = DATA + 0x40;
+
+    /// The format string (odd address: it is read bytewise).
+    pub(crate) const VFPRINTF_R_TEST_FMT: u32 = DATA + 0x103;
+
+    /// The `va_list`: one 8-byte slot per argument.
+    pub(crate) const VFPRINTF_R_TEST_ARGS: u32 = DATA + 0x408;
+
+    /// `%s` strings, 0x40 apart (odd addresses).
+    pub(crate) const VFPRINTF_R_TEST_STRS: u32 = DATA + 0x801;
+
+    /// The `%n` target.
+    pub(crate) const VFPRINTF_R_TEST_COUNT: u32 = DATA + 0xa08;
+
+    /// `_p`: the string buffer (odd address).
+    pub(crate) const VFPRINTF_R_TEST_OUT: u32 = DATA + 0x1003;
+
+    /// The reent in `a0` (unused by the body).
+    pub(crate) const VFPRINTF_R_TEST_REENT: u32 = DATA + 0x2010;
+
+    /// `vfprintf_BufferedWrite`'s static state: the count, the cursor and
+    /// the buffer it resets the cursor to.
+    pub(crate) const VFPRINTF_R_TEST_BW_COUNT: u32 = 0x0045_4cd8;
+
+    pub(crate) const VFPRINTF_R_TEST_BW_CURSOR: u32 = 0x0045_4cdc;
+
+    pub(crate) const VFPRINTF_R_TEST_BW_BUFFER: u32 = 0x0052_ae98;
+
+    /// One argument slot.
+    #[derive(Clone, Copy)]
+    pub(crate) enum VfprintfRArg {
+        /// An integer (the whole 8-byte slot).
+        Int(i64),
+        /// A NUL-terminated string.
+        Str(&'static [u8]),
+        /// A null `%s` pointer.
+        Null,
+        /// A pointer to the `%n` target.
+        Count,
+        /// A double, as its bit pattern.
+        Double(u64),
+    }
+
+    pub(crate) struct VfprintfRCase {
+        pub(crate) fmt: &'static [u8],
+        pub(crate) args: &'static [VfprintfRArg],
+    }
+
+    macro_rules! vfprintf_r_cases {
+        ($($fmt:literal => [$($arg:expr),*]),* $(,)?) => {
+            &[$(VfprintfRCase { fmt: $fmt, args: &[$($arg),*] }),*]
+        };
+    }
+
+    /// Integer, character, string, `%n`, `%%` and unknown conversions with
+    /// every flag, width/precision form and length modifier.
+    #[rustfmt::skip]
+    pub(crate) const VFPRINTF_R_CASES: &[VfprintfRCase] = vfprintf_r_cases![
+        b"" => [],
+        b"plain text" => [],
+        b"%%" => [],
+        b"a%%b" => [],
+        b"%" => [],
+        b"%y" => [],
+        b"ab%yc" => [],
+        b"%\x80" => [],
+        b"%5y" => [],
+        b"%-3%" => [],
+        b"%d" => [Int(0)],
+        b"%d" => [Int(1)],
+        b"%d" => [Int(-1)],
+        b"%d" => [Int(i32::MIN as i64)],
+        b"%d" => [Int(1234567)],
+        b"%i" => [Int(9)],
+        b"%d" => [Int(10)],
+        b"%u" => [Int(0xffff_ffff)],
+        b"%u" => [Int(-7)],
+        b"%5d" => [Int(42)],
+        b"%-5d|" => [Int(42)],
+        b"%05d" => [Int(-42)],
+        b"%+d" => [Int(42)],
+        b"%+d" => [Int(-42)],
+        b"% d" => [Int(42)],
+        b"%+ d" => [Int(7)],
+        b"% +d" => [Int(7)],
+        b"%  d" => [Int(7)],
+        b"%.3d" => [Int(42)],
+        b"%.:d" => [Int(42)],
+        b"%.0d" => [Int(0)],
+        b"%.0x" => [Int(0)],
+        b"%.0o" => [Int(0)],
+        b"%#.0o" => [Int(0)],
+        b"%8.3d" => [Int(-42)],
+        b"%08.3d" => [Int(42)],
+        b"%-08d|" => [Int(42)],
+        b"%'d" => [Int(1234567)],
+        b"%'d" => [Int(-1234567)],
+        b"%'20d" => [Int(1234567)],
+        b"%-'20u|" => [Int(1000)],
+        b"%'.10d" => [Int(12345)],
+        b"%*d" => [Int(6), Int(42)],
+        b"%*d|" => [Int(-6), Int(42)],
+        b"%-*d|" => [Int(3), Int(42)],
+        b"%.*d" => [Int(5), Int(42)],
+        b"%.*d" => [Int(-3), Int(42)],
+        b"%.*s" => [Int(2), Str(b"hello")],
+        b"%.*s" => [Int(-1), Str(b"hi")],
+        b"%ld" => [Int(0x1234_5678_9abc)],
+        b"%lld" => [Int(-1)],
+        b"%lld" => [Int(i64::MIN)],
+        b"%llu" => [Int(-1)],
+        b"%qd" => [Int(-99_999_999_999)],
+        b"%llx" => [Int(0x0123_4567_89ab_cdef)],
+        b"%llo" => [Int(-1)],
+        b"%hd" => [Int(0x1_8123)],
+        b"%hu" => [Int(0xffff_8000)],
+        b"%hx" => [Int(0xabcd_1234)],
+        b"%hhd" => [Int(-300)],
+        b"%Ld" => [Int(5)],
+        b"%D" => [Int(-5)],
+        b"%U" => [Int(5)],
+        b"%O" => [Int(8)],
+        b"%o" => [Int(0)],
+        b"%o" => [Int(8)],
+        b"%#o" => [Int(8)],
+        b"%#o" => [Int(0)],
+        b"%#5o" => [Int(1)],
+        b"%o" => [Int(0xffff_ffff)],
+        b"%x" => [Int(0)],
+        b"%x" => [Int(255)],
+        b"%X" => [Int(0xdead_beef)],
+        b"%#x" => [Int(255)],
+        b"%#x" => [Int(0)],
+        b"%#X" => [Int(1)],
+        b"%#10x" => [Int(255)],
+        b"%#010x" => [Int(255)],
+        b"%-#10x|" => [Int(255)],
+        b"%#.4x" => [Int(5)],
+        b"%+x" => [Int(5)],
+        b"%p" => [Int(0x0080_1234)],
+        b"%p" => [Int(0)],
+        b"%20p" => [Int(0x8000_0010)],
+        b"%c" => [Int(b'A' as i64)],
+        b"%5c" => [Int(b'z' as i64)],
+        b"%-3c|" => [Int(b'q' as i64)],
+        b"%c" => [Int(0x100)],
+        b"%+c" => [Int(b'k' as i64)],
+        b"%s" => [Str(b"hello")],
+        b"%s" => [Null],
+        b"%s" => [Str(b"")],
+        b"%10s" => [Str(b"hi")],
+        b"%-10s|" => [Str(b"hi")],
+        b"%.2s" => [Str(b"hello")],
+        b"%.10s" => [Str(b"hi")],
+        b"%10.3s" => [Str(b"abcdef")],
+        b"%40s" => [Str(b"x")],
+        b"%-40s|" => [Str(b"x")],
+        b"%.0s" => [Str(b"abc")],
+        b"% s" => [Str(b"sp")],
+        b"%n" => [Count],
+        b"abc%n" => [Count],
+        b"abcd%hn" => [Count],
+        b"ab%ln" => [Count],
+        b"a%lln" => [Count],
+        b"%40d" => [Int(1)],
+        b"%17d" => [Int(1)],
+        b"%33d" => [Int(1)],
+        b"%-40d|" => [Int(1)],
+        b"%040d" => [Int(-1)],
+        b"%.40d" => [Int(7)],
+        b"%50.40d" => [Int(-7)],
+        b"%-#40x|" => [Int(0x10)],
+        b"%d %s %c" => [Int(-12), Str(b"mid"), Int(b'!' as i64)],
+        b"x=%5.2d|%-3s|%%|%c\n" => [Int(3), Str(b"ab"), Int(b'Z' as i64)],
+    ];
+
+    /// Float conversions: zero, halves, tiny and huge exponents, denormal,
+    /// infinities and NaN, every style choice of `%g`, `'#'`, widths and
+    /// grouping.
+    #[rustfmt::skip]
+    pub(crate) const VFPRINTF_R_FLOAT_CASES: &[VfprintfRCase] = vfprintf_r_cases![
+        b"%e" => [Double(0)],
+        b"%f" => [Double(0x3ff8_0000_0000_0000)],          // 1.5
+        b"%E" => [Double(0xc002_0000_0000_0000)],          // -2.25
+        b"%.0f" => [Double(0x4004_0000_0000_0000)],        // 2.5
+        b"%.3e" => [Double(0x40fe_2406_c8b4_3958)],        // 123456.424
+        b"%g" => [Double(0)],
+        b"%g" => [Double(0x3ee4_f8b5_88e3_68f1)],          // 1e-5
+        b"%g" => [Double(0x3f1a_36e2_eb1c_432d)],          // 1e-4
+        b"%g" => [Double(0x40fe_2400_0000_0000)],          // 123456
+        b"%g" => [Double(0x4130_c6a5_c000_0000)],          // 1099429.75
+        b"%G" => [Double(0x4415_af1d_78b5_8c40)],          // 1e20
+        b"%G" => [Double(0xbf1a_36e2_eb1c_432d)],          // -1e-4
+        b"%g" => [Double(0xc004_0000_0000_0000)],          // -2.5
+        b"%.0g" => [Double(0x4024_0000_0000_0000)],        // 10
+        b"%.1g" => [Double(0x4059_0000_0000_0000)],        // 100
+        b"%#g" => [Double(0x3ff8_0000_0000_0000)],
+        b"%#.0f" => [Double(0x4008_0000_0000_0000)],       // 3
+        b"%#.0e" => [Double(0x4008_0000_0000_0000)],
+        b"%10.2f" => [Double(0x400921fb_54442d18)],        // pi
+        b"%-10.2f|" => [Double(0x400921fb_54442d18)],
+        b"%010.2f" => [Double(0xc00921fb_54442d18)],
+        b"%+f" => [Double(0x3fe0_0000_0000_0000)],         // 0.5
+        b"% e" => [Double(0x3fe0_0000_0000_0000)],
+        b"%'f" => [Double(0x4132_d687_4000_0000)],         // 1234567.25
+        b"%'g" => [Double(0x4132_d687_4000_0000)],
+        b"%e" => [Double(0x7ff0_0000_0000_0000)],          // inf
+        b"%f" => [Double(0xfff0_0000_0000_0000)],          // -inf
+        b"%g" => [Double(0x7ff8_0000_0000_0001)],          // nan
+        b"%g" => [Double(0x0000_0000_0000_0001)],          // denormal
+        b"%e" => [Double(0x7e37_e43c_8800_759c)],          // 1e300
+        b"%Lf" => [Double(0x4000_0000_0000_0000)],         // 2
+        b"%.12e" => [Double(0x3fd5_5555_5555_5555)],       // 1/3
+        b"%20.10g" => [Double(0x4197_d784_0000_0000)],     // 1e8
+        b"%e|%f" => [Double(0x3ff0_0000_0000_0000), Double(0xbff0_0000_0000_0000)],
+        b"%F" => [Double(0x3ff0_0000_0000_0000)],
+        b"%.*f" => [Int(3), Double(0x3ff8_0000_0000_0000)],
+        b"%*.1e" => [Int(-12), Double(0x3ff8_0000_0000_0000)],
+        b"%#x %g" => [Int(26), Double(0x4024_0000_0000_0000)],
+        b"%-+012.3f|" => [Double(0x3ff8_0000_0000_0000)],
+        b"% 08.3g" => [Double(0x3ff8_0000_0000_0000)],
+    ];
+
+    /// How the output `FILE` is set up (a seed digit).
+    pub(crate) const VFPRINTF_R_FILE_MODES: u32 = 5;
+
+    /// Write the format, the arguments and a `FILE` for `mode`:
+    /// 0. a real file whose flags/file word is 0 (`_file` becomes 1);
+    /// 1. a real file on descriptor 3 with `_w` 0, its buffered-write
+    ///    buffer nearly full (a flush runs mid-format);
+    /// 2. a string buffer with room;
+    /// 3. a string buffer that fills partway (`room` bytes);
+    /// 4. a full string buffer.
+    pub(crate) fn vfprintf_r_setup(
+        c: &mut Cpu,
+        seed: u32,
+        case: &VfprintfRCase,
+        mode: u32,
+        room: u32,
+    ) {
+        let mut r = Rng(0x0041_b728 ^ (seed as u64) << 16);
+        scramble(c, &mut r);
+        elf_image(c);
+        c.g[GP][0] = GAME_GP as u64;
+        // Junk over the frame, the output and the %n target: every store shows.
+        fill(c, &mut r, crate::difftest::SP - 0x300, 0xc0);
+        for i in 0..0x200 {
+            c.bus.write8(VFPRINTF_R_TEST_OUT + i, 0xee);
+        }
+        c.bus.write64(VFPRINTF_R_TEST_COUNT, 0xdddd_dddd_dddd_dddd);
+
+        let (flags, fd, w) = match mode {
+            0 => (0u16, 0u16, 0x400u32),
+            1 => (0x0008, 3, 0),
+            2 => (0x0208, 0, 0x400),
+            3 => (0x0208, 0, room),
+            _ => (0x0208, 0, 0),
+        };
+        let file = VFPRINTF_R_TEST_FILE;
+        c.bus.write32(file + VFPRINTF_R_FILE_P, VFPRINTF_R_TEST_OUT);
+        c.bus.write32(file + 0x4, 0); // _r
+        c.bus.write32(file + VFPRINTF_R_FILE_W, w);
+        c.bus.write16(file + VFPRINTF_R_FILE_FLAGS, flags);
+        c.bus.write16(file + VFPRINTF_R_FILE_FD, fd);
+        c.bus.write32(file + 0x10, VFPRINTF_R_TEST_OUT); // _bf._base
+        c.bus.write32(file + VFPRINTF_R_FILE_BF_SIZE, 0x123 + room);
+        c.bus.write32(file + 0x54, VFPRINTF_R_TEST_REENT); // _data
+        c.bus
+            .write32(VFPRINTF_R_TEST_BW_COUNT, if mode == 1 { 120 } else { 0 });
+        c.bus
+            .write32(VFPRINTF_R_TEST_BW_CURSOR, VFPRINTF_R_TEST_BW_BUFFER);
+
+        for (i, b) in case.fmt.iter().enumerate() {
+            c.bus.write8(VFPRINTF_R_TEST_FMT + i as u32, *b);
+        }
+        c.bus.write8(VFPRINTF_R_TEST_FMT + case.fmt.len() as u32, 0);
+        for (i, arg) in case.args.iter().enumerate() {
+            let value = match *arg {
+                Int(v) => v as u64,
+                Double(bits) => bits,
+                Null => 0,
+                Count => VFPRINTF_R_TEST_COUNT as u64,
+                Str(s) => {
+                    let at = VFPRINTF_R_TEST_STRS + 0x40 * i as u32;
+                    for (j, b) in s.iter().enumerate() {
+                        c.bus.write8(at + j as u32, *b);
+                    }
+                    c.bus.write8(at + s.len() as u32, 0);
+                    at as u64
+                }
+            };
+            c.bus.write64(VFPRINTF_R_TEST_ARGS + 8 * i as u32, value);
+        }
+
+        c.g[A0][0] = sx(VFPRINTF_R_TEST_REENT);
+        c.g[A1][0] = sx(VFPRINTF_R_TEST_FILE);
+        c.g[A2][0] = sx(VFPRINTF_R_TEST_FMT);
+        c.g[A3][0] = sx(VFPRINTF_R_TEST_ARGS);
+        c.pc = VFPRINTF_R_ENTRY;
+    }
+
+    /// Room left in a partly filled string buffer (mode 3): less than the
+    /// sign (2), the prefix (3) or a pad chunk (17) needs, exactly a pad
+    /// chunk (16), or just enough.
+    pub(crate) const VFPRINTF_R_TEST_ROOMS: [u32; 8] = [1, 2, 3, 5, 9, 16, 17, 20];
+
+    /// The seed's case (digit 1), file mode (digit 2) and partial room
+    /// (digit 3) from `cases`, each independent of the others.
+    pub(crate) fn vfprintf_r_seeded(c: &mut Cpu, seed: u32, cases: &[VfprintfRCase]) {
+        let n = cases.len() as u32;
+        let index = seed % n;
+        let mode = seed / n % VFPRINTF_R_FILE_MODES;
+        let room = VFPRINTF_R_TEST_ROOMS
+            [(seed / (n * VFPRINTF_R_FILE_MODES)) as usize % VFPRINTF_R_TEST_ROOMS.len()];
+        vfprintf_r_setup(c, seed, &cases[index as usize], mode, room);
+    }
+
+    /// `_vfprintf_r` on every integer, character and string case through
+    /// every file mode (buffered with and without `_file` fix-up and a
+    /// mid-format flush, string buffer with room, filling partway, full)
+    /// and every partial room.
+    #[test]
+    fn vfprintf_r_matches() {
+        let seeds = VFPRINTF_R_CASES.len() as u32
+            * VFPRINTF_R_FILE_MODES
+            * VFPRINTF_R_TEST_ROOMS.len() as u32;
+        check(
+            ee::s15::f_0041b728__generated,
+            vfprintf_r,
+            seeds,
+            &|c, seed| vfprintf_r_seeded(c, seed, VFPRINTF_R_CASES),
+        );
+    }
+
+    /// `_vfprintf_r` on the float cases through every file mode and every
+    /// partial room.
+    #[test]
+    fn vfprintf_r_float_matches() {
+        let seeds = VFPRINTF_R_FLOAT_CASES.len() as u32
+            * VFPRINTF_R_FILE_MODES
+            * VFPRINTF_R_TEST_ROOMS.len() as u32;
+        check(
+            ee::s15::f_0041b728__generated,
+            vfprintf_r,
+            seeds,
+            &|c, seed| vfprintf_r_seeded(c, seed, VFPRINTF_R_FLOAT_CASES),
+        );
+    }
+
+    /// `_vfprintf_r` entered at a call return instead of the entry: the
+    /// hand body resumes in the generated body, as generated does from any
+    /// resume point (its own loop checks never unwind).
+    #[test]
+    fn vfprintf_r_resume_matches() {
+        check(ee::s15::f_0041b728__entries, vfprintf_r, 32, &|c, seed| {
+            vfprintf_r_seeded(c, seed, VFPRINTF_R_CASES);
+            c.pc = 0x0041_b764;
+        });
+    }
+
+    /// The float arms, pinned with the generated body's cycle totals (one
+    /// per case through a string buffer): the exponent and fixed styles,
+    /// precision, `%g` choice, `#`, widths, grouping, infinities and NaN.
+    #[test]
+    fn vfprintf_r_float_paths() {
+        // Indices into `VFPRINTF_R_FLOAT_CASES`.
+        let cases: &[(usize, u64)] = &[
+            (0, 1976),
+            (1, 3920),
+            (4, 12047),
+            (5, 2408),
+            (9, 23128),
+            (14, 15794),
+            (17, 2929),
+            (19, 8456),
+            (22, 3679),
+            (24, 23649),
+            (25, 509),
+            (26, 525),
+            (27, 1420),
+            (28, 2408),
+            (30, 2912),
+            (31, 30535),
+            (34, 360),
+            (37, 13717),
+        ];
+        let totals: Vec<u64> = cases.iter().map(|&(_, t)| t).collect();
+        check_paths(
+            ee::s15::f_0041b728__generated,
+            vfprintf_r,
+            cases.len() as u32,
+            &totals,
+            &|c, seed| {
+                let (index, _) = cases[seed as usize];
+                vfprintf_r_setup(c, seed, &VFPRINTF_R_FLOAT_CASES[index], 2, 0);
+            },
+        );
+    }
+
+    /// The names of `vfprintf_r_arm` are the game's table words.
+    #[test]
+    fn vfprintf_r_arms_match_the_table() {
+        use vfprintf_r_arm as arm;
+        let mut c = fresh();
+        elf_image(&mut c);
+        let named: &[(&[u8], u32)] = &[
+            (b" ", arm::SPACE),
+            (b"#", arm::ALT),
+            (b"'", arm::GROUP),
+            (b"*", arm::STAR),
+            (b"-", arm::MINUS),
+            (b"+", arm::PLUS),
+            (b".", arm::DOT),
+            (b"0", arm::ZERO),
+            (b"123456789", arm::DIGIT),
+            (b"L", arm::LONG_DOUBLE),
+            (b"h", arm::SHORT),
+            (b"l", arm::LONG),
+            (b"q", arm::QUAD),
+            (b"c", arm::CHAR),
+            (b"D", arm::LONG_DECIMAL),
+            (b"di", arm::DECIMAL),
+            (b"eEfgG", arm::FLOAT),
+            (b"n", arm::COUNT),
+            (b"O", arm::LONG_OCTAL),
+            (b"o", arm::OCTAL),
+            (b"p", arm::POINTER),
+            (b"s", arm::STRING),
+            (b"U", arm::LONG_UNSIGNED),
+            (b"u", arm::UNSIGNED),
+            (b"X", arm::HEX_UPPER),
+            (b"x", arm::HEX_LOWER),
+        ];
+        for i in 0..VFPRINTF_R_SPEC_COUNT as u32 {
+            let ch = (VFPRINTF_R_SPEC_FIRST + i) as u8;
+            let want = named
+                .iter()
+                .find(|(chars, _)| chars.contains(&ch))
+                .map_or(arm::OTHER, |&(_, target)| target);
+            let word = c.bus.read32(VFPRINTF_R_SPEC_TABLE + 4 * i);
+            assert_eq!(word, want, "table word for {:?}", ch as char);
+        }
+    }
+
+    /// Run the generated body on `case` into a string buffer with room;
+    /// returns (cycles, return value, output).
+    pub(crate) fn vfprintf_r_generated_run(case: &VfprintfRCase) -> (u64, u32, Vec<u8>) {
+        let mut c = fresh();
+        vfprintf_r_setup(&mut c, 0, case, 2, 0);
+        let before = c.cycles;
+        run_generated(&mut c, ee::s15::f_0041b728__generated);
+        let n = c.g[V0][0] as u32;
+        let out = (0..n.min(0x200))
+            .map(|i| c.bus.read8(VFPRINTF_R_TEST_OUT + i))
+            .collect();
+        (c.cycles - before, n, out)
+    }
+
+    /// The fixtures reach the arms they claim: the generated body prints
+    /// what C's printf prints for formats that go through the sign, both
+    /// blank pads, the zero pads (more than 16 wide), the precision, octal,
+    /// hex with and without prefix, `%c`, `%s` (null, clipped), `%p`, long
+    /// long and an unknown conversion.
+    #[test]
+    fn vfprintf_r_fixtures_print() {
+        #[rustfmt::skip]
+        let cases: &[(VfprintfRCase, &[u8])] = &[
+            (VfprintfRCase { fmt: b"plain text", args: &[] }, b"plain text"),
+            (VfprintfRCase { fmt: b"a%%b", args: &[] }, b"a%b"),
+            (VfprintfRCase { fmt: b"ab%yc", args: &[] }, b"abyc"),
+            (VfprintfRCase { fmt: b"%d", args: &[Int(i32::MIN as i64)] }, b"-2147483648"),
+            (VfprintfRCase { fmt: b"%5d", args: &[Int(42)] }, b"   42"),
+            (VfprintfRCase { fmt: b"%-5d|", args: &[Int(42)] }, b"42   |"),
+            (VfprintfRCase { fmt: b"%05d", args: &[Int(-42)] }, b"-0042"),
+            (VfprintfRCase { fmt: b"%+d", args: &[Int(42)] }, b"+42"),
+            (VfprintfRCase { fmt: b"% d", args: &[Int(42)] }, b" 42"),
+            (VfprintfRCase { fmt: b"%.3d", args: &[Int(42)] }, b"042"),
+            (VfprintfRCase { fmt: b"[%.0d]", args: &[Int(0)] }, b"[]"),
+            (VfprintfRCase { fmt: b"%o", args: &[Int(8)] }, b"10"),
+            (VfprintfRCase { fmt: b"%#o", args: &[Int(8)] }, b"010"),
+            (VfprintfRCase { fmt: b"%x", args: &[Int(255)] }, b"ff"),
+            (VfprintfRCase { fmt: b"%#X", args: &[Int(0xdead_beef)] }, b"0XDEADBEEF"),
+            (VfprintfRCase { fmt: b"%#x", args: &[Int(0)] }, b"0"),
+            (VfprintfRCase { fmt: b"%p", args: &[Int(0x0080_1234)] }, b"0x801234"),
+            (VfprintfRCase { fmt: b"%llx", args: &[Int(-1)] }, b"ffffffffffffffff"),
+            (VfprintfRCase { fmt: b"%lld", args: &[Int(i64::MIN)] }, b"-9223372036854775808"),
+            (VfprintfRCase { fmt: b"%c", args: &[Int(b'A' as i64)] }, b"A"),
+            (VfprintfRCase { fmt: b"%s", args: &[Null] }, b"(null)"),
+            (VfprintfRCase { fmt: b"%.2s", args: &[Str(b"hello")] }, b"he"),
+            (VfprintfRCase { fmt: b"%10s", args: &[Str(b"hi")] }, b"        hi"),
+            (VfprintfRCase { fmt: b"%20s", args: &[Str(b"x")] }, b"                   x"),
+            (VfprintfRCase { fmt: b"%-20s|", args: &[Str(b"x")] }, b"x                   |"),
+            (VfprintfRCase { fmt: b"%020d", args: &[Int(-1)] }, b"-0000000000000000001"),
+            (VfprintfRCase { fmt: b"%.20d", args: &[Int(7)] }, b"00000000000000000007"),
+        ];
+        for (case, want) in cases {
+            let (_, n, out) = vfprintf_r_generated_run(case);
+            assert_eq!(
+                out,
+                want.to_vec(),
+                "{:?} printed {:?}",
+                String::from_utf8_lossy(case.fmt),
+                String::from_utf8_lossy(&out)
+            );
+            assert_eq!(n as usize, want.len());
+        }
+    }
+
+    /// The arms the print fixtures claim, pinned with the generated
+    /// body's cycle totals (one per case through a string buffer): the
+    /// sign, both blank pads, the zero pads (more than 16 wide), the
+    /// precision, octal, hex with and without prefix, `%c`, `%s` (null,
+    /// clipped), `%p`, long long and an unknown conversion.
+    #[test]
+    fn vfprintf_r_fixture_paths() {
+        #[rustfmt::skip]
+        let cases: &[(VfprintfRCase, u64)] = &[
+            (VfprintfRCase { fmt: b"plain text", args: &[] }, 1200),
+            (VfprintfRCase { fmt: b"ab%yc", args: &[] }, 722),
+            (VfprintfRCase { fmt: b"%d", args: &[Int(i32::MIN as i64)] }, 1965),
+            (VfprintfRCase { fmt: b"%5d", args: &[Int(42)] }, 637),
+            (VfprintfRCase { fmt: b"%-5d|", args: &[Int(42)] }, 782),
+            (VfprintfRCase { fmt: b"%020d", args: &[Int(-1)] }, 526),
+            (VfprintfRCase { fmt: b"%.3d", args: &[Int(42)] }, 634),
+            (VfprintfRCase { fmt: b"%o", args: &[Int(8)] }, 405),
+            (VfprintfRCase { fmt: b"%#o", args: &[Int(8)] }, 430),
+            (VfprintfRCase { fmt: b"%#x", args: &[Int(0)] }, 420),
+            (VfprintfRCase { fmt: b"%#X", args: &[Int(0xdead_beef)] }, 556),
+            (VfprintfRCase { fmt: b"%c", args: &[Int(b'A' as i64)] }, 362),
+            (VfprintfRCase { fmt: b"%s", args: &[Null] }, 479),
+            (VfprintfRCase { fmt: b"%.2s", args: &[Str(b"hello")] }, 434),
+            (VfprintfRCase { fmt: b"%p", args: &[Int(0x0080_1234)] }, 499),
+            (VfprintfRCase { fmt: b"%lld", args: &[Int(i64::MIN)] }, 4176),
+        ];
+        let totals: Vec<u64> = cases.iter().map(|&(_, t)| t).collect();
+        check_paths(
+            ee::s15::f_0041b728__generated,
+            vfprintf_r,
+            cases.len() as u32,
+            &totals,
+            &|c, seed| {
+                let (case, _) = &cases[seed as usize];
+                vfprintf_r_setup(c, seed, case, 2, 0);
+            },
+        );
+    }
+
+    /// Flag and modifier arms, by their cost in the generated body: each
+    /// pair differs only in that arm, so the difference is the arm's own
+    /// block charges plus the parse steps around it (read 1, advance 1,
+    /// range check 4, table jump 6). The base of each pair is the same
+    /// conversion without the flag.
+    #[test]
+    fn vfprintf_r_flag_arm_costs() {
+        // (format, args, base format, base args, extra cycles)
+        #[rustfmt::skip]
+        let pairs: &[(&[u8], &[VfprintfRArg], &[u8], &[VfprintfRArg], u64)] = &[
+            // '#' 2 (ALT is unused by %d).
+            (b"%#d", &[Int(5)], b"%d", &[Int(5)], 12 + 2),
+            // '\'' 2, 'h' 2, 'L' 2, 'q' 2 (unused by %s).
+            (b"%'s", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 2),
+            (b"%hs", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 2),
+            (b"%Ls", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 2),
+            (b"%qs", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 2),
+            // ' ' with no sign yet 3+3 (%s clears the sign).
+            (b"% s", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 6),
+            // A second ' ' 3, reading the next character itself.
+            (b"%  s", &[Str(b"ab")], b"% s", &[Str(b"ab")], 11 + 3),
+            // '+' 3.
+            (b"%+s", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 3),
+            // 'l' 4 not followed by 'l'.
+            (b"%ls", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 4),
+            // "ll": 'l' 4, 1, then 'q' 2.
+            (b"%lld", &[Int(5)], b"%qd", &[Int(5)], 4 + 1),
+            // '-' 2: no blank-pad test before (5+1), one after (4).
+            (b"%-s", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 2 - 6 + 4),
+            // '0' 2: the zero-pad test (5+1) replaces the blank-pad one.
+            (b"%0s", &[Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 2),
+            // '*' 4 with a width of 0.
+            (b"%*s", &[Int(0), Str(b"ab")], b"%s", &[Str(b"ab")], 12 + 4),
+            // A width digit: 3, one digit 8, store 2, then a second
+            // dispatch of the conversion character (range check 4, jump 6;
+            // no read or advance: the digit loop already did both).
+            (b"%1s", &[Str(b"abc")], b"%s", &[Str(b"abc")], 3 + 8 + 2 + 10),
+            // Two width digits (a back edge through the digit loop).
+            (b"%12s", &[Str(b"abcdefghijkl")], b"%s", &[Str(b"abcdefghijkl")], 3 + 16 + 2 + 10),
+            // ".0": 4, digit test 4, 1, one digit 8, 5, the second dispatch
+            // (10); then the number clears ZEROPAD (2).
+            (b"%.0d", &[Int(5)], b"%d", &[Int(5)], 22 + 10 + 2),
+            // ".*" with 0: 4+7, then ZEROPAD cleared (2).
+            (b"%.*d", &[Int(0), Int(5)], b"%d", &[Int(5)], 12 + 11 + 2),
+            // ".*" with a negative precision (none): 4+7.
+            (b"%.*d", &[Int(-5), Int(5)], b"%d", &[Int(5)], 12 + 11),
+            // 'D' 1 then 'd', against "ld" ('l' 4 plus a parse step).
+            (b"%ld", &[Int(5)], b"%D", &[Int(5)], 12 + 4 - 1),
+            (b"%lo", &[Int(5)], b"%O", &[Int(5)], 12 + 4 - 1),
+            (b"%lu", &[Int(5)], b"%U", &[Int(5)], 12 + 4 - 1),
+            // 'h' 2 plus the halfword fetch (2 against 1).
+            (b"%hd", &[Int(5)], b"%d", &[Int(5)], 12 + 2 + 1),
+            // '#' on a zero hex value: 2, and the 2-cycle prefix test.
+            (b"%#x", &[Int(0)], b"%x", &[Int(0)], 12 + 2 + 2),
+        ];
+        for &(fmt, args, base_fmt, base_args, extra) in pairs {
+            let (cost, ..) = vfprintf_r_generated_run(&VfprintfRCase { fmt, args });
+            let (base, ..) = vfprintf_r_generated_run(&VfprintfRCase {
+                fmt: base_fmt,
+                args: base_args,
+            });
+            assert_eq!(
+                cost.wrapping_sub(base),
+                extra,
+                "{:?} against {:?}",
+                String::from_utf8_lossy(fmt),
+                String::from_utf8_lossy(base_fmt)
+            );
+        }
+    }
+
+    /// Formats whose loops run many back edges: a long literal, a run of
+    /// flags, width and precision digits, octal, decimal and hex digits,
+    /// every pad loop (more than 16 wide) and a `%g`.
+    #[rustfmt::skip]
+    pub(crate) const VFPRINTF_R_EVENT_CASES: &[VfprintfRCase] = vfprintf_r_cases![
+        b"abcdefghijklmnopqrstuvwxyz %d" => [Int(-3)],
+        b"%+ #-'0hL12.34d|" => [Int(123)],
+        b"%llo|%llu" => [Int(-1), Int(-1)],
+        b"%llx %#X" => [Int(-2), Int(0xabc)],
+        b"%40s|%-40s|" => [Str(b"x"), Str(b"y")],
+        b"%050.40d" => [Int(-7)],
+        b"%040d" => [Int(-7)],
+        b"% 40.20u" => [Int(77)],
+        b"%g %e" => [Double(0x3f1a_36e2_eb1c_432d), Double(0x40fe_2400_0000_0000)],
+    ];
+
+    driven!(vfprintf_r_gen_driven, ee::s15::f_0041b728__generated);
+
+    driven!(vfprintf_r_hand_driven, vfprintf_r);
+
+    /// Events at the back edges: the first event lands early (literal scan,
+    /// flag parse), in the middle (digit loops) or late (pads), on a
+    /// buffered file or a string buffer. Events are off or delivered without
+    /// unwinding: this body's checks ignore an unwind request, so the next
+    /// check in a dispatcher-shaped callee (memcpy, `vfprintf_BufferedWrite`)
+    /// would honour it mid-call, and `drive` cannot resume a callee there
+    /// (the re-entry jumps out to the callee, which returns into this
+    /// function with no unwind tag), on either side. Off seeds keep
+    /// `schedule`'s deadline: an earlier one would deliver the VBlank still
+    /// due on a fresh machine, which requests an unwind.
+    #[test]
+    fn vfprintf_r_events() {
+        let n = VFPRINTF_R_EVENT_CASES.len() as u32;
+        check_events(
+            vfprintf_r_gen_driven,
+            vfprintf_r_hand_driven,
+            3 * n * 2 * 3,
+            &|c, seed| {
+                let case = &VFPRINTF_R_EVENT_CASES[(seed / 3 % n) as usize];
+                let mode = [1, 2][(seed / (3 * n) % 2) as usize];
+                vfprintf_r_setup(c, seed, case, mode, 0);
+                let mut r = Rng(0x0041_b788 ^ seed as u64);
+                // `schedule` picks the mode by `seed % 3`: turn its unwind seeds
+                // (1) into delivering ones (2).
+                let mode_seed = if seed % 3 == 1 { seed + 1 } else { seed };
+                let events = schedule(c, &mut r, mode_seed, VFPRINTF_R_ENTRY);
+                let delay = [25u64, 900, 2600][(seed / (6 * n) % 3) as usize];
+                if events == Events::Deliver {
+                    c.next_event = c.cycles + delay + (r.next_u32() % 64) as u64;
+                }
+                events
+            },
+        );
+    }
+
+    thread_local! {
+        /// Where `vfprintf_r_record_event` was called (this test thread).
+        static VFPRINTF_R_EVENT_PCS: std::cell::RefCell<Vec<u32>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    /// An event hook that is always due and never unwinds: records the
+    /// `pc` of every check that fires.
+    pub(crate) fn vfprintf_r_record_event(c: &mut Cpu) -> bool {
+        assert!(
+            c.cycles < crate::difftest::CYCLE_BUDGET,
+            "runaway at pc {:#x}",
+            c.pc
+        );
+        VFPRINTF_R_EVENT_PCS.with(|v| v.borrow_mut().push(c.pc));
+        c.next_event = c.cycles;
+        false
+    }
+
+    /// Run `f` on `case` with an event due at every check; the `pc`s of the
+    /// checks, in order.
+    pub(crate) fn vfprintf_r_event_pcs(f: GuestFn, case: &VfprintfRCase, mode: u32) -> Vec<u32> {
+        let mut c = fresh();
+        vfprintf_r_setup(&mut c, 0, case, mode, 0);
+        c.hooks.event = vfprintf_r_record_event;
+        c.next_event = c.cycles;
+        VFPRINTF_R_EVENT_PCS.with(|v| v.borrow_mut().clear());
+        f(&mut c);
+        assert_eq!(c.pc, crate::difftest::RA, "did not return");
+        VFPRINTF_R_EVENT_PCS.with(|v| std::mem::take(&mut *v.borrow_mut()))
+    }
+
+    /// With an event due at every check, both bodies check at the same
+    /// `pc`s in the same order, and the event formats reach every back-edge
+    /// head of this function.
+    #[test]
+    fn vfprintf_r_event_heads() {
+        let mut seen = std::collections::BTreeSet::new();
+        for case in VFPRINTF_R_EVENT_CASES {
+            for mode in [1, 2] {
+                let generated = vfprintf_r_event_pcs(ee::s15::f_0041b728__generated, case, mode);
+                let hand = vfprintf_r_event_pcs(vfprintf_r, case, mode);
+                assert_eq!(
+                    generated,
+                    hand,
+                    "{:?} mode {mode}",
+                    String::from_utf8_lossy(case.fmt)
+                );
+                seen.extend(
+                    hand.into_iter()
+                        .filter(|pc| (VFPRINTF_R_ENTRY..VFPRINTF_R_END).contains(pc)),
+                );
+            }
+        }
+        let heads = [
+            VFPRINTF_R_HEAD_FORMAT,
+            VFPRINTF_R_HEAD_SCAN,
+            VFPRINTF_R_HEAD_READ,
+            VFPRINTF_R_HEAD_ADVANCE,
+            VFPRINTF_R_HEAD_DISPATCH,
+            VFPRINTF_R_HEAD_PREC_DIGITS,
+            VFPRINTF_R_HEAD_WIDTH_DIGITS,
+            VFPRINTF_R_HEAD_OCT,
+            VFPRINTF_R_HEAD_DEC,
+            VFPRINTF_R_HEAD_HEX,
+            VFPRINTF_R_PAD_BLANKS_BEFORE.head,
+            VFPRINTF_R_PAD_ZEROS_WIDTH.head,
+            VFPRINTF_R_PAD_ZEROS_PREC.head,
+            VFPRINTF_R_PAD_BLANKS_AFTER.head,
+        ];
+        for head in heads {
+            assert!(
+                seen.contains(&head),
+                "no event check at {head:#x} (seen {seen:x?})"
+            );
+        }
+    }
+
+    /// Forged chunks are carved from here up (a non-zero low byte).
+    pub(crate) const MALLOC_R_ARENA: u32 = DATA + 0x2_0128;
+
+    /// Words of non-zero fill over the arena (heads, feet and the next
+    /// chunks' size words the allocator writes).
+    pub(crate) const MALLOC_R_ARENA_WORDS: u32 = 0x2000;
+
+    /// The forged top chunk's lowest address.
+    pub(crate) const MALLOC_R_FORGED_TOP: u32 = MALLOC_R_ARENA + 0x6000;
+
+    /// Room a forged top keeps past `nb`.
+    pub(crate) const MALLOC_R_TOP_SLACK: u32 = 0x1_0000;
+
+    /// Gap between forged chunks.
+    pub(crate) const MALLOC_R_CHUNK_GAP: u32 = 0x28;
+
+    /// Gate of the `malloc_extend_top` fake: the magic word, then the top
+    /// chunk's new size word.
+    pub(crate) const MALLOC_R_FAKE_GATE: u32 = DATA + 0x6f00;
+
+    pub(crate) const MALLOC_R_FAKE_MAGIC: u32 = 0x6d61_6c72;
+
+    /// Cycles the `malloc_extend_top` fake charges.
+    pub(crate) const MALLOC_R_FAKE_EXTEND_CYCLES: u64 = 3;
+
+    /// Request sizes for the lived-in heaps: the `MINSIZE` edge (11/12),
+    /// the small/large edge (0x1e4 -> 0x1f0, 0x1ed -> 0x200), more than
+    /// the heap can grow by, and sizes that wrap in `request2size`
+    /// (0xfffffff0 -> 16 bytes, 0xffffffe0 -> a huge `nb`).
+    pub(crate) const MALLOC_R_REQUESTS: [u32; 16] = [
+        0,
+        1,
+        11,
+        12,
+        24,
+        0x100,
+        0x1e4,
+        0x1ed,
+        0x3f0,
+        0xff0,
+        0x4000,
+        0x1_0000,
+        0x10_0000,
+        0x7fff_ffff,
+        0xffff_fff0,
+        0xffff_ffe0,
+    ];
+
+    /// A forged heap: the libc heap fixture (image, reent, `sbrk` state),
+    /// chunks carved from the arena and linked into `av_` by hand.
+    pub(crate) struct MallocRHeap {
+        pub(crate) next: u32,
+        /// Low bits put in every forged head (`PREV_INUSE`, `IS_MMAPPED`);
+        /// `chunksize` must drop them.
+        pub(crate) flags: u32,
+    }
+
+    impl MallocRHeap {
+        pub(crate) fn new(c: &mut Cpu, r: &mut Rng, flags: u32) -> Self {
+            heap_init(c, r);
+            fill(c, r, MALLOC_R_ARENA, MALLOC_R_ARENA_WORDS);
+            MallocRHeap {
+                next: MALLOC_R_ARENA,
+                flags,
+            }
+        }
+
+        /// A free chunk of `size` bytes (its head only).
+        pub(crate) fn chunk(&mut self, c: &mut Cpu, size: u32) -> u32 {
+            let at = self.next;
+            c.bus.write32(at + MCHUNK_SIZE, size | self.flags);
+            self.next = at + size + MALLOC_R_CHUNK_GAP;
+            at
+        }
+
+        /// The top chunk, past every chunk, with junk where a split puts
+        /// the new top's head (`nb` bytes in).
+        pub(crate) fn top(&mut self, c: &mut Cpu, r: &mut Rng, size: u32, nb: u32) {
+            let at = self.next.max(MALLOC_R_FORGED_TOP);
+            c.bus.write32(MALLOC_TOP, at);
+            c.bus.write32(at + MCHUNK_SIZE, size | self.flags);
+            fill(c, r, at + nb, 4);
+        }
+    }
+
+    pub(crate) fn malloc_r_bin_at(idx: u32) -> u32 {
+        MALLOC_AV + (idx << MALLOC_BIN_SHIFT)
+    }
+
+    /// Set a `binblocks` bit (also a stale one, over empty bins).
+    pub(crate) fn malloc_r_mark_block(c: &mut Cpu, block: u32) {
+        let blocks = c.bus.read32(MALLOC_BINBLOCKS);
+        c.bus.write32(MALLOC_BINBLOCKS, blocks | 1 << block);
+    }
+
+    /// Link `chunks` into bin `idx` in `fd` order (largest first, as
+    /// `frontlink` keeps them) and mark the bin's block.
+    pub(crate) fn malloc_r_link_bin(c: &mut Cpu, idx: u32, chunks: &[u32]) {
+        let bin = malloc_r_bin_at(idx);
+        let mut prev = bin;
+        for &chunk in chunks {
+            c.bus.write32(prev + MCHUNK_FD, chunk);
+            c.bus.write32(chunk + MCHUNK_BK, prev);
+            prev = chunk;
+        }
+        c.bus.write32(prev + MCHUNK_FD, bin);
+        c.bus.write32(bin + MCHUNK_BK, prev);
+        malloc_r_mark_block(c, idx / MALLOC_BINBLOCKWIDTH as u32);
+    }
+
+    /// Make `chunk` the last remainder.
+    pub(crate) fn malloc_r_set_last_remainder(c: &mut Cpu, chunk: u32) {
+        c.bus.write32(MALLOC_LAST_REMAINDER + MCHUNK_FD, chunk);
+        c.bus.write32(MALLOC_LAST_REMAINDER + MCHUNK_BK, chunk);
+        c.bus.write32(chunk + MCHUNK_FD, MALLOC_LAST_REMAINDER);
+        c.bus.write32(chunk + MCHUNK_BK, MALLOC_LAST_REMAINDER);
+    }
+
+    /// A request `request2size` rounds to `nb`, `slack` bytes into its
+    /// 16-byte window.
+    pub(crate) fn malloc_r_request_for(nb: u32, slack: u32) -> u32 {
+        if nb == MALLOC_MINSIZE as u32 {
+            slack % 12
+        } else {
+            nb - MALLOC_REQUEST_PAD as u32 + slack % 16
+        }
+    }
+
+    /// `_malloc_r(REENT_3, bytes)` at the entry, returning to the test's
+    /// sentinel; junk in a1's upper half (only the low word counts).
+    pub(crate) fn malloc_r_call(c: &mut Cpu, r: &mut Rng, bytes: u32) {
+        c.g[A0][0] = REENT_3 as u64;
+        c.g[A1][0] = (r.next_u32() as u64) << 32 | bytes as u64;
+        c.g[RA][0] = crate::difftest::RA as u64;
+        c.pc = MALLOC_R_ENTRY;
+    }
+
+    /// Gated `malloc_extend_top` (slot 0x41d990): writes the armed size word
+    /// into the top chunk's head and returns, so the post-extend arms run on
+    /// a known top.
+    pub(crate) fn malloc_r_fake_extend_top(c: &mut Cpu) {
+        if c.bus.read32(MALLOC_R_FAKE_GATE) != MALLOC_R_FAKE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(malloc_r_fake_extend_top),
+                ee::s15::f_0041d990__generated,
+            );
+        }
+        let top = c.bus.read32(MALLOC_TOP);
+        let head = c.bus.read32(MALLOC_R_FAKE_GATE + 4);
+        c.bus.write32(top + MCHUNK_SIZE, head);
+        c.cycles += MALLOC_R_FAKE_EXTEND_CYCLES;
+        ret(c);
+    }
+
+    /// Hook the `malloc_extend_top` fake (once per process) and arm it with
+    /// the top's new size word.
+    pub(crate) fn malloc_r_arm_extend_top(c: &mut Cpu, head: u32) {
+        hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0041D990),
+            malloc_r_fake_extend_top,
+            prev_cell(malloc_r_fake_extend_top),
+        );
+        c.bus.write32(MALLOC_R_FAKE_GATE, MALLOC_R_FAKE_MAGIC);
+        c.bus.write32(MALLOC_R_FAKE_GATE + 4, head);
+    }
+
+    /// Forged heaps, each steering one path (named after it; the total
+    /// cycles of each, worked out from the generated block charges with the
+    /// lock at 30 and the unlock at 20, are in the tests).
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum MallocRCase {
+        /// `bin_at(6)` holds a 0x30 chunk for `nb` 0x30.
+        SmallExact,
+        /// `bin_at(2)` holds a `MINSIZE` chunk for a request below 12.
+        SmallExact16,
+        /// Empty bins, no remainder: split the top.
+        SmallTop,
+        /// A 0x100 last remainder for `nb` 0x30: re-split.
+        LrResplit,
+        /// A 0x40 last remainder for `nb` 0x30: `nb` + 16, used whole.
+        LrResplit16,
+        /// A 0x200 last remainder for `nb` 0x1000.
+        LrRemainder512,
+        /// A 0x30 last remainder for `nb` 0x30: used whole.
+        LrExhaust,
+        /// A 0x40 last remainder for `nb` 0x100: into its small bin.
+        LrSmallBin,
+        /// ... with the bin's block bit already set when it is frontlinked.
+        LrSmallBinMarked,
+        /// A 0x400 last remainder for `nb` 0x1000: into empty `bin_at(72)`.
+        LrLargeEmpty,
+        /// ... into `bin_at(72)` holding 0x410 (no walk).
+        LrLargeDirect,
+        /// 0x400 into [0x430, 0x420]: walk to the bin's end.
+        LrLargeWalkEnd,
+        /// 0x420 into [0x430, 0x410]: the walk stops at 0x410.
+        LrLargeWalkStop,
+        /// 0x420 into [0x430, 0x420]: a later chunk of the same size.
+        LrLargeWalkStopEq,
+        /// `bin_at(99)` = [0x1000] for `nb` 0x1000: an exact fit.
+        LargeExact,
+        /// `bin_at(99)` = [0x1010] for `nb` 0x1000: `nb` + 16.
+        LargeExact16,
+        /// [0x1100, 0x1000] for `nb` 0x1100: too small, then exact.
+        LargeShortExact,
+        /// [0x1180] for `nb` 0x1100: too big, split by the block scan.
+        LargeBigBlockSplit,
+        /// [0x1000] for `nb` 0x1100: the bin runs out, the top splits.
+        LargeExhaustedTop,
+        /// `nb` 0x30, a 0x50 chunk in `bin_at(10)`: one bin step (two bins).
+        BlockBinStep,
+        /// A 0x38 chunk (8-aligned) in `bin_at(8)`: taken whole.
+        BlockTake,
+        /// `bin_at(8)` = [0x50, 0x20]: the 0x20 is too small, 0x50 splits.
+        BlockNextVictim,
+        /// `bin_at(8)` = [0x20] runs out, `bin_at(10)` = [0x50] splits.
+        BlockBinExhausted,
+        /// The next block (`bin_at(12)` = [0x60]) found at the boundary.
+        FirstBlockDirect,
+        /// `bin_at(20)` = [0xa0] found by the block search loop.
+        FirstBlockSearch,
+        /// A stale block-2 bit: scanned, cleared, then the search finds
+        /// `bin_at(20)`.
+        StaleClearSearch,
+        /// `nb` 0x40 under a stale block-2 bit: backtrack to the start,
+        /// clear it, then the top.
+        BacktrackClearTop,
+        /// `nb` 0x40, `bin_at(9)` occupied: the backtrack stops, the next
+        /// block (`bin_at(12)`) is marked.
+        BacktrackStopNextMarked,
+        /// ... the next marked block is two further (`bin_at(20)`).
+        BacktrackStopSearch,
+        /// `nb` 0xc0000, `bin_at(126)` = [0xb0000]: block 31 (bit 31 of
+        /// `binblocks`, read with `lwu`), then the top.
+        Bit31Block,
+        /// Top 0x20 for `nb` 0x30: extend (fake), then split.
+        TopShortExtendFits,
+        /// Top 0x30 for `nb` 0x30: just enough, then the extend.
+        TopExactFits,
+        /// Top 0x40 for `nb` 0x30: `nb` + 16, split at once.
+        TopExactPlus16Fits,
+        /// Top 0x38 (remainder below `MINSIZE`): extend, then split.
+        TopThinExtendFits,
+        /// Top 0x20, the extend adds nothing: NULL.
+        TopExtendStillShort,
+        /// Top 0x20 grown to 0x31: still `nb`, NULL.
+        TopExtendGrownExact,
+        /// Top 0x20 grown to 0x41: `nb` + 16, split.
+        TopExtendGrownPlus16,
+        /// Top 0x20 grown to 0x38: still too thin, NULL.
+        TopExtendStillThin,
+        /// Large requests on empty bins, one per `bin_index` class edge.
+        Band1,
+        Band4,
+        Band20,
+        Band21,
+        Band84,
+        Band85,
+        Band340,
+        Band341,
+        Band1364,
+        Band1365,
+        /// Old remainders into empty large bins, one per class edge.
+        LrBand5,
+        LrBand21,
+        LrBand85,
+        LrBand341,
+        LrBand1365,
+    }
+
+    /// Build `case` on a fresh machine; `flags` (0..4) picks the forged
+    /// heads' low bits and `slack` (0..4) the request's place in its
+    /// rounding window, each independent of the other and of the case.
+    pub(crate) fn malloc_r_case(c: &mut Cpu, case: MallocRCase, flags: u32, slack: u32) {
+        use MallocRCase::*;
+        let mut r =
+            Rng(0x0041_dbf8 ^ (case as u64) << 8 ^ (flags as u64) << 16 ^ (slack as u64) << 20);
+        let mut heap = MallocRHeap::new(c, &mut r, [1, 3, 0, 2][flags as usize % 4]);
+        let mut top = None;
+        let mut extend_to = None;
+        let nb: u32 = match case {
+            SmallExact => {
+                let ch = heap.chunk(c, 0x30);
+                malloc_r_link_bin(c, 6, &[ch]);
+                0x30
+            }
+            SmallExact16 => {
+                let ch = heap.chunk(c, 0x10);
+                malloc_r_link_bin(c, 2, &[ch]);
+                0x10
+            }
+            SmallTop => 0x30,
+            LrResplit => {
+                let lr = heap.chunk(c, 0x100);
+                malloc_r_set_last_remainder(c, lr);
+                0x30
+            }
+            LrResplit16 => {
+                let lr = heap.chunk(c, 0x40);
+                malloc_r_set_last_remainder(c, lr);
+                0x30
+            }
+            LrRemainder512 => {
+                let lr = heap.chunk(c, 0x200);
+                malloc_r_set_last_remainder(c, lr);
+                0x1000
+            }
+            LrExhaust => {
+                let lr = heap.chunk(c, 0x30);
+                malloc_r_set_last_remainder(c, lr);
+                0x30
+            }
+            LrSmallBin => {
+                let lr = heap.chunk(c, 0x40);
+                malloc_r_set_last_remainder(c, lr);
+                0x100
+            }
+            LrSmallBinMarked => {
+                let lr = heap.chunk(c, 0x40);
+                malloc_r_set_last_remainder(c, lr);
+                // Already marked when the remainder is frontlinked below.
+                malloc_r_mark_block(c, 2);
+                0x100
+            }
+            LrLargeEmpty | LrLargeDirect | LrLargeWalkEnd | LrLargeWalkStop | LrLargeWalkStopEq => {
+                let (bin, lr): (&[u32], u32) = match case {
+                    LrLargeEmpty => (&[], 0x400),
+                    LrLargeDirect => (&[0x410], 0x430),
+                    LrLargeWalkEnd => (&[0x430, 0x420], 0x400),
+                    LrLargeWalkStopEq => (&[0x430, 0x420], 0x420),
+                    _ => (&[0x430, 0x410], 0x420),
+                };
+                let chunks: Vec<u32> = bin.iter().map(|&s| heap.chunk(c, s)).collect();
+                if !chunks.is_empty() {
+                    malloc_r_link_bin(c, 72, &chunks);
+                }
+                let lr = heap.chunk(c, lr);
+                malloc_r_set_last_remainder(c, lr);
+                0x1000
+            }
+            LargeExact | LargeShortExact | LargeBigBlockSplit | LargeExhaustedTop
+            | LargeExact16 => {
+                let (sizes, nb): (&[u32], u32) = match case {
+                    LargeExact => (&[0x1000], 0x1000),
+                    LargeExact16 => (&[0x1010], 0x1000),
+                    LargeShortExact => (&[0x1100, 0x1000], 0x1100),
+                    LargeBigBlockSplit => (&[0x1180], 0x1100),
+                    _ => (&[0x1000], 0x1100),
+                };
+                let chunks: Vec<u32> = sizes.iter().map(|&s| heap.chunk(c, s)).collect();
+                malloc_r_link_bin(c, 99, &chunks);
+                nb
+            }
+            BlockBinStep => {
+                let ch = heap.chunk(c, 0x50);
+                malloc_r_link_bin(c, 10, &[ch]);
+                0x30
+            }
+            BlockTake => {
+                let ch = heap.chunk(c, 0x38);
+                malloc_r_link_bin(c, 8, &[ch]);
+                0x30
+            }
+            BlockNextVictim => {
+                let big = heap.chunk(c, 0x50);
+                let small = heap.chunk(c, 0x20);
+                malloc_r_link_bin(c, 8, &[big, small]);
+                0x30
+            }
+            BlockBinExhausted => {
+                let small = heap.chunk(c, 0x20);
+                malloc_r_link_bin(c, 8, &[small]);
+                let big = heap.chunk(c, 0x50);
+                malloc_r_link_bin(c, 10, &[big]);
+                0x30
+            }
+            FirstBlockDirect => {
+                let ch = heap.chunk(c, 0x60);
+                malloc_r_link_bin(c, 12, &[ch]);
+                0x30
+            }
+            FirstBlockSearch | StaleClearSearch => {
+                if matches!(case, StaleClearSearch) {
+                    malloc_r_mark_block(c, 2);
+                }
+                let ch = heap.chunk(c, 0xa0);
+                malloc_r_link_bin(c, 20, &[ch]);
+                0x30
+            }
+            BacktrackClearTop => {
+                malloc_r_mark_block(c, 2);
+                0x40
+            }
+            BacktrackStopNextMarked | BacktrackStopSearch => {
+                let odd = heap.chunk(c, 0x48);
+                malloc_r_link_bin(c, 9, &[odd]);
+                let (idx, size) = match case {
+                    BacktrackStopNextMarked => (12, 0x60),
+                    _ => (20, 0xa0),
+                };
+                let ch = heap.chunk(c, size);
+                malloc_r_link_bin(c, idx, &[ch]);
+                0x40
+            }
+            Bit31Block => {
+                let ch = heap.chunk(c, 0xb_0000);
+                malloc_r_link_bin(c, 126, &[ch]);
+                0xc_0000
+            }
+            TopShortExtendFits | TopThinExtendFits | TopExtendStillShort | TopExtendStillThin
+            | TopExactFits | TopExactPlus16Fits | TopExtendGrownExact | TopExtendGrownPlus16 => {
+                let (forged, grown) = match case {
+                    TopShortExtendFits => (0x20, 0x1001),
+                    TopThinExtendFits => (0x38, 0x1001),
+                    TopExactFits => (0x30, 0x1001),
+                    TopExactPlus16Fits => (0x40, 0x1001),
+                    TopExtendGrownExact => (0x20, 0x31),
+                    TopExtendGrownPlus16 => (0x20, 0x41),
+                    TopExtendStillShort => (0x20, 0x21),
+                    _ => (0x20, 0x39),
+                };
+                top = Some(forged);
+                extend_to = Some(grown);
+                0x30
+            }
+            Band1 => 0x200,
+            Band4 => 0x9f0,
+            Band20 => 0x29f0,
+            Band21 => 0x2a00,
+            Band84 => 0xa9f0,
+            Band85 => 0xaa00,
+            Band340 => 0x2_a9f0,
+            Band341 => 0x2_aa00,
+            Band1364 => 0xa_a9f0,
+            Band1365 => 0xa_aa00,
+            LrBand5 | LrBand21 | LrBand85 | LrBand341 | LrBand1365 => {
+                let (lr, nb) = match case {
+                    LrBand5 => (0xa00, 0x1000),
+                    LrBand21 => (0x2a00, 0x8000),
+                    LrBand85 => (0xaa00, 0x2_0000),
+                    LrBand341 => (0x2_aa00, 0x2_b000),
+                    _ => (0xa_aa00, 0xa_b000),
+                };
+                let lr = heap.chunk(c, lr);
+                malloc_r_set_last_remainder(c, lr);
+                nb
+            }
+        };
+        heap.top(c, &mut r, top.unwrap_or(nb + MALLOC_R_TOP_SLACK), nb);
+        if let Some(head) = extend_to {
+            malloc_r_arm_extend_top(c, head);
+        }
+        let slack = [0, 5, 11, 15][slack as usize % 4];
+        malloc_r_call(c, &mut r, malloc_r_request_for(nb, slack));
+    }
+
+    /// Run every case of `cases` (`seed % n`) with every head-flags digit
+    /// (`seed / n % 4`) and every request-slack digit
+    /// (`seed / (4 * n) % 4`), requiring each case's cycle total.
+    pub(crate) fn malloc_r_check_cases(cases: &[(MallocRCase, u64)]) {
+        let n = cases.len() as u32;
+        let totals: Vec<u64> = cases.iter().map(|&(_, t)| t).collect();
+        check_paths(
+            ee::s15::f_0041dbf8__generated,
+            malloc_r,
+            16 * n,
+            &totals,
+            &|c, seed| {
+                let (case, _) = cases[(seed % n) as usize];
+                malloc_r_case(c, case, seed / n % 4, seed / (4 * n) % 4);
+            },
+        );
+    }
+
+    /// `_malloc_r` on lived-in heaps (real `malloc`/`free` histories, or a
+    /// fresh heap whose first request grows the break through the real
+    /// `malloc_extend_top`), with requests across the edges.
+    #[test]
+    fn malloc_r_matches() {
+        check(ee::s15::f_0041dbf8__generated, malloc_r, 192, &|c, seed| {
+            let mut r = Rng(0x0041_dbf8 ^ (seed as u64) << 24);
+            if seed / 16 % 3 == 0 {
+                heap_init(c, &mut r);
+            } else {
+                let _ = heap_history(c, seed / 16, 0x0041_dbf8);
+            }
+            malloc_r_call(c, &mut r, MALLOC_R_REQUESTS[seed as usize % 16]);
+        });
+    }
+
+    /// The small bin, the large bin scan, the last remainder and its
+    /// `frontlink` (small, empty large, sorted large with and without the
+    /// walk, an equal-size later chunk), exact fits.
+    #[test]
+    fn malloc_r_bins_matches() {
+        use MallocRCase::*;
+        malloc_r_check_cases(&[
+            (SmallExact, 101),
+            (SmallExact16, 98),
+            (SmallTop, 139),
+            (LrResplit, 127),
+            (LrResplit16, 127),
+            (LrExhaust, 117),
+            (LrSmallBin, 181),
+            (LrSmallBinMarked, 181),
+            (LrRemainder512, 199),
+            (LrLargeEmpty, 199),
+            (LrLargeDirect, 192),
+            (LrLargeWalkEnd, 204),
+            (LrLargeWalkStop, 203),
+            (LrLargeWalkStopEq, 203),
+            (LargeExact, 122),
+            (LargeExact16, 179),
+            (LargeShortExact, 141),
+            (LargeBigBlockSplit, 179),
+            (LargeExhaustedTop, 167),
+        ]);
+    }
+
+    /// The `binblocks` scan: bin steps, split and take, a bin running out,
+    /// the first-block search, clearing a stale bit, the backtrack, the
+    /// next-block search and block 31.
+    #[test]
+    fn malloc_r_block_scan_matches() {
+        use MallocRCase::*;
+        malloc_r_check_cases(&[
+            (BlockBinStep, 165),
+            (BlockTake, 144),
+            (BlockNextVictim, 171),
+            (BlockBinExhausted, 186),
+            (FirstBlockDirect, 162),
+            (FirstBlockSearch, 177),
+            (StaleClearSearch, 216),
+            (BacktrackClearTop, 189),
+            (BacktrackStopNextMarked, 185),
+            (BacktrackStopSearch, 203),
+            (Bit31Block, 208),
+        ]);
+    }
+
+    /// The top chunk with `malloc_extend_top` faked (grown enough, too thin,
+    /// not at all, grown to exactly `nb` or `nb` + 16), exact and
+    /// just-too-big forged tops, and every `bin_index` class edge for the
+    /// request and for an old remainder.
+    #[test]
+    fn malloc_r_top_matches() {
+        use MallocRCase::*;
+        malloc_r_check_cases(&[
+            (TopShortExtendFits, 164),
+            (TopThinExtendFits, 164),
+            (TopExactFits, 164),
+            (TopExactPlus16Fits, 139),
+            (TopExtendStillShort, 153),
+            (TopExtendStillThin, 154),
+            (TopExtendGrownExact, 154),
+            (TopExtendGrownPlus16, 164),
+            (Band1, 147),
+            (Band4, 147),
+            (Band20, 148),
+            (Band21, 153),
+            (Band84, 153),
+            (Band85, 156),
+            (Band340, 156),
+            (Band341, 159),
+            (Band1364, 159),
+            (Band1365, 158),
+            (LrBand5, 200),
+            (LrBand21, 210),
+            (LrBand85, 216),
+            (LrBand341, 269),
+            (LrBand1365, 251),
+        ]);
+    }
+
+    thread_local! {
+        /// Re-entries at each loop head, generated side then hand side (the
+        /// generated side also counts `check_events`' extra run per seed).
+        static MALLOC_R_RESUMES: std::cell::RefCell<[std::collections::BTreeMap<u32, u32>; 2]> =
+            const { std::cell::RefCell::new([std::collections::BTreeMap::new(), std::collections::BTreeMap::new()]) };
+    }
+
+    /// Count a call into side `side` at a pc other than the entry (a resume
+    /// made by `drive`).
+    pub(crate) fn malloc_r_count_resume(c: &Cpu, side: usize) {
+        if c.pc != MALLOC_R_ENTRY {
+            MALLOC_R_RESUMES.with(|r| *r.borrow_mut()[side].entry(c.pc).or_default() += 1);
+        }
+    }
+
+    pub(crate) fn malloc_r_gen_counted(c: &mut Cpu) {
+        malloc_r_count_resume(c, 0);
+        ee::s15::f_0041dbf8__generated(c);
+    }
+
+    pub(crate) fn malloc_r_hand_counted(c: &mut Cpu) {
+        malloc_r_count_resume(c, 1);
+        malloc_r(c);
+    }
+
+    driven!(malloc_r_gen_driven, malloc_r_gen_counted);
+
+    driven!(malloc_r_hand_driven, malloc_r_hand_counted);
+
+    /// Events at each loop head in turn: `(case, cycles after entry)` puts
+    /// the first due check on the head's back edge (43..46 is past the
+    /// lock's syscall checks; 113..116 skips the two backtrack edges of
+    /// `BacktrackClearTop` for the `binblocks` clear's edge).
+    #[test]
+    fn malloc_r_events() {
+        use MallocRCase::*;
+        const HEADS: [(MallocRCase, u64); 9] = [
+            (LargeExact, 43),
+            (LrLargeWalkEnd, 43),
+            (FirstBlockSearch, 43),
+            (BlockBinStep, 43),
+            (BlockNextVictim, 43),
+            (BacktrackClearTop, 43),
+            (BacktrackStopNextMarked, 43),
+            (BacktrackStopSearch, 43),
+            (BacktrackClearTop, 113),
+        ];
+        check_events(
+            malloc_r_gen_driven,
+            malloc_r_hand_driven,
+            108,
+            &|c, seed| {
+                let (case, after) = HEADS[(seed / 3 % 9) as usize];
+                let digit = seed / 27 % 4;
+                malloc_r_case(c, case, digit, digit);
+                let mut r = Rng(0x0041_dd30 ^ seed as u64);
+                let mode = heap_schedule(c, &mut r, seed, MALLOC_R_ENTRY);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + after + digit as u64;
+                }
+                mode
+            },
+        );
+        let [generated, hand] = MALLOC_R_RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()));
+        for head in [
+            MALLOC_R_LARGE_BIN_NEXT,
+            MALLOC_R_FRONTLINK_WALK,
+            MALLOC_R_FIRST_BLOCK,
+            MALLOC_R_BLOCK,
+            MALLOC_R_BIN,
+            MALLOC_R_VICTIM,
+            MALLOC_R_BACKTRACK,
+            MALLOC_R_NEXT_BLOCK,
+            MALLOC_R_NEXT_BLOCK_SEARCH,
+        ] {
+            assert!(
+                generated.get(&head).copied().unwrap_or(0) > 0,
+                "no resume at {head:#x} (generated {generated:x?})"
+            );
+            assert!(
+                hand.get(&head).copied().unwrap_or(0) > 0,
+                "the hand side never resumed at {head:#x} (hand {hand:x?})"
+            );
+        }
+    }
+
+    /// The generated body (`f_0041af88__generated` once installed).
+    pub(crate) const FLOAT_TO_STR_GENERATED: GuestFn = ee::s15::f_0041af88__generated;
+
+    /// Seeds of the main fixture (31 values x 2 signs, crossed with the
+    /// coprime precision, style, trim and sign-pointer digits).
+    pub(crate) const FLOAT_TO_STR_SEEDS: u32 = 320;
+
+    /// `*sign` (odd address) and its fill; the result buffer's fill length.
+    pub(crate) const FLOAT_TO_STR_TEST_SIGN: u32 = DATA + 0x2a3;
+
+    pub(crate) const FLOAT_TO_STR_TEST_SIGN_FILL: u8 = 0x5a;
+
+    pub(crate) const FLOAT_TO_STR_TEST_BUF_LEN: u32 = 0x400;
+
+    /// Precisions: none, small, the double's 17 digits, large, and -1
+    /// (the point goes in without a shift).
+    pub(crate) const FLOAT_TO_STR_TEST_PRECS: [u32; 8] = [0, 1, 2, 3, 6, 17, 40, u32::MAX];
+
+    /// Styles: `'f'`, `'e'`, `'E'`, `'f'` with junk above its byte, and a
+    /// negative char (sign-extended, printed as the exponent letter).
+    pub(crate) const FLOAT_TO_STR_TEST_STYLES: [u32; 5] = [0x66, 0x65, 0x45, 0x7a66, 0x12e5];
+
+    pub(crate) const FLOAT_TO_STR_TEST_TRIMS: [u32; 3] = [0, 1, 0x8000_0000];
+
+    /// Cycle totals of the arms without calls: NaN (high fraction bits),
+    /// NaN (low word only), +Inf, -Inf.
+    pub(crate) const FLOAT_TO_STR_SPECIAL_PATHS: [u64; 4] = [50, 51, 56, 58];
+
+    pub(crate) const FLOAT_TO_STR_TEST_VALUE_COUNT: u32 = 34;
+
+    /// The doubles converted: zero, integers of 1..4 digits, exact halves
+    /// (rounding), values just below a carry (9.99.., 0.0999..), small and
+    /// large magnitudes at the exponent widths (1e9/1e10, 1e-9/1e-10), 1e300
+    /// (the 163-digit limit), the smallest denormal (soft-float reads it as
+    /// zero), +Inf and the two NaN shapes, the exact-boundary fraction
+    /// remainders (2^-54, a remainder of 1 minus the bound, 0.25).
+    pub(crate) fn float_to_str_test_value(i: u32) -> u64 {
+        let v = match i {
+            0 => 0.0,
+            1 => 1.0,
+            2 => 10.0,
+            3 => 100.0,
+            4 => 1234.5,
+            5 => 0.5,
+            6 => 1.5,
+            7 => 2.5,
+            8 => 0.125,
+            9 => 9.5,
+            10 => 0.95,
+            11 => 9.999_999_9,
+            12 => 0.999_999_999,
+            13 => 0.099_999_999_9,
+            14 => 999_999.999_999_9,
+            15 => 1e-5,
+            16 => 3.14159e-10,
+            17 => 1e20,
+            18 => 1e9,
+            19 => 1e10,
+            20 => 1e-9,
+            21 => 1e-10,
+            22 => 1e300,
+            23 => return 1,
+            24 => 0.1,
+            25 => std::f64::consts::PI,
+            26 => 2.0 / 3.0,
+            27 => return 0x7ff0_0000_0000_0000,
+            28 => return 0x7ff8_0000_0000_0001,
+            29 => return 0x7ff0_0000_0000_0001,
+            30 => 0.009999999999999945,
+            31 => 0.25,
+            32 => return 0x3c90_0000_0000_0000,
+            _ => 123.456,
+        };
+        f64::to_bits(v)
+    }
+
+    /// One call's arguments.
+    #[derive(Clone, Copy)]
+    pub(crate) struct FloatToStrCase {
+        pub(crate) x: u64,
+        pub(crate) prec: u32,
+        pub(crate) style: u32,
+        pub(crate) trim: u32,
+        pub(crate) sign: u32,
+    }
+
+    /// The main fixture's case for `seed` (independent digits: value and
+    /// its sign, precision, style, trim, null `sign`).
+    pub(crate) fn float_to_str_case(seed: u32) -> FloatToStrCase {
+        let n = FLOAT_TO_STR_TEST_VALUE_COUNT;
+        let negative = (seed / n % 2) as u64;
+        FloatToStrCase {
+            x: float_to_str_test_value(seed % n) | negative << 63,
+            prec: FLOAT_TO_STR_TEST_PRECS[(seed % 8) as usize],
+            style: FLOAT_TO_STR_TEST_STYLES[(seed % 5) as usize],
+            trim: FLOAT_TO_STR_TEST_TRIMS[(seed % 3) as usize],
+            sign: if seed % 7 == 3 {
+                0
+            } else {
+                FLOAT_TO_STR_TEST_SIGN
+            },
+        }
+    }
+
+    /// Scrambled registers, the game image (the special strings,
+    /// `IntToStr`'s digit table, the soft-float constants), the result
+    /// buffer and `*sign` pre-filled with non-zero bytes, and the arguments
+    /// (junk above the 32 bits the function stores). Plain RAM the game
+    /// leaves mapped (read on the `-Inf` path) is non-zero too, so a wrong
+    /// address shows.
+    pub(crate) fn float_to_str_setup(c: &mut Cpu, seed: u32, case: FloatToStrCase) {
+        let mut r = machine(c, seed, FLOAT_TO_STR_ENTRY as u64, 0);
+        elf_image(c);
+        c.bus.write32(0x0126_8c00, 0xa5a5_a5a5);
+        for i in 0..FLOAT_TO_STR_TEST_BUF_LEN {
+            c.bus
+                .write8(FLOAT_TO_STR_BUF + i, r.next_u32() as u8 | 0x80);
+        }
+        c.bus
+            .write8(FLOAT_TO_STR_TEST_SIGN, FLOAT_TO_STR_TEST_SIGN_FILL);
+        c.pc = FLOAT_TO_STR_ENTRY;
+        let junk = |r: &mut Rng| (r.next_u32() as u64) << 32;
+        c.g[A0][0] = case.x;
+        c.g[A1][0] = junk(&mut r) | case.prec as u64;
+        c.g[A2][0] = junk(&mut r) | case.style as u64;
+        c.g[A3][0] = junk(&mut r) | case.trim as u64;
+        c.g[T0][0] = sx(case.sign);
+    }
+
+    /// Every value class with every precision, style, trim and sign
+    /// pointer; the four call-free special arms by their cycle totals.
+    #[test]
+    fn vfprintf_float_to_str_matches() {
+        check_paths(
+            FLOAT_TO_STR_GENERATED,
+            vfprintf_float_to_str,
+            FLOAT_TO_STR_SEEDS,
+            &FLOAT_TO_STR_SPECIAL_PATHS,
+            &|c, seed| float_to_str_setup(c, seed, float_to_str_case(seed)),
+        );
+    }
+
+    thread_local! {
+        /// (pc, cycles) of each event check of a dry run.
+        static FLOAT_TO_STR_CHECKS: RefCell<Vec<(u32, u64)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// Event hook of a dry run: record the check, never deliver.
+    pub(crate) fn float_to_str_record_check(c: &mut Cpu) -> bool {
+        assert!(
+            c.cycles < CYCLE_BUDGET,
+            "dry run past the cycle budget at {:#x}",
+            c.pc
+        );
+        FLOAT_TO_STR_CHECKS.with(|v| v.borrow_mut().push((c.pc, c.cycles)));
+        false
+    }
+
+    /// Runs the generated body with every event check (its own and its
+    /// callees') recorded as (pc, cycles), in order.
+    pub(crate) fn float_to_str_check_sites(c: &mut Cpu) -> Vec<(u32, u64)> {
+        FLOAT_TO_STR_CHECKS.with(|v| v.borrow_mut().clear());
+        c.next_event = 0;
+        c.hooks.event = float_to_str_record_check;
+        FLOAT_TO_STR_GENERATED(c);
+        FLOAT_TO_STR_CHECKS.with(|v| std::mem::take(&mut *v.borrow_mut()))
+    }
+
+    /// The result string (up to its NUL).
+    pub(crate) fn float_to_str_text(c: &mut Cpu) -> Vec<u8> {
+        (0..FLOAT_TO_STR_TEST_BUF_LEN)
+            .map(|i| c.bus.read8(FLOAT_TO_STR_BUF + i))
+            .take_while(|&b| b != 0)
+            .collect()
+    }
+
+    /// The loop heads of the function itself.
+    pub(crate) const FLOAT_TO_STR_HEADS: [u32; 7] = [
+        FLOAT_TO_STR_HEAD_INT_DIGITS,
+        FLOAT_TO_STR_HEAD_REVERSE,
+        FLOAT_TO_STR_HEAD_SCALE,
+        FLOAT_TO_STR_HEAD_FRACTION,
+        FLOAT_TO_STR_HEAD_PAD,
+        FLOAT_TO_STR_HEAD_SHIFT,
+        FLOAT_TO_STR_HEAD_TRIM,
+    ];
+
+    /// The main fixture loops at every head and reaches the arms visible
+    /// in the generated body's output: the minus in `*sign` and in the
+    /// buffer, the 163-digit limit, a carry out of a leading 9, no point
+    /// (`prec == 0`), a point dropped by the trim, and the five exponent
+    /// shapes.
+    #[test]
+    fn vfprintf_float_to_str_reaches_arms() {
+        let mut heads = BTreeSet::new();
+        let mut arms = BTreeSet::new();
+        for seed in 0..FLOAT_TO_STR_SEEDS {
+            let case = float_to_str_case(seed);
+            let mut c = fresh();
+            float_to_str_setup(&mut c, seed, case);
+            heads.extend(float_to_str_check_sites(&mut c).into_iter().map(|s| s.0));
+            assert_eq!(c.pc, crate::difftest::RA, "seed {seed}: no return");
+            let x = f64::from_bits(case.x);
+            if !x.is_finite() {
+                continue;
+            }
+            if case.sign != 0 && c.bus.read8(case.sign) == b'-' {
+                arms.insert("minus in *sign");
+            }
+            let text = float_to_str_text(&mut c);
+            let body = match text.split_first() {
+                Some((&b'-', rest)) => {
+                    arms.insert("minus in the buffer");
+                    rest
+                }
+                _ => &text[..],
+            };
+            let fixed = case.style as u8 == b'f';
+            let (mantissa, exponent) = if fixed {
+                (body, &[][..])
+            } else {
+                let at = body
+                    .iter()
+                    .rposition(|&b| b == case.style as u8)
+                    .unwrap_or_else(|| panic!("seed {seed}: no exponent in {text:?}"));
+                (&body[..at], &body[at + 1..])
+            };
+            let point = mantissa.iter().position(|&b| b == b'.');
+            if fixed && point.unwrap_or(mantissa.len()) >= 163 {
+                arms.insert("163 integer digits");
+            }
+            if point.is_none() && case.prec == 0 {
+                arms.insert("no point");
+            }
+            if point.is_none() && case.trim != 0 && (case.prec as i32) > 0 {
+                arms.insert("point trimmed");
+            }
+            let leading_nine = x.is_normal() && format!("{:e}", x.abs()).starts_with('9');
+            if leading_nine && (!fixed || x.abs() >= 1.0) && mantissa.first() == Some(&b'1') {
+                arms.insert("carry out of the first digit");
+            }
+            match exponent {
+                [] => {}
+                [b'+', b'0', b'0'] => {
+                    arms.insert("exponent +00");
+                }
+                [b'+', b'0', _] => {
+                    arms.insert("exponent +0d");
+                }
+                [b'+', ..] => {
+                    arms.insert("exponent +dd");
+                }
+                [b'-', b'0', _] => {
+                    arms.insert("exponent -0d");
+                }
+                [b'-', ..] => {
+                    arms.insert("exponent -dd");
+                }
+                _ => panic!("seed {seed}: exponent {exponent:?}"),
+            }
+        }
+        for head in FLOAT_TO_STR_HEADS {
+            assert!(heads.contains(&head), "loop head {head:#x} never looped");
+        }
+        for arm in [
+            "minus in *sign",
+            "minus in the buffer",
+            "163 integer digits",
+            "no point",
+            "point trimmed",
+            "carry out of the first digit",
+            "exponent +00",
+            "exponent +0d",
+            "exponent +dd",
+            "exponent -0d",
+            "exponent -dd",
+        ] {
+            assert!(
+                arms.contains(arm),
+                "arm never reached: {arm} (seen {arms:?})"
+            );
+        }
+    }
+
+    /// Each head, and whether an unwinding event may land there: only
+    /// event checks that carry on (`RoundDigits`, `IntToStr`) follow the last
+    /// three, while after the others `__fixdfsi`, `__divdf3` or `fmod`
+    /// would unwind mid-call (this function has no resume entries).
+    pub(crate) const FLOAT_TO_STR_EVENT_HEADS: [(u32, bool); 7] = [
+        (FLOAT_TO_STR_HEAD_INT_DIGITS, false),
+        (FLOAT_TO_STR_HEAD_REVERSE, false),
+        (FLOAT_TO_STR_HEAD_SCALE, false),
+        (FLOAT_TO_STR_HEAD_FRACTION, false),
+        (FLOAT_TO_STR_HEAD_PAD, true),
+        (FLOAT_TO_STR_HEAD_SHIFT, true),
+        (FLOAT_TO_STR_HEAD_TRIM, true),
+    ];
+
+    /// 0.00314159 as `%.4e` loops at the scaling and fraction heads;
+    /// 1234.5 as a trimmed `%.6f` at the others.
+    pub(crate) fn float_to_str_event_case(head: u32) -> FloatToStrCase {
+        let scaled = matches!(head, FLOAT_TO_STR_HEAD_SCALE | FLOAT_TO_STR_HEAD_FRACTION);
+        FloatToStrCase {
+            x: (if scaled { 0.003_141_59f64 } else { 1234.5 }).to_bits(),
+            prec: if scaled { 4 } else { 6 },
+            style: if scaled { 0x65 } else { 0x66 },
+            trim: if scaled { 0 } else { 1 },
+            sign: FLOAT_TO_STR_TEST_SIGN,
+        }
+    }
+
+    /// The first event due exactly at the first back-edge check of head
+    /// `seed % 7` (found by a dry run of the generated body): unwinding,
+    /// delivered or off by `seed / 7`, never unwinding where a resumable
+    /// callee would come next.
+    pub(crate) fn float_to_str_event_setup(c: &mut Cpu, seed: u32) -> Events {
+        let (head, unwind_ok) = FLOAT_TO_STR_EVENT_HEADS[(seed % 7) as usize];
+        let case = float_to_str_event_case(head);
+        let mut dry = fresh();
+        float_to_str_setup(&mut dry, seed, case);
+        event_at(&mut dry, FLOAT_TO_STR_ENTRY, 0, 2);
+        let start = dry.cycles;
+        let at = float_to_str_check_sites(&mut dry)
+            .into_iter()
+            .find(|s| s.0 == head)
+            .unwrap_or_else(|| panic!("head {head:#x} never checked"))
+            .1
+            - start;
+        float_to_str_setup(c, seed, case);
+        let mode = if unwind_ok {
+            seed / 7 % 3
+        } else {
+            1 + seed / 7 % 2
+        };
+        event_at(c, FLOAT_TO_STR_ENTRY, at, mode)
+    }
+
+    driven!(float_to_str_gen_driven, FLOAT_TO_STR_GENERATED);
+
+    driven!(float_to_str_hand_driven, vfprintf_float_to_str);
+
+    /// Events at each of the seven loop heads in turn.
+    #[test]
+    fn vfprintf_float_to_str_events() {
+        check_events(
+            float_to_str_gen_driven,
+            float_to_str_hand_driven,
+            84,
+            &float_to_str_event_setup,
+        );
+    }
+
+    /// Forged chunks start here: 4 mod 16 with a non-zero low byte, so every
+    /// copy's source or destination is misaligned and `memcpy` takes its
+    /// byte loop (13 + 7 n cycles for n >= 32).
+    pub(crate) const REALLOC_R_ARENA: u32 = DATA + 0x3_0134;
+
+    /// Words of non-zero fill over the arena.
+    pub(crate) const REALLOC_R_ARENA_WORDS: u32 = 0x400;
+
+    /// The top chunk when the old chunk's next is not the top: far away and
+    /// big, so a fallback malloc splits it (also 4 mod 16).
+    pub(crate) const REALLOC_R_FAR_TOP: u32 = DATA + 0x3_8174;
+
+    pub(crate) const REALLOC_R_FAR_TOP_SIZE: u32 = 0x1_0000;
+
+    pub(crate) const REALLOC_R_FAR_TOP_WORDS: u32 = 0x40;
+
+    /// The chunk a fallback malloc takes whole from its exact small bin.
+    pub(crate) const REALLOC_R_EXACT_CHUNK: u32 = DATA + 0x3_6164;
+
+    pub(crate) const REALLOC_R_EXACT_WORDS: u32 = 0x20;
+
+    /// The in-use chunk standing before the old one when the previous chunk
+    /// is not free, and the in-use fences after a non-top next chunk.
+    pub(crate) const REALLOC_R_PREV_IN_USE_SIZE: u32 = 0x20;
+
+    pub(crate) const REALLOC_R_FENCE: u32 = 0x20;
+
+    /// `IS_MMAPPED`, put in every forged head on half the digits:
+    /// `chunksize` must drop it.
+    pub(crate) const REALLOC_R_IS_MMAPPED: u32 = 0x2;
+
+    /// Gates of the fakes: the magic word (then, for `malloc_extend_top`,
+    /// the top chunk's new size word).
+    pub(crate) const REALLOC_R_EXTEND_GATE: u32 = DATA + 0x6f40;
+
+    pub(crate) const REALLOC_R_FREE_GATE: u32 = DATA + 0x6f50;
+
+    pub(crate) const REALLOC_R_FAKE_MAGIC: u32 = 0x7265_616c;
+
+    /// Cycles the `malloc_extend_top` and `_free_r` fakes charge.
+    pub(crate) const REALLOC_R_FAKE_EXTEND_CYCLES: u64 = 3;
+
+    pub(crate) const REALLOC_R_FAKE_FREE_CYCLES: u64 = 3;
+
+    /// Fixture digits per case: the request's place in its rounding window
+    /// (`% 4`), `IS_MMAPPED` in the heads (`/ 4 % 2`), junk in the upper
+    /// halves of oldmem and bytes (`/ 8 % 2`).
+    pub(crate) const REALLOC_R_DIGITS: u32 = 16;
+
+    /// Requests for the lived-in heaps: zero, the `MINSIZE` edge (11/12),
+    /// small and large sizes, more than the heap holds, and sizes that wrap
+    /// in `request2size` (0xfffffff0 -> 16 bytes, 0xffffffe0 -> an nb that
+    /// wraps the top checks).
+    pub(crate) const REALLOC_R_REQUESTS: [u32; 16] = [
+        0,
+        1,
+        11,
+        12,
+        24,
+        0x28,
+        0x100,
+        0x1e4,
+        0x3f0,
+        0xff0,
+        0x4000,
+        0x1_0000,
+        0x4_0000,
+        0x7fff_ffff,
+        0xffff_fff0,
+        0xffff_ffe0,
+    ];
+
+    /// The chunk before the old one.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum ReallocRPrev {
+        InUse,
+        /// Free, of this size, in its small bin.
+        Free(u32),
+        /// `prev_size` equal to oldp, so `prev_chunk` is 0.
+        Null,
+    }
+
+    /// The chunk after the old one.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum ReallocRNext {
+        Top(u32),
+        /// Free, in its small bin, with in-use fences after it.
+        Free(u32),
+        InUse(u32),
+    }
+
+    /// What a fallback malloc finds.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum ReallocRMalloc {
+        /// Empty bins, a big top: the top splits.
+        FarTop,
+        /// An nb chunk in `bin_at(nb >> 3)`: an exact fit.
+        ExactBin,
+        /// The top (the old chunk's next) is too small: `malloc_extend_top`
+        /// (faked) writes this size word into it.
+        Extend(u32),
+    }
+
+    /// The request.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum ReallocRRequest {
+        /// A size `request2size` rounds to this nb.
+        Window(u32),
+        /// Below 12 bytes: `MINSIZE` by the short arm.
+        Tiny,
+        /// 12 bytes: 16 by the rounding arm.
+        Twelve,
+        /// `realloc(NULL, n)` for this nb.
+        Null(u32),
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct ReallocRLayout {
+        pub(crate) prev: ReallocRPrev,
+        pub(crate) old: u32,
+        pub(crate) next: ReallocRNext,
+        pub(crate) request: ReallocRRequest,
+        pub(crate) malloc: ReallocRMalloc,
+    }
+
+    /// Forged heaps, each steering one path (named after it). Sizes are
+    /// (prev, old, next, nb); the cycle totals are in the case tables.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum ReallocRCase {
+        /// `realloc(NULL, n)`, nb 0x30: malloc splits the top.
+        NullOld,
+        /// 0x10 for a request below 12 (nb 16 by the short arm).
+        SameTiny,
+        /// 0x10 for 12 bytes (nb 16 by the rounding arm).
+        SameTwelve,
+        /// 0x30 for nb 0x30.
+        Same,
+        /// 0x3c for nb 0x30: 12 spare, kept.
+        ShrinkThin,
+        /// 0x40 for nb 0x30: 16 spare, split off.
+        ShrinkEdge,
+        /// 0x100 for nb 0x30: split off.
+        Shrink,
+        /// 0x20 + top 0x100 for nb 0x40.
+        GrowTop,
+        /// 0x20 + top 0x30 for nb 0x40 (exactly nb + `MINSIZE`).
+        GrowTopEdge,
+        /// 0x20 + free 0x20 for nb 0x40 (exact).
+        GrowNextExact,
+        /// 0x20 + free 0x28: 8 spare, kept.
+        GrowNextThin,
+        /// 0x20 + free 0x40: 0x20 split off.
+        GrowNextSplit,
+        /// Free 0x30 + 0x10 (next in use) for nb 0x40: 12 bytes copied.
+        BackOnly12,
+        /// Free 0x2c + 0x14: 16 bytes.
+        BackOnly16,
+        /// Free 0x28 + 0x18: 20 bytes.
+        BackOnly20,
+        /// Free 0x24 + 0x1c: 24 bytes.
+        BackOnly24,
+        /// Free 0x20 + 0x20: 28 bytes.
+        BackOnly28,
+        /// Free 0x1c + 0x24: 32 bytes.
+        BackOnly32,
+        /// Free 0x18 + 0x28: 36 bytes (all three pairs).
+        BackOnly36,
+        /// Free 0x14 + 0x2c: 40 bytes through memcpy.
+        BackOnlyMemcpy,
+        /// Free 0x50 + 0x10: 0x20 split off.
+        BackOnlySplit,
+        /// Free 0x20 + 0x10 + free 0x10 for nb 0x40.
+        BackNext,
+        /// Free 0x10 + 0x20 + free 0x10: 28 bytes.
+        BackNext28,
+        /// Free 0x14 + 0x2c + free 0x10: memcpy, 16 split off.
+        BackNextMemcpy,
+        /// Free 0x40 + 0x10 + top 0x10 for nb 0x40.
+        BackTop12,
+        /// ... + 0x18: 20 bytes.
+        BackTop20,
+        /// ... + 0x20: 28 bytes.
+        BackTop28,
+        /// ... + 0x28: 36 bytes.
+        BackTop36,
+        /// ... + 0x2c: memcpy.
+        BackTopMemcpy,
+        /// Free 0x30 + 0x10 + top 0x10: exactly nb + `MINSIZE`.
+        BackTopEdge,
+        /// Free 0x30 + 0x10 + top 0: too small with the top, enough alone.
+        BackTopShort,
+        /// 0x10 between in-use chunks for nb 0x30: malloc, 12 bytes copied.
+        Copy12,
+        /// 0x14: 16 bytes.
+        Copy16,
+        /// 0x18: 20 bytes.
+        Copy20,
+        /// 0x1c: 24 bytes.
+        Copy24,
+        /// 0x20: 28 bytes.
+        Copy28,
+        /// 0x24: 32 bytes.
+        Copy32,
+        /// 0x28: 36 bytes.
+        Copy36,
+        /// 0x2c: 40 bytes through memcpy.
+        CopyMemcpy,
+        /// 0x10 + free 0x10 (previous in use) for nb 0x30.
+        NextShortCopy,
+        /// Free 0x10 + 0x10 (next in use) for nb 0x30.
+        PrevShortCopy,
+        /// Free 0x10 + 0x10 + free 0x10 for nb 0x40.
+        BothShortCopy,
+        /// `prev_chunk` is 0: straight to malloc.
+        PrevNullCopy,
+        /// 0x10 + top 0x20 for nb 0x30, the extend leaves the top short:
+        /// NULL.
+        MallocFails,
+        /// ... the extend grows the top in place: malloc returns the next
+        /// chunk, merged in and split.
+        MallocAdjacent,
+        /// 0x10 + top 0x10, an exact 0x30 chunk in `bin_at(6)`: copied.
+        MallocExactCopy,
+    }
+
+    pub(crate) fn realloc_r_layout(case: ReallocRCase) -> ReallocRLayout {
+        use ReallocRCase::*;
+        use ReallocRMalloc as M;
+        use ReallocRNext as N;
+        use ReallocRPrev as P;
+        use ReallocRRequest as Q;
+        let fence = N::InUse(REALLOC_R_FENCE);
+        let (prev, old, next, request, malloc) = match case {
+            NullOld => (P::InUse, 0x20, fence, Q::Null(0x30), M::FarTop),
+            SameTiny => (P::InUse, 0x10, fence, Q::Tiny, M::FarTop),
+            SameTwelve => (P::InUse, 0x10, fence, Q::Twelve, M::FarTop),
+            Same => (P::InUse, 0x30, fence, Q::Window(0x30), M::FarTop),
+            ShrinkThin => (P::InUse, 0x3c, fence, Q::Window(0x30), M::FarTop),
+            ShrinkEdge => (P::InUse, 0x40, fence, Q::Window(0x30), M::FarTop),
+            Shrink => (P::InUse, 0x100, fence, Q::Window(0x30), M::FarTop),
+            GrowTop => (P::InUse, 0x20, N::Top(0x100), Q::Window(0x40), M::FarTop),
+            GrowTopEdge => (P::InUse, 0x20, N::Top(0x30), Q::Window(0x40), M::FarTop),
+            GrowNextExact => (P::InUse, 0x20, N::Free(0x20), Q::Window(0x40), M::FarTop),
+            GrowNextThin => (P::InUse, 0x20, N::Free(0x28), Q::Window(0x40), M::FarTop),
+            GrowNextSplit => (P::InUse, 0x20, N::Free(0x40), Q::Window(0x40), M::FarTop),
+            BackOnly12 => (P::Free(0x30), 0x10, fence, Q::Window(0x40), M::FarTop),
+            BackOnly16 => (P::Free(0x2c), 0x14, fence, Q::Window(0x40), M::FarTop),
+            BackOnly20 => (P::Free(0x28), 0x18, fence, Q::Window(0x40), M::FarTop),
+            BackOnly24 => (P::Free(0x24), 0x1c, fence, Q::Window(0x40), M::FarTop),
+            BackOnly28 => (P::Free(0x20), 0x20, fence, Q::Window(0x40), M::FarTop),
+            BackOnly32 => (P::Free(0x1c), 0x24, fence, Q::Window(0x40), M::FarTop),
+            BackOnly36 => (P::Free(0x18), 0x28, fence, Q::Window(0x40), M::FarTop),
+            BackOnlyMemcpy => (P::Free(0x14), 0x2c, fence, Q::Window(0x40), M::FarTop),
+            BackOnlySplit => (P::Free(0x50), 0x10, fence, Q::Window(0x40), M::FarTop),
+            BackNext => (
+                P::Free(0x20),
+                0x10,
+                N::Free(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackNext28 => (
+                P::Free(0x10),
+                0x20,
+                N::Free(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackNextMemcpy => (
+                P::Free(0x14),
+                0x2c,
+                N::Free(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackTop12 => (
+                P::Free(0x40),
+                0x10,
+                N::Top(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackTop20 => (
+                P::Free(0x40),
+                0x18,
+                N::Top(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackTop28 => (
+                P::Free(0x40),
+                0x20,
+                N::Top(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackTop36 => (
+                P::Free(0x40),
+                0x28,
+                N::Top(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackTopMemcpy => (
+                P::Free(0x40),
+                0x2c,
+                N::Top(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackTopEdge => (
+                P::Free(0x30),
+                0x10,
+                N::Top(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            BackTopShort => (P::Free(0x30), 0x10, N::Top(0), Q::Window(0x40), M::FarTop),
+            Copy12 => (P::InUse, 0x10, fence, Q::Window(0x30), M::FarTop),
+            Copy16 => (P::InUse, 0x14, fence, Q::Window(0x30), M::FarTop),
+            Copy20 => (P::InUse, 0x18, fence, Q::Window(0x30), M::FarTop),
+            Copy24 => (P::InUse, 0x1c, fence, Q::Window(0x30), M::FarTop),
+            Copy28 => (P::InUse, 0x20, fence, Q::Window(0x30), M::FarTop),
+            Copy32 => (P::InUse, 0x24, fence, Q::Window(0x30), M::FarTop),
+            Copy36 => (P::InUse, 0x28, fence, Q::Window(0x30), M::FarTop),
+            CopyMemcpy => (P::InUse, 0x2c, fence, Q::Window(0x30), M::FarTop),
+            NextShortCopy => (P::InUse, 0x10, N::Free(0x10), Q::Window(0x30), M::FarTop),
+            PrevShortCopy => (P::Free(0x10), 0x10, fence, Q::Window(0x30), M::FarTop),
+            BothShortCopy => (
+                P::Free(0x10),
+                0x10,
+                N::Free(0x10),
+                Q::Window(0x40),
+                M::FarTop,
+            ),
+            PrevNullCopy => (P::Null, 0x10, fence, Q::Window(0x30), M::FarTop),
+            MallocFails => (
+                P::InUse,
+                0x10,
+                N::Top(0x20),
+                Q::Window(0x30),
+                M::Extend(0x21),
+            ),
+            MallocAdjacent => (
+                P::InUse,
+                0x10,
+                N::Top(0x20),
+                Q::Window(0x30),
+                M::Extend(0x1001),
+            ),
+            MallocExactCopy => (P::InUse, 0x10, N::Top(0x10), Q::Window(0x30), M::ExactBin),
+        };
+        ReallocRLayout {
+            prev,
+            old,
+            next,
+            request,
+            malloc,
+        }
+    }
+
+    /// Link `chunks` into small bin `idx` (in `fd` order) and mark the bin's
+    /// `binblocks` bit.
+    pub(crate) fn realloc_r_link_bin(c: &mut Cpu, idx: u32, chunks: &[u32]) {
+        let bin = MALLOC_AV + (idx << MALLOC_BIN_SHIFT);
+        let mut prev = bin;
+        for &chunk in chunks {
+            c.bus.write32(prev + MCHUNK_FD, chunk);
+            c.bus.write32(chunk + MCHUNK_BK, prev);
+            prev = chunk;
+        }
+        c.bus.write32(prev + MCHUNK_FD, bin);
+        c.bus.write32(bin + MCHUNK_BK, prev);
+        let blocks = c.bus.read32(MALLOC_BINBLOCKS);
+        let block = idx / MALLOC_BINBLOCKWIDTH as u32;
+        c.bus.write32(MALLOC_BINBLOCKS, blocks | 1 << block);
+    }
+
+    /// Link the free `(chunk, size)`s into their small bins, one ring per
+    /// bin.
+    pub(crate) fn realloc_r_link_free(c: &mut Cpu, free: &[(u32, u32)]) {
+        let mut bins: Vec<u32> = free
+            .iter()
+            .map(|&(_, size)| size >> MALLOC_SMALLBIN_SHIFT)
+            .collect();
+        bins.sort_unstable();
+        bins.dedup();
+        for idx in bins {
+            let chunks: Vec<u32> = free
+                .iter()
+                .filter(|&&(_, size)| size >> MALLOC_SMALLBIN_SHIFT == idx)
+                .map(|&(chunk, _)| chunk)
+                .collect();
+            realloc_r_link_bin(c, idx, &chunks);
+        }
+    }
+
+    /// Gated `malloc_extend_top` (slot 0x41d990): writes the armed size word
+    /// into the top chunk's head and returns.
+    pub(crate) fn realloc_r_fake_extend_top(c: &mut Cpu) {
+        if c.bus.read32(REALLOC_R_EXTEND_GATE) != REALLOC_R_FAKE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(realloc_r_fake_extend_top),
+                ee::s15::f_0041d990__generated,
+            );
+        }
+        let top = c.bus.read32(MALLOC_TOP);
+        let head = c.bus.read32(REALLOC_R_EXTEND_GATE + 4);
+        c.bus.write32(top + MCHUNK_SIZE, head);
+        c.cycles += REALLOC_R_FAKE_EXTEND_CYCLES;
+        ret(c);
+    }
+
+    /// Hook the `malloc_extend_top` fake (once per process) and arm it with
+    /// the top's new size word.
+    pub(crate) fn realloc_r_arm_extend_top(c: &mut Cpu, head: u32) {
+        hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0041D990),
+            realloc_r_fake_extend_top,
+            prev_cell(realloc_r_fake_extend_top),
+        );
+        c.bus.write32(REALLOC_R_EXTEND_GATE, REALLOC_R_FAKE_MAGIC);
+        c.bus.write32(REALLOC_R_EXTEND_GATE + 4, head);
+    }
+
+    /// Gated `_free_r` (slot 0x41e340): charges a fixed cost and returns, so
+    /// the cycle totals do not depend on what the free consolidates.
+    pub(crate) fn realloc_r_fake_free(c: &mut Cpu) {
+        if c.bus.read32(REALLOC_R_FREE_GATE) != REALLOC_R_FAKE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(realloc_r_fake_free),
+                ee::s15::f_0041e340__generated,
+            );
+        }
+        c.cycles += REALLOC_R_FAKE_FREE_CYCLES;
+        ret(c);
+    }
+
+    pub(crate) fn realloc_r_arm_free(c: &mut Cpu) {
+        hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0041E340),
+            realloc_r_fake_free,
+            prev_cell(realloc_r_fake_free),
+        );
+        c.bus.write32(REALLOC_R_FREE_GATE, REALLOC_R_FAKE_MAGIC);
+    }
+
+    /// `_realloc_r(REENT_3, oldmem, bytes)` at the entry, returning to the
+    /// test's sentinel; with `junk_high`, junk in the upper halves of a
+    /// non-NULL oldmem and of bytes (only the low words count).
+    pub(crate) fn realloc_r_call(
+        c: &mut Cpu,
+        r: &mut Rng,
+        oldmem: u32,
+        bytes: u32,
+        junk_high: bool,
+    ) {
+        let mut high = || {
+            if junk_high {
+                (r.next_u32() as u64) << 32
+            } else {
+                0
+            }
+        };
+        let old_high = high();
+        let bytes_high = high();
+        c.g[A0][0] = REENT_3 as u64;
+        c.g[A1][0] = if oldmem == 0 {
+            0
+        } else {
+            old_high | oldmem as u64
+        };
+        c.g[A2][0] = bytes_high | bytes as u64;
+        c.g[RA][0] = crate::difftest::RA as u64;
+        c.pc = REALLOC_R_ENTRY;
+    }
+
+    /// Build `case` on a fresh machine: the libc heap fixture, a non-zero
+    /// arena with [prev][old][next][fences] laid out in it, free chunks in
+    /// their bins, the top. `digit` (see [`REALLOC_R_DIGITS`]) picks the
+    /// request in its window, `IS_MMAPPED` in the heads and junk upper
+    /// halves. `fakes` arms the `_free_r` and `malloc_extend_top` fakes.
+    pub(crate) fn realloc_r_case(c: &mut Cpu, case: ReallocRCase, digit: u32, fakes: bool) {
+        let lay = realloc_r_layout(case);
+        let mut r = Rng(0x0042_1f20 ^ (case as u64) << 8 ^ (digit as u64) << 20);
+        heap_init(c, &mut r);
+        fill(c, &mut r, REALLOC_R_ARENA, REALLOC_R_ARENA_WORDS);
+        fill(c, &mut r, REALLOC_R_FAR_TOP, REALLOC_R_FAR_TOP_WORDS);
+        fill(c, &mut r, REALLOC_R_EXACT_CHUNK, REALLOC_R_EXACT_WORDS);
+        let mmapped = if digit / 4 % 2 == 1 {
+            REALLOC_R_IS_MMAPPED
+        } else {
+            0
+        };
+        let head =
+            |c: &mut Cpu, chunk: u32, word: u32| c.bus.write32(chunk + MCHUNK_SIZE, word | mmapped);
+        let in_use = MALLOC_PREV_INUSE as u32;
+        let mut free: Vec<(u32, u32)> = Vec::new();
+        let base = REALLOC_R_ARENA;
+        let old = match lay.prev {
+            ReallocRPrev::InUse => {
+                head(c, base, REALLOC_R_PREV_IN_USE_SIZE | in_use);
+                base + REALLOC_R_PREV_IN_USE_SIZE
+            }
+            ReallocRPrev::Free(size) => {
+                head(c, base, size | in_use);
+                free.push((base, size));
+                c.bus.write32(base + size + MCHUNK_PREV_SIZE, size);
+                base + size
+            }
+            ReallocRPrev::Null => {
+                let old = base + REALLOC_R_PREV_IN_USE_SIZE;
+                c.bus.write32(old + MCHUNK_PREV_SIZE, old);
+                old
+            }
+        };
+        let prev_bit = if matches!(lay.prev, ReallocRPrev::InUse) {
+            in_use
+        } else {
+            0
+        };
+        head(c, old, lay.old | prev_bit);
+        let next = old + lay.old;
+        match lay.next {
+            ReallocRNext::Top(size) => {
+                c.bus.write32(MALLOC_TOP, next);
+                head(c, next, size | in_use);
+            }
+            ReallocRNext::Free(size) | ReallocRNext::InUse(size) => {
+                let next_free = matches!(lay.next, ReallocRNext::Free(_));
+                head(c, next, size | in_use);
+                let fence = next + size;
+                c.bus.write32(fence + MCHUNK_PREV_SIZE, size);
+                head(
+                    c,
+                    fence,
+                    REALLOC_R_FENCE | if next_free { 0 } else { in_use },
+                );
+                head(c, fence + REALLOC_R_FENCE, REALLOC_R_FENCE | in_use);
+                if next_free {
+                    free.push((next, size));
+                }
+                c.bus.write32(MALLOC_TOP, REALLOC_R_FAR_TOP);
+                head(c, REALLOC_R_FAR_TOP, REALLOC_R_FAR_TOP_SIZE | in_use);
+            }
+        }
+        let slack = [0, 5, 11, 15][(digit % 4) as usize];
+        let (nb, bytes) = match lay.request {
+            ReallocRRequest::Window(nb) | ReallocRRequest::Null(nb) => {
+                (nb, nb - MALLOC_REQUEST_PAD as u32 + slack)
+            }
+            ReallocRRequest::Tiny => (MALLOC_MINSIZE as u32, [0, 1, 5, 11][(digit % 4) as usize]),
+            ReallocRRequest::Twelve => (MALLOC_MINSIZE as u32, 12),
+        };
+        match lay.malloc {
+            ReallocRMalloc::ExactBin => {
+                head(c, REALLOC_R_EXACT_CHUNK, nb | in_use);
+                free.push((REALLOC_R_EXACT_CHUNK, nb));
+            }
+            ReallocRMalloc::Extend(grown) if fakes => realloc_r_arm_extend_top(c, grown),
+            _ => {}
+        }
+        realloc_r_link_free(c, &free);
+        if fakes {
+            realloc_r_arm_free(c);
+        }
+        let oldmem = match lay.request {
+            ReallocRRequest::Null(_) => 0,
+            _ => old + MCHUNK_MEM,
+        };
+        realloc_r_call(c, &mut r, oldmem, bytes, digit / 8 % 2 == 1);
+    }
+
+    /// Run every case of `cases` (`seed % n`) with every digit (`seed / n`),
+    /// the fakes armed, requiring each case's cycle total.
+    pub(crate) fn realloc_r_check_cases(cases: &[(ReallocRCase, u64)]) {
+        let n = cases.len() as u32;
+        let totals: Vec<u64> = cases.iter().map(|&(_, total)| total).collect();
+        check_paths(
+            ee::s15::f_00421f20__generated,
+            realloc_r,
+            REALLOC_R_DIGITS * n,
+            &totals,
+            &|c, seed| {
+                let (case, _) = cases[(seed % n) as usize];
+                realloc_r_case(c, case, seed / n % REALLOC_R_DIGITS, true);
+            },
+        );
+    }
+
+    // Cycle totals, from the generated block charges: prologue 15; lock 30
+    // and the last unlock 20 (`__malloc_lock`/`__malloc_unlock` with their
+    // syscall stubs); nested in the fallback malloc the lock is 24 and its
+    // unlock 10, so `_malloc_r` costs its own case's total less 16 (top
+    // split 139 -> 123, exact small bin 101 -> 85, extend then split
+    // 164 -> 148, extend still short 153 -> 137); the `_free_r` fake 3;
+    // `memcpy`'s byte loop 13 + 7 n. Common parts: entry to the grow test
+    // 64 (61 with the short `request2size` arm), split join 1, split
+    // without remainder 33 and with one 44 (incl. the free and the unlock),
+    // return 12. Inline copies: 9 / 17 / 25 / 25 + last pair + 9 cycles for
+    // 3 / 5 / 7 / 9 words.
+
+    /// Entry: NULL, already big enough (same, shrink with and without a
+    /// split, both `request2size` arms at nb 16), forward into the top
+    /// (with its edge) and into a free next chunk.
+    pub(crate) const REALLOC_R_IN_PLACE_CASES: [(ReallocRCase, u64); 12] = [
+        (ReallocRCase::NullOld, 169),
+        (ReallocRCase::SameTiny, 107),
+        (ReallocRCase::SameTwelve, 110),
+        (ReallocRCase::Same, 110),
+        (ReallocRCase::ShrinkThin, 110),
+        (ReallocRCase::ShrinkEdge, 121),
+        (ReallocRCase::Shrink, 121),
+        (ReallocRCase::GrowTop, 123),
+        (ReallocRCase::GrowTopEdge, 123),
+        (ReallocRCase::GrowNextExact, 139),
+        (ReallocRCase::GrowNextThin, 139),
+        (ReallocRCase::GrowNextSplit, 150),
+    ];
+
+    /// Backward: previous alone (every inline copy size, memcpy, a split),
+    /// previous + free next, previous + top (and its edge), previous + top
+    /// too small but previous alone enough.
+    pub(crate) const REALLOC_R_BACKWARD_CASES: [(ReallocRCase, u64); 19] = [
+        (ReallocRCase::BackOnly12, 164),
+        (ReallocRCase::BackOnly16, 164),
+        (ReallocRCase::BackOnly20, 172),
+        (ReallocRCase::BackOnly24, 172),
+        (ReallocRCase::BackOnly28, 180),
+        (ReallocRCase::BackOnly32, 180),
+        (ReallocRCase::BackOnly36, 187),
+        (ReallocRCase::BackOnlyMemcpy, 449),
+        (ReallocRCase::BackOnlySplit, 175),
+        (ReallocRCase::BackNext, 179),
+        (ReallocRCase::BackNext28, 195),
+        (ReallocRCase::BackNextMemcpy, 475),
+        (ReallocRCase::BackTop12, 169),
+        (ReallocRCase::BackTop20, 177),
+        (ReallocRCase::BackTop28, 185),
+        (ReallocRCase::BackTop36, 192),
+        (ReallocRCase::BackTopMemcpy, 452),
+        (ReallocRCase::BackTopEdge, 169),
+        (ReallocRCase::BackTopShort, 173),
+    ];
+
+    /// Malloc-copy-free: every inline copy size and memcpy, reached past a
+    /// too-small next, a too-small previous, both, a NULL `prev_chunk`;
+    /// malloc failing, returning the next chunk, and an exact bin fit.
+    pub(crate) const REALLOC_R_MALLOC_CASES: [(ReallocRCase, u64); 15] = [
+        (ReallocRCase::Copy12, 276),
+        (ReallocRCase::Copy16, 276),
+        (ReallocRCase::Copy20, 284),
+        (ReallocRCase::Copy24, 284),
+        (ReallocRCase::Copy28, 292),
+        (ReallocRCase::Copy32, 292),
+        (ReallocRCase::Copy36, 298),
+        (ReallocRCase::CopyMemcpy, 560),
+        (ReallocRCase::NextShortCopy, 283),
+        (ReallocRCase::PrevShortCopy, 288),
+        (ReallocRCase::BothShortCopy, 304),
+        (ReallocRCase::PrevNullCopy, 286),
+        (ReallocRCase::MallocFails, 259),
+        (ReallocRCase::MallocAdjacent, 305),
+        (ReallocRCase::MallocExactCopy, 236),
+    ];
+
+    /// `_realloc_r` on lived-in heaps (real `malloc`/`free` histories, or a
+    /// fresh heap and `realloc(NULL, n)`), every callee real, with requests
+    /// across the edges.
+    #[test]
+    fn realloc_r_matches() {
+        check(
+            ee::s15::f_00421f20__generated,
+            realloc_r,
+            256,
+            &|c, seed| {
+                let mut r = Rng(0x0042_1f20 ^ (seed as u64) << 24);
+                let request = REALLOC_R_REQUESTS[(seed % 16) as usize];
+                let history = seed / 16;
+                let oldmem = if history % 4 == 0 {
+                    heap_init(c, &mut r);
+                    0
+                } else {
+                    heap_history(c, history, 0x0042_1f20)
+                };
+                realloc_r_call(c, &mut r, oldmem, request, history % 2 == 1);
+            },
+        );
+    }
+
+    /// NULL, the already-big-enough arms and growing forward.
+    #[test]
+    fn realloc_r_in_place_matches() {
+        realloc_r_check_cases(&REALLOC_R_IN_PLACE_CASES);
+    }
+
+    /// Growing backward, with the next chunk or the top and alone.
+    #[test]
+    fn realloc_r_backward_matches() {
+        realloc_r_check_cases(&REALLOC_R_BACKWARD_CASES);
+    }
+
+    /// The malloc-copy-free fallback, malloc failing and the adjacent new
+    /// chunk.
+    #[test]
+    fn realloc_r_malloc_matches() {
+        realloc_r_check_cases(&REALLOC_R_MALLOC_CASES);
+    }
+
+    /// The forged heaps again with the real `_free_r` and
+    /// `malloc_extend_top` (no cycle totals: the real frees consolidate).
+    /// The NULL `prev_chunk` case is left out: a real free of its old chunk
+    /// would unlink a chunk at address 0.
+    #[test]
+    fn realloc_r_forged_real_callees_matches() {
+        let cases: Vec<ReallocRCase> = REALLOC_R_IN_PLACE_CASES
+            .iter()
+            .chain(&REALLOC_R_BACKWARD_CASES)
+            .chain(&REALLOC_R_MALLOC_CASES)
+            .map(|&(case, _)| case)
+            .filter(|case| !matches!(*case, ReallocRCase::PrevNullCopy))
+            .collect();
+        let n = cases.len() as u32;
+        check(
+            ee::s15::f_00421f20__generated,
+            realloc_r,
+            8 * n,
+            &|c, seed| {
+                realloc_r_case(c, cases[(seed % n) as usize], seed / n % 8, false);
+            },
+        );
+    }
+
+    // ------------------------------------------------------------ fixtures
+
+    /// The reent the Bignum tests pass: the libc tests' reent, which
+    /// `heap_init` wires for the real heap.
+    pub(crate) const MPREC_T_REENT: u32 = REENT_3;
+
+    /// The 16 bucket heads of `_freelist`.
+    pub(crate) const MPREC_T_HEADS: u32 = DATA + 0x508;
+
+    /// Free Bigints, MPREC_T_POOL_PER_K of each k < MPREC_T_POOL_KS, at
+    /// addresses 8 mod 16 (so a `memcpy` from `sign` on is bytewise).
+    pub(crate) const MPREC_T_POOL: u32 = DATA + 0x1008;
+
+    pub(crate) const MPREC_T_POOL_KS: u32 = 8;
+
+    pub(crate) const MPREC_T_POOL_PER_K: u32 = 4;
+
+    /// Operand Bigints.
+    pub(crate) const MPREC_T_A: u32 = DATA + 0x8008;
+
+    pub(crate) const MPREC_T_B: u32 = DATA + 0x8408;
+
+    /// A cached `_p5s` chain, one Bigint per 0x40 bytes.
+    pub(crate) const MPREC_T_P5S: u32 = DATA + 0x8808;
+
+    pub(crate) const MPREC_T_P5S_STRIDE: u32 = 0x40;
+
+    /// `int` outputs (`*e` here, `*bits` at +0x14).
+    pub(crate) const MPREC_T_OUT: u32 = DATA + 0x9008;
+
+    pub(crate) const MPREC_T_OUT_BITS: u32 = MPREC_T_OUT + 0x14;
+
+    /// `__s2b` digit text.
+    pub(crate) const MPREC_T_TEXT: u32 = DATA + 0x9108;
+
+    pub(crate) const MPREC_T_TEXT_LEN: u32 = 40;
+
+    /// The fake `_calloc_r`'s arena and its control words: the gate, the
+    /// next block, the allocations left before it returns NULL.
+    pub(crate) const MPREC_T_ARENA: u32 = DATA + 0x2_0008;
+
+    pub(crate) const MPREC_T_CALLOC: u32 = DATA + 0xf_f000;
+
+    pub(crate) const MPREC_T_CALLOC_NEXT: u32 = MPREC_T_CALLOC + 4;
+
+    pub(crate) const MPREC_T_CALLOC_LEFT: u32 = MPREC_T_CALLOC + 8;
+
+    pub(crate) const MPREC_T_CALLOC_MAGIC: u32 = 0x6d70_7263;
+
+    /// Cycles the fake `_calloc_r` charges.
+    pub(crate) const MPREC_T_CALLOC_COST: u64 = 9;
+
+    /// `_Balloc` from a populated bucket (8 + 6 + 3 + 3 + 5).
+    pub(crate) const MPREC_T_BALLOC_HIT: u64 = 25;
+
+    /// `_Bfree` of a Bigint (2 + 9 + 2).
+    pub(crate) const MPREC_T_BFREE: u64 = 13;
+
+    /// Gated `_calloc_r` (slot 0x4224a0): zeroed blocks from the arena at a
+    /// fixed cost, NULL once the fixture's allocation count is used up.
+    pub(crate) fn mprec_t_fake_calloc_r(c: &mut Cpu) {
+        if c.bus.read32(MPREC_T_CALLOC) != MPREC_T_CALLOC_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mprec_t_fake_calloc_r),
+                ee::s15::f_004224a0__generated,
+            );
+        }
+        let size = (c.g[A1][0] as u32).wrapping_mul(c.g[A2][0] as u32);
+        let left = c.bus.read32(MPREC_T_CALLOC_LEFT);
+        let block = if left == 0 {
+            0
+        } else {
+            c.bus.write32(MPREC_T_CALLOC_LEFT, left - 1);
+            let block = c.bus.read32(MPREC_T_CALLOC_NEXT);
+            for i in 0..size {
+                c.bus.write8(block + i, 0);
+            }
+            c.bus
+                .write32(MPREC_T_CALLOC_NEXT, ((block + size + 0x1f) & !0xf) | 8);
+            block
+        };
+        c.g[V0][0] = block as u64;
+        c.cycles += MPREC_T_CALLOC_COST;
+        ret(c);
+    }
+
+    /// Arms the fake `_calloc_r` on this machine for `successes` blocks.
+    pub(crate) fn mprec_t_arm_calloc(c: &mut Cpu, successes: u32) {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_004224A0),
+            mprec_t_fake_calloc_r,
+            fakes::prev_cell(mprec_t_fake_calloc_r),
+        );
+        c.bus.write32(MPREC_T_CALLOC, MPREC_T_CALLOC_MAGIC);
+        c.bus.write32(MPREC_T_CALLOC_NEXT, MPREC_T_ARENA);
+        c.bus.write32(MPREC_T_CALLOC_LEFT, successes);
+    }
+
+    /// The bucket heads, each filled from the pool unless its bit is set in
+    /// `empty`. Pool Bigints carry junk in `sign`, `wds` and `x[]`.
+    pub(crate) fn mprec_t_pool(c: &mut Cpu, r: &mut Rng, empty: u32) {
+        for k in 0..FREELIST_HEADS as u32 {
+            c.bus.write32(MPREC_T_HEADS + 4 * k, 0);
+        }
+        let mut at = MPREC_T_POOL;
+        for k in 0..MPREC_T_POOL_KS {
+            let maxwds = 1u32 << k;
+            let stride = (BIGINT_X + 4 * maxwds + 0xf) & !0xf;
+            let mut head = 0;
+            for _ in 0..MPREC_T_POOL_PER_K {
+                c.bus.write32(at + BIGINT_NEXT, head);
+                c.bus.write32(at + BIGINT_K, k);
+                c.bus.write32(at + BIGINT_MAXWDS, maxwds);
+                c.bus.write32(at + BIGINT_SIGN, r.next_u32() | 1);
+                c.bus.write32(at + BIGINT_WDS, r.next_u32() | 1);
+                for i in 0..maxwds {
+                    c.bus
+                        .write32(at + BIGINT_X + 4 * i, r.next_u32() | 0x0101_0101);
+                }
+                head = at;
+                at += stride;
+            }
+            if empty & (1 << k) == 0 {
+                c.bus.write32(MPREC_T_HEADS + 4 * k, head);
+            }
+        }
+    }
+
+    /// The Bignum test machine: scrambled registers; `_calloc_r` the fake
+    /// with `Some(successes)`, else the real one on the libc tests' heap;
+    /// `r->_p5s = 0`; the bucket heads (when `heads`) filled from the pool
+    /// except the buckets in `empty`. Sets `a0 = r`.
+    pub(crate) fn mprec_t_machine(
+        c: &mut Cpu,
+        r: &mut Rng,
+        calloc: Option<u32>,
+        heads: bool,
+        empty: u32,
+    ) {
+        match calloc {
+            Some(successes) => {
+                scramble(c, r);
+                mprec_t_arm_calloc(c, successes);
+            }
+            None => heap_init(c, r),
+        }
+        c.bus.write32(MPREC_T_REENT + REENT_P5S, 0);
+        let list = if heads { MPREC_T_HEADS } else { 0 };
+        c.bus.write32(MPREC_T_REENT + REENT_FREELIST, list);
+        if heads {
+            mprec_t_pool(c, r, empty);
+        }
+        c.g[A0][0] = MPREC_T_REENT as u64;
+    }
+
+    /// A Bigint at `at`: size class `k`, `sign`, the words `x`; junk in
+    /// `next` and in the two words past `wds`.
+    pub(crate) fn mprec_t_bigint(c: &mut Cpu, r: &mut Rng, at: u32, k: u32, sign: u32, x: &[u32]) {
+        c.bus.write32(at + BIGINT_NEXT, r.next_u32());
+        c.bus.write32(at + BIGINT_K, k);
+        c.bus.write32(at + BIGINT_MAXWDS, 1 << k);
+        c.bus.write32(at + BIGINT_SIGN, sign);
+        c.bus.write32(at + BIGINT_WDS, x.len() as u32);
+        for (i, w) in x.iter().enumerate() {
+            c.bus.write32(at + BIGINT_X + 4 * i as u32, *w);
+        }
+        for i in x.len()..x.len() + 2 {
+            c.bus
+                .write32(at + BIGINT_X + 4 * i as u32, r.next_u32() | 1);
+        }
+    }
+
+    /// A data word: 0, 1, 0xffff, 0x1_0000, all ones, the top bit, the bits
+    /// below it, or random.
+    pub(crate) fn mprec_t_word(r: &mut Rng) -> u32 {
+        match r.next_u32() % 8 {
+            0 => 0,
+            1 => 1,
+            2 => 0xffff,
+            3 => 0x1_0000,
+            4 => u32::MAX,
+            5 => 0x8000_0000,
+            6 => 0x7fff_ffff,
+            _ => r.next_u32(),
+        }
+    }
+
+    /// `n` data words with a non-zero top word.
+    pub(crate) fn mprec_t_words(r: &mut Rng, n: usize) -> Vec<u32> {
+        let mut x: Vec<u32> = (0..n).map(|_| mprec_t_word(r)).collect();
+        if x[n - 1] == 0 {
+            x[n - 1] = r.next_u32() | 1;
+        }
+        x
+    }
+
+    /// `schedule`, with the first event due `offset` cycles after the entry
+    /// (event modes only).
+    pub(crate) fn mprec_t_schedule(
+        c: &mut Cpu,
+        r: &mut Rng,
+        seed: u32,
+        entry: u32,
+        offset: u64,
+    ) -> Events {
+        let mode = schedule(c, r, seed, entry);
+        if mode != Events::Off {
+            c.next_event = c.cycles + offset;
+        }
+        mode
+    }
+
+    thread_local! {
+        /// The `pc` of each event delivered on this test thread, in order.
+        static MPREC_T_DELIVERED: std::cell::RefCell<Vec<u32>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    /// Event hook: note where the event is delivered, then deliver it.
+    pub(crate) fn mprec_t_record_event(c: &mut Cpu) -> bool {
+        assert!(
+            c.cycles < crate::difftest::CYCLE_BUDGET,
+            "cycle budget exceeded at {:#x}: runaway on test data",
+            c.pc
+        );
+        MPREC_T_DELIVERED.with(|v| v.borrow_mut().push(c.pc));
+        (ssx3_ps2::platform::HOOKS.event)(c)
+    }
+
+    /// `f` run as the trampoline runs it (`difftest::events::drive`),
+    /// returning the `pc`s it was re-entered at after unwinds.
+    pub(crate) fn mprec_t_drive(c: &mut Cpu, f: GuestFn) -> Vec<u32> {
+        let mut resumes = Vec::new();
+        f(c);
+        for _ in 0..10_000 {
+            if c.pc == crate::difftest::RA {
+                return resumes;
+            }
+            assert!(
+                c.pc & UNWIND != 0,
+                "stopped at {:#x} without an unwind",
+                c.pc
+            );
+            c.pc &= !UNWIND;
+            if event_due(c) && c.event() {
+                continue;
+            }
+            resumes.push(c.pc);
+            f(c);
+        }
+        panic!("no return after 10000 re-entries (pc {:#x})", c.pc);
+    }
+
+    /// For every event seed of `setup`: the generated and hand bodies
+    /// deliver their first event at the same `pc`, which is `expected(seed)`
+    /// when that is `Some`, and are re-entered at the same `pc`s. Returns
+    /// the re-entry `pc`s over all seeds.
+    pub(crate) fn mprec_t_event_reach(
+        generated: GuestFn,
+        hand: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32) -> Events,
+        expected: &dyn Fn(u32) -> Option<u32>,
+    ) -> Vec<u32> {
+        let mut all = Vec::new();
+        for seed in 0..seeds {
+            let mut runs = Vec::new();
+            for f in [generated, hand] {
+                let mut c = fresh();
+                if setup(&mut c, seed) == Events::Off {
+                    break;
+                }
+                c.hooks.event = mprec_t_record_event;
+                MPREC_T_DELIVERED.with(|v| v.borrow_mut().clear());
+                let resumes = mprec_t_drive(&mut c, f);
+                let first = MPREC_T_DELIVERED.with(|v| v.borrow().first().copied());
+                runs.push((first, resumes));
+            }
+            if runs.is_empty() {
+                continue;
+            }
+            assert_eq!(
+                runs[0], runs[1],
+                "seed {seed}: (first event, re-entries), generated vs hand"
+            );
+            if let Some(head) = expected(seed) {
+                assert_eq!(
+                    runs[1].0,
+                    Some(head),
+                    "seed {seed}: first event not at {head:#x}"
+                );
+            }
+            all.extend(runs[1].1.iter().copied());
+        }
+        all
+    }
+
+    // ------------------------------------------------------------ _Balloc
+
+    /// `_Balloc(r, k)`: the bucket populated, empty, or no heads yet;
+    /// every fake allocation succeeding, the first or the second failing,
+    /// or the real heap; k from 0 to 7.
+    pub(crate) fn balloc_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0510 ^ (seed as u64) << 20);
+        let list = seed % 3;
+        let alloc = seed / 3 % 4;
+        let k = seed / 12 % MPREC_T_POOL_KS;
+        let calloc = match alloc {
+            0 => Some(u32::MAX),
+            1 => Some(0),
+            2 => Some(1),
+            _ => None,
+        };
+        let empty = if list == 1 { 1 << k } else { 0 };
+        mprec_t_machine(c, &mut r, calloc, list != 2, empty);
+        c.g[A1][0] = k as u64;
+        c.pc = 0x0042_0510;
+    }
+
+    #[test]
+    fn balloc_matches() {
+        let f = MPREC_T_CALLOC_COST;
+        let paths = [
+            25,         // bucket hit: 8 + 6 + 3 + 3 + 5
+            32 + f,     // bucket empty, new Bigint: 8 + 6 + 9 + F + 1 + 3 + 5
+            30 + f,     // bucket empty, its calloc fails: 8 + 6 + 9 + F + 2 + 5
+            20 + f,     // no heads, their calloc fails: 8 + 5 + F + 2 + 5
+            37 + 2 * f, // no heads: heads, new Bigint: 8 + 5 + F + 6 + 9 + F + 1 + 3 + 5
+            35 + 2 * f, // no heads: heads, its calloc fails: 8 + 5 + F + 6 + 9 + F + 2 + 5
+        ];
+        check_paths(
+            ee::s15::f_00420510__generated,
+            balloc,
+            288,
+            &paths,
+            &balloc_setup,
+        );
+    }
+
+    // ----------------------------------------------------------- __multadd
+
+    /// `__multadd(r, b, m, a)` on a Bigint at MPREC_T_A. `case`: 0 no carry
+    /// out of the top word, 1 a carry into a spare word, 2 a carry with
+    /// `wds == maxwds`, 3 a carry with `wds > maxwds` (both move `b`).
+    pub(crate) fn multadd_case(c: &mut Cpu, r: &mut Rng, case: u32, w: u32, m: u32, a: u32) {
+        mprec_t_machine(c, r, Some(u32::MAX), true, 0);
+        let (k, wds) = match case {
+            0 | 1 => (3, 1 + w % 4),
+            2 => ([0, 1, 2, 2][w as usize % 4], [1, 2, 4, 4][w as usize % 4]),
+            _ => (w % 2, (1 << (w % 2)) + 1),
+        };
+        let mut x: Vec<u32> = (0..wds).map(|_| mprec_t_word(r)).collect();
+        // A small top word never carries out (m <= 125, a <= 0xff); all
+        // ones always does (m >= 2).
+        x[wds as usize - 1] = if case == 0 {
+            r.next_u32() % 0x100
+        } else {
+            u32::MAX
+        };
+        let sign = r.next_u32() & 1;
+        mprec_t_bigint(c, r, MPREC_T_A, k, sign, &x);
+        c.g[A1][0] = MPREC_T_A as u64;
+        c.g[A2][0] = sx(m);
+        c.g[A3][0] = sx(a);
+        c.pc = 0x0042_05f0;
+    }
+
+    pub(crate) fn multadd_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x05f0 ^ (seed as u64) << 20);
+        let case = seed % 4;
+        let w = seed / 4 % 4;
+        let (m, a) = if case == 0 {
+            (
+                [10, 5, 125, 1][(seed / 16 % 4) as usize],
+                [0, 9, 0xff][(seed / 64 % 3) as usize],
+            )
+        } else {
+            (
+                [10, 0xffff, 2, 25][(seed / 16 % 4) as usize],
+                [0, 9, 0x7fff_ffff][(seed / 64 % 3) as usize],
+            )
+        };
+        multadd_case(c, &mut r, case, w, m, a);
+    }
+
+    #[test]
+    fn multadd_matches() {
+        // Prologue 14, 17 per word, carry test 2, epilogue 8; a carry adds
+        // 4 + 5; a move adds 16 + `_Balloc` + bytewise `memcpy` of
+        // 4 * wds + 8 bytes (10 + 7 per byte) + `_Bfree`.
+        let mut paths = Vec::new();
+        for w in 1..=4u64 {
+            paths.push(24 + 17 * w);
+            paths.push(33 + 17 * w);
+            let copy = 10 + 7 * (4 * w + 8);
+            paths
+                .push(14 + 17 * w + 2 + 4 + 16 + MPREC_T_BALLOC_HIT + copy + MPREC_T_BFREE + 5 + 8);
+        }
+        check_paths_lohi(
+            ee::s15::f_004205f0__generated,
+            multadd,
+            192,
+            &paths,
+            &multadd_setup,
+        );
+    }
+
+    driven!(multadd_gen_driven, ee::s15::f_004205f0__generated);
+
+    driven!(multadd_hand_driven, multadd);
+
+    /// Events due at the word loop's first (check at 31) or second (48)
+    /// back edge; every case has at least three words.
+    #[test]
+    fn multadd_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x05f0_e000 ^ (seed as u64) << 20);
+            multadd_case(c, &mut r, seed / 3 % 4, 3, 0xffff, 9);
+            let offset = [20, 45][(seed / 12 % 2) as usize];
+            mprec_t_schedule(c, &mut r, seed, 0x0042_05f0, offset)
+        };
+        check_events(multadd_gen_driven, multadd_hand_driven, 90, &setup);
+        let resumes =
+            mprec_t_event_reach(ee::s15::f_004205f0__generated, multadd, 90, &setup, &|_| {
+                Some(MULTADD_WORD_LOOP)
+            });
+        assert!(
+            resumes.is_empty(),
+            "the checks only deliver; re-entered at {resumes:x?}"
+        );
+    }
+
+    // --------------------------------------------------------------- __s2b
+
+    /// `__s2b(r, s, nd0, nd, y9)` on MPREC_T_TEXT (random digits, or all
+    /// '0' when `!digits`).
+    pub(crate) fn s2b_case(c: &mut Cpu, r: &mut Rng, nd0: u32, nd: u32, y9: u32, digits: bool) {
+        mprec_t_machine(c, r, Some(u32::MAX), true, 0);
+        for i in 0..MPREC_T_TEXT_LEN {
+            let d = if digits { (r.next_u32() % 10) as u8 } else { 0 };
+            c.bus.write8(MPREC_T_TEXT + i, b'0' + d);
+        }
+        c.g[A1][0] = MPREC_T_TEXT as u64;
+        c.g[A2][0] = sx(nd0);
+        c.g[A3][0] = sx(nd);
+        c.g[T0][0] = sx(y9);
+        c.pc = 0x0042_06f8;
+    }
+
+    pub(crate) fn s2b_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x06f8 ^ (seed as u64) << 20);
+        let nd0 = [1, 9, 10, 12, 18, 20][(seed % 6) as usize];
+        let nd = nd0 + [0, 1, 3, 9][(seed / 6 % 4) as usize];
+        let y9 = match seed / 24 % 4 {
+            0 => r.next_u32() % 1_000_000_000,
+            1 => 0,
+            2 => u32::MAX,
+            _ => 999_999_999,
+        };
+        s2b_case(c, &mut r, nd0, nd, y9, true);
+    }
+
+    #[test]
+    fn s2b_matches() {
+        let paths = [
+            // nd <= 9: 17 + 6 + 9 + `_Balloc` + 1 + 3 + 10.
+            71,
+            // nd0 <= 9, nd = 10, y9 = 0: one size step (6 + 1 + 7), one
+            // remaining digit (3 + 9 + `__multadd` of a zero word: 41).
+            129,
+            // nd0 = nd = 10, y9 = 0: one size step, one integer digit
+            // (2 + 10 + 41 + 2), none left (3).
+            133,
+        ];
+        check_paths_lohi(ee::s15::f_004206f8__generated, s2b, 192, &paths, &s2b_setup);
+    }
+
+    driven!(s2b_gen_driven, ee::s15::f_004206f8__generated);
+
+    driven!(s2b_hand_driven, s2b);
+
+    /// nd0 = 18, nd = 27 of zeros (`__multadd` stays one word, no inner
+    /// checks): the first event due in the size loop (check at 31), the
+    /// integer-digit loop (first check at 125) or the remaining-digit loop
+    /// (first check at 588, the integer loop's last at 482).
+    #[test]
+    fn s2b_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x06f8_e000 ^ (seed as u64) << 20);
+            s2b_case(c, &mut r, 18, 27, 0, false);
+            let offset = [20, 60, 520][(seed / 3 % 3) as usize];
+            mprec_t_schedule(c, &mut r, seed, 0x0042_06f8, offset)
+        };
+        check_events(s2b_gen_driven, s2b_hand_driven, 90, &setup);
+        let resumes =
+            mprec_t_event_reach(ee::s15::f_004206f8__generated, s2b, 90, &setup, &|seed| {
+                Some([S2B_SIZE_LOOP, S2B_INT_LOOP, S2B_FRAC_LOOP][(seed / 3 % 3) as usize])
+            });
+        assert!(
+            resumes.is_empty(),
+            "the checks only deliver; re-entered at {resumes:x?}"
+        );
+    }
+
+    // ---------------------------------------------------------- __multiply
+
+    /// `__multiply(r, a, b)` with `wa`/`wb`-word operands. `class`: 0
+    /// random words, 1 `b` words with a zero low half, 2 with a zero high
+    /// half, 3 all ones, 4 `b` zero. `tight`: each operand in the smallest
+    /// size class (so the product needs the next one).
+    pub(crate) fn multiply_case(
+        c: &mut Cpu,
+        r: &mut Rng,
+        wa: usize,
+        wb: usize,
+        class: u32,
+        tight: bool,
+    ) {
+        mprec_t_machine(c, r, Some(u32::MAX), true, 0);
+        let (xa, xb): (Vec<u32>, Vec<u32>) = match class {
+            0 => (mprec_t_words(r, wa), mprec_t_words(r, wb)),
+            1 => (
+                mprec_t_words(r, wa),
+                (0..wb)
+                    .map(|_| r.next_u32() & 0xffff_0000 | 0x1_0000)
+                    .collect(),
+            ),
+            2 => (
+                mprec_t_words(r, wa),
+                (0..wb).map(|_| r.next_u32() & 0xffff | 1).collect(),
+            ),
+            3 => (vec![u32::MAX; wa], vec![u32::MAX; wb]),
+            _ => (mprec_t_words(r, wa), vec![0; wb]),
+        };
+        let class_of = |w: usize| {
+            if tight {
+                (w as u32).next_power_of_two().trailing_zeros()
+            } else {
+                3
+            }
+        };
+        mprec_t_bigint(c, r, MPREC_T_A, class_of(wa), 0, &xa);
+        mprec_t_bigint(c, r, MPREC_T_B, class_of(wb), 0, &xb);
+        c.g[A1][0] = MPREC_T_A as u64;
+        c.g[A2][0] = MPREC_T_B as u64;
+        c.pc = 0x0042_09b0;
+    }
+
+    pub(crate) fn multiply_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x09b0 ^ (seed as u64) << 20);
+        let wa = 1 + (seed % 4) as usize;
+        let wb = 1 + (seed / 4 % 4) as usize;
+        multiply_case(c, &mut r, wa, wb, seed / 16 % 5, seed / 80 % 2 == 1);
+    }
+
+    /// `__multiply` of all-ones operands (every half digit non-zero, the
+    /// top product word non-zero), from the generated block charges.
+    pub(crate) fn multiply_ones_cycles(wa: u64, wb: u64) -> u64 {
+        let (long, short) = (wa.max(wb), wa.min(wb));
+        let swap = if wa < wb { 2 } else { 0 };
+        let clear = 2 + 7 * (wa + wb);
+        let low = 4 + 4 + 20 * long + 1;
+        let high = 3 + 4 + 18 * long + 1;
+        let digit = low + high + 4;
+        16 + swap + 16 + MPREC_T_BALLOC_HIT + clear + 10 + 1 + short * digit + 1 + (2 + 5 + 1) + 11
+    }
+
+    #[test]
+    fn multiply_matches() {
+        // One-word operands, `b` zero: both halves skipped (4 + 3 + 4),
+        // trimmed to zero words (7 + 7 + 2).
+        let mut paths = vec![16 + 16 + MPREC_T_BALLOC_HIT + 16 + 10 + 1 + 11 + 1 + 16 + 11];
+        for wa in 1..=4 {
+            for wb in 1..=4 {
+                paths.push(multiply_ones_cycles(wa, wb));
+            }
+        }
+        check_paths_lohi(
+            ee::s15::f_004209b0__generated,
+            multiply,
+            320,
+            &paths,
+            &multiply_setup,
+        );
+    }
+
+    driven!(multiply_gen_driven, ee::s15::f_004209b0__generated);
+
+    driven!(multiply_hand_driven, multiply);
+
+    /// 4 x 4 words. All ones: the first event due in the clearing loop
+    /// (check at 66), the low-half loop (154; the clearing loop's last at
+    /// 108) or the high-half loop (240; the low loop's last at 194). `b`
+    /// zero: at the digit loop (137) or the trim loop (178).
+    #[test]
+    fn multiply_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x09b0_e000 ^ (seed as u64) << 20);
+            let (class, offset) =
+                [(3, 60), (3, 130), (3, 220), (4, 120), (4, 165)][(seed / 3 % 5) as usize];
+            multiply_case(c, &mut r, 4, 4, class, false);
+            mprec_t_schedule(c, &mut r, seed, 0x0042_09b0, offset)
+        };
+        check_events(multiply_gen_driven, multiply_hand_driven, 90, &setup);
+        let resumes = mprec_t_event_reach(
+            ee::s15::f_004209b0__generated,
+            multiply,
+            90,
+            &setup,
+            &|seed| {
+                Some(
+                    [
+                        MULTIPLY_CLEAR_LOOP,
+                        MULTIPLY_LOW_LOOP,
+                        MULTIPLY_HIGH_LOOP,
+                        MULTIPLY_DIGIT_LOOP,
+                        MULTIPLY_TRIM_LOOP,
+                    ][(seed / 3 % 5) as usize],
+                )
+            },
+        );
+        assert!(
+            resumes.is_empty(),
+            "the checks only deliver; re-entered at {resumes:x?}"
+        );
+    }
+
+    // ---------------------------------------------------------- __pow5mult
+
+    /// 5^4, 5^8, 5^16 and 5^32 as Bigint words, with their size classes.
+    pub(crate) const POW5MULT_T_POWERS: [(u32, &[u32]); 4] = [
+        (0, &[0x271]),
+        (0, &[0x5_f5e1]),
+        (1, &[0x86f2_6fc1, 0x23]),
+        (2, &[0x85ac_ef81, 0x2d6d_415b, 0x4ee]),
+    ];
+
+    /// `__pow5mult(r, b, k)` with `b` at MPREC_T_A (`[7]` when `small_b`,
+    /// else two random words) and `cache` 0: no `_p5s`, 1: only 5^4, 2: all
+    /// four powers.
+    pub(crate) fn pow5mult_case(c: &mut Cpu, r: &mut Rng, k: u32, cache: u32, small_b: bool) {
+        mprec_t_machine(c, r, Some(u32::MAX), true, 0);
+        elf_image(c); // p05[]
+        let cached = [0, 1, 4][cache as usize];
+        for i in 0..cached {
+            let at = MPREC_T_P5S + MPREC_T_P5S_STRIDE * i as u32;
+            let (class, words) = POW5MULT_T_POWERS[i];
+            mprec_t_bigint(c, r, at, class, 0, words);
+            let next = if i + 1 < cached {
+                at + MPREC_T_P5S_STRIDE
+            } else {
+                0
+            };
+            c.bus.write32(at + BIGINT_NEXT, next);
+        }
+        let p5s = if cached > 0 { MPREC_T_P5S } else { 0 };
+        c.bus.write32(MPREC_T_REENT + REENT_P5S, p5s);
+        let (class, x) = if small_b {
+            (0, vec![7])
+        } else {
+            (1, mprec_t_words(r, 2))
+        };
+        mprec_t_bigint(c, r, MPREC_T_A, class, 0, &x);
+        c.g[A1][0] = MPREC_T_A as u64;
+        c.g[A2][0] = sx(k);
+        c.pc = POW5MULT_ENTRY;
+    }
+
+    pub(crate) fn pow5mult_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0bc8 ^ (seed as u64) << 20);
+        let k = (seed % 4) | (seed / 4 % 8) << 2;
+        pow5mult_case(c, &mut r, k, seed / 32 % 3, seed / 96 % 2 == 0);
+    }
+
+    #[test]
+    fn pow5mult_matches() {
+        let paths = [
+            // k = 0: 11 + 3 + 7.
+            21,
+            // k = 1..3, b = [7]: 11 + 9 + `__multadd` without a carry (41)
+            // + 3 + 7.
+            71,
+            // k = 4, cached, b = [7]: 11 + 3 + 3 + 2 + 7 + `__multiply`
+            // ([7] x [625]: 147) + `_Bfree` + 3 + 1 + 7.
+            197,
+        ];
+        check_paths_lohi(
+            ee::s15::f_00420bc8__generated,
+            pow5mult,
+            192,
+            &paths,
+            &pow5mult_setup,
+        );
+    }
+
+    driven!(pow5mult_gen_driven, ee::s15::f_00420bc8__generated);
+
+    driven!(pow5mult_hand_driven, pow5mult);
+
+    /// Unwinds at the loop head 0x420c50 (k = 8, 16 and 24 reach it first,
+    /// 22 cycles in), resumed there into a cached power or a squaring.
+    #[test]
+    fn pow5mult_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x0bc8_e000 ^ (seed as u64) << 20);
+            let k = [8, 16, 24, 28, 12][(seed / 3 % 5) as usize];
+            pow5mult_case(
+                c,
+                &mut r,
+                k,
+                [2, 1][(seed / 15 % 2) as usize],
+                seed / 30 % 2 == 0,
+            );
+            mprec_t_schedule(c, &mut r, seed, POW5MULT_ENTRY, 15)
+        };
+        check_events(pow5mult_gen_driven, pow5mult_hand_driven, 90, &setup);
+        let resumes = mprec_t_event_reach(
+            ee::s15::f_00420bc8__generated,
+            pow5mult,
+            90,
+            &setup,
+            &|seed| (seed / 3 % 5 < 3).then_some(POW5MULT_NEXT_POWER),
+        );
+        assert!(
+            resumes.contains(&POW5MULT_NEXT_POWER),
+            "no unwind resumed at the loop head"
+        );
+        assert!(
+            resumes.iter().all(|&pc| pc == POW5MULT_NEXT_POWER),
+            "re-entered elsewhere: {resumes:x?}"
+        );
+    }
+
+    // ------------------------------------------------------------ __lshift
+
+    /// `__lshift(r, b, 32 * n + bits)` on a `wds`-word Bigint of class `kb`
+    /// whose top word carries out of any shift (`carry`) or never does.
+    pub(crate) fn lshift_case(
+        c: &mut Cpu,
+        r: &mut Rng,
+        n: u32,
+        bits: u32,
+        wds: usize,
+        kb: u32,
+        carry: bool,
+    ) {
+        mprec_t_machine(c, r, Some(u32::MAX), true, 0);
+        let mut x = mprec_t_words(r, wds);
+        x[wds - 1] = if carry { u32::MAX } else { 1 };
+        mprec_t_bigint(c, r, MPREC_T_A, kb, 0, &x);
+        c.g[A1][0] = MPREC_T_A as u64;
+        c.g[A2][0] = sx(32 * n + bits);
+        c.pc = 0x0042_0cc8;
+    }
+
+    /// Size classes of `b`: maxwds 1 (the size loop runs) or 8 (it never does).
+    pub(crate) const LSHIFT_T_CLASSES: [u32; 2] = [0, 3];
+
+    pub(crate) fn lshift_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0cc8 ^ (seed as u64) << 20);
+        let bits = if seed % 3 == 0 {
+            0
+        } else {
+            [1, 31, 5, 17][(seed / 9 % 4) as usize]
+        };
+        let wds = 1 + (seed / 36 % 3) as usize;
+        let kb = LSHIFT_T_CLASSES[(seed / 108 % 2) as usize];
+        lshift_case(c, &mut r, seed / 3 % 3, bits, wds, kb, seed / 216 % 2 == 1);
+    }
+
+    /// `__lshift` from the generated block charges: prologue 19, the size
+    /// loop (1 + 7 per doubling), 7 + `_Balloc`, the zero words (2 + 7
+    /// each), 5, the shift (4 + 10 per word + 3) or the copy (7 per word),
+    /// 15 + `_Bfree`.
+    pub(crate) fn lshift_cycles(n: u64, shifted: bool, wds: u64, maxwds: u64) -> u64 {
+        let n1 = n + wds + 1;
+        let mut grow = 0;
+        if n1 > maxwds {
+            grow = 1;
+            let mut i = maxwds;
+            loop {
+                i <<= 1;
+                grow += 7;
+                if i >= n1 {
+                    break;
+                }
+            }
+        }
+        let zero = if n > 0 { 2 + 7 * n } else { 0 };
+        let words = if shifted { 4 + 10 * wds + 3 } else { 7 * wds };
+        19 + grow + 7 + MPREC_T_BALLOC_HIT + zero + 5 + words + 15 + MPREC_T_BFREE
+    }
+
+    #[test]
+    fn lshift_matches() {
+        let mut paths = Vec::new();
+        for n in 0..3 {
+            for shifted in [false, true] {
+                for wds in 1..=3 {
+                    for kb in LSHIFT_T_CLASSES {
+                        paths.push(lshift_cycles(n, shifted, wds, 1 << kb));
+                    }
+                }
+            }
+        }
+        check_paths(
+            ee::s15::f_00420cc8__generated,
+            lshift,
+            432,
+            &paths,
+            &lshift_setup,
+        );
+    }
+
+    driven!(lshift_gen_driven, ee::s15::f_00420cc8__generated);
+
+    driven!(lshift_hand_driven, lshift);
+
+    /// The first event due in the size loop (check at 27), the zero-word
+    /// loop (60), the shift loop (70) or the copy loop (63).
+    #[test]
+    fn lshift_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x0cc8_e000 ^ (seed as u64) << 20);
+            let (n, bits, wds, kb, offset) = [
+                (2, 5, 3, 0, 20),
+                (2, 5, 1, 3, 55),
+                (0, 5, 3, 3, 62),
+                (0, 0, 3, 3, 58),
+            ][(seed / 3 % 4) as usize];
+            lshift_case(c, &mut r, n, bits, wds, kb, seed / 12 % 2 == 1);
+            mprec_t_schedule(c, &mut r, seed, 0x0042_0cc8, offset)
+        };
+        check_events(lshift_gen_driven, lshift_hand_driven, 96, &setup);
+        let resumes = mprec_t_event_reach(
+            ee::s15::f_00420cc8__generated,
+            lshift,
+            96,
+            &setup,
+            &|seed| {
+                Some(
+                    [
+                        LSHIFT_GROW_LOOP,
+                        LSHIFT_ZERO_LOOP,
+                        LSHIFT_SHIFT_LOOP,
+                        LSHIFT_COPY_LOOP,
+                    ][(seed / 3 % 4) as usize],
+                )
+            },
+        );
+        assert!(
+            resumes.is_empty(),
+            "the checks only deliver; re-entered at {resumes:x?}"
+        );
+    }
+
+    // ------------------------------------------------------------- __mdiff
+
+    /// `__mdiff(r, a, b)` of `big` and `small` (`rel` 0: big and a copy, 1:
+    /// small and big, 2: big and small). `shape` 0: same width, larger top
+    /// word; 1: same width, equal top words; 2: big wider by 1 + `extra`;
+    /// 3: big = 2^(32w), wider by one, borrowing through its zero words.
+    pub(crate) fn mdiff_case(
+        c: &mut Cpu,
+        r: &mut Rng,
+        rel: u32,
+        shape: u32,
+        w: usize,
+        extra: usize,
+    ) {
+        mprec_t_machine(c, r, Some(u32::MAX), true, 0);
+        let mut small = mprec_t_words(r, w);
+        let big: Vec<u32> = match shape {
+            0 => {
+                small[w - 1] &= 0x7fff_ffff;
+                let mut x = mprec_t_words(r, w);
+                x[w - 1] = small[w - 1] + 1;
+                x
+            }
+            1 => {
+                small[0] &= 0x7fff_ffff;
+                let mut x = small.clone();
+                x[0] = small[0] + 1;
+                x
+            }
+            2 => mprec_t_words(r, w + 1 + extra),
+            _ => {
+                let mut x = vec![0; w];
+                x.push(1);
+                x
+            }
+        };
+        let (a, b) = match rel {
+            0 => (big.clone(), big),
+            1 => (small, big),
+            _ => (big, small),
+        };
+        mprec_t_bigint(c, r, MPREC_T_A, 3, 0, &a);
+        mprec_t_bigint(c, r, MPREC_T_B, 3, 0, &b);
+        c.g[A1][0] = MPREC_T_A as u64;
+        c.g[A2][0] = MPREC_T_B as u64;
+        c.pc = 0x0042_0e90;
+    }
+
+    pub(crate) fn mdiff_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0e90 ^ (seed as u64) << 20);
+        let w = 1 + (seed / 12 % 3) as usize;
+        let extra = (seed / 36 % 2) as usize;
+        mdiff_case(c, &mut r, seed % 3, seed / 3 % 4, w, extra);
+    }
+
+    #[test]
+    fn mdiff_matches() {
+        let mut paths = Vec::new();
+        // Equal: 15 + `__mcmp` over w equal words (12 + 8w) + 7 + `_Balloc` + 8.
+        for w in 1..=4 {
+            paths.push(15 + 12 + 8 * w + 7 + MPREC_T_BALLOC_HIT + 8);
+        }
+        // One word, a > b without a trim: 15 + `__mcmp` (19) + 2 + 16 +
+        // `_Balloc` + 19 + 3 + 3 + 8; a < b swaps (+4).
+        let one_word = 15 + 19 + 2 + 16 + MPREC_T_BALLOC_HIT + 19 + 3 + 3 + 8;
+        paths.push(one_word);
+        paths.push(one_word + 4);
+        check_paths(
+            ee::s15::f_00420e90__generated,
+            mdiff,
+            216,
+            &paths,
+            &mdiff_setup,
+        );
+    }
+
+    driven!(mdiff_gen_driven, ee::s15::f_00420e90__generated);
+
+    driven!(mdiff_hand_driven, mdiff);
+
+    /// [7, 3, 9, 9] - [6, 3, 9, 9]: the first event due in the subtract
+    /// loop (check at 120, `__mcmp`'s last at 49) or the trim loop (191,
+    /// the subtract loop's last at 158). [1, 2, 3, 4, 5] - [9]: in the
+    /// borrow loop (100).
+    #[test]
+    fn mdiff_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x0e90_e000 ^ (seed as u64) << 20);
+            mprec_t_machine(c, &mut r, Some(u32::MAX), true, 0);
+            let target = seed / 3 % 3;
+            let (a, b, offset) = match target {
+                0 => (vec![7, 3, 9, 9], vec![6, 3, 9, 9], 100),
+                1 => (vec![1, 2, 3, 4, 5], vec![9], 90),
+                _ => (vec![7, 3, 9, 9], vec![6, 3, 9, 9], 170),
+            };
+            mprec_t_bigint(c, &mut r, MPREC_T_A, 3, 0, &a);
+            mprec_t_bigint(c, &mut r, MPREC_T_B, 3, 0, &b);
+            c.g[A1][0] = MPREC_T_A as u64;
+            c.g[A2][0] = MPREC_T_B as u64;
+            mprec_t_schedule(c, &mut r, seed, 0x0042_0e90, offset)
+        };
+        check_events(mdiff_gen_driven, mdiff_hand_driven, 90, &setup);
+        let resumes =
+            mprec_t_event_reach(ee::s15::f_00420e90__generated, mdiff, 90, &setup, &|seed| {
+                Some([MDIFF_SUB_LOOP, MDIFF_BORROW_LOOP, MDIFF_TRIM_LOOP][(seed / 3 % 3) as usize])
+            });
+        assert!(
+            resumes.is_empty(),
+            "the checks only deliver; re-entered at {resumes:x?}"
+        );
+    }
+
+    // --------------------------------------------------------------- __b2d
+
+    /// Top words with known `__hi0bits` costs: 0x8000_0000 (k 0: 21),
+    /// 0x0010_0000 (k 11: 29), 1 (k 31: 33).
+    pub(crate) const B2D_T_FIXED_TOPS: [u32; 3] = [0x8000_0000, 0x0010_0000, 1];
+
+    /// `__b2d(a, e)` with a `wds`-word Bigint whose top word is `top`.
+    pub(crate) fn b2d_case(c: &mut Cpu, r: &mut Rng, top: u32, wds: usize) {
+        scramble(c, r);
+        let mut x: Vec<u32> = (0..wds).map(|_| mprec_t_word(r)).collect();
+        x[wds - 1] = top;
+        mprec_t_bigint(c, r, MPREC_T_A, 2, 0, &x);
+        c.bus.write32(MPREC_T_OUT, r.next_u32());
+        c.g[A0][0] = MPREC_T_A as u64;
+        c.g[A1][0] = MPREC_T_OUT as u64;
+        c.pc = 0x0042_10e8;
+    }
+
+    pub(crate) fn b2d_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x10e8 ^ (seed as u64) << 20);
+        let pick = seed % 36;
+        // Every leading-zero count 0..=32 (k < 11, k == 11, k > 11), then
+        // the fixed tops.
+        let top = match pick {
+            32 => 0,
+            0..=31 => {
+                let bit = 1u32 << (31 - pick);
+                bit | (r.next_u32() & (bit - 1))
+            }
+            _ => B2D_T_FIXED_TOPS[(pick - 33) as usize],
+        };
+        b2d_case(c, &mut r, top, 1 + (seed / 36 % 3) as usize);
+    }
+
+    #[test]
+    fn b2d_matches() {
+        let paths = [
+            // k 0: 22 + 21 + 13 (+1 with a word below) + 12 + 10.
+            78, 79, //
+            // k 11: 22 + 29 + 3 (+2 with a word below) + 3 + 12 + 10.
+            79, 81, //
+            // k 31: 22 + 33 + 3 (+2) + 3 + 13 (+1 with a second word
+            // below) + 10 + 10.
+            94, 96, 97,
+        ];
+        check_paths(ee::s15::f_004210e8__generated, b2d, 216, &paths, &b2d_setup);
+    }
+
+    // --------------------------------------------------------------- __d2b
+
+    /// A double for `__d2b`: exponent 0 (zero, denormals), small, around 1,
+    /// the top two (0x7fe, 0x7ff); either sign; a zero, odd or even low
+    /// word; a zero or random high fraction. `seed % 5 == 4`: 1.0,
+    /// 1.0 + ulp or the smallest denormal, whose costs are known.
+    pub(crate) fn d2b_operand(r: &mut Rng, seed: u32) -> u64 {
+        if seed % 5 == 4 {
+            return [0x3ff0_0000_0000_0000, 0x3ff0_0000_0000_0001, 1][(seed / 5 % 3) as usize];
+        }
+        let exp: u64 = match seed % 5 {
+            0 => 0,
+            1 => 1 + (r.next_u32() % 100) as u64,
+            2 => 963 + (r.next_u32() % 120) as u64,
+            _ => 0x7fe + (seed / 60 % 2) as u64,
+        };
+        let sign = (seed / 5 % 2) as u64;
+        let low = match seed / 10 % 3 {
+            0 => 0,
+            1 => r.next_u32() | 1,
+            _ => {
+                let shift = 1 + r.next_u32() % 31;
+                (r.next_u32() | 1) << shift
+            }
+        };
+        let frac = if seed / 30 % 2 == 0 {
+            0
+        } else {
+            r.next_u32() as u64 & DOUBLE_FRAC_MASK
+        };
+        sign << 63 | exp << DOUBLE_EXP_SHIFT | frac << 32 | low as u64
+    }
+
+    pub(crate) fn d2b_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x1280 ^ (seed as u64) << 20);
+        mprec_t_machine(c, &mut r, Some(u32::MAX), true, 0);
+        c.bus.write32(MPREC_T_OUT, r.next_u32());
+        c.bus.write32(MPREC_T_OUT_BITS, r.next_u32());
+        c.g[A1][0] = d2b_operand(&mut r, seed);
+        c.g[A2][0] = MPREC_T_OUT as u64;
+        c.g[A3][0] = MPREC_T_OUT_BITS as u64;
+        c.pc = 0x0042_1280;
+    }
+
+    #[test]
+    fn d2b_matches() {
+        let paths = [
+            // 1.0: 30 + `_Balloc` + 3 + 4 + 8 + `__lo0bits`(0x100000: 23)
+            // + 2 + 5 + 11.
+            111,
+            // 1.0 + ulp: 30 + 25 + 3 + 4 + 5 + `__lo0bits`(1: 8) + 2 + 8
+            // + 2 + 5 + 11.
+            103,
+            // Smallest denormal: 30 + 25 + 4 + 5 + 8 + 2 + 8 + 2 + 8 +
+            // `__hi0bits`(1: 33) + 11.
+            136,
+        ];
+        check_paths(ee::s15::f_00421280__generated, d2b, 240, &paths, &d2b_setup);
+    }
+
+    // ------------------------------------------------------------- __ratio
+
+    /// Top words for `__ratio`'s operands (leading zeros 0, 11, 31, 17, 0).
+    pub(crate) const RATIO_T_TOPS: [u32; 5] = [0x8000_0000, 0x0010_0000, 1, 0x4000, u32::MAX];
+
+    /// `__ratio(a, b)`: widths 1..3 each and the tops above, crossed, so
+    /// the exponent difference is positive, zero and negative.
+    pub(crate) fn ratio_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x1400 ^ (seed as u64) << 20);
+        elf_image(c);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        let wa = 1 + (seed % 3) as usize;
+        let wb = 1 + (seed / 3 % 3) as usize;
+        let mut xa = mprec_t_words(&mut r, wa);
+        let mut xb = mprec_t_words(&mut r, wb);
+        xa[wa - 1] = RATIO_T_TOPS[(seed / 9 % 5) as usize];
+        xb[wb - 1] = RATIO_T_TOPS[(seed / 45 % 5) as usize];
+        mprec_t_bigint(c, &mut r, MPREC_T_A, 2, 0, &xa);
+        mprec_t_bigint(c, &mut r, MPREC_T_B, 2, 0, &xb);
+        c.g[A0][0] = MPREC_T_A as u64;
+        c.g[A1][0] = MPREC_T_B as u64;
+        c.pc = 0x0042_1400;
+    }
+
+    #[test]
+    fn ratio_matches() {
+        check_lohi(ee::s15::f_00421400__generated, ratio, 225, &ratio_setup);
+    }
+
+    /// `__ratio` of two Bigints sharing their top two words (top bit set,
+    /// so `__b2d` takes its k < 11 arm with a word below: 79 cycles either
+    /// way) with `(wa, wb)` = (3, 2), (2, 2), (2, 3) for `seed % 3`: `da`
+    /// and `db` share their mantissa and k = 32 * (wa - wb) is 32, 0, -32.
+    /// The three seeds of a triple draw the same words.
+    pub(crate) fn ratio_pair_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x1400_a000 ^ ((seed / 3) as u64) << 20);
+        let (wa, wb) = [(3, 2), (2, 2), (2, 3)][(seed % 3) as usize];
+        elf_image(c);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        let top = 0x8000_0000 | r.next_u32();
+        let below = r.next_u32();
+        let low = r.next_u32();
+        let words = |w: usize| {
+            if w == 3 {
+                vec![low, below, top]
+            } else {
+                vec![below, top]
+            }
+        };
+        mprec_t_bigint(c, &mut r, MPREC_T_A, 2, 0, &words(wa));
+        mprec_t_bigint(c, &mut r, MPREC_T_B, 2, 0, &words(wb));
+        c.g[A0][0] = MPREC_T_A as u64;
+        c.g[A1][0] = MPREC_T_B as u64;
+        c.pc = 0x0042_1400;
+    }
+
+    /// The exponent arms: with both `__b2d` calls and the `__divdf3`
+    /// operands' mantissas the same across a triple, k > 0 (da's high word
+    /// adjusted, 8 cycles) costs one more than k == 0 and k < 0 (db's, 7).
+    #[test]
+    fn ratio_arms() {
+        const TRIPLES: u32 = 40;
+        check_lohi(
+            ee::s15::f_00421400__generated,
+            ratio,
+            3 * TRIPLES,
+            &ratio_pair_setup,
+        );
+        let total = |seed: u32| {
+            let mut c = fresh();
+            ratio_pair_setup(&mut c, seed);
+            let before = c.cycles;
+            ee::s15::f_00421400__generated(&mut c);
+            c.cycles - before
+        };
+        for triple in 0..TRIPLES {
+            let (up, zero, down) = (
+                total(3 * triple),
+                total(3 * triple + 1),
+                total(3 * triple + 2),
+            );
+            assert_eq!(up, zero + 1, "triple {triple}: k > 0 vs k == 0");
+            assert_eq!(down, zero, "triple {triple}: k < 0 vs k == 0");
+        }
+    }
 }

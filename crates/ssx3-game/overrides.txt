@@ -9457,6 +9457,27 @@
 0x00415c70    __tfSc
 0x0041ef50    __ieee754_fmod
 0x0041f9d8    __ieee754_log10
+# Phase 2 wave: oc1310, oc1311, oc1312, oc1313, oc1314, oc1317, oc1319
+0x00422780    _dtoa_r
+0x0041b728    _vfprintf_r
+0x0040ec58    __kernel_rem_pio2f
+0x0041dbf8    _malloc_r
+0x0040fcb0    __divdi3
+0x0041af88    vfprintf_FloatToStr
+0x00420510    _Balloc
+0x004205f0    __multadd
+0x004206f8    __s2b
+0x004209b0    __multiply
+0x00420bc8    __pow5mult
+0x00420cc8    __lshift
+0x00420e90    __mdiff
+0x004210e8    __b2d
+0x00421280    __d2b
+0x00421400    __ratio
+# Phase 2 wave: oc1315, oc1316, oc1318
+0x0042d470    __moddi3
+0x0041f3a8    __ieee754_log_2
+0x00421f20    _realloc_r
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
