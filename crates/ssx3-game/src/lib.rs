@@ -170,7 +170,10 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
 
 /// Threads the frame driver runs as steps (woken by a signal, run at the top of
 /// the frame loop) instead of scheduling them by priority.
-pub const STEP_THREAD_ENTRIES: &[u32] = &[0x003c_19a8]; // SND_EeThread
+pub const STEP_THREAD_ENTRIES: &[u32] = &[
+    0x003c_19a8, // SND_EeThread
+    0x0031_ac60, // worker
+];
 
 /// The guest threads' entries and the waits (syscall return addresses) at which
 /// each may unwind and be re-entered later (`docs/plans/single-loop.md`). Every
