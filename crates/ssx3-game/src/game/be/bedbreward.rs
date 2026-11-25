@@ -75,6 +75,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_score_int_destroy_instance,
         "BEScoreInt_DestroyInstance",
     ),
+    (
+        0x0015_af40,
+        be_reward_int_get_reward_type_text,
+        "BERewardInt_GetRewardTypeText",
+    ),
 ];
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -1477,6 +1482,184 @@ pub fn be_score_int_destroy_instance(c: &mut Cpu) {
     })
 }
 
+/// `BERewardInt_GetRewardTypeText` (0x0015af40): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn be_reward_int_get_reward_type_text(c: &mut Cpu) {
+    if c.pc != 0x0015af40 {
+        return ee::s01::f_0015af40__generated(c);
+    }
+    guest(c, |c| {
+        'b_15afe0: {
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[A1][0] < 0xau64) as u64;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A3][0] = c.g[A0][0];
+            if t {
+                break 'b_15afe0;
+            } else {
+                'b_15af74: {
+                    'b_15af70: {
+                        'b_15afd4: {
+                            'b_15afc8: {
+                                'b_15afbc: {
+                                    'b_15afb0: {
+                                        'b_15afa4: {
+                                            'b_15af98: {
+                                                'b_15af8c: {
+                                                    c.cycles += 7;
+                                                    c.g[V0][0] = 0x460000;
+                                                    c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+                                                    c.g[V0][0] =
+                                                        sx((c.g[V0][0] as u32)
+                                                            .wrapping_sub(0x5470));
+                                                    c.g[V1][0] = sx((c.g[V1][0] as u32)
+                                                        .wrapping_add(c.g[V0][0] as u32));
+                                                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                                                    let t = c.g[A0][0] as u32;
+                                                    match t {
+                                                        0x0015af68 => {
+                                                            c.cycles += 2;
+                                                            c.g[V0][0] = 0xc;
+                                                            c.g[V1][0] = c.lw((c.g[A3][0] as u32)
+                                                                .wrapping_add(0x8));
+                                                            break 'b_15af70;
+                                                        }
+                                                        0x0015af80 => {
+                                                            c.cycles += 3;
+                                                            c.g[V0][0] = 0xc;
+                                                            let t = true;
+                                                            c.g[V1][0] = c.lw((c.g[A3][0] as u32)
+                                                                .wrapping_add(0xc));
+                                                            if t {
+                                                                break 'b_15af70;
+                                                            } else {
+                                                                break 'b_15af8c;
+                                                            }
+                                                        }
+                                                        0x0015af8c => {
+                                                            break 'b_15af8c;
+                                                        }
+                                                        0x0015af98 => {
+                                                            break 'b_15af98;
+                                                        }
+                                                        0x0015afa4 => {
+                                                            break 'b_15afa4;
+                                                        }
+                                                        0x0015afb0 => {
+                                                            break 'b_15afb0;
+                                                        }
+                                                        0x0015afbc => {
+                                                            break 'b_15afbc;
+                                                        }
+                                                        0x0015afc8 => {
+                                                            break 'b_15afc8;
+                                                        }
+                                                        0x0015afd4 => {
+                                                            break 'b_15afd4;
+                                                        }
+                                                        0x0015afe0 => {
+                                                            break 'b_15afe0;
+                                                        }
+                                                        _ => {
+                                                            c.jump_out(t, 0x0015af40, 0x0015afe8);
+                                                            return Ok(());
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 3;
+                                                c.g[V1][0] =
+                                                    c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+                                                let t = true;
+                                                c.g[V0][0] = sx((c.g[A2][0] as u32) << 3);
+                                                if t {
+                                                    break 'b_15af74;
+                                                } else {
+                                                    break 'b_15af98;
+                                                }
+                                            }
+                                            c.cycles += 3;
+                                            c.g[V1][0] =
+                                                c.lw((c.g[A3][0] as u32).wrapping_add(0x14));
+                                            let t = true;
+                                            c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+                                            if t {
+                                                break 'b_15af74;
+                                            } else {
+                                                break 'b_15afa4;
+                                            }
+                                        }
+                                        c.cycles += 3;
+                                        c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x18));
+                                        let t = true;
+                                        c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+                                        if t {
+                                            break 'b_15af74;
+                                        } else {
+                                            break 'b_15afb0;
+                                        }
+                                    }
+                                    c.cycles += 3;
+                                    c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x1c));
+                                    let t = true;
+                                    c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+                                    if t {
+                                        break 'b_15af74;
+                                    } else {
+                                        break 'b_15afbc;
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x24));
+                                let t = true;
+                                c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+                                if t {
+                                    break 'b_15af74;
+                                } else {
+                                    break 'b_15afc8;
+                                }
+                            }
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x20));
+                            let t = true;
+                            c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+                            if t {
+                                break 'b_15af74;
+                            } else {
+                                break 'b_15afd4;
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x28));
+                        let t = true;
+                        c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+                        if t {
+                            break 'b_15af74;
+                        } else {
+                            break 'b_15afe0;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.mult(0, 2, 6, 2);
+                    break 'b_15af74;
+                }
+                c.cycles += 3;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                let t = c.g[RA][0] as u32;
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.pc = t;
+                return Ok(());
+            }
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.g[V0][0] = 0u64;
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1777,6 +1960,21 @@ pub(crate) mod tests {
                 let obj = if seed % 2 == 0 { 0 } else { DATA + 0x1000 };
                 c.bus.write32(GAME_GP.wrapping_sub(0x1ea8), obj);
                 c.bus.write32(DATA + 0x1000, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn be_reward_int_get_reward_type_text_matches() {
+        check(
+            ee::s01::f_0015af40__generated,
+            be_reward_int_get_reward_type_text,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0xaf40, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x0015af40;
             },
         );
     }

@@ -147,6 +147,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         replay_cache_deserialize_2,
         "ReplayCache_Deserialize",
     ),
+    (0x0026_c458, playback_man_ctor_2, "PlaybackMan_ctor"),
+    (
+        0x0026_d678,
+        replay_deserialize_snapshot_2,
+        "Replay_DeserializeSnapshot",
+    ),
+    (
+        0x0026_db88,
+        replay_restore_snapshot_2,
+        "Replay_RestoreSnapshot",
+    ),
+    (0x0026_dbd0, world_state_restore_2, "WorldState_Restore"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2197,7 +2209,6 @@ pub fn playback_man_ctor(c: &mut Cpu) {
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x140));
         c.pc = t;
-        return Ok(());
         Ok(())
     })
 }
@@ -3005,6 +3016,243 @@ pub fn replay_deserialize_snapshot(c: &mut Cpu) {
 #[allow(dead_code)]
 pub fn world_state_restore(c: &mut Cpu) {
     tail_wrapper(c, None, Target::Table(0x0026_dbf0), 0x0026_dbe0);
+}
+
+/// `PlaybackMan* PlaybackMan_ctor(PlaybackMan* self, int a1)` (0x26c458): build the
+/// replay playback manager: the embedded `WorldStateStream` (`+0x14`), the world
+/// and rider-table words copied from the game world, two allocated helpers (a
+/// pointer cell and a pair set with `ValuePair_SetFirst/SetSecond`) and a
+/// `BigFile` opened from a formatted name; returns `self`.
+pub fn playback_man_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 75;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x140));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.g[S1][0] = c.g[A1][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x100), c.g[RA][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14));
+        Callee {
+            addr: 0x0026d5e8,
+            f: ee::s07::WorldStateStream_ctor,
+        }
+        .call(c, 0x0026c47c)?;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[T1][0] = 0xffffffffffffffff;
+        c.g[A1][0] = 0x480000;
+        c.g[A0][0] = 0x2a4;
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1550));
+        c.g[A2][0] = 0x20000000;
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x5c), c.g[V0][0]);
+        c.g[T0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x78), c.g[T1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x74), c.g[T1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x54), c.g[S1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x50), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x58), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x70), 0u64);
+        c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x40));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xdf0));
+        c.g[T0][0] = c.lw(c.g[V1][0] as u32);
+        c.g[S2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x64), c.g[T0][0]);
+        call_ptr(c, 0x00317d70, 0x0026c4e4)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x68), c.g[V0][0]);
+        c.g[A1][0] = 0x4a0000;
+        c.g[A3][0] = 0u64;
+        c.g[A2][0] = 0x20000000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3420));
+        c.g[A0][0] = 0x8;
+        c.sw(c.g[V0][0] as u32, 0u64);
+        call_ptr(c, 0x00317d70, 0x0026c504)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x68));
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x00244400, 0x0026c514)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x00244408, 0x0026c520)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x6c), c.g[S1][0]);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x328));
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x320));
+        call_ptr(c, 0x00417828, 0x0026c534)?;
+        c.g[A1][0] = 0x4a0000;
+        c.g[A3][0] = 0u64;
+        c.g[A2][0] = 0u64;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3428));
+        c.g[A0][0] = 0x8;
+        call_ptr(c, 0x00317d70, 0x0026c54c)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x00316898, 0x0026c554)?;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[V0][0];
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        c.g[A2][0] = 0u64;
+        call_ptr(c, 0x00316978, 0x0026c568)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x100));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x140));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `base + off` as a guest address (`addiu`; `off` may be negative).
+pub(crate) fn oc683_off(base: u64, off: i32) -> u32 {
+    (base as u32).wrapping_add(off as u32)
+}
+
+/// The generated function of an intra-shard `jal` (the generated body calls it
+/// directly; after the install the call goes through its override slot).
+pub(crate) fn oc683_direct(addr: u32) -> Callee {
+    let f: GuestFn = match addr {
+        0x0026_cfe8 => ee::s07::f_0026cfe8,
+        0x0026_db88 => ee::s07::f_0026db88,
+        0x0026_dbd0 => ee::s07::f_0026dbd0,
+        0x0026_dbf0 => ee::s07::f_0026dbf0,
+        0x0026_ddc0 => ee::s07::f_0026ddc0,
+        0x0026_de58 => ee::s07::f_0026de58,
+        0x0026_e340 => ee::s07::f_0026e340,
+        0x0026_e9b0 => ee::s07::f_0026e9b0,
+        0x0026_eab8 => ee::s07::f_0026eab8,
+        0x0026_ed88 => ee::s07::f_0026ed88,
+        0x0026_ed90 => ee::s07::f_0026ed90,
+        0x0026_ee68 => ee::s07::f_0026ee68,
+        0x0026_ef30 => ee::s07::f_0026ef30,
+        0x0026_f4a0 => ee::s07::f_0026f4a0,
+        0x0026_f7f8 => ee::s07::f_0026f7f8,
+        0x0027_0238 => ee::s07::f_00270238,
+        0x0027_02f8 => ee::s07::f_002702f8,
+        0x0027_03f0 => ee::s07::f_002703f0,
+        0x0028_b180 => ee::s07::f_0028b180,
+        0x0028_f200 => ee::s07::f_0028f200,
+        _ => unreachable!(),
+    };
+    Callee { addr, f }
+}
+
+/// `void Replay_DeserializeSnapshot(Replay *self, char **pp)` (0x26d678):
+/// copies the 0x28-byte snapshot header at `*pp` to the stack, stores the
+/// frame fields into `self`, decompresses the payload and runs the empty
+/// snapshot hook; returns 1. Frame 0x70: saves ra and s0-s2.
+pub fn replay_deserialize_snapshot_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 46;
+        let frame = Frame::open(c, 0x70);
+        c.g[A2][0] = 0x28;
+        frame.save(c, 16, 0x60);
+        frame.save(c, 17, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, 18, 0x40);
+
+        // MEM_copy(hdr = sp, *pp, 0x28); then the header fields.
+        c.g[A0][0] = c.g[SP][0];
+        let s1 = c.g[S1][0] as u32;
+        c.g[S2][0] = c.lw(s1);
+        c.g[V0][0] = sx(oc683_off(c.g[S2][0], 0x28));
+        c.g[A1][0] = c.g[S2][0];
+        c.sw(s1, c.g[V0][0]);
+        call_ptr(c, 0x003e_6574, 0x0026_d6b0)?;
+
+        let f4 = frame.at(c, 4);
+        let f8 = frame.at(c, 8);
+        let fc = frame.at(c, 0xc);
+        let f14 = frame.at(c, 0x14);
+        let f18 = frame.at(c, 0x18);
+        let f1c = frame.at(c, 0x1c);
+        let f20 = frame.at(c, 0x20);
+        c.g[A3][0] = c.lw(f4);
+        c.g[A2][0] = sx(oc683_off(c.g[S2][0], 0x24));
+        c.g[V1][0] = c.lw(f8);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[V0][0] = c.lw(fc);
+        c.g[A0][0] = c.g[S0][0];
+        c.sw(oc683_off(c.g[S0][0], 0x10), c.g[A3][0]);
+        c.sw(oc683_off(c.g[S0][0], 0x30), c.g[V1][0]);
+        c.sw(oc683_off(c.g[S0][0], 0x34), c.g[V0][0]);
+        c.g[V0][0] = c.lw(f18);
+        c.g[V1][0] = c.lw(f14);
+        c.g[A3][0] = c.lw(f1c);
+        c.g[T0][0] = c.lw(f20);
+        // Unaligned word pair (lwl/lwr) at sp+0x10 .. sp+0x13, stored back
+        // unaligned at self+0x1c .. 0x1f.
+        let f13 = frame.at(c, 0x13);
+        let f10 = frame.at(c, 0x10);
+        c.lwl(T1, f13);
+        c.lwr(T1, f10);
+        let s1f = oc683_off(c.g[S0][0], 0x1f);
+        let s1c = oc683_off(c.g[S0][0], 0x1c);
+        c.swl(T1, s1f);
+        c.swr(T1, s1c);
+        c.sw(oc683_off(c.g[S0][0], 0x20), c.g[V1][0]);
+        c.sw(oc683_off(c.g[S0][0], 0x28), c.g[A3][0]);
+        c.sw(oc683_off(c.g[S0][0], 0x2c), c.g[T0][0]);
+        c.sw(oc683_off(c.g[S0][0], 0x24), c.g[V0][0]);
+        oc683_direct(0x0026_eab8).call(c, 0x0026_d708)?;
+
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        oc683_direct(0x0026_ed88).call(c, 0x0026_d714)?;
+
+        frame.restore(c, 16, 0x60);
+        c.g[V0][0] = 1;
+        frame.restore(c, 17, 0x50);
+        frame.restore(c, 18, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Replay_RestoreSnapshot(Replay* self, ReplayFrame* frame)`
+/// (0x26db88): mark the frame used, then restore the world state from it.
+pub fn replay_restore_snapshot_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        oc683_direct(0x0026_ed90).call(c, 0x0026_dbac)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        oc683_direct(0x0026_dbd0).call(c, 0x0026_dbb8)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void WorldState_Restore(WorldState *self, ...)` (0x26dbd0): a tail
+/// forwarder to `WorldState_Read` (`cReplay_restoreFrame`), 7 cycles.
+pub fn world_state_restore_2(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(oc683_direct(0x0026_dbf0)),
+        0x0026_dbe0,
+    );
 }
 
 #[cfg(test)]
@@ -4915,4 +5163,290 @@ pub(crate) mod tests {
         oc653_slot(c, VT_SUB, 0x40, 0x30, FAKE + 0x40);
         oc653_slot(c, VT_STREAM, 0x10, 0x10, FAKE + 0x10);
     }
+
+    use ssx3_ee_rt::funcs::register_functions;
+
+    pub(crate) use crate::game::be::beintstat::tests::oc673_machine;
+
+    /// `PlaybackMan_ctor` against the generated body: the world and AI
+    /// pointers copied in, the two allocations and the `cInput` setup, the
+    /// formatted file name and the big file open; unwinds in each call.
+    #[test]
+    fn playback_man_ctor_matches() {
+        fakes::covered(
+            ee::s07::f_0026c458__generated,
+            playback_man_ctor_2,
+            100,
+            &|c, seed| {
+                let mut r = oc673_machine(c, seed, 0x26c458, 9, 0x0026_c458);
+                let this = DATA + 0xb_0000;
+                let world = DATA + 0xb_1000;
+                let x = DATA + 0xb_2000;
+                let y = DATA + 0xb_3000;
+                let z = DATA + 0xb_4000;
+                let p = DATA + 0xb_5000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(r.next_u32());
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, x);
+                c.bus.write32(x + 0xc, y);
+                c.bus.write32(y + 0x40, z);
+                c.bus.write32(z + 0xdf0, p);
+                c.bus.write32(p, r.next_u32());
+                c.bus.write32(p + 4, r.next_u32());
+                c.bus.write32(GAME_GP + 0x328, r.next_u32());
+                c.bus.write32(GAME_GP + 0x320, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) const OC683_CHILD_ENV: &str = "SSX3_OC683_CHILD";
+
+    /// Logging stubs for the intra-shard callees the generated bodies call
+    /// directly (through their override slots), and `oc683_install_stubs`
+    /// putting them in the slots. Child process only: the stubs are not gated.
+    macro_rules! oc683_stubs {
+        ($($name:ident, $slot:ident, $addr:expr;)*) => {
+            $(
+                fn $name(c: &mut Cpu) {
+                    let ra = c.g[RA][0] as u32;
+                    fakes::fake(c, $addr, ra)
+                }
+            )*
+            fn oc683_install_stubs() {
+                $(
+                    fakes::hook(
+                        addr_of_mut!(ee::s07::$slot),
+                        $name,
+                        fakes::prev_cell($name),
+                    );
+                )*
+            }
+        };
+    }
+
+    oc683_stubs! {
+        oc683_stub_26d4d8, OVERRIDE_0026D4D8, 0x0026_d4d8;
+        oc683_stub_26ddc0, OVERRIDE_0026DDC0, 0x0026_ddc0;
+        oc683_stub_26de58, OVERRIDE_0026DE58, 0x0026_de58;
+        oc683_stub_26e340, OVERRIDE_0026E340, 0x0026_e340;
+        oc683_stub_26e448, OVERRIDE_0026E448, 0x0026_e448;
+        oc683_stub_26e9b0, OVERRIDE_0026E9B0, 0x0026_e9b0;
+        oc683_stub_26ed88, OVERRIDE_0026ED88, 0x0026_ed88;
+        oc683_stub_26ed90, OVERRIDE_0026ED90, 0x0026_ed90;
+        oc683_stub_26ee68, OVERRIDE_0026EE68, 0x0026_ee68;
+        oc683_stub_26ef30, OVERRIDE_0026EF30, 0x0026_ef30;
+        oc683_stub_26f4a0, OVERRIDE_0026F4A0, 0x0026_f4a0;
+        oc683_stub_26f7f8, OVERRIDE_0026F7F8, 0x0026_f7f8;
+        oc683_stub_270238, OVERRIDE_00270238, 0x0027_0238;
+        oc683_stub_2702f8, OVERRIDE_002702F8, 0x0027_02f8;
+        oc683_stub_28b180, OVERRIDE_0028B180, 0x0028_b180;
+        oc683_stub_28f200, OVERRIDE_0028F200, 0x0028_f200;
+    }
+
+    /// Runs `body` in a child process whose function table is empty, so every
+    /// cross-shard call lands in the fake hook, with the direct callees'
+    /// slots stubbed (callees with no override slot cannot be faked in the
+    /// test process). The parent re-runs the named test and checks it passed.
+    pub(crate) fn oc683_in_child(test: &str, body: &dyn Fn()) {
+        if std::env::var_os(OC683_CHILD_ENV).is_some() {
+            oc683_install_stubs();
+            return body();
+        }
+        // The running test's full path: the helper may live in another unit
+        // than the test that calls it.
+        let _ = test;
+        let name = std::thread::current().name().unwrap_or(test).to_string();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([name.as_str(), "--exact", "--test-threads=1", "--nocapture"])
+            .env(OC683_CHILD_ENV, "1")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.status.success() && text.contains("1 passed"),
+            "child run of {name}:\n{text}"
+        );
+    }
+
+    /// Per-seed machine of the child tests: scrambled registers, the fake
+    /// hooks (unwinding at a random call below `calls`) and an empty function
+    /// table (set after `fresh` re-registered the generated one).
+    pub(crate) fn oc683_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        register_functions(&[]);
+        r
+    }
+
+    // The world the WorldState_* bodies read through `gp - 0x848`: the world
+    // (view at +0x84), the view (vtable at +0, sub-object at +0xc), the
+    // sub-object (vtable at +0xcc) and the replay stream (vtable at +0).
+    pub(crate) const OC683_BASE: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC683_WORLD: u32 = OC683_BASE + 0x100;
+
+    pub(crate) const OC683_VIEW: u32 = OC683_BASE + 0x200;
+
+    pub(crate) const OC683_VT_VIEW: u32 = OC683_BASE + 0x300;
+
+    pub(crate) const OC683_SUB: u32 = OC683_BASE + 0x400;
+
+    pub(crate) const OC683_VT_SUB: u32 = OC683_BASE + 0x500;
+
+    pub(crate) const OC683_STREAM: u32 = OC683_BASE + 0x600;
+
+    pub(crate) const OC683_VT_STREAM: u32 = OC683_BASE + 0x700;
+
+    /// A `{ i16 delta; fn }` vtable entry at `vt + off`.
+    pub(crate) fn oc683_slot(c: &mut Cpu, vt: u32, off: u32, delta: u16, func: u32) {
+        c.bus.write16(vt + off, delta);
+        c.bus.write32(vt + off + 4, func);
+    }
+
+    /// The world chain; every virtual target is a fake address (the miss hook).
+    pub(crate) fn oc683_world(c: &mut Cpu) {
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), OC683_WORLD);
+        c.bus.write32(OC683_WORLD + 0x84, OC683_VIEW);
+        c.bus.write32(OC683_VIEW, OC683_VT_VIEW);
+        c.bus.write32(OC683_VIEW + 0xc, OC683_SUB);
+        c.bus.write32(OC683_SUB + 0xcc, OC683_VT_SUB);
+        c.bus.write32(OC683_STREAM, OC683_VT_STREAM);
+        oc683_slot(c, OC683_VT_VIEW, 0x48, 0x20, fakes::FAKE + 0x50);
+        oc683_slot(c, OC683_VT_SUB, 0x40, 0x30, fakes::FAKE + 0x40);
+        oc683_slot(c, OC683_VT_STREAM, 0x10, 0x10, fakes::FAKE + 0x10);
+    }
+
+    // The playback manager's file table: count at +0x50, 12-byte entries at
+    // the pointer at +0x58 (key, pack data, ...), the async handle at +0x78.
+    #[allow(dead_code)]
+    pub(crate) const OC683_PM: u32 = DATA + 0x20_1000;
+
+    #[allow(dead_code)]
+    pub(crate) const OC683_PM_ENTRIES: u32 = DATA + 0x20_2000;
+
+    /// The result the `0x3df690` fake returns (the async handle).
+    #[allow(dead_code)]
+    pub(crate) const OC683_PM_HANDLE: u32 = DATA + 0x20_3000;
+
+    /// Three entries (keys 1 to 3, pack data set or not), a count of 0 to 3,
+    /// a handle word that is negative or not, and a key of 0 to 4 (0 and 4
+    /// never match).
+    #[allow(dead_code)]
+    pub(crate) fn oc683_file_table(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.bus.write32(OC683_PM + 0x50, seed % 4);
+        c.bus.write32(OC683_PM + 0x58, OC683_PM_ENTRIES);
+        for i in 0..3u32 {
+            c.bus.write32(OC683_PM_ENTRIES + 12 * i, i + 1);
+            let pack = if r.next_u32() & 1 == 0 {
+                0
+            } else {
+                r.next_u32() | 1
+            };
+            c.bus.write32(OC683_PM_ENTRIES + 12 * i + 4, pack);
+        }
+        let handle = if r.next_u32() & 1 == 0 {
+            0xffff_fff0
+        } else {
+            r.next_u32() & 0x7fff_ffff
+        };
+        c.bus.write32(OC683_PM + 0x78, handle);
+        c.g[A0][0] = sx(OC683_PM);
+        c.g[A1][0] = (seed / 4 % 5) as u64;
+    }
+
+    /// Miss hook of the StartFileLoad test: a logged fake, except that the
+    /// file API call (`0x3df690`) returns the handle word at
+    /// `OC683_PM_HANDLE` sign-extended (the fakes cannot force a negative).
+    #[allow(dead_code)]
+    pub(crate) fn oc683_sfl_miss(c: &mut Cpu, target: u32) {
+        let handle = c.bus.read32(OC683_PM_HANDLE);
+        fakes::fake_call(c, target);
+        if target == 0x003d_f690 {
+            c.g[V0][0] = sx(handle);
+        }
+    }
+
+    /// `PlaybackMan_StartFileLoad(self, key)`: the async file open (`0x417828`
+    /// builds the path, `0x3df690` starts the load), with its failure path.
+
+    pub(crate) const OC683_REPLAY: u32 = DATA + 0x20_5000;
+
+    pub(crate) const OC683_PP: u32 = DATA + 0x20_5100;
+
+    pub(crate) const OC683_BUF: u32 = DATA + 0x20_5200;
+
+    /// `Replay_DeserializeSnapshot(self, &p)`: copies the header to the stack,
+    /// stores its fields into the replay, decompresses (the real
+    /// `ReplayStream_Decompress`) and runs the snapshot hook.
+    #[test]
+    fn replay_deserialize_snapshot_matches() {
+        oc683_in_child("replay_deserialize_snapshot_matches", &|| {
+            check(
+                ee::s07::f_0026d678__generated,
+                replay_deserialize_snapshot_2,
+                100,
+                &|c, seed| {
+                    let mut r = oc683_machine(c, seed, 0x0026_d678, 8);
+                    for i in 0..16 {
+                        c.bus.write32(OC683_REPLAY + 4 * i, r.next_u32());
+                    }
+                    c.bus.write32(OC683_PP, OC683_BUF);
+                    for i in 0..16 {
+                        c.bus.write32(OC683_BUF + 4 * i, r.next_u32());
+                    }
+                    c.g[A0][0] = sx(OC683_REPLAY);
+                    c.g[A1][0] = sx(OC683_PP);
+                    c.pc = 0x0026_d678;
+                },
+            );
+        });
+    }
+
+    pub(crate) const OC683_STATE: u32 = DATA + 0x20_7000;
+
+    /// `Replay_RestoreSnapshot(self, frame)`: the snapshot hook, then the real
+    /// `WorldState_Restore` -> `WorldState_Read` (its callees are logged fakes).
+    #[test]
+    fn replay_restore_snapshot_matches() {
+        oc683_in_child("replay_restore_snapshot_matches", &|| {
+            check(
+                ee::s07::f_0026db88__generated,
+                replay_restore_snapshot_2,
+                60,
+                &|c, seed| {
+                    let _ = oc683_machine(c, seed, 0x0026_db88, 40);
+                    oc683_world(c);
+                    c.g[A0][0] = sx(OC683_STATE);
+                    c.g[A1][0] = sx(OC683_STREAM);
+                    c.pc = 0x0026_db88;
+                },
+            );
+        });
+    }
+
+    /// `WorldState_Restore(self, stream)`: forwards to `WorldState_Read`.
+    #[test]
+    fn world_state_restore_matches() {
+        oc683_in_child("world_state_restore_matches", &|| {
+            check(
+                ee::s07::f_0026dbd0__generated,
+                world_state_restore_2,
+                60,
+                &|c, seed| {
+                    let _ = oc683_machine(c, seed, 0x0026_dbd0, 40);
+                    oc683_world(c);
+                    c.g[A0][0] = sx(OC683_STATE);
+                    c.g[A1][0] = sx(OC683_STREAM);
+                    c.pc = 0x0026_dbd0;
+                },
+            );
+        });
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const OC683_BP: u32 = DATA + 0x20_a000;
 }

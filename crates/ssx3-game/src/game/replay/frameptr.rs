@@ -29,6 +29,7 @@ pub(crate) use crate::game::render::lightman::addu;
 pub(crate) use crate::game::render::lightman::off;
 pub(crate) use crate::game::render::lightman::Oc49Mem;
 pub(crate) use crate::game::render::particle::at;
+pub(crate) use crate::game::replay::playbackman::oc683_direct;
 pub(crate) use crate::game::scripter::ssxscriptengine::p as p_4;
 pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::sound::bankmonitor::p as p_2;
@@ -154,6 +155,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0026_fa78,
         replay_update_camera_input_2,
         "Replay_UpdateCameraInput",
+    ),
+    (
+        0x0026_eab8,
+        replay_stream_decompress_4,
+        "ReplayStream_Decompress",
+    ),
+    (
+        0x0026_f850,
+        replay_restore_resume_snapshot_4,
+        "Replay_RestoreResumeSnapshot",
     ),
 ];
 
@@ -3534,6 +3545,91 @@ pub(crate) fn c_eq_f0_f20(c: &mut Cpu) -> bool {
     eq
 }
 
+/// `cReplayFramePtr_loadBlock` (0x26eab8), listed as `ReplayStream_Decompress`:
+/// reads a block tag from `src` and its size from `*pp`, advances `*pp` past
+/// the 4-byte size, Huffman-decodes `size` bytes into the stream's block
+/// (`self+4`), moves `*pp` past them, sets `self+8` (WriteData) to the end of
+/// the decoded bytes and rewinds the stream. Returns 1.
+pub fn replay_stream_decompress_4(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 35;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = 4;
+        // MEM_copy(&hdr.tag, src, 4)
+        call_ptr(c, 0x003e_6574, 0x0026_eae0)?;
+        let pp = c.g[S0][0] as u32;
+        c.g[A1][0] = c.lw(pp);
+        c.g[A0][0] = c.g[SP][0] | 0x4;
+        c.g[A2][0] = 4;
+        // MEM_copy(&hdr.size, *pp, 4)
+        call_ptr(c, 0x003e_6574, 0x0026_eaf0)?;
+        c.g[A0][0] = c.lw(pp);
+        c.g[A1][0] = 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+        let advanced = c.g[A0][0];
+        c.sw(pp, advanced);
+        // HUFF_decode(*pp, 0, self->Block)
+        let self_ptr = c.g[S1][0] as u32;
+        c.g[A2][0] = c.lw(self_ptr.wrapping_add(0x4));
+        call_ptr(c, 0x002c_85a0, 0x0026_eb08)?;
+        let size_slot = sp(c).wrapping_add(0x4);
+        c.g[V1][0] = c.lw(size_slot);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.lw(pp);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        let moved = c.g[A1][0];
+        c.sw(pp, moved);
+        let self_ptr = c.g[S1][0] as u32;
+        c.g[V1][0] = c.lw(self_ptr.wrapping_add(0x4));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let write_data = c.g[V1][0];
+        c.sw(self_ptr.wrapping_add(0x8), write_data);
+        oc683_direct(0x0026_e9b0).call(c, 0x0026_eb2c)?;
+        frame.restore(c, S0, 0x30);
+        c.g[V0][0] = 1;
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cReplay_popReplaySaveFrame` (0x26f850), listed as
+/// `Replay_RestoreResumeSnapshot`: when the save frame (`self+0x3d0`) is set,
+/// restores it, frees it and clears the slot.
+pub fn replay_restore_resume_snapshot_4(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        let save_frame = c.lw(this.wrapping_add(0x3d0));
+        c.g[A1][0] = save_frame;
+        if save_frame != 0 {
+            c.cycles += 7;
+            oc683_direct(0x0026_db88).call(c, 0x0026_f874)?;
+            c.g[A1][0] = c.lw(this.wrapping_add(0x3d0));
+            c.g[A0][0] = c.g[S0][0];
+            oc683_direct(0x0027_0238).call(c, 0x0026_f880)?;
+            c.sw(this.wrapping_add(0x3d0), 0);
+        }
+        c.cycles += 3;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 // The fixtures of the dropped (uninstalled) replay ports stay with their ports.
 #[allow(dead_code)]
@@ -4927,4 +5023,74 @@ pub(crate) mod tests {
 
     /// The gp-relative world pointer (`GAME_GP - 0x848`).
     pub(crate) const GAME_GP_848: u32 = crate::difftest::GAME_GP - 0x848;
+
+    pub(crate) use crate::game::replay::playbackman::tests::oc683_in_child;
+    pub(crate) use crate::game::replay::playbackman::tests::oc683_machine;
+
+    pub(crate) use crate::game::replay::playbackman::tests::OC683_STREAM;
+
+    pub(crate) use crate::game::replay::playbackman::tests::oc683_world;
+    pub(crate) use crate::game::replay::playbackman::tests::OC683_STATE;
+
+    // The stream of `ReplayStream_Decompress`: the block pointer at +4 and
+    // the write pointer at +8, the `u8 **` cursor and the source tag.
+    pub(crate) const OC683_RS_SELF: u32 = DATA + 0x20_8000;
+
+    pub(crate) const OC683_RS_CURSOR: u32 = DATA + 0x20_8100;
+
+    pub(crate) const OC683_RS_SRC: u32 = DATA + 0x20_8200;
+
+    pub(crate) const OC683_RS_BLOCK: u32 = DATA + 0x20_9000;
+
+    pub(crate) const OC683_RS_CODED: u32 = DATA + 0x20_9800;
+
+    /// `ReplayStream_Decompress(self, &p, src)`: tag, size and Huffman body
+    /// (the copies and the decoder are logged fakes), then the rewind.
+    #[test]
+    fn replay_stream_decompress_matches() {
+        oc683_in_child("replay_stream_decompress_matches", &|| {
+            check(
+                ee::s07::f_0026eab8__generated,
+                replay_stream_decompress,
+                100,
+                &|c, seed| {
+                    let mut r = oc683_machine(c, seed, 0x0026_eab8, 4);
+                    c.bus.write32(OC683_RS_SELF + 0x4, OC683_RS_BLOCK);
+                    c.bus.write32(OC683_RS_SELF + 0x8, r.next_u32());
+                    c.bus.write32(OC683_RS_CURSOR, OC683_RS_CODED);
+                    c.bus.write32(OC683_RS_SRC, r.next_u32());
+                    c.bus.write32(OC683_RS_CODED, 4 + seed % 8);
+                    for i in 0..16 {
+                        c.bus.write32(OC683_RS_CODED + 4 + 4 * i, r.next_u32());
+                    }
+                    c.g[A0][0] = sx(OC683_RS_SELF);
+                    c.g[A1][0] = sx(OC683_RS_CURSOR);
+                    c.g[A2][0] = sx(OC683_RS_SRC);
+                    c.pc = 0x0026_eab8;
+                },
+            );
+        });
+    }
+
+    /// `Replay_RestoreResumeSnapshot(self)`: with a resume snapshot at `+0x3d0`
+    /// it is restored (the real `Replay_RestoreSnapshot` chain), freed and
+    /// cleared; without one nothing is called.
+    #[test]
+    fn replay_restore_resume_snapshot_matches() {
+        oc683_in_child("replay_restore_resume_snapshot_matches", &|| {
+            check(
+                ee::s07::f_0026f850__generated,
+                replay_restore_resume_snapshot,
+                60,
+                &|c, seed| {
+                    let _ = oc683_machine(c, seed, 0x0026_f850, 40);
+                    oc683_world(c);
+                    let snapshot = if seed % 3 == 0 { 0 } else { OC683_STREAM };
+                    c.bus.write32(OC683_STATE + 0x3d0, snapshot);
+                    c.g[A0][0] = sx(OC683_STATE);
+                    c.pc = 0x0026_f850;
+                },
+            );
+        });
+    }
 }

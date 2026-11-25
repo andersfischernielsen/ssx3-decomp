@@ -43,6 +43,10 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -501,6 +505,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0030_b590,
         wscript_man_request_mission_playback_2,
         "WScriptMan_RequestMissionPlayback",
+    ),
+    (
+        0x0030_bfc0,
+        wscript_man_check_rider_gate,
+        "WScriptMan_CheckRiderGate",
     ),
 ];
 
@@ -7370,6 +7379,306 @@ pub(crate) fn wsm_preview_body(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// `|a - b|` on VU0: `Vec(a) - Vec(b)` stored at `dst` (and through `tmp`),
+/// then the square root of the squared length into Q (`cfc2 v1, vi22`). The
+/// distance helper `vu0Length(vu0Sub(a, b))` of the rider gate.
+pub(crate) fn gate_distance(c: &mut Cpu, a: u32, b: u32, dst: u32, tmp: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, dst);
+    c.lq(2, dst);
+    c.sq(2, tmp);
+    c.lqc2(3, tmp);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(3, 22);
+}
+
+/// `int WScriptMan_CheckRiderGate(int* rider, int id1, int id2, int id3)`
+/// (0x30bfc0): looks up up to three script objects (`id`: low byte indexes
+/// the table behind `gp+0x16c8`, `id >> 8` the entry's table, `-1` = none) and
+/// decides whether the rider passes the gate between them. Returns 1 when the
+/// rider's own first query (vtable +0x18) is set, else compares the rider's
+/// distance to the first object (scaled by `gp-0x3364`, else 1.5) with the
+/// distance to the other two: 0, or -1 when it is outside.
+pub fn wscript_man_check_rider_gate(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0xa0);
+        c.g[T0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x70);
+        c.g[T1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x60);
+        c.g[S2][0] = 0;
+        frame.save(c, S4, 0x50);
+        c.g[S3][0] = 0;
+        frame.save(c, S0, 0x90);
+        c.g[S4][0] = 0;
+        frame.save(c, S1, 0x80);
+        c.g[V0][0] = !(0u64 | c.g[T0][0]);
+        let none = c.g[V0][0] == 0;
+        frame.save_ra(c, 0x40);
+        'b_30c040: {
+            if none {
+                break 'b_30c040;
+            }
+            'b_30c03c: {
+                'b_30c038: {
+                    c.cycles += 9;
+                    c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x16c8));
+                    c.g[V0][0] = c.g[T0][0] & 0xff;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V1][0] = c.lw(r32(c, A1));
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x8));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    let null = c.g[V1][0] == 0;
+                    c.g[V0][0] = sx(r32(c, T0) >> 8);
+                    if null {
+                        break 'b_30c038;
+                    }
+                    c.cycles += 7;
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    c.g[V0][0] = sx(r32(c, V1) >> 8);
+                    let found = c.g[V0][0] != 0;
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    if found {
+                        break 'b_30c03c;
+                    }
+                    break 'b_30c038;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                break 'b_30c03c;
+            }
+            c.cycles += 1;
+            c.g[S3][0] = c.g[V0][0];
+        }
+        'b_30c09c: {
+            c.cycles += 3;
+            c.g[V0][0] = !(0u64 | c.g[A2][0]);
+            let none = c.g[V0][0] == 0;
+            c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x16c8));
+            if none {
+                break 'b_30c09c;
+            }
+            'b_30c098: {
+                'b_30c074: {
+                    c.cycles += 8;
+                    c.g[V0][0] = c.g[A2][0] & 0xff;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V1][0] = c.lw(r32(c, A1));
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x8));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    if c.g[V1][0] != 0 {
+                        c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+                        break 'b_30c074;
+                    }
+                    c.cycles += 2;
+                    c.g[A1][0] = 0;
+                    break 'b_30c098;
+                }
+                'b_30c094: {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx(r32(c, A2) >> 8);
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    c.g[V0][0] = sx(r32(c, V1) >> 8);
+                    let found = c.g[V0][0] != 0;
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    if found {
+                        break 'b_30c094;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                }
+                c.cycles += 1;
+                c.g[A1][0] = c.g[V0][0];
+            }
+            c.cycles += 1;
+            c.g[S2][0] = c.g[A1][0];
+        }
+        'b_30c0ec: {
+            c.cycles += 3;
+            c.g[V0][0] = !(0u64 | c.g[A3][0]);
+            let none = c.g[V0][0] == 0;
+            c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x16c8));
+            if none {
+                break 'b_30c0ec;
+            }
+            'b_30c0e8: {
+                'b_30c0e4: {
+                    c.cycles += 8;
+                    c.g[V0][0] = c.g[A3][0] & 0xff;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V1][0] = c.lw(r32(c, A1));
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x8));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    let null = c.g[V1][0] == 0;
+                    c.g[V0][0] = sx(r32(c, A3) >> 8);
+                    if null {
+                        break 'b_30c0e4;
+                    }
+                    c.cycles += 7;
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    c.g[V0][0] = sx(r32(c, V1) >> 8);
+                    let found = c.g[V0][0] != 0;
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    if found {
+                        break 'b_30c0e8;
+                    }
+                    break 'b_30c0e4;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[S4][0] = c.g[V0][0];
+        }
+        'b_30c36c: {
+            c.cycles += 16;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.g[A1][0] = c.g[S2][0];
+            c.g[V1][0] = c.lw(r32(c, T1));
+            c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0x84));
+            c.g[V1][0] = sx(r32(c, V1) << 2);
+            c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0xc));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            c.g[S0][0] = c.lw(r32(c, V0).wrapping_add(0x28));
+            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x6c0));
+            c.g[S1][0] = sx(r32(c, S0).wrapping_add(0x6c0));
+            c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x18));
+            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+            call_ptr(c, target, 0x0030_c124)?;
+            let gated = c.g[V0][0] != 0;
+            c.g[V0][0] = 1;
+            if gated {
+                break 'b_30c36c;
+            }
+            let spv = frame.at(c, 0);
+            'b_30c200: {
+                'b_30c1a4: {
+                    c.cycles += 7;
+                    c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x6c0));
+                    c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x28));
+                    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x2c));
+                    let target = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+                    call_ptr(c, target, 0x0030_c140)?;
+                    let no_first = c.g[S3][0] == 0;
+                    c.g[A0][0] = c.g[V0][0];
+                    if no_first {
+                        break 'b_30c1a4;
+                    }
+                    // Rider position vs the first object, scaled by gp-0x3364.
+                    c.cycles += 23;
+                    c.lq(2, r32(c, S3).wrapping_add(0x40));
+                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x3364));
+                    c.sq(2, spv + 0x10);
+                    let pos = r32(c, A0);
+                    gate_distance(c, pos, spv + 0x10, spv + 0x20, spv);
+                    c.mtc1(3, 2);
+                    c.lq(2, r32(c, S2).wrapping_add(0x40));
+                    c.sq(2, spv + 0x10);
+                    c.lq(3, r32(c, S3).wrapping_add(0x40));
+                    break 'b_30c200;
+                }
+                // No first object: scale 1.5, second object instead.
+                c.cycles += 23;
+                c.lq(2, r32(c, S2).wrapping_add(0x40));
+                c.g[AT][0] = 0x3fc0_0000;
+                c.mtc1(1, 1);
+                c.sq(2, spv + 0x10);
+                let pos = r32(c, A0);
+                gate_distance(c, pos, spv + 0x10, spv + 0x20, spv);
+                c.mtc1(3, 2);
+                c.lq(2, r32(c, S4).wrapping_add(0x40));
+                c.sq(2, spv + 0x10);
+                c.lq(3, r32(c, S2).wrapping_add(0x40));
+            }
+            c.cycles += 22;
+            c.sq(3, spv + 0x20);
+            gate_distance(c, spv + 0x10, spv + 0x20, spv + 0x30, spv);
+            c.mtc1(3, 0);
+            c.mul_s(0, 0, 1);
+            c.c_le_s(2, 0);
+            let inside = c.fcc();
+            c.g[V0][0] = 0;
+            if inside {
+                break 'b_30c36c;
+            }
+            'b_30c310: {
+                'b_30c2b8: {
+                    c.cycles += 2;
+                    let no_third = c.g[S4][0] == 0;
+                    c.lq(2, r32(c, S2).wrapping_add(0x40));
+                    if no_third {
+                        break 'b_30c2b8;
+                    }
+                    c.cycles += 22;
+                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x3360));
+                    c.sq(2, spv + 0x10);
+                    let pos = r32(c, A0);
+                    gate_distance(c, pos, spv + 0x10, spv + 0x20, spv);
+                    c.mtc1(3, 2);
+                    c.lq(2, r32(c, S4).wrapping_add(0x40));
+                    c.sq(2, spv + 0x10);
+                    c.lq(3, r32(c, S2).wrapping_add(0x40));
+                    break 'b_30c310;
+                }
+                c.cycles += 22;
+                c.g[AT][0] = 0x3fc0_0000;
+                c.mtc1(1, 1);
+                c.sq(2, spv + 0x10);
+                let pos = r32(c, A0);
+                gate_distance(c, pos, spv + 0x10, spv + 0x20, spv);
+                c.mtc1(3, 2);
+                c.lq(2, r32(c, S2).wrapping_add(0x40));
+                c.sq(2, spv + 0x10);
+                c.lq(3, r32(c, S3).wrapping_add(0x40));
+            }
+            c.cycles += 22;
+            c.sq(3, spv + 0x20);
+            gate_distance(c, spv + 0x10, spv + 0x20, spv + 0x30, spv);
+            c.mtc1(3, 0);
+            c.mul_s(0, 0, 1);
+            c.c_le_s(2, 0);
+            let inside = c.fcc();
+            c.g[V0][0] = 0;
+            if !inside {
+                c.cycles += 1;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11195,6 +11504,109 @@ pub(crate) mod tests {
                 c.bus.write32(game + 0x28, OC655_MAN + 0x1300);
                 c.bus.write32(OC655_MAN + 0x2a0, r.next_u32());
                 c.g[A0][0] = OC655_MAN as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::animsequencer::tests::oc684_w;
+
+    /// `SphereTree_SortChildOrder`: random child centres and direction (some
+    /// seeds with equal centres, so the keys tie) through the real shell sort.
+
+    /// `SphereTree_CollidePlane`: compressed and plain tree info (AllocBuf
+    /// fake), `worstCase` negative, zero, positive or -0 from the faked plane
+    /// check, the real sort-axes call in between; fakes unwind at any call.
+
+    /// `WScriptMan_CheckRiderGate`: the three ids each -1 (none), valid, or
+    /// pointing at a null entry / null node (6^3 combinations), with the
+    /// rider's first query either set (fake call, returns 1) or clear (real
+    /// leaf returning 0, then the position from a second fake).
+    #[test]
+    fn wscript_man_check_rider_gate_matches() {
+        fakes::covered(
+            ee::s10::f_0030bfc0__generated,
+            wscript_man_check_rider_gate,
+            432,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_bfc0, 1);
+                // The first fake call unwinds on a third of the seeds.
+                let unwind = (seed / 7) % 3 == 0;
+                oc684_w(c, fakes::LOG_UNWIND_AT, if unwind { 0 } else { u32::MAX });
+                const NODES: u32 = DATA + 0x7000;
+                const POS: u32 = DATA + 0x7800;
+                // Ref table: ctx -> A -> [+8] B[lo] -> entry -> [+0x1c] C[hi]
+                // -> (node >> 2) << 8.
+                let (ctx, ta, tb, entry, tc) = (
+                    DATA + 0x5000,
+                    DATA + 0x5100,
+                    DATA + 0x5200,
+                    DATA + 0x5300,
+                    DATA + 0x5400,
+                );
+                oc684_w(c, GAME_GP + 0x16c8, ctx);
+                oc684_w(c, ctx, ta);
+                oc684_w(c, ta + 8, tb);
+                for lo in 0..4u32 {
+                    oc684_w(c, tb + 4 * lo, entry);
+                }
+                oc684_w(c, tb + 16, 0);
+                oc684_w(c, entry + 0x1c, tc);
+                for hi in 0..4u32 {
+                    let node = NODES + 0x100 * hi;
+                    let word = if hi == 3 {
+                        0
+                    } else {
+                        ((node >> 2) << 8) | 0x55
+                    };
+                    oc684_w(c, tc + 4 * hi, word);
+                    for k in 0..4 {
+                        oc684_w(c, node + 0x40 + 4 * k, r.f32(10.0));
+                    }
+                }
+                for k in 0..4 {
+                    oc684_w(c, POS + 4 * k, r.f32(10.0));
+                }
+                // The rider: index at `idx`, object with the vtable at +0x6c0.
+                let (world, manager, table, idx) =
+                    (DATA + 0x4000, DATA + 0x4100, DATA + 0x4200, DATA + 0x4400);
+                let (rider, vt) = (DATA + 0x6900, DATA + 0x6800);
+                let slot = seed % 3;
+                oc684_w(c, GAME_GP - 0x848, world);
+                oc684_w(c, world + 0x84, manager);
+                oc684_w(c, manager + 0xc, table);
+                oc684_w(c, idx, slot);
+                oc684_w(c, table + 0x28 + 4 * slot, rider);
+                oc684_w(c, rider + 0x6c0, vt);
+                let delta = (r.next_u32() % 4) * 4;
+                c.bus.write16(vt + 0x18, delta as u16);
+                c.bus.write16(vt + 0x28, delta as u16);
+                let first_set = seed / 216 == 0;
+                // Slot 0x1c: the fake (non-zero result) or a leaf returning 0.
+                oc684_w(
+                    c,
+                    vt + 0x1c,
+                    if first_set { fakes::FAKE } else { 0x0014_06c0 },
+                );
+                oc684_w(c, vt + 0x2c, fakes::FAKE);
+                // The second query's result: the rider position (fake call 0).
+                oc684_w(c, fakes::LOG_RESULTS, POS);
+                put_words(
+                    c,
+                    GAME_GP - 0x3364,
+                    &[(1.0f32 + (seed % 3) as f32).to_bits()],
+                );
+                put_words(
+                    c,
+                    GAME_GP - 0x3360,
+                    &[(1.0f32 + (seed / 3 % 3) as f32).to_bits()],
+                );
+                // Ids: -1, valid (hi 0..2, lo 0..2), null node (hi 3), null entry (lo 4).
+                let ids = [u32::MAX, 0x000, 0x101, 0x202, 0x303, 0x004];
+                let pick = |k: u32| sx(ids[((seed % 216) / 6u32.pow(k) % 6) as usize]);
+                c.g[A0][0] = idx as u64;
+                c.g[A1][0] = pick(0);
+                c.g[A2][0] = pick(1);
+                c.g[A3][0] = pick(2);
             },
         );
     }

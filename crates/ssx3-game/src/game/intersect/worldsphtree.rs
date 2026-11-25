@@ -304,6 +304,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cell_gather_all_subtree_2,
         "Cell_GatherAllSubtree",
     ),
+    (0x0034_2538, anim_teeter_v43_2, "AnimTeeter_v43"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -34082,6 +34083,180 @@ pub fn cell_gather_all_subtree_2(c: &mut Cpu) {
     })
 }
 
+/// `void AnimTeeter_v43(AnimTeeter* self, Hit* hit, Vec4* force)` (0x342538,
+/// `cAnimTeeterNode_applyForce`): torque from a force applied to a hit bone;
+/// when the hit's mesh index (+0x5c) is non-negative and the model's bone
+/// table entry has an animation, asks the object (vtable slot 0xe8/0xec) for
+/// the bone matrix, and if the force is longer than 100 builds the lever arm
+/// from the hit position and adds `dot(yaxis * bone, lever x force)` to
+/// the torque sum.
+pub fn anim_teeter_v43_2(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_342700: {
+            c.cycles += 10;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S0][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[S1][0] = c.g[A1][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[RA][0]);
+            c.g[A3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x5c));
+            let t = (c.g[A3][0] as i64) < 0;
+            c.g[S2][0] = c.g[A2][0];
+            if t {
+                break 'b_342700;
+            } else {
+                c.cycles += 9;
+                c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x44));
+                c.g[A1][0] = sx((c.g[A3][0] as u32) << 4);
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x18));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x80));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                let t = c.g[V0][0] == 0u64;
+                c.g[A1][0] = c.g[A3][0];
+                if t {
+                    break 'b_342700;
+                } else {
+                    c.cycles += 22;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x50));
+                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xe8));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xec));
+                    let t = c.g[V0][0] as u32;
+                    c.g[RA][0] = sx(0x00342598);
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x00342598)?;
+                    c.g[V1][0] = c.g[V0][0];
+                    c.g[AT][0] = 0x42c80000;
+                    c.mtc1(1, 1);
+                    c.lqc2(3, c.g[S2][0] as u32);
+                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                    c.vu0().sqrt(4, 0);
+                    c.vu0().waitq();
+                    c.cfc2(2, 22);
+                    c.mtc1(2, 0);
+                    c.c_lt_s(1, 0);
+                    let t = !c.fcc();
+                    c.g[A0][0] = c.g[V1][0];
+                    if t {
+                        break 'b_342700;
+                    } else {
+                        'b_342638: {
+                            c.cycles += 13;
+                            c.lq(2, (c.g[V1][0] as u32).wrapping_add(0x30));
+                            c.mtc1(0, 1);
+                            c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+                            c.lqc2(3, c.g[S1][0] as u32);
+                            c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x10));
+                            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                            c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+                            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+                            c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                            c.c_lt_s(0, 1);
+                            let t = !c.fcc();
+                            c.sq(2, c.g[SP][0] as u32);
+                            if t {
+                                break 'b_342638;
+                            } else {
+                                c.cycles += 10;
+                                c.g[AT][0] = 0xffffffffbf800000;
+                                c.mtc1(1, 0);
+                                c.mfc1(3, 0);
+                                c.lqc2(4, c.g[SP][0] as u32);
+                                c.qmtc2(3, 3);
+                                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                                c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                c.sq(2, c.g[SP][0] as u32);
+                                c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+                                break 'b_342638;
+                            }
+                        }
+                        'b_34267c: {
+                            c.cycles += 6;
+                            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x5c));
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2c));
+                            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32
+                                >> ((c.g[V1][0] as u32) & 31))
+                                as u32);
+                            c.g[V0][0] = c.g[V0][0] & 0x1;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = 0x500000;
+                            if t {
+                                break 'b_34267c;
+                            } else {
+                                c.cycles += 11;
+                                c.g[AT][0] = 0xffffffffbf800000;
+                                c.mtc1(1, 0);
+                                c.mfc1(3, 0);
+                                c.lqc2(4, c.g[SP][0] as u32);
+                                c.qmtc2(3, 3);
+                                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                                c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                c.sq(2, c.g[SP][0] as u32);
+                                c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+                                c.g[V0][0] = 0x500000;
+                                break 'b_34267c;
+                            }
+                        }
+                        c.cycles += 33;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xeb0));
+                        c.lqc2(8, c.g[V0][0] as u32);
+                        c.lqc2(4, c.g[A0][0] as u32);
+                        c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
+                        c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
+                        c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
+                        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+                        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+                        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+                        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+                        c.sqc2(12, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.lqc2(4, c.g[SP][0] as u32);
+                        c.lqc2(5, c.g[S2][0] as u32);
+                        c.vu0().opmula(4, 5);
+                        c.vu0().opmsub(6, 5, 4);
+                        c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+                        c.sqc2(6, (c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.lwc1(0, c.g[S0][0] as u32);
+                        c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.lqc2(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                        c.qmfc2(3, 4);
+                        c.mtc1(3, 1);
+                        c.add_s(0, 0, 1);
+                        c.swc1(0, c.g[S0][0] as u32);
+                        break 'b_342700;
+                    }
+                }
+            }
+        }
+        c.cycles += 6;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -38098,5 +38273,87 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(OUT);
             },
         );
+    }
+
+    /// `Nash_FindClosestObjectContact(nash, query, out, full)`: with no hits
+    /// (count 0 at `nash+0x24`; the Nash has no root cell, so the real
+    /// `Nash_CollideObjects` just returns the count) the result is -1.0.
+    /// Otherwise the hit whose `Iparam` is closest to the query's ideal value
+    /// (a virtual call, fake, unwinding on some seeds) wins; equal distances
+    /// go through the tie-break on the hits' object pointers (+0x50/+0x54);
+    /// the winner is copied to `out`. The hits are the frame buffer the
+    /// callee left, so the test pre-fills that stack memory.
+
+    /// `AnimTeeter_v43(self, hit, force)`: a force on a teeter bone adds to
+    /// the torque sum (`self+0`). Paths: a negative mesh index, a bone with
+    /// no animation (+8 of its table entry is zero), a short force (length
+    /// not above 100), and the full computation with the lever arm negated
+    /// by the torque scale's sign and by the mesh's animation sign bit. The
+    /// bone matrix comes from a virtual call (fake method at vtable
+    /// `+0xe8/0xec`, unwinding on some seeds).
+    #[test]
+    fn anim_teeter_v43_matches() {
+        covered(
+            ee::s11::f_00342538__generated,
+            anim_teeter_v43_2,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_2538, 1);
+                c.pc = 0x0034_2538;
+                let (this, hit, force, vt, inst, model, ents, amat) = (
+                    DATA + 0x1000,
+                    DATA + 0x1400,
+                    DATA + 0x1800,
+                    DATA + 0x1c00,
+                    DATA + 0x2000,
+                    DATA + 0x2400,
+                    DATA + 0x2800,
+                    DATA + 0x3000,
+                );
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(hit);
+                c.g[A2][0] = sx(force);
+                let mesh = if seed % 9 == 0 {
+                    0xffff_ffff
+                } else {
+                    r.next_u32() % 6
+                };
+                c.bus.write32(hit + 0x5c, mesh);
+                oc686_put_floats(c, &mut r, hit, 4, 50.0);
+                // The force: long (above 100) on most seeds.
+                let len = if seed % 4 == 1 { 30.0 } else { 160.0 };
+                for k in 0..3u32 {
+                    let v = r.f32(len);
+                    c.bus.write32(force + 4 * k, v);
+                }
+                c.bus.write32(this + 0x50, vt);
+                c.bus.write16(vt + 0xe8, (4 * (r.next_u32() % 3)) as u16);
+                c.bus.write32(vt + 0xec, fakes::FAKE);
+                c.bus.write32(fakes::LOG_RESULTS, amat);
+                oc686_put_floats(c, &mut r, amat, 16, 30.0);
+                c.bus.write32(this + 0x5c, inst);
+                c.bus.write32(inst + 0x80, model);
+                c.bus.write32(model + 8, ents);
+                for i in 0..6u32 {
+                    c.bus.write32(
+                        ents + 16 * i + 8,
+                        if seed % 7 == 2 { 0 } else { r.next_u32() | 1 },
+                    );
+                }
+                // Torque sum, torque scale (sign) and the animation sign bits.
+                c.bus.write32(this, r.f32(5.0));
+                c.bus.write32(this + 8, r.f32(3.0));
+                c.bus.write32(this + 0x2c, r.next_u32());
+                oc686_put_floats(c, &mut r, 0x004f_f150, 4, 1.0);
+            },
+        );
+    }
+
+    /// Sixteen random floats at `addr` (a 4x4 matrix or four vectors).
+    pub(crate) fn oc686_put_floats(c: &mut Cpu, r: &mut Rng, addr: u32, n: u32, range: f32) {
+        for i in 0..n {
+            let v = r.f32(range);
+            c.bus.write32(addr + 4 * i, v);
+        }
     }
 }

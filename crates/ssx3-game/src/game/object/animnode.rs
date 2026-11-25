@@ -57,6 +57,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "AnimObject_ComputeNodeVelocities",
     ),
     (0x0034_ec58, floating_ctor, "Floating_ctor"),
+    (0x0034_ed88, floating_ctor_2_2, "Floating_ctor_2"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1094,6 +1095,107 @@ pub fn floating_ctor_2(c: &mut Cpu) {
     });
 }
 
+/// `Floating_ctor_2(self, int, Stream* s)` (0x34ed88): the second floating
+/// node constructor, the same node without the spring setup. Builds the
+/// `ModObj` (`ModObj_ctor_2`), sets the vtable (0x48f858) and clears the part
+/// pointer (+0x78), reads one word from the stream and bounds the node when
+/// it is set (`Floating_AllocBoundBox`), then reads the per-mesh frames and
+/// ORs flag bit 0 into the halfword at +0x12. Returns `self`.
+pub fn floating_ctor_2_2(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        'b_34edec: {
+            c.cycles += 22;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S0][0] = c.g[A2][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            c.g[RA][0] = sx(0x0034eda8);
+            c.g[S1][0] = c.g[A0][0];
+            Callee {
+                addr: 0x003552d8,
+                f: ee::s11::ModObj_ctor_2,
+            }
+            .call(c, 0x0034eda8)?;
+            c.g[V1][0] = 0x490000;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x78), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7a8));
+            c.g[A1][0] = c.g[SP][0];
+            c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+            c.g[A2][0] = 0x4;
+            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+            let t = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x0034edd4);
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0034edd4)?;
+            c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+            if c.g[V0][0] == 0u64 {
+                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                break 'b_34edec;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x0034ede8);
+                c.g[A0][0] = c.g[S1][0];
+                Callee {
+                    addr: 0x0034eeb8,
+                    f: ee::s11::Floating_AllocBoundBox,
+                }
+                .call(c, 0x0034ede8)?;
+                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                break 'b_34edec;
+            }
+        }
+        'b_34ee38: {
+            c.cycles += 18;
+            c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2c));
+            c.g[A2][0] = 0x48;
+            c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x74));
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+            let t = c.g[V0][0] as u32;
+            c.g[RA][0] = sx(0x0034ee08);
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0034ee08)?;
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+            c.g[A1][0] = 0x490000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1780));
+            c.g[A2][0] = 0x20000000;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x80));
+            c.g[A3][0] = 0u64;
+            c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[RA][0] = sx(0x0034ee2c);
+            c.g[A0][0] = sx((c.g[S0][0] as u32) << 6);
+            call_ptr(c, 0x00317e30, 0x0034ee2c)?;
+            let t = c.g[S0][0] == 0u64;
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                break 'b_34ee38;
+            } else {
+                c.cycles += 1;
+                c.g[A0][0] = 0xffffffffffffffff;
+                break 'b_34ee38;
+            }
+        }
+        c.cycles += 11;
+        c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+        c.g[V0][0] = c.g[S1][0];
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[V1][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(0x12));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[V1][0] = c.g[V1][0] | 0x1;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sh((c.g[S1][0] as u32).wrapping_add(0x12), c.g[V1][0]);
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1455,6 +1557,64 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(seed % 4);
                 c.g[A2][0] = sx(NODE);
                 c.g[A3][0] = sx(INFO);
+            },
+        );
+    }
+
+    use crate::difftest::Rng;
+    use crate::difftest::SP as TEST_SP;
+
+    pub(crate) use crate::game::object::flexrailnode::tests::FIX;
+
+    pub(crate) use crate::game::object::flexrailnode::tests::oc687_gate;
+    pub(crate) use crate::game::object::flexrailnode::tests::oc687_install_fakes;
+
+    /// A vtable at `vt` whose slot at `off` calls fake method number `n`
+    /// (`{delta, fn}`: the receiver is moved by the random delta).
+    pub(crate) fn oc687_vslot(c: &mut Cpu, r: &mut Rng, vt: u32, off: u32, n: u32) {
+        let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+        c.bus.write16(vt + off, delta as u16);
+        c.bus.write32(vt + off + 4, fakes::FAKE + 0x10 * n);
+    }
+
+    /// A replay stream at `st` whose vtable has two read methods (+0x10
+    /// `read(buf, n)`, +0x18 `readReplayInstance()`).
+    pub(crate) fn oc687_stream(c: &mut Cpu, r: &mut Rng, st: u32) {
+        let vt = st + 0x100;
+        c.bus.write32(st, vt);
+        oc687_vslot(c, r, vt, 0x10, 0);
+        oc687_vslot(c, r, vt, 0x18, 1);
+    }
+
+    /// A zero or non-zero word at `addr` (`nonzero` of the seed's choice).
+    pub(crate) fn oc687_flag(c: &mut Cpu, r: &mut Rng, addr: u32, nonzero: bool) {
+        let v = if nonzero { r.next_u32() | 1 } else { 0 };
+        c.bus.write32(addr, v);
+    }
+
+    /// `Floating_ctor_2` with the real `ModObj_ctor_2`: the bound-box word the
+    /// first read stores (zero: no `AllocBoundBox`), and the mesh count.
+    #[test]
+    fn floating_ctor_2_matches() {
+        oc687_install_fakes();
+        fakes::covered(
+            ee::s11::f_0034ed88__generated,
+            floating_ctor_2_2,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x34_ed88, 10);
+                oc687_gate(c);
+                c.pc = 0x0034_ed88;
+                let (me, st, model, info) = (FIX, FIX + 0x1000, FIX + 0x1400, FIX + 0x1500);
+                oc687_stream(c, &mut r, st);
+                c.bus.write32(me + 0x18, model);
+                c.bus.write32(model + 0x80, info);
+                c.bus
+                    .write32(info + 4, [0, 1, 3, 0x40][(seed % 4) as usize]);
+                oc687_flag(c, &mut r, TEST_SP - 0x50, seed % 2 == 0);
+                oc687_flag(c, &mut r, TEST_SP - 0x90, seed % 3 != 0);
+                c.g[A0][0] = me as u64;
+                c.g[A2][0] = st as u64;
             },
         );
     }

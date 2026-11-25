@@ -28,6 +28,8 @@ pub(crate) use crate::game::fe::ovstates::at as at_2;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::fe::ovstates::open;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
+use crate::game::input::inputmap::COMPILE_BINDINGS as IM671_BINDINGS;
+use crate::game::input::inputmap::STR_INPUT_MAP as IM671_STR_INPUT_MAP;
 pub(crate) use crate::game::movie::movieplayer::p;
 pub(crate) use crate::game::render::particle::addi;
 pub(crate) use crate::game::render::particle::gp;
@@ -133,6 +135,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0022_8bb8, ssxapp_v02, "SSXApp_v02"),
     (0x0022_7fc0, ssxapp_shutdown, "SSXApp_Shutdown"),
+    (0x0022_6900, ssx_app_init_3, "SSXApp_Init"),
+    (
+        0x0022_6b60,
+        oc671_input_map_load_from_file,
+        "InputMap_LoadFromFile",
+    ),
+    (0x0022_82d0, ssxapp_boot_load, "SSXApp_BootLoad"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -4798,6 +4807,793 @@ pub fn ssxapp_shutdown(c: &mut Cpu) {
     });
 }
 
+/// `void InputMap_LoadFromFile(void *self, const char *path)` (0x226b60),
+/// `cSSXApp_loadInputMap` in the reference. Reads the map file at `path`
+/// (its `#include`s expanded) into a new 0x18-byte `InputMap` initialised for
+/// 205 bindings, frees the text, compiles the bindings and purges the file.
+/// Returns the map in v0.
+///
+/// The first callee, `InputPreproc_Run` (0x325f48), has no slot; the test runs
+/// it for real with its own callees (`InputPreproc_ProcessFile`, the
+/// allocators) faked in their slots.
+pub fn oc671_input_map_load_from_file(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        c.g[A0][0] = c.g[SP][0];
+        frame.save(c, S1, 0x30);
+        frame.save_ra(c, 0x20);
+        // `size` out-parameter in the frame.
+        c.g[A2][0] = sx(frame.at(c, 0x10));
+        call_ptr(c, 0x0032_5f48, 0x0022_6b7c)?;
+        c.g[S1][0] = c.g[V0][0];
+
+        // `new InputMap` (0x18 bytes, tagged str_InputMap), then `init(205)`.
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A1][0] = IM671_STR_INPUT_MAP;
+        c.g[A0][0] = 0x18;
+        call_ptr(c, 0x0031_7d70, 0x0022_6b98)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xcd;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0032_0ca0, 0x0022_6ba8)?;
+
+        // loadMapFile(map, data, size): the size is read back from the frame.
+        c.g[A2][0] = Addr(frame.at(c, 0x10)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0032_0db0, 0x0022_6bb8)?;
+
+        // Free the text when the loader returned one.
+        c.g[A2][0] = 0x0048_0000;
+        if c.g[S1][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e98, 0x0022_6bc8)?;
+            c.g[A2][0] = 0x0048_0000;
+        }
+        c.cycles += 1032;
+
+        // compileMap(map, index, name) for every binding; a1 and a2 are left
+        // as the last call set them.
+        for (index, &(ret, name, _)) in IM671_BINDINGS.iter().enumerate() {
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = index as u64;
+            c.g[A2][0] = sx(name);
+            call_ptr(c, 0x0032_0e18, ret)?;
+        }
+
+        // purgeMapFile(map); the result is the map.
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0032_0f10, 0x0022_7bd4)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S0, 0x40);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `lui 0x480000`: the string and global pool that the generated code
+/// reaches with `0x480000 - off`.
+pub(crate) const BOOT_HI_DATA: u32 = 0x0048_0000;
+
+/// `lui 0x4a0000`: the second string pool (`D_004A29xx`).
+pub(crate) const BOOT_HI_STR2: u32 = 0x004a_0000;
+
+/// `lui 0x440000`: the texture-name table at `+0x2100`.
+pub(crate) const BOOT_HI_TEX: u32 = 0x0044_0000;
+
+/// `lui 0x530000`: the BE option struct at `+0x5610` (copied by `Cfg_82D0()`).
+pub(crate) const BOOT_HI_BEOPT: u32 = 0x0053_0000;
+
+/// Offset of the BE option struct from `BOOT_HI_BEOPT` (the `Cfg_82D0()` source).
+pub(crate) const BOOT_BEOPT_OFF: u32 = 0x5610;
+
+/// SSXApp fields the load writes or reads.
+pub(crate) const BOOT_SELF_BE: u32 = 0x78;
+
+pub(crate) const BOOT_SELF_FONTS: u32 = 0x88;
+
+pub(crate) const BOOT_SELF_ANIM_DB: u32 = 0x90;
+
+pub(crate) const BOOT_SELF_ANIM_MAP: u32 = 0x94;
+
+pub(crate) const BOOT_SELF_PADS: u32 = 0xa8;
+
+pub(crate) const BOOT_SELF_PLAYERS: u32 = 0xb0;
+
+pub(crate) const BOOT_SELF_INPUT_MAPS: u32 = 0xb8;
+
+pub(crate) const BOOT_SELF_CMDLINE_TRACK: u32 = 0xcc;
+
+pub(crate) const BOOT_SELF_BIG_TEX: u32 = 0xec;
+
+pub(crate) const BOOT_SELF_BIG_RWRD: u32 = 0x118;
+
+/// The SSXApp pointer as the register holds it (read after every call).
+#[inline(always)]
+pub(crate) fn boot_self(c: &Cpu) -> u32 {
+    c.g[S4][0] as u32
+}
+
+/// `if (BXFILE_exists(name)) FILESYS_addbigsync(name, 0, 100, &self->field)`:
+/// one of the four generated blocks that open the audio big files. `pre` is
+/// the cycles charged at the block head, `name_lo` the string at
+/// `0x480000 - name_lo`, `field` the self field the handle goes to.
+pub(crate) fn boot_big_if_exists(
+    c: &mut Cpu,
+    pre: u64,
+    name_lo: u32,
+    field: u32,
+    ret_exists: u32,
+    ret_add: u32,
+) -> Flow {
+    c.cycles += pre;
+    c.g[V0][0] = BOOT_HI_DATA as u64;
+    c.g[S0][0] = sx(BOOT_HI_DATA.wrapping_sub(name_lo));
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, 0x0031_7f38, ret_exists)?; // BXFILE_exists
+    let found = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S0][0];
+    if found {
+        c.cycles += 4;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x64;
+        c.g[A3][0] = sx(boot_self(c).wrapping_add(field));
+        call_ptr(c, 0x003d_ed50, ret_add)?; // FILESYS_addbigsync
+    }
+    Ok(())
+}
+
+/// The inline copy of the 0x288-byte BE option snapshot (`Cfg_82D0()` by
+/// value) into the stack buffer at SP, as the generated code does it. `src`
+/// is the source register; its address is advanced in 32-byte steps. Aligned
+/// sources (`src & 7 == 0`) use `ld`/`sd` with the registers `al`; unaligned
+/// ones use `ldl`/`ldr`/`sdl`/`sdr` with `ua`. The 8-byte tail is copied by
+/// the next block (see [`boot_cfg_tail`]). `heads` are the two loop heads for
+/// the event checks.
+pub(crate) fn boot_cfg_copy(
+    c: &mut Cpu,
+    src: usize,
+    ua: [usize; 4],
+    al: [usize; 4],
+    heads: (u32, u32),
+) {
+    c.g[V0][0] = c.g[src][0] & 0x7;
+    let aligned = c.g[V0][0] == 0;
+    c.g[V1][0] = c.g[SP][0];
+    if !aligned {
+        c.cycles += 1;
+        c.g[V0][0] = sx((c.g[src][0] as u32).wrapping_add(0x280));
+        loop {
+            c.cycles += 19;
+            let s = c.g[src][0] as u32;
+            let d = c.g[V1][0] as u32;
+            for k in 0..4 {
+                let off = (8 * k) as u32;
+                c.ldl(ua[k], s.wrapping_add(off + 7));
+                c.ldr(ua[k], s.wrapping_add(off));
+            }
+            for k in 0..4 {
+                let off = (8 * k) as u32;
+                c.sdl(ua[k], d.wrapping_add(off + 7));
+                c.sdr(ua[k], d.wrapping_add(off));
+            }
+            c.g[src][0] = sx(s.wrapping_add(0x20));
+            let more = c.g[src][0] != c.g[V0][0];
+            c.g[V1][0] = sx(d.wrapping_add(0x20));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, heads.0);
+                }
+                continue;
+            }
+            c.cycles += 2;
+            return;
+        }
+    }
+    c.cycles += 1;
+    c.g[V0][0] = sx((c.g[src][0] as u32).wrapping_add(0x280));
+    loop {
+        c.cycles += 11;
+        let s = c.g[src][0] as u32;
+        let d = c.g[V1][0] as u32;
+        for k in 0..4 {
+            c.g[al[k]][0] = c.ld(s.wrapping_add((8 * k) as u32));
+        }
+        for k in 0..4 {
+            c.sd(d.wrapping_add((8 * k) as u32), c.g[al[k]][0]);
+        }
+        c.g[src][0] = sx(s.wrapping_add(0x20));
+        let more = c.g[src][0] != c.g[V0][0];
+        c.g[V1][0] = sx(d.wrapping_add(0x20));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, heads.1);
+            }
+            continue;
+        }
+        return;
+    }
+}
+
+/// The 8-byte tail of a [`boot_cfg_copy`] (`ldl`/`ldr` from the end of the
+/// source into `reg`, then `sdl`/`sdr` to SP+0x280). The caller charges the
+/// block's cycles.
+pub(crate) fn boot_cfg_tail(c: &mut Cpu, src: usize, reg: usize) {
+    let s = c.g[src][0] as u32;
+    let d = c.g[V1][0] as u32;
+    c.ldl(reg, s.wrapping_add(7));
+    c.ldr(reg, s);
+    c.sdl(reg, d.wrapping_add(7));
+    c.sdr(reg, d);
+}
+
+/// `cSSXApp_initload(SSXApp* self)` (0x2282d0, `SSXApp_BootLoad`): the game's
+/// one-time load. Starts the net modules (`initOnline`), opens the big files
+/// that exist, the scripts, the 11 character textures and `rwrdps2.big`,
+/// creates the ScriptEngine, loads `input.map` and `input2.map` into the
+/// input maps and gives both players a cInput on the first map, loads the
+/// fonts, applies the display options and the locale, builds the animation
+/// data, starts the audio with the saved volumes, inits the world triggers
+/// and copies a non-empty command-line track.
+///
+/// `Cfg_82D0()` by value is the inline copy of the BE option struct, five
+/// times: each `cSSXAudio_*` argument is read from the stack copy.
+pub fn ssxapp_boot_load(c: &mut Cpu) {
+    guest(c, ssxapp_boot_load_body);
+}
+
+pub(crate) fn ssxapp_boot_load_body(c: &mut Cpu) -> Flow {
+    ssx3_ee_rt::prof::enter(c, 0x0022_82d0);
+    c.cycles += 19;
+    let frame = Frame::open(c, 0x330);
+    frame.save(c, 20, 0x2e0);
+    frame.save(c, 16, 0x320);
+    frame.save(c, 17, 0x310);
+    frame.save(c, 18, 0x300);
+    frame.save(c, 19, 0x2f0);
+    frame.save(c, 21, 0x2d0);
+    frame.save(c, 22, 0x2c0);
+    frame.save(c, 23, 0x2b0);
+    frame.save(c, 30, 0x2a0);
+    frame.save_ra(c, 0x290);
+
+    // initOnline(): net modules.
+    c.g[S4][0] = c.g[A0][0];
+    Callee {
+        addr: 0x0022_8ee0,
+        f: ee::s05::f_00228ee0,
+    }
+    .call(c, 0x0022_8304)?;
+
+    // The four audio big files (music, music2, audio, speech).
+    boot_big_if_exists(c, 0, 0x57d8, 0xd8, 0x0022_8314, 0x0022_832c)?;
+    boot_big_if_exists(c, 6, 0x57c0, 0xdc, 0x0022_833c, 0x0022_8354)?;
+    boot_big_if_exists(c, 6, 0x57a8, 0xd4, 0x0022_8364, 0x0022_837c)?;
+    boot_big_if_exists(c, 6, 0x5790, 0xe0, 0x0022_838c, 0x0022_83a4)?;
+
+    // func_00256188(); scdat.big; D_004A29C8 (mdlps2.big).
+    c.cycles += 21;
+    c.g[RA][0] = sx(0x0022_83ac);
+    c.g[S6][0] = sx(boot_self(c).wrapping_add(BOOT_SELF_BIG_RWRD));
+    call_ptr(c, 0x0025_6188, 0x0022_83ac)?;
+    c.g[A0][0] = BOOT_HI_DATA as u64;
+    c.g[A1][0] = 0;
+    c.g[A0][0] = sx(BOOT_HI_DATA.wrapping_sub(0x5778));
+    c.g[A2][0] = 0x64;
+    c.g[A3][0] = sx(boot_self(c).wrapping_add(0xe4));
+    c.g[S3][0] = sx(boot_self(c).wrapping_add(BOOT_SELF_PLAYERS));
+    call_ptr(c, 0x003d_ed50, 0x0022_83c8)?;
+    c.g[S5][0] = sx(boot_self(c).wrapping_add(BOOT_SELF_PADS));
+    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x728));
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0x64;
+    c.g[A3][0] = sx(boot_self(c).wrapping_add(0xe8));
+    call_ptr(c, 0x003d_ed50, 0x0022_83e0)?;
+
+    // The 11 character textures (D_00442100[i] into fEC[i]).
+    c.g[FP][0] = sx(boot_self(c).wrapping_add(BOOT_SELF_FONTS));
+    c.g[V1][0] = BOOT_HI_TEX as u64;
+    c.g[S7][0] = BOOT_HI_BEOPT as u64;
+    c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2100));
+    c.g[S0][0] = sx(boot_self(c).wrapping_add(BOOT_SELF_BIG_TEX));
+    c.g[S1][0] = 0xa;
+    loop {
+        c.cycles += 9;
+        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+        c.g[A3][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x64;
+        call_ptr(c, 0x003d_ed50, 0x0022_840c)?;
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(4));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(1));
+        let more = (c.g[S1][0] as i64) >= 0;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_83f8);
+            }
+            continue;
+        }
+        break;
+    }
+
+    // rwrdps2.big (D_004A29CC into f118).
+    c.cycles += 29;
+    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x724));
+    c.g[A1][0] = 0;
+    c.g[A3][0] = c.g[S6][0];
+    c.g[A2][0] = 0x64;
+    call_ptr(c, 0x003d_ed50, 0x0022_8430)?;
+
+    // ScriptEngine: alloc, construct, InitOnce.
+    c.g[S2][0] = c.g[S5][0];
+    c.g[A1][0] = sx(BOOT_HI_DATA.wrapping_sub(0x5730));
+    c.g[A2][0] = 0;
+    c.g[A3][0] = 0;
+    c.g[A0][0] = 0xa50;
+    c.g[S5][0] = 0x1;
+    call_ptr(c, 0x0031_7d70, 0x0022_8450)?; // cMemMan_alloc
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, 0x0027_7f20, 0x0022_8458)?; // cSSXScriptEngine ctor
+    c.g[A0][0] = c.g[V0][0];
+    c.sw((c.g[GP][0] as u32).wrapping_sub(0x84c), c.g[V0][0]); // ScriptEngine = sm
+    call_ptr(c, 0x0027_8210, 0x0022_8464)?; // cSSXScriptEngine_InitOnce
+
+    // input.map and input2.map into the two input maps.
+    c.g[A1][0] = BOOT_HI_DATA as u64;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = sx(BOOT_HI_DATA.wrapping_sub(0x5720));
+    Callee {
+        addr: 0x0022_6b60,
+        f: ee::s05::f_00226b60,
+    }
+    .call(c, 0x0022_8474)?; // cSSXApp_loadInputMap
+    c.g[A1][0] = BOOT_HI_DATA as u64;
+    c.sw(boot_self(c).wrapping_add(BOOT_SELF_INPUT_MAPS), c.g[V0][0]);
+    c.g[A1][0] = sx(BOOT_HI_DATA.wrapping_sub(0x5708));
+    c.g[A0][0] = c.g[S4][0];
+    Callee {
+        addr: 0x0022_6b60,
+        f: ee::s05::f_00226b60,
+    }
+    .call(c, 0x0022_8488)?;
+    c.sw(
+        boot_self(c).wrapping_add(BOOT_SELF_INPUT_MAPS + 4),
+        c.g[V0][0],
+    );
+
+    // Two cInputs (setPad, setMap) on fB0[j], j = 0, 1.
+    loop {
+        c.cycles += 19;
+        c.g[V0][0] = BOOT_HI_STR2 as u64;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x8;
+        c.g[A1][0] = sx(BOOT_HI_STR2.wrapping_add(0x29d0));
+        c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_sub(1));
+        call_ptr(c, 0x0031_7d70, 0x0022_84ac)?; // cMemMan_alloc (str_Input)
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = c.lw(c.g[S2][0] as u32);
+        c.g[S1][0] = c.lw(boot_self(c).wrapping_add(BOOT_SELF_INPUT_MAPS));
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0024_4400, 0x0022_84c0)?; // cInput_setPad
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(4));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0024_4408, 0x0022_84d0)?; // cInput_setMap
+        c.sw(c.g[S3][0] as u32, c.g[S0][0]);
+        let more = (c.g[S5][0] as i64) >= 0;
+        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(4));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_8490);
+            }
+            continue;
+        }
+        break;
+    }
+
+    // Font interface: alloc 0x44, zero the four entries and the counters.
+    c.cycles += 11;
+    c.g[A1][0] = BOOT_HI_DATA as u64;
+    c.g[A0][0] = 0x44;
+    c.g[A1][0] = sx(BOOT_HI_DATA.wrapping_sub(0x56f0));
+    c.g[A2][0] = 0;
+    c.g[A3][0] = 0;
+    call_ptr(c, 0x0031_7d70, 0x0022_84f4)?; // cMemMan_alloc (cUIFontInterface)
+    c.sw(c.g[V0][0] as u32, 0);
+    c.g[A1][0] = u64::MAX;
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(4));
+    c.g[A0][0] = 0x3;
+    loop {
+        c.cycles += 7;
+        c.sw(c.g[V1][0] as u32, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+        c.sw((c.g[V1][0] as u32).wrapping_add(4), 0);
+        c.sw((c.g[V1][0] as u32).wrapping_add(8), 0);
+        let more = c.g[A0][0] != c.g[A1][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_8508);
+            }
+            continue;
+        }
+        break;
+    }
+
+    // Font interface fields, then the two font entries.
+    c.cycles += 78;
+    c.sw(c.g[FP][0] as u32, c.g[V0][0]); // self->fonts = new interface
+    c.g[A0][0] = sx(BOOT_HI_STR2.wrapping_add(0x29d8));
+    c.sb((c.g[V0][0] as u32).wrapping_add(0x34), 0);
+    c.sw((c.g[V0][0] as u32).wrapping_add(0x38), 0);
+    c.g[S0][0] = BOOT_HI_DATA as u64;
+    c.sw((c.g[V0][0] as u32).wrapping_add(0x3c), 0);
+    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x56d8));
+    c.sw((c.g[V0][0] as u32).wrapping_add(0x40), 0);
+    c.g[S1][0] = BOOT_HI_DATA as u64;
+    call_ptr(c, 0x0031_7670, 0x0022_8550)?; // name the interface (str_cUIFontInterface)
+    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x56c0));
+    c.g[A0][0] = c.lw(boot_self(c).wrapping_add(BOOT_SELF_FONTS));
+    c.g[A2][0] = c.g[S0][0];
+    c.g[A3][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, 0x0039_84b0, 0x0022_8568)?; // cUIFontInterface_addFontEntry(fefont)
+    c.g[S2][0] = sx((c.g[S7][0] as u32).wrapping_add(BOOT_BEOPT_OFF));
+    c.g[A0][0] = sx(BOOT_HI_STR2.wrapping_add(0x29e0));
+    call_ptr(c, 0x0031_7670, 0x0022_8578)?;
+    c.g[A0][0] = c.lw(boot_self(c).wrapping_add(BOOT_SELF_FONTS));
+    c.g[A1][0] = 1;
+    c.g[A2][0] = c.g[S1][0];
+    c.g[A3][0] = c.g[V0][0];
+    call_ptr(c, 0x0039_84b0, 0x0022_858c)?; // cUIFontInterface_addFontEntry(hudfont)
+    c.g[A0][0] = c.lw(boot_self(c).wrapping_add(BOOT_SELF_FONTS));
+    call_ptr(c, 0x0039_8568, 0x0022_8594)?; // cUIFontInterface_loadFonts
+    call_ptr(c, 0x0014_dc80, 0x0022_859c)?; // cBE_getBE
+    c.sw(boot_self(c).wrapping_add(BOOT_SELF_BE), c.g[V0][0]);
+
+    // BE options, the locale, the animation data.
+    c.g[A0][0] = c.g[S4][0];
+    Callee {
+        addr: 0x0022_8c08,
+        f: ee::s05::f_00228c08,
+    }
+    .call(c, 0x0022_85a8)?; // SSXApp_ApplyDisplayOptions
+    c.g[A0][0] = c.g[S4][0];
+    Callee {
+        addr: 0x0022_8a78,
+        f: ee::s05::f_00228a78,
+    }
+    .call(c, 0x0022_85b0)?; // SSXApp_LoadLocale
+    call_ptr(c, 0x0031_1870, 0x0022_85b8)?; // cRiderAnimBase_initAIAnimEventMap
+    c.g[A1][0] = BOOT_HI_DATA as u64;
+    c.g[A2][0] = 0;
+    c.g[A1][0] = sx(BOOT_HI_DATA.wrapping_sub(0x56a8));
+    c.g[A3][0] = 0;
+    c.g[A0][0] = 0x1848;
+    call_ptr(c, 0x0031_7d70, 0x0022_85d0)?; // cMemMan_alloc (GameAnimMap)
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, 0x0031_4d98, 0x0022_85d8)?; // cGameAnimMap ctor
+    c.g[A0][0] = c.g[V0][0];
+    c.sw(boot_self(c).wrapping_add(BOOT_SELF_ANIM_MAP), c.g[V0][0]);
+    call_ptr(c, 0x0031_4dd8, 0x0022_85e4)?; // cGameAnimMap_initMap
+    c.g[A1][0] = BOOT_HI_DATA as u64;
+    c.g[A2][0] = 0;
+    c.g[A3][0] = 0;
+    c.g[A1][0] = sx(BOOT_HI_DATA.wrapping_sub(0x5698));
+    c.g[A0][0] = 0x3fc;
+    call_ptr(c, 0x0031_7d70, 0x0022_85fc)?; // cMemMan_alloc (AnimDataBase)
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, 0x0031_1048, 0x0022_8604)?; // cAnimDataBase ctor
+    c.sw(boot_self(c).wrapping_add(BOOT_SELF_ANIM_DB), c.g[V0][0]);
+    call_ptr(c, 0x0014_dc80, 0x0022_860c)?; // cBE_getBE
+    c.g[A1][0] = 4;
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, 0x0014_dd58, 0x0022_8618)?; // cBE_getInterface(be, 4)
+
+    // Audio: SSXAUDIO_Init with the saved output mode, then the volumes.
+    call_ptr(c, 0x0028_b180, 0x0022_8620)?; // cAudioInterface_bxAudio
+    c.g[A1][0] = c.lw((c.g[S7][0] as u32).wrapping_add(BOOT_BEOPT_OFF));
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[A1][0] as u32) >> 12);
+    c.g[A1][0] = c.g[A1][0] & 0x3;
+    call_ptr(c, 0x0028_9d08, 0x0022_8634)?; // cSSXAudio_BEAudioModeToAudioMode
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, 0x0028_4bb0, 0x0022_863c)?; // SSXAUDIO_Init
+    call_ptr(c, 0x0031_a6b8, 0x0022_8644)?; // func_0031A6B8
+    call_ptr(c, 0x0028_b180, 0x0022_864c)?; // cAudioInterface_bxAudio
+    c.g[A0][0] = c.g[V0][0];
+
+    // Cfg_82D0().sfxVol: copy A, its tail, then func_00287410.
+    boot_cfg_copy(
+        c,
+        18,
+        [5, 6, 7, 8],
+        [9, 5, 6, 7],
+        (0x0022_8660, 0x0022_86b8),
+    );
+    c.cycles += 14;
+    boot_cfg_tail(c, 18, 8);
+    c.g[A1][0] = c.lw(sp(c)) & 0xf;
+    call_ptr(c, 0x0028_7410, 0x0022_8700)?; // func_00287410 (sfxVol)
+
+    // Cfg_82D0().speechVol: copy B, its tail, then cSSXAudio_SetSFXVolume.
+    call_ptr(c, 0x0028_b180, 0x0022_8708)?; // cAudioInterface_bxAudio
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = sx(BOOT_HI_BEOPT.wrapping_add(BOOT_BEOPT_OFF));
+    boot_cfg_copy(c, 5, [6, 7, 8, 9], [6, 7, 8, 9], (0x0022_8720, 0x0022_8778));
+    c.cycles += 15;
+    boot_cfg_tail(c, 5, 2);
+    c.g[A1][0] = sx((c.lw(sp(c)) as u32) >> 8);
+    c.g[A1][0] = c.g[A1][0] & 0xf;
+    call_ptr(c, 0x0028_7488, 0x0022_87c4)?; // cSSXAudio_SetSFXVolume (speechVol)
+
+    // Cfg_82D0().musicVol: copy C, its tail, then func_00287520.
+    call_ptr(c, 0x0028_b180, 0x0022_87cc)?; // cAudioInterface_bxAudio
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = sx(BOOT_HI_BEOPT.wrapping_add(BOOT_BEOPT_OFF));
+    boot_cfg_copy(c, 5, [9, 6, 7, 8], [9, 6, 7, 8], (0x0022_87e4, 0x0022_883c));
+    c.cycles += 14;
+    boot_cfg_tail(c, 5, 9);
+    c.g[A1][0] = c.lbu(sp(c)) >> 4;
+    call_ptr(c, 0x0028_7520, 0x0022_8884)?; // func_00287520 (musicVol)
+
+    // Cfg_82D0().iUseDJSpeech: copy D, its tail, then cSSXAudio_SetDJSpeech.
+    call_ptr(c, 0x0028_b180, 0x0022_888c)?; // cAudioInterface_bxAudio
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = sx(BOOT_HI_BEOPT.wrapping_add(BOOT_BEOPT_OFF));
+    boot_cfg_copy(c, 5, [8, 9, 6, 7], [8, 9, 6, 7], (0x0022_88a4, 0x0022_88fc));
+    c.cycles += 14;
+    boot_cfg_tail(c, 5, 8);
+    c.g[A1][0] = sx(((c.lw(sp(c)) as u32) as i32 >> 17) as u32);
+    c.g[A1][0] = c.g[A1][0] & 0x1;
+    call_ptr(c, 0x0028_7558, 0x0022_8948)?; // cSSXAudio_SetDJSpeech
+
+    // Cfg_82D0().iUseArcadeSFX: copy E, its tail, then cSSXAudio_SetArcadeSFX.
+    c.g[S2][0] = sx(BOOT_HI_BEOPT.wrapping_add(BOOT_BEOPT_OFF));
+    call_ptr(c, 0x0028_b180, 0x0022_8950)?; // cAudioInterface_bxAudio
+    c.g[A0][0] = c.g[V0][0];
+    boot_cfg_copy(
+        c,
+        18,
+        [7, 8, 9, 5],
+        [6, 7, 8, 9],
+        (0x0022_8964, 0x0022_89bc),
+    );
+    c.cycles += 15;
+    boot_cfg_tail(c, 18, 2);
+    c.g[A1][0] = c.lh(sp(c).wrapping_add(0x2));
+    c.g[A1][0] = c.g[A1][0] & 0x1;
+    call_ptr(c, 0x0028_75d0, 0x0022_8a04)?; // cSSXAudio_SetArcadeSFX
+
+    // WORLDTRIGGERMANAGER_Init, then the command-line track.
+    call_ptr(c, 0x002b_4b08, 0x0022_8a0c)?; // WORLDTRIGGERMANAGER_Init
+    c.g[A1][0] = BOOT_HI_STR2 as u64;
+    c.g[A0][0] = c.lw(boot_self(c).wrapping_add(BOOT_SELF_CMDLINE_TRACK));
+    c.g[A1][0] = sx(BOOT_HI_STR2.wrapping_add(0x29e8));
+    call_ptr(c, 0x0041_65a8, 0x0022_8a1c)?; // strcmp(fCC, D_004A29E8)
+    let same = c.g[V0][0] == 0;
+    frame.restore(c, 16, 0x320);
+    if !same {
+        c.cycles += 9;
+        call_ptr(c, 0x0014_dc80, 0x0022_8a2c)?; // cBE_getBE
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0022_8a38)?; // cBE_getInterface(be, 0)
+        c.g[A0][0] = sx((c.g[GP][0] as u32).wrapping_add(0x1bc8));
+        c.g[A1][0] = c.lw(boot_self(c).wrapping_add(BOOT_SELF_CMDLINE_TRACK));
+        call_ptr(c, 0x0031_84e8, 0x0022_8a44)?; // cBXString_operator=
+        frame.restore(c, 16, 0x320);
+    }
+
+    // Epilogue.
+    c.cycles += 11;
+    frame.restore(c, 17, 0x310);
+    frame.restore(c, 18, 0x300);
+    frame.restore(c, 19, 0x2f0);
+    frame.restore(c, 20, 0x2e0);
+    frame.restore(c, 21, 0x2d0);
+    frame.restore(c, 22, 0x2c0);
+    frame.restore(c, 23, 0x2b0);
+    frame.restore(c, 30, 0x2a0);
+    frame.restore_ra(c, 0x290);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void SSXApp_Init(cSSXApp* self, int argc, char** argv)` (0x226900): the
+/// application's start-up: registers the app at `gp-0x848`, the state config
+/// (`+0x9c`), the pad queue (`gp-0x850`, a 0x2efc-byte object), the graphics
+/// manager (`gp-0x854`) with its vtable setup, the light and bezier managers,
+/// the byte at `gp-0x844` and the two 0x2a4-byte pad records at `+0xa8`, the
+/// command line, the graphics mode (slot 0x160, 0x100), the boot shape
+/// (`SHPS_Find` + slot 0x170, into `+0xa0`), the 0x1c-byte white tint (`+0xa4`),
+/// the pre-start screen (`+0xc0`) and the FE async manager (`+0x11c`).
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unreachable_code,
+    unused_mut,
+    clippy::all
+)]
+pub fn ssx_app_init_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 48;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S2][0] = c.g[A0][0];
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.g[A2][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S4][0] = c.g[A1][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0xa8));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S1][0] = 0x1;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+        c.g[S5][0] = 0x480000;
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x848), c.g[S2][0]);
+        call_ptr(c, 0x002c7440, 0x00226940)?;
+        c.g[A1][0] = 0x480000;
+        c.g[A2][0] = 0u64;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x65c0));
+        c.g[A3][0] = 0u64;
+        c.g[A0][0] = 0x2efc;
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x9c), c.g[V0][0]);
+        call_ptr(c, 0x00317d70, 0x0022695c)?;
+        c.sw(c.g[SP][0] as u32, c.g[V0][0]);
+        c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+        call_ptr(c, 0x00326a28, 0x0022696c)?;
+        c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x850), c.g[V0][0]);
+        call_ptr(c, 0x00375a08, 0x00226978)?;
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10d8));
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x854), c.g[V0][0]);
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[A1][0] as u32;
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00226990)?;
+        call_ptr(c, 0x0038dbd0, 0x00226998)?;
+        call_ptr(c, 0x0038aef8, 0x002269a0)?;
+        c.g[A1][0] = 0x480000;
+        c.g[A0][0] = 0x1;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x65b0));
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317d70, 0x002269b8)?;
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x844), c.g[V0][0]);
+        'l_2269c0: loop {
+            c.cycles += 10;
+            c.g[A0][0] = 0x2a4;
+            c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x65a0));
+            c.g[A2][0] = 0u64;
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00317d70, 0x002269d4)?;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+            c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+            c.sw(c.g[V0][0] as u32, 0u64);
+            let t = (c.g[S1][0] as i64) >= 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002269c0);
+                }
+                continue 'l_2269c0;
+            } else {
+                c.cycles += 94;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x84), 0u64);
+                c.g[A2][0] = c.g[S3][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x80), 0u64);
+                c.g[A0][0] = c.g[S2][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x7c), 0u64);
+                c.g[A1][0] = c.g[S4][0];
+                call_ptr(c, 0x00227bf0, 0x00226a04)?;
+                c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                c.g[A1][0] = 0x100;
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x10d8));
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x160));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x164));
+                let t = c.g[V1][0] as u32;
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x00226a20)?;
+                c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                c.g[A0][0] = 0x480000;
+                c.g[A1][0] = 0x4a0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54c0));
+                c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10d8));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x28b0));
+                c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x170));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                call_ptr(c, 0x003b39b8, 0x00226a44)?;
+                c.g[T2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x174));
+                c.g[A2][0] = 0x480000;
+                c.g[T0][0] = 0x1;
+                c.g[T1][0] = 0xffffffffffffffff;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x6590));
+                c.g[A0][0] = c.g[S0][0];
+                let t = c.g[T2][0] as u32;
+                c.g[A3][0] = 0u64;
+                call_ptr(c, t, 0x00226a68)?;
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0xa0), c.g[V0][0]);
+                call_ptr(c, 0x00369ff8, 0x00226a78)?;
+                c.g[A1][0] = 0x480000;
+                c.g[A0][0] = 0x1c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6580));
+                c.g[A2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x00226a90)?;
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 0);
+                c.g[A1][0] = 0x480000;
+                c.sw(c.g[V0][0] as u32, 0u64);
+                c.g[A2][0] = 0x100;
+                c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x1c));
+                c.g[A3][0] = 0u64;
+                c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6570));
+                c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x14));
+                c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x18));
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xa4), c.g[V0][0]);
+                c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
+                c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x1f));
+                c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x18));
+                c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x13));
+                c.sdr(3, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.sdl(8, (c.g[V0][0] as u32).wrapping_add(0x1b));
+                c.sdr(8, (c.g[V0][0] as u32).wrapping_add(0x14));
+                c.g[A0][0] = 0xc;
+                call_ptr(c, 0x00317d70, 0x00226af0)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x00232328, 0x00226af8)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x00316ef8, 0x00226b04)?;
+                call_ptr(c, 0x00237cf8, 0x00226b0c)?;
+                c.g[A1][0] = 0x480000;
+                c.g[A2][0] = 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6560));
+                c.g[A3][0] = 0u64;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xc0), c.g[V0][0]);
+                c.g[A0][0] = 0x590;
+                call_ptr(c, 0x00317d70, 0x00226b28)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x001a3590, 0x00226b30)?;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x11c), c.g[V0][0]);
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x001a3648, 0x00226b3c)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6936,6 +7732,341 @@ pub(crate) mod tests {
                 c.bus.write32(OC642_CTRL + 4, flags);
                 c.g[A0][0] = DATA as u64;
                 oc642_fixture(c, &mut r);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    use crate::difftest::RA as DT_RA;
+    use ssx3_ee_rt::funcs::register_functions;
+    use ssx3_ee_rt::funcs::FnEntry;
+
+    pub(crate) use crate::game::be::beintstat::tests::oc673_machine;
+    pub(crate) use crate::game::be::beintstat::tests::oc673_result_at;
+
+    /// Gate of the callee fakes (otherwise the body they replaced runs).
+    pub(crate) const OC671_CTRL: u32 = DATA + 0x000e_4000;
+
+    pub(crate) const OC671_MAGIC: u32 = 0x494d_5036;
+
+    /// Call index at which the `operator_new_named` fake returns 0.
+    pub(crate) const OC671_ZERO_AT: u32 = DATA + 0x000e_4004;
+
+    pub(crate) const OC671_PATH: u32 = DATA + 0x2000;
+
+    /// A gated fake for one callee slot: logs the call and returns.
+    macro_rules! oc671_fake {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC671_CTRL) != OC671_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let n = c.bus.read32(fakes::LOG_COUNT);
+                fakes::fake_call(c, $addr);
+                if $addr == 0x0031_7e30 && n == c.bus.read32(OC671_ZERO_AT) {
+                    c.g[V0][0] = 0;
+                }
+            }
+        };
+    }
+
+    oc671_fake!(
+        oc671_f_new,
+        OC671_PREV_NEW,
+        0x0031_7e30,
+        ee::s10::f_00317e30__generated
+    );
+
+    oc671_fake!(
+        oc671_f_alloc,
+        OC671_PREV_ALLOC,
+        0x0031_7d70,
+        ee::s10::f_00317d70__generated
+    );
+
+    oc671_fake!(
+        oc671_f_free,
+        OC671_PREV_FREE,
+        0x0031_7e98,
+        ee::s10::f_00317e98__generated
+    );
+
+    oc671_fake!(
+        oc671_f_init,
+        OC671_PREV_INIT,
+        0x0032_0ca0,
+        ee::s10::f_00320ca0__generated
+    );
+
+    oc671_fake!(
+        oc671_f_parser,
+        OC671_PREV_PARSER,
+        0x0032_0db0,
+        ee::s10::f_00320db0__generated
+    );
+
+    oc671_fake!(
+        oc671_f_compile,
+        OC671_PREV_COMPILE,
+        0x0032_0e18,
+        ee::s10::f_00320e18__generated
+    );
+
+    oc671_fake!(
+        oc671_f_purge,
+        OC671_PREV_PURGE,
+        0x0032_0f10,
+        ee::s10::f_00320f10__generated
+    );
+
+    oc671_fake!(
+        oc671_f_process,
+        OC671_PREV_PROCESS,
+        0x0032_6078,
+        ee::s10::f_00326078__generated
+    );
+
+    pub(crate) fn oc671_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            oc671_f_new,
+            &OC671_PREV_NEW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc671_f_alloc,
+            &OC671_PREV_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            oc671_f_free,
+            &OC671_PREV_FREE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00320CA0),
+            oc671_f_init,
+            &OC671_PREV_INIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00320DB0),
+            oc671_f_parser,
+            &OC671_PREV_PARSER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00320E18),
+            oc671_f_compile,
+            &OC671_PREV_COMPILE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00320F10),
+            oc671_f_purge,
+            &OC671_PREV_PURGE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00326078),
+            oc671_f_process,
+            &OC671_PREV_PROCESS,
+        );
+    }
+
+    /// `InputMap_LoadFromFile(self, path)`: loads the input map file (205
+    /// bindings) through the preprocessor, allocates and compiles the map.
+    /// `InputPreproc_Run` runs for real; the file reader and every allocator
+    /// and map call is a gated fake. Fixture: a path with or without a
+    /// directory part, a zero text pointer (no free) on some seeds, and
+    /// unwinds at random calls.
+    #[test]
+    fn oc671_input_map_load_from_file_matches() {
+        oc671_install_fakes();
+        check(
+            ee::s05::f_00226b60__generated,
+            oc671_input_map_load_from_file,
+            90,
+            &|c, seed| {
+                let _ = fakes::machine(c, seed, 0x0671_0000, 215);
+                c.pc = 0x0022_6b60;
+                c.bus.write32(OC671_CTRL, OC671_MAGIC);
+                // The 3rd allocation call of the preprocessor is the text copy
+                // (new #0, ProcessFile #1, new #2); zero it on every 3rd seed.
+                let zero = if seed % 3 == 0 { 2 } else { u32::MAX };
+                c.bus.write32(OC671_ZERO_AT, zero);
+                let path: &[u8] = if seed % 2 == 0 {
+                    b"data/input/ssx.map\0"
+                } else {
+                    b"ssx.map\0"
+                };
+                c.bus.write_bytes(OC671_PATH, path);
+                c.g[A0][0] = sx(DATA + 0x3000);
+                c.g[A1][0] = sx(OC671_PATH);
+            },
+        );
+    }
+
+    /// Environment switch of the child process (see the test).
+    pub(crate) const OC672_CHILD_ENV: &str = "SSX3_OC672_CHILD";
+
+    /// Stub controls: the BXFILE_exists answer bits (+0), its call counter
+    /// (+4), the strcmp answer (+8).
+    pub(crate) const OC672_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC672_SELF: u32 = DATA + 0x1000;
+
+    pub(crate) const OC672_TRACK: u32 = DATA + 0x2000;
+
+    /// `BXFILE_exists`: bit n of the control word answers call n.
+    pub(crate) fn oc672_stub_exists(c: &mut Cpu) {
+        let ret = c.g[RA][0] as u32;
+        let n = c.bus.read32(OC672_CTRL + 4);
+        c.bus.write32(OC672_CTRL + 4, n + 1);
+        fake(c, 0x0031_7f38, ret);
+        if c.pc == ret {
+            let mask = c.bus.read32(OC672_CTRL);
+            c.g[V0][0] = ((mask >> (n & 31)) & 1) as u64;
+        }
+    }
+
+    /// `strcmp`: 0 (same track) or 1.
+    pub(crate) fn oc672_stub_strcmp(c: &mut Cpu) {
+        let ret = c.g[RA][0] as u32;
+        fake(c, 0x0041_65a8, ret);
+        if c.pc == ret {
+            c.g[V0][0] = (c.bus.read32(OC672_CTRL + 8) != 0) as u64;
+        }
+    }
+
+    pub(crate) static OC672_STUBS: [FnEntry; 2] = [
+        FnEntry {
+            start: 0x0031_7f38,
+            end: 0x0031_7f3c,
+            f: oc672_stub_exists,
+        },
+        FnEntry {
+            start: 0x0041_65a8,
+            end: 0x0041_65ac,
+            f: oc672_stub_strcmp,
+        },
+    ];
+
+    /// A direct callee replaced by a logging fake (child process only).
+    pub(crate) fn oc672_fake_net(c: &mut Cpu) {
+        let ra = c.g[RA][0] as u32;
+        fake(c, 0x0022_8ee0, ra)
+    }
+
+    pub(crate) fn oc672_fake_display(c: &mut Cpu) {
+        let ra = c.g[RA][0] as u32;
+        fake(c, 0x0022_8c08, ra)
+    }
+
+    pub(crate) fn oc672_fake_locale(c: &mut Cpu) {
+        let ra = c.g[RA][0] as u32;
+        fake(c, 0x0022_8a78, ra)
+    }
+
+    /// Child process only: a function table with just the two answer stubs,
+    /// and fakes in the slots of the directly called ported functions.
+    pub(crate) fn oc672_install() {
+        if std::env::var_os(OC672_CHILD_ENV).is_none() {
+            return;
+        }
+        register_functions(&OC672_STUBS);
+        // SAFETY: the child process runs this one test, single-threaded.
+        unsafe {
+            ee::s05::OVERRIDE_00228EE0 = oc672_fake_net;
+            ee::s05::OVERRIDE_00228C08 = oc672_fake_display;
+            ee::s05::OVERRIDE_00228A78 = oc672_fake_locale;
+        }
+    }
+
+    pub(crate) fn oc672_setup(c: &mut Cpu, seed: u32) {
+        oc672_install();
+        let mut r = machine(c, seed, 0x22_82d0, 90);
+        c.pc = 0x0022_82d0;
+        c.g[RA][0] = DT_RA as u64;
+        c.g[A0][0] = OC672_SELF as u64;
+        // Which of the four big files exist; same or different track.
+        c.bus.write32(OC672_CTRL, r.next_u32());
+        c.bus.write32(OC672_CTRL + 4, 0);
+        c.bus
+            .write32(OC672_CTRL + 8, (r.next_u32() & 1) | (seed & 1));
+        c.bus
+            .write32(OC672_SELF + BOOT_SELF_CMDLINE_TRACK, OC672_TRACK);
+        c.bus
+            .write32(OC672_SELF + BOOT_SELF_INPUT_MAPS, r.next_u32());
+        for off in [0x728u32, 0x724] {
+            c.bus.write32(GAME_GP.wrapping_sub(off), r.next_u32());
+        }
+        // The BE option snapshot (0x288 bytes) with random volumes and modes.
+        fill(c, &mut r, BOOT_HI_BEOPT + BOOT_BEOPT_OFF, 0x288 / 4);
+    }
+
+    /// `cSSXApp_initload` against the generated body: the one-time game load.
+    /// All ~70 callees are logging fakes (the child process's function table
+    /// holds only the `BXFILE_exists` and `strcmp` answer stubs; the ported
+    /// direct callees get fakes in their slots), so the diff compares every
+    /// call's registers, the BE option copies and the unwinds at random call
+    /// indices. The option struct sits at a constant aligned address, so the
+    /// unaligned ldl/ldr copy paths are unreachable.
+    #[test]
+    fn ssxapp_boot_load_matches() {
+        if std::env::var_os(OC672_CHILD_ENV).is_some() {
+            return covered(
+                ee::s05::f_002282d0__generated,
+                ssxapp_boot_load,
+                160,
+                &oc672_setup,
+            );
+        }
+        let name = format!(
+            "{}::ssxapp_boot_load_matches",
+            module_path!().split_once("::").map_or("", |p| p.1)
+        );
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([name.as_str(), "--exact", "--test-threads=1", "--nocapture"])
+            .env(OC672_CHILD_ENV, "1")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.status.success() && text.contains("1 passed"),
+            "child run of {name}:\n{text}"
+        );
+    }
+
+    /// `SSXApp_Init` against the generated body: the boot sequence with the
+    /// graphics manager (a fixture whose vtable slots are fake methods), the
+    /// pad queue, light and bezier managers (the real, bounded constructors
+    /// run), the pad records, the command line, the boot shape and tint, and
+    /// unwinds in each call.
+    #[test]
+    fn ssx_app_init_matches_2() {
+        fakes::covered(
+            ee::s05::f_00226900__generated,
+            ssx_app_init_3,
+            40,
+            &|c, seed| {
+                let mut r = oc673_machine(c, seed, 0x226900, 50, 0x0022_6900);
+                // Above the reach of the real constructors' writes through the fake
+                // allocator's pointers (DATA .. DATA + 0xe8000).
+                let this = DATA + 0xf_2000;
+                let gm = DATA + 0xf_0000;
+                let g = DATA + 0xf_1000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(r.next_u32() % 4);
+                c.g[A2][0] = sx(DATA + 0xf_3000);
+                c.bus.write32(gm + 0x10d8, g);
+                for off in [0x14, 0x164, 0x174] {
+                    c.bus.write32(g + off, FAKE);
+                }
+                for off in [0x10, 0x160, 0x170] {
+                    c.bus.write16(g + off, ((r.next_u32() % 64) * 4) as u16);
+                }
+                oc673_result_at(c, 0x0037_5a08, gm);
             },
         );
     }
