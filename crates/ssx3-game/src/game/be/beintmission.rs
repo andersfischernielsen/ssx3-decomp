@@ -1263,7 +1263,7 @@ pub fn be_mission_int_count_collected_on_peak(c: &mut Cpu) {
         BE_GET_RIDER_CHARACTER.call(c, 0x0015_35f0)?;
         c.g[V1][0] = RIDER_STRIDE as u64;
         c.g[T3][0] = 0xc;
-        c.mult(0, A1, V0, V1);
+        c.mult(0, T1, V0, V1);
         c.g[A3][0] = 0;
         c.g[V0][0] = 0x9b50;
         c.g[V1][0] = 0x440000;
@@ -3048,6 +3048,39 @@ pub(crate) mod tests {
                 fill(c, &mut r, 0x43d000, 0x1000);
             });
         }
+    }
+
+    #[test]
+    fn be_mission_int_count_collected_on_peak_matches() {
+        check(
+            ssx3_ee::s01::f_001535c0__generated,
+            be_mission_int_count_collected_on_peak,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1535c0, 0);
+                fill_missions(c, &mut r, &[0, 1, 2]);
+
+                // Rider 1 selects profile 1 and character 3. A stale T1
+                // points at character 2's collected bytes instead.
+                c.g[A1][0] = 1;
+                c.g[A2][0] = 2;
+                c.g[T1][0] = (2 * RIDER_STRIDE) as u64;
+                c.bus.write32(0x0053_05b4, 2);
+                c.bus.write32(0x0053_5b58 + 0xc, 0);
+                c.bus.write32(0x0053_5b58 + 0x10, 0x301);
+
+                let profile_base = RIDER_FLAG_TABLE + 0x9b50;
+                let wrong_slot = profile_base + 2 * RIDER_STRIDE;
+                let right_slot = profile_base + 3 * RIDER_STRIDE;
+                fill(c, &mut r, wrong_slot, 22 * 0xc + 5);
+                fill(c, &mut r, right_slot, 22 * 0xc + 5);
+                for i in 0..22 {
+                    c.bus.write32(0x0043_d9a4 + i * 0x64, 2);
+                    c.bus.write8(wrong_slot + i * 0xc + 4, 0);
+                    c.bus.write8(right_slot + i * 0xc + 4, 1);
+                }
+            },
+        );
     }
 
     #[test]
