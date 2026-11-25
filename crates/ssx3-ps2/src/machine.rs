@@ -101,6 +101,14 @@ pub struct Sched {
     pub trace_calls: bool,
     /// Host clock mode (`SSX3_HOST_CLOCK=1`), see [`follow_host_clock`].
     pub host_clock: Option<HostClock>,
+    /// Nesting of `service_events` calls.
+    pub service_depth: u32,
+    /// Native thread slices running on the driver's stack (`kernel::run_native`).
+    pub native_slices: u32,
+    /// A frame boundary came up inside a native slice: in coroutine mode the
+    /// outermost `service_events` (the one that woke the thread) would have
+    /// completed there, so its tail must not run when the slice ends.
+    pub boundary_in_native: bool,
 }
 
 /// Emulated time following the host clock (phase 3 frame loop,
@@ -261,6 +269,21 @@ fn idle(c: &mut Cpu) {
 /// Advance hardware time and deliver interrupts. Returns true when the current
 /// thread must unwind (thread switch, or the host wants a frame).
 pub fn service_events(c: &mut Cpu) -> bool {
+    m!(c).sched.service_depth += 1;
+    let r = service_events_inner(c);
+    m!(c).sched.service_depth -= 1;
+    r
+}
+
+fn service_events_inner(c: &mut Cpu) -> bool {
+    if m!(c).kernel.trace_threads {
+        eprintln!(
+            "[thread] svc-enter cyc {} cur {} token {}",
+            c.cycles,
+            m!(c).kernel.current,
+            crate::threads::my_token()
+        );
+    }
     follow_host_clock(c);
     m!(c).hw.now = c.cycles;
     // VBlank start/end.
@@ -295,6 +318,12 @@ pub fn service_events(c: &mut Cpu) -> bool {
     crate::sif::pump(c);
     m!(c).hw.irq_dirty = false;
     kernel::service(c);
+    if m!(c).sched.service_depth == 1 && m!(c).sched.boundary_in_native {
+        // The woken native thread's slice crossed a frame boundary: in coroutine
+        // mode this call returned there, ahead of the later events' own tails.
+        m!(c).sched.boundary_in_native = false;
+        return false;
+    }
     // Schedule the next check.
     let mut next = m!(c).sched.next_vblank;
     if m!(c).sched.in_vblank {
@@ -330,6 +359,10 @@ pub fn service_events(c: &mut Cpu) -> bool {
             }
             if me != 0 {
                 crate::threads::handoff(me, 0);
+            } else if m!(c).sched.native_slices > 0 {
+                // A native slice on the driver's stack cannot hand the baton to the
+                // host: the driver loop returns when the slice has finished.
+                m!(c).sched.boundary_in_native = true;
             }
         }
         return false;

@@ -117,12 +117,15 @@ Measured on the gate replay (`../investigation/thread-inventory.md`,
   share priority 100 and switch only cooperatively (`EAThread_Yield`).
   A simulation over the trace finds no switch that resumes a preempted thread
   other than the top of the stack.
-- **Mutexes never block.** There is no block on an `EAMutex_Lock`/`SND_MutexLock`
-  semaphore in the whole replay: they are counters only.
-- Only these blocks happen: the thread loop semaphores (VSync 18, SND 25, main's
+- **Mutexes block rarely, and once it matters.** Almost all `EAMutex_Lock`/`SND_MutexLock`
+  calls find the semaphore free. The SND mutex (semaphore 24) blocks 7 times in the
+  replay: the SND thread (8) preempts main inside main's SND critical section, blocks on
+  the mutex, main finishes and unlocks, and thread 8 continues in the middle of its body.
+  That is the one non-LIFO case (see "Mid-body blocks").
+- These are all the blocks: the thread loop semaphores (VSync 18, SND 25, main's
   frame sema 16, worker 17), main's `EAFile_DelayTicks` alarm waits (sema 13,
-  20 times, nothing else runs meanwhile) and the SND-init RPC waits (sema 24, 7
-  times, main runs meanwhile).
+  20 times, nothing else runs meanwhile) and the SND mutex contention above
+  (sema 24, 7 times, main runs meanwhile).
 
 So one host stack suffices: a thread is a function run nested, to its next block
 point, at the moment the scheduler would have switched to it.
@@ -177,6 +180,42 @@ idle), the SND thread stays a coroutine. The explanation decides how the main
 loop and the worker (which also run across frame boundaries) can be converted
 without moving host-visible events; if exactness cannot be kept, the fallback is
 a re-based gate for that step only (compare race outcome and screenshots).
+
+## Mid-body blocks (what stops a thread from being native)
+
+A native thread unwinds at its wait and is re-entered at the wait's return address.
+That works when the wait is a direct syscall call of a resumable (dispatcher-shaped)
+body: the loop-top wait of a thread. A thread that blocks deeper (inside `SND_Service`
+-> `SND_MutexLock`) leaves frames of functions that cannot re-enter at a return
+address, and it cannot stay nested on top of the thread it waits for.
+
+| thread | blocks mid-body | consequence |
+| --- | --- | --- |
+| 6 VSync | no | native, gate identical (done) |
+| 8 SND | SND mutex held by the thread it preempted (7 in the replay) | needs resumable frames from the thread entry down to `SND_MutexLock`, or a deferral that reproduces the 39-cycle bounce, or an accepted timing change |
+| 1 main | `EAFile_DelayTicks` (alarm + semaphore: wait inline with the event loop, nothing else runs) and the frame wait in `PS2ExecMan_WaitFrame` | main becomes the base context the driver runs; its waits become "pump events until signalled" |
+| 5 worker | loading jobs wait on IOP RPC replies and CD reads (sema 8, 17, ...) | job-by-job conversion |
+| 2, 3, 4, 7 | no: they run once to a wait and never resume | native with no resume arm (`EAFile_CdReadThread`, `libcdvd_CallbackThread`, `Renderer_DmaKickThread` are ported; the libkernl helper is not) |
+
+Frame boundaries: the host regains control at each VBlank (`run_frame` returns). In
+coroutine mode a thread that sees the boundary hands the baton to the driver
+mid-slice. A native slice sits on the driver's own stack and cannot, so the
+boundary is deferred until the stack unwinds; `Sched::boundary_in_native` keeps the
+outermost `service_events` tail identical to the original. Nothing in the VSync
+thread's slices observes the host's work between frames, and the gate agrees.
+
+### Decision needed for the rest
+
+Exact (gate-identical) conversion of the SND thread, main and the worker needs either
+(a) every function on their blocking paths to be re-entrant at its return addresses
+(large, mechanical, and the code that results is worse Rust than a plain call), or
+(b) a deliberate, bounded timing change: replace "preempt and block on the mutex"
+by "defer the thread's slice to the unlock" and the SND-init and `DelayTicks`
+waits by synchronous completion, then rebuild the gate baseline once and check
+equivalence by comparing screenshots and the race result instead of RAM. (b) is
+what the roadmap's end state ("the game as one loop the port drives") implies,
+because it removes the guest scheduler's exact cycle interleaving, which only
+the emulation of the PS2 kernel had; it should be an owner decision.
 
 ## Verification
 

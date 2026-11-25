@@ -413,7 +413,16 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
         if to == from && next == Some(cur) {
             return;
         }
+        if m!(c).kernel.trace_threads {
+            eprintln!(
+                "[thread] sw-handoff from {from} to {to} cur {cur} cyc {}",
+                c.cycles
+            );
+        }
         crate::threads::handoff(from, to);
+        if m!(c).kernel.trace_threads {
+            eprintln!("[thread] sw-back from {from} cur {cur} cyc {}", c.cycles);
+        }
         return;
     }
     c.pc |= UNWIND;
@@ -435,6 +444,12 @@ fn run_native(c: &mut Cpu, id: i32, from: i32) {
             c.pc = pc;
         }
     }
+    m!(c).sched.native_slices += 1;
+    run_native_loop(c, id);
+    m!(c).sched.native_slices -= 1;
+}
+
+fn run_native_loop(c: &mut Cpu, id: i32) {
     loop {
         if m!(c).kernel.current != id || m!(c).kernel.halted.is_some() {
             return;
