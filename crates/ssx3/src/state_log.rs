@@ -48,7 +48,18 @@ impl StateLog {
             };
             rec.extend_from_slice(&h.to_le_bytes());
         }
-        let _ = self.out.write_all(&rec);
+        if let Err(e) = self.out.write_all(&rec) {
+            eprintln!("SSX3_STATE_LOG: write failed: {e}");
+            std::process::exit(1);
+        }
+    }
+
+    /// Flush at exit; a log that cannot be written completely fails the run.
+    pub fn finish(mut self) {
+        if let Err(e) = self.out.flush() {
+            eprintln!("SSX3_STATE_LOG: flush failed: {e}");
+            std::process::exit(1);
+        }
     }
 }
 

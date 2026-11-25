@@ -1453,7 +1453,7 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             match m!(c).kernel.semas.get_mut(&id) {
                 Some(s) if s.count > 0 => {
                     s.count -= 1;
-                    if s.init == 1 && n == 0x45 {
+                    if s.init == 1 {
                         s.owner = Some(cur);
                         *m!(c).kernel.held.entry(cur).or_default() += 1;
                     }

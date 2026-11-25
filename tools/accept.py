@@ -13,9 +13,11 @@ next to them: DIR/state.bin, DIR/shots/frameNNNNN.png, DIR/ram.bin.
 the number of differing pages grows (a changed schedule shows as a few pages that
 differ for a while and then converge, a real divergence as pages that keep
 growing), and, for the screenshots, the mean absolute difference per frame.
-Exit status 0 when the RAM dumps are identical or when every screenshot is within
+Exit status 0 when both runs finished, logged the same frames, and every screenshot is within
 SHOT_TOL (mean absolute channel difference, default 2.0) and the last logged frame
-differs in no more than PAGE_TOL pages (default 64 of 8192).
+differs in no more than PAGE_TOL pages (default 64 of 8192); identical RAM does not
+skip the screenshot check. Missing screenshots, missing frames, a truncated log or
+a missing Pillow fail the comparison.
 Build first: cargo build --profile game -p ssx3 --bins.
 """
 import os
@@ -52,6 +54,8 @@ def read_log(path):
     assert b[:8] == b"SSX3STAT", path
     page, n = struct.unpack_from("<II", b, 8)
     rec = 4 + 8 * n
+    if (len(b) - 16) % rec:
+        sys.exit(f"{path}: truncated state log")
     out = {}
     for o in range(16, len(b) - rec + 1, rec):
         f = struct.unpack_from("<I", b, o)[0]
@@ -61,11 +65,17 @@ def read_log(path):
 
 def compare(a, b):
     ok = True
-    if open(os.path.join(a, "ram.bin"), "rb").read() == open(os.path.join(b, "ram.bin"), "rb").read():
-        print("RAM identical at exit")
-        return 0
+    for d in (a, b):
+        if not os.path.exists(os.path.join(d, "ram.bin")):
+            print(f"{d}: ram.bin missing (the run did not finish)")
+            return 1
+    ram_same = open(os.path.join(a, "ram.bin"), "rb").read() == open(os.path.join(b, "ram.bin"), "rb").read()
+    print("RAM identical at exit" if ram_same else "RAM differs at exit")
     page, n, la = read_log(os.path.join(a, "state.bin"))
     _, _, lb = read_log(os.path.join(b, "state.bin"))
+    if set(la) != set(lb):
+        print(f"logged frames differ: {len(set(la) ^ set(lb))} frames in only one recording")
+        ok = False
     frames = sorted(set(la) & set(lb))
     first = None
     last_diff = 0
@@ -91,12 +101,18 @@ def compare(a, b):
     try:
         from PIL import Image, ImageChops, ImageStat
     except ImportError:
-        print("PIL missing: screenshots not compared")
-        return 0 if ok else 1
+        print("PIL missing: screenshots cannot be compared (pip install pillow)")
+        return 1
     sa, sb = os.path.join(a, "shots"), os.path.join(b, "shots")
+    for name in sorted(os.listdir(sb)):
+        if not os.path.exists(os.path.join(sa, name)):
+            print(f"{name}: missing in {a}")
+            ok = False
     worst = 0.0
     for name in sorted(os.listdir(sa)):
         if not os.path.exists(os.path.join(sb, name)):
+            print(f"{name}: missing in {b}")
+            ok = False
             continue
         ia, ib = Image.open(os.path.join(sa, name)).convert("RGB"), Image.open(os.path.join(sb, name)).convert("RGB")
         if ia.size != ib.size:
@@ -109,6 +125,9 @@ def compare(a, b):
             print(f"{name}: mean abs diff {m:.2f} > {SHOT_TOL}")
             ok = False
     print(f"worst screenshot difference {worst:.2f} (tolerance {SHOT_TOL})")
+    if ram_same and ok:
+        print("ACCEPT: RAM identical, screenshots match")
+        return 0
     print("ACCEPT: equivalent" if ok else "ACCEPT FAILED")
     return 0 if ok else 1
 

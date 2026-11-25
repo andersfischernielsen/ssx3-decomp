@@ -49,7 +49,7 @@ pub fn run(plugins: Vec<Box<dyn ssx3_engine::ssx3_plugin::Plugin>>) {
     let shot_from: u64 = ssx3_core::config::var("SSX3_SHOT_FROM")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    // SSX3_STATE_LOG=path: per frame, a hash of every 64 KiB page of EE RAM (see
+    // SSX3_STATE_LOG=path: per frame, a hash of every 4 KiB page of EE RAM (see
     // `state_log`); SSX3_STATE_EVERY=N logs every Nth frame only.
     let mut state_log = ssx3_core::config::var("SSX3_STATE_LOG").and_then(|p| {
         let every = ssx3_core::config::var("SSX3_STATE_EVERY")
@@ -424,6 +424,9 @@ pub fn run(plugins: Vec<Box<dyn ssx3_engine::ssx3_plugin::Plugin>>) {
         scan("ram", &c.bus.ram);
         scan("vu1data", &ssx3_ps2::m!(c).hw.vu1.data);
         scan("spr", &c.bus.spr);
+    }
+    if let Some(log) = state_log.take() {
+        log.finish();
     }
     // Debug: SSX3_RAM_DUMP=path writes the 32 MiB of EE RAM at exit (compare
     // with a PCSX2 dump via tools/pine.py).
