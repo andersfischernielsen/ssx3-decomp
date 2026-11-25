@@ -39,7 +39,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees (addresses the generated body reaches through the function table).
 
 pub(crate) mod callee {
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_ADD_CHILD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_STATE_MGR_SWITCH_STATE;
 }
 
 /// `cFEStateRuleSelect* cFEStateRuleSelect_ctor(void* self)` (0x191360): the
@@ -117,7 +117,7 @@ pub fn c_fe_state_rider_bio_on_widget_action(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[A0][0] = c.lw(at(c, S0, 0x10));
                     c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x18));
-                    call_ptr(c, callee::UI_OBJECT_ADD_CHILD, 0x0019_133c)?;
+                    callee::UI_STATE_MGR_SWITCH_STATE.call(c, 0x0019_133c)?;
                     frame.restore(c, S0, 0x10);
                 }
             } else {
@@ -214,6 +214,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::{fake, fall_back, hook, FAKE, LOG_RESULTS};
     use crate::difftest::DATA;
     pub(crate) use crate::game::dirtysock::tagsunk::tests::w8;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base;
@@ -229,6 +230,8 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_14 as SEEDS_2;
     pub(crate) use crate::game::fe::festatecredits::tests::RET_ZERO;
     use ssx3_ee as ee;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn cfe_state_rule_select_ctor_matches() {
@@ -269,6 +272,70 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = if seed % 5 == 0 { 0 } else { sx(item) };
                 c.g[A2][0] = [6u64, 9, 0, 3][(seed % 4) as usize];
+            },
+        );
+    }
+
+    /// The gate for the widget-action-6 fake below: only machines holding the
+    /// magic at `RIDER_BIO_CTRL` take the fake.
+    pub(crate) const RIDER_BIO_CTRL: u32 = DATA + 0x0e_33a0;
+    pub(crate) const RIDER_BIO_MAGIC: u32 = 0x0019_1206;
+
+    static RIDER_BIO_PREV_SWITCH_STATE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `UIStateMgr_SwitchState` (0x39f400) logging which call the port made.
+    /// (`UIStateMgr_PushPopup`, the wrong callee, has no override slot, so on
+    /// the hand side its generated body runs instead of a fake.)
+    fn rider_bio_fake_switch_state(c: &mut Cpu) {
+        if c.bus.read32(RIDER_BIO_CTRL) != RIDER_BIO_MAGIC {
+            return fall_back(
+                c,
+                &RIDER_BIO_PREV_SWITCH_STATE,
+                ee::s13::f_0039f400__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fake(c, 0x0039_f400, ra);
+    }
+
+    /// Widget action 6 with a live rider-screen handler: the handler answers
+    /// a nonzero screen pointer, so the port must hand the screen to
+    /// `UIStateMgr_SwitchState`. The seeded slot of the existing test only
+    /// ever answers zero, so this arm never runs there.
+    #[test]
+    fn c_fe_state_rider_bio_on_widget_action_six_matches() {
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039F400),
+            rider_bio_fake_switch_state,
+            &RIDER_BIO_PREV_SWITCH_STATE,
+        );
+        check(
+            ee::s02::f_001912d0__generated,
+            c_fe_state_rider_bio_on_widget_action,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 0x1912, 0);
+                env(c);
+                c.bus.write32(RIDER_BIO_CTRL, RIDER_BIO_MAGIC);
+                // The handler answers a live screen pointer: forced fake
+                // result in zeroed fixture space, so the wrong-callee path
+                // the hand port takes is fixed and short.
+                c.bus.write32(LOG_RESULTS, DATA + 0x2000);
+                let this = DATA + 0x400;
+                let item = DATA + 0x800;
+                let engine = DATA + 0x1000;
+                let obj = DATA + 0x1100;
+                let vt = DATA + 0x1200;
+                slot(c, vt, 0x28, FAKE);
+                w32(c, this + 0x10, engine);
+                w32(c, engine, obj);
+                w32(c, obj + 4, vt);
+                w32(c, this + 0x28, DATA + 0x3000);
+                w8(c, item + 0x319, seed % 4);
+                w32(c, item + 0x18, seed % 8);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(item);
+                c.g[A2][0] = 6;
             },
         );
     }
