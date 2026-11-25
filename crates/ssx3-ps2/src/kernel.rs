@@ -300,14 +300,14 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
             m!(c).kernel.current = id;
             load_context(c, &ctx);
             if m!(c).kernel.trace_threads {
-                eprintln!("[thread] -> {id} at {:#010x}", ctx.pc);
+                eprintln!("[thread] {cur} -> {id} at {:#010x} cyc {}", ctx.pc, c.cycles);
             }
         }
         None => {
             m!(c).kernel.current = 0;
             c.pc = IDLE;
             if m!(c).kernel.trace_threads {
-                eprintln!("[thread] -> idle");
+                eprintln!("[thread] {cur} -> idle cyc {}", c.cycles);
             }
         }
     }
@@ -759,13 +759,15 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
     *m!(c).kernel.syscall_counts.entry(n).or_default() += 1;
     if m!(c).kernel.trace_syscalls {
         eprintln!(
-            "[sys] {}({n:#04x}) {:08x} {:08x} {:08x} {:08x} from {pc:#010x} thread {}",
+            "[sys] {}({n:#04x}) {:08x} {:08x} {:08x} {:08x} from {pc:#010x} thread {} ra {:08x} cyc {}",
             syscall_name(n),
             arg(c, 0),
             arg(c, 1),
             arg(c, 2),
             arg(c, 3),
-            m!(c).kernel.current
+            m!(c).kernel.current,
+            c.g[31][0] as u32,
+            c.cycles
         );
     }
     // Syscalls redirected with SetSyscall to translated game code.
