@@ -881,16 +881,21 @@ mod tests {
 
     #[test]
     fn wscriptman_pop_event_matches() {
-        check(ee::s10::f_0030d348__generated, wscriptman_pop_event, 60, &|c, seed| {
-            let mut r = Rng(0x0d34_8000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0030_d348;
-            c.g[A0][0] = DATA as u64;
-            // An empty queue (head == tail): the callee's early return.
-            let q = r.next_u32();
-            c.bus.write32(DATA + 0x1c4, q);
-            c.bus.write32(DATA + 0x1c8, q);
-        });
+        check(
+            ee::s10::f_0030d348__generated,
+            wscriptman_pop_event,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x0d34_8000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0030_d348;
+                c.g[A0][0] = DATA as u64;
+                // An empty queue (head == tail): the callee's early return.
+                let q = r.next_u32();
+                c.bus.write32(DATA + 0x1c4, q);
+                c.bus.write32(DATA + 0x1c8, q);
+            },
+        );
     }
 
     #[test]
@@ -1140,56 +1145,76 @@ mod tests {
     fn mdffile_load_matches() {
         oc560_hook_loadpack();
         oc560_hook_parse_header();
-        check(ee::s10::f_00314a60__generated, mdffile_load, 40, &|c, seed| {
-            let mut r = Rng(0x0031_4a60 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0031_4a60;
-            c.bus.write32(OC560_GATE, OC560_MAGIC);
-            c.g[A0][0] = (DATA + 0x100) as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = r.next_u32() as u64;
-        });
+        check(
+            ee::s10::f_00314a60__generated,
+            mdffile_load,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x0031_4a60 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_4a60;
+                c.bus.write32(OC560_GATE, OC560_MAGIC);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
     }
 
     #[test]
     fn mdffile_has_model_matches() {
-        check(ee::s10::f_00314ae0__generated, mdffile_has_model, 80, &|c, seed| {
-            let mut r = Rng(0x0031_4ae0 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0031_4ae0;
-            // Case-insensitive hits and misses.
-            let queries: [&[u8]; 4] = [b"BETA", b"gamma", b"delta", b"alpha"];
-            oc560_model_fixture(c, queries[(seed % 4) as usize]);
-            c.g[A0][0] = (DATA + 0x100) as u64;
-            c.g[A1][0] = (DATA + 0x400) as u64;
-        });
+        check(
+            ee::s10::f_00314ae0__generated,
+            mdffile_has_model,
+            80,
+            &|c, seed| {
+                let mut r = Rng(0x0031_4ae0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_4ae0;
+                // Case-insensitive hits and misses.
+                let queries: [&[u8]; 4] = [b"BETA", b"gamma", b"delta", b"alpha"];
+                oc560_model_fixture(c, queries[(seed % 4) as usize]);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x400) as u64;
+            },
+        );
     }
 
     #[test]
     fn mdffile_find_model_matches() {
-        check(ee::s10::f_00314b70__generated, mdffile_find_model, 80, &|c, seed| {
-            let mut r = Rng(0x0031_4b70 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0031_4b70;
-            let queries: [&[u8]; 4] = [b"Gamma", b"alpha", b"omega", b"BETA"];
-            oc560_model_fixture(c, queries[(seed % 4) as usize]);
-            c.g[A0][0] = (DATA + 0x100) as u64;
-            c.g[A1][0] = (DATA + 0x400) as u64;
-        });
+        check(
+            ee::s10::f_00314b70__generated,
+            mdffile_find_model,
+            80,
+            &|c, seed| {
+                let mut r = Rng(0x0031_4b70 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_4b70;
+                let queries: [&[u8]; 4] = [b"Gamma", b"alpha", b"omega", b"BETA"];
+                oc560_model_fixture(c, queries[(seed % 4) as usize]);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x400) as u64;
+            },
+        );
     }
 
     #[test]
     fn gameanimmap_dtor_matches() {
         oc560_hook_delete();
-        check(ee::s10::f_00314db0__generated, gameanimmap_dtor, 40, &|c, seed| {
-            let mut r = Rng(0x0031_4db0 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0031_4db0;
-            c.bus.write32(OC560_GATE, OC560_MAGIC);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-        });
+        check(
+            ee::s10::f_00314db0__generated,
+            gameanimmap_dtor,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x0031_4db0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_4db0;
+                c.bus.write32(OC560_GATE, OC560_MAGIC);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
     }
 
     #[test]

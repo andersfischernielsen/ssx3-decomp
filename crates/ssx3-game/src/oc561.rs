@@ -678,29 +678,39 @@ mod tests {
     #[test]
     fn input_map_free_matches() {
         oc561_install_fakes();
-        check(ee::s10::f_00320d08__generated, input_map_free, 96, &|c, seed| {
-            let mut r = Rng(0x0032_0d08 ^ seed as u64);
-            oc561_setup(c, &mut r);
-            c.g[A0][0] = sx(DATA);
-            c.bus
-                .write32(DATA + 4, if seed % 3 == 0 { 0 } else { DATA + 0x400 });
-            c.bus
-                .write32(DATA + 0x14, if seed % 2 == 0 { 0 } else { DATA + 0x800 });
-        });
+        check(
+            ee::s10::f_00320d08__generated,
+            input_map_free,
+            96,
+            &|c, seed| {
+                let mut r = Rng(0x0032_0d08 ^ seed as u64);
+                oc561_setup(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                c.bus
+                    .write32(DATA + 4, if seed % 3 == 0 { 0 } else { DATA + 0x400 });
+                c.bus
+                    .write32(DATA + 0x14, if seed % 2 == 0 { 0 } else { DATA + 0x800 });
+            },
+        );
     }
 
     #[test]
     fn input_map_parse_file_matches() {
         oc561_install_fakes();
-        check(ee::s10::f_00320d50__generated, input_map_parse_file, 96, &|c, seed| {
-            let mut r = Rng(0x0032_0d50 ^ seed as u64);
-            oc561_setup(c, &mut r);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x1000);
-            c.bus.write32(OC561_FILE_SIZE, DATA + 0x2000 + 16 * seed);
-            c.bus
-                .write32(OC561_FILE_V0, if seed % 3 == 0 { 0 } else { DATA + 0x3000 });
-        });
+        check(
+            ee::s10::f_00320d50__generated,
+            input_map_parse_file,
+            96,
+            &|c, seed| {
+                let mut r = Rng(0x0032_0d50 ^ seed as u64);
+                oc561_setup(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x1000);
+                c.bus.write32(OC561_FILE_SIZE, DATA + 0x2000 + 16 * seed);
+                c.bus
+                    .write32(OC561_FILE_V0, if seed % 3 == 0 { 0 } else { DATA + 0x3000 });
+            },
+        );
     }
 
     #[test]
@@ -807,36 +817,41 @@ mod tests {
 
     #[test]
     fn rle_decode_matches() {
-        check(ee::s10::f_0032b620__generated, rle_decode, 200, &|c, seed| {
-            let mut r = Rng(0x0032_b620 ^ seed as u64);
-            scramble(c, &mut r);
-            let src = DATA + 0x1000;
-            let mut at = src;
-            if seed % 6 == 0 {
-                c.g[A1][0] = 0;
-            } else {
-                c.g[A1][0] = sx(src);
-                let segments = 1 + r.next_u32() % 6;
-                for _ in 0..segments {
-                    if r.next_u32() & 1 == 0 {
-                        // Repeat run: header 0..127, then the byte to repeat.
-                        c.bus.write8(at, (1 + r.next_u32() % 40) as u8);
-                        c.bus.write8(at + 1, r.next_u32() as u8);
-                        at += 2;
-                    } else {
-                        // Literal run: header -n, then n bytes.
-                        let n = 1 + r.next_u32() % 20;
-                        c.bus.write8(at, (256 - n) as u8);
-                        at += 1;
-                        for _ in 0..n {
-                            c.bus.write8(at, r.next_u32() as u8);
+        check(
+            ee::s10::f_0032b620__generated,
+            rle_decode,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0032_b620 ^ seed as u64);
+                scramble(c, &mut r);
+                let src = DATA + 0x1000;
+                let mut at = src;
+                if seed % 6 == 0 {
+                    c.g[A1][0] = 0;
+                } else {
+                    c.g[A1][0] = sx(src);
+                    let segments = 1 + r.next_u32() % 6;
+                    for _ in 0..segments {
+                        if r.next_u32() & 1 == 0 {
+                            // Repeat run: header 0..127, then the byte to repeat.
+                            c.bus.write8(at, (1 + r.next_u32() % 40) as u8);
+                            c.bus.write8(at + 1, r.next_u32() as u8);
+                            at += 2;
+                        } else {
+                            // Literal run: header -n, then n bytes.
+                            let n = 1 + r.next_u32() % 20;
+                            c.bus.write8(at, (256 - n) as u8);
                             at += 1;
+                            for _ in 0..n {
+                                c.bus.write8(at, r.next_u32() as u8);
+                                at += 1;
+                            }
                         }
                     }
+                    c.bus.write8(at, 0);
                 }
-                c.bus.write8(at, 0);
-            }
-            c.g[A0][0] = sx(DATA + 0x20000);
-        });
+                c.g[A0][0] = sx(DATA + 0x20000);
+            },
+        );
     }
 }

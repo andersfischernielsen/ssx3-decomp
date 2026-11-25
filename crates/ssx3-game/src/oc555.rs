@@ -737,40 +737,55 @@ mod tests {
     #[test]
     fn game_link_free_matches() {
         oc555_setup_fakes();
-        check(ee::s08::f_002c28f8__generated, game_link_free, 200, &|c, seed| {
-            let mut r = oc555_gate(c, seed, 0x2c28f8, u32::MAX);
-            c.pc = 0x002c_28f8;
-            c.g[A0][0] = sx(fakes::ptr(&mut r));
-        });
+        check(
+            ee::s08::f_002c28f8__generated,
+            game_link_free,
+            200,
+            &|c, seed| {
+                let mut r = oc555_gate(c, seed, 0x2c28f8, u32::MAX);
+                c.pc = 0x002c_28f8;
+                c.g[A0][0] = sx(fakes::ptr(&mut r));
+            },
+        );
     }
 
     #[test]
     fn game_link_mem_copy_matches() {
         oc555_setup_fakes();
-        check(ee::s08::f_002c2918__generated, game_link_mem_copy, 200, &|c, seed| {
-            let mut r = oc555_gate(c, seed, 0x2c2918, u32::MAX);
-            c.pc = 0x002c_2918;
-            c.g[A0][0] = sx(fakes::ptr(&mut r));
-        });
+        check(
+            ee::s08::f_002c2918__generated,
+            game_link_mem_copy,
+            200,
+            &|c, seed| {
+                let mut r = oc555_gate(c, seed, 0x2c2918, u32::MAX);
+                c.pc = 0x002c_2918;
+                c.g[A0][0] = sx(fakes::ptr(&mut r));
+            },
+        );
     }
 
     #[test]
     fn game_link_realloc_matches() {
         oc555_setup_fakes();
-        check(ee::s08::f_002c2940__generated, game_link_realloc, 300, &|c, seed| {
-            let zero_at = [u32::MAX, 0, 1, 2][(seed % 4) as usize];
-            let mut r = oc555_gate(c, seed, 0x2c2940, zero_at);
-            c.pc = 0x002c_2940;
-            // block: null on a third of the seeds; size: zero on a quarter.
-            let block = if seed % 3 == 0 { 0 } else { fakes::ptr(&mut r) };
-            let size = if seed % 4 == 0 {
-                0
-            } else {
-                1 + r.next_u32() % 0x1000
-            };
-            c.g[A0][0] = sx(block);
-            c.g[A2][0] = sx(size);
-        });
+        check(
+            ee::s08::f_002c2940__generated,
+            game_link_realloc,
+            300,
+            &|c, seed| {
+                let zero_at = [u32::MAX, 0, 1, 2][(seed % 4) as usize];
+                let mut r = oc555_gate(c, seed, 0x2c2940, zero_at);
+                c.pc = 0x002c_2940;
+                // block: null on a third of the seeds; size: zero on a quarter.
+                let block = if seed % 3 == 0 { 0 } else { fakes::ptr(&mut r) };
+                let size = if seed % 4 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 0x1000
+                };
+                c.g[A0][0] = sx(block);
+                c.g[A2][0] = sx(size);
+            },
+        );
     }
 
     #[test]
@@ -817,10 +832,15 @@ mod tests {
     #[test]
     fn game_link_yield_matches() {
         oc555_setup_fakes();
-        check(ee::s08::f_002c2b08__generated, game_link_yield, 100, &|c, seed| {
-            let _r = oc555_gate(c, seed, 0x2c2b08, u32::MAX);
-            c.pc = 0x002c_2b08;
-        });
+        check(
+            ee::s08::f_002c2b08__generated,
+            game_link_yield,
+            100,
+            &|c, seed| {
+                let _r = oc555_gate(c, seed, 0x2c2b08, u32::MAX);
+                c.pc = 0x002c_2b08;
+            },
+        );
     }
 
     #[test]
@@ -951,36 +971,71 @@ mod tests {
 
     #[test]
     fn wscript_process_v07_matches() {
-        wscript_check(ee::s10::f_00307a60__generated, wscript_process_v07, 0x307a60, 0x34);
+        wscript_check(
+            ee::s10::f_00307a60__generated,
+            wscript_process_v07,
+            0x307a60,
+            0x34,
+        );
     }
 
     #[test]
     fn wscript_process_v08_matches() {
-        wscript_check(ee::s10::f_00307a90__generated, wscript_process_v08, 0x307a90, 0x38);
+        wscript_check(
+            ee::s10::f_00307a90__generated,
+            wscript_process_v08,
+            0x307a90,
+            0x38,
+        );
     }
 
     #[test]
     fn wscript_process_v09_matches() {
-        wscript_check(ee::s10::f_00307ac0__generated, wscript_process_v09, 0x307ac0, 0x3c);
+        wscript_check(
+            ee::s10::f_00307ac0__generated,
+            wscript_process_v09,
+            0x307ac0,
+            0x3c,
+        );
     }
 
     #[test]
     fn wscript_process_v10_matches() {
-        wscript_check(ee::s10::f_00307af0__generated, wscript_process_v10, 0x307af0, 0x40);
+        wscript_check(
+            ee::s10::f_00307af0__generated,
+            wscript_process_v10,
+            0x307af0,
+            0x40,
+        );
     }
 
     #[test]
     fn wscript_process_v11_matches() {
-        wscript_check(ee::s10::f_00307b20__generated, wscript_process_v11, 0x307b20, 0x44);
+        wscript_check(
+            ee::s10::f_00307b20__generated,
+            wscript_process_v11,
+            0x307b20,
+            0x44,
+        );
     }
 
     #[test]
     fn wscript_process_v12_matches() {
-        wscript_check(ee::s10::f_00307b50__generated, wscript_process_v12, 0x307b50, 0x48);
+        wscript_check(
+            ee::s10::f_00307b50__generated,
+            wscript_process_v12,
+            0x307b50,
+            0x48,
+        );
     }
 
     #[test]
     fn wscript_process_v13_matches() {
-        wscript_check(ee::s10::f_00307b80__generated, wscript_process_v13, 0x307b80, 0x4c);
+        wscript_check(
+            ee::s10::f_00307b80__generated,
+            wscript_process_v13,
+            0x307b80,
+            0x4c,
+        );
     }
 }

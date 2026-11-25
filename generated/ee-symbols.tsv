@@ -8218,7 +8218,7 @@ s10	00307568	00307594	-	WScriptMission_v20
 s10	00307598	00307738	o	WScriptProcess_ctor
 s10	00307738	003077f8	o	WScriptProcess_dtor
 s10	003077f8	003078bc	o	WScriptProcess_Update
-s10	003078c0	003079d4	e	WScriptProcess_DispatchEvent
+s10	003078c0	003079d4	oe	WScriptProcess_DispatchEvent
 s10	003079d8	00307a0c	o	WScriptProcess_GetCurrentTaskId
 s10	00307a10	00307a60	o	WScriptProcess_ForwardEventToTask
 s10	00307a60	00307a8c	o	WScriptProcess_v07
@@ -8245,7 +8245,7 @@ s10	00308118	00308228	-	WScriptProcess_LoadState
 s10	00308228	00308274	o	WScriptTask_ctor
 s10	00308278	00308328	o	WScriptTask_Init
 s10	00308328	003083a0	o	WScriptTask_Update
-s10	003083a0	003084cc	e	WScriptTask_HandleEvent
+s10	003083a0	003084cc	oe	WScriptTask_HandleEvent
 s10	003084d0	003084fc	o	WScriptTask_v07
 s10	00308500	0030852c	o	WScriptTask_v08
 s10	00308530	0030855c	o	WScriptTask_v09
@@ -8785,7 +8785,7 @@ s10	00321428	003214fc	o	InputParser_ctor
 s10	00321500	00321590	o	InputParser_Error
 s10	00321590	003215f8	o	InputParser_SkipStatement
 s10	003215f8	00321638	o	InputParser_AllocNode
-s10	00321638	003216e8	e	InputParser_FreeNode
+s10	00321638	003216e8	oe	InputParser_FreeNode
 s10	003216e8	003217d0	o	InputParser_LookupButton
 s10	003217d0	00321880	o	InputParser_LookupModifier
 s10	00321880	00321a40	oe	InputParser_LookupBuiltinName
@@ -8856,7 +8856,7 @@ s10	00327c00	00327c64	o	AIFwdDiffCache_BuildEntry
 s10	00327c68	00327cc4	o	AIFwdDiffCache_ResetEntries
 s10	00327cc8	00327da8	o	RollerModifier_CopyMatrixBlock
 s10	00327da8	00327f14	o	cPS2ChunkResolve_ParseHeader
-s10	00327f18	00328030	-	RiderSphereTree_CollideSphereTree
+s10	00327f18	00328030	o	RiderSphereTree_CollideSphereTree
 s10	00328030	0032816c	o	SphereTree_CollideTriangle2Sided
 s10	00328170	003281cc	-	SphereTree_WalkLevels
 s10	003281d0	0032835c	-	SphereTree_WalkLevelsRecursive
@@ -8910,7 +8910,7 @@ s11	0032da40	0032db3c	o	ShellSortDesc_KeyVal
 s11	0032db40	0032dc0c	-	SphereTree_SortChildOrder
 s11	0032dc10	0032de1c	o	World_InitSphereTreeCache
 s11	0032de20	0032df28	o	World_FreeSphereTreeCache
-s11	0032df28	0032e100	-	SphereTreeCache_GetMasks
+s11	0032df28	0032e100	o	SphereTreeCache_GetMasks
 s11	0032e100	0032e284	o	CollSegment_ctor
 s11	0032e288	0032e394	o	CollSegment_OverlapsAABB
 s11	0032e398	0032e4b4	-	CollSegment_Transform
@@ -9049,7 +9049,7 @@ s11	00343a68	00343b28	o	CrowdMan3d_ctor
 s11	00343b28	00343bbc	o	CrowdMan3d_dtor
 s11	00343bc0	00343c08	o	CrowdMan3d_Reset
 s11	00343c08	00343c60	o	CrowdMan3d_RemoveSection
-s11	00343c60	00343f34	-	CrowdMan3d_AddInstance
+s11	00343c60	00343f34	o	CrowdMan3d_AddInstance
 s11	00343f38	003440c4	-	CrowdMan3d_RemoveInstance
 s11	003440c8	00344138	o	CrowdMan3d_Update
 s11	00344138	003441a8	o	CrowdMan3d_Render

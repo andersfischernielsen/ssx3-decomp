@@ -8629,6 +8629,13 @@
 0x0032d208    SphereTree_CollidePlaneNode
 0x00341388    cBoostNode_cBoostNode1
 0x00341818    cBoostNode_applyBoost
+# Phase 2 wave: oc574, oc575, oc576, oc577, oc578, oc579, oc580, oc581
+0x00343c60    CrowdMan3d_AddInstance
+0x003078c0    WScriptProcess_DispatchEvent
+0x003083a0    WScriptTask_HandleEvent
+0x0032df28    SphereTreeCache_GetMasks
+0x00321638    InputParser_FreeNode
+0x00327f18    RiderSphereTree_CollideSphereTree
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

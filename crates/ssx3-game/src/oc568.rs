@@ -765,9 +765,12 @@ mod tests {
 
     #[test]
     fn rle_encode_matches() {
-        check(ee::s10::f_0032b468__generated, rle_encode, 300, &|c, seed| {
-            rle_setup(c, seed)
-        });
+        check(
+            ee::s10::f_0032b468__generated,
+            rle_encode,
+            300,
+            &|c, seed| rle_setup(c, seed),
+        );
     }
 
     /// The transform's self (axes, centre, scale), its tree info (root centre)

@@ -1211,32 +1211,37 @@ mod tests {
 
     #[test]
     fn script_movie_start_matches() {
-        check(ee::s07::f_002839a8__generated, script_movie_start, 300, &|c, seed| {
-            let mut r = oc554_gate_on(c, seed, 0x554_0011);
-            let movie = DATA + 0x7000;
-            let grman = DATA + 0x5000;
-            let vt = DATA + 0x6400;
-            let world = DATA + 0x5400;
-            let game = DATA + 0x5800;
-            let cut = DATA + 0x5c00;
-            c.bus
-                .write32(movie, if seed % 5 == 0 { 0 } else { DATA + 0x7100 });
-            c.bus
-                .write32(movie + 0x4, if seed % 3 == 0 { 1 } else { 0 });
-            c.bus.write32(movie + 0x14, r.next_u32());
-            c.bus.write32(GAME_GP - 0x854, grman);
-            c.bus.write32(grman + 0x10d8, vt);
-            c.bus.write16(vt + 0x140, 0x20);
-            c.bus.write32(vt + 0x144, fakes::FAKE);
-            c.bus.write16(vt + 0x150, 0x10);
-            c.bus.write32(vt + 0x154, fakes::FAKE);
-            c.bus.write32(GAME_GP - 0x848, world);
-            c.bus.write32(world + 0x84, game);
-            c.bus.write32(game + 0x64, cut);
-            c.bus.write32(cut + 0x10, seed % 4);
-            c.bus.write32(GAME_GP - 0x69c, seed % 4);
-            c.g[A0][0] = movie as u64;
-        });
+        check(
+            ee::s07::f_002839a8__generated,
+            script_movie_start,
+            300,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0011);
+                let movie = DATA + 0x7000;
+                let grman = DATA + 0x5000;
+                let vt = DATA + 0x6400;
+                let world = DATA + 0x5400;
+                let game = DATA + 0x5800;
+                let cut = DATA + 0x5c00;
+                c.bus
+                    .write32(movie, if seed % 5 == 0 { 0 } else { DATA + 0x7100 });
+                c.bus
+                    .write32(movie + 0x4, if seed % 3 == 0 { 1 } else { 0 });
+                c.bus.write32(movie + 0x14, r.next_u32());
+                c.bus.write32(GAME_GP - 0x854, grman);
+                c.bus.write32(grman + 0x10d8, vt);
+                c.bus.write16(vt + 0x140, 0x20);
+                c.bus.write32(vt + 0x144, fakes::FAKE);
+                c.bus.write16(vt + 0x150, 0x10);
+                c.bus.write32(vt + 0x154, fakes::FAKE);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0x64, cut);
+                c.bus.write32(cut + 0x10, seed % 4);
+                c.bus.write32(GAME_GP - 0x69c, seed % 4);
+                c.g[A0][0] = movie as u64;
+            },
+        );
     }
 
     #[test]
@@ -1261,9 +1266,24 @@ mod tests {
             // bit 0 (free the object) on every other seed
             c.g[A1][0] = ((r.next_u32() & !1) | (seed & 1)) as u64;
         };
-        check(ee::s07::f_002848d8__generated, script_dummy_obj_dtor, 100, &setup);
-        check(ee::s07::f_00284950__generated, script_audio_obj_dtor, 100, &setup);
-        check(ee::s07::f_00284ae8__generated, rider_script_obj_dtor, 100, &setup);
+        check(
+            ee::s07::f_002848d8__generated,
+            script_dummy_obj_dtor,
+            100,
+            &setup,
+        );
+        check(
+            ee::s07::f_00284950__generated,
+            script_audio_obj_dtor,
+            100,
+            &setup,
+        );
+        check(
+            ee::s07::f_00284ae8__generated,
+            rider_script_obj_dtor,
+            100,
+            &setup,
+        );
     }
 
     #[test]
@@ -1273,7 +1293,12 @@ mod tests {
             c.g[A0][0] = (DATA + 0xd200) as u64;
             c.g[A1][0] = r.next_u32() as u64;
         };
-        check(ee::s07::f_00284a28__generated, script_obj_cam_dtor, 100, &setup);
+        check(
+            ee::s07::f_00284a28__generated,
+            script_obj_cam_dtor,
+            100,
+            &setup,
+        );
         check(
             ee::s07::f_00284aa8__generated,
             c_transition_man_script_dtor,
@@ -1298,22 +1323,32 @@ mod tests {
 
     #[test]
     fn game_link_get_ticks_matches() {
-        check(ee::s08::f_002c28a0__generated, game_link_get_ticks, 100, &|c, seed| {
-            let mut r = oc554_gate_on(c, seed, 0x554_0015);
-            let _ = r.next_u32();
-        });
+        check(
+            ee::s08::f_002c28a0__generated,
+            game_link_get_ticks,
+            100,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0015);
+                let _ = r.next_u32();
+            },
+        );
     }
 
     #[test]
     fn game_link_alloc_matches() {
-        check(ee::s08::f_002c28c0__generated, game_link_alloc, 200, &|c, seed| {
-            let mut r = oc554_gate_on(c, seed, 0x554_0016);
-            c.g[A1][0] = (r.next_u32() % 0x1000) as u64;
-            c.g[A2][0] = if seed % 2 == 0 {
-                0
-            } else {
-                (r.next_u32() as u64) | 1
-            };
-        });
+        check(
+            ee::s08::f_002c28c0__generated,
+            game_link_alloc,
+            200,
+            &|c, seed| {
+                let mut r = oc554_gate_on(c, seed, 0x554_0016);
+                c.g[A1][0] = (r.next_u32() % 0x1000) as u64;
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    (r.next_u32() as u64) | 1
+                };
+            },
+        );
     }
 }

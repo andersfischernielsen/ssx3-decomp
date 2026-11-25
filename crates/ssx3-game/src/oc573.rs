@@ -469,37 +469,42 @@ mod tests {
 
     #[test]
     fn boost_node_ctor_matches() {
-        check(ee::s11::f_00341388__generated, boost_node_ctor, 300, &|c, seed| {
-            let mut r = alloc_base_3(c, seed, 0x34_1388, 0);
-            c.pc = 0x0034_1388;
-            c.g[GP][0] = GAME_GP as u64;
-            let this = DATA + 0x4000;
-            let def = DATA + 0x5000;
-            let instance = DATA + 0x6000;
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = sx(DATA + 0x8000);
-            c.g[A2][0] = (seed % 3) as u64;
-            c.g[A3][0] = sx(instance);
-            c.g[T0][0] = sx(def);
-            fill(c, &mut r, this, 16);
-            fill(c, &mut r, instance, 32);
-            c.bus.write32(GAME_GP + GP_APP_MAN, APP_MAN);
-            c.bus.write32(APP_MAN + APP_MAN_TIMER_HZ, 30 + seed % 40);
-            c.bus
-                .write32(GAME_GP - GP_SPEED_SCALE, SPEED_SCALE.to_bits());
-            put_vec(c, T4VECT_ZERO, [0, 0, 0, 0]);
-            put_vec(c, T4VECT_Y_AXIS, [0, 1.0f32.to_bits(), 0, 0]);
-            // Type 0, 1 or 2 (type 2 is the reversed, transformed boost).
-            c.bus
-                .write16(def + DEF_TYPE, [0u16, 2, 1][seed as usize % 3]);
-            c.bus.write32(def + DEF_BOOST_TIME, r.f32(20.0));
-            c.bus.write32(def + DEF_DRAG, r.f32(2.0));
-            c.bus.write32(def + DEF_MAX_SPEED, r.f32(50.0));
-            let [x, y, z] = boost_dir(&mut r, seed % 6);
-            c.bus.write32(def + DEF_BOOST_X, x);
-            c.bus.write32(def + DEF_BOOST_Y, y);
-            c.bus.write32(def + DEF_BOOST_Z, z);
-        });
+        check(
+            ee::s11::f_00341388__generated,
+            boost_node_ctor,
+            300,
+            &|c, seed| {
+                let mut r = alloc_base_3(c, seed, 0x34_1388, 0);
+                c.pc = 0x0034_1388;
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA + 0x4000;
+                let def = DATA + 0x5000;
+                let instance = DATA + 0x6000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x8000);
+                c.g[A2][0] = (seed % 3) as u64;
+                c.g[A3][0] = sx(instance);
+                c.g[T0][0] = sx(def);
+                fill(c, &mut r, this, 16);
+                fill(c, &mut r, instance, 32);
+                c.bus.write32(GAME_GP + GP_APP_MAN, APP_MAN);
+                c.bus.write32(APP_MAN + APP_MAN_TIMER_HZ, 30 + seed % 40);
+                c.bus
+                    .write32(GAME_GP - GP_SPEED_SCALE, SPEED_SCALE.to_bits());
+                put_vec(c, T4VECT_ZERO, [0, 0, 0, 0]);
+                put_vec(c, T4VECT_Y_AXIS, [0, 1.0f32.to_bits(), 0, 0]);
+                // Type 0, 1 or 2 (type 2 is the reversed, transformed boost).
+                c.bus
+                    .write16(def + DEF_TYPE, [0u16, 2, 1][seed as usize % 3]);
+                c.bus.write32(def + DEF_BOOST_TIME, r.f32(20.0));
+                c.bus.write32(def + DEF_DRAG, r.f32(2.0));
+                c.bus.write32(def + DEF_MAX_SPEED, r.f32(50.0));
+                let [x, y, z] = boost_dir(&mut r, seed % 6);
+                c.bus.write32(def + DEF_BOOST_X, x);
+                c.bus.write32(def + DEF_BOOST_Y, y);
+                c.bus.write32(def + DEF_BOOST_Z, z);
+            },
+        );
     }
 
     #[test]

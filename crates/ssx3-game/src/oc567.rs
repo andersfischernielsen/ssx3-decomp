@@ -808,16 +808,21 @@ mod tests {
 
     #[test]
     fn debounce_v36_matches() {
-        check(ssx3_ee::s11::f_00342e78__generated, debounce_v36, 100, &|c, seed| {
-            let mut r = Rng(0x0034_2e78 ^ seed as u64);
-            scramble(c, &mut r);
-            let obj = DATA + 0x1000 + (r.next_u32() & 0xff0);
-            // ModifierBlock empty: the move node's signal returns at once.
-            c.bus.write32(obj + 0x1c, 0);
-            c.pc = 0x0034_2e78;
-            c.g[A0][0] = sx(obj);
-            c.g[RA][0] = sx(SENTINEL);
-        });
+        check(
+            ssx3_ee::s11::f_00342e78__generated,
+            debounce_v36,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0034_2e78 ^ seed as u64);
+                scramble(c, &mut r);
+                let obj = DATA + 0x1000 + (r.next_u32() & 0xff0);
+                // ModifierBlock empty: the move node's signal returns at once.
+                c.bus.write32(obj + 0x1c, 0);
+                c.pc = 0x0034_2e78;
+                c.g[A0][0] = sx(obj);
+                c.g[RA][0] = sx(SENTINEL);
+            },
+        );
     }
 
     #[test]

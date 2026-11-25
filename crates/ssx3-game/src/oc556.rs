@@ -272,30 +272,42 @@ mod tests {
 
     #[test]
     fn wscript_process_v14_matches() {
-        check(ee::s10::f_00307bb0__generated, wscript_process_v14, 300, &|c, seed| {
-            wscript_process_setup(c, seed, 0x50)
-        });
+        check(
+            ee::s10::f_00307bb0__generated,
+            wscript_process_v14,
+            300,
+            &|c, seed| wscript_process_setup(c, seed, 0x50),
+        );
     }
 
     #[test]
     fn wscript_process_v15_matches() {
-        check(ee::s10::f_00307be0__generated, wscript_process_v15, 300, &|c, seed| {
-            wscript_process_setup(c, seed, 0x54)
-        });
+        check(
+            ee::s10::f_00307be0__generated,
+            wscript_process_v15,
+            300,
+            &|c, seed| wscript_process_setup(c, seed, 0x54),
+        );
     }
 
     #[test]
     fn wscript_process_v16_matches() {
-        check(ee::s10::f_00307c10__generated, wscript_process_v16, 300, &|c, seed| {
-            wscript_process_setup(c, seed, 0x58)
-        });
+        check(
+            ee::s10::f_00307c10__generated,
+            wscript_process_v16,
+            300,
+            &|c, seed| wscript_process_setup(c, seed, 0x58),
+        );
     }
 
     #[test]
     fn wscript_process_v05_matches() {
-        check(ee::s10::f_00307d00__generated, wscript_process_v05, 300, &|c, seed| {
-            wscript_process_setup(c, seed, 0x2c)
-        });
+        check(
+            ee::s10::f_00307d00__generated,
+            wscript_process_v05,
+            300,
+            &|c, seed| wscript_process_setup(c, seed, 0x2c),
+        );
     }
 
     #[test]
@@ -321,72 +333,102 @@ mod tests {
 
     #[test]
     fn wscript_task_v07_matches() {
-        check(ee::s10::f_003084d0__generated, wscript_task_v07, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x14)
-        });
+        check(
+            ee::s10::f_003084d0__generated,
+            wscript_task_v07,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x14),
+        );
     }
 
     #[test]
     fn wscript_task_v08_matches() {
-        check(ee::s10::f_00308500__generated, wscript_task_v08, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x18)
-        });
+        check(
+            ee::s10::f_00308500__generated,
+            wscript_task_v08,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x18),
+        );
     }
 
     #[test]
     fn wscript_task_v09_matches() {
-        check(ee::s10::f_00308530__generated, wscript_task_v09, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x1c)
-        });
+        check(
+            ee::s10::f_00308530__generated,
+            wscript_task_v09,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x1c),
+        );
     }
 
     #[test]
     fn wscript_task_v10_matches() {
-        check(ee::s10::f_00308560__generated, wscript_task_v10, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x20)
-        });
+        check(
+            ee::s10::f_00308560__generated,
+            wscript_task_v10,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x20),
+        );
     }
 
     #[test]
     fn wscript_task_v11_matches() {
-        check(ee::s10::f_00308590__generated, wscript_task_v11, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x24)
-        });
+        check(
+            ee::s10::f_00308590__generated,
+            wscript_task_v11,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x24),
+        );
     }
 
     #[test]
     fn wscript_task_v12_matches() {
-        check(ee::s10::f_003085c0__generated, wscript_task_v12, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x28)
-        });
+        check(
+            ee::s10::f_003085c0__generated,
+            wscript_task_v12,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x28),
+        );
     }
 
     #[test]
     fn wscript_task_v13_matches() {
-        check(ee::s10::f_003085f0__generated, wscript_task_v13, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x2c)
-        });
+        check(
+            ee::s10::f_003085f0__generated,
+            wscript_task_v13,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x2c),
+        );
     }
 
     #[test]
     fn wscript_task_v14_matches() {
-        check(ee::s10::f_00308620__generated, wscript_task_v14, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x30)
-        });
+        check(
+            ee::s10::f_00308620__generated,
+            wscript_task_v14,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x30),
+        );
     }
 
     #[test]
     fn wscript_task_v15_matches() {
-        check(ee::s10::f_00308650__generated, wscript_task_v15, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x34)
-        });
+        check(
+            ee::s10::f_00308650__generated,
+            wscript_task_v15,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x34),
+        );
     }
 
     #[test]
     fn wscript_task_v16_matches() {
-        check(ee::s10::f_00308680__generated, wscript_task_v16, 300, &|c, seed| {
-            wscript_task_setup(c, seed, 0x38)
-        });
+        check(
+            ee::s10::f_00308680__generated,
+            wscript_task_v16,
+            300,
+            &|c, seed| wscript_task_setup(c, seed, 0x38),
+        );
     }
 
     #[test]

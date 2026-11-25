@@ -184,17 +184,22 @@ mod tests {
 
     #[test]
     fn vec3_neg_dot_matches() {
-        check(ssx3_ee::s11::f_003300f8__generated, vec3_neg_dot, 200, &|c, seed| {
-            let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ seed as u64);
-            scramble(c, &mut r);
-            c.pc = 0x0033_00f8;
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x20);
-            for k in 0..4u32 {
-                c.bus.write32(DATA + 4 * k, r.f32(100.0));
-                c.bus.write32(DATA + 0x20 + 4 * k, r.f32(100.0));
-            }
-        });
+        check(
+            ssx3_ee::s11::f_003300f8__generated,
+            vec3_neg_dot,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0033_00f8;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x20);
+                for k in 0..4u32 {
+                    c.bus.write32(DATA + 4 * k, r.f32(100.0));
+                    c.bus.write32(DATA + 0x20 + 4 * k, r.f32(100.0));
+                }
+            },
+        );
     }
 
     /// The callback the segment test calls: a real leaf that returns 0.
