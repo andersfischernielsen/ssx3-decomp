@@ -7,8 +7,11 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::gp_7 as gp;
@@ -20,14 +23,24 @@ pub(crate) use crate::game::fe::feasyncfile::p as p_7;
 pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::object::instancenode::ui_vector_lw;
 pub(crate) use crate::game::object::movenode::AVALANCHE_GRMAN_GP;
+use crate::game::object::movenode::IDENTITY_MATRIX;
 pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
 pub(crate) use crate::game::render::graphicsman::RegMem;
+pub(crate) use crate::game::render::lightman::LIGHT_MAN_INSTANCES;
 pub(crate) use crate::game::render::particle::copy_mat;
+use crate::game::render::particle::man;
 pub(crate) use crate::game::render::particle::p_2 as p;
+use crate::game::render::particle::renderer_fields;
+#[cfg(test)]
+use crate::game::render::particle::GM_FOG_MODE;
+#[cfg(test)]
+use crate::game::render::particle::GM_LIGHTS;
 pub(crate) use crate::game::sound::bankmonitor::p as p_2;
 pub(crate) use crate::game::wscript::wscriptman::p as p_3;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use callee::*;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::call_indirect;
@@ -198,6 +211,53 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         font_draw_text_right_varargs,
         "Font_DrawTextRightVarargs",
     ),
+    (
+        0x0039_3048,
+        renderer_static_init_destroy,
+        "Renderer_StaticInitDestroy",
+    ),
+    (0x0039_4c68, light_man_dtor_wrapper, "LightMan_dtor_Wrapper"),
+    (0x0039_4c88, light_man_get_instance, "LightMan_GetInstance"),
+    (
+        0x0039_4d10,
+        light_man_reset_counter,
+        "LightMan_ResetCounter",
+    ),
+    (0x0039_4d30, light_man_v08, "LightMan_v08"),
+    (0x0039_4d38, light_man_v13, "LightMan_v13"),
+    (0x0039_4d40, light_man_v14, "LightMan_v14"),
+    (0x0039_4d48, light_man_v15, "LightMan_v15"),
+    (
+        0x0039_6108,
+        c_ps2_grid_mesh_is_valid,
+        "cPS2GridMesh_IsValid",
+    ),
+    (0x0039_70f8, renderer_global_ctors, "Renderer_GlobalCtors"),
+    (0x0039_7118, renderer_global_dtors, "Renderer_GlobalDtors"),
+    (0x0039_5268, ps2_graphics_man_dtor, "PS2GraphicsMan_dtor"),
+    (
+        0x0039_5318,
+        ps2_graphics_man_get_display_mode_count,
+        "PS2GraphicsMan_GetDisplayModeCount",
+    ),
+    (
+        0x0039_5320,
+        ps2_graphics_man_is_progressive,
+        "PS2GraphicsMan_IsProgressive",
+    ),
+    (
+        0x0039_5328,
+        ps2_graphics_man_get_display_mode_index,
+        "PS2GraphicsMan_GetDisplayModeIndex",
+    ),
+    (
+        0x0039_5500,
+        ps2_graphics_man_get_lighting,
+        "PS2GraphicsMan_GetLighting",
+    ),
+    (0x0039_56e0, ps2_graphics_man_v98, "PS2GraphicsMan_v98"),
+    (0x0039_5750, ps2_graphics_man_v33, "PS2GraphicsMan_v33"),
+    (0x0039_5fa0, ps2_graphics_man_v68, "PS2GraphicsMan_v68"),
     (0x0039_5288, ps2_graphics_man_ctor, "PS2GraphicsMan_ctor"),
     (
         0x0039_53b0,
@@ -290,7 +350,40 @@ pub(crate) mod trail {
 
 pub(crate) mod callee {
 
+    use super::{ee, Callee};
     pub(crate) use crate::game::fe::festateload::callee::EA_MEM_FREE;
+
+    pub(crate) use crate::game::lib::sif::callee::MEMSET;
+
+    pub(crate) use crate::game::render::lightman::callee::LIGHT_MAN_DTOR;
+
+    pub(crate) use crate::game::render::particle::callee::RENDERER_STATIC_INIT_DESTROY;
+
+    /// `Rand_GetDefaultState(state)`: copy the default random state.
+    pub(crate) const RAND_GET_DEFAULT_STATE: Callee = Callee {
+        addr: 0x0031_7930,
+        f: ee::s10::f_00317930,
+    };
+
+    /// `SprStream_SetMode(stream, mode)`.
+    pub(crate) const SPR_STREAM_SET_MODE: Callee = Callee {
+        addr: 0x0038_f300,
+        f: ee::s12::f_0038f300,
+    };
+
+    /// `Renderer_BuildSineTable(table)`.
+    pub(crate) const RENDERER_BUILD_SINE_TABLE: Callee = Callee {
+        addr: 0x0039_2df0,
+        f: ee::s13::f_00392df0,
+    };
+    pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
+
+    /// `GraphicsMan_dtor` (0x3695d8, s12): the base graphics manager
+    /// destructor.
+    pub(crate) const GRAPHICS_MAN_DTOR: Callee = Callee {
+        addr: 0x0036_95d8,
+        f: ee::s12::GraphicsMan_dtor,
+    };
 }
 
 /// `gp`-relative globals used here.
@@ -2365,6 +2458,46 @@ pub fn font_draw_text_scaled_varargs(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod gmesh {
+
+    pub(crate) use crate::game::render::particle::gmesh::VALID;
+}
+
+pub(crate) const LIGHT_MAN_NEXT_INDEX: u32 = 0xc;
+
+/// `void LightMan_dtor_Wrapper(LightMan* self, int flags)` (0x394c68): the
+/// vtable's destructor slot; forwards to `LightMan::~LightMan`.
+pub fn light_man_dtor_wrapper(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(callee::LIGHT_MAN_DTOR), 0x0039_4c78);
+}
+
+/// `void** LightMan_GetInstance(LightMan* self, int id)` (0x394c88): the
+/// address of slot `id` of the instance table at +0x4 (`a1` is left as
+/// `id * 4`).
+pub fn light_man_get_instance(c: &mut Cpu) {
+    c.cycles += 4;
+    let this = Addr(abi::arg(c, 0));
+    c.g[V0][0] = this.off(LIGHT_MAN_INSTANCES).lw(c);
+    c.g[A1][0] = sx(r32(c, A1) << 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+    ret(c);
+}
+
+/// `void LightMan_ResetCounter(LightMan* self)` (0x394d10): next index
+/// (+0xc) = 0.
+pub fn light_man_reset_counter(c: &mut Cpu) {
+    c.cycles += 2;
+    let this = Addr(abi::arg(c, 0));
+    this.off(LIGHT_MAN_NEXT_INDEX).sw(c, 0);
+    ret(c);
+}
+
+/// `void LightMan_v08(LightMan* self)` (0x394d30): empty virtual method.
+pub fn light_man_v08(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 /// `void* PS2GraphicsMan_GetFogState(gfx)` (0x3953b0): the fog state block
 /// embedded at `gfx+0x6b94`.
 pub fn ps2_graphics_man_get_fog_state(c: &mut Cpu) {
@@ -2386,6 +2519,785 @@ pub fn ps2_graphics_man_clear_lights(c: &mut Cpu) {
 pub fn ps2_graphics_man_v110(c: &mut Cpu) {
     c.cycles += 2;
     ret(c);
+}
+
+/// `void LightMan_v13(LightMan* self)` (0x394d38): empty virtual method.
+pub fn light_man_v13(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void LightMan_v14(LightMan* self)` (0x394d40): empty virtual method.
+pub fn light_man_v14(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void LightMan_v15(LightMan* self)` (0x394d48): empty virtual method.
+pub fn light_man_v15(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Renderer_StaticInitDestroy: the static objects of the renderer unit.
+
+/// The priority the unit's constructors run at (gcc's default, 0xffff).
+pub(crate) const RENDERER_INIT_PRIORITY: u64 = 0xffff;
+
+pub(crate) const RENDERER_INIT_FRAME: u32 = 0x120;
+
+/// Callee-saved registers and their frame slots.
+pub(crate) const RENDERER_INIT_SAVED: [(usize, u32); 9] = [
+    (S0, 0xf0),
+    (S1, 0xe0),
+    (S2, 0xd0),
+    (S3, 0xc0),
+    (S4, 0xb0),
+    (S5, 0xa0),
+    (S6, 0x90),
+    (S7, 0x80),
+    (FP, 0x70),
+];
+
+pub(crate) const RENDERER_INIT_RA_SLOT: u32 = 0x60;
+
+pub(crate) const RENDERER_INIT_SAVED_FPRS: [(usize, u32); 4] =
+    [(23, 0x118), (22, 0x110), (21, 0x108), (20, 0x100)];
+
+/// Stack slots the compiled code keeps values in (outside the saved area).
+pub(crate) const RENDERER_INIT_MASK_SLOT: u32 = 0x10;
+
+pub(crate) const RENDERER_INIT_COUNT_SLOT: u32 = 0x14;
+
+pub(crate) const RENDERER_INIT_CURSOR_SLOT: u32 = 0x58;
+
+/// High half of every static's address (`lui 0x50`).
+pub(crate) const RENDERER_STATICS_HI: u64 = 0x50_0000;
+
+/// 56 vec4 constants (unknown use; mostly w = 0 or 1).
+pub(crate) const RENDERER_VEC4S_A: u32 = 0x0050_10a0;
+
+/// A 16-byte block cleared with memset (other units copy it as a template).
+pub(crate) const RENDERER_CLEARED_BLOCK: u32 = 0x0050_1420;
+
+/// Two halfwords set to -1, right after the cleared block.
+pub(crate) const RENDERER_HALF_PAIR: u32 = 0x0050_1430;
+
+/// Two halfwords set to -1 (the compiled code addresses them absolutely; at
+/// the game's gp this is gp+0x2920).
+pub(crate) const RENDERER_GLOBAL_HALF_PAIR: u32 = 0x004a_5a10;
+
+/// Five vec4 constants (unknown use).
+pub(crate) const RENDERER_VEC4S_B: u32 = 0x0050_46e0;
+
+/// A 4x4 matrix: x * 0.5, y * -0.5, then + (0.5, 0.5, 1, 1).
+pub(crate) const RENDERER_HALF_SCALE_MATRIX: u32 = 0x0050_4760;
+
+/// A 4x4 axis swap: x' = -y, y' = z, z' = x.
+pub(crate) const RENDERER_AXIS_MATRIX: u32 = 0x0050_47a0;
+
+/// A random state (0x18 bytes) filled by `Rand_GetDefaultState`.
+pub(crate) const RENDERER_RAND_STATE: u32 = 0x0050_47e0;
+
+/// Two words cleared after the random state.
+pub(crate) const RENDERER_CLEARED_PAIR: u32 = 0x0050_47f8;
+
+/// Two vec4 (1, 1, 1, 1).
+pub(crate) const RENDERER_ONES: u32 = 0x0050_4810;
+
+/// A copy of the all-ones entry 10 of [`RENDERER_VEC4S_A`].
+pub(crate) const RENDERER_ONES_COPY: u32 = 0x0050_4830;
+
+pub(crate) const RENDERER_ONES_SOURCE: u32 = RENDERER_VEC4S_A + 0xa0;
+
+/// Four records (stride 0x60) of twelve VU microcode entry addresses.
+pub(crate) const RENDERER_MICROCODE_TABLES: u32 = 0x0050_4840;
+
+/// A second copy of the half-scale matrix.
+pub(crate) const RENDERER_HALF_SCALE_MATRIX_2: u32 = 0x0050_49c0;
+
+/// The renderer's scratchpad stream, set to mode 3.
+pub(crate) const RENDERER_SPR_STREAM: u32 = 0x0050_4f80;
+
+pub(crate) const RENDERER_SPR_STREAM_MODE: u64 = 3;
+
+/// 640 floats filled by `Renderer_BuildSineTable`.
+pub(crate) const RENDERER_SINE_TABLE: u32 = 0x0050_4fb8;
+
+/// Two vec4 after the sine table.
+pub(crate) const RENDERER_VEC4S_C: u32 = 0x0050_59b8;
+
+/// gp-relative globals: two records of words (bit masks and sizes;
+/// unknown use) and two flags.
+pub(crate) const RENDERER_GP_WORDS: [(u32, u32); 24] = [
+    (0x28bc, 0xc),
+    (0x28d4, 0x0180_0000),
+    (0x28d8, 0x0040_0000),
+    (0x28dc, 0x0030_0000),
+    (0x28e4, 0x7c),
+    (0x28b8, 3),
+    (0x28c0, 0),
+    (0x28c4, 0),
+    (0x28c8, 0),
+    (0x28cc, 0),
+    (0x28d0, 0),
+    (0x28e0, 0x000f_f000),
+    (0x28e8, 0),
+    (0x28ec, 3),
+    (0x28f4, 0x3e0),
+    (0x28f8, 0x3c0),
+    (0x28fc, 0xc00),
+    (0x2900, 0x000f_f000),
+    (0x2904, 0x1f),
+    (0x2910, 0x3fff_ffff),
+    (0x2908, 0),
+    (0x290c, 0),
+    (0x2914, 0),
+    (0x2918, 0),
+];
+
+/// The second record's mask, which the compiled code passes through a stack
+/// slot (stored at `gp+0x28f0`).
+pub(crate) const RENDERER_GP_MASK: u64 = 0x1fff_fc00;
+
+pub(crate) const RENDERER_GP_MASK_WORD: u32 = 0x28f0;
+
+/// A word set to -1 (`gp+0x2928`).
+pub(crate) const RENDERER_GP_FLAG: u32 = 0x2928;
+
+/// A word cleared after the stream mode is set (`gp+0x2930`).
+pub(crate) const RENDERER_GP_STREAM_WORD: u32 = 0x2930;
+
+pub(crate) const RENDERER_ONE: u32 = 0x3f80_0000;
+
+pub(crate) const RENDERER_HALF: u32 = 0x3f00_0000;
+
+pub(crate) const RENDERER_NEG_HALF: u32 = 0xbf00_0000;
+
+pub(crate) const RENDERER_NEG_ONE: u32 = 0xbf80_0000;
+
+/// One float word of a static table: a constant, or the literal at
+/// `gp - offset`.
+#[derive(Clone, Copy)]
+pub(crate) enum RendererWord {
+    One,
+    Half,
+    NegHalf,
+    NegOne,
+    Zero,
+    Lit(u32),
+}
+
+pub(crate) const RENDERER_VEC4S_A_INIT: [[RendererWord; 4]; 56] = {
+    use RendererWord::{Half, Lit, One, Zero};
+    [
+        [One, One, One, Half],
+        [Lit(0x2690), One, One, Zero],
+        [Lit(0x268c), One, One, Zero],
+        [Lit(0x2688), Lit(0x2668), Lit(0x2664), Lit(0x2684)],
+        [Lit(0x2680), Lit(0x2660), Lit(0x265c), Zero],
+        [Lit(0x267c), One, One, Zero],
+        [Lit(0x2678), Lit(0x2658), Lit(0x2654), Lit(0x2674)],
+        [Lit(0x2670), Lit(0x2650), One, One],
+        [Lit(0x266c), Lit(0x264c), Lit(0x263c), Zero],
+        [Lit(0x2648), Lit(0x2638), Lit(0x2634), Lit(0x2644)],
+        [One, One, One, One],
+        [One, Zero, Zero, Zero],
+        [One, Lit(0x2640), Lit(0x2630), Lit(0x2640)],
+        [One, One, One, One],
+        [One, One, One, One],
+        [One, Zero, Zero, Zero],
+        [One, Zero, Zero, Zero],
+        [One, One, One, One],
+        [One, Half, One, Half],
+        [One, Half, One, Half],
+        [One, Half, One, Half],
+        [One, Lit(0x2624), Lit(0x2620), Lit(0x262c)],
+        [One, One, Lit(0x261c), Zero],
+        [Lit(0x2628), Lit(0x2618), Lit(0x2614), Zero],
+        [One, One, One, One],
+        [One, One, Lit(0x2608), Zero],
+        [One, Lit(0x2604), Lit(0x2600), Zero],
+        [One, Lit(0x25fc), Lit(0x25f8), Lit(0x2610)],
+        [One, Lit(0x25e4), Lit(0x25f4), One],
+        [One, Lit(0x25f0), One, Lit(0x260c)],
+        [One, One, One, One],
+        [One, One, One, One],
+        [One, Lit(0x25ec), Lit(0x25e8), Zero],
+        [One, One, One, One],
+        [One, Lit(0x25d0), One, Zero],
+        [One, One, One, One],
+        [One, One, Zero, Zero],
+        [Lit(0x25e0), Zero, Zero, Zero],
+        [One, Lit(0x25cc), Lit(0x25c8), Lit(0x25dc)],
+        [One, Lit(0x25c4), One, Lit(0x25d8)],
+        [One, One, Lit(0x25c0), Zero],
+        [One, Lit(0x25bc), One, Lit(0x25d4)],
+        [One, One, One, One],
+        [One, Lit(0x25e4), One, Lit(0x25e4)],
+        [One, One, Zero, Zero],
+        [One, One, Zero, Zero],
+        [One, One, Zero, Zero],
+        [One, Lit(0x25b0), One, Lit(0x25b8)],
+        [One, One, Lit(0x25ac), Lit(0x25b4)],
+        [One, One, Lit(0x25a8), Zero],
+        [One, Lit(0x25a4), Lit(0x25a0), Zero],
+        [One, Lit(0x2594), Lit(0x2590), Zero],
+        [One, Lit(0x258c), Lit(0x2588), Lit(0x259c)],
+        [One, Lit(0x2584), Lit(0x2580), Lit(0x2598)],
+        [One, Zero, One, Zero],
+        [One, One, Zero, Zero],
+    ]
+};
+
+pub(crate) const RENDERER_VEC4S_B_INIT: [[RendererWord; 4]; 5] = {
+    use RendererWord::{Lit, One};
+    [
+        [Lit(0x257c), Lit(0x2574), Lit(0x2570), One],
+        [Lit(0x2574), Lit(0x2574), Lit(0x2570), One],
+        [Lit(0x257c), Lit(0x2574), Lit(0x2570), One],
+        [Lit(0x2574), Lit(0x2574), Lit(0x2570), One],
+        [One, Lit(0x256c), Lit(0x2568), Lit(0x2578)],
+    ]
+};
+
+pub(crate) const RENDERER_HALF_SCALE_INIT: [[RendererWord; 4]; 4] = {
+    use RendererWord::{Half, NegHalf, One, Zero};
+    [
+        [Half, Zero, Zero, Zero],
+        [Zero, NegHalf, Zero, Zero],
+        [Zero, Zero, Zero, Zero],
+        [Half, Half, One, One],
+    ]
+};
+
+pub(crate) const RENDERER_AXIS_INIT: [[RendererWord; 4]; 4] = {
+    use RendererWord::{NegOne, One, Zero};
+    [
+        [Zero, Zero, One, Zero],
+        [NegOne, Zero, Zero, Zero],
+        [Zero, One, Zero, Zero],
+        [Zero, Zero, Zero, One],
+    ]
+};
+
+pub(crate) const RENDERER_ONES_INIT: [[RendererWord; 4]; 2] = {
+    use RendererWord::One;
+    [[One, One, One, One], [One, One, One, One]]
+};
+
+pub(crate) const RENDERER_VEC4S_C_INIT: [[RendererWord; 4]; 2] = {
+    use RendererWord::{Lit, One};
+    [[One, One, One, One], [Lit(0x2564), One, One, One]]
+};
+
+/// VU microcode entry points as byte offsets in the microprogram (stored as
+/// instruction addresses, offset >> 3), one row per record.
+pub(crate) const RENDERER_MICROCODE_ENTRIES: [[u32; 12]; 4] = [
+    [
+        0x610, 0x610, 0x6b8, 0x790, 0x868, 0x8a0, 0x8d8, 0x910, 0x948, 0x980, 0x948, 0x980,
+    ],
+    [
+        0x648, 0x648, 0x700, 0x7d8, 0x868, 0x8a0, 0x8d8, 0x910, 0x948, 0x980, 0x948, 0x980,
+    ],
+    [
+        0x680, 0x680, 0x748, 0x820, 0x868, 0x8a0, 0x8d8, 0x910, 0x948, 0x980, 0x948, 0x980,
+    ],
+    [
+        0x930, 0x930, 0x9a0, 0xa38, 0xb00, 0xb68, 0xc48, 0xc48, 0xcf0, 0xcf0, 0xcf0, 0xcf0,
+    ],
+];
+
+pub(crate) const RENDERER_MICROCODE_STRIDE: u32 = 0x60;
+
+/// Entry addresses the compiled code spills to its frame while building the
+/// records: `sw` slots, then `sd` slots (offset >> 3 each).
+pub(crate) const RENDERER_MICROCODE_WORD_SPILLS: [(u32, u32); 10] = [
+    (0x18, 0x610),
+    (0x1c, 0x6b8),
+    (0x20, 0x868),
+    (0x30, 0x910),
+    (0x40, 0x930),
+    (0x44, 0xa38),
+    (0x48, 0xb00),
+    (0x4c, 0xb68),
+    (0x50, 0xc48),
+    (0x54, 0xc48),
+];
+
+pub(crate) const RENDERER_MICROCODE_DWORD_SPILLS: [(u32, u32); 2] = [(0x28, 0x868), (0x38, 0x910)];
+
+/// A (1, 1, 1) the compiled code also writes at the bottom of its frame.
+pub(crate) const RENDERER_ONES_SPILL: [u32; 3] = [0x0, 0x4, 0x8];
+
+/// Registers as the first scheduled block leaves them (addresses inside
+/// the tables, the stored values).
+pub(crate) const RENDERER_AFTER_TABLES_GPRS: [(usize, u64); 25] = [
+    (V0, 0x3e0),
+    (V1, 0xc00),
+    (A0, u64::MAX),
+    (A1, 0x3c0),
+    (A2, 0x1f),
+    (A3, 0xc),
+    (T0, 0x0050_1270),
+    (T1, 0x0050_1260),
+    (T2, 0x0180_0000),
+    (T3, 0x0040_0000),
+    (T4, 0x000f_f000),
+    (T5, 0x0030_0000),
+    (T6, 0x7c),
+    (T7, 3),
+    (T8, 0x0050_11e0),
+    (S0, 0x0050_13a0),
+    (S1, 0x0050_13f0),
+    (S2, 0x0050_1370),
+    (S4, RENDERER_STATICS_HI),
+    (S5, RENDERER_STATICS_HI),
+    (S6, RENDERER_STATICS_HI),
+    (S7, RENDERER_STATICS_HI),
+    (FP, 0x3fff_ffff),
+    (AT, RENDERER_HALF as u64),
+    (S3, RENDERER_GP_MASK),
+];
+
+/// FPU registers the first block leaves loaded: (register, literal offset
+/// below gp); f0 holds 1.0.
+pub(crate) const RENDERER_AFTER_TABLES_FPRS: [(usize, u32); 19] = [
+    (1, 0x2598),
+    (2, 0x259c),
+    (3, 0x2594),
+    (4, 0x2590),
+    (5, 0x258c),
+    (6, 0x2588),
+    (7, 0x2584),
+    (8, 0x2580),
+    (9, 0x25c0),
+    (10, 0x25bc),
+    (11, 0x25e8),
+    (12, 0x25e4),
+    (13, 0x2660),
+    (14, 0x265c),
+    (15, 0x2658),
+    (16, 0x2654),
+    (17, 0x2668),
+    (18, 0x2664),
+    (19, 0x264c),
+];
+
+/// Registers after the five-vector block.
+pub(crate) const RENDERER_AFTER_VEC4S_B_GPRS: [(usize, u64); 11] = [
+    (V0, 0x0050_4710),
+    (V1, 0x0050_4720),
+    (A0, u64::MAX),
+    (A1, 0x0050_46e0),
+    (A2, 0x0050_46f0),
+    (A3, 0x0050_4700),
+    (T0, 2),
+    (T1, u64::MAX),
+    (T4, RENDERER_STATICS_HI),
+    (T5, RENDERER_STATICS_HI),
+    (AT, RENDERER_ONE as u64),
+];
+
+pub(crate) const RENDERER_AFTER_VEC4S_B_FPRS: [(usize, u32); 6] = [
+    (1, 0x2578),
+    (2, 0x2574),
+    (3, 0x2570),
+    (4, 0x257c),
+    (5, 0x2568),
+    (6, 0x256c),
+];
+
+/// Registers at the `Rand_GetDefaultState` call: the matrix addresses and
+/// the (zero) high halves of microcode addresses used after the call.
+pub(crate) const RENDERER_AT_RAND_GPRS: [(usize, u64); 9] = [
+    (V0, RENDERER_HALF_SCALE_MATRIX as u64),
+    (V1, RENDERER_AXIS_MATRIX as u64),
+    (A0, RENDERER_RAND_STATE as u64),
+    (S0, 0),
+    (S1, 0),
+    (S2, 0),
+    (S3, 0x910),
+    (S6, 0),
+    (AT, 0xffff_ffff_bf00_0000),
+];
+
+/// Registers after the microcode records (record addresses and entry
+/// values; V0/V1 are the first loop's counters).
+pub(crate) const RENDERER_AFTER_MICROCODE_GPRS: [(usize, u64); 25] = [
+    (A0, 0x0050_4900),
+    (A1, 0x0050_4960),
+    (A2, 0x0050_48a0),
+    (A3, 0x980 >> 3),
+    (S0, 0x680 >> 3),
+    (S1, 0x820 >> 3),
+    (S2, 0x748 >> 3),
+    (S3, 0xc48 >> 3),
+    (S4, RENDERER_STATICS_HI),
+    (S5, 0x930),
+    (S6, 0x9a0 >> 3),
+    (S7, 0x820),
+    (FP, 0x930 >> 3),
+    (T0, 0x948 >> 3),
+    (T1, 0xcf0 >> 3),
+    (T2, 0xcf0 >> 3),
+    (T3, 0x910 >> 3),
+    (T4, 0xa38 >> 3),
+    (T5, 0xb00 >> 3),
+    (T6, 0xb68 >> 3),
+    (T7, 0xc48 >> 3),
+    (T8, 0x680 >> 3),
+    (T9, 0x680),
+    (V0, 5),
+    (V1, 4),
+];
+
+/// Back-edge heads of the loops (event checks).
+pub(crate) const RENDERER_HEAD_GLOBAL_HALVES: u32 = 0x0039_38f8;
+
+pub(crate) const RENDERER_HEAD_HALVES: u32 = 0x0039_3930;
+
+pub(crate) const RENDERER_HEAD_ARRAY_8: u32 = 0x0039_3968;
+
+pub(crate) const RENDERER_HEAD_ARRAY_3: u32 = 0x0039_3a38;
+
+pub(crate) const RENDERER_HEAD_GRID_ROWS: u32 = 0x0039_3e80;
+
+pub(crate) const RENDERER_HEAD_GRID_COLS: u32 = 0x0039_3e88;
+
+pub(crate) const RENDERER_HEAD_ARRAY_8B: u32 = 0x0039_3ec0;
+
+pub(crate) const RENDERER_HEAD_ARRAY_8C: u32 = 0x0039_3ee8;
+
+pub(crate) fn renderer_gp(c: &Cpu) -> u32 {
+    c.g[GP][0] as u32
+}
+
+pub(crate) fn renderer_word(c: &mut Cpu, w: RendererWord) -> u64 {
+    match w {
+        RendererWord::One => RENDERER_ONE as u64,
+        RendererWord::Half => RENDERER_HALF as u64,
+        RendererWord::NegHalf => RENDERER_NEG_HALF as u64,
+        RendererWord::NegOne => RENDERER_NEG_ONE as u64,
+        RendererWord::Zero => 0,
+        RendererWord::Lit(off) => Addr(renderer_gp(c).wrapping_sub(off)).lw(c),
+    }
+}
+
+/// Write `table` as consecutive vec4 at `base`.
+pub(crate) fn renderer_write_vec4s(c: &mut Cpu, base: u32, table: &[[RendererWord; 4]]) {
+    for (i, vec) in table.iter().enumerate() {
+        for (k, &w) in vec.iter().enumerate() {
+            let v = renderer_word(c, w);
+            Addr(base + 0x10 * i as u32 + 4 * k as u32).sw(c, v);
+        }
+    }
+}
+
+pub(crate) fn renderer_set_gprs(c: &mut Cpu, regs: &[(usize, u64)]) {
+    for &(r, v) in regs {
+        c.g[r][0] = v;
+    }
+}
+
+/// `lwc1 f, -off(gp)` for each entry.
+pub(crate) fn renderer_load_lits(c: &mut Cpu, regs: &[(usize, u32)]) {
+    for &(f, off) in regs {
+        let a = renderer_gp(c).wrapping_sub(off);
+        c.lwc1(f, a);
+    }
+}
+
+/// `void Renderer_StaticInitDestroy(int initialize, int priority)`
+/// (0x393048): gcc's static constructor/destructor body for the renderer
+/// unit, called by `Renderer_GlobalCtors`/`Renderer_GlobalDtors`. Only the
+/// construct pass at priority 0xffff does anything (the destroy pass has
+/// nothing to destroy): it fills the unit's constant vec4 tables, matrices
+/// and gp-relative words, sets two halfword pairs to -1, clears a block,
+/// copies the default random state, writes four records of VU microcode
+/// entry addresses, runs the (empty) constructor loops of five static
+/// arrays, sets the scratchpad stream to mode 3 and builds the sine table.
+pub fn renderer_static_init_destroy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, RENDERER_INIT_FRAME);
+        c.g[V0][0] = RENDERER_INIT_PRIORITY;
+        for &(r, off) in &RENDERER_INIT_SAVED {
+            frame.save(c, r, off);
+        }
+        frame.save_ra(c, RENDERER_INIT_RA_SLOT);
+        for &(f, off) in &RENDERER_INIT_SAVED_FPRS {
+            frame.save_fpr(c, f, off);
+        }
+        'construct: {
+            if c.g[A1][0] != RENDERER_INIT_PRIORITY {
+                break 'construct;
+            }
+            c.cycles += 2;
+            c.g[T2][0] = RENDERER_STATICS_HI;
+            if c.g[A0][0] == 0 {
+                break 'construct;
+            }
+            renderer_construct_statics(c, frame)?;
+        }
+        c.cycles += 16;
+        for &(r, off) in &RENDERER_INIT_SAVED {
+            frame.restore(c, r, off);
+        }
+        frame.restore_ra(c, RENDERER_INIT_RA_SLOT);
+        for &(f, off) in &RENDERER_INIT_SAVED_FPRS {
+            frame.restore_fpr(c, f, off);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The construct pass of [`renderer_static_init_destroy`].
+pub(crate) fn renderer_construct_statics(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 537;
+    let gp = renderer_gp(c);
+    renderer_write_vec4s(c, RENDERER_VEC4S_A, &RENDERER_VEC4S_A_INIT);
+    for &(off, v) in &RENDERER_GP_WORDS {
+        Addr(gp.wrapping_add(off)).sw(c, v as u64);
+    }
+    Addr(frame.at(c, RENDERER_INIT_MASK_SLOT)).sw(c, RENDERER_GP_MASK);
+    Addr(frame.at(c, RENDERER_INIT_CURSOR_SLOT)).sw(c, RENDERER_GLOBAL_HALF_PAIR as u64);
+    Addr(frame.at(c, RENDERER_INIT_COUNT_SLOT)).sw(c, 0);
+    let mask = Addr(frame.at(c, RENDERER_INIT_MASK_SLOT)).lw(c);
+    Addr(gp.wrapping_add(RENDERER_GP_MASK_WORD)).sw(c, mask);
+    renderer_set_gprs(c, &RENDERER_AFTER_TABLES_GPRS);
+    c.f[0] = RENDERER_ONE;
+    renderer_load_lits(c, &RENDERER_AFTER_TABLES_FPRS);
+
+    // The global halfword pair, cursor and count kept in the frame.
+    loop {
+        c.cycles += 9;
+        c.g[A3][0] = Addr(frame.at(c, RENDERER_INIT_CURSOR_SLOT)).lw(c);
+        Addr(c.g[A3][0] as u32).sh(c, c.g[A0][0]);
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(2));
+        c.g[T2][0] = Addr(frame.at(c, RENDERER_INIT_COUNT_SLOT)).lw(c);
+        Addr(frame.at(c, RENDERER_INIT_CURSOR_SLOT)).sw(c, c.g[A3][0]);
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(1));
+        c.g[V0][0] = (c.g[T2][0] < 2) as u64;
+        Addr(frame.at(c, RENDERER_INIT_COUNT_SLOT)).sw(c, c.g[T2][0]);
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, RENDERER_HEAD_GLOBAL_HALVES);
+        }
+    }
+
+    // The halfword pair after the cleared block.
+    c.cycles += 5;
+    c.g[V0][0] = RENDERER_STATICS_HI;
+    c.g[A1][0] = 0;
+    c.g[A0][0] = sx(RENDERER_CLEARED_BLOCK);
+    c.g[A2][0] = u64::MAX;
+    c.g[V1][0] = sx(RENDERER_HALF_PAIR);
+    loop {
+        c.cycles += 7;
+        Addr(c.g[V1][0] as u32).sh(c, c.g[A2][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+        c.g[V0][0] = (c.g[A1][0] < 2) as u64;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(2));
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, RENDERER_HEAD_HALVES);
+        }
+    }
+
+    c.cycles += 7;
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0x10;
+    callee::MEMSET.call(c, 0x0039_3958)?;
+
+    // Empty constructor loop of an 8-element static array.
+    c.g[V1][0] = u64::MAX;
+    c.g[V0][0] = 7;
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        c.g[T3][0] = RENDERER_STATICS_HI;
+        if c.g[V0][0] == c.g[V1][0] {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, RENDERER_HEAD_ARRAY_8);
+        }
+    }
+
+    c.cycles += 45;
+    Addr(gp.wrapping_add(RENDERER_GP_FLAG)).sw(c, u64::MAX);
+    renderer_write_vec4s(c, RENDERER_VEC4S_B, &RENDERER_VEC4S_B_INIT);
+    renderer_set_gprs(c, &RENDERER_AFTER_VEC4S_B_GPRS);
+    c.f[0] = RENDERER_ONE;
+    renderer_load_lits(c, &RENDERER_AFTER_VEC4S_B_FPRS);
+
+    // Empty constructor loop of a 3-element static array.
+    loop {
+        c.cycles += 7;
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(1));
+        c.g[T6][0] = RENDERER_STATICS_HI;
+        if c.g[T0][0] == c.g[T1][0] {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, RENDERER_HEAD_ARRAY_3);
+        }
+    }
+
+    // The two matrices (f20-f23 keep 0, 1, 0.5 and -0.5 past the call).
+    c.cycles += 267;
+    c.f[22] = RENDERER_HALF;
+    c.f[21] = RENDERER_ONE;
+    c.f[20] = 0;
+    c.f[0] = RENDERER_NEG_ONE;
+    c.f[23] = RENDERER_NEG_HALF;
+    renderer_write_vec4s(c, RENDERER_HALF_SCALE_MATRIX, &RENDERER_HALF_SCALE_INIT);
+    renderer_write_vec4s(c, RENDERER_AXIS_MATRIX, &RENDERER_AXIS_INIT);
+    renderer_set_gprs(c, &RENDERER_AT_RAND_GPRS);
+    callee::RAND_GET_DEFAULT_STATE.call(c, 0x0039_3b24)?;
+
+    renderer_write_microcode_records(c, frame);
+
+    // Empty constructor loops of a 6x6 static array.
+    loop {
+        c.cycles += 2;
+        c.g[V0][0] = 5;
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            c.g[S6][0] = u64::MAX;
+            if c.g[V0][0] == c.g[S6][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, RENDERER_HEAD_GRID_COLS);
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[V1][0];
+        let more = c.g[V0][0] != c.g[S6][0];
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, RENDERER_HEAD_GRID_ROWS);
+        }
+    }
+
+    // Empty constructor loops of two 8-element static arrays.
+    c.cycles += 4;
+    c.g[V0][0] = 7;
+    c.g[A0][0] = u64::MAX;
+    c.g[V1][0] = 6;
+    loop {
+        c.cycles += 8;
+        c.g[V0][0] = c.g[V1][0];
+        let more = c.g[V0][0] != c.g[A0][0];
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, RENDERER_HEAD_ARRAY_8B);
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 7;
+    c.g[V1][0] = u64::MAX;
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        c.g[A1][0] = RENDERER_SPR_STREAM_MODE;
+        if c.g[V0][0] == c.g[V1][0] {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, RENDERER_HEAD_ARRAY_8C);
+        }
+    }
+
+    // The scratchpad stream (from mode 0), then the sine table.
+    c.cycles += 24;
+    c.g[V0][0] = RENDERER_STATICS_HI;
+    c.g[A0][0] = sx(RENDERER_SPR_STREAM);
+    Addr(RENDERER_SPR_STREAM).sw(c, 0);
+    callee::SPR_STREAM_SET_MODE.call(c, 0x0039_3f14)?;
+    Addr(renderer_gp(c).wrapping_add(RENDERER_GP_STREAM_WORD)).sw(c, 0);
+    c.g[A0][0] = sx(RENDERER_SINE_TABLE);
+    callee::RENDERER_BUILD_SINE_TABLE.call(c, 0x0039_3f24)?;
+
+    renderer_write_vec4s(c, RENDERER_VEC4S_C, &RENDERER_VEC4S_C_INIT);
+    c.g[AT][0] = RENDERER_ONE as u64;
+    c.f[0] = RENDERER_ONE;
+    let lit = renderer_gp(c).wrapping_sub(0x2564);
+    c.lwc1(1, lit);
+    c.g[V0][0] = sx(RENDERER_VEC4S_C);
+    c.g[V1][0] = sx(RENDERER_VEC4S_C + 0x10);
+    c.g[A0][0] = RENDERER_STATICS_HI;
+    c.g[A1][0] = RENDERER_STATICS_HI;
+    Ok(())
+}
+
+/// After `Rand_GetDefaultState`: the cleared pair, the ones vectors and
+/// their copy, the four microcode records, the second half-scale matrix,
+/// and the frame slots and registers the compiled code leaves.
+pub(crate) fn renderer_write_microcode_records(c: &mut Cpu, frame: Frame) {
+    Addr(RENDERER_CLEARED_PAIR + 4).sw(c, 0);
+    Addr(RENDERER_CLEARED_PAIR).sw(c, 0);
+    renderer_write_vec4s(c, RENDERER_ONES, &RENDERER_ONES_INIT);
+    for off in [0, 8] {
+        let v = Addr(RENDERER_ONES_SOURCE + off).ld(c);
+        Addr(RENDERER_ONES_COPY + off).sd(c, v);
+    }
+    for (i, record) in RENDERER_MICROCODE_ENTRIES.iter().enumerate() {
+        let base = RENDERER_MICROCODE_TABLES + RENDERER_MICROCODE_STRIDE * i as u32;
+        for (k, &entry) in record.iter().enumerate() {
+            Addr(base + 8 * k as u32).sd(c, (entry >> 3) as u64);
+        }
+    }
+    renderer_write_vec4s(c, RENDERER_HALF_SCALE_MATRIX_2, &RENDERER_HALF_SCALE_INIT);
+    for &(off, entry) in &RENDERER_MICROCODE_WORD_SPILLS {
+        Addr(frame.at(c, off)).sw(c, (entry >> 3) as u64);
+    }
+    for &(off, entry) in &RENDERER_MICROCODE_DWORD_SPILLS {
+        Addr(frame.at(c, off)).sd(c, (entry >> 3) as u64);
+    }
+    for off in RENDERER_ONES_SPILL {
+        Addr(frame.at(c, off)).sw(c, RENDERER_ONE as u64);
+    }
+    renderer_set_gprs(c, &RENDERER_AFTER_MICROCODE_GPRS);
+}
+
+/// `bool cPS2GridMesh_IsValid(cPS2GridMesh* self)` (0x396108, vtable
+/// +0x14): whether the constructor's allocation succeeded (`VALID`).
+pub fn c_ps2_grid_mesh_is_valid(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = Addr(r32(c, A0)).off(gmesh::VALID).lw(c);
+    ret(c);
+}
+
+/// `Renderer_GlobalCtors` / `Renderer_GlobalDtors`: one call of
+/// `Renderer_StaticInitDestroy(initialize, 0xffff)` returning to `ret_to`.
+pub(crate) fn renderer_global_xtors(c: &mut Cpu, initialize: u64, ret_to: u32) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = initialize;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = RENDERER_INIT_PRIORITY;
+        RENDERER_STATIC_INIT_DESTROY.call(c, ret_to)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 /// `int PS2GraphicsMan_GetFlipCount(gfx)` (0x395510): the frame flip counter
@@ -2456,6 +3368,337 @@ pub fn ps2_graphics_man_ctor(c: &mut Cpu) {
         c.cycles += 4;
         c.g[V0][0] = c.g[S0][0];
         frame.restore(c, 16, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Renderer_GlobalCtors()` (0x3970f8): run the renderer unit's static
+/// constructors (`Renderer_StaticInitDestroy(1, 0xffff)`).
+pub fn renderer_global_ctors(c: &mut Cpu) {
+    renderer_global_xtors(c, 1, 0x0039_710c);
+}
+
+/// `void Renderer_GlobalDtors()` (0x397118): run the renderer unit's static
+/// destructors (`Renderer_StaticInitDestroy(0, 0xffff)`).
+pub fn renderer_global_dtors(c: &mut Cpu) {
+    renderer_global_xtors(c, 0, 0x0039_712c);
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan fields (besides `GM_*` in `game::render::particle`).
+
+/// The 0xa0-byte lighting block (`PS2GraphicsMan_SetLighting` copies it in).
+pub(crate) const GM_LIGHTING: u32 = 0x6bb0;
+
+// ---------------------------------------------------------------------------
+// Constructor and destructor.
+
+/// `PS2GraphicsMan::~PS2GraphicsMan(int flags)` (0x395268): forwards to the
+/// base `GraphicsMan_dtor` (which resets the vtable, clears the manager
+/// global and frees the object when `flags & 1`).
+pub fn ps2_graphics_man_dtor(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::GRAPHICS_MAN_DTOR),
+        0x0039_5278,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Small accessors.
+
+/// `int PS2GraphicsMan::GetDisplayModeCount()` (0x395318): the number of
+/// display modes (`+0x59c4`).
+pub fn ps2_graphics_man_get_display_mode_count(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = Addr(abi::arg(c, 0)).off(renderer_fields::MODE_COUNT).lw(c);
+    ret(c);
+}
+
+/// `int PS2GraphicsMan::IsProgressive()` (0x395320): the progressive-scan
+/// flag (`+0x5a4c`).
+pub fn ps2_graphics_man_is_progressive(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = Addr(abi::arg(c, 0)).off(renderer_fields::PROGRESSIVE).lw(c);
+    ret(c);
+}
+
+/// `int PS2GraphicsMan::GetDisplayModeIndex()` (0x395328): the current
+/// display mode (`+0x59c8`).
+pub fn ps2_graphics_man_get_display_mode_index(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = Addr(abi::arg(c, 0)).off(renderer_fields::CUR_MODE).lw(c);
+    ret(c);
+}
+
+/// `void* PS2GraphicsMan::GetLighting()` (0x395500): the address of the
+/// lighting block (`this + 0x6bb0`).
+pub fn ps2_graphics_man_get_lighting(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx(abi::arg(c, 0).wrapping_add(GM_LIGHTING));
+    ret(c);
+}
+
+/// `void PS2GraphicsMan::v98(int value)` (0x3956e0): store `value` in the
+/// unknown word at `+0x6d14`.
+pub fn ps2_graphics_man_v98(c: &mut Cpu) {
+    c.cycles += 2;
+    let value = c.g[A1][0];
+    Addr(abi::arg(c, 0))
+        .off(renderer_fields::F6D14)
+        .sw(c, value);
+    ret(c);
+}
+
+/// `void PS2GraphicsMan::v68()` (0x395fa0): an empty virtual method.
+pub fn ps2_graphics_man_v68(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_v33 (0x395750): view matrix from a position and angles.
+
+/// `v33`'s three rotation axes (static vec4s set at boot), in the order the
+/// angles in f12, f13 and f14 use them.
+pub(crate) const V33_AXIS_1: u32 = 0x004f_f140;
+
+pub(crate) const V33_AXIS_2: u32 = 0x004f_f160;
+
+pub(crate) const V33_AXIS_3: u32 = 0x004f_f150;
+
+/// The base `v33` keeps in s0 across its calls and reads the axes relative
+/// to.
+pub(crate) const V33_AXES_BASE: u32 = 0x0050_0000;
+
+/// `v33`'s stack: the scratch matrix (rows at 0..0x40, also the translation
+/// vector), the sine/cosine pairs `Math_SinCos` writes for each angle, and
+/// the saved registers.
+pub(crate) const V33_FRAME: u32 = 0xe0;
+
+pub(crate) const V33_SCRATCH: u32 = 0x0;
+
+pub(crate) const V33_SIN_COS_1: u32 = 0x40;
+
+pub(crate) const V33_SIN_COS_2: u32 = 0x48;
+
+pub(crate) const V33_SIN_COS_3: u32 = 0x50;
+
+pub(crate) const V33_SAVED_RA: u32 = 0x60;
+
+/// One rotation of `v33`: from the sine and cosine at `sp+sin_cos` and
+/// `sp+sin_cos+4` and the axis (x at `axis_x`, y and z at `axis+4` and
+/// `axis+8`), build the axis-angle rotation matrix in the scratch matrix
+/// (`t = 1 - cos`; `r[i][j] = t*a[j]*a[i] + cos` on the diagonal, `-/+ sin*a[k]`
+/// off it), then multiply the current matrix by it in place. The FPU
+/// registers are left as the original's straight-line code leaves them.
+pub(crate) fn v33_rotate_about_axis(
+    c: &mut Cpu,
+    frame: Frame,
+    sin_cos: u32,
+    axis: u32,
+    axis_x: u32,
+    matrix: u32,
+) {
+    let cos = Addr(frame.at(c, sin_cos + 4)).read_fpu(c);
+    let z = Addr(axis).off(8).read_fpu(c);
+    let t = FpuF32(c.f[20]) - cos;
+    let x = Addr(axis_x).read_fpu(c);
+    let y = Addr(axis).off(4).read_fpu(c);
+    let sin = Addr(frame.at(c, sin_cos)).read_fpu(c);
+
+    let (tz, tx, ty) = (t * z, t * x, t * y);
+    let (sin_z, sin_x) = (sin * z, sin * x);
+    let (tzz, txz, tzx, txx) = (tz * z, tx * z, tz * x, tx * x);
+    let (tyz, tyx) = (ty * z, ty * x);
+    let sin_y = sin * y;
+    let (tzy, txy, tyy) = (tz * y, tx * y, ty * y);
+
+    let m02 = tzx + sin_y;
+    let m01 = tyx - sin_z;
+    let m12 = tzy - sin_x;
+    let m22 = tzz + cos;
+    let m00 = txx + cos;
+    let m10 = txy + sin_z;
+    let m20 = txz - sin_y;
+    let m11 = tyy + cos;
+    let m21 = tyz + sin_x;
+
+    // Rows 0-2 with w = 0, row 3 = (0, 0, 0, 1.0 from f20).
+    let rows = [
+        [m00, m01, m02, FpuF32::ZERO],
+        [m10, m11, m12, FpuF32::ZERO],
+        [m20, m21, m22, FpuF32::ZERO],
+        [FpuF32::ZERO, FpuF32::ZERO, FpuF32::ZERO, FpuF32(c.f[20])],
+    ];
+    let scratch = frame.at(c, V33_SCRATCH);
+    for (i, row) in rows.iter().enumerate() {
+        for (j, v) in row.iter().enumerate() {
+            Addr(scratch + 0x10 * i as u32 + 4 * j as u32).write_fpu(c, *v);
+        }
+    }
+    for (reg, v) in [
+        (0, m01),
+        (1, m11),
+        (2, m12),
+        (3, m21),
+        (4, m10),
+        (5, m02),
+        (6, y),
+        (7, m00),
+        (8, sin_y),
+        (9, m22),
+        (10, m20),
+        (11, cos),
+        (12, sin_x),
+        (13, sin_z),
+    ] {
+        c.f[reg] = v.0;
+    }
+
+    // matrix = scratch * matrix (row i = sum over j of scratch[i][j] * row j).
+    c.lqc2(4, matrix);
+    c.lqc2(5, matrix.wrapping_add(0x10));
+    c.lqc2(6, matrix.wrapping_add(0x20));
+    c.lqc2(7, matrix.wrapping_add(0x30));
+    for i in 0..4u32 {
+        c.lqc2(8 + i as usize, scratch + 0x10 * i);
+    }
+    for i in 0..4u8 {
+        let (row, out) = (8 + i, 12 + i);
+        c.vu0().mula(0b1111, 4, Src::Bc(row, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(row, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(row, Z));
+        c.vu0().madd(0b1111, out, 7, Src::Bc(row, W));
+    }
+    for i in 0..4u32 {
+        c.sqc2(12 + i as usize, matrix.wrapping_add(0x10 * i));
+    }
+}
+
+/// `void PS2GraphicsMan::v33(const Vec4* pos, float rx, float ry, float rz)`
+/// (0x395750): build the view matrix in the current matrix: the identity
+/// with its y and z rows swapped, rotated by `-rx`, `-ry` and `-rz` about
+/// the three static axes (one `Math_SinCos` each), then translated by
+/// `(-pos.x, -pos.y, -pos.z, pos.w)`; marks the view matrices stale.
+pub fn ps2_graphics_man_v33(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 313;
+        let frame = Frame::open(c, V33_FRAME);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S4, 0x70);
+        frame.save_fpr(c, 22, 0xd0);
+        frame.save_fpr(c, 21, 0xc8);
+        frame.save(c, S0, 0xb0);
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S3, 0x80);
+        frame.save_ra(c, V33_SAVED_RA);
+        frame.save_fpr(c, 20, 0xc0);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S4][0] = c.g[A1][0];
+        c.mov_s(22, 14);
+        c.mov_s(21, 13);
+
+        // Current matrix = identity, then swap the y and z rows:
+        // row 1 = (0, 0, 1, 0), row 2 = (0, 1, 0, 0).
+        let this = Addr(c.g[S2][0] as u32);
+        c.g[V1][0] = sx(IDENTITY_MATRIX);
+        c.g[V0][0] = this.off(man::CAMERA).lw(c);
+        let (identity, top) = (c.g[V1][0] as u32, c.g[V0][0] as u32);
+        for i in 0..4u32 {
+            c.lqc2(1 + i as usize, identity + 0x10 * i);
+        }
+        for i in 0..4u32 {
+            c.sqc2(1 + i as usize, top.wrapping_add(0x10 * i));
+        }
+        c.g[A1][0] = this.off(man::CAMERA).lw(c);
+        c.neg_s(12, 12);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 20); // f20 = 1.0
+        c.g[A0][0] = sx(frame.at(c, V33_SIN_COS_1));
+        Addr(c.g[A1][0] as u32).off(0x14).sw(c, 0);
+        c.g[S0][0] = sx(V33_AXES_BASE);
+        c.g[A1][0] = sx(frame.at(c, V33_SIN_COS_1 + 4));
+        c.g[S1][0] = sx(V33_AXIS_1);
+        c.g[V1][0] = this.off(man::CAMERA).lw(c);
+        c.swc1(20, (c.g[V1][0] as u32).wrapping_add(0x24));
+        c.g[V0][0] = this.off(man::CAMERA).lw(c);
+        c.swc1(20, (c.g[V0][0] as u32).wrapping_add(0x18));
+        c.g[V1][0] = this.off(man::CAMERA).lw(c);
+        Addr(c.g[V1][0] as u32).off(0x28).sw(c, 0);
+        c.g[S3][0] = this.off(man::CAMERA).lw(c);
+
+        // Rotate by -rx about the first axis (s1; its x read through s0).
+        callee::MATH_SIN_COS.call(c, 0x0039_57f8)?;
+        let axis = c.g[S1][0] as u32;
+        let axis_x = (c.g[S0][0] as u32).wrapping_sub(V33_AXES_BASE - V33_AXIS_1);
+        let matrix = c.g[S3][0] as u32;
+        v33_rotate_about_axis(c, frame, V33_SIN_COS_1, axis, axis_x, matrix);
+
+        // Rotate by -ry about the second axis.
+        c.neg_s(12, 21);
+        c.g[S1][0] = Addr(c.g[S2][0] as u32).off(man::CAMERA).lw(c);
+        c.g[A0][0] = sx(frame.at(c, V33_SIN_COS_2));
+        c.g[A1][0] = sx(frame.at(c, V33_SIN_COS_2 + 4));
+        c.g[S0][0] = sx(V33_AXES_BASE);
+        callee::MATH_SIN_COS.call(c, 0x0039_5938)?;
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(V33_AXES_BASE - V33_AXIS_2));
+        let axis = c.g[V0][0] as u32;
+        let matrix = c.g[S1][0] as u32;
+        v33_rotate_about_axis(c, frame, V33_SIN_COS_2, axis, axis, matrix);
+
+        // Rotate by -rz about the third axis.
+        c.neg_s(12, 22);
+        c.g[S1][0] = Addr(c.g[S2][0] as u32).off(man::CAMERA).lw(c);
+        c.g[A0][0] = sx(frame.at(c, V33_SIN_COS_3));
+        c.g[A1][0] = sx(frame.at(c, V33_SIN_COS_3 + 4));
+        c.g[S0][0] = sx(V33_AXES_BASE);
+        callee::MATH_SIN_COS.call(c, 0x0039_5a7c)?;
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(V33_AXES_BASE - V33_AXIS_3));
+        let axis = c.g[V0][0] as u32;
+        let matrix = c.g[S1][0] as u32;
+        v33_rotate_about_axis(c, frame, V33_SIN_COS_3, axis, axis, matrix);
+
+        // Translate by v = pos * -1.0 with its w negated back.
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(AT, 0); // f0 = -1.0
+        c.mfc1(V1, 0);
+        c.lqc2(4, c.g[S4][0] as u32);
+        c.qmtc2(V1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        let v = frame.at(c, V33_SCRATCH);
+        c.sqc2(5, v + 0x10);
+        c.lq(V0, v + 0x10);
+        c.g[V1][0] = Addr(c.g[S2][0] as u32).off(man::CAMERA).lw(c);
+        c.sq(V0, v);
+        c.lwc1(0, v + 0xc);
+        c.neg_s(0, 0);
+        c.swc1(0, v + 0xc);
+        // Row 3 of the current matrix = v transformed by it.
+        let top = c.g[V1][0] as u32;
+        c.lqc2(4, top);
+        c.lqc2(5, top.wrapping_add(0x10));
+        c.lqc2(6, top.wrapping_add(0x20));
+        c.lqc2(7, top.wrapping_add(0x30));
+        c.lqc2(8, v);
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, top.wrapping_add(0x30));
+        Addr(c.g[S2][0] as u32).off(man::TEX_READY).sw(c, 0);
+
+        frame.restore(c, S0, 0xb0);
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore_ra(c, V33_SAVED_RA);
+        frame.restore_fpr(c, 22, 0xd0);
+        frame.restore_fpr(c, 21, 0xc8);
+        frame.restore_fpr(c, 20, 0xc0);
         frame.close(c);
         Ok(())
     })
@@ -3728,6 +4971,792 @@ pub(crate) mod tests {
         );
     }
 
+    use crate::difftest::check_paths;
+    use crate::difftest::events::driven;
+
+    use crate::difftest::elf_image;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::render::lightman::tests::light_man_empty_method_check;
+    pub(crate) use crate::game::render::particle::tests::GRID_MESH_AT;
+
+    #[test]
+    fn light_man_v08_matches() {
+        light_man_empty_method_check(ee::s13::f_00394d30__generated, light_man_v08, 0x394d30);
+    }
+
+    #[test]
+    fn light_man_v13_matches() {
+        light_man_empty_method_check(ee::s13::f_00394d38__generated, light_man_v13, 0x394d38);
+    }
+
+    #[test]
+    fn light_man_v14_matches() {
+        light_man_empty_method_check(ee::s13::f_00394d40__generated, light_man_v14, 0x394d40);
+    }
+
+    #[test]
+    fn light_man_v15_matches() {
+        light_man_empty_method_check(ee::s13::f_00394d48__generated, light_man_v15, 0x394d48);
+    }
+
+    /// Gate of the destructor fake of the `LightMan_dtor_Wrapper` test.
+    pub(crate) const LIGHT_MAN_DTOR_GATE: u32 = DATA + 0x9_0010;
+
+    pub(crate) const LIGHT_MAN_DTOR_MAGIC: u32 = 0x4454_4f52;
+
+    pub(crate) static LIGHT_MAN_DTOR_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// `LightMan::~LightMan` for the wrapper's test: unwinds (pc away from
+    /// the return address, nothing else changed) when the gate is set, else
+    /// the real destructor.
+    pub(crate) fn light_man_dtor_wrapper_fake_dtor(c: &mut Cpu) {
+        if c.bus.read32(LIGHT_MAN_DTOR_GATE) != LIGHT_MAN_DTOR_MAGIC {
+            return fakes::fall_back(c, &LIGHT_MAN_DTOR_PREV, ee::s12::f_0038ae28__generated);
+        }
+        c.pc = 0xdead_0000;
+    }
+
+    /// `LightMan_dtor_Wrapper`: a light manager of random words, the real
+    /// destructor (vtable, gp+0x2a9c cleared) without the delete flag (the
+    /// real delete would free a random block): 7 + 11 cycles; or
+    /// (`seed / 4 % 2`) a gated fake destructor that unwinds: 7.
+    #[test]
+    fn light_man_dtor_wrapper_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038AE28),
+            light_man_dtor_wrapper_fake_dtor,
+            &LIGHT_MAN_DTOR_PREV,
+        );
+        check_paths(
+            ee::s13::f_00394c68__generated,
+            light_man_dtor_wrapper,
+            100,
+            &[18, 7],
+            &|c, seed| {
+                let mut r = Rng(0x0039_4c68 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                fill(c, &mut r, DATA, 0x100);
+                c.bus.write32(GAME_GP + 0x2a9c, r.next_u32());
+                c.g[A0][0] = sx(DATA + 0x234 + (seed % 4) * 0x20);
+                c.g[A1][0] &= !1;
+                if seed / 4 % 2 == 1 {
+                    c.bus.write32(LIGHT_MAN_DTOR_GATE, LIGHT_MAN_DTOR_MAGIC);
+                }
+                c.pc = 0x0039_4c68;
+            },
+        );
+    }
+
+    /// `LightMan_GetInstance`: random table pointers and ids (negative too,
+    /// junk in the upper words).
+    #[test]
+    fn light_man_get_instance_matches() {
+        check_paths(
+            ee::s13::f_00394c88__generated,
+            light_man_get_instance,
+            100,
+            &[4],
+            &|c, seed| {
+                let mut r = Rng(0x0039_4c88 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA, 0x100);
+                c.g[A0][0] = sx(DATA + 0x124 + (seed % 4) * 0x20);
+            },
+        );
+    }
+
+    /// `LightMan_ResetCounter`: a light manager of random words; only +0xc
+    /// is cleared.
+    #[test]
+    fn light_man_reset_counter_matches() {
+        check_paths(
+            ee::s13::f_00394d10__generated,
+            light_man_reset_counter,
+            100,
+            &[2],
+            &|c, seed| {
+                let mut r = Rng(0x0039_4d10 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA, 0x100);
+                c.g[A0][0] = sx(DATA + 0x234 + (seed % 4) * 0x20);
+            },
+        );
+    }
+
+    pub(crate) const RENDERER_INIT_ENTRY: u32 = 0x0039_3048;
+
+    /// Gate of this test's callee fakes (a word in the machine's RAM).
+    pub(crate) const RENDERER_INIT_FAKE_CTRL: u32 = DATA + 0x2_0000;
+
+    pub(crate) const RENDERER_INIT_FAKE_MAGIC: u32 = 0x5245_4e49;
+
+    /// Cycles each fake charges (a fixed cost, so the path totals are known).
+    pub(crate) const RENDERER_INIT_FAKE_COST: u64 = 5;
+
+    /// Run `fakes::fake` for `target` when the gate is set (fixed cost),
+    /// else what the slot held before.
+    pub(crate) fn renderer_init_fake_call(
+        c: &mut Cpu,
+        target: u32,
+        prev: &AtomicUsize,
+        generated: fn(&mut Cpu),
+    ) {
+        if c.bus.read32(RENDERER_INIT_FAKE_CTRL) != RENDERER_INIT_FAKE_MAGIC {
+            return fakes::fall_back(c, prev, generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let start = c.cycles;
+        fakes::fake(c, target, ra);
+        c.cycles = start + RENDERER_INIT_FAKE_COST;
+    }
+
+    pub(crate) fn renderer_init_fake_memset(c: &mut Cpu) {
+        renderer_init_fake_call(
+            c,
+            0x0041_6210,
+            fakes::prev_cell(renderer_init_fake_memset),
+            ee::s15::f_00416210__generated,
+        )
+    }
+
+    /// `EA_MemCopy`, the copy inside `Rand_GetDefaultState` (which has no
+    /// slot of its own).
+    pub(crate) fn renderer_init_fake_ea_mem_copy(c: &mut Cpu) {
+        renderer_init_fake_call(
+            c,
+            0x003e_6574,
+            fakes::prev_cell(renderer_init_fake_ea_mem_copy),
+            ee::s14::f_003e6574__generated,
+        )
+    }
+
+    pub(crate) fn renderer_init_fake_spr_stream_set_mode(c: &mut Cpu) {
+        renderer_init_fake_call(
+            c,
+            0x0038_f300,
+            fakes::prev_cell(renderer_init_fake_spr_stream_set_mode),
+            ee::s12::f_0038f300__generated,
+        )
+    }
+
+    pub(crate) fn renderer_init_fake_build_sine_table(c: &mut Cpu) {
+        renderer_init_fake_call(
+            c,
+            0x0039_2df0,
+            fakes::prev_cell(renderer_init_fake_build_sine_table),
+            ee::s13::f_00392df0__generated,
+        )
+    }
+
+    pub(crate) fn renderer_init_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00416210),
+            renderer_init_fake_memset,
+            fakes::prev_cell(renderer_init_fake_memset),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6574),
+            renderer_init_fake_ea_mem_copy,
+            fakes::prev_cell(renderer_init_fake_ea_mem_copy),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038F300),
+            renderer_init_fake_spr_stream_set_mode,
+            fakes::prev_cell(renderer_init_fake_spr_stream_set_mode),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_00392DF0),
+            renderer_init_fake_build_sine_table,
+            fakes::prev_cell(renderer_init_fake_build_sine_table),
+        );
+    }
+
+    /// The callees a seed runs.
+    #[derive(Clone, Copy, PartialEq)]
+    pub(crate) enum RendererInitCallees {
+        /// The real memset, Rand_GetDefaultState, SprStream_SetMode and
+        /// Renderer_BuildSineTable (the game image supplies their tables).
+        Real,
+        /// Fakes; fake call `unwind_at` (0 memset, 1 EA_MemCopy, 2
+        /// SprStream_SetMode, 3 Renderer_BuildSineTable) unwinds.
+        Faked { unwind_at: u32 },
+    }
+
+    /// Scrambled registers (and the game image for real callees), every
+    /// output area and frame slot pre-filled with random words, a random
+    /// literal pool at gp-0x2690..gp-0x2560 (so a misplaced literal shows),
+    /// and the arguments.
+    pub(crate) fn renderer_init_setup(
+        c: &mut Cpu,
+        seed: u32,
+        initialize: u64,
+        priority: u64,
+        callees: RendererInitCallees,
+    ) -> Rng {
+        if callees == RendererInitCallees::Real {
+            elf_image(c);
+        }
+        let mut r = machine(c, seed, 0x0039_3048, 0);
+        fill(
+            c,
+            &mut r,
+            RENDERER_VEC4S_A,
+            (0x0050_1440 - RENDERER_VEC4S_A) / 4,
+        );
+        fill(
+            c,
+            &mut r,
+            RENDERER_VEC4S_B,
+            (0x0050_5a00 - RENDERER_VEC4S_B) / 4,
+        );
+        fill(c, &mut r, GAME_GP + 0x28b0, 0x24);
+        let frame_base = crate::difftest::SP - RENDERER_INIT_FRAME;
+        fill(c, &mut r, frame_base, RENDERER_INIT_FRAME / 4);
+        fill(c, &mut r, GAME_GP - 0x2690, 0x4c);
+        if let RendererInitCallees::Faked { unwind_at } = callees {
+            c.bus
+                .write32(RENDERER_INIT_FAKE_CTRL, RENDERER_INIT_FAKE_MAGIC);
+            c.bus.write32(fakes::LOG_UNWIND_AT, unwind_at);
+        }
+        c.g[A0][0] = initialize;
+        c.g[A1][0] = priority;
+        c.pc = RENDERER_INIT_ENTRY;
+        r
+    }
+
+    /// Renderer_StaticInitDestroy. Digits: `seed % 4` picks the pass
+    /// (0: another priority, 1: destroy pass, 2-3: construct pass);
+    /// `seed / 4 % 6` the callees (0 real, 1 fakes, 2-5 fake call 0-3
+    /// unwinds); `seed / 24 % 3` the argument values (priorities 0, 0xfffe
+    /// and 0x1_0000_ffff; initialize 1, 0x1_0000_0000 and a negative one).
+    ///
+    /// Paths (cycles): other priority 33; destroy pass 35; construct with
+    /// fakes 1466; memset unwinds 605; EA_MemCopy (in
+    /// Rand_GetDefaultState) unwinds 1008; SprStream_SetMode unwinds 1445;
+    /// Renderer_BuildSineTable unwinds 1450. Real-callee seeds take a path
+    /// of their own.
+    #[test]
+    fn renderer_static_init_destroy_matches() {
+        renderer_init_install_fakes();
+        check_paths(
+            ee::s13::f_00393048__generated,
+            renderer_static_init_destroy,
+            288,
+            &[33, 35, 605, 1008, 1445, 1450, 1466],
+            &|c, seed| {
+                let pass = seed % 4;
+                let callees = match seed / 4 % 6 {
+                    0 => RendererInitCallees::Real,
+                    1 => RendererInitCallees::Faked {
+                        unwind_at: u32::MAX,
+                    },
+                    n => RendererInitCallees::Faked { unwind_at: n - 2 },
+                };
+                let value = (seed / 24 % 3) as usize;
+                let (initialize, priority) = match pass {
+                    0 => (1, [0, 0xfffe, 0x1_0000_ffff][value]),
+                    1 => (0, RENDERER_INIT_PRIORITY),
+                    _ => (
+                        [1, 0x1_0000_0000, 0xffff_ffff_8000_0000][value],
+                        RENDERER_INIT_PRIORITY,
+                    ),
+                };
+                renderer_init_setup(c, seed, initialize, priority, callees);
+            },
+        );
+    }
+
+    driven!(renderer_init_gen_driven, ee::s13::f_00393048__generated);
+
+    driven!(renderer_init_hand_driven, renderer_static_init_destroy);
+
+    /// Cycles after entry at which the event falls due, one per loop head
+    /// (with fakes): the global halfword loop (565), the halfword loop
+    /// (586), the 8-array loop (612..654), the 3-array loop (713, 720), the
+    /// 6x6 inner (1017..) and outer (1055) loops, and the two 8-array loops
+    /// (1302..1350, 1367..1409).
+    pub(crate) const RENDERER_INIT_EVENT_AT: [u64; 8] =
+        [560, 580, 630, 715, 1030, 1050, 1320, 1390];
+
+    /// Renderer_StaticInitDestroy (construct pass, fakes that return) with
+    /// an event due at each loop head in turn (`seed / 3 % 8`): delivered
+    /// or asking to unwind (the structured loops carry on either way).
+    #[test]
+    fn renderer_static_init_destroy_events_match() {
+        renderer_init_install_fakes();
+        check_events(
+            renderer_init_gen_driven,
+            renderer_init_hand_driven,
+            144,
+            &|c, seed| {
+                let mut r = renderer_init_setup(
+                    c,
+                    seed / 3,
+                    1,
+                    RENDERER_INIT_PRIORITY,
+                    RendererInitCallees::Faked {
+                        unwind_at: u32::MAX,
+                    },
+                );
+                let mode = schedule(c, &mut r, seed, RENDERER_INIT_ENTRY);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + RENDERER_INIT_EVENT_AT[(seed / 3 % 8) as usize];
+                }
+                mode
+            },
+        );
+    }
+
+    /// `cPS2GridMesh_IsValid` against the generated body (one path, 2 cycles).
+    #[test]
+    fn c_ps2_grid_mesh_is_valid_matches() {
+        check_paths(
+            ee::s13::f_00396108__generated,
+            c_ps2_grid_mesh_is_valid,
+            100,
+            &[2],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x39_6108, 0);
+                c.pc = 0x0039_6108;
+                fill(c, &mut r, GRID_MESH_AT, 0x74);
+                if seed % 2 == 0 {
+                    c.bus.write32(GRID_MESH_AT + gmesh::VALID, 0);
+                }
+                c.g[A0][0] = sx(GRID_MESH_AT);
+            },
+        );
+    }
+
+    /// `Renderer_GlobalCtors` against the generated body: the real
+    /// `Renderer_StaticInitDestroy(1, 0xffff)` runs on the game image.
+    #[test]
+    fn renderer_global_ctors_matches() {
+        check(
+            ee::s13::f_003970f8__generated,
+            renderer_global_ctors,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x39_70f8, 0);
+                elf_image(c);
+                c.pc = 0x0039_70f8;
+            },
+        );
+    }
+
+    /// `Renderer_GlobalDtors` against the generated body: the real
+    /// `Renderer_StaticInitDestroy(0, 0xffff)` takes its short path (43).
+    #[test]
+    fn renderer_global_dtors_matches() {
+        check_paths(
+            ee::s13::f_00397118__generated,
+            renderer_global_dtors,
+            100,
+            &[43],
+            &|c, seed| {
+                machine(c, seed, 0x39_7118, 0);
+                c.pc = 0x0039_7118;
+            },
+        );
+    }
+
+    use crate::difftest::fresh;
+    use crate::difftest::require_paths;
+
+    // -- Constructor and destructor -----------------------------------------
+
+    /// Gate of this module's test fakes (a magic word in the machine's RAM).
+    pub(crate) const PS2GM_FAKE_GATE: u32 = DATA + 0x8_0000;
+
+    pub(crate) const PS2GM_FAKE_MAGIC: u32 = 0x5047_4d64;
+
+    pub(crate) static PS2GM_DTOR_PREV_BASE_DTOR: AtomicUsize = AtomicUsize::new(0);
+
+    /// `GraphicsMan_dtor` for `PS2GraphicsMan_dtor`'s test: the logging fake
+    /// (may unwind) when the gate is set, else the body it replaced.
+    pub(crate) fn ps2_graphics_man_dtor_fake_base_dtor(c: &mut Cpu) {
+        if c.bus.read32(PS2GM_FAKE_GATE) != PS2GM_FAKE_MAGIC {
+            return fakes::fall_back(
+                c,
+                &PS2GM_DTOR_PREV_BASE_DTOR,
+                ee::s12::f_003695d8__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0036_95d8, ra);
+    }
+
+    /// `PS2GraphicsMan_dtor`: the real `GraphicsMan_dtor` on its no-delete
+    /// path (`flags & 1 == 0`, 7 + 11 = 18 cycles), the fake returning, or
+    /// the fake unwinding (`seed % 3`; the object address from `seed / 3`).
+    #[test]
+    fn ps2_graphics_man_dtor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_003695D8),
+            ps2_graphics_man_dtor_fake_base_dtor,
+            &PS2GM_DTOR_PREV_BASE_DTOR,
+        );
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x0039_5268, 1);
+            let this = DATA + 0x1_0000 + 0x10 * (seed / 3 % 16);
+            fill(c, &mut r, this + 0x10c0, 16);
+            fill(c, &mut r, GAME_GP + 0x2a80, 8);
+            if seed % 3 != 0 {
+                c.bus.write32(PS2GM_FAKE_GATE, PS2GM_FAKE_MAGIC);
+            }
+            let unwind_at = if seed % 3 == 2 { 0 } else { u32::MAX };
+            c.bus.write32(fakes::LOG_UNWIND_AT, unwind_at);
+            c.g[A0][0] = sx(this);
+            c.g[A1][0] &= !1;
+            c.pc = 0x0039_5268;
+        };
+        fakes::covered(
+            ee::s13::f_00395268__generated,
+            ps2_graphics_man_dtor,
+            120,
+            &setup,
+        );
+        require_paths(ee::s13::f_00395268__generated, 120, &[18], &setup);
+    }
+
+    pub(crate) const PS2GM_CTOR_THIS: u32 = DATA + 0x1_0030;
+
+    /// A graphics manager to construct: its first 0x1300 bytes (base
+    /// fields, the vtable word and the render-slot arrays) filled with
+    /// random words.
+    pub(crate) fn ps2_graphics_man_ctor_fixture(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = Rng(0x3952_8800 ^ (seed as u64) << 12);
+        scramble(c, &mut r);
+        c.g[GP][0] = sx(GAME_GP);
+        fill(c, &mut r, PS2GM_CTOR_THIS, 0x1300 / 4);
+        c.g[A0][0] = sx(PS2GM_CTOR_THIS);
+        c.pc = 0x0039_5288;
+        r
+    }
+
+    /// Cycles the base `GraphicsMan_ctor` takes on the fixture.
+    pub(crate) fn ps2_graphics_man_ctor_base_cycles(seed: u32) -> u64 {
+        let mut c = fresh();
+        ps2_graphics_man_ctor_fixture(&mut c, seed);
+        c.pc = 0x0036_91f8;
+        let before = c.cycles;
+        ee::s12::GraphicsMan_ctor(&mut c);
+        assert_eq!(c.pc, crate::difftest::RA, "GraphicsMan_ctor did not return");
+        c.cycles - before
+    }
+
+    /// The constructor's own charges: 10 + 12*7 + 7 + 4*7 + 4.
+    pub(crate) const PS2GM_CTOR_OWN_CYCLES: u64 = 133;
+
+    #[test]
+    fn ps2_graphics_man_ctor_matches_gfx1() {
+        let total = PS2GM_CTOR_OWN_CYCLES + ps2_graphics_man_ctor_base_cycles(0);
+        check_paths(
+            ee::s13::f_00395288__generated,
+            crate::game::render::font::ps2_graphics_man_ctor,
+            100,
+            &[total],
+            &|c, seed| {
+                ps2_graphics_man_ctor_fixture(c, seed);
+            },
+        );
+    }
+
+    driven!(gen_ps2_graphics_man_ctor, ee::s13::f_00395288__generated);
+
+    driven!(
+        hand_ps2_graphics_man_ctor_gfx1,
+        crate::game::render::font::ps2_graphics_man_ctor
+    );
+
+    /// Events at the back edges of both counting loops (0x3952b0 and
+    /// 0x3952e8): the first event is due after the base constructor has
+    /// returned, somewhere inside the two loops.
+    #[test]
+    fn ps2_graphics_man_ctor_events_gfx1() {
+        let base = ps2_graphics_man_ctor_base_cycles(0);
+        check_events(
+            gen_ps2_graphics_man_ctor,
+            hand_ps2_graphics_man_ctor_gfx1,
+            150,
+            &|c, seed| {
+                let mut r = ps2_graphics_man_ctor_fixture(c, seed / 3);
+                let mode = schedule(c, &mut r, seed, 0x0039_5288);
+                if mode != Events::Off {
+                    // Loop back edges are at +7..+77 and +98..+112 after the
+                    // base constructor returns.
+                    c.next_event = c.cycles + 10 + base + (r.next_u32() % 113) as u64;
+                }
+                mode
+            },
+        );
+    }
+
+    // -- Small accessors -----------------------------------------------------
+
+    /// A graphics manager at a varied word address with varied non-zero
+    /// words around `field` (both signs), `a0` carrying a random upper
+    /// half, and `pc` at `entry`. Returns `this`.
+    pub(crate) fn ps2_graphics_man_field_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        field: u32,
+        entry: u32,
+    ) -> u32 {
+        let mut r = Rng(entry as u64 ^ (seed as u64) << 24 ^ field as u64);
+        scramble(c, &mut r);
+        let this = DATA + 0x4_0000 + 4 * (seed % 61);
+        for i in 0..12 {
+            let w = r.next_u32() | 0x0100_0100;
+            c.bus.write32(this + field - 0x18 + 4 * i, w);
+        }
+        c.g[A0][0] = (r.next_u32() as u64) << 32 | this as u64;
+        c.pc = entry;
+        this
+    }
+
+    #[test]
+    fn ps2_graphics_man_get_display_mode_count_matches() {
+        check_paths(
+            ee::s13::f_00395318__generated,
+            ps2_graphics_man_get_display_mode_count,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, renderer_fields::MODE_COUNT, 0x0039_5318);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_is_progressive_matches() {
+        check_paths(
+            ee::s13::f_00395320__generated,
+            ps2_graphics_man_is_progressive,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, renderer_fields::PROGRESSIVE, 0x0039_5320);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_get_display_mode_index_matches() {
+        check_paths(
+            ee::s13::f_00395328__generated,
+            ps2_graphics_man_get_display_mode_index,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, renderer_fields::CUR_MODE, 0x0039_5328);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_get_fog_state_matches_gfx1() {
+        check_paths(
+            ee::s13::f_003953b0__generated,
+            crate::game::render::font::ps2_graphics_man_get_fog_state,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, GM_FOG_MODE, 0x0039_53b0);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_clear_lights_matches_gfx1() {
+        check_paths(
+            ee::s13::f_00395420__generated,
+            crate::game::render::font::ps2_graphics_man_clear_lights,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, GM_LIGHTS, 0x0039_5420);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_get_lighting_matches() {
+        check_paths(
+            ee::s13::f_00395500__generated,
+            ps2_graphics_man_get_lighting,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, GM_LIGHTING, 0x0039_5500);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_v110_matches_gfx1() {
+        check_paths(
+            ee::s13::f_00395508__generated,
+            crate::game::render::font::ps2_graphics_man_v110,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, 0x40, 0x0039_5508);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_get_flip_count_matches_gfx1() {
+        check_paths(
+            ee::s13::f_00395510__generated,
+            crate::game::render::font::ps2_graphics_man_get_flip_count,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, renderer_fields::FLIP_COUNT, 0x0039_5510);
+            },
+        );
+    }
+
+    /// `a1` keeps scramble's random upper half (only the low word is stored).
+    #[test]
+    fn ps2_graphics_man_v98_matches() {
+        check_paths(
+            ee::s13::f_003956e0__generated,
+            ps2_graphics_man_v98,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, renderer_fields::F6D14, 0x0039_56e0);
+            },
+        );
+    }
+
+    /// Top pointer, depth and the view-valid word all random non-zero.
+    #[test]
+    fn ps2_graphics_man_pop_matrix_matches_gfx1() {
+        check_paths(
+            ee::s13::f_00395730__generated,
+            crate::game::render::font::ps2_graphics_man_pop_matrix,
+            100,
+            &[8],
+            &|c, seed| {
+                let this = ps2_graphics_man_field_fixture(c, seed, man::CAMERA, 0x0039_5730);
+                let mut r = Rng(0x3957_3000 ^ seed as u64);
+                for i in 0..8 {
+                    let w = r.next_u32() | 0x0100_0100;
+                    c.bus.write32(this + man::TEX_READY - 0x10 + 4 * i, w);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_get_matrix_matches_gfx1() {
+        check_paths(
+            ee::s13::f_00395c68__generated,
+            crate::game::render::font::ps2_graphics_man_get_matrix,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, man::CAMERA, 0x0039_5c68);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_v68_matches() {
+        check_paths(
+            ee::s13::f_00395fa0__generated,
+            ps2_graphics_man_v68,
+            100,
+            &[2],
+            &|c, seed| {
+                ps2_graphics_man_field_fixture(c, seed, 0x40, 0x0039_5fa0);
+            },
+        );
+    }
+
+    // -- v33 ---------------------------------------------------------------
+
+    pub(crate) static PS2GM_V33_PREV_SIN_COS: AtomicUsize = AtomicUsize::new(0);
+
+    /// `Math_SinCos` for `v33`'s test: the logging fake (may unwind; it
+    /// writes no sine or cosine) when the gate is set, else the body it
+    /// replaced.
+    pub(crate) fn ps2_graphics_man_v33_fake_sin_cos(c: &mut Cpu) {
+        if c.bus.read32(PS2GM_FAKE_GATE) != PS2GM_FAKE_MAGIC {
+            return fakes::fall_back(c, &PS2GM_V33_PREV_SIN_COS, ee::s10::f_0031be50__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_be50, ra);
+    }
+
+    /// `v33` on random data: the manager at DATA+0x10000 with its matrix
+    /// stack top at one of four 16-byte-aligned slots, random floats in the
+    /// identity source, the three axes, the position and the stack frame.
+    /// `seed % 5`: the real `Math_SinCos` (its constants from the game
+    /// image), the fake returning from all three calls, or the fake
+    /// unwinding at call 0, 1 or 2 (each call's return entered).
+    /// `seed / 5 % 3 == 0`: edge-case angles, else within +-7 rad.
+    #[test]
+    fn ps2_graphics_man_v33_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0031BE50),
+            ps2_graphics_man_v33_fake_sin_cos,
+            &PS2GM_V33_PREV_SIN_COS,
+        );
+        fakes::covered(
+            ee::s13::f_00395750__generated,
+            ps2_graphics_man_v33,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0039_5750, 3);
+                elf_image(c);
+                let calls = seed % 5;
+                if calls != 0 {
+                    c.bus.write32(PS2GM_FAKE_GATE, PS2GM_FAKE_MAGIC);
+                }
+                let unwind_at = if calls >= 2 { calls - 2 } else { u32::MAX };
+                c.bus.write32(fakes::LOG_UNWIND_AT, unwind_at);
+                let this = DATA + 0x1_0000;
+                fill(c, &mut r, this + renderer_fields::MATRIX_DEPTH - 0x10, 12);
+                fill(c, &mut r, this + man::TEX_READY - 0x10, 8);
+                let top = DATA + 0x3_0010 + 0x40 * (seed / 15 % 4);
+                c.bus.write32(this + man::CAMERA, top);
+                for at in (DATA + 0x3_0000..DATA + 0x3_0200).step_by(4) {
+                    let v = r.f32(4.0);
+                    c.bus.write32(at, v);
+                }
+                for base in [IDENTITY_MATRIX, V33_AXIS_1, V33_AXIS_2, V33_AXIS_3] {
+                    let words = if base == IDENTITY_MATRIX { 16 } else { 4 };
+                    for i in 0..words {
+                        let v = r.f32(1.5);
+                        c.bus.write32(base + 4 * i, v);
+                    }
+                }
+                let pos = DATA + 0x2_0000 + 0x10 * (r.next_u32() % 8);
+                for i in 0..4 {
+                    let v = r.f32(500.0);
+                    c.bus.write32(pos + 4 * i, v);
+                }
+                for f in 12..15 {
+                    c.f[f] = if seed / 5 % 3 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(7.0)
+                    };
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(pos);
+                c.pc = 0x0039_5750;
+            },
+        );
+    }
     pub(crate) use crate::game::render::particle::tests::oc690_gfx_leaf;
     pub(crate) use crate::game::render::particle::tests::GFX;
     pub(crate) use crate::game::render::particle::tests::SEEDS_13 as SEEDS_5;

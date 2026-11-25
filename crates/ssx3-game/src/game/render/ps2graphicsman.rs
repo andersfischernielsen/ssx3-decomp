@@ -2184,6 +2184,13 @@ pub(crate) fn tex_load_texture_exit(c: &mut Cpu, frame: Frame) {
     frame.close(c);
 }
 
+pub(crate) mod ps2gm {
+    #[cfg(test)]
+    pub(crate) use crate::game::render::particle::ps2gm::SHAPE_BANK_COUNT;
+    #[cfg(test)]
+    pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE_COUNT;
+}
+
 /// `int PS2GraphicsMan_GetTextureByName(PS2GraphicsMan* self, const char* name)`
 /// (0x003696c8): texture id of a 4-character shape name. Copies at most four
 /// characters of `name` into a local buffer, looks it up in the cache
@@ -3186,7 +3193,160 @@ pub(crate) mod tests {
         );
     }
 
+    use crate::game::dirtysock::buddyapi::tests::require_arm_values;
+
+    pub(crate) use crate::game::render::particle::tests::PS2GM_RET;
+    pub(crate) use crate::game::render::particle::tests::PS2GM_STACK;
+
+    pub(crate) use crate::game::render::particle::tests::GTN_MAN;
+
+    pub(crate) use crate::game::render::particle::tests::GTN_BEFORE;
+
+    pub(crate) use crate::game::render::particle::tests::get_texture_by_name_setup;
+    pub(crate) use crate::game::render::particle::tests::GTN_NAMES;
+
+    /// GetTextureByName against the generated body: every key length, cache
+    /// hits and misses, bank hits and misses (fake unwinds included).
+    #[test]
+    fn ps2_graphics_man_get_texture_by_name_matches_gfx1() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            get_texture_by_name_setup(c, seed);
+        };
+        check_lohi(
+            ee::s12::f_003696c8__generated,
+            crate::game::render::ps2graphicsman::ps2_graphics_man_get_texture_by_name,
+            216,
+            &setup,
+        );
+        // The key copy: empty, ended by the NUL, cut at four characters.
+        require_arm_values(
+            ee::s12::f_003696c8__generated,
+            216,
+            &setup,
+            &|c, seed| {
+                let buf = PS2GM_STACK - 0x80;
+                let len = (0..5).take_while(|&i| c.bus.read8(buf + i) != 0).count();
+                match len {
+                    0 => 0,
+                    1..=3 => 1,
+                    4 if GTN_NAMES[(seed % 4) as usize].len() == 4 => 2,
+                    4 => 3,
+                    _ => 9,
+                }
+            },
+            &[0, 1, 2, 3],
+        );
+        // The outcome (0 cached, 1 loaded from a bank, 2 missing) with
+        // whether the cache and the banks were searched.
+        require_arm_values(
+            ee::s12::f_003696c8__generated,
+            216,
+            &setup,
+            &|c, _| {
+                if c.pc != PS2GM_RET {
+                    return (9, false, false);
+                }
+                let before = c.bus.read32(GTN_BEFORE);
+                let banks = c.bus.read32(GTN_BEFORE + 4);
+                let after = c.bus.read32(GTN_MAN + ps2gm::TEX_CACHE_COUNT);
+                let outcome = if after == before {
+                    0
+                } else if c.g[V0][0] == u64::MAX {
+                    2
+                } else {
+                    1
+                };
+                (outcome, before > 0, outcome != 0 && banks > 0)
+            },
+            &[
+                (0, true, false),
+                (1, false, true),
+                (1, true, true),
+                (2, false, false),
+                (2, false, true),
+                (2, true, false),
+                (2, true, true),
+            ],
+        );
+        // The returns and unwinds (`pc`, the copy flag at `GTN_UNWIND + 4`):
+        // the renderer's texture load (fake call 0), strcmp before and after
+        // the key was copied in, strcpy.
+        require_arm_values(
+            ee::s12::f_003696c8__generated,
+            216,
+            &setup,
+            &|c, _| match c.pc {
+                PS2GM_RET => (0, 0),
+                pc => (pc, c.bus.read32(GTN_UNWIND + 4)),
+            },
+            &[
+                (0, 0),
+                (0xdead_0000, 1),
+                (0xdead_0100, 0),
+                (0xdead_0100, 1),
+                (0xdead_0200, 1),
+            ],
+        );
+    }
+
+    use crate::difftest::events::driven;
+    use crate::difftest::events::Events;
     use crate::difftest::fakes;
+    use crate::game::render::particle::tests::ps2gm_deliver_only;
+    use crate::game::render::particle::tests::ps2gm_put_str;
+    use crate::game::render::particle::tests::GTN_BANKS;
+    use crate::game::render::particle::tests::GTN_BANK_LIST;
+    use crate::game::render::particle::tests::GTN_NAME;
+    use crate::game::render::particle::tests::GTN_UNWIND;
+
+    driven!(gen_get_texture_by_name, ee::s12::f_003696c8__generated);
+
+    driven!(
+        hand_get_texture_by_name_gfx1,
+        crate::game::render::ps2graphicsman::ps2_graphics_man_get_texture_by_name
+    );
+
+    /// The bank loop's event fixture: key `"sky"`, an empty cache, and three
+    /// banks of one entry whose shape's long name is empty (misses that make
+    /// no event check: `strcmp` returns at the empty string's first byte); the
+    /// event falls due when `strcpy` returns, so it lands on the bank loop's
+    /// back edge.
+    pub(crate) fn gtn_bank_head_fixture(c: &mut Cpu) {
+        ps2gm_put_str(c, GTN_NAME, b"sky");
+        c.bus.write32(GTN_MAN + ps2gm::TEX_CACHE_COUNT, 0);
+        c.bus.write32(GTN_MAN + ps2gm::SHAPE_BANK_COUNT, 3);
+        for k in 0..3 {
+            let bank = GTN_BANKS + 0x1000 * k;
+            c.bus.write32(GTN_BANK_LIST + 4 * k, bank);
+            c.bus.write32(bank + 8, 1);
+            c.bus.write32(bank + 0x14, 0x400);
+            c.bus.write32(bank + 0x400, 0x70);
+            ps2gm_put_str(c, bank + 0x404, b"");
+        }
+        c.bus.write32(GTN_UNWIND + 8, 1);
+    }
+
+    /// GetTextureByName with events at the copy, cache and bank loops' back
+    /// edges (structured loops: delivered, never unwinding there): `seed / 3
+    /// % 2` aims the event at the bank loop (0x3697b0).
+    #[test]
+    fn ps2_graphics_man_get_texture_by_name_events_match_gfx1() {
+        check_events(
+            gen_get_texture_by_name,
+            hand_get_texture_by_name_gfx1,
+            300,
+            &|c, seed| {
+                let mut r = get_texture_by_name_setup(c, seed / 6);
+                c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+                c.bus.write32(GTN_UNWIND, 0);
+                let mode = schedule(c, &mut r, seed, 0x0036_96c8);
+                if seed / 3 % 2 == 1 && mode != Events::Off {
+                    gtn_bank_head_fixture(c);
+                }
+                ps2gm_deliver_only(c, mode)
+            },
+        );
+    }
 
     pub(crate) use crate::game::bx::memblockman::tests::oc689_put_cstr;
     pub(crate) use crate::game::bx::memblockman::tests::OC689_GFX;
