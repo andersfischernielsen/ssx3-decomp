@@ -1,37 +1,33 @@
 # Roadmap
 
-Goal: a complete decompilation of SSX 3 (`SLUS_207.72`) to Rust that runs
-natively, then becomes readable, typed Rust, and finally a native **port**
-with no PS2 machine emulation (`AGENTS.md`, "Goals").
+Goal: a complete decompilation of SSX 3 (`SLUS_207.72`) to Rust that runs natively, then becomes readable, typed Rust, and finally a native port with no PS2 machine emulation (`AGENTS.md`, "Goals").
 
-Agreed with the project owner on 2026-10-14. Order matters: each phase is
-the safety net for the next one (see "Verification" below).
+Order matters: each phase is the safety net for the next one (see "Verification" below).
 
-Status legend: ✅ done · 🟡 in progress · ⬜ not started
+Legend: 
+- ✅ done
+- 🟡 in progress
+- ⬜ not started
 
 ## Where we are
 
 | Layer | Today |
 | --- | --- |
-| Game logic (EE) | Statically compiled to Rust; about half of it hand-written typed Rust (the README's progress chart, `tools/progress.py`), the rest generated. Still PS2-shaped: register file, guest RAM, PS2 float rules. |
+| Game logic (EE) | Statically compiled to Rust: about half of it hand-written typed Rust (the README's progress chart, `tools/progress.py`), the rest generated. Still PS2-shaped: register file, guest RAM, PS2 float rules. |
 | Kernel | Native HLE: guest threads as coroutines on one host thread, semaphores, alarms, interrupts. The final state has no guest threads (below). |
 | Graphics | Native: the draw functions record typed draws, `ssx3-gfx` (wgpu) renders them. The emulated DMA/VIF/VU1/GS remain only for the reference path (`--features vu1-microcode`). |
 | Movies, sound, files, pads, memory card | Native (`ssx3-mpeg`, `ssx3-snd`, `std::fs`, native libpad/libmc). The IOP does not run. |
 | Game rate | Configurable (`SSX3_TICK_HZ`), bit-exact at 60: `configurable-tick-rate.md`. |
 
-Detailed status of the native work: `native-rendering.md` (N1-N6); runtime
-next steps: `port-architecture.md`; open issues:
-`../investigation/limitations.md`.
+Detailed status of the native work: `native-rendering.md` (N1-N6). 
+Runtime next steps: `port-architecture.md`.
+Open issues: `../investigation/limitations.md`.
 
 ## Phase 1: full static recompilation, playable natively ✅
 
-Everything the game executes is statically translated (EE: 13,306 functions,
-mostly structured Rust, no runtime decode; VU microprograms; the IOP sound,
-pad and memory-card modules) and the game is playable at full speed: boot,
-movies, menus, memory-card save/load, every course and mode scripted in
-`tools/scenarios.py`. Runtime misses are recorded in `generated/entries.txt`
-and translated on the next `recomp-ee`. History: `../archive/` (recompiler,
-GS/VU/IOP models, build-time split, coverage).
+Everything the game executes is statically translated (EE: 13,306 functions, mostly structured Rust, no runtime decode; VU microprograms; the IOP sound, pad and memory-card modules) and the game is playable at full speed: boot, movies, menus, memory-card save/load, every course and mode scripted in `tools/scenarios.py`. 
+
+Runtime misses are recorded in `generated/entries.txt` and translated on the next `recomp-ee`. History: `../archive/` (recompiler, GS/VU/IOP models, build-time split, coverage).
 
 ## Phase 2: "Rust-ify": readable, typed source 🟡
 
@@ -51,12 +47,11 @@ Turn machine-shaped Rust into source a person can read and change.
    strings, fixed-point/float helpers), keeping bit-exactness where it
    matters.
 
-Done when: the subsystems in phase 3 have clear, typed interfaces.
+Done when the subsystems in phase 3 have clear, typed interfaces.
 
 ## Phase 3: native port: move the boundary upward 🟡
 
-Replace hardware models with host implementations at the game's own
-interfaces, one subsystem at a time:
+Replace hardware models with host implementations at the game's own interfaces, one subsystem at a time:
 
 - ✅ Files → `std::fs` (`../investigation/phase3-files.md`).
 - ✅ Sound → native driver and mixer (`../investigation/phase3-sound.md`,
@@ -72,58 +67,38 @@ interfaces, one subsystem at a time:
 - 🟡 The rest of the PS2 (kernel, DMAC/INTC/timer state, guest RAM):
   `native-rendering.md` N4/N6, `port-architecture.md` task 3.
 
-Done when: the game runs without the PS2 hardware models (they stay available
-for verification until then).
+Done when the game runs without the PS2 hardware models (they stay available for verification until then).
 
 ## Optional: browser (WebAssembly) 🟡
 
-The browser front end (its own repository, [`../frontends.md`](../frontends.md)): the game in a Web
-Worker with its guest threads on WebAssembly JSPI stacks (`ssx3_ps2::threads::StackSwitcher`),
-the disc image read with `FileReaderSync`, ssx3-gfx drawing with WebGPU. Lowest-priority
-target: avoid new blocking GPU readbacks. The unwind form is gone (2026-11-22).
+The browser front end (its own repository, [`../frontends.md`](../frontends.md)): the game in a Web Worker with its guest threads on WebAssembly JSPI stacks (`ssx3_ps2::threads::StackSwitcher`), the disc image read with `FileReaderSync`, `ssx3-gfx` drawing with WebGPU. 
 
-## Final task (required before the project is called done) ⬜
+Lowest-priority target: avoid new blocking GPU readbacks.
 
-- **Light glows/flares must be occluded by geometry**:
-  `../investigation/flare-occlusion.md`. Parked by the owner on 2026-10-15,
-  but explicitly required. Confirm against PCSX2.
+## Final task ⬜
+
+- Light glows/flares must be occluded by geometry: `../investigation/flare-occlusion.md`. Parked on 2026-10-15, but explicitly required. Confirm against PCSX2.
 
 ## Final state: no guest threads ⬜
 
-Agreed with the project owner on 2026-11-17: the decompilation ends with the
-game as one loop that the port drives, without the EE kernel's threads.
+The decompilation ends with the game as one loop that the port drives, without the EE kernel's threads.
 
-The EE has one core, but the game is written as kernel threads (8 in a race:
-`CreateThread`, semaphores, `SleepThread`/`iWakeupThread`, alarms), one
-running at a time. Recompiled, a guest call is a host call, so a thread that
-blocks deep in a call chain holds host stack frames. Keeping that working
-costs a host stack per guest thread (coroutines in `ssx3-ps2/src/threads.rs`;
-JSPI stacks in the browser, `threads_switcher.rs`). That is not the game; it is
-there because its threads are.
+The EE has one core, but the game is written as kernel threads (8 in a race: 
+- `CreateThread`, semaphores, `SleepThread`/`iWakeupThread`, alarms), one running at a time. 
+- Recompiled, a guest call is a host call, so a thread that blocks deep in a call chain holds host stack frames. 
+- Keeping that working costs a host stack per guest thread (coroutines in `ssx3-ps2/src/threads.rs`: JSPI stacks in the browser, `threads_switcher.rs`). This is not due to the game, it is there because its threads are.
 
-The way out is to remove the threads from the game itself: once everything
-on each thread's paths is hand-written, what a thread does becomes a call
-from the frame loop (a VBlank wait becomes the end of a frame, a semaphore a
-direct call or a flag, a streaming thread a step per frame), still deterministic and
-RAM-identical at each step under the gate.
+The solution is to remove the threads from the game itself: once everything on each thread's paths is hand-written, what a thread does becomes a call from the frame loop (a VBlank wait becomes the end of a frame, a semaphore a direct call or a flag, a streaming thread a step per frame), still deterministic and RAM-identical at each step under the gate.
 
 Done when:
-- no guest thread is created; the kernel's thread, semaphore and alarm
-  services are unused by the game;
-- the coroutine layer (`threads.rs`, `corosensei`, the `StackSwitcher`) and
-  the trampoline and dispatch-form code that only the thread-free game needs
-  are deleted;
-- every front end, the browser included, runs the same code with no stack
-  switching.
+- no guest thread is created: the kernel's thread, semaphore and alarm services are unused by the game.
+- the coroutine layer (`threads.rs`, `corosensei`, the `StackSwitcher`) and the trampoline and dispatch-form code that only the thread-free game needs are deleted.
+- every front end, the browser included, runs the same code with no stack switching.
 
-The browser needs JSPI until then (one wasm stack per guest thread: Chrome/Edge
-137+, Firefox 153+, Safari 27).
+The browser frontend needs JSPI until then.
 
 ## Verification (applies to every phase)
 
-Runs are deterministic (fixed RTC), so any change can be checked by replaying
-the scripted race and comparing RAM (the gate) or screenshots byte for byte
-against the previous build (`../development.md`). Hand-written code has
-differential tests against its generated body. Further oracles: PCSX2 via
-PINE (`tools/pine.py`, `../investigation/tools.md`) and, in the reference
-build, `vu_diff` captures and `gs_replay` traces.
+Runs are deterministic (fixed RTC), so any change can be checked by replaying the scripted race and comparing RAM (the gate) or screenshots byte for byte against the previous build (`../development.md`). 
+Hand-written code has differential tests against its generated body. 
+Other oracles: PCSX2 via PINE (`tools/pine.py`, `../investigation/tools.md`) and, in the reference build, `vu_diff` captures and `gs_replay` traces.
