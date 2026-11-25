@@ -103,6 +103,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0036_7bc0, tex_man_free_texture, "TexMan_FreeTexture"),
     (0x0036_7440, tex_man_load_texture, "TexMan_LoadTexture"),
+    (
+        0x0036_96c8,
+        ps2_graphics_man_get_texture_by_name,
+        "PS2GraphicsMan_GetTextureByName",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2179,6 +2184,233 @@ pub(crate) fn tex_load_texture_exit(c: &mut Cpu, frame: Frame) {
     frame.close(c);
 }
 
+/// `int PS2GraphicsMan_GetTextureByName(PS2GraphicsMan* self, const char* name)`
+/// (0x003696c8): texture id of a 4-character shape name. Copies at most four
+/// characters of `name` into a local buffer, looks it up in the cache
+/// (`self + 0x280 + 12 * i`: handle, name; count at `+0xe80`), otherwise
+/// appends an entry, searches the shape banks (`+0x278` count, `+0x27c` array)
+/// with `SHAPE_locatez` and creates the texture through vtable slot 46
+/// (`self->+0x10d8`), or stores -1. Returns the entry's handle.
+#[allow(unused_labels, unused_assignments, unused_variables, unreachable_code)]
+pub fn ps2_graphics_man_get_texture_by_name(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_369724: {
+            c.cycles += 12;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S0][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            c.g[V0][0] = c.lb(c.g[A1][0] as u32);
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[A1][0];
+            if t {
+                break 'b_369724;
+            } else {
+                c.cycles += 2;
+                c.g[A2][0] = c.g[SP][0];
+                c.g[V0][0] = c.lbu(c.g[A0][0] as u32);
+                'l_369700: loop {
+                    c.cycles += 5;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    c.sb(c.g[A2][0] as u32, c.g[V0][0]);
+                    c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    if t {
+                        break 'b_369724;
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < 4i64) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[V0][0] = c.lbu(c.g[A0][0] as u32);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00369700);
+                            }
+                            continue 'l_369700;
+                        } else {
+                            break 'b_369724;
+                        }
+                    }
+                }
+            }
+        }
+        'b_36986c: {
+            'b_369778: {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+                c.g[S3][0] = 0u64;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sb(c.g[V1][0] as u32, 0u64);
+                let t = (c.g[A0][0] as i64) <= 0;
+                c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x280));
+                if t {
+                    break 'b_369778;
+                } else {
+                    c.cycles += 2;
+                    c.g[S2][0] = c.g[S4][0];
+                    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x284));
+                    'l_369748: loop {
+                        'b_369764: {
+                            c.cycles += 5;
+                            c.g[A0][0] = c.g[SP][0];
+                            c.g[RA][0] = sx(0x00369754);
+                            c.g[A1][0] = c.g[S1][0];
+                            call_ptr(c, 0x004165a8, 0x00369754)?;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                                break 'b_369764;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                                if t {
+                                    break 'b_36986c;
+                                } else {
+                                    break 'b_369764;
+                                }
+                            }
+                        }
+                        c.cycles += 5;
+                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
+                        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00369748);
+                            }
+                            continue 'l_369748;
+                        } else {
+                            break 'b_369778;
+                        }
+                    }
+                }
+            }
+            'b_36983c: {
+                c.cycles += 11;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                c.g[V0][0] = 0xc;
+                c.g[A1][0] = c.g[SP][0];
+                c.g[S1][0] = 0u64;
+                c.mult(0, 3, 4, 2);
+                c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                c.g[RA][0] = sx(0x00369798);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x284));
+                call_ptr(c, 0x004166f4, 0x00369798)?;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x278));
+                let t = (c.g[V1][0] as i64) <= 0;
+                c.g[S3][0] = 0xc;
+                if t {
+                    break 'b_36983c;
+                } else {
+                    c.cycles += 3;
+                    c.g[S5][0] = 0x4a0000;
+                    c.g[S2][0] = c.g[S4][0];
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                    'l_3697b0: loop {
+                        'b_369828: {
+                            c.cycles += 10;
+                            c.g[V0][0] = sx((c.g[S1][0] as u32) << 2);
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x27c));
+                            c.mult(0, 4, 5, 19);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                            c.g[RA][0] = sx(0x003697d0);
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x284));
+                            call_ptr(c, 0x003b3900, 0x003697d0)?;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[A1][0] = c.g[V0][0];
+                            if t {
+                                break 'b_369828;
+                            } else {
+                                c.cycles += 20;
+                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10d8));
+                                c.g[A2][0] = sx((c.g[S5][0] as u32).wrapping_add(0x41a0));
+                                c.g[A3][0] = 0u64;
+                                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x170));
+                                c.g[T0][0] = 0x1;
+                                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x174));
+                                c.g[T1][0] = 0xffffffffffffffff;
+                                let t = c.g[V0][0] as u32;
+                                c.g[RA][0] = sx(0x003697fc);
+                                c.g[A0][0] =
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                call_ptr(c, t, 0x003697fc)?;
+                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                                c.mult(0, 4, 3, 19);
+                                c.g[V1][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                                c.mult(0, 2, 4, 19);
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                                c.g[V1][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                let t = true;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xe80), c.g[A0][0]);
+                                if t {
+                                    break 'b_36986c;
+                                } else {
+                                    break 'b_369828;
+                                }
+                            }
+                        }
+                        c.cycles += 5;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x278));
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003697b0);
+                            }
+                            continue 'l_3697b0;
+                        } else {
+                            break 'b_36983c;
+                        }
+                    }
+                }
+            }
+            c.cycles += 12;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+            c.g[A0][0] = 0xc;
+            c.g[A1][0] = 0xffffffffffffffff;
+            c.mult(0, 3, 2, 4);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[A1][0]);
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+            c.mult(0, 2, 3, 4);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xe80), c.g[V1][0]);
+            break 'b_36986c;
+        }
+        c.cycles += 9;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2950,6 +3182,100 @@ pub(crate) mod tests {
                 c.g[SP][0] = sx(STACK_TOP);
                 c.g[RA][0] = sx(crate::difftest::RA);
                 c.pc = 0x0036_7440;
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::bx::memblockman::tests::oc689_put_cstr;
+    pub(crate) use crate::game::bx::memblockman::tests::OC689_GFX;
+    pub(crate) use crate::game::bx::memblockman::tests::OC689_SEEDS;
+
+    pub(crate) const OC689_SRCS: u32 = DATA + 0x0003_0000;
+
+    pub(crate) const OC689_VTABLE: u32 = DATA + 0x0004_0000;
+
+    /// The graphics manager's texture cache (`+0x280`, 12-byte entries,
+    /// count `+0xe80`) and shape banks (`+0x27c`, count `+0x278`): a bank
+    /// holds `count` shapes whose names the real `SHAPE_locatez` compares;
+    /// the texture is created through vtable slot 46 (a fake).
+    pub(crate) fn oc689_texture_setup(c: &mut Cpu, seed: u32, long: bool) -> Rng {
+        let mut r = fakes::machine(c, seed, 0x0689_0008, 3);
+        c.pc = 0x0036_96c8;
+        let names: [&[u8]; 5] = [b"abc", b"abcdefgh", b"wxyz", b"", b"q"];
+        let name = names[(seed % 5) as usize];
+        let want: Vec<u8> = name.iter().take(4).copied().collect();
+        c.g[A0][0] = OC689_GFX as u64;
+        c.g[A1][0] = (DATA + 0x1000) as u64;
+        oc689_put_cstr(c, DATA + 0x1000, name);
+        // Cache.
+        let count = if long {
+            30 + r.next_u32() % 8
+        } else {
+            r.next_u32() % 4
+        };
+        c.bus.write32(OC689_GFX + 0xe80, count);
+        for i in 0..count {
+            let e = OC689_GFX + 0x280 + 12 * i;
+            c.bus.write32(e, r.next_u32());
+            let pool: [&[u8]; 4] = [b"zzzz", b"q", b"wxyz", b"abc"];
+            let other = pool[(r.next_u32() % 4) as usize];
+            if !long && i + 1 == count && r.next_u32() % 3 == 0 {
+                oc689_put_cstr(c, e + 4, &want);
+            } else if long {
+                oc689_put_cstr(c, e + 4, b"zzzz");
+            } else {
+                oc689_put_cstr(c, e + 4, other);
+            }
+        }
+        // Shape banks.
+        let banks = r.next_u32() % 3;
+        c.bus.write32(OC689_GFX + 0x278, banks);
+        c.bus.write32(OC689_GFX + 0x27c, OC689_SRCS);
+        for j in 0..banks {
+            let src = OC689_SRCS + 0x1000 * (j + 1);
+            c.bus.write32(OC689_SRCS + 4 * j, src);
+            let shapes = r.next_u32() % 3;
+            c.bus.write32(src + 8, shapes);
+            for k in 0..shapes {
+                let off = 0x100 + 0x20 * k;
+                c.bus.write32(src + 0x14 + 8 * k, off);
+                c.bus.write32(src + off, 0x70);
+                if r.next_u32() % 2 == 0 {
+                    oc689_put_cstr(c, src + off + 4, &want);
+                } else {
+                    oc689_put_cstr(c, src + off + 4, b"nope");
+                }
+            }
+        }
+        // Vtable slot 46: `{delta, fn}` at +0x170, a fake.
+        c.bus.write32(OC689_GFX + 0x10d8, OC689_VTABLE);
+        c.bus
+            .write16(OC689_VTABLE + 0x170, (r.next_u32() % 0x40 * 4) as u16);
+        c.bus.write32(OC689_VTABLE + 0x174, fakes::FAKE);
+        r
+    }
+
+    /// `PS2GraphicsMan_GetTextureByName`: cache hit, shape found (texture
+    /// created by the vtable fake) and not found (-1), names of 0 to 8 characters.
+    #[test]
+    fn ps2_graphics_man_get_texture_by_name_matches() {
+        check(
+            ee::s12::f_003696c8__generated,
+            ps2_graphics_man_get_texture_by_name,
+            OC689_SEEDS,
+            &|c, seed| {
+                oc689_texture_setup(c, seed, false);
+            },
+        );
+        check_events(
+            ee::s12::f_003696c8__generated,
+            ps2_graphics_man_get_texture_by_name,
+            OC689_SEEDS,
+            &|c, seed| {
+                let mut r = oc689_texture_setup(c, seed, true);
+                schedule(c, &mut r, seed, 0x0036_96c8)
             },
         );
     }

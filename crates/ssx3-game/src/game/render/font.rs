@@ -198,6 +198,33 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         font_draw_text_right_varargs,
         "Font_DrawTextRightVarargs",
     ),
+    (0x0039_5288, ps2_graphics_man_ctor, "PS2GraphicsMan_ctor"),
+    (
+        0x0039_53b0,
+        ps2_graphics_man_get_fog_state,
+        "PS2GraphicsMan_GetFogState",
+    ),
+    (
+        0x0039_5420,
+        ps2_graphics_man_clear_lights,
+        "PS2GraphicsMan_ClearLights",
+    ),
+    (0x0039_5508, ps2_graphics_man_v110, "PS2GraphicsMan_v110"),
+    (
+        0x0039_5510,
+        ps2_graphics_man_get_flip_count,
+        "PS2GraphicsMan_GetFlipCount",
+    ),
+    (
+        0x0039_5730,
+        ps2_graphics_man_pop_matrix,
+        "PS2GraphicsMan_PopMatrix",
+    ),
+    (
+        0x0039_5c68,
+        ps2_graphics_man_get_matrix,
+        "PS2GraphicsMan_GetMatrix",
+    ),
 ];
 
 /// `DeferMan` layout (offsets from the `DeferMan*`).
@@ -2338,6 +2365,134 @@ pub fn font_draw_text_scaled_varargs(c: &mut Cpu) {
     });
 }
 
+/// `void* PS2GraphicsMan_GetFogState(gfx)` (0x3953b0): the fog state block
+/// embedded at `gfx+0x6b94`.
+pub fn ps2_graphics_man_get_fog_state(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6b94));
+}
+
+/// `void PS2GraphicsMan_ClearLights(gfx)` (0x395420): zero the light count
+/// at `gfx+0x13ec`.
+pub fn ps2_graphics_man_clear_lights(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+    let gfx = c.g[A0][0] as u32;
+    Addr(gfx.wrapping_add(0x13ec)).sw(c, 0);
+}
+
+/// `void PS2GraphicsMan_v110(gfx)` (0x395508): empty virtual slot.
+pub fn ps2_graphics_man_v110(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int PS2GraphicsMan_GetFlipCount(gfx)` (0x395510): the frame flip counter
+/// at `gfx+0x5a74`.
+pub fn ps2_graphics_man_get_flip_count(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+    let gfx = c.g[A0][0] as u32;
+    c.g[V0][0] = Addr(gfx.wrapping_add(0x5a74)).lw(c);
+}
+
+/// `PS2GraphicsMan* PS2GraphicsMan_ctor(PS2GraphicsMan* self)` (0x395288):
+/// run the base-class constructor (`cGraphicsMan_ctor`, 0x3691f8), set the
+/// vtable word at `self+0x10d8` (0x493260), burn the two short counted
+/// loops the compiler left (12 and 4 passes, no stores in the generated
+/// body) and return `self`.
+pub fn ps2_graphics_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0039_529c);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0036_91f8, 0x0039_529c)?;
+        c.g[V0][0] = 0x49_0000;
+        c.g[A0][0] = u64::MAX;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3260));
+        c.g[V1][0] = 0xb;
+        let vtable = c.g[V0][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x10d8)).sw(c, vtable);
+        'l_3952b0: loop {
+            c.cycles += 7;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+            let more = c.g[V1][0] != c.g[A0][0];
+            c.g[V0][0] = 0x7;
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0039_52b0);
+                }
+                continue 'l_3952b0;
+            } else {
+                break 'l_3952b0;
+            }
+        }
+        c.cycles += 7;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = 0x1;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = 0x1;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = 0x3;
+        c.g[V1][0] = u64::MAX;
+        'l_3952e8: loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            let more = c.g[V0][0] != c.g[V1][0];
+            frame.restore_ra(c, 0);
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0039_52e8);
+                }
+                continue 'l_3952e8;
+            } else {
+                break 'l_3952e8;
+            }
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, 16, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PS2GraphicsMan::PopMatrix(this)` (0x395730): drop the top matrix of the
+/// view stack (`top -= 0x40`, `depth -= 1`) and clear the stack-dirty word.
+pub fn ps2_graphics_man_pop_matrix(c: &mut Cpu) {
+    c.cycles += 8;
+    let this = abi_a0(c);
+    c.g[V0][0] = Addr(this).off(0x13e4).lw(c);
+    c.g[V1][0] = Addr(this).off(0x13e0).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x40));
+    Addr(this).off(0x6b90).sw(c, 0);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+    let v0 = c.g[V0][0];
+    Addr(this).off(0x13e4).sw(c, v0);
+    let t = c.g[RA][0] as u32;
+    let v1 = c.g[V1][0];
+    Addr(this).off(0x13e0).sw(c, v1);
+    c.pc = t;
+}
+
+/// `float* PS2GraphicsMan::GetMatrix(this)` (0x395c68): the current top
+/// matrix of the view stack.
+pub fn ps2_graphics_man_get_matrix(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = Addr(abi_a0(c)).off(0x13e4).lw(c);
+    c.pc = t;
+}
+
+#[inline]
+pub(crate) fn abi_a0(c: &Cpu) -> u32 {
+    c.g[A0][0] as u32
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3569,6 +3724,107 @@ pub(crate) mod tests {
                 c.g[A0][0] = (DATA + 0x100) as u64;
                 c.bus.write32(DATA + 0x130, r.f32(100.0));
                 c.bus.write32(DATA + 0x134, r.edge_f32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::render::particle::tests::oc690_gfx_leaf;
+    pub(crate) use crate::game::render::particle::tests::GFX;
+    pub(crate) use crate::game::render::particle::tests::SEEDS_13 as SEEDS_5;
+
+    /// `GetFogState`, `ClearLights`, `v110`, `GetFlipCount`: leaf accessors.
+    #[test]
+    fn ps2_graphics_man_leaf_accessors_match() {
+        let fog: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = oc690_gfx_leaf(c, seed, 0x690_0005, 0x0039_53b0);
+        };
+        check(
+            ee::s13::f_003953b0__generated,
+            ps2_graphics_man_get_fog_state,
+            SEEDS_5,
+            fog,
+        );
+        let lights: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = oc690_gfx_leaf(c, seed, 0x690_0006, 0x0039_5420);
+        };
+        check(
+            ee::s13::f_00395420__generated,
+            ps2_graphics_man_clear_lights,
+            SEEDS_5,
+            lights,
+        );
+        let v110: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = oc690_gfx_leaf(c, seed, 0x690_0007, 0x0039_5508);
+        };
+        check(
+            ee::s13::f_00395508__generated,
+            ps2_graphics_man_v110,
+            SEEDS_5,
+            v110,
+        );
+        let flips: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = oc690_gfx_leaf(c, seed, 0x690_0008, 0x0039_5510);
+        };
+        check(
+            ee::s13::f_00395510__generated,
+            ps2_graphics_man_get_flip_count,
+            SEEDS_5,
+            flips,
+        );
+    }
+
+    /// `PS2GraphicsMan_ctor`: the real base constructor (0x3691f8: short
+    /// memset calls on `gfx`) and the two delay loops. Events are not
+    /// scheduled (see the report).
+    #[test]
+    fn ps2_graphics_man_ctor_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = machine(c, seed, 0x690_0009, 0);
+            c.pc = 0x0039_5288;
+            c.g[A0][0] = GFX as u64;
+        };
+        check(
+            ee::s13::f_00395288__generated,
+            ps2_graphics_man_ctor,
+            16,
+            setup,
+        );
+    }
+
+    /// `PopMatrix`: any stack pointer and depth (the arithmetic is 32-bit).
+    #[test]
+    fn ps2_graphics_man_pop_matrix_matches() {
+        check(
+            ee::s13::f_00395730__generated,
+            ps2_graphics_man_pop_matrix,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0039_5730 ^ ((seed as u64) << 8));
+                scramble(c, &mut r);
+                c.pc = 0x0039_5730;
+                let this = DATA + 0x1000;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x13e4, r.next_u32());
+                c.bus.write32(this + 0x13e0, r.next_u32());
+                c.bus.write32(this + 0x6b90, r.next_u32());
+            },
+        );
+    }
+
+    /// `GetMatrix`: returns the top-of-stack pointer.
+    #[test]
+    fn ps2_graphics_man_get_matrix_matches() {
+        check(
+            ee::s13::f_00395c68__generated,
+            ps2_graphics_man_get_matrix,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0039_5c68 ^ ((seed as u64) << 8));
+                scramble(c, &mut r);
+                c.pc = 0x0039_5c68;
+                let this = DATA + 0x1000;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x13e4, r.next_u32());
             },
         );
     }

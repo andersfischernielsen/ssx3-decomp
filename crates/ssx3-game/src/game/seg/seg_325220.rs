@@ -1,136 +1,202 @@
-//! Staging module oc698 (wave wave237): hand-written replacements, each with its
-//! differential test against the generated body. Moved into the source-tree
-//! units by `tools/reorg_modules.py apply oc698`.
+//! `src/seg/seg_325220.cpp`: hand-written replacements (moved from the
+//! batch modules by `tools/reorg_modules.py`).
 
-#![allow(unused_imports)]
-
-use crate::abi::{r32, ret};
-use crate::call::{call_ptr, guest, sp, Callee, Frame};
-use crate::events::{deliver_event_here, event_due};
-use crate::guest::Addr;
+use crate::abi::ret;
+use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::Callee;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 use ssx3_ee as ee;
-use ssx3_ee_rt::cpu::{reg::*, sx};
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
-/// Replacements in this module: (address, function, name).
+/// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x00426020, sce_sif_add_cmd_handler, "sceSifAddCmdHandler"),
-    (0x004261b0, sce_sif_send_cmd, "sceSifSendCmd"),
     (
-        0x00426358,
+        0x0042_5cc0,
+        sce_sif_cmd_set_sreg_handler,
+        "sceSifCmd_SetSregHandler",
+    ),
+    (0x0042_5cf0, sce_sif_get_sreg, "sceSifGetSreg"),
+    (0x0042_5ff0, sce_sif_set_cmd_buffer, "sceSifSetCmdBuffer"),
+    (0x0042_6020, sce_sif_add_cmd_handler, "sceSifAddCmdHandler"),
+    (0x0042_61b0, sce_sif_send_cmd, "sceSifSendCmd"),
+    (
+        0x0042_6358,
         sce_sif_write_back_d_cache,
         "sceSifWriteBackDCache",
     ),
-    (0x004265d0, sce_sif_rpc_get_packet, "sceSifRpc_GetPacket"),
-    (0x00426678, sce_sif_rpc_free_packet, "sceSifRpc_FreePacket"),
-    (0x00426708, sce_sif_rpc_request_end, "sceSifRpc_RequestEnd"),
-    (0x00426b48, sce_sif_bind_rpc, "sceSifBindRpc"),
-    (0x00426d18, sce_sif_call_rpc, "sceSifCallRpc"),
-    (0x00426f08, sce_sif_check_stat_rpc, "sceSifCheckStatRpc"),
-    (0x00427438, sce_fs_fd_sema_init, "sceFs_FdSemaInit"),
-    (0x00427938, sce_fs_sema_init, "sceFs_SemaInit"),
+    (0x0042_65d0, sce_sif_rpc_get_packet, "sceSifRpc_GetPacket"),
+    (0x0042_6678, sce_sif_rpc_free_packet, "sceSifRpc_FreePacket"),
+    (0x0042_6708, sce_sif_rpc_request_end, "sceSifRpc_RequestEnd"),
+    (0x0042_6b48, sce_sif_bind_rpc, "sceSifBindRpc"),
+    (0x0042_6d18, sce_sif_call_rpc, "sceSifCallRpc"),
+    (0x0042_6f08, sce_sif_check_stat_rpc, "sceSifCheckStatRpc"),
+    (0x0042_7438, sce_fs_fd_sema_init, "sceFs_FdSemaInit"),
+    (0x0042_7938, sce_fs_sema_init, "sceFs_SemaInit"),
+    (0x0042_7988, sce_fs_lock, "sceFs_Lock"),
+    (0x0042_79b8, sce_fs_unlock, "sceFs_Unlock"),
+    (0x0042_7c98, sce_fs_needs_rebind, "sceFs_NeedsRebind"),
+    (0x0042_7d60, sce_open, "sceOpen"),
+    (0x0042_ab18, sce_sif_init_iop_heap, "sceSifInitIopHeap"),
+    (0x0042_aba0, sce_sif_alloc_iop_heap, "sceSifAllocIopHeap"),
 ];
 
 /// Direct-call targets of this module (address, generated function).
-mod oc698_callee {
-    use super::{ee, Callee};
+pub(crate) mod oc698_callee {
+    use super::ee;
+    use super::Callee;
 
     /// `_sceSifSendCmd` (`0x00426078`).
-    pub(super) const OC698_U_SCE_SIF_SEND_CMD: Callee = Callee {
+    pub(crate) const OC698_U_SCE_SIF_SEND_CMD: Callee = Callee {
         addr: 0x00426078,
         f: ee::s15::f_00426078,
     };
 
     /// `DIntr` (`0x0042c078`).
-    pub(super) const OC698_DINTR: Callee = Callee {
+    pub(crate) const OC698_DINTR: Callee = Callee {
         addr: 0x0042c078,
         f: ee::s15::f_0042c078,
     };
 
     /// `EIntr` (`0x0042c0c0`).
-    pub(super) const OC698_EINTR: Callee = Callee {
+    pub(crate) const OC698_EINTR: Callee = Callee {
         addr: 0x0042c0c0,
         f: ee::s15::f_0042c0c0,
     };
 
     /// `sceSifInitCmd` (`0x00425d38`).
-    pub(super) const OC698_SCE_SIF_INIT_CMD: Callee = Callee {
+    #[allow(dead_code)]
+    pub(crate) const OC698_SCE_SIF_INIT_CMD: Callee = Callee {
         addr: 0x00425d38,
         f: ee::s15::f_00425d38,
     };
 
     /// `sceSifAddCmdHandler` (`0x00426020`).
-    pub(super) const OC698_SCE_SIF_ADD_CMD_HANDLER: Callee = Callee {
+    #[allow(dead_code)]
+    pub(crate) const OC698_SCE_SIF_ADD_CMD_HANDLER: Callee = Callee {
         addr: 0x00426020,
         f: ee::s15::f_00426020,
     };
 
     /// `sceSifGetReg` (`0x004241b0`).
-    pub(super) const OC698_SCE_SIF_GET_REG: Callee = Callee {
+    #[allow(dead_code)]
+    pub(crate) const OC698_SCE_SIF_GET_REG: Callee = Callee {
         addr: 0x004241b0,
         f: ee::s15::f_004241b0,
     };
 
     /// `sceSifSendCmd` (`0x004261b0`).
-    pub(super) const OC698_SCE_SIF_SEND_CMD: Callee = Callee {
+    pub(crate) const OC698_SCE_SIF_SEND_CMD: Callee = Callee {
         addr: 0x004261b0,
         f: ee::s15::f_004261b0,
     };
 
     /// `sceSifGetSreg` (`0x00425cf0`).
-    pub(super) const OC698_SCE_SIF_GET_SREG: Callee = Callee {
+    #[allow(dead_code)]
+    pub(crate) const OC698_SCE_SIF_GET_SREG: Callee = Callee {
         addr: 0x00425cf0,
         f: ee::s15::f_00425cf0,
     };
 
     /// `sceSifSetReg` (`0x004241a0`).
-    pub(super) const OC698_SCE_SIF_SET_REG: Callee = Callee {
+    #[allow(dead_code)]
+    pub(crate) const OC698_SCE_SIF_SET_REG: Callee = Callee {
         addr: 0x004241a0,
         f: ee::s15::f_004241a0,
     };
 
     /// `iSignalSema` (`0x00423dd0`).
-    pub(super) const OC698_I_SIGNAL_SEMA: Callee = Callee {
+    pub(crate) const OC698_I_SIGNAL_SEMA: Callee = Callee {
         addr: 0x00423dd0,
         f: ee::s15::f_00423dd0,
     };
 
     /// `sceSifRpc_FreePacket` (`0x00426678`).
-    pub(super) const OC698_SCE_SIF_RPC_FREE_PACKET: Callee = Callee {
+    pub(crate) const OC698_SCE_SIF_RPC_FREE_PACKET: Callee = Callee {
         addr: 0x00426678,
         f: ee::s15::f_00426678,
     };
 
     /// `sceSifRpc_GetPacket` (`0x004265d0`).
-    pub(super) const OC698_SCE_SIF_RPC_GET_PACKET: Callee = Callee {
+    pub(crate) const OC698_SCE_SIF_RPC_GET_PACKET: Callee = Callee {
         addr: 0x004265d0,
         f: ee::s15::f_004265d0,
     };
 
     /// `CreateSema` (`0x00423da0`).
-    pub(super) const OC698_CREATE_SEMA: Callee = Callee {
+    pub(crate) const OC698_CREATE_SEMA: Callee = Callee {
         addr: 0x00423da0,
         f: ee::s15::f_00423da0,
     };
 
     /// `DeleteSema` (`0x00423db0`).
-    pub(super) const OC698_DELETE_SEMA: Callee = Callee {
+    pub(crate) const OC698_DELETE_SEMA: Callee = Callee {
         addr: 0x00423db0,
         f: ee::s15::f_00423db0,
     };
 
     /// `WaitSema` (`0x00423de0`).
-    pub(super) const OC698_WAIT_SEMA: Callee = Callee {
+    pub(crate) const OC698_WAIT_SEMA: Callee = Callee {
         addr: 0x00423de0,
         f: ee::s15::f_00423de0,
     };
 
     /// `sceSifWriteBackDCache` (`0x00426358`).
-    pub(super) const OC698_SCE_SIF_WRITE_BACK_DCACHE: Callee = Callee {
+    pub(crate) const OC698_SCE_SIF_WRITE_BACK_DCACHE: Callee = Callee {
         addr: 0x00426358,
         f: ee::s15::f_00426358,
     };
+}
+
+/// `void sceSifCmd_SetSregHandler(cmd, mgr)` (0x425cc0): the SIF "set SREG"
+/// command's handler. `cmd` holds the register index (`+0x10`) and the value
+/// (`+0x14`); the value goes to `mgr`'s SREG table (pointer at `+0x1c`).
+pub fn sce_sif_cmd_set_sreg_handler(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+    c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1c));
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    // The store sits in the return's delay slot.
+    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+    ret(c);
+}
+
+/// The SIF SREG table (`sceSifGetSreg`): 32-bit registers at `0x52be00`.
+pub(crate) const SIF_SREG_TABLE: u32 = 0x0052_be00;
+
+/// `u32 sceSifGetSreg(int n)` (0x425cf0): SIF software register `n` (the
+/// word the IOP set with the SREG command).
+pub fn sce_sif_get_sreg(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = 0x530000;
+    c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+    c.g[V0][0] = sx(SIF_SREG_TABLE);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+    ret(c);
+}
+
+/// The SIF command state: the receive buffer pointer at `+0x14` and its size
+/// at `+0x18` (`sceSifSetCmdBuffer`).
+pub(crate) const SIF_CMD_STATE: u32 = 0x0052_bcd8;
+
+/// `void *sceSifSetCmdBuffer(void *buf, int size)` (0x425ff0): install the
+/// SIF command receive buffer, returning the previous buffer pointer.
+pub fn sce_sif_set_cmd_buffer(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V1][0] = sx(SIF_CMD_STATE);
+    c.g[V0][0] = c.lw(SIF_CMD_STATE + 0x14);
+    c.sw(SIF_CMD_STATE + 0x18, c.g[A1][0]);
+    // The buffer store sits in the return's delay slot.
+    c.sw(SIF_CMD_STATE + 0x14, c.g[A0][0]);
+    ret(c);
 }
 
 /// `void sceSifAddCmdHandler(int cid, void (*handler)(void), int arg)` (0x426020):
@@ -162,10 +228,10 @@ pub fn sce_sif_add_cmd_handler(c: &mut Cpu) {
         break 'b_42603c;
     }
     c.cycles += 4;
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
     c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[A2][0]);
     let t = c.g[RA][0] as u32;
-    c.sw((c.g[V1][0] as u32), c.g[A1][0]);
+    c.sw(c.g[V1][0] as u32, c.g[A1][0]);
     c.pc = t;
     return;
 }
@@ -182,14 +248,14 @@ pub fn sce_sif_send_cmd(c: &mut Cpu) {
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
         c.g[T2][0] = c.g[T1][0];
         c.g[A2][0] = c.g[A1][0];
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
         c.g[A3][0] = c.g[V0][0];
         c.g[T0][0] = c.g[V1][0];
         c.g[T1][0] = c.g[T3][0];
         c.g[RA][0] = sx(0x004261e0);
         c.g[A1][0] = 0u64;
         oc698_callee::OC698_U_SCE_SIF_SEND_CMD.call(c, 0x004261e0)?;
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
         c.pc = t;
@@ -208,7 +274,7 @@ pub fn sce_sif_write_back_d_cache(c: &mut Cpu) {
         c.g[T9][0] = 0xffffffffffff0000;
         c.g[T9][0] = c.g[T9][0] | 0xffc0;
         let t = (c.g[A1][0] as i64) <= 0;
-        c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+        c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
         if t {
             break 'b_4263fc;
         } else {
@@ -217,7 +283,7 @@ pub fn sce_sif_write_back_d_cache(c: &mut Cpu) {
                 c.g[T0][0] = c.g[A0][0] & c.g[T9][0];
                 c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x1));
                 c.g[T1][0] = c.g[T2][0] & c.g[T9][0];
-                c.g[T2][0] = sx((c.g[T1][0] as u32).wrapping_sub((c.g[T0][0] as u32)));
+                c.g[T2][0] = sx((c.g[T1][0] as u32).wrapping_sub(c.g[T0][0] as u32));
                 c.g[T3][0] = sx((c.g[T2][0] as u32) >> 6);
                 c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
                 c.g[T1][0] = c.g[T3][0] & 0x7;
@@ -283,7 +349,7 @@ pub fn sce_sif_rpc_get_packet(c: &mut Cpu) {
                 c.cycles += 10;
                 c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
                 c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
-                c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                 c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
                 c.g[RA][0] = sx(0x004265e8);
                 c.g[S1][0] = c.g[A0][0];
@@ -311,17 +377,17 @@ pub fn sce_sif_rpc_get_packet(c: &mut Cpu) {
                                     c.g[V0][0] = sx((c.g[V1][0] as u32) << 16);
                                     c.g[V0][0] = c.g[V0][0] | 0x5;
                                     c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
-                                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                                     c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
                                     let t = c.g[V1][0] != c.g[A1][0];
-                                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                                     if t {
                                         break 'b_426638;
                                     } else {
                                         c.cycles += 3;
                                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2));
                                         c.g[V1][0] = 0x1;
-                                        c.sw((c.g[S1][0] as u32), c.g[V0][0]);
+                                        c.sw(c.g[S1][0] as u32, c.g[V0][0]);
                                         break 'b_426638;
                                     }
                                 }
@@ -363,7 +429,7 @@ pub fn sce_sif_rpc_get_packet(c: &mut Cpu) {
         c.cycles += 5;
         c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
         c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
         c.pc = t;
@@ -404,7 +470,7 @@ pub fn sce_sif_rpc_request_end(c: &mut Cpu) {
                         c.g[V0][0] = c.g[V0][0] | 0xa;
                         c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
                         c.g[S1][0] = c.g[A0][0];
-                        c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+                        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
                         let t = c.g[V1][0] == c.g[V0][0];
                         c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
@@ -483,12 +549,12 @@ pub fn sce_sif_rpc_request_end(c: &mut Cpu) {
         }
         c.cycles += 8;
         c.g[RA][0] = sx(0x004267a4);
-        c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
         oc698_callee::OC698_SCE_SIF_RPC_FREE_PACKET.call(c, 0x004267a4)?;
-        c.sw((c.g[S0][0] as u32), 0u64);
+        c.sw(c.g[S0][0] as u32, 0u64);
         c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
         c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
         c.pc = t;
@@ -530,7 +596,7 @@ pub fn sce_sif_bind_rpc(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V1][0] = c.g[S2][0] & 0x1;
-                    c.sw((c.g[S1][0] as u32), c.g[S0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[S0][0]);
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[S3][0]);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S0][0]);
@@ -697,7 +763,7 @@ pub fn sce_sif_call_rpc(c: &mut Cpu) {
                         c.g[A0][0] = c.g[FP][0] & 0x2;
                         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                         c.sw((c.g[S1][0] as u32).wrapping_add(0x20), c.g[V0][0]);
-                        c.sw((c.g[S1][0] as u32), c.g[S0][0]);
+                        c.sw(c.g[S1][0] as u32, c.g[S0][0]);
                         c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                         c.sw((c.g[S1][0] as u32).wrapping_add(0x1c), c.g[S7][0]);
                         c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[S6][0]);
@@ -922,7 +988,7 @@ pub fn sce_sif_call_rpc(c: &mut Cpu) {
 pub fn sce_sif_check_stat_rpc(c: &mut Cpu) {
     'b_426f34: {
         c.cycles += 3;
-        c.g[A1][0] = c.lw((c.g[A0][0] as u32));
+        c.g[A1][0] = c.lw(c.g[A0][0] as u32);
         let t = c.g[A1][0] == 0u64;
         if t {
             break 'b_426f34;
@@ -1040,29 +1106,784 @@ pub fn sce_fs_sema_init(c: &mut Cpu) {
     })
 }
 
+/// `int sceFs_Lock(void)`: make sure the fs semaphore exists, wait on it and return 0.
+pub fn sce_fs_lock(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x00427998);
+        Callee {
+            addr: 0x00427938,
+            f: ee::s15::sceFs_SemaInit,
+        }
+        .call(c, 0x00427998)?;
+        c.g[V0][0] = 0x450000;
+        c.g[RA][0] = sx(0x004279a4);
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5214));
+        Callee {
+            addr: 0x00423de0,
+            f: ee::s15::WaitSema,
+        }
+        .call(c, 0x004279a4)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[V0][0] = 0u64;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void sceFs_Unlock(void)`: signal the fs semaphore (tail call to SignalSema).
+pub fn sce_fs_unlock(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[V0][0] = 0x450000;
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5214));
+        c.pc = 0x00423dc0;
+        (ee::s15::SignalSema)(c);
+        return Ok(());
+    });
+}
+
+/// `int sceFs_NeedsRebind(void)`: memcmp the RPC stamp against the two known stamps; 1 when it differs from both (after the IOP reset).
+pub fn sce_fs_needs_rebind(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_427d04: {
+            c.cycles += 17;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.g[V0][0] = 0x450000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+            c.g[V1][0] = 0x530000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+            c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5164));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+            c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x11d8));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[RA][0]);
+            c.g[S2][0] = 0u64;
+            c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.g[RA][0] = sx(0x00427cd4);
+            c.g[A2][0] = 0x4;
+            Callee {
+                addr: 0x00415fc8,
+                f: ee::s15::memcmp,
+            }
+            .call(c, 0x00427cd4)?;
+            let t = c.g[V0][0] == 0u64;
+            c.g[S0][0] = 0x450000;
+            if t {
+                break 'b_427d04;
+            } else {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5220));
+                c.g[RA][0] = sx(0x00427cec);
+                c.g[A2][0] = 0x4;
+                Callee {
+                    addr: 0x00415fc8,
+                    f: ee::s15::memcmp,
+                }
+                .call(c, 0x00427cec)?;
+                let t = c.g[V0][0] == 0u64;
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5220));
+                if t {
+                    break 'b_427d04;
+                } else {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[RA][0] = sx(0x00427d00);
+                    c.g[A2][0] = 0x4;
+                    Callee {
+                        addr: 0x00415fc8,
+                        f: ee::s15::memcmp,
+                    }
+                    .call(c, 0x00427d00)?;
+                    c.g[S2][0] = (0u64 < c.g[V0][0]) as u64;
+                    break 'b_427d04;
+                }
+            }
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[S2][0];
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `int sceOpen(char *path, int flags, ...)`: lock the fs, init on first use, allocate an fd, copy the path (max 1024), create a reply semaphore, call the open RPC and wait for the reply; returns the fd or a negative error.
+pub fn sce_open(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_427dd4: {
+            c.cycles += 27;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x150));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S0][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0xb0), c.g[S7][0]);
+            c.g[S0][0] = c.g[A0][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0xc0), c.g[FP][0]);
+            c.g[S7][0] = c.g[A1][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S1][0]);
+            c.g[A0][0] = 0u64;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0xd0), c.g[RA][0]);
+            c.g[FP][0] = 0x530000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0xa0), c.g[S6][0]);
+            c.g[S1][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x2900));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x90), c.g[S5][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[S4][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[S3][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S2][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x120), c.g[A2][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x128), c.g[A3][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x130), c.g[T0][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x138), c.g[T1][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x140), c.g[T2][0]);
+            c.g[RA][0] = sx(0x00427dbc);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x148), c.g[T3][0]);
+            Callee {
+                addr: 0x00427988,
+                f: ee::s15::sceFs_Lock,
+            }
+            .call(c, 0x00427dbc)?;
+            c.g[V1][0] = 0x450000;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x520c));
+            let t = c.g[V0][0] != 0u64;
+
+            if t {
+                break 'b_427dd4;
+            } else {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x00427dd4);
+                Callee {
+                    addr: 0x00427a90,
+                    f: ee::s15::sceFsInit,
+                }
+                .call(c, 0x00427dd4)?;
+                break 'b_427dd4;
+            }
+        }
+        'b_427fb4: {
+            'b_427df8: {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x00427ddc);
+                Callee {
+                    addr: 0x00427c98,
+                    f: ee::s15::sceFs_NeedsRebind,
+                }
+                .call(c, 0x00427ddc)?;
+                let t = c.g[V0][0] == 0u64;
+
+                if t {
+                    break 'b_427df8;
+                } else {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x00427dec);
+                    Callee {
+                        addr: 0x004279b8,
+                        f: ee::s15::sceFs_Unlock,
+                    }
+                    .call(c, 0x00427dec)?;
+                    c.g[V0][0] = 0xfffffffffffe0000;
+                    let t = true;
+                    c.g[V0][0] = c.g[V0][0] | 0xfffc;
+                    if t {
+                        break 'b_427fb4;
+                    } else {
+                        break 'b_427df8;
+                    }
+                }
+            }
+            'b_427e1c: {
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x00427e00);
+                Callee {
+                    addr: 0x00427498,
+                    f: ee::s15::sceFs_AllocFd,
+                }
+                .call(c, 0x00427e00)?;
+                c.g[S3][0] = c.g[V0][0];
+                if c.g[S3][0] != 0u64 {
+                    c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
+                    break 'b_427e1c;
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00427e14);
+                    Callee {
+                        addr: 0x004279b8,
+                        f: ee::s15::sceFs_Unlock,
+                    }
+                    .call(c, 0x00427e14)?;
+                    let t = true;
+                    c.g[V0][0] = 0xffffffffffffffed;
+                    if t {
+                        break 'b_427fb4;
+                    } else {
+                        break 'b_427e1c;
+                    }
+                }
+            }
+            'b_427e88: {
+                'b_427e84: {
+                    'b_427e74: {
+                        c.cycles += 5;
+                        c.g[A1][0] = 0u64;
+                        c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x120));
+                        c.g[V0][0] = sx((c.g[V1][0] as u32) << 24);
+                        let t = c.g[V0][0] == 0u64;
+                        c.sb((c.g[S1][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+                        if t {
+                            break 'b_427e74;
+                        } else {
+                            c.cycles += 6;
+                            c.g[A2][0] = 0x530000;
+                            c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                            c.g[S6][0] = 0x530000;
+                            c.g[S4][0] = 0x530000;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                            'l_427e48: loop {
+                                c.cycles += 3;
+                                c.g[V0][0] = ((c.g[A1][0] as i64) < 1024i64) as u64;
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] =
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                if t {
+                                    break 'b_427e84;
+                                } else {
+                                    c.cycles += 6;
+                                    c.g[A0][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                                    c.sb((c.g[A0][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+                                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 24);
+                                    if c.g[V1][0] != 0u64 {
+                                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x00427e48);
+                                        }
+                                        continue 'l_427e48;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = true;
+                                        c.g[V0][0] = 0x400;
+                                        if t {
+                                            break 'b_427e88;
+                                        } else {
+                                            break 'b_427e74;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[A2][0] = 0x530000;
+                    c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S6][0] = 0x530000;
+                    c.g[S4][0] = 0x530000;
+                    break 'b_427e84;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0x400;
+                break 'b_427e88;
+            }
+            'b_427e90: {
+                c.cycles += 2;
+                if c.g[A1][0] == c.g[V0][0] {
+                    c.sb((c.g[S1][0] as u32).wrapping_add(0x413), 0u64);
+                    break 'b_427e90;
+                } else {
+                    break 'b_427e90;
+                }
+            }
+            'b_427f2c: {
+                c.cycles += 33;
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1400));
+                c.g[V1][0] = 0x7fff0000;
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V1][0] = c.g[V1][0] | 0xffff;
+                c.g[S5][0] = sx(((c.g[V0][0] as u32) as i32 >> 4) as u32);
+                c.g[V1][0] = c.g[S7][0] & c.g[V1][0];
+                c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                c.g[V0][0] = 0x1;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+                c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x1cc0));
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x414), c.g[S5][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x18), 0u64);
+                c.g[RA][0] = sx(0x00427ed0);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x24), 0u64);
+                Callee {
+                    addr: 0x00423da0,
+                    f: ee::s15::CreateSema,
+                }
+                .call(c, 0x00427ed0)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[S2][0]);
+                c.g[V0][0] = 0x4;
+                c.sw(c.g[S1][0] as u32, c.g[S0][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[A0][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x1200));
+                c.g[A3][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x2900));
+                c.g[A1][0] = 0u64;
+                c.sw(c.g[SP][0] as u32, 0u64);
+                c.g[A2][0] = 0u64;
+                c.g[T0][0] = 0x418;
+                c.g[T1][0] = c.g[S4][0];
+                c.g[T2][0] = 0x4;
+                c.g[RA][0] = sx(0x00427f0c);
+                c.g[T3][0] = 0u64;
+                Callee {
+                    addr: 0x00426d18,
+                    f: ee::s15::sceSifCallRpc,
+                }
+                .call(c, 0x00427f0c)?;
+                let t = (c.g[V0][0] as i64) >= 0;
+                c.g[V0][0] = 0x20000000;
+                if t {
+                    break 'b_427f2c;
+                } else {
+                    c.cycles += 6;
+                    c.g[RA][0] = sx(0x00427f1c);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x00423db0,
+                        f: ee::s15::DeleteSema,
+                    }
+                    .call(c, 0x00427f1c)?;
+                    c.g[RA][0] = sx(0x00427f24);
+                    Callee {
+                        addr: 0x004279b8,
+                        f: ee::s15::sceFs_Unlock,
+                    }
+                    .call(c, 0x00427f24)?;
+                    let t = true;
+                    c.g[V0][0] = 0xfffffffffffffff5;
+                    if t {
+                        break 'b_427fb4;
+                    } else {
+                        break 'b_427f2c;
+                    }
+                }
+            }
+            'b_427f50: {
+                c.cycles += 5;
+                c.g[V0][0] = c.g[S4][0] | c.g[V0][0];
+                c.g[RA][0] = sx(0x00427f38);
+                c.g[S1][0] = c.lw(c.g[V0][0] as u32);
+                Callee {
+                    addr: 0x004279b8,
+                    f: ee::s15::sceFs_Unlock,
+                }
+                .call(c, 0x00427f38)?;
+                let t = c.g[S1][0] != 0u64;
+
+                if t {
+                    break 'b_427f50;
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00427f48);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x00423db0,
+                        f: ee::s15::DeleteSema,
+                    }
+                    .call(c, 0x00427f48)?;
+                    let t = true;
+                    c.g[V0][0] = 0xfffffffffffffff5;
+                    if t {
+                        break 'b_427fb4;
+                    } else {
+                        break 'b_427f50;
+                    }
+                }
+            }
+            'b_427f88: {
+                c.cycles += 7;
+                c.g[RA][0] = sx(0x00427f58);
+                c.g[A0][0] = c.g[S0][0];
+                Callee {
+                    addr: 0x00423de0,
+                    f: ee::s15::WaitSema,
+                }
+                .call(c, 0x00427f58)?;
+                c.g[RA][0] = sx(0x00427f60);
+                c.g[A0][0] = c.g[S0][0];
+                Callee {
+                    addr: 0x00423db0,
+                    f: ee::s15::DeleteSema,
+                }
+                .call(c, 0x00427f60)?;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                let t = (c.g[V1][0] as i64) >= 0;
+                c.g[S0][0] = 0x450000;
+                if t {
+                    break 'b_427f88;
+                } else {
+                    c.cycles += 7;
+                    c.g[RA][0] = sx(0x00427f74);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5218));
+                    Callee {
+                        addr: 0x00423de0,
+                        f: ee::s15::WaitSema,
+                    }
+                    .call(c, 0x00427f74)?;
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0x4), 0u64);
+                    c.g[RA][0] = sx(0x00427f80);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5218));
+                    Callee {
+                        addr: 0x00423dc0,
+                        f: ee::s15::SignalSema,
+                    }
+                    .call(c, 0x00427f80)?;
+                    let t = true;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                    if t {
+                        break 'b_427fb4;
+                    } else {
+                        break 'b_427f88;
+                    }
+                }
+            }
+            c.cycles += 11;
+            c.g[S1][0] = c.g[S5][0];
+            c.g[RA][0] = sx(0x00427f94);
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5218));
+            Callee {
+                addr: 0x00423de0,
+                f: ee::s15::WaitSema,
+            }
+            .call(c, 0x00427f94)?;
+            c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5218));
+            c.g[V1][0] = c.g[V1][0] | c.g[S7][0];
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+            c.g[RA][0] = sx(0x00427fb0);
+            c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+            Callee {
+                addr: 0x00423dc0,
+                f: ee::s15::SignalSema,
+            }
+            .call(c, 0x00427fb0)?;
+            c.g[V0][0] = c.g[S1][0];
+            break 'b_427fb4;
+        }
+        c.cycles += 12;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.g[FP][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.g[S7][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.g[S6][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.g[S5][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x90));
+        c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x150));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `int sceSifInitIopHeap(void)`: bind the IOP heap RPC (spinning until the IOP answers) and clear the heap error word at 0x455224. Returns 0, or -1 when the bind fails.
+pub fn sce_sif_init_iop_heap(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0042ab18 => {
+                    c.cycles += 6;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+                    c.g[S1][0] = 0x530000;
+                    let t = true;
+                    c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                    if t {
+                        pc = 0x0042ab54;
+                        continue;
+                    }
+                    pc = 0x0042ab30;
+                    continue;
+                }
+                0x0042ab30 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x100000;
+                    c.g[V1][0] = 0xffffffffffffffff;
+                    pc = 0x0042ab38;
+                    continue;
+                }
+                0x0042ab38 => {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[V0][0] != c.g[V1][0];
+
+                    if t {
+                        if back_edge_unwinds(c, 0x0042ab38) {
+                            return Ok(());
+                        }
+                        pc = 0x0042ab38;
+                        continue;
+                    }
+                    pc = 0x0042ab54;
+                    continue;
+                }
+                0x0042ab54 => {
+                    c.cycles += 8;
+                    c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1140));
+                    c.g[A1][0] = 0xffffffff80000000;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[A1][0] | 0x3;
+                    c.g[RA][0] = sx(0x0042ab6c);
+                    c.g[A2][0] = 0u64;
+                    Callee {
+                        addr: 0x00426b48,
+                        f: ee::s15::sceSifBindRpc,
+                    }
+                    .call(c, 0x0042ab6c)?;
+
+                    if (c.g[V0][0] as i64) >= 0 {
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+                        pc = 0x0042ab7c;
+                        continue;
+                    }
+                    pc = 0x0042ab74;
+                    continue;
+                }
+                0x0042ab74 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    if t {
+                        pc = 0x0042ab8c;
+                        continue;
+                    }
+                    pc = 0x0042ab7c;
+                    continue;
+                }
+                0x0042ab7c => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x450000;
+                    if t {
+                        if back_edge_unwinds(c, 0x0042ab30) {
+                            return Ok(());
+                        }
+                        pc = 0x0042ab30;
+                        continue;
+                    }
+                    pc = 0x0042ab84;
+                    continue;
+                }
+                0x0042ab84 => {
+                    c.cycles += 2;
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x5224), 0u64);
+                    c.g[V0][0] = 0u64;
+                    pc = 0x0042ab8c;
+                    continue;
+                }
+                0x0042ab8c => {
+                    c.cycles += 5;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0042ab18, 0x0042aba0);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `int sceSifAllocIopHeap(int size)`: allocate IOP heap memory through the RPC (function 1); 0 when the heap is not initialised or the call fails.
+pub fn sce_sif_alloc_iop_heap(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_42ac00: {
+            'b_42abfc: {
+                c.cycles += 7;
+                c.g[V1][0] = 0x450000;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5224));
+                c.g[A1][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+                let t = (c.g[V0][0] as i64) < 0;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S0][0]);
+                if t {
+                    break 'b_42abfc;
+                } else {
+                    c.cycles += 16;
+                    c.g[A3][0] = 0x530000;
+                    c.g[A0][0] = 0x530000;
+                    c.sw((c.g[A3][0] as u32).wrapping_sub(0x10c0), c.g[A1][0]);
+                    c.g[S0][0] = 0x530000;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1140));
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x10c0));
+                    c.sw(c.g[SP][0] as u32, 0u64);
+                    c.g[A1][0] = 0x1;
+                    c.g[A2][0] = 0u64;
+                    c.g[T0][0] = 0x4;
+                    c.g[T1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1100));
+                    c.g[T2][0] = 0x4;
+                    c.g[RA][0] = sx(0x0042abf4);
+                    c.g[T3][0] = 0u64;
+                    Callee {
+                        addr: 0x00426d18,
+                        f: ee::s15::sceSifCallRpc,
+                    }
+                    .call(c, 0x0042abf4)?;
+                    let t = (c.g[V0][0] as i64) >= 0;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_sub(0x1100));
+                    if t {
+                        break 'b_42ac00;
+                    } else {
+                        break 'b_42abfc;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0u64;
+            break 'b_42ac00;
+        }
+        c.cycles += 4;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+
     use crate::difftest::check;
-    use crate::difftest::events::{check_events, driven, schedule};
+    use crate::difftest::check_paths;
+
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::game::lib::sif::tests::{
-        mrpc_setup, packet_slots, RPC_OWNER, RPC_PACKET, RPC_REQUEST, SIF_CLIENT, SIF_PACKET,
-        SIF_RPC_POOL, SIF_RPC_POOL_COUNT,
-    };
+
+    use crate::difftest::put_words;
+    use crate::game::lib::sif::tests::mrpc_setup;
+    use crate::game::lib::sif::tests::packet_slots;
+    use crate::game::lib::sif::tests::put_cstr;
+    use crate::game::lib::sif::tests::sif_packet_setup;
+    use crate::game::lib::sif::tests::RPC_OWNER;
+    use crate::game::lib::sif::tests::RPC_PACKET;
+    use crate::game::lib::sif::tests::RPC_REQUEST;
+    use crate::game::lib::sif::tests::SIF_CLIENT;
+    use crate::game::lib::sif::tests::SIF_PACKET;
+    use crate::game::lib::sif::tests::SIF_RPC_POOL;
+    use crate::game::lib::sif::tests::SIF_RPC_POOL_COUNT;
+
+    /// `sceSifGetSreg`: random register numbers over a random table.
+    #[test]
+    fn sce_sif_get_sreg_matches() {
+        check_paths(
+            ee::s15::f_00425cf0__generated,
+            sce_sif_get_sreg,
+            100,
+            &[6],
+            &|c, seed| {
+                let mut r = Rng(0x0042_5cf0 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                scramble(c, &mut r);
+                c.pc = 0x0042_5cf0;
+                let n = r.next_u32() % 0x40;
+                c.g[A0][0] = n as u64;
+                for i in 0..0x40 {
+                    c.bus.write32(SIF_SREG_TABLE + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `sceSifCmd_SetSregHandler`: a command (register index, value) against
+    /// a manager with a table pointer.
+    #[test]
+    fn sce_sif_cmd_set_sreg_handler_matches() {
+        check_paths(
+            ee::s15::f_00425cc0__generated,
+            sce_sif_cmd_set_sreg_handler,
+            100,
+            &[7],
+            &|c, seed| {
+                let mut r = Rng(0x0042_5cc0 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                scramble(c, &mut r);
+                c.pc = 0x0042_5cc0;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x200) as u64;
+                c.bus.write32(DATA + 0x110, r.next_u32() % 16);
+                c.bus.write32(DATA + 0x114, r.next_u32());
+                c.bus.write32(DATA + 0x21c, DATA + 0x300);
+                for i in 0..16 {
+                    c.bus.write32(DATA + 0x300 + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `sceSifSetCmdBuffer`: random buffer and size over random state.
+    #[test]
+    fn sce_sif_set_cmd_buffer_matches() {
+        check_paths(
+            ee::s15::f_00425ff0__generated,
+            sce_sif_set_cmd_buffer,
+            100,
+            &[6],
+            &|c, seed| {
+                let mut r = Rng(0x0042_5ff0 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                scramble(c, &mut r);
+                c.pc = 0x0042_5ff0;
+                c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.bus.write32(SIF_CMD_STATE + 0x14, r.next_u32());
+                c.bus.write32(SIF_CMD_STATE + 0x18, r.next_u32());
+            },
+        );
+    }
 
     /// Gate words of this module's fakes (in the machine's RAM).
-    const OC698_WAIT_GATE: u32 = DATA + 0x7200;
-    const OC698_DMA_GATE: u32 = DATA + 0x7204;
-    const OC698_SEMA_FAIL_GATE: u32 = DATA + 0x7208;
-    const OC698_SEMA_FAIL_SKIP: u32 = DATA + 0x720c;
-    const OC698_GETREG_GATE: u32 = DATA + 0x7210;
-    const OC698_GETREG_VALUE: u32 = DATA + 0x7214;
-    const OC698_GATE_MAGIC: u32 = 0x4f43_3639;
+    pub(crate) const OC698_WAIT_GATE: u32 = DATA + 0x7200;
+
+    pub(crate) const OC698_DMA_GATE: u32 = DATA + 0x7204;
+
+    pub(crate) const OC698_SEMA_FAIL_GATE: u32 = DATA + 0x7208;
+
+    pub(crate) const OC698_SEMA_FAIL_SKIP: u32 = DATA + 0x720c;
+
+    pub(crate) const OC698_GETREG_GATE: u32 = DATA + 0x7210;
+
+    pub(crate) const OC698_GETREG_VALUE: u32 = DATA + 0x7214;
+
+    pub(crate) const OC698_GATE_MAGIC: u32 = 0x4f43_3639;
 
     /// `WaitSema` with its gate set: the sema is already signalled (the IOP
     /// answered at once), so the wait returns its id without blocking.
-    fn oc698_fake_wait_sema(c: &mut Cpu) {
+    pub(crate) fn oc698_fake_wait_sema(c: &mut Cpu) {
         if c.bus.read32(OC698_WAIT_GATE) != OC698_GATE_MAGIC {
             return crate::difftest::fakes::fall_back(
                 c,
@@ -1077,7 +1898,7 @@ mod tests {
 
     /// `sceSifSetDma` with its gate set: the DMA queue is full, so it returns
     /// 0 and nothing is sent.
-    fn oc698_fake_set_dma(c: &mut Cpu) {
+    pub(crate) fn oc698_fake_set_dma(c: &mut Cpu) {
         if c.bus.read32(OC698_DMA_GATE) != OC698_GATE_MAGIC {
             return crate::difftest::fakes::fall_back(
                 c,
@@ -1092,7 +1913,7 @@ mod tests {
 
     /// Run on the main guest thread (a test machine has none), so the kernel
     /// calls that reschedule (`DeleteSema`) come back to the caller.
-    fn oc698_on_thread(c: &mut Cpu) {
+    pub(crate) fn oc698_on_thread(c: &mut Cpu) {
         let saved = (c.pc, c.g[A0], c.g[A1], c.g[RA]);
         ssx3_ps2::kernel::start_main_thread(c, saved.0, 0, 0);
         (c.pc, c.g[A0], c.g[A1], c.g[RA]) = saved;
@@ -1100,7 +1921,7 @@ mod tests {
 
     /// Hook both fakes, open the gate at `gate`, and run on the main guest
     /// thread.
-    fn oc698_answered_on_thread(c: &mut Cpu, gate: u32) {
+    pub(crate) fn oc698_answered_on_thread(c: &mut Cpu, gate: u32) {
         crate::difftest::fakes::hook(
             std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00423DE0),
             oc698_fake_wait_sema,
@@ -1119,7 +1940,7 @@ mod tests {
     /// `CreateSema` calls (syscall 0x40), one fails with -1; `sceSifGetReg`
     /// (syscall 0x7a) returns the word at `OC698_GETREG_VALUE`; every other
     /// syscall goes to the machine's hook.
-    fn oc698_syscall(c: &mut Cpu, at: u32) {
+    pub(crate) fn oc698_syscall(c: &mut Cpu, at: u32) {
         if c.bus.read32(OC698_SEMA_FAIL_GATE) == OC698_GATE_MAGIC && c.g[V1][0] as u32 == 0x40 {
             let skip = c.bus.read32(OC698_SEMA_FAIL_SKIP);
             c.bus.write32(OC698_SEMA_FAIL_SKIP, skip.wrapping_sub(1));
@@ -1137,7 +1958,7 @@ mod tests {
 
     /// Make the `CreateSema` after `skip` successful ones fail, on the main
     /// guest thread.
-    fn oc698_create_sema_fails_after(c: &mut Cpu, skip: u32) {
+    pub(crate) fn oc698_create_sema_fails_after(c: &mut Cpu, skip: u32) {
         c.hooks.syscall = oc698_syscall;
         c.bus.write32(OC698_SEMA_FAIL_GATE, OC698_GATE_MAGIC);
         c.bus.write32(OC698_SEMA_FAIL_SKIP, skip);
@@ -1145,7 +1966,7 @@ mod tests {
     }
 
     /// One free packet in the SIF RPC pool (`{total, packets, count}`).
-    fn oc698_one_free_packet(c: &mut Cpu, total: u32) {
+    pub(crate) fn oc698_one_free_packet(c: &mut Cpu, total: u32) {
         c.bus.write32(SIF_RPC_POOL, total);
         c.bus.write32(SIF_RPC_POOL + 4, SIF_PACKET);
         c.bus.write32(SIF_RPC_POOL_COUNT, 1);
@@ -1153,7 +1974,7 @@ mod tests {
     }
 
     /// Zero the client struct at `SIF_CLIENT`.
-    fn oc698_clear_client(c: &mut Cpu) {
+    pub(crate) fn oc698_clear_client(c: &mut Cpu) {
         for i in 0..16 {
             c.bus.write32(SIF_CLIENT + i * 4, 0);
         }
@@ -1242,6 +2063,7 @@ mod tests {
     }
 
     driven!(oc698_write_back_gen_driven, ee::s15::f_00426358__generated);
+
     driven!(oc698_write_back_hand_driven, sce_sif_write_back_d_cache);
 
     /// Long write-backs with an event due in the 8-line block loop.
@@ -1260,11 +2082,8 @@ mod tests {
         );
     }
 
-    /// Already initialised (init word set: only `EIntr`); the full bring-up
-    /// with SIF register 2 already set (return), and with it clear (command
-    /// sent, SREG 0 polled until the preset value, then `sceSifSetReg`).
-
     driven!(oc698_get_packet_gen_driven, ee::s15::f_004265d0__generated);
+
     driven!(oc698_get_packet_hand_driven, sce_sif_rpc_get_packet);
 
     /// Empty pool, all-used pool (both return 0), and free slots at several
@@ -1296,10 +2115,10 @@ mod tests {
     }
 
     /// Header `{total, base, count}` of the long packet pool.
-    const OC698_LONG_POOL: u32 = DATA + 0x1204;
+    pub(crate) const OC698_LONG_POOL: u32 = DATA + 0x1204;
 
     /// Slots (stride 0x40) of the long packet pool.
-    const OC698_LONG_POOL_SLOTS: u32 = DATA + 0x1440;
+    pub(crate) const OC698_LONG_POOL_SLOTS: u32 = DATA + 0x1440;
 
     /// Taking a packet from a pool whose leading slots are all busy: the
     /// scan steps over them with a live event, then takes the first free slot
@@ -1569,6 +2388,253 @@ mod tests {
                 if seed % 3 == 1 {
                     oc698_create_sema_fails_after(c, 0);
                 }
+            },
+        );
+    }
+
+    pub(crate) const SEEDS: u32 = 200;
+
+    /// fs semaphore word (-1 until `sceFs_SemaInit` creates it).
+    pub(crate) const FS_SEMA: u32 = 0x0045_5214;
+
+    /// fd-table semaphore word (-1 until `sceFs_FdSemaInit` creates it).
+    pub(crate) const FS_FD_SEMA: u32 = 0x0045_5218;
+
+    /// Nonzero once `sceFsInit` ran.
+    pub(crate) const FS_INITIALISED: u32 = 0x0045_520c;
+
+    /// "SIF RPC library initialised" word of `sceSifInitRpc`.
+    pub(crate) const SIF_RPC_INITIALISED: u32 = 0x0045_5180;
+
+    /// The fd table: 32 entries of 16 bytes, in-use word at +4.
+    pub(crate) const FS_FD_TABLE: u32 = 0x0052_ec00;
+
+    /// The RPC stamp compared by `sceFs_NeedsRebind`, and the two known ones.
+    pub(crate) const FS_STAMP: u32 = 0x0052_ee28;
+
+    pub(crate) const FS_STAMP_A: u32 = 0x0045_5164;
+
+    pub(crate) const FS_STAMP_B: u32 = 0x0045_5220;
+
+    /// The fs RPC client (its server word is at +0x24).
+    #[allow(dead_code)]
+    pub(crate) const FS_CLIENT: u32 = 0x0052_ee00;
+
+    /// IOP heap error word and RPC client.
+    pub(crate) const IOP_HEAP_STATE: u32 = 0x0045_5224;
+
+    pub(crate) const IOP_HEAP_CLIENT: u32 = 0x0052_eec0;
+
+    /// Shared fs state for the open/init fixtures: which semaphores exist,
+    /// whether the fs is initialised, stamps (a rebind needed on seed % 7 == 3),
+    /// a full fd table (seed % 5 == 4) and SIF packets (seed % 9 == 8).
+    pub(crate) fn fs_setup(c: &mut Cpu, seed: u32) {
+        c.bus
+            .write32(FS_SEMA, if seed % 2 == 0 { 7 } else { u32::MAX });
+        c.bus
+            .write32(FS_FD_SEMA, if seed / 2 % 2 == 0 { 9 } else { u32::MAX });
+        c.bus
+            .write32(FS_INITIALISED, if seed % 3 == 0 { 0 } else { 1 });
+        c.bus.write32(SIF_RPC_INITIALISED, 1);
+        if seed % 7 == 3 {
+            put_words(c, FS_STAMP, &[0x0101_0101]);
+            put_words(c, FS_STAMP_A, &[0x0202_0202]);
+            put_words(c, DATA + 0x40, &[0x0303_0303]);
+            put_words(c, FS_STAMP_B, &[DATA + 0x40]);
+        }
+        for i in 0..32 {
+            c.bus
+                .write32(FS_FD_TABLE + 16 * i + 4, (seed % 5 == 4) as u32);
+        }
+        sif_packet_setup(c, seed);
+    }
+
+    /// `sceFs_Lock`: creates the fs semaphore when missing, then waits on it.
+    #[test]
+    fn sce_fs_lock_matches() {
+        covered(
+            ee::s15::f_00427988__generated,
+            sce_fs_lock,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 237_001, 2);
+                c.pc = 0x0042_7988;
+                c.bus
+                    .write32(FS_SEMA, if seed % 2 == 0 { 7 } else { u32::MAX });
+            },
+        );
+    }
+
+    /// `sceFs_Unlock`: tail-calls SignalSema on the fs semaphore.
+    #[test]
+    fn sce_fs_unlock_matches() {
+        covered(
+            ee::s15::f_004279b8__generated,
+            sce_fs_unlock,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 237_002, 1);
+                c.pc = 0x0042_79b8;
+                c.bus.write32(FS_SEMA, seed.wrapping_mul(0x9e37_79b9));
+            },
+        );
+    }
+
+    /// `sceFs_NeedsRebind`: the three stamp comparisons.
+    #[test]
+    fn sce_fs_needs_rebind_matches() {
+        check(
+            ee::s15::f_00427c98__generated,
+            sce_fs_needs_rebind,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 237_003, 1);
+                c.pc = 0x0042_7c98;
+                match seed % 4 {
+                    0 => {}
+                    1 => put_words(c, FS_STAMP, &[0x0101_0101]),
+                    2 => {
+                        put_words(c, FS_STAMP, &[0x0101_0101]);
+                        put_words(c, FS_STAMP_B, &[0x0202_0202]);
+                        put_words(c, FS_STAMP_A, &[0xFFFF_FFFF]);
+                    }
+                    _ => {
+                        put_words(c, FS_STAMP, &[0x0101_0101]);
+                        put_words(c, FS_STAMP_B, &[0xFFFF_FFFF]);
+                    }
+                }
+            },
+        );
+    }
+
+    /// `sceSifInitIopHeap` fixture: bind succeeds on packet seeds; the server
+    /// word is set on some of them (the bind may clear it again).
+    pub(crate) fn iop_heap_setup(c: &mut Cpu, seed: u32) {
+        sif_packet_setup(c, seed);
+        c.bus
+            .write32(IOP_HEAP_STATE, if seed % 2 == 0 { 0 } else { u32::MAX });
+        c.bus.write32(
+            IOP_HEAP_CLIENT + 0x24,
+            if seed % 4 < 2 { 0 } else { 0x1_0000 },
+        );
+    }
+
+    #[test]
+    fn sce_sif_init_iop_heap_matches() {
+        check(
+            ee::s15::f_0042ab18__generated,
+            sce_sif_init_iop_heap,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 237_004, 1);
+                c.pc = 0x0042_ab18;
+                iop_heap_setup(c, seed);
+            },
+        );
+    }
+
+    driven!(
+        sce_sif_init_iop_heap_gen_driven,
+        ee::s15::f_0042ab18__generated
+    );
+
+    driven!(sce_sif_init_iop_heap_hand_driven, sce_sif_init_iop_heap);
+
+    /// The spin loops re-entered at their heads after an event.
+    #[test]
+    fn sce_sif_init_iop_heap_events() {
+        check_events(
+            sce_sif_init_iop_heap_gen_driven,
+            sce_sif_init_iop_heap_hand_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 237_004, 0);
+                iop_heap_setup(c, seed);
+                schedule(c, &mut r, seed, 0x0042_ab18)
+            },
+        );
+    }
+
+    /// `sceSifAllocIopHeap`: 0 while the heap word is negative, else the RPC.
+    #[test]
+    fn sce_sif_alloc_iop_heap_matches() {
+        check(
+            ee::s15::f_0042aba0__generated,
+            sce_sif_alloc_iop_heap,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 237_005, 1);
+                c.pc = 0x0042_aba0;
+                c.bus
+                    .write32(IOP_HEAP_STATE, if seed % 2 == 0 { 0 } else { u32::MAX });
+                c.bus.write32(0x0052_ef00, 0x7a00_7a00);
+                sif_packet_setup(c, seed);
+                c.g[A0][0] = (seed % 64) as u64;
+            },
+        );
+    }
+
+    /// `sceFsInit`: SIF init, handlers, bind spin, fd semaphore, init RPC.
+    #[allow(dead_code)]
+    pub(crate) fn fs_init_setup(c: &mut Cpu, seed: u32) {
+        fs_setup(c, seed);
+        // SIF RPC init already ran on most seeds; the others run it for real.
+        c.bus.write32(SIF_RPC_INITIALISED, (seed % 5 != 0) as u32);
+        c.bus
+            .write32(FS_CLIENT + 0x24, if seed % 4 < 2 { 0 } else { 0x1_0000 });
+    }
+
+    /// The path `sceOpen` receives: empty, short, 1023 bytes, or without a
+    /// terminator inside the 1024-byte limit.
+    pub(crate) fn open_path(c: &mut Cpu, seed: u32) {
+        let at = DATA + 0x1000;
+        match seed % 4 {
+            0 => put_cstr(c, at, b""),
+            1 => put_cstr(c, at, b"cdrom0:\\SSX3\\DATA.BIN;1"),
+            2 => {
+                for i in 0..1023 {
+                    c.bus.write8(at + i, b'a' + (i % 26) as u8);
+                }
+                c.bus.write8(at + 1023, 0);
+            }
+            _ => {
+                for i in 0..1100 {
+                    c.bus.write8(at + i, b'b');
+                }
+            }
+        }
+        c.g[A0][0] = at as u64;
+        c.g[A1][0] = (seed % 8) as u64 | 0x8000_0000;
+    }
+
+    /// `sceOpen`: lock, init on first use, rebind check, fd allocation, path
+    /// copy, reply semaphore and the open RPC.
+    #[test]
+    fn sce_open_matches() {
+        check(
+            ee::s15::f_00427d60__generated,
+            sce_open,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 237_007, 6);
+                c.pc = 0x0042_7d60;
+                fs_setup(c, seed);
+                open_path(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn sce_open_events() {
+        check_events(
+            ee::s15::f_00427d60__generated,
+            sce_open,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 237_007, 0);
+                fs_setup(c, seed);
+                open_path(c, seed);
+                schedule(c, &mut r, seed, 0x0042_7d60)
             },
         );
     }

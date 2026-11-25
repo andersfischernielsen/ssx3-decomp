@@ -65,6 +65,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_2450, sce_cd_mmode, "sceCdMmode"),
     (0x0040_2520, sce_cd_read_clock, "sceCdReadClock"),
     (0x0040_2618, sce_cd_tray_req, "sceCdTrayReq"),
+    (
+        0x0040_09a8,
+        libcdvd_callback_thread,
+        "libcdvd_CallbackThread",
+    ),
+    (
+        0x0040_0b48,
+        libcdvd_read_rpc_end_callback,
+        "libcdvd_ReadRpcEndCallback",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3880,6 +3890,246 @@ pub fn sce_cd_tray_req(c: &mut Cpu) {
     })
 }
 
+/// `void libcdvd_CallbackThread(void)` (0x4009a8): the libcdvd callback thread.
+/// Waits on its semaphore, exits (and deletes) itself when the request word is
+/// -1, otherwise optionally prints the pending callback, runs the registered
+/// callback with the saved argument (swapping in its `gp`) and clears the
+/// busy flag.
+pub fn libcdvd_callback_thread(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[FP][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[S7][0]);
+        c.g[FP][0] = 0x520000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S6][0]);
+        c.g[S7][0] = 0x450000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S5][0]);
+        c.g[S6][0] = 0x490000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+        c.g[S5][0] = 0x520000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+        c.g[S4][0] = 0x450000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+        c.g[S3][0] = 0x450000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+        c.g[S2][0] = 0x520000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x90), c.g[RA][0]);
+        c.g[S1][0] = 0x450000;
+        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+        c.g[V0][0] = 0x450000;
+        'l_4009f8: loop {
+            'b_400a2c: {
+                c.cycles += 6;
+                c.g[RA][0] = sx(0x00400a00);
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1620));
+                Callee {
+                    addr: 0x00423de0,
+                    f: ee::s15::WaitSema,
+                }
+                .call(c, 0x00400a00)?;
+                c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x1658));
+                c.g[V0][0] = 0xffffffffffffffff;
+                let t = c.g[V1][0] != c.g[V0][0];
+                c.g[V0][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0x1610));
+                if t {
+                    break 'b_400a2c;
+                } else {
+                    c.cycles += 7;
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0x1634), 0u64);
+                    c.g[V0][0] = 0x450000;
+                    c.sw((c.g[S4][0] as u32).wrapping_add(0x1658), 0u64);
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x1614), 0u64);
+                    c.g[RA][0] = sx(0x00400a28);
+                    c.sw((c.g[FP][0] as u32).wrapping_add(0x64d4), 0u64);
+                    Callee {
+                        addr: 0x00423be0,
+                        f: ee::s15::ExitDeleteThread,
+                    }
+                    .call(c, 0x00400a28)?;
+                    c.g[V0][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0x1610));
+                    break 'b_400a2c;
+                }
+            }
+            'b_400a40: {
+                c.cycles += 2;
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[A0][0] = sx((c.g[S6][0] as u32).wrapping_add(0x79e0));
+                if t {
+                    break 'b_400a40;
+                } else {
+                    c.cycles += 3;
+                    c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x64c0));
+                    c.g[RA][0] = sx(0x00400a40);
+                    c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x165c));
+                    Callee {
+                        addr: 0x00425c60,
+                        f: ee::s15::scePrintf,
+                    }
+                    .call(c, 0x00400a40)?;
+                    break 'b_400a40;
+                }
+            }
+            'b_400a6c: {
+                c.cycles += 3;
+                c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x64c0));
+                let t = c.g[V1][0] == 0u64;
+
+                if t {
+                    break 'b_400a6c;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x165c));
+                    let t = c.g[V0][0] == 0u64;
+
+                    if t {
+                        break 'b_400a6c;
+                    } else {
+                        c.cycles += 5;
+                        c.g[S0][0] = c.g[GP][0];
+                        c.g[GP][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x64c4));
+                        let t = c.g[V1][0] as u32;
+                        c.g[RA][0] = sx(0x00400a68);
+                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x165c));
+                        call_ptr(c, t, 0x00400a68)?;
+                        c.g[GP][0] = c.g[S0][0];
+                        break 'b_400a6c;
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x1634), 0u64);
+            let t = true;
+            c.g[V0][0] = 0x450000;
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x004009f8);
+                }
+                continue 'l_4009f8;
+            } else {
+                c.pc = 0x0040_0a78;
+                ee::s15::sceCdInitEeCB(c);
+                return Ok(());
+            }
+        }
+    });
+}
+
+/// `void libcdvd_ReadRpcEndCallback(void *rpc)` (0x400b48): the read RPC's end
+/// callback. Copies the packet's two byte runs (`[0]` bytes from `+0x10`, `[4]`
+/// bytes from `+0x50`) to the destinations at `+8` and `+0xc` (cached and
+/// uncached views), then tail-calls `libcdvd_CallbackCmdHandler` for the
+/// pending command at `0x451658`.
+pub fn libcdvd_read_rpc_end_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_400bb0: {
+            'b_400ba8: {
+                c.cycles += 5;
+                c.g[A1][0] = 0x20000000;
+                c.g[A3][0] = c.g[A0][0] | c.g[A1][0];
+                c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[A2][0] = 0u64;
+                if t {
+                    break 'b_400ba8;
+                } else {
+                    c.cycles += 3;
+                    c.g[T1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x8));
+                    let t = (c.g[V0][0] as i64) <= 0;
+                    c.g[T2][0] = c.g[T1][0] | c.g[A1][0];
+                    if t {
+                        break 'b_400ba8;
+                    } else {
+                        c.cycles += 4;
+                        c.g[T0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
+                        c.g[T3][0] = 0x450000;
+                        c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                        'l_400b78: loop {
+                            c.cycles += 10;
+                            c.g[A1][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                            c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                            c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                            c.sb(c.g[A1][0] as u32, c.g[V1][0]);
+                            c.sb(c.g[A0][0] as u32, c.g[V1][0]);
+                            c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                            c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x00400b78);
+                                }
+                                continue 'l_400b78;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                                if t {
+                                    break 'b_400bb0;
+                                } else {
+                                    break 'b_400ba8;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[T3][0] = 0x450000;
+            c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+            break 'b_400bb0;
+        }
+        'b_400bf8: {
+            c.cycles += 2;
+            let t = (c.g[V1][0] as i64) <= 0;
+            c.g[V0][0] = 0x20000000;
+            if t {
+                break 'b_400bf8;
+            } else {
+                c.cycles += 4;
+                c.g[T1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
+                c.g[A2][0] = 0u64;
+                let t = (c.g[V1][0] as i64) <= 0;
+                c.g[T2][0] = c.g[T1][0] | c.g[V0][0];
+                if t {
+                    break 'b_400bf8;
+                } else {
+                    c.cycles += 2;
+                    c.g[T0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x50));
+                    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    'l_400bd0: loop {
+                        c.cycles += 10;
+                        c.g[A1][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                        c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                        c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                        c.sb(c.g[A1][0] as u32, c.g[V1][0]);
+                        c.sb(c.g[A0][0] as u32, c.g[V1][0]);
+                        c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00400bd0);
+                            }
+                            continue 'l_400bd0;
+                        } else {
+                            break 'b_400bf8;
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 2;
+        c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1658));
+        c.pc = 0x0040_0908;
+        ee::s15::libcdvd_CallbackCmdHandler(c);
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::ee;
@@ -5896,6 +6146,65 @@ pub(crate) mod tests {
                 schedule(c, &mut r, 0, 0x0040_1718);
                 c.next_event = crate::difftest::CYCLE_BUDGET;
                 crate::difftest::events::Events::Off
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::FAKE;
+
+    pub(crate) use crate::game::lib::eafile::tests::oc697_open;
+
+    pub(crate) use crate::game::ealib::seg_2dcae8::tests::oc697_rpc_setup;
+
+    // -------------------------------------------------------------------
+    // libcdvd_CallbackThread
+
+    /// `libcdvd_CallbackThread`: the thread loops forever, so each seed picks
+    /// the call at which a fake unwinds. The request word is -1 (exit), 0 or
+    /// a command; debug printing on or off; a callback registered or not.
+    #[test]
+    fn libcdvd_callback_thread_matches() {
+        covered(
+            ee::s15::f_004009a8__generated,
+            libcdvd_callback_thread,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0040_09a8, 0);
+                oc697_open(c, 1 + seed % 9);
+                elf_image(c);
+                c.pc = 0x0040_09a8;
+                c.bus.write32(0x0045_1620, r.next_u32());
+                c.bus
+                    .write32(0x0045_1658, [0xffff_ffff, 0, 5][(seed % 3) as usize]);
+                c.bus.write32(0x0045_165c, r.next_u32());
+                c.bus.write32(0x0045_1610, (seed / 3) % 2);
+                c.bus
+                    .write32(0x0052_64c0, if seed / 6 % 2 == 0 { 0 } else { FAKE + 0x40 });
+                c.bus.write32(0x0052_64c4, r.next_u32());
+                c.bus.write32(0x0045_1634, r.next_u32());
+                c.bus.write32(0x0045_1614, r.next_u32());
+                c.bus.write32(0x0052_64d4, r.next_u32());
+                // `scePrintf` gets an empty format.
+                c.bus.write8(0x0049_79e0, 0);
+            },
+        );
+    }
+
+    /// `libcdvd_ReadRpcEndCallback`: empty, negative and short byte runs,
+    /// and the pending command handler the call ends in (real, over fake
+    /// syscalls).
+    #[test]
+    fn libcdvd_read_rpc_end_callback_matches() {
+        check(
+            ee::s15::f_00400b48__generated,
+            libcdvd_read_rpc_end_callback,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0040_0b48, 0);
+                elf_image(c);
+                c.pc = 0x0040_0b48;
+                oc697_rpc_setup(c, seed, &mut r);
             },
         );
     }
