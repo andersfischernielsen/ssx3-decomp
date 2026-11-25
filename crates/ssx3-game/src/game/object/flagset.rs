@@ -133,6 +133,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_cf98, fence_update_verts, "Fence_UpdateVerts"),
     (0x0034_d1e8, fence_build_mesh, "Fence_BuildMesh"),
+    (
+        0x0034_dac8,
+        anim_object_base_ctor_2_2,
+        "AnimObject_BaseCtor_2",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4920,6 +4925,104 @@ pub fn anim_object_base_ctor_2(c: &mut Cpu) {
     });
 }
 
+/// `cAnimNode* cAnimNode::cAnimNode(self, int, Stream* s)` (0x34dac8), the
+/// stream-loaded animation node: builds the embedded `ModObj` (`ModObj_ctor_2`
+/// on `self + 0x14`), sets the vtable (0x490cc8), allocates one slot per mesh
+/// of the node's model (`operator_new_named`, size `count << 6`), builds the
+/// mesh cache (`AnimObject_AllocNodeInfo`), reads the 20-byte header and one
+/// word from the stream and evaluates the first frame (`AnimObject_v52`).
+/// Returns `self`.
+pub fn anim_object_base_ctor_2_2(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        'b_34db38: {
+            c.cycles += 26;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x14));
+            c.g[S2][0] = c.g[A2][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[A0][0] = c.g[S0][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            c.g[RA][0] = sx(0x0034daf8);
+            c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x44));
+            Callee {
+                addr: 0x003552d8,
+                f: ee::s11::ModObj_ctor_2,
+            }
+            .call(c, 0x0034daf8)?;
+            c.g[V1][0] = 0x490000;
+            c.g[A1][0] = 0x490000;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xcc8));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x18a8));
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+            c.g[A2][0] = 0x20000000;
+            c.g[A3][0] = 0u64;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x80));
+            c.g[S0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[RA][0] = sx(0x0034db28);
+            c.g[A0][0] = sx((c.g[S0][0] as u32) << 6);
+            call_ptr(c, 0x00317e30, 0x0034db28)?;
+            let t = c.g[S0][0] == 0u64;
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                break 'b_34db38;
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = 0xffffffffffffffff;
+                break 'b_34db38;
+            }
+        }
+        c.cycles += 27;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x0034db44);
+        c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+        Callee {
+            addr: 0x0034e448,
+            f: ee::s11::AnimObject_AllocNodeInfo,
+        }
+        .call(c, 0x0034db44)?;
+        c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = 0x14;
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x0034db60);
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0034db60)?;
+        c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x4;
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x0034db7c);
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0034db7c)?;
+        c.g[RA][0] = sx(0x0034db84);
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0034e348,
+            f: ee::s11::AnimObject_v52,
+        }
+        .call(c, 0x0034db84)?;
+        c.g[V0][0] = c.g[S1][0];
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6688,6 +6791,44 @@ pub(crate) mod tests {
                 slot_2(c, GRID_VT, 0x30, 2, 0x10);
                 c.bus.write32(LOG_RESULTS, GRID);
                 c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    use crate::difftest::SP as TEST_SP;
+
+    pub(crate) use crate::game::object::flexrailnode::tests::FIX as FIX_2;
+
+    pub(crate) use crate::game::object::flexrailnode::tests::oc687_gate;
+    pub(crate) use crate::game::object::flexrailnode::tests::oc687_install_fakes;
+
+    pub(crate) use crate::game::object::animnode::tests::oc687_flag;
+    pub(crate) use crate::game::object::animnode::tests::oc687_stream;
+
+    /// `AnimObject_BaseCtor_2` with the real `ModObj_ctor_2` (and, through it,
+    /// `ModifierBlock_Load` on an all-zero header): the mesh count of the
+    /// node's model is 0, 1, 3 or 0x40 (the allocation size and the `-1`
+    /// slot count), the block word read by `ModObj_ctor_2` zero or not.
+    #[test]
+    fn anim_object_base_ctor_2_matches() {
+        oc687_install_fakes();
+        fakes::covered(
+            ee::s11::f_0034dac8__generated,
+            anim_object_base_ctor_2_2,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x34_dac8, 10);
+                oc687_gate(c);
+                c.pc = 0x0034_dac8;
+                let (me, st, model, info) = (FIX_2, FIX_2 + 0x1000, FIX_2 + 0x1400, FIX_2 + 0x1500);
+                oc687_stream(c, &mut r, st);
+                c.bus.write32(me + 0x2c, model);
+                c.bus.write32(model + 0x80, info);
+                c.bus
+                    .write32(info + 4, [0, 1, 3, 0x40][(seed % 4) as usize]);
+                oc687_flag(c, &mut r, TEST_SP - 0xa0, seed % 3 != 0);
+                c.g[A0][0] = me as u64;
+                c.g[A2][0] = st as u64;
             },
         );
     }

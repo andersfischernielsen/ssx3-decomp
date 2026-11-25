@@ -163,6 +163,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_game_load_screen_try_exit,
         "cGameLoadScreen_TryExit",
     ),
+    (
+        0x0023_2568,
+        init_load_screen_enter_load,
+        "InitLoadScreen_Enter",
+    ),
+    (
+        0x0023_3048,
+        c_game_load_screen_load_pictures_3,
+        "cGameLoadScreen_LoadPictures",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1796,6 +1806,230 @@ pub fn c_game_load_screen_load_pictures_2(c: &mut Cpu) {
     })
 }
 
+/// `void cGameLoadScreen_LoadPictures(cGameLoadScreen* self, int)` (0x233048):
+/// loads the load screen's textures from a BigFile. Rider race (the byte at
+/// `0x535c11` is 2): the two characters' pictures (`sprintf` of the character
+/// ids of both players, `FILE_loadpackz`, then a texture load through the
+/// graphics manager's vtable `+0x170` into `self + 0x10 + 4 * i`). Otherwise:
+/// the course picture of the location id (0 when above 16) into `self + 0x10`.
+/// The BigFile is closed with flag 2.
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unreachable_code,
+    unused_mut,
+    clippy::all
+)]
+pub fn c_game_load_screen_load_pictures_3(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_233238: {
+            'b_233180: {
+                c.cycles += 26;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x110));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0xe0));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x100));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xf0));
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                c.sq(22, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[RA][0]);
+                c.g[S2][0] = c.g[A0][0];
+                call_ptr(c, 0x0014dc80, 0x00233078)?; // call_indirect
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0x1;
+                call_ptr(c, 0x0014dd58, 0x00233084)?; // call_indirect
+                c.g[S3][0] = c.g[V0][0];
+                call_ptr(c, 0x0014dc80, 0x0023308c)?; // call_indirect
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0u64;
+                call_ptr(c, 0x0014dd58, 0x00233098)?; // call_indirect
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V1][0] = 0x2;
+                c.g[V0][0] = 0x530000;
+                c.g[A0][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x5c11));
+                let t = c.g[A0][0] != c.g[V1][0];
+                c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+                if t {
+                    break 'b_233180;
+                } else {
+                    c.cycles += 12;
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.g[A1][0] = 0x480000;
+                    c.g[S7][0] = c.g[A0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4288));
+                    c.g[A2][0] = 0x100;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
+                    call_ptr(c, 0x003168b0, 0x002330cc)?; // call_indirect
+                    c.g[S1][0] = 0u64;
+                    c.g[V0][0] = 0x440000;
+                    c.g[S5][0] = 0x480000;
+                    c.g[S6][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2928));
+                    c.g[S4][0] = 0x480000;
+                    'l_2330e0: loop {
+                        'b_23315c: {
+                            c.cycles += 29;
+                            c.g[A0][0] = c.g[S3][0];
+                            c.g[A1][0] = (0u64 < c.g[S1][0]) as u64;
+                            call_ptr(c, 0x00147488, 0x002330ec)?; // call_indirect
+                            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                            c.g[A3][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x5b4));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S6][0] as u32));
+                            c.g[A0][0] = c.g[SP][0];
+                            c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                            c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x4270));
+                            call_ptr(c, 0x00417828, 0x00233108)?; // call_indirect
+                            c.g[A1][0] = 0x3000000;
+                            c.g[A0][0] = c.g[SP][0];
+                            c.g[A1][0] = c.g[A1][0] | 0x100;
+                            call_ptr(c, 0x003e2190, 0x00233118)?; // call_indirect
+                            c.g[T2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                            c.g[S0][0] = c.g[V0][0];
+                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                            c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x4260));
+                            c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x10d8));
+                            c.g[A3][0] = 0u64;
+                            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                            c.g[T0][0] = 0x1;
+                            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x170));
+                            c.g[T1][0] = 0xffffffffffffffff;
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x174));
+                            let t = c.g[V0][0] as u32;
+                            c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            call_ptr(c, t, 0x0023314c)?; // call_indirect
+                            let t = c.g[S0][0] == 0u64;
+                            c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                            if t {
+                                break 'b_23315c;
+                            } else {
+                                c.cycles += 2;
+                                c.g[A0][0] = c.g[S0][0];
+                                call_ptr(c, 0x00317e98, 0x0023315c)?; // call_indirect
+                                break 'b_23315c;
+                            }
+                        }
+                        c.cycles += 4;
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < 2i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002330e0);
+                            }
+                            continue 'l_2330e0;
+                        } else {
+                            c.cycles += 5;
+                            c.g[A0][0] = c.g[S7][0];
+                            c.g[A1][0] = 0x2;
+                            call_ptr(c, 0x003168e8, 0x00233178)?; // call_indirect
+                            let t = true;
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x100));
+                            if t {
+                                break 'b_233238;
+                            } else {
+                                break 'b_233180;
+                            }
+                        }
+                    }
+                }
+            }
+            'b_233228: {
+                c.cycles += 40;
+                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4250));
+                c.g[A2][0] = 0x100;
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x003168b0, 0x00233194)?; // call_indirect
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x00144be0, 0x0023319c)?; // call_indirect
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+                c.g[A2][0] = 0x440000;
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2950));
+                c.g[V1][0] = ((c.g[V0][0] as i64) < 17i64) as u64;
+                c.g[A1][0] = 0x4a0000;
+                if c.g[V1][0] == 0 {
+                    c.g[V0][0] = 0u64;
+                }
+                c.g[A0][0] = c.g[SP][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c30));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                call_ptr(c, 0x00417828, 0x002331d0)?; // call_indirect
+                c.g[A1][0] = 0x3000000;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = c.g[A1][0] | 0x100;
+                call_ptr(c, 0x003e2190, 0x002331e0)?; // call_indirect
+                c.g[T2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                c.g[A2][0] = 0x480000;
+                c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x10d8));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x4238));
+                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[A3][0] = 0u64;
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x170));
+                c.g[T0][0] = 0x1;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x174));
+                c.g[T1][0] = 0xffffffffffffffff;
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x00233218)?; // call_indirect
+                let t = c.g[S0][0] == 0u64;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                if t {
+                    break 'b_233228;
+                } else {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x00317e98, 0x00233228)?; // call_indirect
+                    break 'b_233228;
+                }
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x2;
+            call_ptr(c, 0x003168e8, 0x00233234)?; // call_indirect
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x100));
+            break 'b_233238;
+        }
+        c.cycles += 10;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xf0));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x80));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x110));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void InitLoadScreen_Enter(void)` (0x00232568): start the boot load,
+/// `cSSXApp_initload(*(gp - 0x848))` (the app object). The pre-existing
+/// `init_load_screen_enter` / `_2` in `loadscreens_prestart.rs` are untested
+/// duplicates of this: delete them at the reorg.
+pub fn init_load_screen_enter_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x0022_82d0, 0x0023_257c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2428,6 +2662,66 @@ pub(crate) mod tests {
                 c.bus.write32(OC430_CTRL, OC430_MAGIC);
                 c.pc = 0x0023_2e20;
                 oc430_load_screen_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::be::beintstat::tests::oc673_machine;
+    pub(crate) use crate::game::be::beintstat::tests::oc673_result_at;
+
+    pub(crate) use crate::game::ai::ai::tests::oc674_gp;
+    pub(crate) use crate::game::ai::ai::tests::oc674_install;
+    pub(crate) use crate::game::ai::ai::tests::oc674_machine;
+
+    /// `cGameLoadScreen_LoadPictures` against the generated body: the
+    /// two-player branch (two pictures, the loaded file present or missing)
+    /// and the single course picture (location id above 16 or not), unwinds
+    /// in each call. The graphics manager's vtable slots are fake methods.
+    #[test]
+    fn c_game_load_screen_load_pictures_matches() {
+        fakes::covered(
+            ee::s06::f_00233048__generated,
+            c_game_load_screen_load_pictures_3,
+            200,
+            &|c, seed| {
+                let mut r = oc673_machine(c, seed, 0x233048, 17, 0x0023_3048);
+                let this = DATA + 0x9_0000;
+                let gm = DATA + 0x9_1000;
+                let g = DATA + 0x9_2000;
+                let file = DATA + 0x9_3000;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(GAME_GP - 0x854, gm);
+                c.bus.write32(gm + 0x10d8, g);
+                c.bus.write16(g + 0x170, ((r.next_u32() % 0x40) * 4) as u16);
+                c.bus.write32(g + 0x174, FAKE);
+                c.bus
+                    .write8(0x0053_5c11, [2, 2, 3][(r.next_u32() % 3) as usize]);
+                let loaded = if r.next_u32() % 4 == 0 { 0 } else { file };
+                oc673_result_at(c, 0x003e_2190, loaded);
+                c.bus.write32(file + 0x14, (r.next_u32() % 0x100) & !3);
+                oc673_result_at(
+                    c,
+                    0x0014_4be0,
+                    [5, 0x12, 0xff, 0x10, 0][(r.next_u32() % 5) as usize],
+                );
+            },
+        );
+    }
+
+    /// `InitLoadScreen_Enter` stops at its first callee here; both sides log
+    /// the call and agree on everything up to the unwind.
+    #[test]
+    fn init_load_screen_enter_matches() {
+        oc674_install();
+        check(
+            ee::s06::f_00232568__generated,
+            init_load_screen_enter_load,
+            40,
+            &|c, seed| {
+                let mut r = oc674_machine(c, seed, 0x0674_0001, 0);
+                c.pc = 0x0023_2568;
+                let at = oc674_gp(c, 0x848);
+                c.bus.write32(at, r.next_u32() & 0x00ff_fff0);
             },
         );
     }

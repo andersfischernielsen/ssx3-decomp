@@ -356,6 +356,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ava_spline_modifier_ctor_2_2,
         "AvaSplineModifier_ctor_2",
     ),
+    (0x0035_52d8, mod_obj_ctor_2_3, "ModObj_ctor_2"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5708,6 +5709,115 @@ pub fn mod_obj_ctor_2_2(c: &mut Cpu) {
     })
 }
 
+/// `ModObj* ModObj::ModObj(self, int, Stream* s)` (0x3552d8), the stream
+/// constructor: builds the world-object base (`WorldObj_ctor_2`), sets the
+/// `ModObj` vtable (0x491028), reads `self + 0x20/0x24/0x28` and a block flag
+/// from the stream, creates and loads the modifier block when the flag is set,
+/// runs `ModObj_v48` and sets flag bit 0 of the halfword at +0x12. Returns
+/// `self`.
+pub fn mod_obj_ctor_2_3(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        'b_355394: {
+            c.cycles += 42;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S0][0] = c.g[A0][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            c.g[RA][0] = sx(0x003552f4);
+            c.g[S1][0] = c.g[A2][0];
+            Callee {
+                addr: 0x0034fb90,
+                f: ee::s11::WorldObj_ctor_2,
+            }
+            .call(c, 0x003552f4)?;
+            c.g[V1][0] = 0x490000;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1028));
+            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x20));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+            c.g[A2][0] = 0x4;
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+            let t = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x00355320);
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x00355320)?;
+            c.g[A3][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
+            c.g[A2][0] = 0x4;
+            c.g[A0][0] = c.lh((c.g[A3][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x14));
+            let t = c.g[V0][0] as u32;
+            c.g[RA][0] = sx(0x0035533c);
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0035533c)?;
+            c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x28));
+            c.g[A2][0] = 0x4;
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+            let t = c.g[V0][0] as u32;
+            c.g[RA][0] = sx(0x00355358);
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x00355358)?;
+            c.g[A3][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A2][0] = 0x4;
+            c.g[A0][0] = c.lh((c.g[A3][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x14));
+            let t = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x00355374);
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x00355374)?;
+            c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+            let t = c.g[V0][0] == 0u64;
+
+            if t {
+                break 'b_355394;
+            } else {
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x00355388);
+                c.g[A0][0] = c.g[S0][0];
+                Callee {
+                    addr: 0x00355468,
+                    f: ee::s11::ModObj_CreateModifierBlock,
+                }
+                .call(c, 0x00355388)?;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x00355394);
+                c.g[A1][0] = c.g[S1][0];
+                Callee {
+                    addr: 0x003536d8,
+                    f: ee::s11::ModifierBlock_Load,
+                }
+                .call(c, 0x00355394)?;
+                break 'b_355394;
+            }
+        }
+        c.cycles += 11;
+        c.g[RA][0] = sx(0x0035539c);
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x00356780,
+            f: ee::s11::ModObj_v48,
+        }
+        .call(c, 0x0035539c)?;
+        c.g[V1][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x12));
+        c.g[V0][0] = c.g[S0][0];
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[V1][0] = c.g[V1][0] | 0x1;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sh((c.g[S0][0] as u32).wrapping_add(0x12), c.g[V1][0]);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9042,6 +9152,39 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(o);
                 c.g[RA][0] = SENTINEL as u64;
                 c.pc = 0x0035_7798;
+            },
+        );
+    }
+
+    use crate::difftest::SP as TEST_SP;
+
+    pub(crate) use crate::game::object::flexrailnode::tests::FIX;
+
+    pub(crate) use crate::game::object::flexrailnode::tests::oc687_gate;
+    pub(crate) use crate::game::object::flexrailnode::tests::oc687_install_fakes;
+
+    pub(crate) use crate::game::object::animnode::tests::oc687_flag;
+    pub(crate) use crate::game::object::animnode::tests::oc687_stream;
+
+    /// `ModObj_ctor_2`: the block word read last (zero: no block, else the
+    /// block is created and loaded: `ModifierBlock_Load` runs for real on a
+    /// zero header).
+    #[test]
+    fn mod_obj_ctor_2_matches() {
+        oc687_install_fakes();
+        fakes::covered(
+            ee::s11::f_003552d8__generated,
+            mod_obj_ctor_2_3,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x35_52d8, 8);
+                oc687_gate(c);
+                c.pc = 0x0035_52d8;
+                let (me, st) = (FIX, FIX + 0x1000);
+                oc687_stream(c, &mut r, st);
+                oc687_flag(c, &mut r, TEST_SP - 0x40, seed % 3 != 0);
+                c.g[A0][0] = me as u64;
+                c.g[A2][0] = st as u64;
             },
         );
     }

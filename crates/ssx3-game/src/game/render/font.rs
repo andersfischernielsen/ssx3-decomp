@@ -31,7 +31,9 @@ pub(crate) use crate::game::render::particle::copy_mat;
 use crate::game::render::particle::man;
 pub(crate) use crate::game::render::particle::p_2 as p;
 use crate::game::render::particle::renderer_fields;
+#[cfg(test)]
 use crate::game::render::particle::GM_FOG_MODE;
+#[cfg(test)]
 use crate::game::render::particle::GM_LIGHTS;
 pub(crate) use crate::game::sound::bankmonitor::p as p_2;
 pub(crate) use crate::game::wscript::wscriptman::p as p_3;
@@ -233,7 +235,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_70f8, renderer_global_ctors, "Renderer_GlobalCtors"),
     (0x0039_7118, renderer_global_dtors, "Renderer_GlobalDtors"),
     (0x0039_5268, ps2_graphics_man_dtor, "PS2GraphicsMan_dtor"),
-    (0x0039_5288, ps2_graphics_man_ctor, "PS2GraphicsMan_ctor"),
     (
         0x0039_5318,
         ps2_graphics_man_get_display_mode_count,
@@ -250,6 +251,15 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2GraphicsMan_GetDisplayModeIndex",
     ),
     (
+        0x0039_5500,
+        ps2_graphics_man_get_lighting,
+        "PS2GraphicsMan_GetLighting",
+    ),
+    (0x0039_56e0, ps2_graphics_man_v98, "PS2GraphicsMan_v98"),
+    (0x0039_5750, ps2_graphics_man_v33, "PS2GraphicsMan_v33"),
+    (0x0039_5fa0, ps2_graphics_man_v68, "PS2GraphicsMan_v68"),
+    (0x0039_5288, ps2_graphics_man_ctor, "PS2GraphicsMan_ctor"),
+    (
         0x0039_53b0,
         ps2_graphics_man_get_fog_state,
         "PS2GraphicsMan_GetFogState",
@@ -259,30 +269,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_graphics_man_clear_lights,
         "PS2GraphicsMan_ClearLights",
     ),
-    (
-        0x0039_5500,
-        ps2_graphics_man_get_lighting,
-        "PS2GraphicsMan_GetLighting",
-    ),
     (0x0039_5508, ps2_graphics_man_v110, "PS2GraphicsMan_v110"),
     (
         0x0039_5510,
         ps2_graphics_man_get_flip_count,
         "PS2GraphicsMan_GetFlipCount",
     ),
-    (0x0039_56e0, ps2_graphics_man_v98, "PS2GraphicsMan_v98"),
     (
         0x0039_5730,
         ps2_graphics_man_pop_matrix,
         "PS2GraphicsMan_PopMatrix",
     ),
-    (0x0039_5750, ps2_graphics_man_v33, "PS2GraphicsMan_v33"),
     (
         0x0039_5c68,
         ps2_graphics_man_get_matrix,
         "PS2GraphicsMan_GetMatrix",
     ),
-    (0x0039_5fa0, ps2_graphics_man_v68, "PS2GraphicsMan_v68"),
 ];
 
 /// `DeferMan` layout (offsets from the `DeferMan*`).
@@ -375,13 +377,6 @@ pub(crate) mod callee {
         f: ee::s13::f_00392df0,
     };
     pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
-
-    /// `GraphicsMan_ctor` (0x3691f8, s12): the base graphics manager
-    /// constructor.
-    pub(crate) const GRAPHICS_MAN_CTOR: Callee = Callee {
-        addr: 0x0036_91f8,
-        f: ee::s12::GraphicsMan_ctor,
-    };
 
     /// `GraphicsMan_dtor` (0x3695d8, s12): the base graphics manager
     /// destructor.
@@ -2503,6 +2498,29 @@ pub fn light_man_v08(c: &mut Cpu) {
     ret(c);
 }
 
+/// `void* PS2GraphicsMan_GetFogState(gfx)` (0x3953b0): the fog state block
+/// embedded at `gfx+0x6b94`.
+pub fn ps2_graphics_man_get_fog_state(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6b94));
+}
+
+/// `void PS2GraphicsMan_ClearLights(gfx)` (0x395420): zero the light count
+/// at `gfx+0x13ec`.
+pub fn ps2_graphics_man_clear_lights(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+    let gfx = c.g[A0][0] as u32;
+    Addr(gfx.wrapping_add(0x13ec)).sw(c, 0);
+}
+
+/// `void PS2GraphicsMan_v110(gfx)` (0x395508): empty virtual slot.
+pub fn ps2_graphics_man_v110(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 /// `void LightMan_v13(LightMan* self)` (0x394d38): empty virtual method.
 pub fn light_man_v13(c: &mut Cpu) {
     c.cycles += 2;
@@ -3282,6 +3300,79 @@ pub(crate) fn renderer_global_xtors(c: &mut Cpu, initialize: u64, ret_to: u32) {
     })
 }
 
+/// `int PS2GraphicsMan_GetFlipCount(gfx)` (0x395510): the frame flip counter
+/// at `gfx+0x5a74`.
+pub fn ps2_graphics_man_get_flip_count(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+    let gfx = c.g[A0][0] as u32;
+    c.g[V0][0] = Addr(gfx.wrapping_add(0x5a74)).lw(c);
+}
+
+/// `PS2GraphicsMan* PS2GraphicsMan_ctor(PS2GraphicsMan* self)` (0x395288):
+/// run the base-class constructor (`cGraphicsMan_ctor`, 0x3691f8), set the
+/// vtable word at `self+0x10d8` (0x493260), burn the two short counted
+/// loops the compiler left (12 and 4 passes, no stores in the generated
+/// body) and return `self`.
+pub fn ps2_graphics_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0039_529c);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0036_91f8, 0x0039_529c)?;
+        c.g[V0][0] = 0x49_0000;
+        c.g[A0][0] = u64::MAX;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3260));
+        c.g[V1][0] = 0xb;
+        let vtable = c.g[V0][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x10d8)).sw(c, vtable);
+        'l_3952b0: loop {
+            c.cycles += 7;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+            let more = c.g[V1][0] != c.g[A0][0];
+            c.g[V0][0] = 0x7;
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0039_52b0);
+                }
+                continue 'l_3952b0;
+            } else {
+                break 'l_3952b0;
+            }
+        }
+        c.cycles += 7;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = 0x1;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = 0x1;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = 0x3;
+        c.g[V1][0] = u64::MAX;
+        'l_3952e8: loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            let more = c.g[V0][0] != c.g[V1][0];
+            frame.restore_ra(c, 0);
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0039_52e8);
+                }
+                continue 'l_3952e8;
+            } else {
+                break 'l_3952e8;
+            }
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, 16, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 /// `void Renderer_GlobalCtors()` (0x3970f8): run the renderer unit's static
 /// constructors (`Renderer_StaticInitDestroy(1, 0xffff)`).
 pub fn renderer_global_ctors(c: &mut Cpu) {
@@ -3300,9 +3391,6 @@ pub fn renderer_global_dtors(c: &mut Cpu) {
 /// The 0xa0-byte lighting block (`PS2GraphicsMan_SetLighting` copies it in).
 pub(crate) const GM_LIGHTING: u32 = 0x6bb0;
 
-/// The `PS2GraphicsMan` vtable.
-pub(crate) const PS2_GRAPHICS_MAN_VTABLE: u32 = 0x0049_3260;
-
 // ---------------------------------------------------------------------------
 // Constructor and destructor.
 
@@ -3316,72 +3404,6 @@ pub fn ps2_graphics_man_dtor(c: &mut Cpu) {
         Target::Direct(callee::GRAPHICS_MAN_DTOR),
         0x0039_5278,
     );
-}
-
-/// Loop heads of the constructor's emptied placement-new loops.
-pub(crate) const PS2GM_CTOR_SLOTS_LOOP: u32 = 0x0039_52b0;
-
-pub(crate) const PS2GM_CTOR_TAIL_LOOP: u32 = 0x0039_52e8;
-
-/// `PS2GraphicsMan* PS2GraphicsMan::PS2GraphicsMan()` (0x395288): run the
-/// base `GraphicsMan` constructor, install the `PS2GraphicsMan` vtable and
-/// return `this`. Two counting loops (12 and 4 iterations) touch only
-/// registers: what is left of placement-new loops over members with empty
-/// constructors.
-pub fn ps2_graphics_man_ctor(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 10;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        callee::GRAPHICS_MAN_CTOR.call(c, 0x0039_529c)?;
-
-        let this = Addr(c.g[S0][0] as u32);
-        c.g[A0][0] = u64::MAX; // the counters run down to -1
-        c.g[V0][0] = sx(PS2_GRAPHICS_MAN_VTABLE);
-        c.g[V1][0] = 0xb;
-        let vtable = c.g[V0][0];
-        this.off(man::DISPLAY).sw(c, vtable);
-
-        // First counting loop: 12 iterations of v1.
-        loop {
-            c.cycles += 7;
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
-            let more = c.g[V1][0] != c.g[A0][0];
-            c.g[V0][0] = 7;
-            if !more {
-                break;
-            }
-            if event_due(c) {
-                deliver_event_here(c, PS2GM_CTOR_SLOTS_LOOP);
-            }
-        }
-
-        // What the compiler left of the next arrays' counters, then the
-        // second counting loop: 4 iterations of v0.
-        c.cycles += 7;
-        c.g[V0][0] = 3;
-        c.g[V1][0] = u64::MAX;
-        loop {
-            c.cycles += 7;
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
-            let more = c.g[V0][0] != c.g[V1][0];
-            frame.restore_ra(c, 0);
-            if !more {
-                break;
-            }
-            if event_due(c) {
-                deliver_event_here(c, PS2GM_CTOR_TAIL_LOOP);
-            }
-        }
-
-        c.cycles += 4;
-        c.g[V0][0] = c.g[S0][0];
-        frame.restore(c, S0, 0x10);
-        frame.close(c);
-        Ok(())
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -3411,41 +3433,11 @@ pub fn ps2_graphics_man_get_display_mode_index(c: &mut Cpu) {
     ret(c);
 }
 
-/// `void* PS2GraphicsMan::GetFogState()` (0x3953b0): the address of the fog
-/// state block (`this + 0x6b94`, starting with the fog mode).
-pub fn ps2_graphics_man_get_fog_state(c: &mut Cpu) {
-    c.cycles += 2;
-    c.g[V0][0] = sx(abi::arg(c, 0).wrapping_add(GM_FOG_MODE));
-    ret(c);
-}
-
-/// `void PS2GraphicsMan::ClearLights()` (0x395420): empty the light table
-/// (count at `+0x13ec` = 0).
-pub fn ps2_graphics_man_clear_lights(c: &mut Cpu) {
-    c.cycles += 2;
-    Addr(abi::arg(c, 0)).off(GM_LIGHTS).sw(c, 0);
-    ret(c);
-}
-
 /// `void* PS2GraphicsMan::GetLighting()` (0x395500): the address of the
 /// lighting block (`this + 0x6bb0`).
 pub fn ps2_graphics_man_get_lighting(c: &mut Cpu) {
     c.cycles += 2;
     c.g[V0][0] = sx(abi::arg(c, 0).wrapping_add(GM_LIGHTING));
-    ret(c);
-}
-
-/// `void PS2GraphicsMan::v110()` (0x395508): an empty virtual method.
-pub fn ps2_graphics_man_v110(c: &mut Cpu) {
-    c.cycles += 2;
-    ret(c);
-}
-
-/// `int PS2GraphicsMan::GetFlipCount()` (0x395510): frames flipped
-/// (`+0x5a74`).
-pub fn ps2_graphics_man_get_flip_count(c: &mut Cpu) {
-    c.cycles += 2;
-    c.g[V0][0] = Addr(abi::arg(c, 0)).off(renderer_fields::FLIP_COUNT).lw(c);
     ret(c);
 }
 
@@ -3457,31 +3449,6 @@ pub fn ps2_graphics_man_v98(c: &mut Cpu) {
     Addr(abi::arg(c, 0))
         .off(renderer_fields::F6D14)
         .sw(c, value);
-    ret(c);
-}
-
-/// `void PS2GraphicsMan::PopMatrix()` (0x395730): drop the top of the
-/// matrix stack (top pointer back 0x40 bytes, depth - 1) and mark the view
-/// matrices stale.
-pub fn ps2_graphics_man_pop_matrix(c: &mut Cpu) {
-    c.cycles += 8;
-    let this = Addr(abi::arg(c, 0));
-    c.g[V0][0] = this.off(man::CAMERA).lw(c);
-    c.g[V1][0] = this.off(renderer_fields::MATRIX_DEPTH).lw(c);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x40));
-    this.off(man::TEX_READY).sw(c, 0);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
-    let (top, depth) = (c.g[V0][0], c.g[V1][0]);
-    this.off(man::CAMERA).sw(c, top);
-    this.off(renderer_fields::MATRIX_DEPTH).sw(c, depth);
-    ret(c);
-}
-
-/// `float* PS2GraphicsMan::GetMatrix()` (0x395c68): the current matrix (the
-/// top of the matrix stack).
-pub fn ps2_graphics_man_get_matrix(c: &mut Cpu) {
-    c.cycles += 2;
-    c.g[V0][0] = Addr(abi::arg(c, 0)).off(man::CAMERA).lw(c);
     ret(c);
 }
 
@@ -3735,6 +3702,38 @@ pub fn ps2_graphics_man_v33(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `PS2GraphicsMan::PopMatrix(this)` (0x395730): drop the top matrix of the
+/// view stack (`top -= 0x40`, `depth -= 1`) and clear the stack-dirty word.
+pub fn ps2_graphics_man_pop_matrix(c: &mut Cpu) {
+    c.cycles += 8;
+    let this = abi_a0(c);
+    c.g[V0][0] = Addr(this).off(0x13e4).lw(c);
+    c.g[V1][0] = Addr(this).off(0x13e0).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x40));
+    Addr(this).off(0x6b90).sw(c, 0);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+    let v0 = c.g[V0][0];
+    Addr(this).off(0x13e4).sw(c, v0);
+    let t = c.g[RA][0] as u32;
+    let v1 = c.g[V1][0];
+    Addr(this).off(0x13e0).sw(c, v1);
+    c.pc = t;
+}
+
+/// `float* PS2GraphicsMan::GetMatrix(this)` (0x395c68): the current top
+/// matrix of the view stack.
+pub fn ps2_graphics_man_get_matrix(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = Addr(abi_a0(c)).off(0x13e4).lw(c);
+    c.pc = t;
+}
+
+#[inline]
+pub(crate) fn abi_a0(c: &Cpu) -> u32 {
+    c.g[A0][0] as u32
 }
 
 #[cfg(test)]
@@ -5453,11 +5452,11 @@ pub(crate) mod tests {
     pub(crate) const PS2GM_CTOR_OWN_CYCLES: u64 = 133;
 
     #[test]
-    fn ps2_graphics_man_ctor_matches() {
+    fn ps2_graphics_man_ctor_matches_gfx1() {
         let total = PS2GM_CTOR_OWN_CYCLES + ps2_graphics_man_ctor_base_cycles(0);
         check_paths(
             ee::s13::f_00395288__generated,
-            ps2_graphics_man_ctor,
+            crate::game::render::font::ps2_graphics_man_ctor,
             100,
             &[total],
             &|c, seed| {
@@ -5468,17 +5467,20 @@ pub(crate) mod tests {
 
     driven!(gen_ps2_graphics_man_ctor, ee::s13::f_00395288__generated);
 
-    driven!(hand_ps2_graphics_man_ctor, ps2_graphics_man_ctor);
+    driven!(
+        hand_ps2_graphics_man_ctor_gfx1,
+        crate::game::render::font::ps2_graphics_man_ctor
+    );
 
     /// Events at the back edges of both counting loops (0x3952b0 and
     /// 0x3952e8): the first event is due after the base constructor has
     /// returned, somewhere inside the two loops.
     #[test]
-    fn ps2_graphics_man_ctor_events() {
+    fn ps2_graphics_man_ctor_events_gfx1() {
         let base = ps2_graphics_man_ctor_base_cycles(0);
         check_events(
             gen_ps2_graphics_man_ctor,
-            hand_ps2_graphics_man_ctor,
+            hand_ps2_graphics_man_ctor_gfx1,
             150,
             &|c, seed| {
                 let mut r = ps2_graphics_man_ctor_fixture(c, seed / 3);
@@ -5556,10 +5558,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn ps2_graphics_man_get_fog_state_matches() {
+    fn ps2_graphics_man_get_fog_state_matches_gfx1() {
         check_paths(
             ee::s13::f_003953b0__generated,
-            ps2_graphics_man_get_fog_state,
+            crate::game::render::font::ps2_graphics_man_get_fog_state,
             100,
             &[2],
             &|c, seed| {
@@ -5569,10 +5571,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn ps2_graphics_man_clear_lights_matches() {
+    fn ps2_graphics_man_clear_lights_matches_gfx1() {
         check_paths(
             ee::s13::f_00395420__generated,
-            ps2_graphics_man_clear_lights,
+            crate::game::render::font::ps2_graphics_man_clear_lights,
             100,
             &[2],
             &|c, seed| {
@@ -5595,10 +5597,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn ps2_graphics_man_v110_matches() {
+    fn ps2_graphics_man_v110_matches_gfx1() {
         check_paths(
             ee::s13::f_00395508__generated,
-            ps2_graphics_man_v110,
+            crate::game::render::font::ps2_graphics_man_v110,
             100,
             &[2],
             &|c, seed| {
@@ -5608,10 +5610,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn ps2_graphics_man_get_flip_count_matches() {
+    fn ps2_graphics_man_get_flip_count_matches_gfx1() {
         check_paths(
             ee::s13::f_00395510__generated,
-            ps2_graphics_man_get_flip_count,
+            crate::game::render::font::ps2_graphics_man_get_flip_count,
             100,
             &[2],
             &|c, seed| {
@@ -5636,10 +5638,10 @@ pub(crate) mod tests {
 
     /// Top pointer, depth and the view-valid word all random non-zero.
     #[test]
-    fn ps2_graphics_man_pop_matrix_matches() {
+    fn ps2_graphics_man_pop_matrix_matches_gfx1() {
         check_paths(
             ee::s13::f_00395730__generated,
-            ps2_graphics_man_pop_matrix,
+            crate::game::render::font::ps2_graphics_man_pop_matrix,
             100,
             &[8],
             &|c, seed| {
@@ -5654,10 +5656,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn ps2_graphics_man_get_matrix_matches() {
+    fn ps2_graphics_man_get_matrix_matches_gfx1() {
         check_paths(
             ee::s13::f_00395c68__generated,
-            ps2_graphics_man_get_matrix,
+            crate::game::render::font::ps2_graphics_man_get_matrix,
             100,
             &[2],
             &|c, seed| {
@@ -5752,6 +5754,106 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(pos);
                 c.pc = 0x0039_5750;
+            },
+        );
+    }
+    pub(crate) use crate::game::render::particle::tests::oc690_gfx_leaf;
+    pub(crate) use crate::game::render::particle::tests::GFX;
+    pub(crate) use crate::game::render::particle::tests::SEEDS_13 as SEEDS_5;
+
+    /// `GetFogState`, `ClearLights`, `v110`, `GetFlipCount`: leaf accessors.
+    #[test]
+    fn ps2_graphics_man_leaf_accessors_match() {
+        let fog: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = oc690_gfx_leaf(c, seed, 0x690_0005, 0x0039_53b0);
+        };
+        check(
+            ee::s13::f_003953b0__generated,
+            ps2_graphics_man_get_fog_state,
+            SEEDS_5,
+            fog,
+        );
+        let lights: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = oc690_gfx_leaf(c, seed, 0x690_0006, 0x0039_5420);
+        };
+        check(
+            ee::s13::f_00395420__generated,
+            ps2_graphics_man_clear_lights,
+            SEEDS_5,
+            lights,
+        );
+        let v110: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = oc690_gfx_leaf(c, seed, 0x690_0007, 0x0039_5508);
+        };
+        check(
+            ee::s13::f_00395508__generated,
+            ps2_graphics_man_v110,
+            SEEDS_5,
+            v110,
+        );
+        let flips: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = oc690_gfx_leaf(c, seed, 0x690_0008, 0x0039_5510);
+        };
+        check(
+            ee::s13::f_00395510__generated,
+            ps2_graphics_man_get_flip_count,
+            SEEDS_5,
+            flips,
+        );
+    }
+
+    /// `PS2GraphicsMan_ctor`: the real base constructor (0x3691f8: short
+    /// memset calls on `gfx`) and the two delay loops. Events are not
+    /// scheduled (see the report).
+    #[test]
+    fn ps2_graphics_man_ctor_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _ = machine(c, seed, 0x690_0009, 0);
+            c.pc = 0x0039_5288;
+            c.g[A0][0] = GFX as u64;
+        };
+        check(
+            ee::s13::f_00395288__generated,
+            ps2_graphics_man_ctor,
+            16,
+            setup,
+        );
+    }
+
+    /// `PopMatrix`: any stack pointer and depth (the arithmetic is 32-bit).
+    #[test]
+    fn ps2_graphics_man_pop_matrix_matches() {
+        check(
+            ee::s13::f_00395730__generated,
+            ps2_graphics_man_pop_matrix,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0039_5730 ^ ((seed as u64) << 8));
+                scramble(c, &mut r);
+                c.pc = 0x0039_5730;
+                let this = DATA + 0x1000;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x13e4, r.next_u32());
+                c.bus.write32(this + 0x13e0, r.next_u32());
+                c.bus.write32(this + 0x6b90, r.next_u32());
+            },
+        );
+    }
+
+    /// `GetMatrix`: returns the top-of-stack pointer.
+    #[test]
+    fn ps2_graphics_man_get_matrix_matches() {
+        check(
+            ee::s13::f_00395c68__generated,
+            ps2_graphics_man_get_matrix,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0039_5c68 ^ ((seed as u64) << 8));
+                scramble(c, &mut r);
+                c.pc = 0x0039_5c68;
+                let this = DATA + 0x1000;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x13e4, r.next_u32());
             },
         );
     }

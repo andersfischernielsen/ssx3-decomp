@@ -253,6 +253,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "EAFile_EmptyStub_Wrapper",
     ),
     (0x003d_ec80, eafile_write, "EAFile_Write"),
+    (0x003e_3618, ea_file_cd_reset, "EAFile_CdReset"),
+    (0x003e_3758, ea_file_cd_scan_dir, "EAFile_CdScanDir"),
+    (0x003e_3968, ea_file_cd_compare_hash, "EAFile_CdCompareHash"),
+    (0x003e_3be0, ea_file_cd_read_thread, "EAFile_CdReadThread"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6973,6 +6977,743 @@ pub fn eafile_write(c: &mut Cpu) {
     })
 }
 
+/// How often `EAFile_CdCompareHash` found two equal hashes (a collision
+/// counter, `[0x51ed80]`).
+pub(crate) const EA_FILE_CD_HASH_EQUAL_COUNT: u32 = 0x0051_ed80;
+
+/// `int EAFile_CdCompareHash(const u32 *a, const u32 *b)` (0x3e3968): compare
+/// two file-name hashes (`-1`, `1`, or `0` when equal). Equal hashes also
+/// count a collision in [`EA_FILE_CD_HASH_EQUAL_COUNT`]. The 64-bit difference
+/// of the zero-extended words is tested, so the full unsigned range compares
+/// correctly.
+pub fn ea_file_cd_compare_hash(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V1][0] = c.lwu(c.g[A0][0] as u32);
+    c.g[V0][0] = c.lwu(c.g[A1][0] as u32);
+    c.g[V1][0] = c.g[V1][0].wrapping_sub(c.g[V0][0]);
+    let diff = c.g[V1][0] as i64;
+    c.g[V0][0] = u64::MAX;
+    c.cycles += 2;
+    if diff < 0 {
+        ret(c);
+        return;
+    }
+    c.g[A0][0] = 0x520000;
+    if diff > 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 1;
+        ret(c);
+        return;
+    }
+    c.cycles += 5;
+    c.g[V0][0] = 0;
+    c.g[V1][0] = c.lw(EA_FILE_CD_HASH_EQUAL_COUNT);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+    // The store sits in the return's delay slot.
+    c.sw(EA_FILE_CD_HASH_EQUAL_COUNT, c.g[V1][0]);
+    ret(c);
+}
+
+/// `char *EAFile_CdReset(void)` (0x3e3618): (re)read the CD sector at the
+/// current LBA into the sector buffer `0x519c80` and return it. Retries up to
+/// ten times on drive errors (a delay between polls); when the budget is
+/// used up it re-initialises the drive (`sceCdInit(0)`, `sceCdMmode`) and
+/// starts over. A `match pc` body (back edges deliver events): re-entered at
+/// its block heads after an unwind.
+pub fn ea_file_cd_reset(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003e3618 => {
+                    c.cycles += 14;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+                    c.g[V0][0] = 0x450000;
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.g[V1][0] = 0x520000;
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S2][0] = 0xa;
+                    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x63c0));
+                    c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S4][0] = 0x520000;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_add(0xc58));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    pc = 0x003e3650;
+                    continue;
+                }
+                0x003e3650 => {
+                    c.cycles += 2;
+                    let t = c.g[S2][0] != 0u64;
+                    c.g[A0][0] = 0u64;
+                    if t {
+                        pc = 0x003e3668;
+                        continue;
+                    }
+                    pc = 0x003e3658;
+                    continue;
+                }
+                0x003e3658 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x003e3660);
+                    c.g[S2][0] = 0xa;
+                    call_ptr(c, 0x00401718, 0x003e3660)?;
+                    c.g[RA][0] = sx(0x003e3668);
+                    c.g[A0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x8));
+                    call_ptr(c, 0x00402450, 0x003e3668)?;
+                    pc = 0x003e3668;
+                    continue;
+                }
+                0x003e3668 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x003e3670);
+                    c.g[A0][0] = 0u64;
+                    call_ptr(c, 0x00401bf0, 0x003e3670)?;
+                    let t = true;
+                    c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    if t {
+                        pc = 0x003e3680;
+                        continue;
+                    }
+                    pc = 0x003e3678;
+                    continue;
+                }
+                0x003e3678 => {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x003e3680);
+                    c.g[A0][0] = 0x1e0;
+                    Callee {
+                        addr: 0x003e35b0,
+                        f: ee::s14::EAFile_DelayTicks,
+                    }
+                    .call(c, 0x003e3680)?;
+                    pc = 0x003e3680;
+                    continue;
+                }
+                0x003e3680 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x2c));
+                    c.g[A1][0] = 0x1;
+                    c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x6380));
+                    c.g[RA][0] = sx(0x003e3694);
+                    c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1c));
+                    call_ptr(c, 0x00401df8, 0x003e3694)?;
+                    let t = c.g[V0][0] == 0u64;
+
+                    if t {
+                        if back_edge_unwinds(c, 0x003e3678) {
+                            return Ok(());
+                        }
+                        pc = 0x003e3678;
+                        continue;
+                    }
+                    pc = 0x003e369c;
+                    continue;
+                }
+                0x003e369c => {
+                    c.cycles += 1;
+                    pc = 0x003e36a0;
+                    continue;
+                }
+                0x003e36a0 => {
+                    c.cycles += 7;
+                    c.g[RA][0] = sx(0x003e36a8);
+                    c.g[A0][0] = 0x1;
+                    call_ptr(c, 0x004013e8, 0x003e36a8)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x003e36b4);
+                    c.g[A0][0] = 0x1e0;
+                    Callee {
+                        addr: 0x003e35b0,
+                        f: ee::s14::EAFile_DelayTicks,
+                    }
+                    .call(c, 0x003e36b4)?;
+                    let t = c.g[S0][0] != 0u64;
+
+                    if t {
+                        if back_edge_unwinds(c, 0x003e36a0) {
+                            return Ok(());
+                        }
+                        pc = 0x003e36a0;
+                        continue;
+                    }
+                    pc = 0x003e36bc;
+                    continue;
+                }
+                0x003e36bc => {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x003e36c4);
+                    call_ptr(c, 0x00402300, 0x003e36c4)?;
+                    c.g[V0][0] = (c.g[V0][0] < 0x1u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[S2][0] = c.g[S1][0];
+                    }
+                    if t {
+                        if back_edge_unwinds(c, 0x003e3650) {
+                            return Ok(());
+                        }
+                        pc = 0x003e3650;
+                        continue;
+                    }
+                    pc = 0x003e36d0;
+                    continue;
+                }
+                0x003e36d0 => {
+                    c.cycles += 10;
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x6380));
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003e3618, 0x003e36f8);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `void EAFile_CdScanDir(int lba, int sectors)` (0x3e3758): walk the ISO9660
+/// directory at `lba` (`sectors` sectors long), appending every file to the
+/// file table (`[0x450c68] + n * 0x108`: path, LBA, size; count at
+/// `[0x450c6c]`) and recursing into subdirectories with the sector buffer
+/// and the path saved around the call. Re-entered at its block heads after
+/// an unwind (`match pc` body).
+pub fn ea_file_cd_scan_dir(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003e3758 => {
+                    c.cycles += 29;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x9c0));
+                    c.g[V0][0] = 0x520000;
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x9a0));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x990));
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x980));
+                    c.g[S2][0] = c.g[A1][0];
+                    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x970));
+                    c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x63a0));
+                    c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x960));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x950));
+                    c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x940));
+                    c.g[S6][0] = 0x450000;
+                    c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x930));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x9b0));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x920), c.g[RA][0]);
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x910), c.g[V0][0]);
+                    c.g[V0][0] = 0x520000;
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0xc), c.g[A0][0]);
+                    c.g[RA][0] = sx(0x003e37b0);
+                    c.g[S7][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1380));
+                    Callee {
+                        addr: 0x003e3618,
+                        f: ee::s14::EAFile_CdReset,
+                    }
+                    .call(c, 0x003e37b0)?;
+                    c.g[A0][0] = c.lb(c.g[V0][0] as u32);
+                    c.g[V1][0] = 0x520000;
+                    c.g[S5][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S4][0] = sx((c.g[SP][0] as u32).wrapping_add(0x110));
+                    c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    let t = true;
+                    c.g[FP][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6380));
+                    if t {
+                        pc = 0x003e38fc;
+                        continue;
+                    }
+                    pc = 0x003e37cc;
+                    continue;
+                }
+                0x003e37cc => {
+                    c.cycles += 1;
+                    pc = 0x003e37d0;
+                    continue;
+                }
+                0x003e37d0 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[V0][0] & 0x2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = c.g[SP][0];
+                    if t {
+                        pc = 0x003e386c;
+                        continue;
+                    }
+                    pc = 0x003e37dc;
+                    continue;
+                }
+                0x003e37dc => {
+                    c.cycles += 36;
+                    c.g[A2][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.g[RA][0] = sx(0x003e37e8);
+                    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x21));
+                    call_ptr(c, 0x0041605c, 0x003e37e8)?;
+                    c.g[A2][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.g[A3][0] = 0x2f;
+                    c.g[A0][0] = c.g[S5][0];
+                    c.g[A1][0] = c.g[S7][0];
+                    c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.sb(c.g[V1][0] as u32, c.g[A3][0]);
+                    c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[SP][0] as u32));
+                    c.g[RA][0] = sx(0x003e3810);
+                    c.sb((c.g[V0][0] as u32).wrapping_add(0x1), 0u64);
+                    call_ptr(c, 0x004166f4, 0x003e3810)?;
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[RA][0] = sx(0x003e381c);
+                    c.g[A0][0] = c.g[S7][0];
+                    call_ptr(c, 0x004162d0, 0x003e381c)?;
+                    c.g[A2][0] = 0x800;
+                    c.g[A1][0] = c.g[FP][0];
+                    c.g[RA][0] = sx(0x003e382c);
+                    c.g[A0][0] = c.g[S4][0];
+                    Callee {
+                        addr: 0x003e6574,
+                        f: ee::s14::EA_MemCopy,
+                    }
+                    .call(c, 0x003e382c)?;
+                    c.lwl(5, (c.g[S1][0] as u32).wrapping_add(0xd));
+                    c.lwr(5, (c.g[S1][0] as u32).wrapping_add(0xa));
+                    c.lwl(4, (c.g[S1][0] as u32).wrapping_add(0x5));
+                    c.lwr(4, (c.g[S1][0] as u32).wrapping_add(0x2));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7ff));
+                    c.g[RA][0] = sx(0x003e3848);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32) >> 11);
+                    Callee {
+                        addr: 0x003e3758,
+                        f: ee::s14::EAFile_CdScanDir,
+                    }
+                    .call(c, 0x003e3848)?;
+                    c.g[A0][0] = c.g[FP][0];
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[RA][0] = sx(0x003e3858);
+                    c.g[A2][0] = 0x800;
+                    Callee {
+                        addr: 0x003e6574,
+                        f: ee::s14::EA_MemCopy,
+                    }
+                    .call(c, 0x003e3858)?;
+                    c.g[A0][0] = c.g[S7][0];
+                    c.g[RA][0] = sx(0x003e3864);
+                    c.g[A1][0] = c.g[S5][0];
+                    call_ptr(c, 0x004166f4, 0x003e3864)?;
+                    let t = true;
+                    c.g[V0][0] = c.lb(c.g[S1][0] as u32);
+                    if t {
+                        pc = 0x003e3900;
+                        continue;
+                    }
+                    pc = 0x003e386c;
+                    continue;
+                }
+                0x003e386c => {
+                    c.cycles += 14;
+                    c.g[A2][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x21));
+                    c.g[RA][0] = sx(0x003e387c);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x2));
+                    Callee {
+                        addr: 0x003e6574,
+                        f: ee::s14::EA_MemCopy,
+                    }
+                    .call(c, 0x003e387c)?;
+                    c.g[V1][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.g[A0][0] = 0x2e;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[SP][0] as u32));
+                    c.sb((c.g[V1][0] as u32).wrapping_sub(0x2), 0u64);
+                    c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x3));
+                    c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+
+                    if c.g[V1][0] == c.g[A0][0] {
+                        c.sb(c.g[V0][0] as u32, 0u64);
+                        pc = 0x003e38a4;
+                        continue;
+                    }
+                    pc = 0x003e38a4;
+                    continue;
+                }
+                0x003e38a4 => {
+                    c.cycles += 22;
+                    c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0xc6c));
+                    c.g[V1][0] = 0x108;
+                    c.g[A0][0] = 0x450000;
+                    c.mult(0, 2, 2, 3);
+                    c.g[S0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc68));
+                    c.g[A0][0] = 0x520000;
+                    c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1380));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[RA][0] = sx(0x003e38cc);
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x004166f4, 0x003e38cc)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x003e38d8);
+                    c.g[A1][0] = c.g[SP][0];
+                    call_ptr(c, 0x004162d0, 0x003e38d8)?;
+                    c.lwl(4, (c.g[S1][0] as u32).wrapping_add(0x5));
+                    c.lwr(4, (c.g[S1][0] as u32).wrapping_add(0x2));
+                    c.g[V1][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0xc6c));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x100), c.g[A0][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    c.lwl(2, (c.g[S1][0] as u32).wrapping_add(0xd));
+                    c.lwr(2, (c.g[S1][0] as u32).wrapping_add(0xa));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x104), c.g[V0][0]);
+                    c.sw((c.g[S6][0] as u32).wrapping_add(0xc6c), c.g[V1][0]);
+                    pc = 0x003e38fc;
+                    continue;
+                }
+                0x003e38fc => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lb(c.g[S1][0] as u32);
+                    pc = 0x003e3900;
+                    continue;
+                }
+                0x003e3900 => {
+                    c.cycles += 1;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    pc = 0x003e3904;
+                    continue;
+                }
+                0x003e3904 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lb(c.g[S1][0] as u32);
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x19));
+                        if back_edge_unwinds(c, 0x003e37d0) {
+                            return Ok(());
+                        }
+                        pc = 0x003e37d0;
+                        continue;
+                    }
+                    pc = 0x003e3910;
+                    continue;
+                }
+                0x003e3910 => {
+                    c.cycles += 2;
+                    let t = c.g[S2][0] == 0u64;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    if t {
+                        pc = 0x003e3930;
+                        continue;
+                    }
+                    pc = 0x003e3918;
+                    continue;
+                }
+                0x003e3918 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.g[RA][0] = sx(0x003e3928);
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    Callee {
+                        addr: 0x003e3618,
+                        f: ee::s14::EAFile_CdReset,
+                    }
+                    .call(c, 0x003e3928)?;
+                    let t = true;
+                    c.g[S1][0] = c.g[V0][0];
+                    if t {
+                        if back_edge_unwinds(c, 0x003e3904) {
+                            return Ok(());
+                        }
+                        pc = 0x003e3904;
+                        continue;
+                    }
+                    pc = 0x003e3930;
+                    continue;
+                }
+                0x003e3930 => {
+                    c.cycles += 14;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x910));
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x9b0));
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x9a0));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x990));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x980));
+                    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x970));
+                    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x960));
+                    c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x950));
+                    c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x940));
+                    c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x930));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x920));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x9c0));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003e3758, 0x003e3968);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `void EAFile_CdReadThread(void)` (0x3e3be0): the CD read thread, which never
+/// returns. Waits on the request semaphore, then handles a drive error or
+/// an abort flag (re-issuing the read while retries last), the copy of the
+/// sector just read into the caller's buffer, and the next sector run
+/// (`EAFile_CdIssueRead`) or the completion of the request.
+pub fn ea_file_cd_read_thread(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+        c.g[V0][0] = 0x520000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x63a0));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S1][0] = 0x520000;
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x20));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S3][0] = 0x1;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S4][0] = 0xfffffffffffffffe;
+        'l_3e3c18: loop {
+            'b_3e3c7c: {
+                'b_3e3c3c: {
+                    c.cycles += 6;
+                    c.g[RA][0] = sx(0x003e3c20);
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x00423de0, 0x003e3c20)?;
+                    c.g[RA][0] = sx(0x003e3c28);
+                    call_ptr(c, 0x00402300, 0x003e3c28)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x63c0));
+                    if t {
+                        break 'b_3e3c3c;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.g[V1][0] & 0x8;
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = c.g[V1][0] & 0x1;
+                        if t {
+                            break 'b_3e3c7c;
+                        } else {
+                            break 'b_3e3c3c;
+                        }
+                    }
+                }
+                c.cycles += 5;
+                c.g[V0][0] = 0xfffffffffffffff7;
+                c.g[A0][0] = c.g[V1][0] & c.g[V0][0];
+                c.g[V1][0] = c.g[V1][0] & 0x2;
+                let t = c.g[V1][0] == 0u64;
+                c.sw((c.g[S1][0] as u32).wrapping_sub(0x63c0), c.g[A0][0]);
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003e3c18);
+                    }
+                    continue 'l_3e3c18;
+                } else {
+                    'b_3e3c70: {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                        let t = (c.g[V0][0] as i64) <= 0;
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                        if t {
+                            break 'b_3e3c70;
+                        } else {
+                            c.cycles += 4;
+                            c.g[RA][0] = sx(0x003e3c68);
+                            Callee {
+                                addr: 0x003e3b00,
+                                f: ee::s14::EAFile_CdIssueRead,
+                            }
+                            .call(c, 0x003e3c68)?;
+                            let t = true;
+
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x003e3c18);
+                                }
+                                continue 'l_3e3c18;
+                            } else {
+                                break 'b_3e3c70;
+                            }
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[A0][0] | 0x4;
+                    let t = true;
+                    c.sw((c.g[S1][0] as u32).wrapping_sub(0x63c0), c.g[V0][0]);
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003e3c18);
+                        }
+                        continue 'l_3e3c18;
+                    } else {
+                        break 'b_3e3c7c;
+                    }
+                }
+            }
+            'b_3e3ca8: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V1][0] = c.g[V1][0] & c.g[S4][0];
+                if t {
+                    break 'b_3e3ca8;
+                } else {
+                    c.cycles += 9;
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                    c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x3c));
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.sw((c.g[S1][0] as u32).wrapping_sub(0x63c0), c.g[V1][0]);
+                    c.g[RA][0] = sx(0x003e3ca8);
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x14), c.g[A3][0]);
+                    Callee {
+                        addr: 0x003e6574,
+                        f: ee::s14::EA_MemCopy,
+                    }
+                    .call(c, 0x003e3ca8)?;
+                    break 'b_3e3ca8;
+                }
+            }
+            'b_3e3d54: {
+                c.cycles += 3;
+                c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                let t = (c.g[A3][0] as i64) <= 0;
+                c.g[A2][0] = ((c.g[A3][0] as i64) < 2048i64) as u64;
+                if t {
+                    break 'b_3e3d54;
+                } else {
+                    'b_3e3d38: {
+                        'b_3e3cf4: {
+                            c.cycles += 10;
+                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), 0u64);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+                            let t = c.g[A2][0] == 0u64;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                            if t {
+                                break 'b_3e3cf4;
+                            } else {
+                                c.cycles += 6;
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x63c0));
+                                c.sw(c.g[S0][0] as u32, c.g[A3][0]);
+                                c.g[V0][0] = c.g[V0][0] | 0x1;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[S3][0]);
+                                let t = true;
+                                c.sw((c.g[S1][0] as u32).wrapping_sub(0x63c0), c.g[V0][0]);
+                                if t {
+                                    break 'b_3e3d38;
+                                } else {
+                                    break 'b_3e3cf4;
+                                }
+                            }
+                        }
+                        'b_3e3d18: {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.g[V0][0] & 0x3f;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x63c0));
+                            if t {
+                                break 'b_3e3d18;
+                            } else {
+                                c.cycles += 6;
+                                c.g[V0][0] = 0x800;
+                                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                                c.g[V1][0] = c.g[V1][0] | 0x1;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[S3][0]);
+                                let t = true;
+                                c.sw((c.g[S1][0] as u32).wrapping_sub(0x63c0), c.g[V1][0]);
+                                if t {
+                                    break 'b_3e3d38;
+                                } else {
+                                    break 'b_3e3d18;
+                                }
+                            }
+                        }
+                        c.cycles += 8;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x63c0));
+                        c.g[V1][0] = 0xfffffffffffff800;
+                        c.g[V1][0] = c.g[A3][0] & c.g[V1][0];
+                        c.g[V0][0] = c.g[V0][0] & c.g[S4][0];
+                        c.g[A0][0] = sx(((c.g[V1][0] as u32) as i32 >> 11) as u32);
+                        c.sw((c.g[S1][0] as u32).wrapping_sub(0x63c0), c.g[V0][0]);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[A0][0]);
+                        c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+                        break 'b_3e3d38;
+                    }
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    c.g[RA][0] = sx(0x003e3d4c);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    Callee {
+                        addr: 0x003e3b00,
+                        f: ee::s14::EAFile_CdIssueRead,
+                    }
+                    .call(c, 0x003e3d4c)?;
+                    let t = true;
+
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003e3c18);
+                        }
+                        continue 'l_3e3c18;
+                    } else {
+                        break 'b_3e3d54;
+                    }
+                }
+            }
+            c.cycles += 8;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x63c0));
+            c.g[V1][0] = 0xfffffffffffffffd;
+            c.g[A0][0] = 0x1;
+            c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+            c.g[RA][0] = sx(0x003e3d6c);
+            c.sw((c.g[S1][0] as u32).wrapping_sub(0x63c0), c.g[V0][0]);
+            Callee {
+                addr: 0x003de420,
+                f: ee::s14::EAFile_CompleteRequest,
+            }
+            .call(c, 0x003e3d6c)?;
+            let t = true;
+
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x003e3c18);
+                }
+                continue 'l_3e3c18;
+            } else {
+                c.cycles += 1;
+                c.pc = 0x003e_3d78;
+                ee::s14::EAFile_CdMountDisc(c);
+                return Ok(());
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11582,6 +12323,313 @@ pub(crate) mod tests {
             64,
             &PATHS_EAFILE_WRITE,
             &eafile_write_setup,
+        );
+    }
+
+    use crate::game::ealib::seg_2dcae8::tests::oc697_hook_all;
+
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+
+    // -------------------------------------------------------------------
+    // Leaf and simple functions.
+
+    /// Hash compare: less, greater and equal (with the collision counter),
+    /// over the full unsigned range.
+    #[test]
+    fn ea_file_cd_compare_hash_matches() {
+        check_paths(
+            ee::s14::f_003e3968__generated,
+            ea_file_cd_compare_hash,
+            200,
+            &[7, 9, 12],
+            &|c, seed| {
+                let mut r = Rng(0x003e_3968 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                scramble(c, &mut r);
+                c.pc = 0x003e_3968;
+                let x = if seed % 4 == 0 {
+                    r.next_u32() | 0x8000_0000
+                } else {
+                    r.next_u32()
+                };
+                let y = match seed % 3 {
+                    0 => x,
+                    1 => x.wrapping_add(1 + r.next_u32() % 4),
+                    _ => x.wrapping_sub(1 + r.next_u32() % 4),
+                };
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x110) as u64;
+                c.bus.write32(DATA + 0x100, x);
+                c.bus.write32(DATA + 0x110, y);
+                c.bus.write32(EA_FILE_CD_HASH_EQUAL_COUNT, r.next_u32());
+            },
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // Gated slot fakes for the library calls of the CD functions.
+
+    /// Gate word (in the machine's RAM): the fakes below only act when it
+    /// holds [`OC697_MAGIC`]; with the gate off they run the body they
+    /// replaced.
+    pub(crate) const OC697_CTRL: u32 = DATA + 0x9_0000;
+
+    pub(crate) const OC697_MAGIC: u32 = 0x6970_0697;
+
+    /// Per-callee result scripts: `[count, next, v0...]` (0x40 bytes each).
+    pub(crate) const OC697_SCRIPT: u32 = DATA + 0x9_0100;
+
+    /// While nonzero, the fake `sceCdRead` copies a sector into its buffer:
+    /// sector 0 on the first call, sector 1 on every later one.
+    pub(crate) const OC697_SECT_ON: u32 = DATA + 0x9_0f00;
+
+    pub(crate) const OC697_SECT_NEXT: u32 = DATA + 0x9_0f04;
+
+    /// The two 0x800-byte sectors.
+    pub(crate) const OC697_SECTORS: u32 = DATA + 0x2_0000;
+
+    /// While nonzero, `SetAlarm` fails (-1).
+    pub(crate) const OC697_FAIL_ALARM: u32 = DATA + 0x9_0f08;
+
+    /// Script slot of a faked callee.
+    pub(crate) fn oc697_slot(addr: u32) -> u32 {
+        match addr {
+            0x0040_1718 => 0,
+            0x0040_2450 => 1,
+            0x0040_1bf0 => 2,
+            0x0040_1df8 => 3,
+            0x0040_13e8 => 4,
+            0x0040_2300 => 5,
+            0x0042_3de0 => 6,
+            0x003e_35b0 => 7,
+            _ => 8,
+        }
+    }
+
+    /// Give callee `addr` the results `vals` (cycled) instead of the fake's
+    /// hash.
+    pub(crate) fn oc697_script(c: &mut Cpu, addr: u32, vals: &[u32]) {
+        let base = OC697_SCRIPT + oc697_slot(addr) * 0x40;
+        c.bus.write32(base, vals.len() as u32);
+        c.bus.write32(base + 4, 0);
+        for (i, v) in vals.iter().enumerate() {
+            c.bus.write32(base + 8 + 4 * i as u32, *v);
+        }
+    }
+
+    /// The gate open, empty scripts and no sector copy; the fakes unwind at
+    /// call `unwind` (`u32::MAX`: never).
+    pub(crate) fn oc697_open(c: &mut Cpu, unwind: u32) {
+        oc697_hook_all();
+        c.bus.write32(OC697_CTRL, OC697_MAGIC);
+        c.bus.write32(LOG_UNWIND_AT, unwind);
+        for slot in 0..9 {
+            c.bus.write32(OC697_SCRIPT + slot * 0x40, 0);
+        }
+        c.bus.write32(OC697_SECT_ON, 0);
+        c.bus.write32(OC697_SECT_NEXT, 0);
+        c.bus.write32(OC697_FAIL_ALARM, 0);
+    }
+
+    /// A test machine (fake syscalls and unknown callees) with the CD
+    /// fakes open.
+    pub(crate) fn oc697_machine(c: &mut Cpu, seed: u32, salt: u64, unwind: u32) -> Rng {
+        let r = machine(c, seed, salt, 0);
+        oc697_open(c, unwind);
+        r
+    }
+
+    // -------------------------------------------------------------------
+    // EAFile_CdReset
+
+    /// Scripted drive for `EAFile_CdReset`: `Read` fails `reads` times first,
+    /// `Sync(1)` reports busy once, `GetError` reports `errors` errors before
+    /// success.
+    pub(crate) fn oc697_reset_scripts(c: &mut Cpu, reads: u32, errors: u32) {
+        let mut read = vec![0; reads as usize];
+        read.push(1);
+        oc697_script(c, 0x0040_1df8, &read);
+        oc697_script(c, 0x0040_13e8, &[1, 0]);
+        let mut err = vec![1; errors as usize];
+        err.push(0);
+        oc697_script(c, 0x0040_2300, &err);
+    }
+
+    /// `EAFile_CdReset`: read retries, busy syncs, drive errors (up to
+    /// the ten-error budget that re-initialises the drive), and fakes that
+    /// unwind in the middle.
+    #[test]
+    fn ea_file_cd_reset_matches() {
+        covered(
+            ee::s14::f_003e3618__generated,
+            ea_file_cd_reset,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x003e_3618 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                let unwind = if seed % 4 == 0 {
+                    r.next_u32() % 30
+                } else {
+                    u32::MAX
+                };
+                let mut g = oc697_machine(c, seed, 0x003e_3618, unwind);
+                c.pc = 0x003e_3618;
+                oc697_reset_scripts(c, seed % 3, (seed / 3) % 13);
+                c.bus.write32(0x0045_0c60, g.next_u32());
+            },
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // EAFile_CdScanDir
+
+    /// Write an ISO9660-style directory record at `at` and return its
+    /// length: `len`, LBA at +2 and size at +10 (little endian, unaligned),
+    /// flags at +0x19, name length at +0x20 and the name at +0x21.
+    pub(crate) fn oc697_dir_record(
+        c: &mut Cpu,
+        at: u32,
+        lba: u32,
+        size: u32,
+        flags: u8,
+        name: &[u8],
+    ) -> u32 {
+        let len = (0x21 + name.len() as u32 + 1) & !1;
+        c.bus.write8(at, len as u8);
+        for i in 0..4 {
+            c.bus.write8(at + 2 + i, (lba >> (8 * i)) as u8);
+            c.bus.write8(at + 10 + i, (size >> (8 * i)) as u8);
+        }
+        c.bus.write8(at + 0x19, flags);
+        c.bus.write8(at + 0x20, name.len() as u8);
+        for (i, b) in name.iter().enumerate() {
+            c.bus.write8(at + 0x21 + i as u32, *b);
+        }
+        len
+    }
+
+    /// The two sectors `sceCdRead` hands out: sector 0 lists "." then
+    /// `entries` files and (when `dirs`) directories, sector 1 only files.
+    /// Names end in ".;1", ";1" or a bare dot, to reach each branch of the
+    /// name clean-up.
+    pub(crate) fn oc697_sectors(c: &mut Cpu, r: &mut Rng, entries: u32, dirs: bool) {
+        for s in 0..2u32 {
+            let base = OC697_SECTORS + s * 0x800;
+            let mut at = base;
+            at += oc697_dir_record(c, at, 0x100, 0x800, 2, b".");
+            let n = if s == 0 {
+                entries
+            } else {
+                1 + r.next_u32() % 3
+            };
+            for j in 0..n {
+                let dir = s == 0 && dirs && (j + r.next_u32()) % 2 == 0;
+                let name: Vec<u8> = match r.next_u32() % 3 {
+                    0 => b"AB.;1".to_vec(),
+                    1 => b"CDE;1".to_vec(),
+                    _ => b"FG.H;1".to_vec(),
+                };
+                let size = 0x7f0 + (r.next_u32() % 3) * 0x400;
+                at += oc697_dir_record(
+                    c,
+                    at,
+                    0x200 + 0x10 * j,
+                    size,
+                    if dir { 2 } else { 0 },
+                    if dir { &b"SUBDIR"[..] } else { &name[..] },
+                );
+            }
+            c.bus.write8(at, 0);
+        }
+    }
+
+    /// The `ScanDir` fixture: the file table and its count, an empty path,
+    /// the sector script and a quiet drive.
+    pub(crate) fn oc697_scan_setup(c: &mut Cpu, seed: u32, r: &mut Rng) {
+        oc697_reset_scripts(c, 0, 0);
+        oc697_script(c, 0x0040_1df8, &[1]);
+        oc697_script(c, 0x0040_13e8, &[0]);
+        c.bus.write32(OC697_SECT_ON, 1);
+        c.bus.write32(0x0045_0c68, DATA + 0x6000);
+        c.bus.write32(0x0045_0c6c, seed % 3);
+        c.bus.write32(0x0051_9c6c, r.next_u32());
+        let entries = 1 + seed % 5;
+        oc697_sectors(c, r, entries, seed / 5 % 3 != 0);
+        c.g[A0][0] = (0x100 + seed % 7) as u64;
+        c.g[A1][0] = (1 + seed / 15 % 3) as u64;
+    }
+
+    /// `EAFile_CdScanDir`: a root directory with files and subdirectories
+    /// (the recursion), one to three sectors, the sector buffer and path
+    /// saved around the recursion.
+    #[test]
+    fn ea_file_cd_scan_dir_matches() {
+        covered(
+            ee::s14::f_003e3758__generated,
+            ea_file_cd_scan_dir,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x003e_3758 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                let unwind = if seed % 5 == 0 {
+                    r.next_u32() % 60
+                } else {
+                    u32::MAX
+                };
+                oc697_machine(c, seed, 0x003e_3758, unwind);
+                c.pc = 0x003e_3758;
+                oc697_scan_setup(c, seed, &mut r);
+            },
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // EAFile_CdReadThread
+
+    /// The CD request state: flags `0x519c40`, semaphore `+0xc`, retries
+    /// `+0x10`, `+0x14`, the buffer base `+0x3c`; the current read at
+    /// `0x519c60` (length, remaining, offset, sector, sector count, dest).
+    pub(crate) const OC697_CD_STATE: u32 = 0x0051_9c40;
+
+    pub(crate) const OC697_CD_READ: u32 = 0x0051_9c60;
+
+    /// `EAFile_CdReadThread`: the thread loops forever, so each seed picks
+    /// the call at which a fake unwinds. Random flags, retry counts,
+    /// remaining lengths (none, a short tail, unaligned and aligned
+    /// runs), drive errors, and failing re-reads.
+    #[test]
+    fn ea_file_cd_read_thread_matches() {
+        covered(
+            ee::s14::f_003e3be0__generated,
+            ea_file_cd_read_thread,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003e_3be0 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                oc697_machine(c, seed, 0x003e_3be0, 1 + seed % 14);
+                c.pc = 0x003e_3be0;
+                let flags = r.next_u32() & 0xf;
+                c.bus.write32(OC697_CD_STATE, flags);
+                c.bus.write32(OC697_CD_STATE + 0xc, r.next_u32());
+                c.bus.write32(OC697_CD_STATE + 0x10, r.next_u32() % 3);
+                c.bus.write32(OC697_CD_STATE + 0x14, r.next_u32());
+                c.bus.write32(OC697_CD_STATE + 0x3c, DATA + 0x6_0000);
+                let len = [0, 1, 0x10, 0x7ff, 0x800][(r.next_u32() % 5) as usize];
+                let remaining =
+                    [0, 0x40, 0x7ff, 0x800, 0x1000, 0x1801][(r.next_u32() % 6) as usize];
+                c.bus.write32(OC697_CD_READ, len);
+                c.bus.write32(OC697_CD_READ + 4, remaining);
+                c.bus.write32(OC697_CD_READ + 8, r.next_u32() % 0x40);
+                c.bus.write32(OC697_CD_READ + 0xc, r.next_u32() % 0x1000);
+                c.bus.write32(OC697_CD_READ + 0x10, r.next_u32() % 4);
+                c.bus.write32(
+                    OC697_CD_READ + 0x14,
+                    DATA + 0x4_0000 + 0x40 * (r.next_u32() % 4),
+                );
+                let errors: Vec<u32> = (0..8).map(|_| (r.next_u32() % 3 == 0) as u32).collect();
+                oc697_script(c, 0x0040_2300, &errors);
+                let reads: Vec<u32> = (0..4).map(|_| (r.next_u32() % 2) as u32).collect();
+                oc697_script(c, 0x0040_1df8, &reads);
+                for w in 0..16 {
+                    c.bus.write32(DATA + 0x6_0000 + 4 * w, r.next_u32());
+                }
+            },
         );
     }
 }

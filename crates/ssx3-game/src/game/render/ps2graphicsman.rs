@@ -32,7 +32,6 @@ pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::particle::deleting_dtor;
-use crate::game::render::particle::man;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -130,11 +129,6 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::festatetrophyroom::callee::MEM_MAN_FREE;
 
     pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-
-    pub(crate) use crate::game::lib::libc::callee::STRCMP;
-    pub(crate) use crate::game::lib::snd::callee::STRCPY;
-
-    pub(crate) use crate::game::render::particle::callee::SHPS_FIND_ENTRY_BY_NAME;
 }
 
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
@@ -2191,200 +2185,237 @@ pub(crate) fn tex_load_texture_exit(c: &mut Cpu, frame: Frame) {
 }
 
 pub(crate) mod ps2gm {
-    pub(crate) use crate::game::render::particle::ps2gm::SHAPE_BANKS;
+    #[cfg(test)]
     pub(crate) use crate::game::render::particle::ps2gm::SHAPE_BANK_COUNT;
-    pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE;
+    #[cfg(test)]
     pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE_COUNT;
-    pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE_ENTRY;
-    pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE_NAME;
 }
 
-/// `int PS2GraphicsMan::GetTextureByName(const char* name)` (0x3696c8): the
-/// texture handle for the first four characters of `name`. A key already in
-/// the name cache returns its handle; otherwise the key goes into the next
-/// cache entry, the shape banks are searched for a shape of that name and the
-/// first one found is loaded through vtable slot +0x170 (`"charshp"`, 0, 1,
-/// -1); a key found nowhere is cached as -1.
+/// `int PS2GraphicsMan_GetTextureByName(PS2GraphicsMan* self, const char* name)`
+/// (0x003696c8): texture id of a 4-character shape name. Copies at most four
+/// characters of `name` into a local buffer, looks it up in the cache
+/// (`self + 0x280 + 12 * i`: handle, name; count at `+0xe80`), otherwise
+/// appends an entry, searches the shape banks (`+0x278` count, `+0x27c` array)
+/// with `SHAPE_locatez` and creates the texture through vtable slot 46
+/// (`self->+0x10d8`), or stores -1. Returns the entry's handle.
+#[allow(unused_labels, unused_assignments, unused_variables, unreachable_code)]
 pub fn ps2_graphics_man_get_texture_by_name(c: &mut Cpu) {
-    use ps2gm::*;
-    const COPY_HEAD: u32 = 0x0036_9700;
-    const CACHE_HEAD: u32 = 0x0036_9748;
-    const BANK_HEAD: u32 = 0x0036_97b0;
-    /// `"charshp"`: the texture group of shapes loaded from the banks.
-    const CHARSHP: u32 = 0x004a_41a0;
-    const LOAD_SHAPE_SLOT: u32 = 0x170;
     guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x80);
-        frame.save(c, S0, 0x70);
-        frame.save(c, S1, 0x60);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save(c, S2, 0x50);
-        frame.save(c, S3, 0x40);
-        frame.save(c, S4, 0x30);
-        frame.save(c, S5, 0x20);
-        frame.save_ra(c, 0x10);
-        // The key: at most four characters of the name, in a buffer at sp.
-        c.g[V0][0] = Addr(r32(c, A1)).lb(c);
-        c.g[A0][0] = c.g[A1][0];
-        if c.g[V0][0] != 0 {
-            c.cycles += 2;
-            c.g[A2][0] = c.g[SP][0];
-            c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
-            loop {
-                c.cycles += 5;
-                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
-                Addr(r32(c, A2)).sb(c, c.g[V0][0]);
-                c.g[V1][0] = Addr(r32(c, A0)).lb(c);
-                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
-                if c.g[V1][0] == 0 {
-                    break;
-                }
-                c.cycles += 4;
-                let copied = sx(r32(c, A0).wrapping_sub(r32(c, A1)));
-                c.g[V0][0] = ((copied as i64) < 4) as u64;
-                if c.g[V0][0] == 0 {
-                    break;
-                }
-                c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
-                if event_due(c) {
-                    deliver_event_here(c, COPY_HEAD);
+        'b_369724: {
+            c.cycles += 12;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S0][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            c.g[V0][0] = c.lb(c.g[A1][0] as u32);
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[A1][0];
+            if t {
+                break 'b_369724;
+            } else {
+                c.cycles += 2;
+                c.g[A2][0] = c.g[SP][0];
+                c.g[V0][0] = c.lbu(c.g[A0][0] as u32);
+                'l_369700: loop {
+                    c.cycles += 5;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    c.sb(c.g[A2][0] as u32, c.g[V0][0]);
+                    c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    if t {
+                        break 'b_369724;
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < 4i64) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[V0][0] = c.lbu(c.g[A0][0] as u32);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00369700);
+                            }
+                            continue 'l_369700;
+                        } else {
+                            break 'b_369724;
+                        }
+                    }
                 }
             }
         }
-        'exit: {
-            c.cycles += 7;
-            let key_len = sx(r32(c, A0).wrapping_sub(r32(c, A1)));
-            c.g[V0][0] = key_len;
-            c.g[S3][0] = 0;
-            let this = Addr(r32(c, S0));
-            c.g[A0][0] = this.off(TEX_CACHE_COUNT).lw(c);
-            c.g[V1][0] = sx(sp(c).wrapping_add(key_len as u32));
-            Addr(r32(c, V1)).sb(c, 0);
-            c.g[S4][0] = sx(this.off(TEX_CACHE).0);
-            // Search the cache (s3 = index, s2 = entry, s1 = its name).
-            if (c.g[A0][0] as i64) > 0 {
-                c.cycles += 2;
-                c.g[S2][0] = c.g[S4][0];
-                c.g[S1][0] = sx(this.off(TEX_CACHE + TEX_CACHE_NAME).0);
-                loop {
-                    c.cycles += 5;
-                    c.g[A0][0] = c.g[SP][0];
-                    c.g[A1][0] = c.g[S1][0];
-                    callee::STRCMP.call(c, 0x0036_9754)?;
-                    if c.g[V0][0] == 0 {
-                        c.cycles += 2;
-                        c.g[V0][0] = Addr(r32(c, S2)).lw(c);
-                        break 'exit;
-                    }
-                    c.g[V0][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
-                    c.cycles += 5;
-                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
-                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(TEX_CACHE_ENTRY));
-                    c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(TEX_CACHE_ENTRY));
-                    if c.g[V0][0] == 0 {
-                        break;
-                    }
-                    if event_due(c) {
-                        deliver_event_here(c, CACHE_HEAD);
-                    }
-                }
-            }
-            // Not cached: the key becomes the name of the next entry.
-            c.cycles += 11;
-            c.g[A0][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
-            c.g[V0][0] = TEX_CACHE_ENTRY as u64;
-            c.g[A1][0] = c.g[SP][0];
-            c.g[S1][0] = 0;
-            c.mult(0, V1, A0, V0);
-            c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, S0)));
-            c.g[A0][0] = sx(r32(c, A0).wrapping_add(TEX_CACHE + TEX_CACHE_NAME));
-            callee::STRCPY.call(c, 0x0036_9798)?;
-            // Look for a shape of that name in each bank (s1 = bank index).
-            c.g[V1][0] = Addr(r32(c, S0)).off(SHAPE_BANK_COUNT).lw(c);
-            c.g[S3][0] = TEX_CACHE_ENTRY as u64;
-            if (c.g[V1][0] as i64) > 0 {
-                c.cycles += 3;
-                c.g[S5][0] = 0x4a_0000;
-                c.g[S2][0] = c.g[S4][0];
-                c.g[A1][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
-                loop {
-                    c.cycles += 10;
-                    c.g[V0][0] = sx(r32(c, S1) << 2);
-                    c.g[V1][0] = Addr(r32(c, S0)).off(SHAPE_BANKS).lw(c);
-                    c.mult(0, A0, A1, S3);
-                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
-                    c.g[A1][0] = sx(r32(c, A0).wrapping_add(r32(c, S0)));
-                    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
-                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(TEX_CACHE + TEX_CACHE_NAME));
-                    callee::SHPS_FIND_ENTRY_BY_NAME.call(c, 0x0036_97d0)?;
-                    c.g[A1][0] = c.g[V0][0];
-                    if c.g[V0][0] != 0 {
-                        // Load the shape and cache its handle.
-                        c.cycles += 20;
-                        let vt = Addr(r32(c, S0)).off(man::DISPLAY).lw(c);
-                        c.g[V1][0] = vt;
-                        c.g[A2][0] = sx(r32(c, S5).wrapping_add(CHARSHP & 0xffff));
-                        c.g[A3][0] = 0;
-                        c.g[A0][0] = Addr(vt as u32).off(LOAD_SHAPE_SLOT).lh(c);
-                        c.g[T0][0] = 1;
-                        c.g[V0][0] = Addr(vt as u32).off(LOAD_SHAPE_SLOT + 4).lw(c);
-                        c.g[T1][0] = u64::MAX;
-                        let method = r32(c, V0);
-                        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
-                        call_ptr(c, method, 0x0036_97fc)?;
-                        c.g[V1][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
-                        c.mult(0, A0, V1, S3);
-                        c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S2)));
-                        Addr(r32(c, V1)).sw(c, c.g[V0][0]);
-                        c.g[A0][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
-                        c.mult(0, V0, A0, S3);
-                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
-                        c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
-                        c.g[V0][0] = Addr(r32(c, V1)).lw(c);
-                        Addr(r32(c, S0)).off(TEX_CACHE_COUNT).sw(c, c.g[A0][0]);
-                        break 'exit;
-                    }
-                    c.cycles += 5;
-                    c.g[V0][0] = Addr(r32(c, S0)).off(SHAPE_BANK_COUNT).lw(c);
-                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
-                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                    if c.g[V0][0] == 0 {
-                        break;
-                    }
-                    c.g[A1][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
-                    if event_due(c) {
-                        deliver_event_here(c, BANK_HEAD);
+        'b_36986c: {
+            'b_369778: {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+                c.g[S3][0] = 0u64;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sb(c.g[V1][0] as u32, 0u64);
+                let t = (c.g[A0][0] as i64) <= 0;
+                c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x280));
+                if t {
+                    break 'b_369778;
+                } else {
+                    c.cycles += 2;
+                    c.g[S2][0] = c.g[S4][0];
+                    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x284));
+                    'l_369748: loop {
+                        'b_369764: {
+                            c.cycles += 5;
+                            c.g[A0][0] = c.g[SP][0];
+                            c.g[RA][0] = sx(0x00369754);
+                            c.g[A1][0] = c.g[S1][0];
+                            call_ptr(c, 0x004165a8, 0x00369754)?;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                                break 'b_369764;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                                if t {
+                                    break 'b_36986c;
+                                } else {
+                                    break 'b_369764;
+                                }
+                            }
+                        }
+                        c.cycles += 5;
+                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
+                        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00369748);
+                            }
+                            continue 'l_369748;
+                        } else {
+                            break 'b_369778;
+                        }
                     }
                 }
             }
-            // Found nowhere: cache the key as missing (-1).
+            'b_36983c: {
+                c.cycles += 11;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                c.g[V0][0] = 0xc;
+                c.g[A1][0] = c.g[SP][0];
+                c.g[S1][0] = 0u64;
+                c.mult(0, 3, 4, 2);
+                c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                c.g[RA][0] = sx(0x00369798);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x284));
+                call_ptr(c, 0x004166f4, 0x00369798)?;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x278));
+                let t = (c.g[V1][0] as i64) <= 0;
+                c.g[S3][0] = 0xc;
+                if t {
+                    break 'b_36983c;
+                } else {
+                    c.cycles += 3;
+                    c.g[S5][0] = 0x4a0000;
+                    c.g[S2][0] = c.g[S4][0];
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                    'l_3697b0: loop {
+                        'b_369828: {
+                            c.cycles += 10;
+                            c.g[V0][0] = sx((c.g[S1][0] as u32) << 2);
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x27c));
+                            c.mult(0, 4, 5, 19);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                            c.g[RA][0] = sx(0x003697d0);
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x284));
+                            call_ptr(c, 0x003b3900, 0x003697d0)?;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[A1][0] = c.g[V0][0];
+                            if t {
+                                break 'b_369828;
+                            } else {
+                                c.cycles += 20;
+                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10d8));
+                                c.g[A2][0] = sx((c.g[S5][0] as u32).wrapping_add(0x41a0));
+                                c.g[A3][0] = 0u64;
+                                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x170));
+                                c.g[T0][0] = 0x1;
+                                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x174));
+                                c.g[T1][0] = 0xffffffffffffffff;
+                                let t = c.g[V0][0] as u32;
+                                c.g[RA][0] = sx(0x003697fc);
+                                c.g[A0][0] =
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                call_ptr(c, t, 0x003697fc)?;
+                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                                c.mult(0, 4, 3, 19);
+                                c.g[V1][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                                c.mult(0, 2, 4, 19);
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                                c.g[V1][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                let t = true;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xe80), c.g[A0][0]);
+                                if t {
+                                    break 'b_36986c;
+                                } else {
+                                    break 'b_369828;
+                                }
+                            }
+                        }
+                        c.cycles += 5;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x278));
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003697b0);
+                            }
+                            continue 'l_3697b0;
+                        } else {
+                            break 'b_36983c;
+                        }
+                    }
+                }
+            }
             c.cycles += 12;
-            c.g[V0][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
-            c.g[A0][0] = TEX_CACHE_ENTRY as u64;
-            c.g[A1][0] = u64::MAX;
-            c.mult(0, V1, V0, A0);
-            c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, S4)));
-            Addr(r32(c, V0)).sw(c, c.g[A1][0]);
-            c.g[V1][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
-            c.mult(0, V0, V1, A0);
-            c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
-            c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, S4)));
-            c.g[V0][0] = Addr(r32(c, A0)).lw(c);
-            Addr(r32(c, S0)).off(TEX_CACHE_COUNT).sw(c, c.g[V1][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+            c.g[A0][0] = 0xc;
+            c.g[A1][0] = 0xffffffffffffffff;
+            c.mult(0, 3, 2, 4);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[A1][0]);
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe80));
+            c.mult(0, 2, 3, 4);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xe80), c.g[V1][0]);
+            break 'b_36986c;
         }
         c.cycles += 9;
-        frame.restore(c, S0, 0x70);
-        frame.restore(c, S1, 0x60);
-        frame.restore(c, S2, 0x50);
-        frame.restore(c, S3, 0x40);
-        frame.restore(c, S4, 0x30);
-        frame.restore(c, S5, 0x20);
-        frame.restore_ra(c, 0x10);
-        frame.close(c);
-        Ok(())
-    })
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        return Ok(());
+    });
 }
 
 #[cfg(test)]
@@ -3177,13 +3208,13 @@ pub(crate) mod tests {
     /// GetTextureByName against the generated body: every key length, cache
     /// hits and misses, bank hits and misses (fake unwinds included).
     #[test]
-    fn ps2_graphics_man_get_texture_by_name_matches() {
+    fn ps2_graphics_man_get_texture_by_name_matches_gfx1() {
         let setup = |c: &mut Cpu, seed: u32| {
             get_texture_by_name_setup(c, seed);
         };
         check_lohi(
             ee::s12::f_003696c8__generated,
-            ps2_graphics_man_get_texture_by_name,
+            crate::game::render::ps2graphicsman::ps2_graphics_man_get_texture_by_name,
             216,
             &setup,
         );
@@ -3271,8 +3302,8 @@ pub(crate) mod tests {
     driven!(gen_get_texture_by_name, ee::s12::f_003696c8__generated);
 
     driven!(
-        hand_get_texture_by_name,
-        ps2_graphics_man_get_texture_by_name
+        hand_get_texture_by_name_gfx1,
+        crate::game::render::ps2graphicsman::ps2_graphics_man_get_texture_by_name
     );
 
     /// The bank loop's event fixture: key `"sky"`, an empty cache, and three
@@ -3299,10 +3330,10 @@ pub(crate) mod tests {
     /// edges (structured loops: delivered, never unwinding there): `seed / 3
     /// % 2` aims the event at the bank loop (0x3697b0).
     #[test]
-    fn ps2_graphics_man_get_texture_by_name_events_match() {
+    fn ps2_graphics_man_get_texture_by_name_events_match_gfx1() {
         check_events(
             gen_get_texture_by_name,
-            hand_get_texture_by_name,
+            hand_get_texture_by_name_gfx1,
             300,
             &|c, seed| {
                 let mut r = get_texture_by_name_setup(c, seed / 6);
@@ -3313,6 +3344,98 @@ pub(crate) mod tests {
                     gtn_bank_head_fixture(c);
                 }
                 ps2gm_deliver_only(c, mode)
+            },
+        );
+    }
+
+    pub(crate) use crate::game::bx::memblockman::tests::oc689_put_cstr;
+    pub(crate) use crate::game::bx::memblockman::tests::OC689_GFX;
+    pub(crate) use crate::game::bx::memblockman::tests::OC689_SEEDS;
+
+    pub(crate) const OC689_SRCS: u32 = DATA + 0x0003_0000;
+
+    pub(crate) const OC689_VTABLE: u32 = DATA + 0x0004_0000;
+
+    /// The graphics manager's texture cache (`+0x280`, 12-byte entries,
+    /// count `+0xe80`) and shape banks (`+0x27c`, count `+0x278`): a bank
+    /// holds `count` shapes whose names the real `SHAPE_locatez` compares;
+    /// the texture is created through vtable slot 46 (a fake).
+    pub(crate) fn oc689_texture_setup(c: &mut Cpu, seed: u32, long: bool) -> Rng {
+        let mut r = fakes::machine(c, seed, 0x0689_0008, 3);
+        c.pc = 0x0036_96c8;
+        let names: [&[u8]; 5] = [b"abc", b"abcdefgh", b"wxyz", b"", b"q"];
+        let name = names[(seed % 5) as usize];
+        let want: Vec<u8> = name.iter().take(4).copied().collect();
+        c.g[A0][0] = OC689_GFX as u64;
+        c.g[A1][0] = (DATA + 0x1000) as u64;
+        oc689_put_cstr(c, DATA + 0x1000, name);
+        // Cache.
+        let count = if long {
+            30 + r.next_u32() % 8
+        } else {
+            r.next_u32() % 4
+        };
+        c.bus.write32(OC689_GFX + 0xe80, count);
+        for i in 0..count {
+            let e = OC689_GFX + 0x280 + 12 * i;
+            c.bus.write32(e, r.next_u32());
+            let pool: [&[u8]; 4] = [b"zzzz", b"q", b"wxyz", b"abc"];
+            let other = pool[(r.next_u32() % 4) as usize];
+            if !long && i + 1 == count && r.next_u32() % 3 == 0 {
+                oc689_put_cstr(c, e + 4, &want);
+            } else if long {
+                oc689_put_cstr(c, e + 4, b"zzzz");
+            } else {
+                oc689_put_cstr(c, e + 4, other);
+            }
+        }
+        // Shape banks.
+        let banks = r.next_u32() % 3;
+        c.bus.write32(OC689_GFX + 0x278, banks);
+        c.bus.write32(OC689_GFX + 0x27c, OC689_SRCS);
+        for j in 0..banks {
+            let src = OC689_SRCS + 0x1000 * (j + 1);
+            c.bus.write32(OC689_SRCS + 4 * j, src);
+            let shapes = r.next_u32() % 3;
+            c.bus.write32(src + 8, shapes);
+            for k in 0..shapes {
+                let off = 0x100 + 0x20 * k;
+                c.bus.write32(src + 0x14 + 8 * k, off);
+                c.bus.write32(src + off, 0x70);
+                if r.next_u32() % 2 == 0 {
+                    oc689_put_cstr(c, src + off + 4, &want);
+                } else {
+                    oc689_put_cstr(c, src + off + 4, b"nope");
+                }
+            }
+        }
+        // Vtable slot 46: `{delta, fn}` at +0x170, a fake.
+        c.bus.write32(OC689_GFX + 0x10d8, OC689_VTABLE);
+        c.bus
+            .write16(OC689_VTABLE + 0x170, (r.next_u32() % 0x40 * 4) as u16);
+        c.bus.write32(OC689_VTABLE + 0x174, fakes::FAKE);
+        r
+    }
+
+    /// `PS2GraphicsMan_GetTextureByName`: cache hit, shape found (texture
+    /// created by the vtable fake) and not found (-1), names of 0 to 8 characters.
+    #[test]
+    fn ps2_graphics_man_get_texture_by_name_matches() {
+        check(
+            ee::s12::f_003696c8__generated,
+            ps2_graphics_man_get_texture_by_name,
+            OC689_SEEDS,
+            &|c, seed| {
+                oc689_texture_setup(c, seed, false);
+            },
+        );
+        check_events(
+            ee::s12::f_003696c8__generated,
+            ps2_graphics_man_get_texture_by_name,
+            OC689_SEEDS,
+            &|c, seed| {
+                let mut r = oc689_texture_setup(c, seed, true);
+                schedule(c, &mut r, seed, 0x0036_96c8)
             },
         );
     }

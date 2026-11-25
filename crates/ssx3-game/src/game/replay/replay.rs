@@ -22,6 +22,8 @@ pub(crate) use crate::game::fe::festateloadhint::sqsp;
 pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::replay::playbackman::oc653_off;
+pub(crate) use crate::game::replay::playbackman::oc683_direct;
+pub(crate) use crate::game::replay::playbackman::oc683_off;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -110,6 +112,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         snapshot_list_find_by_frame,
         "SnapshotList_FindByFrame",
     ),
+    (0x0026_dbf0, world_state_read_2, "WorldState_Read"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1843,6 +1846,166 @@ pub fn world_state_read(c: &mut Cpu) {
     })
 }
 
+/// `void WorldState_Read(WorldState *self, Stream *s)` (0x26dbf0): restores
+/// one replay frame from the stream `s` (a vtable read) into the world: the
+/// buckets are merged and purged, the map reset, each subsystem's
+/// `readFromReplayFrame` runs in turn, then the objects are notified and
+/// the AI and game view updated. Frame 0x70: saves ra and s0-s2.
+pub fn world_state_read_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 116;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, 16, 0x60);
+        frame.save(c, 17, 0x50);
+        c.g[S0][0] = sx(oc683_off(c.g[GP][0], 0x2898));
+        frame.save(c, 18, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+
+        // Buckets: merge and purge the bucket manager, reset the world map.
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0035_4c98, 0x0026_dc1c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0035_5118, 0x0026_dc28)?;
+        c.g[A1][0] = 8;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0035_5118, 0x0026_dc34)?;
+        c.g[A0][0] = c.lw(oc683_off(c.g[GP][0], 0x16c8));
+        call_ptr(c, 0x003a_6800, 0x0026_dc3c)?;
+        c.g[A0][0] = c.g[S1][0];
+        oc683_direct(0x0026_e9b0).call(c, 0x0026_dc44)?;
+
+        // Stream read (vtable slot 0x10): the frame header into sp.
+        c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x18;
+        c.g[A0][0] = c.lh(oc683_off(c.g[V1][0], 0x10));
+        c.g[V0][0] = c.lw(oc683_off(c.g[V1][0], 0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0026_dc60)?;
+
+        c.g[A0][0] = c.g[SP][0];
+        call_ptr(c, 0x0031_7908, 0x0026_dc68)?;
+
+        // Stream read again (vtable slot 0x10) into sp+0x20.
+        c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[S0][0] = sx(oc683_off(c.g[SP][0], 0x20));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = 4;
+        c.g[A0][0] = c.lh(oc683_off(c.g[V1][0], 0x10));
+        c.g[V0][0] = c.lw(oc683_off(c.g[V1][0], 0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0026_dc88)?;
+
+        // The same slot again, through A3, with the word at sp+0x20 stored
+        // to the global at gp+0x2a88.
+        c.g[A3][0] = c.lw(c.g[S1][0] as u32);
+        c.g[A2][0] = 4;
+        c.g[V0][0] = c.lw(oc683_off(c.g[SP][0], 0x20));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.lh(oc683_off(c.g[A3][0], 0x10));
+        c.g[V1][0] = c.lw(oc683_off(c.g[A3][0], 0x14));
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        let t = c.g[V1][0] as u32;
+        let gp2a88 = oc683_off(c.g[GP][0], 0x2a88);
+        c.sw(gp2a88, c.g[V0][0]);
+        call_ptr(c, t, 0x0026_dcac)?;
+
+        c.g[V0][0] = c.lw(oc683_off(c.g[SP][0], 0x20));
+        let gp2a8c = oc683_off(c.g[GP][0], 0x2a8c);
+        c.sw(gp2a8c, c.g[V0][0]);
+        call_ptr(c, 0x002c_03e8, 0x0026_dcb8)?;
+
+        // cBE_readFromReplayFrame(cBE_getBE(), s).
+        call_ptr(c, 0x0014_dc80, 0x0026_dcc0)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0014_dfa8, 0x0026_dccc)?;
+
+        // Vtable call on world->view (+0x84), slot 0x48, with A0 = view + delta.
+        c.g[V1][0] = c.lw(oc683_off(c.g[GP][0], -0x848));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.lw(oc683_off(c.g[V1][0], 0x84));
+        c.g[V0][0] = c.lw(c.g[A2][0] as u32);
+        c.g[A0][0] = c.lh(oc683_off(c.g[V0][0], 0x48));
+        c.g[V1][0] = c.lw(oc683_off(c.g[V0][0], 0x4c));
+        let t = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0026_dcec)?;
+
+        // Vtable call on view->+0xc, slot 0x40 (the field at +0xcc).
+        c.g[A0][0] = c.lw(oc683_off(c.g[GP][0], -0x848));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[V0][0] = c.lw(oc683_off(c.g[A0][0], 0x84));
+        c.g[A2][0] = c.lw(oc683_off(c.g[V0][0], 0xc));
+        c.g[V1][0] = c.lw(oc683_off(c.g[A2][0], 0xcc));
+        c.g[A0][0] = c.lh(oc683_off(c.g[V1][0], 0x40));
+        c.g[V0][0] = c.lw(oc683_off(c.g[V1][0], 0x44));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0026_dd10)?;
+
+        // Object and stream subsystems: each reads from the replay frame.
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x002d_9d68, 0x0026_dd18)?;
+        c.g[A0][0] = c.lw(oc683_off(c.g[GP][0], 0xce8));
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0030_bd20, 0x0026_dd24)?;
+        c.g[A0][0] = c.lw(oc683_off(c.g[GP][0], -0x6f0));
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0022_9e58, 0x0026_dd30)?;
+        c.g[A0][0] = c.lw(oc683_off(c.g[GP][0], 0xf00));
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0034_4240, 0x0026_dd3c)?;
+        c.g[A0][0] = c.lw(oc683_off(c.g[GP][0], 0xf38));
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0035_7d28, 0x0026_dd48)?;
+
+        // WorldState_ReadObjects(self, 1, s); WorldState_ReadDeadObjects(self, s).
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = 1;
+        oc683_direct(0x0026_ddc0).call(c, 0x0026_dd58)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S1][0];
+        oc683_direct(0x0026_e340).call(c, 0x0026_dd64)?;
+
+        // Field of the view's object (+0x84 -> +0xc -> +0xa4): the 0x103578 call.
+        c.g[A0][0] = c.lw(oc683_off(c.g[GP][0], -0x848));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[V0][0] = c.lw(oc683_off(c.g[A0][0], 0x84));
+        c.g[V1][0] = c.lw(oc683_off(c.g[V0][0], 0xc));
+        c.g[A0][0] = c.lw(oc683_off(c.g[V1][0], 0xa4));
+        call_ptr(c, 0x0010_3578, 0x0026_dd7c)?;
+
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = 1;
+        oc683_direct(0x0026_de58).call(c, 0x0026_dd88)?;
+
+        c.g[V0][0] = c.lw(oc683_off(c.g[GP][0], -0x848));
+        c.g[V1][0] = c.lw(oc683_off(c.g[V0][0], 0x84));
+        c.g[A0][0] = c.lw(oc683_off(c.g[V1][0], 0xc));
+        call_ptr(c, 0x0012_b788, 0x0026_dd98)?;
+
+        c.g[V0][0] = c.lw(oc683_off(c.g[GP][0], -0x848));
+        c.g[V1][0] = c.lw(oc683_off(c.g[V0][0], 0x84));
+        c.g[A0][0] = c.lw(oc683_off(c.g[V1][0], 0x84));
+        call_ptr(c, 0x0022_e840, 0x0026_dda8)?;
+
+        frame.restore(c, 16, 0x60);
+        frame.restore(c, 17, 0x50);
+        frame.restore(c, 18, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2402,5 +2565,33 @@ pub(crate) mod tests {
                 c.pc = 0x0026ded8;
             },
         );
+    }
+
+    pub(crate) use crate::game::replay::playbackman::tests::oc683_in_child;
+    pub(crate) use crate::game::replay::playbackman::tests::oc683_machine;
+
+    pub(crate) use crate::game::replay::playbackman::tests::OC683_STREAM;
+
+    pub(crate) use crate::game::replay::playbackman::tests::oc683_world;
+    pub(crate) use crate::game::replay::playbackman::tests::OC683_STATE;
+
+    /// `WorldState_Read(self, stream)`: one replay frame read back into the
+    /// world, 30 callees, each a logged fake (unwinds at random calls).
+    #[test]
+    fn world_state_read_matches() {
+        oc683_in_child("world_state_read_matches", &|| {
+            check(
+                ee::s07::f_0026dbf0__generated,
+                world_state_read_2,
+                120,
+                &|c, seed| {
+                    let _ = oc683_machine(c, seed, 0x0026_dbf0, 34);
+                    oc683_world(c);
+                    c.g[A0][0] = sx(OC683_STATE);
+                    c.g[A1][0] = sx(OC683_STREAM);
+                    c.pc = 0x0026_dbf0;
+                },
+            );
+        });
     }
 }

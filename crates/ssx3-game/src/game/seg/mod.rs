@@ -12,6 +12,7 @@ pub mod seg_21e5a8;
 pub mod seg_2fe810;
 pub mod seg_316fb8;
 pub mod seg_3249a0;
+pub mod seg_325220;
 
 /// Every replacement in this directory.
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
@@ -26,5 +27,6 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(seg_2fe810::OVERRIDES);
     v.extend_from_slice(seg_316fb8::OVERRIDES);
     v.extend_from_slice(seg_3249a0::OVERRIDES);
+    v.extend_from_slice(seg_325220::OVERRIDES);
     v
 }

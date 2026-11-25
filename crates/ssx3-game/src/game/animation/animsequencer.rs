@@ -104,6 +104,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_4a60, mdffile_load, "MdfFile_Load"),
     (0x0031_4ae0, mdffile_has_model, "MdfFile_HasModel"),
     (0x0031_4b70, mdffile_find_model, "MdfFile_FindModel"),
+    (0x0031_4050, anim_sequence_load, "AnimSequence_Load"),
+    (0x0031_4880, anim_seq_list_load, "AnimSeqList_Load"),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -1642,6 +1644,250 @@ pub fn mdffile_find_model(c: &mut Cpu) {
     });
 }
 
+/// One stream read of the anim loaders: `stream->read(dst, len)` through the
+/// stream's vtable (`lh +0x10` this-delta, `lw +0x14` method).
+pub(crate) fn anim_stream_read(
+    c: &mut Cpu,
+    stream: u32,
+    dst: u32,
+    len: u32,
+    ret_addr: u32,
+) -> Flow {
+    c.g[V1][0] = c.lw(stream);
+    c.g[A1][0] = sx(dst);
+    c.g[A2][0] = len as u64;
+    c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x10));
+    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x14));
+    let method = c.g[V0][0] as u32;
+    c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret_addr)
+}
+
+/// `void AnimSequence_Load(AnimSequence* seq, Stream* in)` (0x314050): reads a
+/// sequence from a replay stream: the fixed fields (17 stream reads, the last
+/// one the track count), then one 16-byte track per count, each allocated and
+/// chained from `seq+0xac` / the previous track's `+0xc`.
+pub fn anim_sequence_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 133;
+        let frame = Frame::open(c, 0x80);
+        c.g[A2][0] = 4;
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x30);
+        c.g[A1][0] = c.g[S2][0];
+        frame.save(c, S0, 0x70);
+        c.g[S4][0] = 0;
+        frame.save(c, S5, 0x20);
+        frame.save_ra(c, 0x10);
+        // (field offset in the sequence, length, return address)
+        const READS: [(u32, u32, u32); 16] = [
+            (0x0, 4, 0x0031_4098),
+            (0x4, 0x54, 0x0031_40b4),
+            (0x60, 0x20, 0x0031_40d0),
+            (0x80, 4, 0x0031_40ec),
+            (0x84, 4, 0x0031_4108),
+            (0x88, 8, 0x0031_4124),
+            (0x90, 4, 0x0031_4140),
+            (0x94, 4, 0x0031_415c),
+            (0x98, 4, 0x0031_4178),
+            (0x9c, 4, 0x0031_4194),
+            (0xa0, 4, 0x0031_41b0),
+            (0xa4, 4, 0x0031_41cc),
+            (0xa8, 4, 0x0031_41e8),
+            (0xb0, 0x10, 0x0031_4204),
+            (0xc0, 4, 0x0031_4220),
+            (0xc4, 4, 0x0031_423c),
+        ];
+        for (off, len, ret_addr) in READS {
+            let (stream, seq) = (r32(c, S1), r32(c, S2));
+            anim_stream_read(c, stream, seq.wrapping_add(off), len, ret_addr)?;
+        }
+        // The track count lands on the stack.
+        let (stream, count_slot) = (r32(c, S1), frame.at(c, 0));
+        anim_stream_read(c, stream, count_slot, 4, 0x0031_4258)?;
+        c.g[V1][0] = c.lw(frame.at(c, 0));
+        let none = (c.g[V1][0] as i64) <= 0;
+        c.g[S3][0] = c.lw(r32(c, S2).wrapping_add(0xac));
+        'b_3142c0: {
+            if none {
+                break 'b_3142c0;
+            }
+            c.cycles += 1;
+            c.g[S5][0] = 0x49_0000;
+            loop {
+                'b_3142ac: {
+                    c.cycles += 16;
+                    c.g[A0][0] = 0x10;
+                    c.g[A1][0] = sx(r32(c, S5).wrapping_sub(0x5a50));
+                    c.g[A2][0] = 0x2000_0000;
+                    c.g[A3][0] = 0;
+                    Callee {
+                        addr: 0x0031_7d70,
+                        f: ee::s10::f_00317d70,
+                    }
+                    .call(c, 0x0031_427c)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A2][0] = 0x10;
+                    c.g[V0][0] = c.lw(r32(c, S1));
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x10));
+                    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x14));
+                    let method = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+                    call_ptr(c, method, 0x0031_429c)?;
+                    c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(0xac));
+                    if c.g[V0][0] == 0 {
+                        let track = c.g[S0][0];
+                        c.sw(r32(c, S2).wrapping_add(0xac), track);
+                        break 'b_3142ac;
+                    }
+                    c.cycles += 1;
+                    let track = c.g[S0][0];
+                    c.sw(r32(c, S3).wrapping_add(0xc), track);
+                }
+                c.cycles += 5;
+                c.g[V0][0] = c.lw(frame.at(c, 0));
+                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S3][0] = c.g[S0][0];
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_4268);
+                    }
+                    continue;
+                }
+                break 'b_3142c0;
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void AnimSeqList_Load(AnimSeqList* list, Stream* in)` (0x314880): reads
+/// the sequence count, then for each sequence allocates 0xd0 bytes, clears
+/// them, loads the sequence from the stream and appends it to the list.
+pub fn anim_seq_list_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x80);
+        c.g[A2][0] = 4;
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x40);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x70);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S4, 0x30);
+        c.g[A1][0] = c.g[SP][0];
+        frame.save(c, S5, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[V1][0] = c.lw(r32(c, S2));
+        c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x10));
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x14));
+        let method = c.g[V0][0] as u32;
+        c.g[A0][0] = sx(r32(c, S2).wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0031_48c8)?;
+        c.g[V1][0] = c.lw(frame.at(c, 0));
+        let none = (c.g[V1][0] as i64) <= 0;
+        c.sw(r32(c, S3), 0);
+        'b_314950: {
+            if none {
+                break 'b_314950;
+            }
+            c.cycles += 3;
+            c.g[S5][0] = 0x49_0000;
+            c.g[S4][0] = 0xffff_ffff_ffff_ffff;
+            c.g[A0][0] = 0xd0;
+            'l_3148e0: loop {
+                c.cycles += 8;
+                c.g[A1][0] = sx(r32(c, S5).wrapping_sub(0x5a40));
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0;
+                Callee {
+                    addr: 0x0031_7d70,
+                    f: ee::s10::f_00317d70,
+                }
+                .call(c, 0x0031_48f0)?;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V0][0] = 2;
+                // Three spins of a cleared-slot countdown (v0 2, 1, 0, -1).
+                loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                    let spin = c.g[V0][0] != c.g[S4][0];
+                    c.g[A2][0] = 0xd0;
+                    if spin {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_4900);
+                        }
+                        continue;
+                    }
+                    c.cycles += 13;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x003e_6448, 0x0031_4928)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S2][0];
+                    Callee {
+                        addr: 0x0031_4050,
+                        f: ee::s10::f_00314050,
+                    }
+                    .call(c, 0x0031_4934)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    Callee {
+                        addr: 0x0031_4368,
+                        f: ee::s10::f_00314368,
+                    }
+                    .call(c, 0x0031_4940)?;
+                    c.g[V0][0] = c.lw(frame.at(c, 0));
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A0][0] = 0xd0;
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_48e0);
+                        }
+                        continue 'l_3148e0;
+                    }
+                    break 'b_314950;
+                }
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `base + off` as a 32-bit guest address.
+#[allow(dead_code)]
+pub(crate) fn oc684_addr(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2703,6 +2949,160 @@ pub(crate) mod tests {
                 oc560_model_fixture(c, queries[(seed % 4) as usize]);
                 c.g[A0][0] = (DATA + 0x100) as u64;
                 c.g[A1][0] = (DATA + 0x400) as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    use crate::game::scripter::ssxscriptengine::tests::oc423_fake;
+    use crate::game::scripter::ssxscriptengine::tests::oc423_fake_call;
+    use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+
+    use std::ptr::addr_of_mut;
+
+    /// The test stack top (`SP` would shadow the register index).
+    pub(crate) const OC684_STACK: u32 = crate::difftest::SP;
+
+    /// Where the bump allocator fake keeps its next block, and the value the
+    /// plane-check fake stores as `worstCase`.
+    pub(crate) const OC684_BUMP: u32 = OC423_CTRL + 0x100;
+
+    #[allow(dead_code)]
+    pub(crate) const OC684_WORST: u32 = OC423_CTRL + 0x80;
+
+    pub(crate) fn oc684_w(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(addr, v);
+    }
+
+    /// Gate on, the scripted result words and the allocator heap start.
+    pub(crate) fn oc684_gate(c: &mut Cpu) {
+        oc684_w(c, OC423_CTRL, OC423_MAGIC);
+        oc684_w(c, OC684_BUMP, DATA + 0x20_0000);
+    }
+
+    oc423_fake!(
+        oc684_fake_alloc_buf,
+        OC684_PREV_ALLOC_BUF,
+        0x0032_df28,
+        ee::s11::f_0032df28__generated
+    );
+
+    pub(crate) static OC684_PREV_ALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    #[allow(dead_code)]
+    pub(crate) static OC684_PREV_CHECK_PLANE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemAllocNamed`: a fresh 0x100-byte block of the test heap per call
+    /// (so appended list nodes never alias).
+    pub(crate) fn oc684_fake_alloc(c: &mut Cpu) {
+        if c.bus.read32(OC423_CTRL) != OC423_MAGIC {
+            return fall_back(c, &OC684_PREV_ALLOC, ee::s10::f_00317d70__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let block = c.bus.read32(OC684_BUMP);
+        c.bus.write32(OC684_BUMP, block + 0x100);
+        oc423_fake_call(c, 0x0031_7d70);
+        if c.pc == ra {
+            c.g[V0][0] = block as u64;
+        }
+    }
+
+    /// `SphereTree_checkPlaneCollision`: stores the seed's `worstCase` in the
+    /// tree (`+0x94`).
+    #[allow(dead_code)]
+    pub(crate) fn oc684_fake_check_plane(c: &mut Cpu) {
+        if c.bus.read32(OC423_CTRL) != OC423_MAGIC {
+            return fall_back(c, &OC684_PREV_CHECK_PLANE, ee::s11::f_0032d208__generated);
+        }
+        let tree = c.g[A0][0] as u32;
+        let ra = c.g[RA][0] as u32;
+        oc423_fake_call(c, 0x0032_d208);
+        if c.pc == ra {
+            let worst = c.bus.read32(OC684_WORST);
+            c.bus.write32(tree + 0x94, worst);
+        }
+    }
+
+    pub(crate) fn oc684_hook_anim_fakes() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc684_fake_alloc,
+            &OC684_PREV_ALLOC,
+        );
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn oc684_hook_sphere_fakes() {
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0032DF28),
+            oc684_fake_alloc_buf,
+            &OC684_PREV_ALLOC_BUF,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0032D208),
+            oc684_fake_check_plane,
+            &OC684_PREV_CHECK_PLANE,
+        );
+    }
+
+    /// A stream object at `stream` whose vtable (at `stream + 0x100`) has the
+    /// read method (`+0x14`) at the fake address and a `this` delta (`+0x10`).
+    pub(crate) fn oc684_stream(c: &mut Cpu, stream: u32, delta: u32) {
+        let vt = stream + 0x100;
+        oc684_w(c, stream, vt);
+        c.bus.write16(vt + 0x10, delta as u16);
+        oc684_w(c, vt + 0x14, fakes::FAKE);
+    }
+
+    /// `AnimSequence_Load`: 0, 1..3 tracks (and a negative count), the
+    /// sequence's track chain empty or already started.
+    #[test]
+    fn anim_sequence_load_matches() {
+        oc684_hook_anim_fakes();
+        fakes::covered(
+            ee::s10::f_00314050__generated,
+            anim_sequence_load,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_4050, 24);
+                oc684_gate(c);
+                let (seq, stream) = (DATA + 0x400, DATA + 0x800);
+                oc684_stream(c, stream, (r.next_u32() % 4) * 4);
+                let count = [0u32, 1, 2, 3, u32::MAX][(seed % 5) as usize];
+                oc684_w(c, OC684_STACK - 0x80, count);
+                let head = if seed / 5 % 2 == 0 { 0 } else { DATA + 0x600 };
+                oc684_w(c, seq + 0xac, head);
+                c.g[A0][0] = seq as u64;
+                c.g[A1][0] = stream as u64;
+            },
+        );
+    }
+
+    /// `AnimSeqList_Load`: 0, 1 or 2 sequences, each one with 0..2 tracks
+    /// (real `AnimSequence_Load`, `AnimSeqList_Append` and memset behind the
+    /// allocator and stream fakes).
+    #[test]
+    fn anim_seq_list_load_matches() {
+        oc684_hook_anim_fakes();
+        fakes::covered(
+            ee::s10::f_00314880__generated,
+            anim_seq_list_load,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_4880, 40);
+                oc684_gate(c);
+                let (list, stream) = (DATA + 0x400, DATA + 0x800);
+                oc684_stream(c, stream, (r.next_u32() % 4) * 4);
+                let count = [0u32, 1, 2, u32::MAX][(seed % 4) as usize];
+                oc684_w(c, OC684_STACK - 0x80, count);
+                oc684_w(c, OC684_STACK - 0x100, seed / 4 % 3);
+                oc684_w(c, list, r.next_u32());
+                oc684_w(c, list + 4, 0);
+                c.g[A0][0] = list as u64;
+                c.g[A1][0] = stream as u64;
             },
         );
     }

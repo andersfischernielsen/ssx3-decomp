@@ -545,6 +545,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0027_2aa0, in_seq_run_to_end, "InSeq_RunToEnd"),
     (0x0027_3f68, in_seq_channel_restart, "InSeq_ChannelRestart"),
+    (
+        0x0027_01a0,
+        replay_recycle_oldest_snapshot_2,
+        "Replay_RecycleOldestSnapshot",
+    ),
+    (0x0027_03f0, replay_step_frame_3, "Replay_StepFrame"),
+    (0x0027_09d8, replay_on_rider_event_3, "Replay_OnRiderEvent"),
+    (0x0027_1758, replay_load_saved_2, "Replay_LoadSaved"),
 ];
 
 /// `void WorldStateStream_Reset(WorldStateStream *stream)` (0x26d628):
@@ -10726,6 +10734,624 @@ pub(crate) fn icr_channels(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// `void Replay_StepFrame(Replay* self, int reset)` (0x2703f0): step the
+/// replay player one frame. With `reset` it re-finds the current snapshot
+/// (`+0x488`), skips a finished one, re-seeks every run list at `+0x48c` and
+/// restores the snapshot; without it the tick (`+0x484`) advances, and past
+/// the last tick (`+0x3cc`) the replay either goes to state 3 or rewinds,
+/// steps once more with `reset = 1` and redraws the camera and views.
+pub fn replay_step_frame_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        let no_step = c.g[S1][0] == 0;
+        frame.save_ra(c, 0);
+        'b_27041c: {
+            if no_step {
+                break 'b_27041c;
+            }
+            c.cycles += 3;
+            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(0x484)).lw(c);
+            Callee {
+                addr: 0x0026_e448,
+                f: ee::s07::f_0026e448,
+            }
+            .call(c, 0x0027_0418)?;
+            let v = c.g[V0][0];
+            Addr(r32(c, S0).wrapping_add(0x488)).sw(c, v);
+        }
+        'b_27043c: {
+            c.cycles += 3;
+            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0x488)).lw(c);
+            if c.g[V1][0] == 0 {
+                break 'b_27043c;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x3d0)).lw(c);
+            if c.g[V1][0] != c.g[V0][0] {
+                break 'b_27043c;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x18)).lw(c);
+            let v = c.g[V0][0];
+            Addr(r32(c, S0).wrapping_add(0x488)).sw(c, v);
+        }
+        'b_270520: {
+            'b_27048c: {
+                c.cycles += 2;
+                let flag_zero = c.g[S1][0] == 0;
+                c.g[S1][0] = sx(r32(c, S0).wrapping_add(0x48c));
+                if flag_zero {
+                    break 'b_27048c;
+                }
+                c.cycles += 5;
+                c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0x488)).lw(c);
+                c.g[S2][0] = 1;
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x30)).lw(c);
+                let v = c.g[V0][0];
+                Addr(r32(c, S0).wrapping_add(0x484)).sw(c, v);
+                'l_270458: loop {
+                    'b_270470: {
+                        c.cycles += 3;
+                        c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+                        if c.g[A0][0] == 0 {
+                            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+                            break 'b_270470;
+                        }
+                        c.cycles += 3;
+                        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(0x484)).lw(c);
+                        Callee {
+                            addr: 0x0026_d4d8,
+                            f: ee::s07::f_0026d4d8,
+                        }
+                        .call(c, 0x0027_046c)?;
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+                    }
+                    c.cycles += 2;
+                    let go_on = (c.g[S2][0] as i64) >= 0;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                    if go_on {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_0458);
+                        }
+                        continue 'l_270458;
+                    }
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = Addr(r32(c, A0).wrapping_add(0x488)).lw(c);
+                    Callee {
+                        addr: 0x0026_db88,
+                        f: ee::s07::f_0026db88,
+                    }
+                    .call(c, 0x0027_0484)?;
+                    frame.restore(c, S0, 0x30);
+                    break 'b_270520;
+                }
+            }
+            'b_270518: {
+                c.cycles += 5;
+                c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0x484)).lw(c);
+                c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x3cc)).lw(c);
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                let below = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                if below {
+                    break 'b_270518;
+                }
+                'b_270504: {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x61c)).lw(c);
+                    if c.g[V0][0] == 0 {
+                        let v = c.g[A0][0];
+                        Addr(r32(c, S0).wrapping_add(0x484)).sw(c, v);
+                        break 'b_270504;
+                    }
+                    c.cycles += 22;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0;
+                    Callee {
+                        addr: 0x0027_02f8,
+                        f: ee::s07::f_002702f8,
+                    }
+                    .call(c, 0x0027_04b8)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 1;
+                    Callee {
+                        addr: 0x0027_03f0,
+                        f: ee::s07::f_002703f0,
+                    }
+                    .call(c, 0x0027_04c4)?;
+                    c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x84)).lw(c);
+                    c.g[S1][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x84)).lw(c);
+                    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4)).lw(c);
+                    c.g[S0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xa8)).lw(c);
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x0016_20d0, 0x0027_04e0)?;
+                    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x14)).lw(c);
+                    c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x20)).lh(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x24)).lw(c);
+                    let target = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx(r32(c, S0).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0027_04f4)?;
+                    c.g[A0][0] = c.g[S1][0];
+                    call_ptr(c, 0x0022_e840, 0x0027_04fc)?;
+                    frame.restore(c, S0, 0x30);
+                    break 'b_270520;
+                }
+                c.cycles += 5;
+                c.g[A1][0] = 3;
+                c.g[A0][0] = c.g[S0][0];
+                Callee {
+                    addr: 0x0026_f4a0,
+                    f: ee::s07::f_0026f4a0,
+                }
+                .call(c, 0x0027_0510)?;
+                frame.restore(c, S0, 0x30);
+                break 'b_270520;
+            }
+            c.cycles += 2;
+            let v = c.g[V0][0];
+            Addr(r32(c, S0).wrapping_add(0x484)).sw(c, v);
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void Replay_OnRiderEvent(Replay* self, int rider, int kind)` (0x2709d8): a
+/// rider event while a replay is recorded. Ignored while the replay is busy
+/// (`+0x61c`, `+0x620`, `+0x610`, `+0x60c` or the state word at 0 set);
+/// otherwise the rider's index is looked up and kind 0 runs the empty rider
+/// hook and kind 1 begins a highlight (with the rider's `+0x790` field).
+pub fn replay_on_rider_event_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        'b_270a9c: {
+            'b_270a98: {
+                frame.save(c, S0, 0x30);
+                frame.save(c, S1, 0x20);
+                c.g[S0][0] = c.g[A0][0];
+                frame.save(c, S2, 0x10);
+                c.g[S1][0] = c.g[A1][0];
+                frame.save_ra(c, 0);
+                c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x61c));
+                let busy = c.g[V0][0] != 0;
+                c.g[S2][0] = c.g[A2][0];
+                if busy {
+                    break 'b_270a98;
+                }
+                for off in [0x620u32, 0x610, 0x60c, 0] {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(off));
+                    if c.g[V0][0] != 0 {
+                        frame.restore(c, S0, 0x30);
+                        break 'b_270a9c;
+                    }
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S1][0];
+                Callee {
+                    addr: 0x0027_0730,
+                    f: ee::s07::f_00270730,
+                }
+                .call(c, 0x0027_0a38)?;
+                c.g[A3][0] = c.g[V0][0];
+                let negative = (c.g[A3][0] as i64) < 0;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                if negative {
+                    break 'b_270a98;
+                }
+                'b_270a88: {
+                    'b_270a70: {
+                        c.cycles += 6;
+                        c.g[A1][0] = sx(r32(c, S1) << 2);
+                        c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x84));
+                        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0xc));
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+                        let kind_zero = c.g[S2][0] == 0;
+                        c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0x28));
+                        if kind_zero {
+                            break 'b_270a70;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = 1;
+                        if c.g[S2][0] == c.g[V0][0] {
+                            c.g[A2][0] = c.lw(r32(c, A0).wrapping_add(0x790));
+                            break 'b_270a88;
+                        }
+                        c.cycles += 2;
+                        frame.restore(c, S0, 0x30);
+                        break 'b_270a9c;
+                    }
+                    // kind 0: the empty rider hook.
+                    c.cycles += 6;
+                    c.g[A1][0] = c.lw(r32(c, A0).wrapping_add(0x790));
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(0xfc));
+                    Callee {
+                        addr: 0x0027_05a8,
+                        f: ee::s07::f_002705a8,
+                    }
+                    .call(c, 0x0027_0a80)?;
+                    frame.restore(c, S0, 0x30);
+                    break 'b_270a9c;
+                }
+                // kind 1: begin the rider's highlight.
+                c.cycles += 4;
+                c.g[A1][0] = c.g[A3][0];
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0xfc));
+                Callee {
+                    addr: 0x0027_0b88,
+                    f: ee::s07::f_00270b88,
+                }
+                .call(c, 0x0027_0a98)?;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `int Replay_LoadSaved(Replay* self, ReplaySave* save)` (0x271758): rebuild
+/// the replay from a saved one. Returns 0 when the save's world mode
+/// (`save+0x18`) is not the game's; else resets the snapshot list (`+0x3b0`),
+/// reads the save's snapshots, then each cache slot (`+0x48c`..) that is set,
+/// enters state 8 and returns 1.
+pub fn replay_load_saved_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x30);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S0, 0x70);
+        c.g[S4][0] = c.g[SP][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S5, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0x84));
+        c.g[A2][0] = c.lw(r32(c, S3).wrapping_add(0x18));
+        let a1 = c.g[A1][0];
+        c.sw(frame.at(c, 0), a1);
+        c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0xc));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x7c));
+        let mismatch = c.g[A2][0] != c.g[V1][0];
+        c.g[V0][0] = 0;
+        'b_271880: {
+            if mismatch {
+                break 'b_271880;
+            }
+            'b_271838: {
+                c.cycles += 22;
+                c.g[V0][0] = 1;
+                c.g[A0][0] = sx(r32(c, S2).wrapping_add(0x3b0));
+                let v = c.g[V0][0];
+                c.sw(r32(c, S2).wrapping_add(0x608), v);
+                c.g[S5][0] = c.g[A0][0];
+                c.g[S1][0] = 0;
+                c.g[V1][0] = c.lw(r32(c, S3).wrapping_add(0x8));
+                let v = c.g[V1][0];
+                c.sw(r32(c, S2).wrapping_add(0x18), v);
+                c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0xc));
+                c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+                let v = c.g[V0][0];
+                c.sw(r32(c, S2).wrapping_add(0x610), v);
+                c.g[V1][0] = c.lw(r32(c, S3).wrapping_add(0x10));
+                let v = c.g[V1][0];
+                c.sw(r32(c, S2).wrapping_add(0x3c8), v);
+                c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x14));
+                c.sw(r32(c, S2).wrapping_add(0x3d0), 0);
+                c.sw(r32(c, S2).wrapping_add(0x484), 0);
+                let v = c.g[V0][0];
+                c.sw(r32(c, S2).wrapping_add(0x3cc), v);
+                Callee {
+                    addr: 0x0026_e5c0,
+                    f: ee::s07::f_0026e5c0,
+                }
+                .call(c, 0x0027_17e8)?;
+                c.g[V0][0] = sx(r32(c, S3).wrapping_add(0x28));
+                let v = c.g[V0][0];
+                c.sw(frame.at(c, 0), v);
+                c.g[V1][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+                if (c.g[V1][0] as i64) <= 0 {
+                    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x18));
+                    break 'b_271838;
+                }
+                c.cycles += 1;
+                c.g[A0][0] = c.g[S2][0];
+                // The saved snapshots, one allocation each.
+                loop {
+                    c.cycles += 13;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                    Callee {
+                        addr: 0x0027_0130,
+                        f: ee::s07::f_00270130,
+                    }
+                    .call(c, 0x0027_1808)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x0026_d678,
+                        f: ee::s07::f_0026d678,
+                    }
+                    .call(c, 0x0027_1818)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S5][0];
+                    Callee {
+                        addr: 0x0026_e5d0,
+                        f: ee::s07::f_0026e5d0,
+                    }
+                    .call(c, 0x0027_1824)?;
+                    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x4));
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A0][0] = c.g[S2][0];
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_1800);
+                        }
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x18));
+                    break 'b_271838;
+                }
+            }
+            'b_271870: {
+                c.cycles += 2;
+                let none = (c.g[V0][0] as i64) <= 0;
+                c.g[S1][0] = 0;
+                if none {
+                    break 'b_271870;
+                }
+                c.cycles += 2;
+                c.g[S0][0] = sx(r32(c, S2).wrapping_add(0x48c));
+                // The cache slots that are set.
+                loop {
+                    'b_271860: {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.lw(r32(c, S0));
+                        if c.g[A0][0] == 0 {
+                            c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x18));
+                            break 'b_271860;
+                        }
+                        c.cycles += 3;
+                        c.g[A1][0] = c.g[S4][0];
+                        Callee {
+                            addr: 0x0026_d558,
+                            f: ee::s07::f_0026d558,
+                        }
+                        .call(c, 0x0027_185c)?;
+                        c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0x18));
+                    }
+                    c.cycles += 4;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_1848);
+                        }
+                        continue;
+                    }
+                    break 'b_271870;
+                }
+            }
+            c.cycles += 4;
+            c.g[V0][0] = 1;
+            c.g[V1][0] = 8;
+            let v = c.g[V0][0];
+            c.sw(r32(c, S2).wrapping_add(0x618), v);
+            let v = c.g[V1][0];
+            c.sw(r32(c, S2), v);
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `Replay_RecycleOldestSnapshot` (0x002701a0): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn replay_recycle_oldest_snapshot_2(c: &mut Cpu) {
+    if c.pc != 0x002701a0 {
+        return ee::s07::f_002701a0__generated(c);
+    }
+    guest(c, |c| {
+        let mut pc: u32 = 0x002701a0;
+        loop {
+            match pc {
+                0x002701a0 => {
+                    c.cycles += 4;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                    c.g[A2][0] = c.g[A0][0];
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[A3][0] = 0u64;
+                    pc = 0x002701b0;
+                    continue;
+                }
+                0x002701b0 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x3ac));
+                    if t {
+                        pc = 0x002701f4;
+                        continue;
+                    }
+                    pc = 0x002701b8;
+                    continue;
+                }
+                0x002701b8 => {
+                    c.cycles += 4;
+                    c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+                    c.g[V1][0] = c.lbu((c.g[A1][0] as u32).wrapping_add(0x1f));
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[A0][0] = c.g[V0][0];
+                    if t {
+                        pc = 0x002701ec;
+                        continue;
+                    }
+                    pc = 0x002701c8;
+                    continue;
+                }
+                0x002701c8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lbu((c.g[A1][0] as u32).wrapping_add(0x1e));
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+                        pc = 0x002701f0;
+                        continue;
+                    }
+                    pc = 0x002701d4;
+                    continue;
+                }
+                0x002701d4 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x14));
+                    c.g[A0][0] = c.g[A2][0];
+                    c.g[RA][0] = sx(0x002701e4);
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x3ac), c.g[V0][0]);
+                    Callee {
+                        addr: 0x00270238,
+                        f: ee::s07::Replay_FreeSnapshot,
+                    }
+                    .call(c, 0x002701e4)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x0027022c;
+                        continue;
+                    }
+                    pc = 0x002701ec;
+                    continue;
+                }
+                0x002701ec => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+                    pc = 0x002701f0;
+                    continue;
+                }
+                0x002701f0 => {
+                    c.cycles += 1;
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x3ac), c.g[V0][0]);
+                    pc = 0x002701f4;
+                    continue;
+                }
+                0x002701f4 => {
+                    c.cycles += 2;
+
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x3b0));
+                        pc = 0x00270218;
+                        continue;
+                    }
+                    pc = 0x002701fc;
+                    continue;
+                }
+                0x002701fc => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x3b0));
+                        pc = 0x00270218;
+                        continue;
+                    }
+                    pc = 0x00270208;
+                    continue;
+                }
+                0x00270208 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x3ac));
+                        if back_edge_unwinds(c, 0x002701b8) {
+                            return Ok(());
+                        }
+                        pc = 0x002701b8;
+                        continue;
+                    }
+                    pc = 0x00270214;
+                    continue;
+                }
+                0x00270214 => {
+                    c.cycles += 1;
+                    c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x3b0));
+                    pc = 0x00270218;
+                    continue;
+                }
+                0x00270218 => {
+                    c.cycles += 4;
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < 2i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x3ac), c.g[V1][0]);
+                    if t {
+                        if back_edge_unwinds(c, 0x002701b0) {
+                            return Ok(());
+                        }
+                        pc = 0x002701b0;
+                        continue;
+                    }
+                    pc = 0x00270228;
+                    continue;
+                }
+                0x00270228 => {
+                    c.cycles += 1;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    pc = 0x0027022c;
+                    continue;
+                }
+                0x0027022c => {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002701a0, 0x00270234);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15510,5 +16136,275 @@ pub(crate) mod tests {
             c.bus.write32(events, mask);
         }
         fake_call(c, target);
+    }
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    use crate::game::scripter::ssxscriptengine::tests::oc423_fake;
+    use crate::game::scripter::ssxscriptengine::tests::oc423_fake_call;
+    use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+    use crate::game::scripter::ssxscriptengine::tests::OC423_RET;
+
+    pub(crate) use crate::game::animation::animsequencer::tests::oc684_gate;
+    pub(crate) use crate::game::animation::animsequencer::tests::oc684_w;
+
+    oc423_fake!(
+        oc684_fake_find_snapshot,
+        OC684_PREV_FIND_SNAPSHOT,
+        0x0026_e448,
+        ee::s07::f_0026e448__generated
+    );
+
+    oc423_fake!(
+        oc684_fake_run_list_seek,
+        OC684_PREV_RUN_LIST_SEEK,
+        0x0026_d4d8,
+        ee::s07::f_0026d4d8__generated
+    );
+
+    oc423_fake!(
+        oc684_fake_seek_to_snapshot,
+        OC684_PREV_SEEK_TO_SNAPSHOT,
+        0x0027_02f8,
+        ee::s07::f_002702f8__generated
+    );
+
+    oc423_fake!(
+        oc684_fake_set_state,
+        OC684_PREV_SET_STATE,
+        0x0026_f4a0,
+        ee::s07::f_0026f4a0__generated
+    );
+
+    oc423_fake!(
+        oc684_fake_find_rider_index,
+        OC684_PREV_FIND_RIDER_INDEX,
+        0x0027_0730,
+        ee::s07::f_00270730__generated
+    );
+
+    oc423_fake!(
+        oc684_fake_empty_rider_hook,
+        OC684_PREV_EMPTY_RIDER_HOOK,
+        0x0027_05a8,
+        ee::s07::f_002705a8__generated
+    );
+
+    oc423_fake!(
+        oc684_fake_begin_highlight,
+        OC684_PREV_BEGIN_HIGHLIGHT,
+        0x0027_0b88,
+        ee::s07::f_00270b88__generated
+    );
+
+    oc423_fake!(
+        oc684_fake_snapshot_clear,
+        OC684_PREV_SNAPSHOT_CLEAR,
+        0x0026_e5c0,
+        ee::s07::f_0026e5c0__generated
+    );
+
+    oc423_fake!(
+        oc684_fake_cache_deserialize,
+        OC684_PREV_CACHE_DESERIALIZE,
+        0x0026_d558,
+        ee::s07::f_0026d558__generated
+    );
+
+    pub(crate) fn oc684_hook_replay_fakes() {
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026E448),
+            oc684_fake_find_snapshot,
+            &OC684_PREV_FIND_SNAPSHOT,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026D4D8),
+            oc684_fake_run_list_seek,
+            &OC684_PREV_RUN_LIST_SEEK,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_002702F8),
+            oc684_fake_seek_to_snapshot,
+            &OC684_PREV_SEEK_TO_SNAPSHOT,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026F4A0),
+            oc684_fake_set_state,
+            &OC684_PREV_SET_STATE,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00270730),
+            oc684_fake_find_rider_index,
+            &OC684_PREV_FIND_RIDER_INDEX,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_002705A8),
+            oc684_fake_empty_rider_hook,
+            &OC684_PREV_EMPTY_RIDER_HOOK,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00270B88),
+            oc684_fake_begin_highlight,
+            &OC684_PREV_BEGIN_HIGHLIGHT,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026E5C0),
+            oc684_fake_snapshot_clear,
+            &OC684_PREV_SNAPSHOT_CLEAR,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026D558),
+            oc684_fake_cache_deserialize,
+            &OC684_PREV_CACHE_DESERIALIZE,
+        );
+    }
+
+    /// `Replay_StepFrame`: reset = 0 with the tick before the last tick (tick
+    /// advances; current snapshot unchanged, equal to the saved one, or
+    /// another), at the last tick with `+0x61c` clear (state 3 via the fake)
+    /// or set (the first fake, SeekToSnapshot, unwinds; the recursive step
+    /// and the redraw behind it need the real snapshot restore, which the
+    /// fixture cannot bound), and reset = 1 (FindSnapshot unwinds at once:
+    /// the run-list loop and `Replay_RestoreSnapshot`, the real
+    /// `WorldState_Read`, are not reached).
+    #[test]
+    fn replay_step_frame_matches() {
+        oc684_hook_replay_fakes();
+        fakes::covered(
+            ee::s07::f_002703f0__generated,
+            replay_step_frame_3,
+            240,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0027_03f0, 1);
+                oc684_gate(c);
+                let mut r = Rng(0x2703_f0 ^ (seed as u64) << 20);
+                let (replay, save) = (DATA, DATA + 0x2000);
+                let kind = seed % 6;
+                let tick = r.next_u32() % 1000;
+                let (last, f61c) = match kind {
+                    0 | 5 => (tick + 1 + seed % 2, 0),
+                    1 => (tick - tick.min(seed % 2), 0),
+                    _ => (tick - tick.min(seed % 2), 1),
+                };
+                let cur = match seed / 6 % 3 {
+                    0 => 0,
+                    1 => save,
+                    _ => DATA + 0x3000,
+                };
+                oc684_w(c, replay + 0x3d0, save);
+                oc684_w(c, replay + 0x488, cur);
+                oc684_w(c, save + 0x18, DATA + 0x4000);
+                oc684_w(c, replay + 0x484, tick);
+                oc684_w(c, replay + 0x3cc, last);
+                oc684_w(c, replay + 0x61c, f61c);
+                let unwind = matches!(kind, 2 | 3 | 4);
+                oc684_w(c, fakes::LOG_UNWIND_AT, if unwind { 0 } else { u32::MAX });
+                c.g[A0][0] = replay as u64;
+                c.g[A1][0] = matches!(kind, 3 | 4) as u64;
+            },
+        );
+    }
+
+    /// `Replay_OnRiderEvent`: each busy flag alone, no flag with a negative
+    /// or valid rider index, and kinds 0 (empty hook), 1 (highlight) and 2
+    /// (ignored).
+    #[test]
+    fn replay_on_rider_event_matches() {
+        oc684_hook_replay_fakes();
+        fakes::covered(
+            ee::s07::f_002709d8__generated,
+            replay_on_rider_event_3,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_09d8, 2);
+                oc684_gate(c);
+                let replay = DATA;
+                // Which busy word is set: 0..=4, or none (5..=7).
+                let busy = [0x61cu32, 0x620, 0x610, 0x60c, 0];
+                let which = (seed % 8) as usize;
+                for off in busy {
+                    oc684_w(c, replay + off, 0);
+                }
+                if which < busy.len() {
+                    oc684_w(c, replay + busy[which], 1 + r.next_u32() % 3);
+                }
+                let rider = seed / 8 % 3;
+                let kind = seed / 24 % 3;
+                // FindRiderIndex result: negative for one seed in three.
+                let index = if seed / 72 % 3 == 0 { u32::MAX } else { rider };
+                oc684_w(c, OC423_RET, index);
+                // World -> manager -> rider table at +0x28 + 4 * rider.
+                let (world, manager, table) = (DATA + 0x4000, DATA + 0x4100, DATA + 0x4200);
+                oc684_w(c, GAME_GP - 0x848, world);
+                oc684_w(c, world + 0x84, manager);
+                oc684_w(c, manager + 0xc, table);
+                for i in 0..3u32 {
+                    let obj = DATA + 0x4400 + 0x1000 * i;
+                    oc684_w(c, table + 0x28 + 4 * i, obj);
+                    oc684_w(c, obj + 0x790, r.next_u32());
+                }
+                c.g[A0][0] = replay as u64;
+                c.g[A1][0] = rider as u64;
+                c.g[A2][0] = kind as u64;
+            },
+        );
+    }
+
+    /// `Replay_LoadSaved`: world mode mismatch (returns 0), 0..=2 cache slots
+    /// each set or not, no saved snapshots (the snapshot loop calls the
+    /// unfakeable `Replay_DeserializeSnapshot` and is not reached).
+    #[test]
+    fn replay_load_saved_matches() {
+        oc684_hook_replay_fakes();
+        fakes::covered(
+            ee::s07::f_00271758__generated,
+            replay_load_saved_2,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_1758, 3);
+                oc684_gate(c);
+                let (replay, save) = (DATA, DATA + 0x1000);
+                let caches = seed % 3;
+                let mismatch = seed % 6 == 5;
+                let (world, manager, ai) = (DATA + 0x4000, DATA + 0x4100, DATA + 0x4200);
+                oc684_w(c, GAME_GP - 0x848, world);
+                oc684_w(c, world + 0x84, manager);
+                oc684_w(c, manager + 0xc, ai);
+                oc684_w(c, ai + 0x7c, caches + mismatch as u32);
+                oc684_w(c, save + 0x4, 0);
+                oc684_w(c, save + 0x8, r.next_u32());
+                oc684_w(c, save + 0xc, r.next_u32() % 3);
+                oc684_w(c, save + 0x10, r.next_u32());
+                oc684_w(c, save + 0x14, r.next_u32());
+                oc684_w(c, save + 0x18, caches);
+                for i in 0..2u32 {
+                    let set = (seed / 3 >> i) & 1 == 1;
+                    oc684_w(
+                        c,
+                        replay + 0x48c + 4 * i,
+                        if set { DATA + 0x3000 } else { 0 },
+                    );
+                }
+                c.g[A0][0] = replay as u64;
+                c.g[A1][0] = save as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn replay_recycle_oldest_snapshot_matches() {
+        check(
+            ee::s07::f_002701a0__generated,
+            replay_recycle_oldest_snapshot_2,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x1a0, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x002701a0;
+            },
+        );
     }
 }

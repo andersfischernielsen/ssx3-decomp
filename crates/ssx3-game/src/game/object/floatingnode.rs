@@ -62,6 +62,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         floating_node_update_intersect_info,
         "cFloatingNode_updateIntersectInfo",
     ),
+    (0x0034_ef40, floating_v50_2, "Floating_v50"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1150,6 +1151,111 @@ pub fn floating_v50(c: &mut Cpu) {
     });
 }
 
+/// `Floating_v50(self)` (0x34ef40): the floating node's per-frame update. With
+/// a second part (`self + 0x78`) it takes the sum and difference of two
+/// virtual matrix rows (VU0 `sub` then `add`) into the part's first rows, then
+/// `World_GetNash` and `SpatialHash_Update`. Without one it calls `ModObj_v50`.
+pub fn floating_v50_2(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        'b_34f038: {
+            'b_34f02c: {
+                c.cycles += 7;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[RA][0]);
+                c.g[S0][0] = c.g[A0][0];
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x78));
+                let t = c.g[A0][0] == 0u64;
+
+                if t {
+                    break 'b_34f02c;
+                } else {
+                    c.cycles += 52;
+                    c.lq(3, c.g[A0][0] as u32);
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(2, (c.g[A0][0] as u32).wrapping_add(0x10));
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x20));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x4c), 0u64);
+                    c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x48));
+                    c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x44));
+                    c.g[A0][0] = c.lh((c.g[A1][0] as u32).wrapping_add(0xc0));
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc4));
+                    let t = c.g[V0][0] as u32;
+                    c.g[RA][0] = sx(0x0034ef94);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x0034ef94)?;
+                    c.lq(3, (c.g[V0][0] as u32).wrapping_add(0x30));
+                    c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.sq(2, c.g[SP][0] as u32);
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xc0));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
+                    let t = c.g[V0][0] as u32;
+                    c.g[RA][0] = sx(0x0034efcc);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x0034efcc)?;
+                    c.lq(3, (c.g[V0][0] as u32).wrapping_add(0x30));
+                    c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x78));
+                    c.lq(3, c.g[SP][0] as u32);
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.sq(3, c.g[A0][0] as u32);
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sq(2, (c.g[A0][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = sx(0x0034f00c);
+                    c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    call_ptr(c, 0x002d1be0, 0x0034f00c)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A2][0] = c.g[S0][0];
+                    c.g[A1][0] = 0u64;
+                    c.g[A3][0] = c.g[SP][0];
+                    c.g[RA][0] = sx(0x0034f024);
+                    c.g[T0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                    call_ptr(c, 0x003291e0, 0x0034f024)?;
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                    if t {
+                        break 'b_34f038;
+                    } else {
+                        break 'b_34f02c;
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x0034f034);
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x003568b0,
+                f: ee::s11::ModObj_v50,
+            }
+            .call(c, 0x0034f034)?;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+            break 'b_34f038;
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x80));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1462,6 +1568,46 @@ pub(crate) mod tests {
                     c.bus.write32(DATA + 0x1000 + 4 * k, r.next_u32());
                 }
                 c.bus.write16(node + 0x12, 0xffff);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::object::flexrailnode::tests::FIX;
+
+    pub(crate) use crate::game::object::flexrailnode::tests::oc687_gate;
+    pub(crate) use crate::game::object::flexrailnode::tests::oc687_install_fakes;
+
+    /// `Floating_v50`: no second part (`ModObj_v50` instead), or a part: the
+    /// two virtual matrix getters, the VU0 `sub` / `add` of their rows, the
+    /// nash lookup and the spatial update.
+    #[test]
+    fn floating_v50_matches() {
+        oc687_install_fakes();
+        fakes::covered(
+            ee::s11::f_0034ef40__generated,
+            floating_v50_2,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x34_ef40, 4);
+                oc687_gate(c);
+                c.pc = 0x0034_ef40;
+                let (me, owner, part) = (FIX, FIX + 0x1000, FIX + 0x2000);
+                c.bus.write32(me + 0xc, owner);
+                c.bus.write32(me + 0x18, r.next_u32());
+                c.bus
+                    .write32(me + 0x78, if seed % 3 == 0 { 0 } else { part });
+                // The owner's two virtual matrix getters share one vtable word
+                // pair at +0xc0 (`{delta, fn}`).
+                let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+                c.bus.write16(owner + 0xc0, delta as u16);
+                c.bus.write32(owner + 0xc4, fakes::FAKE);
+                fill(c, &mut r, part, 0x10);
+                for i in 0..12 {
+                    c.bus.write32(part + 0x20 + 4 * i, r.f32(4.0));
+                }
+                c.g[A0][0] = me as u64;
             },
         );
     }

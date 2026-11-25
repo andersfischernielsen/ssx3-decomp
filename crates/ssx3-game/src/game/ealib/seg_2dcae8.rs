@@ -155,6 +155,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x003e_5a10, ea_timer_service_for, "EATimer_ServiceFor"),
     (0x003e_6690, ea_timer_set_video_mode, "EATimer_SetVideoMode"),
+    (0x003e_52b0, thread_yieldticks, "THREAD_yieldticks"),
+    (0x003e_5698, ea_mutex_init, "EAMutex_Init"),
+    (0x003e_56e0, ea_mutex_destroy, "EAMutex_Destroy"),
 ];
 
 /// Callees of the EA file, stream, timer and thread ports below (those
@@ -4816,6 +4819,197 @@ pub fn ea_timer_set_video_mode(c: &mut Cpu) {
     })
 }
 
+/// Offsets in the semaphore-backed mutex (`MUTEX`): two counters the lock
+/// code keeps (cleared at init) and the kernel semaphore id.
+pub(crate) const EA_MUTEX_COUNT_A: u32 = 0x4;
+
+pub(crate) const EA_MUTEX_COUNT_B: u32 = 0x8;
+
+pub(crate) const EA_MUTEX_SEMA: u32 = 0xc;
+
+/// `int EAMutex_Init(MUTEX *m)` (0x3e5698, `MUTEX_create`): clear the mutex's
+/// two counters and create its kernel semaphore (initial and maximum count
+/// 1, from a parameter block on the stack), keeping the id. Returns 0.
+pub fn ea_mutex_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(EA_MUTEX_COUNT_B), 0u64);
+        c.g[A0][0] = c.g[SP][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(EA_MUTEX_COUNT_A), 0u64);
+        // `ee_sema_t`: max_count and init_count are 1 (count and the rest
+        // are whatever the stack held).
+        c.sw(frame.at(c, 8), c.g[V0][0]);
+        c.g[RA][0] = sx(0x003e_56c4);
+        c.sw(frame.at(c, 4), c.g[V0][0]);
+        Callee {
+            addr: 0x0042_3da0,
+            f: ee::s15::CreateSema,
+        }
+        .call(c, 0x003e_56c4)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(EA_MUTEX_SEMA), c.g[V0][0]);
+        frame.restore(c, S0, 0x30);
+        c.g[V0][0] = 0;
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EAMutex_Destroy(MUTEX *m)` (0x3e56e0, `MUTEX_destroy`): delete the
+/// mutex's kernel semaphore.
+pub fn ea_mutex_destroy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003e_56f0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(EA_MUTEX_SEMA));
+        Callee {
+            addr: 0x0042_3db0,
+            f: ee::s15::DeleteSema,
+        }
+        .call(c, 0x003e_56f0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void THREAD_yieldticks(int ticks)` (0x3e52b0): sleep `ticks` thread ticks:
+/// an alarm for `ticks * rate / tick_rate` (masked to 16 bits) that wakes this
+/// thread, then `SleepThread`. With `ticks <= 0` it rotates this thread's
+/// ready queue instead (the `i` syscalls when in interrupt context).
+pub fn thread_yieldticks(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_3e5380: {
+            'b_3e532c: {
+                c.cycles += 7;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.g[S2][0] = c.g[A0][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                let t = (c.g[S2][0] as i64) <= 0;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                if t {
+                    break 'b_3e532c;
+                } else {
+                    'b_3e52e8: {
+                        c.cycles += 7;
+                        c.g[RA][0] = sx(0x003e52d4);
+                        c.g[S1][0] = 0x3e0000;
+                        Callee {
+                            addr: 0x003e5008,
+                            f: ee::s14::EATimer_GetTickRate,
+                        }
+                        .call(c, 0x003e52d4)?;
+                        c.g[V1][0] = 0x450000;
+                        c.g[S0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xda0));
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x5290));
+                        if c.g[V0][0] == 0u64 {
+                            break 'b_3e52e8;
+                        } else {
+                            break 'b_3e52e8;
+                        }
+                    }
+                    'b_3e531c: {
+                        c.cycles += 11;
+                        c.mult(0, 16, 18, 16);
+                        c.div(0, 16, 2);
+                        c.g[S0][0] = c.lo[0];
+                        c.g[RA][0] = sx(0x003e52fc);
+                        c.g[S0][0] = c.g[S0][0] & 0xffff;
+                        call_ptr(c, 0x00423c90, 0x003e52fc)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        c.g[RA][0] = sx(0x003e530c);
+                        c.g[A2][0] = c.g[V0][0];
+                        call_ptr(c, 0x00423b20, 0x003e530c)?;
+                        let t = (c.g[V0][0] as i64) >= 0;
+                        c.g[A0][0] = 0x490000;
+                        if t {
+                            break 'b_3e531c;
+                        } else {
+                            c.cycles += 2;
+                            c.g[RA][0] = sx(0x003e531c);
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5e20));
+                            Callee {
+                                addr: 0x003e6070,
+                                f: ee::s14::EA_DebugMessage,
+                            }
+                            .call(c, 0x003e531c)?;
+                            break 'b_3e531c;
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x003e5324);
+                    call_ptr(c, 0x00423cc0, 0x003e5324)?;
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    if t {
+                        break 'b_3e5380;
+                    } else {
+                        break 'b_3e532c;
+                    }
+                }
+            }
+            'b_3e5360: {
+                c.cycles += 4;
+                c.g[V0][0] = 0x450000;
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xde4));
+                let t = c.g[V1][0] == 0u64;
+
+                if t {
+                    break 'b_3e5360;
+                } else {
+                    c.cycles += 9;
+                    c.g[RA][0] = sx(0x003e5344);
+                    call_ptr(c, 0x00423c90, 0x003e5344)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x003e5350);
+                    c.g[A1][0] = c.g[SP][0];
+                    call_ptr(c, 0x00423cb0, 0x003e5350)?;
+                    c.g[RA][0] = sx(0x003e5358);
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                    call_ptr(c, 0x00424ce8, 0x003e5358)?;
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    if t {
+                        break 'b_3e5380;
+                    } else {
+                        break 'b_3e5360;
+                    }
+                }
+            }
+            c.cycles += 8;
+            c.g[RA][0] = sx(0x003e5368);
+            call_ptr(c, 0x00423c90, 0x003e5368)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[RA][0] = sx(0x003e5374);
+            c.g[A1][0] = c.g[SP][0];
+            call_ptr(c, 0x00423ca0, 0x003e5374)?;
+            c.g[RA][0] = sx(0x003e537c);
+            c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+            call_ptr(c, 0x00423c50, 0x003e537c)?;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            break 'b_3e5380;
+        }
+        c.cycles += 5;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7401,5 +7595,272 @@ pub(crate) mod tests {
             96,
             &|c, seed| remove_callback_setup(c, seed, true),
         );
+    }
+
+    use crate::difftest::elf_image;
+
+    pub(crate) use crate::game::lib::eafile::tests::oc697_slot;
+    pub(crate) use crate::game::lib::eafile::tests::OC697_CTRL;
+    pub(crate) use crate::game::lib::eafile::tests::OC697_FAIL_ALARM;
+    pub(crate) use crate::game::lib::eafile::tests::OC697_MAGIC;
+    pub(crate) use crate::game::lib::eafile::tests::OC697_SCRIPT;
+    pub(crate) use crate::game::lib::eafile::tests::OC697_SECTORS;
+    pub(crate) use crate::game::lib::eafile::tests::OC697_SECT_NEXT;
+    pub(crate) use crate::game::lib::eafile::tests::OC697_SECT_ON;
+
+    pub(crate) use crate::game::lib::eafile::tests::oc697_open;
+    pub(crate) use crate::game::lib::eafile::tests::oc697_reset_scripts;
+
+    pub(crate) use crate::game::lib::cdvd::libcdvd_read_rpc_end_callback;
+    pub(crate) use crate::game::lib::eafile::ea_file_cd_reset;
+    pub(crate) use crate::game::lib::eafile::ea_file_cd_scan_dir;
+    pub(crate) use crate::game::lib::eafile::tests::oc697_scan_setup;
+
+    /// `EAMutex_Init`: the semaphore call is a fake (it unwinds on some
+    /// seeds).
+    #[test]
+    fn ea_mutex_init_matches() {
+        covered(
+            ee::s14::f_003e5698__generated,
+            ea_mutex_init,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003e_5698, 1);
+                c.pc = 0x003e_5698;
+                c.g[A0][0] = (DATA + 0x100 + 0x10 * (seed % 8)) as u64;
+                for i in 0..4 {
+                    c.bus.write32(DATA + 0x100 + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `EAMutex_Destroy`: the delete call is a fake (it unwinds on some
+    /// seeds).
+    #[test]
+    fn ea_mutex_destroy_matches() {
+        covered(
+            ee::s14::f_003e56e0__generated,
+            ea_mutex_destroy,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003e_56e0, 1);
+                c.pc = 0x003e_56e0;
+                c.g[A0][0] = (DATA + 0x100 + 0x10 * (seed % 8)) as u64;
+                for i in 0..4 {
+                    c.bus.write32(DATA + 0x100 + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// The logging fake (every register to the call log, maybe an unwind),
+    /// then the scripted result and the sector copy.
+    pub(crate) fn oc697_fake_call(c: &mut Cpu, addr: u32) {
+        let ra = c.g[RA][0] as u32;
+        let dest = c.g[A2][0] as u32;
+        fakes::fake(c, addr, ra);
+        if c.pc != ra {
+            return;
+        }
+        let base = OC697_SCRIPT + oc697_slot(addr) * 0x40;
+        let n = c.bus.read32(base);
+        if n != 0 {
+            let i = c.bus.read32(base + 4);
+            c.bus.write32(base + 4, i.wrapping_add(1));
+            let v = c.bus.read32(base + 8 + 4 * (i % n));
+            c.g[V0][0] = sx(v);
+        }
+        if addr == 0x0040_1df8 && c.bus.read32(OC697_SECT_ON) != 0 {
+            let i = c.bus.read32(OC697_SECT_NEXT);
+            c.bus.write32(OC697_SECT_NEXT, i.wrapping_add(1));
+            let src = OC697_SECTORS + if i == 0 { 0 } else { 0x800 };
+            for w in 0..0x200 {
+                let v = c.bus.read32(src + 4 * w);
+                c.bus.write32(dest + 4 * w, v);
+            }
+        }
+    }
+
+    macro_rules! oc697_fakes {
+        ($($fake:ident, $prev:ident, $addr:literal, $slot:path, $gen:path;)*) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC697_CTRL) != OC697_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    oc697_fake_call(c, $addr)
+                }
+            )*
+            pub(crate) fn oc697_hook_all() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc697_fakes! {
+        oc697_fake_cd_init, OC697_PREV_CD_INIT, 0x0040_1718,
+            ee::s15::OVERRIDE_00401718, ee::s15::f_00401718__generated;
+        oc697_fake_cd_mmode, OC697_PREV_CD_MMODE, 0x0040_2450,
+            ee::s15::OVERRIDE_00402450, ee::s15::f_00402450__generated;
+        oc697_fake_cd_disk_ready, OC697_PREV_CD_DISK_READY, 0x0040_1bf0,
+            ee::s15::OVERRIDE_00401BF0, ee::s15::f_00401bf0__generated;
+        oc697_fake_cd_read, OC697_PREV_CD_READ, 0x0040_1df8,
+            ee::s15::OVERRIDE_00401DF8, ee::s15::f_00401df8__generated;
+        oc697_fake_cd_sync, OC697_PREV_CD_SYNC, 0x0040_13e8,
+            ee::s15::OVERRIDE_004013E8, ee::s15::f_004013e8__generated;
+        oc697_fake_cd_get_error, OC697_PREV_CD_GET_ERROR, 0x0040_2300,
+            ee::s15::OVERRIDE_00402300, ee::s15::f_00402300__generated;
+        oc697_fake_wait_sema, OC697_PREV_WAIT_SEMA, 0x0042_3de0,
+            ee::s15::OVERRIDE_00423DE0, ee::s15::f_00423de0__generated;
+        oc697_fake_delay_ticks, OC697_PREV_DELAY_TICKS, 0x003e_35b0,
+            ee::s14::OVERRIDE_003E35B0, ee::s14::f_003e35b0__generated;
+        oc697_fake_complete_request, OC697_PREV_COMPLETE_REQUEST, 0x003d_e420,
+            ee::s14::OVERRIDE_003DE420, ee::s14::f_003de420__generated;
+    }
+
+    /// The syscall hook with `SetAlarm` failing when the gate is set.
+    pub(crate) fn oc697_syscall(c: &mut Cpu, at: u32) {
+        fakes::fake_syscall(c, at);
+        if at == 0x0042_3b24 && c.bus.read32(OC697_FAIL_ALARM) == OC697_MAGIC {
+            c.g[V0][0] = u64::MAX;
+        }
+    }
+
+    driven!(oc697_reset_gen, ee::s14::f_003e3618__generated);
+
+    driven!(oc697_reset_hand, ea_file_cd_reset);
+
+    /// `EAFile_CdReset` on a running thread with events due in the poll
+    /// loops (read retry, busy sync, error retry).
+    #[test]
+    fn ea_file_cd_reset_events() {
+        check_events(oc697_reset_gen, oc697_reset_hand, 96, &|c, seed| {
+            let mut r = Rng(0x003e_3618 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+            oc697_open(c, u32::MAX);
+            oc697_reset_scripts(c, 1 + seed / 3 % 2, 2 + seed / 6 % 11);
+            c.bus.write32(0x0045_0c60, r.next_u32());
+            schedule(c, &mut r, seed, 0x003e_3618)
+        });
+    }
+
+    driven!(oc697_scan_gen, ee::s14::f_003e3758__generated);
+
+    driven!(oc697_scan_hand, ea_file_cd_scan_dir);
+
+    /// `EAFile_CdScanDir` on a running thread with events due at its back
+    /// edges (the record walk, the next sector).
+    #[test]
+    fn ea_file_cd_scan_dir_events() {
+        check_events(oc697_scan_gen, oc697_scan_hand, 60, &|c, seed| {
+            let mut r = Rng(0x003e_3758 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+            oc697_open(c, u32::MAX);
+            oc697_scan_setup(c, seed, &mut r);
+            schedule(c, &mut r, seed, 0x003e_3758)
+        });
+    }
+
+    // -------------------------------------------------------------------
+    // THREAD_yieldticks
+
+    /// `THREAD_yieldticks`: positive, zero and negative tick counts; tick
+    /// rates including zero (the divide by zero); alarm failing (the debug
+    /// message) or not; in interrupt context or not; fakes unwinding.
+    #[test]
+    fn thread_yieldticks_matches() {
+        covered(
+            ee::s14::f_003e52b0__generated,
+            thread_yieldticks,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003e_52b0, 6);
+                c.hooks.syscall = oc697_syscall;
+                elf_image(c);
+                c.pc = 0x003e_52b0;
+                c.g[A0][0] = match seed % 5 {
+                    0 => 0,
+                    1 => sx(0xffff_ff00 | (r.next_u32() & 0xff)),
+                    2 => 1 + (r.next_u32() % 100) as u64,
+                    3 => 0x7fff,
+                    _ => r.next_u32() as u64,
+                };
+                c.bus
+                    .write32(0x0045_0dc8, [60, 1000, 0, 7][(seed / 5 % 4) as usize]);
+                c.bus.write32(0x0045_0da0, r.next_u32() % 2000);
+                c.bus.write32(0x0045_0de4, (seed / 20) % 2);
+                if seed / 40 % 2 == 0 {
+                    c.bus.write32(OC697_FAIL_ALARM, OC697_MAGIC);
+                    // The debug message prints through [0x450dd8] (a fake) an
+                    // empty string.
+                    c.bus.write32(0x0045_0dd8, FAKE + 0x20);
+                    c.bus.write8(0x0049_5e20, 0);
+                }
+            },
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // libcdvd_ReadRpcEndCallback
+
+    /// The read-RPC packet and the two destinations.
+    pub(crate) const OC697_RPC: u32 = DATA + 0x100;
+
+    pub(crate) const OC697_RPC_DST1: u32 = DATA + 0x400;
+
+    pub(crate) const OC697_RPC_DST2: u32 = DATA + 0x600;
+
+    /// Packet, destinations and the pending-command words the tail call
+    /// reads.
+    pub(crate) fn oc697_rpc_setup(c: &mut Cpu, seed: u32, r: &mut Rng) {
+        c.g[A0][0] = OC697_RPC as u64;
+        let n1 = match seed % 4 {
+            0 => 0,
+            1 => 0xffff_ffff,
+            _ => 1 + r.next_u32() % 0x40,
+        };
+        let n2 = match seed / 4 % 4 {
+            0 => 0,
+            1 => 0xffff_ffff,
+            _ => 1 + r.next_u32() % 0x40,
+        };
+        c.bus.write32(OC697_RPC, n1);
+        c.bus.write32(OC697_RPC + 4, n2);
+        c.bus.write32(OC697_RPC + 8, OC697_RPC_DST1);
+        c.bus.write32(OC697_RPC + 0xc, OC697_RPC_DST2);
+        for w in 0..0x20 {
+            c.bus.write32(OC697_RPC + 0x10 + 4 * w, r.next_u32());
+        }
+        c.bus.write32(
+            0x0045_1658,
+            if seed % 3 == 0 {
+                0xb
+            } else {
+                r.next_u32() % 13
+            },
+        );
+        c.bus.write32(0x0045_1628, r.next_u32() & 0xffff);
+        c.bus.write32(0x0045_1620, r.next_u32() & 0xffff);
+        c.bus
+            .write32(0x0045_1614, if seed % 5 == 1 { 0 } else { 0x0052_0000 });
+        c.bus
+            .write32(0x0052_64c0, if seed % 7 == 2 { 0 } else { seed });
+    }
+
+    driven!(oc697_rpc_gen, ee::s15::f_00400b48__generated);
+
+    driven!(oc697_rpc_hand, libcdvd_read_rpc_end_callback);
+
+    /// `libcdvd_ReadRpcEndCallback` on a running thread with events due in
+    /// the byte-copy loops.
+    #[test]
+    fn libcdvd_read_rpc_end_callback_events() {
+        check_events(oc697_rpc_gen, oc697_rpc_hand, 96, &|c, seed| {
+            let mut r = Rng(0x0040_0b48 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+            elf_image(c);
+            // Copies of at least two bytes in both runs reach the back edges.
+            oc697_rpc_setup(c, 2 + seed % 2 + 4 * (2 + seed / 3 % 2), &mut r);
+            schedule(c, &mut r, seed, 0x0040_0b48)
+        });
     }
 }

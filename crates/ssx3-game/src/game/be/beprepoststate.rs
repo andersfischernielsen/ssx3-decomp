@@ -60,6 +60,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_copy_profile_characters,
         "BE_CopyProfileCharacters",
     ),
+    (
+        0x0015_6390,
+        be_post_race_get_interface,
+        "BEPostRace_GetInterface",
+    ),
 ];
 
 /// `BEPostRace_GetInstance(int id)` (0x156338): as above with `gp - 0x1e9c`
@@ -387,6 +392,330 @@ pub fn be_copy_profile_characters(c: &mut Cpu) {
     })
 }
 
+/// `BEPostRace_GetInterface` (0x00156390): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn be_post_race_get_interface(c: &mut Cpu) {
+    if c.pc != 0x00156390 {
+        return ee::s01::f_00156390__generated(c);
+    }
+    guest(c, |c| 'l_156390: loop {
+        'b_1564a4: {
+            'b_15649c: {
+                c.cycles += 4;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                c.g[V0][0] = (c.g[A1][0] < 0xeu64) as u64;
+                let t = c.g[V0][0] == 0u64;
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                if t {
+                    break 'b_15649c;
+                } else {
+                    'b_15648c: {
+                        'b_15647c: {
+                            'b_15646c: {
+                                'b_15645c: {
+                                    'b_15644c: {
+                                        'b_15643c: {
+                                            'b_15642c: {
+                                                'b_15641c: {
+                                                    'b_15640c: {
+                                                        'b_1563fc: {
+                                                            'b_1563ec: {
+                                                                'b_1563dc: {
+                                                                    'b_1563cc: {
+                                                                        c.cycles += 7;
+                                                                        c.g[V0][0] = 0x460000;
+                                                                        c.g[V1][0] =
+                                                                            sx((c.g[A1][0] as u32)
+                                                                                << 2);
+                                                                        c.g[V0][0] =
+                                                                            sx((c.g[V0][0] as u32)
+                                                                                .wrapping_sub(
+                                                                                    0x5740,
+                                                                                ));
+                                                                        c.g[V1][0] =
+                                                                            sx((c.g[V1][0] as u32)
+                                                                                .wrapping_add(
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
+                                                                                ));
+                                                                        c.g[A0][0] =
+                                                                            c.lw(c.g[V1][0] as u32);
+                                                                        let t = c.g[A0][0] as u32;
+                                                                        match t {
+                                                                            0x00156390 => {
+                                                                                if event_due(c) {
+                                                                                    deliver_event_here(c, 0x00156390);
+                                                                                }
+                                                                                continue 'l_156390;
+                                                                            }
+                                                                            0x001563bc => {
+                                                                                c.cycles += 4;
+                                                                                c.g[RA][0] =
+                                                                                    sx(0x001563c4);
+                                                                                Callee { addr: 0x001448d8, f: ee::s01::BENewRaceInt_GetInstance }.call(c, 0x001563c4)?;
+                                                                                let t = true;
+                                                                                c.g[RA][0] = c
+                                                                                    .ld(c.g[SP][0]
+                                                                                        as u32);
+                                                                                if t {
+                                                                                    break 'b_1564a4;
+                                                                                } else {
+                                                                                    break 'b_1563cc;
+                                                                                }
+                                                                            }
+                                                                            0x001563cc => {
+                                                                                break 'b_1563cc;
+                                                                            }
+                                                                            0x001563dc => {
+                                                                                break 'b_1563dc;
+                                                                            }
+                                                                            0x001563ec => {
+                                                                                break 'b_1563ec;
+                                                                            }
+                                                                            0x001563fc => {
+                                                                                break 'b_1563fc;
+                                                                            }
+                                                                            0x0015640c => {
+                                                                                break 'b_15640c;
+                                                                            }
+                                                                            0x0015641c => {
+                                                                                break 'b_15641c;
+                                                                            }
+                                                                            0x0015642c => {
+                                                                                break 'b_15642c;
+                                                                            }
+                                                                            0x0015643c => {
+                                                                                break 'b_15643c;
+                                                                            }
+                                                                            0x0015644c => {
+                                                                                break 'b_15644c;
+                                                                            }
+                                                                            0x0015645c => {
+                                                                                break 'b_15645c;
+                                                                            }
+                                                                            0x0015646c => {
+                                                                                break 'b_15646c;
+                                                                            }
+                                                                            0x0015647c => {
+                                                                                break 'b_15647c;
+                                                                            }
+                                                                            0x0015648c => {
+                                                                                break 'b_15648c;
+                                                                            }
+                                                                            _ => {
+                                                                                c.jump_out(
+                                                                                    t, 0x00156390,
+                                                                                    0x001564ac,
+                                                                                );
+                                                                                return Ok(());
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    c.cycles += 4;
+                                                                    c.g[RA][0] = sx(0x001563d4);
+                                                                    Callee { addr: 0x00145970, f: ee::s01::BENewPlayerInt_GetInstance }.call(c, 0x001563d4)?;
+                                                                    let t = true;
+                                                                    c.g[RA][0] =
+                                                                        c.ld(c.g[SP][0] as u32);
+                                                                    if t {
+                                                                        break 'b_1564a4;
+                                                                    } else {
+                                                                        break 'b_1563dc;
+                                                                    }
+                                                                }
+                                                                c.cycles += 4;
+                                                                c.g[RA][0] = sx(0x001563e4);
+                                                                Callee { addr: 0x0014edd8, f: ee::s01::BE_GetCharDBInterface }.call(c, 0x001563e4)?;
+                                                                let t = true;
+                                                                c.g[RA][0] =
+                                                                    c.ld(c.g[SP][0] as u32);
+                                                                if t {
+                                                                    break 'b_1564a4;
+                                                                } else {
+                                                                    break 'b_1563ec;
+                                                                }
+                                                            }
+                                                            c.cycles += 4;
+                                                            c.g[RA][0] = sx(0x001563f4);
+                                                            Callee {
+                                                                addr: 0x00147f78,
+                                                                f: ee::s01::BECharInt_GetInstance,
+                                                            }
+                                                            .call(c, 0x001563f4)?;
+                                                            let t = true;
+                                                            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                                            if t {
+                                                                break 'b_1564a4;
+                                                            } else {
+                                                                break 'b_1563fc;
+                                                            }
+                                                        }
+                                                        c.cycles += 4;
+                                                        c.g[RA][0] = sx(0x00156404);
+                                                        Callee {
+                                                            addr: 0x0014f250,
+                                                            f: ee::s01::BEOptionInt_GetInstance,
+                                                        }
+                                                        .call(c, 0x00156404)?;
+                                                        let t = true;
+                                                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                                        if t {
+                                                            break 'b_1564a4;
+                                                        } else {
+                                                            break 'b_15640c;
+                                                        }
+                                                    }
+                                                    c.cycles += 4;
+                                                    c.g[RA][0] = sx(0x00156414);
+                                                    Callee {
+                                                        addr: 0x00152638,
+                                                        f: ee::s01::BESaveInt_GetInstance,
+                                                    }
+                                                    .call(c, 0x00156414)?;
+                                                    let t = true;
+                                                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                                    if t {
+                                                        break 'b_1564a4;
+                                                    } else {
+                                                        break 'b_15641c;
+                                                    }
+                                                }
+                                                c.cycles += 4;
+                                                c.g[RA][0] = sx(0x00156424);
+                                                Callee {
+                                                    addr: 0x0014e0e0,
+                                                    f: ee::s01::BENetworkInt_GetInstance,
+                                                }
+                                                .call(c, 0x00156424)?;
+                                                let t = true;
+                                                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                                if t {
+                                                    break 'b_1564a4;
+                                                } else {
+                                                    break 'b_15642c;
+                                                }
+                                            }
+                                            c.cycles += 4;
+                                            c.g[RA][0] = sx(0x00156434);
+                                            Callee {
+                                                addr: 0x00154948,
+                                                f: ee::s01::BEScoreInt_GetInstance,
+                                            }
+                                            .call(c, 0x00156434)?;
+                                            let t = true;
+                                            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                            if t {
+                                                break 'b_1564a4;
+                                            } else {
+                                                break 'b_15643c;
+                                            }
+                                        }
+                                        c.cycles += 4;
+                                        c.g[RA][0] = sx(0x00156444);
+                                        Callee {
+                                            addr: 0x0014abe0,
+                                            f: ee::s01::BEBoltInt_GetInstance,
+                                        }
+                                        .call(c, 0x00156444)?;
+                                        let t = true;
+                                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                        if t {
+                                            break 'b_1564a4;
+                                        } else {
+                                            break 'b_15644c;
+                                        }
+                                    }
+                                    c.cycles += 4;
+                                    c.g[RA][0] = sx(0x00156454);
+                                    Callee {
+                                        addr: 0x0014f900,
+                                        f: ee::s01::BEBAGTInt_GetInstance,
+                                    }
+                                    .call(c, 0x00156454)?;
+                                    let t = true;
+                                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                    if t {
+                                        break 'b_1564a4;
+                                    } else {
+                                        break 'b_15645c;
+                                    }
+                                }
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x00156464);
+                                Callee {
+                                    addr: 0x001508d8,
+                                    f: ee::s01::BEEconInt_GetInstance,
+                                }
+                                .call(c, 0x00156464)?;
+                                let t = true;
+                                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                if t {
+                                    break 'b_1564a4;
+                                } else {
+                                    break 'b_15646c;
+                                }
+                            }
+                            c.cycles += 4;
+                            c.g[RA][0] = sx(0x00156474);
+                            Callee {
+                                addr: 0x001532a0,
+                                f: ee::s01::BEMissionInt_GetInstance,
+                            }
+                            .call(c, 0x00156474)?;
+                            let t = true;
+                            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                            if t {
+                                break 'b_1564a4;
+                            } else {
+                                break 'b_15647c;
+                            }
+                        }
+                        c.cycles += 4;
+                        c.g[RA][0] = sx(0x00156484);
+                        Callee {
+                            addr: 0x00155a50,
+                            f: ee::s01::BEAggressionInt_GetInstance,
+                        }
+                        .call(c, 0x00156484)?;
+                        let t = true;
+                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                        if t {
+                            break 'b_1564a4;
+                        } else {
+                            break 'b_15648c;
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156494);
+                    Callee {
+                        addr: 0x001569c0,
+                        f: ee::s01::BERewardInt_GetInstance,
+                    }
+                    .call(c, 0x00156494)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        break 'b_1564a4;
+                    } else {
+                        break 'b_15649c;
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 0u64;
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+            break 'b_1564a4;
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -586,6 +915,21 @@ pub(crate) mod tests {
                     }
                 }
                 fill(c, &mut r, DATA + 0x40_0000, 0x1000);
+            },
+        );
+    }
+
+    #[test]
+    fn be_post_race_get_interface_matches() {
+        check(
+            ee::s01::f_00156390__generated,
+            be_post_race_get_interface,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x6390, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.pc = 0x00156390;
             },
         );
     }

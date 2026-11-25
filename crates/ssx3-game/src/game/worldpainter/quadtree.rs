@@ -2,9 +2,9 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::ret;
-use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -35,9 +35,6 @@ pub(crate) use crate::game::fe::feasyncfile::p as p_5;
 pub(crate) use crate::game::fe::feasyncfile::p as p_6;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p;
 pub(crate) use crate::game::fe::festateload::at;
-pub(crate) use crate::game::fe::festateloadhint::lqsp;
-pub(crate) use crate::game::fe::festateloadhint::p_3 as p_4;
-pub(crate) use crate::game::fe::festateloadhint::sqsp;
 pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::main::gamemode::low as low_2;
 pub(crate) use crate::game::main::gamemode::sp_2;
@@ -367,6 +364,97 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_link_setup_platform_funcs,
         "GameLink_SetupPlatformFuncs",
     ),
+    (0x002c_4050, c_ps2_mem_card_init, "cPS2MemCard_Init"),
+    (0x002c_4290, c_ps2_mem_card_v76, "cPS2MemCard_v76"),
+    (
+        0x002c_4368,
+        c_ps2_mem_card_request_format,
+        "cPS2MemCard_RequestFormat",
+    ),
+    (0x002c_43e0, c_ps2_mem_card_v10, "cPS2MemCard_v10"),
+    (
+        0x002c_4410,
+        c_ps2_mem_card_do_delete_save,
+        "cPS2MemCard_DoDeleteSave",
+    ),
+    (0x002c_4720, c_ps2_mem_card_v41, "cPS2MemCard_v41"),
+    (0x002c_4768, c_ps2_mem_card_v43, "cPS2MemCard_v43"),
+    (0x002c_4858, c_ps2_mem_card_v30, "cPS2MemCard_v30"),
+    (0x002c_48a0, c_ps2_mem_card_v32, "cPS2MemCard_v32"),
+    (0x002c_48c0, cps2_mem_card_set_state, "cPS2MemCard_SetState"),
+    (0x002c_5230, c_ps2_mem_card_v73, "cPS2MemCard_v73"),
+    (
+        0x002c_5338,
+        c_ps2_mem_card_get_free_space,
+        "cPS2MemCard_GetFreeSpace",
+    ),
+    (
+        0x002c_53e0,
+        c_ps2_mem_card_get_free_space_string,
+        "cPS2MemCard_GetFreeSpaceString",
+    ),
+    (
+        0x002c_54d0,
+        c_ps2_mem_card_get_save_name,
+        "cPS2MemCard_GetSaveName",
+    ),
+    (0x002c_5500, c_ps2_mem_card_v45, "cPS2MemCard_v45"),
+    (
+        0x002c_6128,
+        c_ps2_mem_card_get_status_string,
+        "cPS2MemCard_GetStatusString",
+    ),
+    (0x002c_64f8, c_ps2_mem_card_v17, "cPS2MemCard_v17"),
+    (0x002c_6718, c_ps2_mem_card_v62, "cPS2MemCard_v62"),
+    (0x002c_6778, c_ps2_mem_card_v23, "cPS2MemCard_v23"),
+    (0x002c_67b0, c_ps2_mem_card_v51, "cPS2MemCard_v51"),
+    (
+        0x002c_67e8,
+        c_ps2_mem_card_request_get_info_now,
+        "cPS2MemCard_RequestGetInfoNow",
+    ),
+    (
+        0x002c_6a08,
+        c_ps2_mem_card_request_close,
+        "cPS2MemCard_RequestClose",
+    ),
+    (
+        0x002c_6a60,
+        c_ps2_mem_card_request_seek,
+        "cPS2MemCard_RequestSeek",
+    ),
+    (
+        0x002c_6ae0,
+        c_ps2_mem_card_request_flush,
+        "cPS2MemCard_RequestFlush",
+    ),
+    (
+        0x002c_6b50,
+        c_ps2_mem_card_request_read,
+        "cPS2MemCard_RequestRead",
+    ),
+    (
+        0x002c_6bd0,
+        c_ps2_mem_card_request_write,
+        "cPS2MemCard_RequestWrite",
+    ),
+    (
+        0x002d_3788,
+        c_ps2_mem_card_base_dtor,
+        "cPS2MemCard_BaseDtor",
+    ),
+    (0x002d_37e0, c_ps2_mem_card_v49, "cPS2MemCard_v49"),
+    (0x002d_3810, c_ps2_mem_card_v53, "cPS2MemCard_v53"),
+    (0x002d_3840, c_ps2_mem_card_v54, "cPS2MemCard_v54"),
+    (0x002d_38f0, c_ps2_mem_card_v55, "cPS2MemCard_v55"),
+    (0x002d_3930, c_ps2_mem_card_v63, "cPS2MemCard_v63"),
+    (0x002d_3950, c_ps2_mem_card_v64, "cPS2MemCard_v64"),
+    (0x002d_3980, c_ps2_mem_card_v71, "cPS2MemCard_v71"),
+    (
+        0x002d_39b8,
+        c_ps2_mem_card_get_current_port_error,
+        "cPS2MemCard_GetCurrentPortError",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -656,6 +744,49 @@ pub(crate) mod callee {
 
     /// `__cmpdf2` (gcc), called through the function table.
     pub(crate) const CMPDF2: u32 = 0x0041_2500;
+    pub(crate) use super::table::MEM_FREE;
+    pub(crate) use crate::game::be::belibrary::EA_MEM_COPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::U_STR_SPRINTF;
+    pub(crate) use crate::game::main::gamestate::callee::STR_HASH;
+
+    /// `cPS2MemCard_DoGetInfo` (0x2c50e0).
+    pub(crate) const C_PS2_MEM_CARD_DO_GET_INFO: Callee = Callee {
+        addr: 0x002c_50e0,
+        f: ee::s08::cPS2MemCard_DoGetInfo,
+    };
+
+    /// `MemCard_AsciiToSjisString` (0x2c2210).
+    pub(crate) const MEM_CARD_ASCII_TO_SJIS_STRING: Callee = Callee {
+        addr: 0x002c_2210,
+        f: ee::s08::MemCard_AsciiToSjisString,
+    };
+
+    /// `AsyncFile_Load` (0x3df690, s14), through the function table.
+    pub(crate) const ASYNC_FILE_LOAD: u32 = 0x003d_f690;
+
+    /// `sceMcOpen` (0x409d10, s15), through the function table.
+    pub(crate) const SCE_MC_OPEN: u32 = 0x0040_9d10;
+
+    /// `sceMcGetDir` (0x40a688, s15), through the function table.
+    pub(crate) const SCE_MC_GET_DIR: u32 = 0x0040_a688;
+
+    /// `cPS2MemCard_GetFreeSpaceForPort` (0x2c5320).
+    pub(crate) const C_PS2_MEM_CARD_GET_FREE_SPACE_FOR_PORT: Callee = Callee {
+        addr: 0x002c_5320,
+        f: ee::s08::cPS2MemCard_GetFreeSpaceForPort,
+    };
+
+    /// `cPS2MemCard_GetPortChangedFlag` (0x2c53c8).
+    pub(crate) const C_PS2_MEM_CARD_GET_PORT_CHANGED_FLAG: Callee = Callee {
+        addr: 0x002c_53c8,
+        f: ee::s08::cPS2MemCard_GetPortChangedFlag,
+    };
+
+    /// `cPS2MemCard_GetFreeSpaceString` (0x2c53e0).
+    pub(crate) const C_PS2_MEM_CARD_GET_FREE_SPACE_STRING: Callee = Callee {
+        addr: 0x002c_53e0,
+        f: ee::s08::cPS2MemCard_GetFreeSpaceString,
+    };
 }
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -2606,46 +2737,6 @@ pub fn c_ps2_mem_card_dtor(c: &mut Cpu) {
     })
 }
 
-/// `void cPS2MemCard_DoDeleteSave(cPS2MemCard* m)` (0x2c4410): build the save
-/// file name and prompt string, then move to state 0x36 (delete). The
-/// generated body's call into the 1200-line memcard state machine cannot be
-/// bounded cheaply, so this port has no differential test.
-#[allow(dead_code)]
-pub fn c_ps2_mem_card_do_delete_save(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 28;
-        let frame = Frame::open(c, 0x30);
-        c.g[V0][0] = 0x78;
-        sqsp(c, 16, 0x20);
-        sqsp(c, 17, 0x10);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0);
-        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xb9));
-        Addr(p_4(r32(c, S0), 0x3c)).sw(c, 0);
-        c.g[A0][0] = c.g[S1][0];
-        c.g[A1][0] = Addr(p_4(r32(c, S0), 0x1c)).lw(c);
-        c.mult(0, V1, A1, V0);
-        c.g[A1][0] = abi::addu(c.g[V1][0], c.g[S0][0]);
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1b0));
-        call::call_ptr(c, 0x0041_66f4, 0x002c_4448)?;
-        c.g[A2][0] = c.g[S1][0];
-        c.g[A1][0] = 0x004a_3948;
-        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xf9));
-        c.g[A3][0] = c.g[A2][0];
-        call::call_ptr(c, 0x0041_7828, 0x002c_4460)?;
-        c.g[A0][0] = c.g[S0][0];
-        c.g[A1][0] = 0x36;
-        call::call_ptr(c, 0x002c_48c0, 0x002c_446c)?;
-        lqsp(c, 16, 0x20);
-        lqsp(c, 17, 0x10);
-        frame.restore_ra(c, 0);
-        let ra = c.g[RA][0] as u32;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
-        c.pc = ra;
-        Ok(())
-    });
-}
-
 /// `cPS2MemCard_CountSaves` (0x2C68F0): count the memory card's save slots whose
 /// name is non-empty.
 pub fn cps2_mem_card_count_saves(c: &mut Cpu) {
@@ -3353,123 +3444,6 @@ pub fn quad_tree_flatten_node(c: &mut Cpu) {
         frame.restore(c, 19, 0x30);
         frame.restore(c, 20, 0x20);
         frame.restore(c, 21, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `cPS2MemCard_GetFreeSpaceString(self, idx, dst, port)` (0x2c53e0): format
-/// the free space of memory-card entry `idx` into the wide string `dst`.
-/// No entry data, a status of -2 or an unknown status produce the "no card"
-/// message; status 0 formats the free-space number through the file-system
-/// object's size formatter.
-pub fn cps2memcard_get_free_space_string(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x50);
-        c.g[V0][0] = 0x14;
-        // `a3 = idx * sizeof(entry)` (imul rd=a3, rs=a1, rt=20)
-        c.mult(0, A3, A1, V0);
-        frame.save(c, 19, 0x10);
-        frame.save(c, 16, 0x40);
-        frame.save(c, 17, 0x30);
-        frame.save(c, 18, 0x20);
-        frame.save_ra(c, 0);
-        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A3][0] as u32));
-        c.g[V1][0] = lw(c, p_8(c.g[V0][0] as u32, 0x188));
-        let no_data = c.g[V1][0] == 0;
-        c.g[S3][0] = c.g[A2][0];
-        // 0: no data, 1: status -2, 2: status 0, 3: any other status
-        let mut which = 0u32;
-        if !no_data {
-            c.cycles += 5;
-            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A3][0] as u32));
-            c.g[V1][0] = sx(0xffff_fffe);
-            c.g[V0][0] = lw(c, p_8(c.g[V0][0] as u32, 0x184));
-            if c.g[V0][0] == c.g[V1][0] {
-                c.g[A1][0] = 0x4a_0000;
-                which = 1;
-            } else {
-                c.cycles += 2;
-                if c.g[V0][0] == 0 {
-                    which = 2;
-                } else {
-                    c.cycles += 2;
-                    c.g[A1][0] = 0x4a_0000;
-                    which = 3;
-                }
-            }
-        }
-        if which == 0 {
-            c.cycles += 1;
-            c.g[A1][0] = 0x4a_0000;
-        }
-        if which == 2 {
-            // status 0: the free-space number, formatted by the file system
-            c.cycles += 23;
-            c.g[RA][0] = sx(0x002c_5454);
-            c.g[S2][0] = 0;
-            c.pc = 0x002c_5320;
-            ee::s08::cPS2MemCard_GetFreeSpaceForPort(c);
-            if c.pc != 0x002c_5454 {
-                return Err(Unwound);
-            }
-            c.g[A1][0] = lw(c, gp(c, -0x848));
-            c.g[V1][0] = sx(0xffff_ffff);
-            c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-            c.g[A0][0] = 0x48_0000;
-            c.g[S0][0] = lw(c, p_8(c.g[A1][0] as u32, 0x8c));
-            if c.g[V1][0] != 0 {
-                c.g[S2][0] = c.g[V0][0];
-            }
-            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x61f8));
-            c.g[S1][0] = lw(c, p_8(c.g[S0][0] as u32, 4));
-            c.g[V0][0] = c.lh(p_8(c.g[S1][0] as u32, 0x20));
-            c.g[RA][0] = sx(0x002c_5480);
-            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
-            call_ptr(c, 0x0031_7670, 0x002c_5480)?; // StrHash(D_004861F8)
-            c.g[V1][0] = lw(c, p_8(c.g[S1][0] as u32, 0x24));
-            c.g[A0][0] = c.g[S0][0];
-            let t = c.g[V1][0] as u32;
-            c.g[RA][0] = sx(0x002c_5490);
-            c.g[A1][0] = c.g[V0][0];
-            c.pc = t;
-            ssx3_ee_rt::funcs::call_indirect(c, t);
-            if c.pc != 0x002c_5490 {
-                return Err(Unwound);
-            }
-            c.g[A0][0] = c.g[S3][0];
-            c.g[A1][0] = c.g[V0][0];
-            c.g[RA][0] = sx(0x002c_54a0);
-            c.g[A2][0] = c.g[S2][0];
-            c.pc = 0x002c_26d0;
-            ee::s08::UStr_Sprintf(c);
-            if c.pc != 0x002c_54a0 {
-                return Err(Unwound);
-            }
-        } else {
-            // "no card" (status -2, or no data) and unknown statuses
-            let (cost, ret) = if which == 1 {
-                (5, 0x002c_5444)
-            } else {
-                (4, 0x002c_54b4)
-            };
-            c.cycles += cost;
-            c.g[A0][0] = c.g[S3][0];
-            c.g[RA][0] = sx(ret);
-            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3968));
-            c.pc = 0x002c_2540;
-            ee::s08::UStr_FromAscii_2(c);
-            if c.pc != ret {
-                return Err(Unwound);
-            }
-        }
-        c.lq(16, p_8(sp(c), 0x40));
-        c.cycles += 6;
-        frame.restore(c, 17, 0x30);
-        frame.restore(c, 18, 0x20);
-        frame.restore(c, 19, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -7838,6 +7812,2240 @@ pub fn game_link_setup_platform_funcs(c: &mut Cpu) {
     frame.close(c);
 }
 
+// ---------------------------------------------------------------------------
+// cPS2MemCard_SetState (0x2c48c0)
+
+/// `cPS2MemCard_SetState`'s entry and the head of state 7's slot scan (the
+/// one point it is re-entered at after an event).
+pub(crate) const MC_SET_STATE_ENTRY: u32 = 0x002c_48c0;
+
+pub(crate) const MC_SET_STATE_SCAN_HEAD: u32 = 0x002c_4e60;
+
+/// The state jump table (.rodata, one word per state 1..=0x4e).
+pub(crate) const MCU_SET_STATE_TABLE: u32 = 0x0048_60c0;
+
+/// `cPS2MemCard_SetState`'s stack frame (s0..s4 and `ra`).
+pub(crate) const SET_STATE_FRAME: Frame = Frame { size: 0xa0 };
+
+/// `cPS2MemCard` field: the icon title's line-break offset (`OffsLF`; 0 or
+/// less: after the whole title).
+pub(crate) const MCU_TITLE_BREAK: u32 = 0x8;
+
+/// `cPS2MemCard` field: the caller's buffer of the current card read/write.
+pub(crate) const MCU_BUFFER: u32 = 0x2c;
+
+/// `cPS2MemCard` field: the file or directory name a request names.
+pub(crate) const MCU_FILE: u32 = 0xf9;
+
+/// `cPS2MemCard` field: the 0x40-byte `sceMcGetDir` entry buffer.
+pub(crate) const MCU_DIR_ENTRY: u32 = 0x480;
+
+/// `cPS2MemCard` field: the directory the save's icon files are loaded from.
+pub(crate) const MCU_ICON_DIR: u32 = 0x14c0;
+
+/// `cPS2MemCard` vtable slot 0x218: `HasSlotName(slot)`, whether save slot
+/// `slot` holds a named save.
+pub(crate) const MCU_VT_HAS_SLOT_NAME: u32 = 0x218;
+
+/// The shared `icon.sys` header buffer (`sceMcIconSys`, 0x3c4 bytes).
+pub(crate) const MC_ICON_SYS: u32 = 0x0053_76f8;
+
+pub(crate) const MC_ICON_SYS_SIZE: u32 = 0x3c4;
+
+/// `"%s/%s"`: a file in a directory.
+pub(crate) const MC_DIR_FMT: u32 = 0x004a_3958;
+
+/// `"PS2D"`: the `icon.sys` magic (4 bytes and a NUL).
+pub(crate) const MC_ICON_MAGIC: u32 = 0x004a_3960;
+
+/// The three icon file names (view, copy, delete).
+pub(crate) const MC_ICON_FILES: u32 = 0x0044_59f0;
+
+/// The `icon.sys` colour and light constants: background colours (0x40
+/// bytes), light directions (0x30), light colours (0x30), ambient (0x10).
+pub(crate) const MC_ICON_BG: u32 = 0x0044_5a00;
+
+pub(crate) const MC_ICON_LIGHT_DIR: u32 = 0x0044_5a40;
+
+pub(crate) const MC_ICON_LIGHT_COLOR: u32 = 0x0044_5a70;
+
+pub(crate) const MC_ICON_AMBIENT: u32 = 0x0044_5aa0;
+
+/// `cPS2MemCard` states `cPS2MemCard_SetState` acts on.
+///
+/// State 1: the operation failed: record the result in the port's status,
+/// drop the async buffer, close the open file (state 2 while that close
+/// runs) and forget the request.
+pub(crate) const MC_STATE_FAILED: u64 = 0x1;
+
+/// State 2: waiting for the close state 1 started.
+pub(crate) const MC_STATE_FAILED_CLOSING: u64 = 0x2;
+
+/// State 3: refresh the card info now (`SetState` runs `DoGetInfo` at once).
+pub(crate) const MC_STATE_GET_INFO_NOW: u64 = 0x3;
+
+/// State 7: find the first slot that holds a save and open its `icon.sys`.
+pub(crate) const MC_STATE_FIND_SAVE: u64 = 0x7;
+
+/// State 8: open the slot's `icon.sys` for reading.
+pub(crate) const MC_STATE_OPEN_ICON_SYS: u64 = 0x8;
+
+/// State 9: close the slot's `icon.sys`.
+pub(crate) const MC_STATE_CLOSE_ICON_SYS: u64 = 0x9;
+
+/// State 0xa: read the slot's `icon.sys` into the shared header buffer.
+pub(crate) const MC_STATE_READ_ICON_SYS: u64 = 0xa;
+
+/// State 0xb: read the directory entry of the slot's save directory.
+pub(crate) const MC_STATE_GET_SAVE_DIR: u64 = 0xb;
+
+/// States 0xc-0xe: read the directory entry of icon file 0, 1, 2.
+pub(crate) const MC_STATE_GET_ICON_DIR: [u64; 3] = [0xc, 0xd, 0xe];
+
+/// State 0xf: close the `icon.sys` whose read failed.
+pub(crate) const MC_STATE_CLOSE_BAD_SAVE: u64 = 0xf;
+
+/// State 0x10: the slot's save is invalid.
+pub(crate) const MC_STATE_SAVE_INVALID: u64 = 0x10;
+
+/// State 0x16: create the file named at `+0xf9` for writing.
+pub(crate) const MC_STATE_OPEN_FOR_WRITE: u64 = 0x16;
+
+/// State 0x17: write the buffer to the open save file (`SetState` starts
+/// `sceMcWrite` at once).
+pub(crate) const MC_STATE_WRITE_SAVE_FILE: u64 = 0x17;
+
+/// State 0x18: close the save file after a write (state 0x19 if none is open).
+pub(crate) const MC_STATE_CLOSE_AFTER_WRITE: u64 = 0x18;
+
+/// State 0x19: the save file is written and closed.
+pub(crate) const MC_STATE_WRITE_DONE: u64 = 0x19;
+
+/// State 0x1c: open the file named at `+0xf9` for reading.
+pub(crate) const MC_STATE_OPEN_FOR_READ: u64 = 0x1c;
+
+/// State 0x1d: read the open save file into the buffer (`SetState` starts
+/// `sceMcRead` at once).
+pub(crate) const MC_STATE_READ_SAVE_FILE: u64 = 0x1d;
+
+/// State 0x1e: close the save file after a read (state 0x1f if none is open).
+pub(crate) const MC_STATE_CLOSE_AFTER_READ: u64 = 0x1e;
+
+/// State 0x1f: the save file is read and closed.
+pub(crate) const MC_STATE_READ_DONE: u64 = 0x1f;
+
+/// State 0x24: make the directory named at `+0xf9`.
+pub(crate) const MC_STATE_MAKE_DIR: u64 = 0x24;
+
+/// State 0x25: create `icon.sys` in that directory.
+pub(crate) const MC_STATE_CREATE_ICON_SYS: u64 = 0x25;
+
+/// State 0x26: build the `icon.sys` header and write it.
+pub(crate) const MC_STATE_WRITE_ICON_SYS: u64 = 0x26;
+
+/// State 0x27: close the new `icon.sys`.
+pub(crate) const MC_STATE_CLOSE_NEW_ICON_SYS: u64 = 0x27;
+
+/// States 0x28, 0x2c, 0x30: start loading icon file 0, 1, 2 from the icon
+/// directory (async file load).
+pub(crate) const MC_STATE_LOAD_ICON: [u64; 3] = [0x28, 0x2c, 0x30];
+
+/// States 0x29, 0x2d, 0x31: create the icon file in the directory at `+0xb9`.
+pub(crate) const MC_STATE_CREATE_ICON: [u64; 3] = [0x29, 0x2d, 0x31];
+
+/// States 0x2a, 0x2e, 0x32: write the loaded icon to it.
+pub(crate) const MC_STATE_WRITE_ICON: [u64; 3] = [0x2a, 0x2e, 0x32];
+
+/// States 0x2b, 0x2f, 0x33: drop the loaded icon and close the file.
+pub(crate) const MC_STATE_CLOSE_ICON: [u64; 3] = [0x2b, 0x2f, 0x33];
+
+/// State 0x36: delete the file named at `+0xf9` (the port's status cleared).
+pub(crate) const MC_STATE_DELETE_FILE: u64 = 0x36;
+
+/// States 0x37-0x39: delete icon file 0, 1, 2 from the directory at `+0xb9`.
+pub(crate) const MC_STATE_DELETE_ICON: [u64; 3] = [0x37, 0x38, 0x39];
+
+/// State 0x3a: delete that directory's `icon.sys`.
+pub(crate) const MC_STATE_DELETE_ICON_SYS: u64 = 0x3a;
+
+/// State 0x3b: delete the directory at `+0xb9`.
+pub(crate) const MC_STATE_DELETE_DIR: u64 = 0x3b;
+
+/// States `SetState` only records (their work is done by the update). Every
+/// other state of 1..=0x4e it has no step for, and any state out of range,
+/// refreshes the card info unless a request is running.
+pub(crate) const MC_SET_STATE_RECORD_ONLY: [u64; 21] = [
+    0x2, 0x4, 0x6, 0x10, 0x12, 0x15, 0x19, 0x1b, 0x1f, 0x23, 0x34, 0x35, 0x3d, 0x40, 0x42, 0x44,
+    0x46, 0x48, 0x4a, 0x4c, 0x4e,
+];
+
+/// Where a state step continues: the shared exit blocks, in code order
+/// (each one falls through to the next one it names).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum SetStateExit {
+    /// 0x2c4e38: the request's result in v0; negative: state 1.
+    Check,
+    /// 0x2c4e44: state 1 (a0 = self).
+    Fail,
+    /// 0x2c5054: the save is invalid, state 0x10 (a0 = self).
+    Invalid,
+    /// 0x2c5064: the file is closed: forget its descriptor.
+    Closed,
+    /// 0x2c50ac: refresh the card info unless a request is running.
+    Refresh,
+    /// 0x2c50c0: restore s0, then the epilogue.
+    Done,
+    /// 0x2c50c4: s0 already restored.
+    Epilogue,
+}
+
+/// `self` (s2) field `off`.
+#[inline]
+pub(crate) fn set_state_field(c: &Cpu, off: u32) -> Addr {
+    Addr(r32(c, S2).wrapping_add(off))
+}
+
+/// The address of `self` field `off`, as a register value.
+#[inline]
+pub(crate) fn set_state_addr(c: &Cpu, off: u32) -> u64 {
+    sx(r32(c, S2).wrapping_add(off))
+}
+
+/// Keep the `sceMc*` result (v0) in the gp-relative result word.
+#[inline]
+pub(crate) fn set_state_keep_result(c: &mut Cpu) {
+    let v0 = c.g[V0][0];
+    Addr(r32(c, GP).wrapping_add(MCU_GP_RESULT)).sw(c, v0);
+}
+
+/// `cPS2MemCard_SetState(self, next)` returning to `ret`, then restore s0.
+pub(crate) fn set_state_go(c: &mut Cpu, next: u64, ret: u32) -> Result<SetStateExit, Unwound> {
+    c.g[A1][0] = next;
+    callee::MEM_CARD_SET_STATE.call(c, ret)?;
+    SET_STATE_FRAME.restore(c, S0, 0x90);
+    Ok(SetStateExit::Epilogue)
+}
+
+/// `void cPS2MemCard_SetState(cPS2MemCard* self, int state)` (0x2c48c0):
+/// enter `state` and start its first step: open, read, write, close or
+/// delete the files of a save (`sceMc*`, results kept in the gp result
+/// word; a failed request goes to state 1, a bad save to state 0x10), build
+/// the `icon.sys` header, start loading the icon files, scan the slots for
+/// a save (state 7), or refresh the card info. Re-entered at the slot scan's
+/// head after an event.
+pub fn cps2_mem_card_set_state(c: &mut Cpu) {
+    let resumed = match c.pc {
+        MC_SET_STATE_ENTRY => false,
+        MC_SET_STATE_SCAN_HEAD => true,
+        _ => return ee::s08::f_002c48c0__generated(c),
+    };
+    guest(c, |c| {
+        let exit = if resumed {
+            set_state_find_save_scan(c, true)?
+        } else {
+            set_state_enter(c)?
+        };
+        set_state_finish(c, exit)
+    })
+}
+
+/// The prologue, the state store and the dispatch on the state.
+pub(crate) fn set_state_enter(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 12;
+    let frame = Frame::open(c, SET_STATE_FRAME.size);
+    c.g[V1][0] = sx(r32(c, A1).wrapping_sub(1));
+    frame.save(c, S2, 0x70);
+    c.g[V0][0] = (c.g[V1][0] < 0x4e) as u64;
+    frame.save(c, S0, 0x90);
+    c.g[S2][0] = c.g[A0][0];
+    frame.save(c, S1, 0x80);
+    frame.save(c, S3, 0x60);
+    frame.save(c, S4, 0x50);
+    frame.save_ra(c, 0x40);
+    let in_table = c.g[V0][0] != 0;
+    let a1 = c.g[A1][0];
+    set_state_field(c, MCU_STATE).sw(c, a1);
+    if !in_table {
+        return Ok(SetStateExit::Refresh);
+    }
+    // The table word of the state (a0); the arms below are its targets.
+    c.cycles += 7;
+    c.g[V0][0] = sx(MCU_SET_STATE_TABLE);
+    c.g[V1][0] = sx((r32(c, V1) << 2).wrapping_add(MCU_SET_STATE_TABLE));
+    c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+    let state = r32(c, A1) as u64;
+    match state {
+        MC_STATE_FAILED => set_state_failed(c),
+        MC_STATE_GET_INFO_NOW => {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S2][0];
+            callee::C_PS2_MEM_CARD_DO_GET_INFO.call(c, 0x002c_4988)?;
+            SET_STATE_FRAME.restore(c, S0, 0x90);
+            Ok(SetStateExit::Epilogue)
+        }
+        MC_STATE_FIND_SAVE => set_state_find_save(c),
+        MC_STATE_OPEN_ICON_SYS => set_state_open_icon_sys(c),
+        MC_STATE_CLOSE_ICON_SYS => set_state_close_icon_sys(c),
+        MC_STATE_READ_ICON_SYS => set_state_read_icon_sys(c),
+        MC_STATE_GET_SAVE_DIR => set_state_get_save_dir(c),
+        s if MC_STATE_GET_ICON_DIR.contains(&s) => set_state_get_icon_dir(c),
+        MC_STATE_CLOSE_BAD_SAVE => set_state_close_bad_save(c),
+        MC_STATE_OPEN_FOR_WRITE => set_state_open_for_write(c),
+        MC_STATE_WRITE_SAVE_FILE => set_state_write_save_file(c),
+        MC_STATE_CLOSE_AFTER_WRITE => {
+            set_state_close_then(c, 0x002c_4cbc, MC_STATE_WRITE_DONE, 0x002c_4cdc)
+        }
+        MC_STATE_OPEN_FOR_READ => set_state_open_for_read(c),
+        MC_STATE_READ_SAVE_FILE => set_state_read_save_file(c),
+        MC_STATE_CLOSE_AFTER_READ => {
+            set_state_close_then(c, 0x002c_4d48, MC_STATE_READ_DONE, 0x002c_4d68)
+        }
+        MC_STATE_MAKE_DIR => set_state_make_dir(c),
+        MC_STATE_CREATE_ICON_SYS => set_state_create_icon_sys(c),
+        MC_STATE_WRITE_ICON_SYS => set_state_write_icon_sys(c),
+        MC_STATE_CLOSE_NEW_ICON_SYS => {
+            c.cycles += 4;
+            c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+            call_ptr(c, SCE_MC_CLOSE, 0x002c_4b08)?;
+            Ok(set_state_handle_done(c))
+        }
+        s if MC_STATE_LOAD_ICON.contains(&s) => set_state_load_icon(c),
+        s if MC_STATE_CREATE_ICON.contains(&s) => set_state_create_icon(c),
+        s if MC_STATE_WRITE_ICON.contains(&s) => {
+            c.cycles += 6;
+            c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+            c.g[A1][0] = set_state_field(c, MCU_ASYNC_A).lw(c);
+            c.g[A2][0] = set_state_field(c, MCU_ASYNC_B).lw(c);
+            call_ptr(c, callee::SCE_MC_WRITE, 0x002c_4c1c)?;
+            set_state_keep_result(c);
+            Ok(SetStateExit::Check)
+        }
+        s if MC_STATE_CLOSE_ICON.contains(&s) => set_state_close_icon(c),
+        MC_STATE_DELETE_FILE => {
+            c.cycles += 9;
+            c.g[V0][0] = set_state_field(c, MCU_PORT).lw(c);
+            c.g[V1][0] = MCU_PORT_INFO_SIZE as u64;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = set_state_addr(c, MCU_FILE);
+            c.mult(0, A0, V0, V1);
+            c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S2)));
+            Addr(r32(c, V0).wrapping_add(MCU_PORTS + MCU_PORT_INFO_STATUS)).sw(c, 0);
+            c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+            set_state_delete(c)
+        }
+        s if MC_STATE_DELETE_ICON.contains(&s) => {
+            c.g[V1][0] = set_state_field(c, MCU_STATE).lw(c);
+            set_state_icon_index(c, 4, MC_STATE_DELETE_ICON[1], MC_STATE_DELETE_ICON[2]);
+            c.cycles += 15;
+            set_state_icon_file(c);
+            c.g[S0][0] = set_state_addr(c, MCU_PATH);
+            c.g[A1][0] = sx(MCU_PATH_FMT);
+            c.g[A3][0] = Addr(r32(c, V1)).lw(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = set_state_addr(c, MCU_DIR);
+            call_ptr(c, MCU_SPRINTF, 0x002c_4de0)?;
+            c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            set_state_delete(c)
+        }
+        MC_STATE_DELETE_ICON_SYS => {
+            c.cycles += 12;
+            c.g[S0][0] = set_state_addr(c, MCU_PATH);
+            c.g[A1][0] = sx(MCU_PATH_FMT);
+            c.g[A3][0] = sx(MCU_PATH_EXT);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = set_state_addr(c, MCU_DIR);
+            call_ptr(c, MCU_SPRINTF, 0x002c_4e10)?;
+            c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            set_state_delete(c)
+        }
+        MC_STATE_DELETE_DIR => {
+            c.cycles += 3;
+            c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+            c.g[A1][0] = 0;
+            c.g[A2][0] = set_state_addr(c, MCU_DIR);
+            set_state_delete(c)
+        }
+        s if MC_SET_STATE_RECORD_ONLY.contains(&s) => Ok(SetStateExit::Done),
+        _ => Ok(SetStateExit::Refresh),
+    }
+}
+
+/// The shared exit blocks and the epilogue.
+pub(crate) fn set_state_finish(c: &mut Cpu, exit: SetStateExit) -> Flow {
+    let mut exit = exit;
+    if exit == SetStateExit::Check {
+        c.cycles += 2;
+        let ok = (c.g[V0][0] as i64) >= 0;
+        // Delay slot: runs on both arms.
+        SET_STATE_FRAME.restore(c, S0, 0x90);
+        exit = if ok {
+            SetStateExit::Epilogue
+        } else {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S2][0];
+            SetStateExit::Fail
+        };
+    }
+    if exit == SetStateExit::Fail {
+        c.cycles += 4;
+        exit = set_state_go(c, MC_STATE_FAILED, 0x002c_4e4c)?;
+    }
+    if exit == SetStateExit::Invalid {
+        c.cycles += 4;
+        exit = set_state_go(c, MC_STATE_SAVE_INVALID, 0x002c_505c)?;
+    }
+    if exit == SetStateExit::Closed {
+        c.cycles += 3;
+        c.g[V0][0] = u64::MAX;
+        set_state_field(c, MCU_RESULT).sw(c, u64::MAX);
+        exit = SetStateExit::Done;
+    }
+    if exit == SetStateExit::Refresh {
+        c.cycles += 3;
+        c.g[V0][0] = set_state_field(c, MCU_BUSY).lw(c);
+        let busy = c.g[V0][0] != 0;
+        // Delay slot: runs on both arms.
+        SET_STATE_FRAME.restore(c, S0, 0x90);
+        exit = if busy {
+            SetStateExit::Epilogue
+        } else {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S2][0];
+            callee::C_PS2_MEM_CARD_DO_GET_INFO.call(c, 0x002c_50c0)?;
+            SetStateExit::Done
+        };
+    }
+    if exit == SetStateExit::Done {
+        c.cycles += 1;
+        SET_STATE_FRAME.restore(c, S0, 0x90);
+    }
+    c.cycles += 7;
+    SET_STATE_FRAME.restore(c, S1, 0x80);
+    SET_STATE_FRAME.restore(c, S2, 0x70);
+    SET_STATE_FRAME.restore(c, S3, 0x60);
+    SET_STATE_FRAME.restore(c, S4, 0x50);
+    SET_STATE_FRAME.restore_ra(c, 0x40);
+    SET_STATE_FRAME.close(c);
+    Ok(())
+}
+
+/// The handle is no longer needed (v0 = the `sceMc*` result): forget it;
+/// a failure also goes to state 1.
+pub(crate) fn set_state_handle_done(c: &mut Cpu) -> SetStateExit {
+    let ok = (c.g[V0][0] as i64) >= 0;
+    set_state_keep_result(c);
+    if ok {
+        return SetStateExit::Closed;
+    }
+    c.cycles += 4;
+    c.g[V0][0] = u64::MAX;
+    c.g[A0][0] = c.g[S2][0];
+    set_state_field(c, MCU_RESULT).sw(c, u64::MAX);
+    SetStateExit::Fail
+}
+
+/// 0x2c4e2c: `sceMcDelete(a0, a1, a2)`, its result checked.
+pub(crate) fn set_state_delete(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 3;
+    call_ptr(c, callee::SCE_MC_DELETE, 0x002c_4e34)?;
+    set_state_keep_result(c);
+    Ok(SetStateExit::Check)
+}
+
+/// Which icon file a three-state step is on (v1 = the state, `cycles` the
+/// block's charge): 1 for `second`, 2 for `third`, else 0, in v1.
+pub(crate) fn set_state_icon_index(c: &mut Cpu, cycles: u64, second: u64, third: u64) {
+    c.cycles += cycles;
+    c.g[V0][0] = second;
+    let is_second = c.g[V1][0] == c.g[V0][0];
+    c.g[V0][0] = c.g[V1][0] ^ third;
+    if is_second {
+        c.cycles += 1;
+        c.g[V1][0] = 1;
+    } else {
+        c.cycles += 3;
+        c.g[V1][0] = if c.g[V0][0] != 0 { 0 } else { 2 };
+    }
+}
+
+/// v1 = the address of icon file name v1 (v0 = the name table).
+pub(crate) fn set_state_icon_file(c: &mut Cpu) {
+    c.g[V0][0] = sx(MC_ICON_FILES);
+    c.g[V1][0] = sx((r32(c, V1) << 2).wrapping_add(MC_ICON_FILES));
+}
+
+/// State 1: record the result in the port's status, free the async buffer,
+/// close the open file (state 2 when the close starts) and clear the slot,
+/// size and buffer.
+pub(crate) fn set_state_failed(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 9;
+    c.g[V0][0] = set_state_field(c, MCU_PORT).lw(c);
+    c.g[V1][0] = MCU_PORT_INFO_SIZE as u64;
+    c.g[A0][0] = Addr(r32(c, GP).wrapping_add(MCU_GP_RESULT)).lw(c);
+    c.mult(0, A1, V0, V1);
+    c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, S2)));
+    let result = c.g[A0][0];
+    Addr(r32(c, V0).wrapping_add(MCU_PORTS + MCU_PORT_INFO_STATUS)).sw(c, result);
+    c.g[A0][0] = set_state_field(c, MCU_ASYNC_A).lw(c);
+    if c.g[A0][0] != 0 {
+        c.cycles += 4;
+        call_ptr(c, callee::MEM_FREE, 0x002c_4938)?;
+        set_state_field(c, MCU_ASYNC_A).sw(c, 0);
+    }
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    c.cycles += 2;
+    let none_open = (c.g[A0][0] as i64) < 0;
+    c.g[V0][0] = u64::MAX;
+    if !none_open {
+        c.cycles += 4;
+        call_ptr(c, SCE_MC_CLOSE, 0x002c_4950)?;
+        let failed = (c.g[V0][0] as i64) < 0;
+        set_state_keep_result(c);
+        if !failed {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = MC_STATE_FAILED_CLOSING;
+            callee::MEM_CARD_SET_STATE.call(c, 0x002c_4964)?;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = u64::MAX;
+        set_state_field(c, MCU_RESULT).sw(c, u64::MAX);
+    }
+    c.cycles += 4;
+    set_state_field(c, MCU_SIZE).sw(c, 0);
+    let v0 = c.g[V0][0];
+    set_state_field(c, MCU_SLOT).sw(c, v0);
+    set_state_field(c, MCU_BUFFER).sw(c, 0);
+    Ok(SetStateExit::Done)
+}
+
+/// State 7: no slots: done. Else scan from slot 0.
+pub(crate) fn set_state_find_save(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = set_state_field(c, MCU_COUNT).lw(c);
+    let none = (c.g[V0][0] as i64) <= 0;
+    set_state_field(c, MCU_INDEX).sw(c, 0);
+    if none {
+        return Ok(SetStateExit::Done);
+    }
+    set_state_find_save_scan(c, false)
+}
+
+/// State 7's scan (head 0x2c4e60): ask the vtable whether slot `+0x28`
+/// holds a save; the first that does gets its `icon.sys` path and state 8.
+/// Entered at the head after an event (`resumed`), a due event at the back
+/// edge unwinds; on the first pass it is delivered and the scan goes on.
+pub(crate) fn set_state_find_save_scan(
+    c: &mut Cpu,
+    resumed: bool,
+) -> Result<SetStateExit, Unwound> {
+    loop {
+        c.cycles += 8;
+        c.g[V1][0] = set_state_field(c, 0).lw(c);
+        c.g[A1][0] = set_state_field(c, MCU_INDEX).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(MCU_VT_HAS_SLOT_NAME)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(MCU_VT_HAS_SLOT_NAME + 4)).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, S2).wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x002c_4e78)?;
+        if c.g[V0][0] != 0 {
+            c.g[A2][0] = set_state_field(c, MCU_INDEX).lw(c);
+            return set_state_open_found_save(c);
+        }
+        c.cycles += 6;
+        c.g[V0][0] = set_state_field(c, MCU_INDEX).lw(c);
+        c.g[V1][0] = set_state_field(c, MCU_COUNT).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+        c.g[V1][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        let more = c.g[V1][0] != 0;
+        let next = c.g[V0][0];
+        set_state_field(c, MCU_INDEX).sw(c, next);
+        if !more {
+            c.cycles += 2;
+            SET_STATE_FRAME.restore(c, S0, 0x90);
+            return Ok(SetStateExit::Epilogue);
+        }
+        if resumed {
+            if back_edge_unwinds(c, MC_SET_STATE_SCAN_HEAD) {
+                return Err(Unwound);
+            }
+        } else if event_due(c) {
+            deliver_event_here(c, MC_SET_STATE_SCAN_HEAD);
+        }
+    }
+}
+
+/// 0x2c5070: slot a2 holds a save: path `/<slot name>/icon.sys`, state 8.
+pub(crate) fn set_state_open_found_save(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 15;
+    c.g[V0][0] = 0x78;
+    c.g[A1][0] = sx(MCU_PATH_FMT);
+    c.g[A3][0] = sx(MCU_PATH_EXT);
+    c.mult(0, V1, A2, V0);
+    c.g[A0][0] = set_state_addr(c, MCU_PATH);
+    c.g[A2][0] = sx(r32(c, V1)
+        .wrapping_add(r32(c, S2))
+        .wrapping_add(MCU_ENTRIES + 0xc));
+    call_ptr(c, MCU_SPRINTF, 0x002c_5098)?;
+    c.g[A0][0] = c.g[S2][0];
+    set_state_go(c, MC_STATE_OPEN_ICON_SYS, 0x002c_50a4)
+}
+
+/// State 8: open the path at `+0x79` for reading; on failure the slot's
+/// save is marked invalid (state 0x10).
+pub(crate) fn set_state_open_icon_sys(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 7;
+    c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+    c.g[A1][0] = 0;
+    c.g[A2][0] = set_state_addr(c, MCU_PATH);
+    c.g[A3][0] = 1;
+    call_ptr(c, callee::SCE_MC_OPEN, 0x002c_4eb4)?;
+    let ok = (c.g[V0][0] as i64) >= 0;
+    set_state_keep_result(c);
+    if ok {
+        return Ok(SetStateExit::Closed);
+    }
+    c.cycles += 7;
+    c.g[A1][0] = set_state_field(c, MCU_INDEX).lw(c);
+    c.g[V0][0] = u64::MAX;
+    c.g[A0][0] = c.g[S2][0];
+    set_state_field(c, MCU_RESULT).sw(c, u64::MAX);
+    MCU_MARK_SAVE_INVALID.call(c, 0x002c_4ed0)?;
+    c.g[A0][0] = c.g[S2][0];
+    Ok(SetStateExit::Invalid)
+}
+
+/// State 0xa: read the header into the shared buffer; on failure the save
+/// is marked invalid and its file closed (state 0xf).
+pub(crate) fn set_state_read_icon_sys(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 7;
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    c.g[A1][0] = sx(MC_ICON_SYS);
+    c.g[A2][0] = MC_ICON_SYS_SIZE as u64;
+    call_ptr(c, callee::SCE_MC_READ, 0x002c_4eec)?;
+    let ok = (c.g[V0][0] as i64) >= 0;
+    set_state_keep_result(c);
+    if ok {
+        return Ok(SetStateExit::Done);
+    }
+    c.cycles += 8;
+    c.g[A1][0] = set_state_field(c, MCU_INDEX).lw(c);
+    c.g[A0][0] = c.g[S2][0];
+    MCU_MARK_SAVE_INVALID.call(c, 0x002c_4f00)?;
+    c.g[A0][0] = c.g[S2][0];
+    set_state_go(c, MC_STATE_CLOSE_BAD_SAVE, 0x002c_4f0c)
+}
+
+/// State 9: close the `icon.sys`; on failure the save is invalid.
+pub(crate) fn set_state_close_icon_sys(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 4;
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    call_ptr(c, SCE_MC_CLOSE, 0x002c_4f1c)?;
+    let ok = (c.g[V0][0] as i64) >= 0;
+    set_state_keep_result(c);
+    if ok {
+        return Ok(SetStateExit::Closed);
+    }
+    c.cycles += 2;
+    c.g[A0][0] = c.g[S2][0];
+    Ok(SetStateExit::Invalid)
+}
+
+/// State 0xb: `sceMcGetDir` of `/<slot name>/<slot name>` (built at
+/// `+0xf9`) into the entry buffer; on failure the save is invalid.
+pub(crate) fn set_state_get_save_dir(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 26;
+    c.g[A2][0] = set_state_field(c, MCU_INDEX).lw(c);
+    c.g[V0][0] = 0x78;
+    c.g[S1][0] = set_state_addr(c, MCU_FILE);
+    set_state_field(c, MCU_ACTIVE).sw(c, 0);
+    c.mult(0, V1, A2, V0);
+    c.g[A1][0] = sx(MCU_PATH_FMT);
+    c.g[A0][0] = c.g[S1][0];
+    c.g[S0][0] = set_state_addr(c, MCU_DIR_ENTRY);
+    c.g[A2][0] = sx(r32(c, V1)
+        .wrapping_add(r32(c, S2))
+        .wrapping_add(MCU_ENTRIES + 0xc));
+    c.g[A3][0] = c.g[A2][0];
+    call_ptr(c, MCU_SPRINTF, 0x002c_4f60)?;
+    set_state_get_dir(c, 0x002c_4f70, 0x002c_4f8c)
+}
+
+/// The entry buffer cleared, then `sceMcGetDir(port, 0, s1, 0, 1, s0)`;
+/// on failure the save is invalid.
+pub(crate) fn set_state_get_dir(
+    c: &mut Cpu,
+    fill_ret: u32,
+    ret: u32,
+) -> Result<SetStateExit, Unwound> {
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0x40;
+    call_ptr(c, MCU_MEM_FILL, fill_ret)?;
+    c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+    c.g[A2][0] = c.g[S1][0];
+    c.g[T1][0] = c.g[S0][0];
+    c.g[A1][0] = 0;
+    c.g[A3][0] = 0;
+    c.g[T0][0] = 1;
+    call_ptr(c, callee::SCE_MC_GET_DIR, ret)?;
+    let ok = (c.g[V0][0] as i64) >= 0;
+    set_state_keep_result(c);
+    if ok {
+        return Ok(SetStateExit::Done);
+    }
+    c.cycles += 2;
+    c.g[A0][0] = c.g[S2][0];
+    Ok(SetStateExit::Invalid)
+}
+
+/// States 0xc-0xe: `sceMcGetDir` of `/<slot name>/<icon file>` (built at
+/// `+0x79`) into the entry buffer.
+pub(crate) fn set_state_get_icon_dir(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.g[V1][0] = set_state_field(c, MCU_STATE).lw(c);
+    set_state_icon_index(c, 4, MC_STATE_GET_ICON_DIR[1], MC_STATE_GET_ICON_DIR[2]);
+    c.cycles += 29;
+    c.g[A2][0] = set_state_field(c, MCU_INDEX).lw(c);
+    c.g[A0][0] = 0x78;
+    c.g[V1][0] = sx(r32(c, V1) << 2);
+    c.mult(0, A1, A2, A0);
+    c.g[V0][0] = sx(MC_ICON_FILES);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(MC_ICON_FILES));
+    c.g[S1][0] = set_state_addr(c, MCU_PATH);
+    c.g[A3][0] = Addr(r32(c, V1)).lw(c);
+    c.g[A0][0] = c.g[S1][0];
+    c.g[S0][0] = set_state_addr(c, MCU_DIR_ENTRY);
+    c.g[A2][0] = sx(r32(c, A1)
+        .wrapping_add(r32(c, S2))
+        .wrapping_add(MCU_ENTRIES + 0xc));
+    c.g[A1][0] = sx(MCU_PATH_FMT);
+    call_ptr(c, MCU_SPRINTF, 0x002c_4ffc)?;
+    set_state_get_dir(c, 0x002c_500c, 0x002c_5028)
+}
+
+/// State 0xf: close the file whose header read failed; the save is invalid
+/// either way.
+pub(crate) fn set_state_close_bad_save(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 4;
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    call_ptr(c, SCE_MC_CLOSE, 0x002c_5040)?;
+    let ok = (c.g[V0][0] as i64) >= 0;
+    set_state_keep_result(c);
+    if ok {
+        return Ok(SetStateExit::Closed);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = u64::MAX;
+    c.g[A0][0] = c.g[S2][0];
+    set_state_field(c, MCU_RESULT).sw(c, u64::MAX);
+    Ok(SetStateExit::Invalid)
+}
+
+/// State 0x16: `sceMcOpen(port, 0, +0xf9, CREAT | WRONLY)`.
+pub(crate) fn set_state_open_for_write(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 7;
+    c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+    c.g[A1][0] = 0;
+    c.g[A2][0] = set_state_addr(c, MCU_FILE);
+    c.g[A3][0] = 0x203;
+    call_ptr(c, callee::SCE_MC_OPEN, 0x002c_4c70)?;
+    Ok(set_state_handle_done(c))
+}
+
+/// State 0x17: `sceMcWrite(fd, buffer, size)`; buffer and size are cleared.
+pub(crate) fn set_state_write_save_file(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 8;
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    c.g[A1][0] = set_state_field(c, MCU_BUFFER).lw(c);
+    c.g[A2][0] = set_state_field(c, MCU_SIZE).lw(c);
+    call_ptr(c, callee::SCE_MC_WRITE, 0x002c_4c98)?;
+    set_state_keep_result(c);
+    set_state_field(c, MCU_BUFFER).sw(c, 0);
+    set_state_field(c, MCU_SIZE).sw(c, 0);
+    Ok(SetStateExit::Check)
+}
+
+/// States 0x18 and 0x1e: close the open file; with none open, go straight
+/// to `next` (`ret`: that call's return address).
+pub(crate) fn set_state_close_then(
+    c: &mut Cpu,
+    close_ret: u32,
+    next: u64,
+    ret: u32,
+) -> Result<SetStateExit, Unwound> {
+    c.cycles += 3;
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    if (c.g[A0][0] as i64) < 0 {
+        c.g[A0][0] = c.g[S2][0];
+        c.cycles += 4;
+        return set_state_go(c, next, ret);
+    }
+    c.cycles += 4;
+    call_ptr(c, SCE_MC_CLOSE, close_ret)?;
+    Ok(set_state_handle_done(c))
+}
+
+/// State 0x1c: `sceMcOpen(port, 0, +0xf9, RDONLY)`; anything but 0 fails.
+pub(crate) fn set_state_open_for_read(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 10;
+    set_state_field(c, MCU_REQ_1E).sw(c, 0);
+    c.g[A1][0] = 0;
+    c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+    c.g[A2][0] = set_state_addr(c, MCU_FILE);
+    c.g[A3][0] = 1;
+    call_ptr(c, callee::SCE_MC_OPEN, 0x002c_4cfc)?;
+    c.g[V1][0] = u64::MAX;
+    set_state_keep_result(c);
+    let started = c.g[V0][0] == 0;
+    set_state_field(c, MCU_RESULT).sw(c, u64::MAX);
+    if started {
+        return Ok(SetStateExit::Done);
+    }
+    c.cycles += 2;
+    c.g[A0][0] = c.g[S2][0];
+    Ok(SetStateExit::Fail)
+}
+
+/// State 0x1d: `sceMcRead(fd, buffer, size)`; anything but 0 fails.
+pub(crate) fn set_state_read_save_file(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 6;
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    c.g[A1][0] = set_state_field(c, MCU_BUFFER).lw(c);
+    c.g[A2][0] = set_state_field(c, MCU_SIZE).lw(c);
+    call_ptr(c, callee::SCE_MC_READ, 0x002c_4d24)?;
+    let started = c.g[V0][0] == 0;
+    set_state_keep_result(c);
+    if started {
+        return Ok(SetStateExit::Done);
+    }
+    c.cycles += 2;
+    c.g[A0][0] = c.g[S2][0];
+    Ok(SetStateExit::Fail)
+}
+
+/// State 0x24: `sceMcMkdir(port, 0, +0xf9)`; the pending close request
+/// (`+0x48`) is dropped.
+pub(crate) fn set_state_make_dir(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 7;
+    set_state_field(c, MCU_REQ_18).sw(c, 0);
+    c.g[A1][0] = 0;
+    c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+    c.g[A2][0] = set_state_addr(c, MCU_FILE);
+    call_ptr(c, callee::SCE_MC_MKDIR, 0x002c_49a4)?;
+    set_state_keep_result(c);
+    Ok(SetStateExit::Check)
+}
+
+/// State 0x25: create `<+0xf9>/icon.sys` (path at `+0x79`).
+pub(crate) fn set_state_create_icon_sys(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 17;
+    c.g[S0][0] = set_state_addr(c, MCU_PATH);
+    c.g[A1][0] = sx(MC_DIR_FMT);
+    c.g[A3][0] = sx(MCU_PATH_EXT);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A2][0] = set_state_addr(c, MCU_FILE);
+    call_ptr(c, MCU_SPRINTF, 0x002c_49cc)?;
+    c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+    c.g[A2][0] = c.g[S0][0];
+    c.g[A1][0] = 0;
+    c.g[A3][0] = 0x203;
+    call_ptr(c, callee::SCE_MC_OPEN, 0x002c_49e0)?;
+    c.g[V1][0] = u64::MAX;
+    set_state_keep_result(c);
+    set_state_field(c, MCU_RESULT).sw(c, u64::MAX);
+    Ok(SetStateExit::Check)
+}
+
+/// State 0x26: fill in the `icon.sys` header (magic, the title in SJIS
+/// with its line break, transparency, colours and lights, the three icon
+/// file names) and write it to the open file.
+pub(crate) fn set_state_write_icon_sys(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 22;
+    c.g[S0][0] = 0x53_0000;
+    c.g[A1][0] = 0;
+    c.g[S3][0] = sx(MC_ICON_SYS);
+    c.g[A2][0] = MC_ICON_SYS_SIZE as u64;
+    c.g[A0][0] = c.g[S3][0];
+    c.g[S1][0] = set_state_addr(c, MCU_NAME);
+    call_ptr(c, MCU_MEM_FILL, 0x002c_4a0c)?;
+    c.g[S4][0] = c.g[S0][0];
+    c.g[V0][0] = 0x4a_0000;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[V1][0] = sx(MC_ICON_MAGIC);
+    c.g[T1][0] = sx(r32(c, S0).wrapping_add(0x76f8));
+    c.g[A3][0] = Addr(r32(c, V1)).lw(c);
+    c.g[T0][0] = Addr(r32(c, V1).wrapping_add(4)).lb(c);
+    let (magic, nul) = (c.g[A3][0], c.g[T0][0]);
+    Addr(r32(c, T1)).sw(c, magic);
+    Addr(r32(c, T1).wrapping_add(4)).sb(c, nul);
+    // The title, at +0xc0.
+    c.g[A1][0] = sx(r32(c, S3).wrapping_add(0xc0));
+    c.g[A2][0] = c.g[S1][0];
+    callee::MEM_CARD_ASCII_TO_SJIS_STRING.call(c, 0x002c_4a3c)?;
+    c.g[V0][0] = set_state_field(c, MCU_TITLE_BREAK).lw(c);
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 2;
+        c.g[V0][0] = set_state_field(c, MCU_TITLE_BREAK).lhu(c);
+    } else {
+        // After the whole title: two SJIS bytes per character.
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, MCU_STRLEN, 0x002c_4a58)?;
+        c.g[V0][0] = sx(r32(c, V0) << 1);
+    }
+    c.cycles += 41;
+    let line_break = c.g[V0][0];
+    Addr(r32(c, S3).wrapping_add(6)).sh(c, line_break);
+    c.g[S1][0] = sx(r32(c, S4).wrapping_add(0x76f8));
+    c.g[V0][0] = 0x60;
+    Addr(r32(c, S1).wrapping_add(0xc)).sw(c, 0x60);
+    for (dst, src, len, ret) in [
+        (0x10, MC_ICON_BG, 0x40, 0x002c_4a80),
+        (0x50, MC_ICON_LIGHT_DIR, 0x30, 0x002c_4a94),
+        (0x80, MC_ICON_LIGHT_COLOR, 0x30, 0x002c_4aa8),
+        (0xb0, MC_ICON_AMBIENT, 0x10, 0x002c_4abc),
+    ] {
+        c.g[A1][0] = sx(src);
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(dst));
+        c.g[A2][0] = len;
+        call_ptr(c, callee::EA_MEM_COPY, ret)?;
+    }
+    // The view, copy and delete icon file names (+0x104, +0x144, +0x184).
+    c.g[S0][0] = sx(MC_ICON_FILES);
+    for (k, ret) in [0x002c_4ad0u32, 0x002c_4adc, 0x002c_4ae8]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(0x104 + 0x40 * k));
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(4 * k)).lw(c);
+        call_ptr(c, MCU_STRCPY, ret)?;
+    }
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = MC_ICON_SYS_SIZE as u64;
+    call_ptr(c, callee::SCE_MC_WRITE, 0x002c_4af8)?;
+    set_state_keep_result(c);
+    Ok(SetStateExit::Check)
+}
+
+/// States 0x28, 0x2c, 0x30: drop the previous icon, then start loading
+/// `<+0x14c0>/<icon file>` (path on the stack; the handle to `+0x38`).
+pub(crate) fn set_state_load_icon(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 3;
+    c.g[A0][0] = set_state_field(c, MCU_ASYNC_A).lw(c);
+    if c.g[A0][0] != 0 {
+        c.cycles += 4;
+        call_ptr(c, callee::MEM_FREE, 0x002c_4b34)?;
+        set_state_field(c, MCU_ASYNC_A).sw(c, 0);
+    }
+    c.g[V1][0] = set_state_field(c, MCU_STATE).lw(c);
+    set_state_icon_index(c, 3, MC_STATE_LOAD_ICON[1], MC_STATE_LOAD_ICON[2]);
+    c.cycles += 15;
+    set_state_icon_file(c);
+    c.g[A0][0] = c.g[SP][0];
+    c.g[A3][0] = Addr(r32(c, V1)).lw(c);
+    c.g[A1][0] = sx(MC_DIR_FMT);
+    c.g[A2][0] = set_state_addr(c, MCU_ICON_DIR);
+    call_ptr(c, MCU_SPRINTF, 0x002c_4b80)?;
+    c.g[A0][0] = c.g[SP][0];
+    c.g[A1][0] = 0x100;
+    call_ptr(c, callee::ASYNC_FILE_LOAD, 0x002c_4b8c)?;
+    let handle = c.g[V0][0];
+    set_state_field(c, MCU_HANDLE).sw(c, handle);
+    Ok(SetStateExit::Done)
+}
+
+/// States 0x29, 0x2d, 0x31: create `/<+0xb9>/<icon file>` (path at `+0x79`).
+pub(crate) fn set_state_create_icon(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.g[V1][0] = set_state_field(c, MCU_STATE).lw(c);
+    set_state_icon_index(c, 4, MC_STATE_CREATE_ICON[1], MC_STATE_CREATE_ICON[2]);
+    c.cycles += 18;
+    set_state_icon_file(c);
+    c.g[S0][0] = set_state_addr(c, MCU_PATH);
+    c.g[A3][0] = Addr(r32(c, V1)).lw(c);
+    c.g[A1][0] = sx(MCU_PATH_FMT);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A2][0] = set_state_addr(c, MCU_DIR);
+    call_ptr(c, MCU_SPRINTF, 0x002c_4be0)?;
+    c.g[A0][0] = set_state_field(c, MCU_PORT).lw(c);
+    c.g[A2][0] = c.g[S0][0];
+    c.g[A1][0] = 0;
+    c.g[A3][0] = 0x203;
+    call_ptr(c, callee::SCE_MC_OPEN, 0x002c_4bf4)?;
+    Ok(set_state_handle_done(c))
+}
+
+/// States 0x2b, 0x2f, 0x33: free the loaded icon, close the icon file.
+pub(crate) fn set_state_close_icon(c: &mut Cpu) -> Result<SetStateExit, Unwound> {
+    c.cycles += 3;
+    c.g[A0][0] = set_state_field(c, MCU_ASYNC_A).lw(c);
+    if c.g[A0][0] != 0 {
+        c.cycles += 3;
+        call_ptr(c, callee::MEM_FREE, 0x002c_4c38)?;
+        set_state_field(c, MCU_ASYNC_A).sw(c, 0);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = set_state_field(c, MCU_RESULT).lw(c);
+    call_ptr(c, SCE_MC_CLOSE, 0x002c_4c44)?;
+    Ok(set_state_handle_done(c))
+}
+
+// ---------------------------------------------------------------------------
+// cPS2MemCard layout used here (the fields the per-frame update names are
+// the `MCU_*` constants above).
+
+/// Size of one save-slot entry (`MCU_ENTRIES`, six of them).
+pub(crate) const MCU_ENTRY_SIZE: u32 = 0x78;
+
+/// Number of save slots.
+pub(crate) const MCU_ENTRY_COUNT: u64 = 6;
+
+/// Save-slot entry word set by `cPS2MemCard_MarkSlotUsed`.
+pub(crate) const MCU_ENTRY_USED: u32 = 0x0;
+
+/// Save-slot entry word set by `cPS2MemCard_MarkSaveInvalid`.
+pub(crate) const MCU_ENTRY_INVALID: u32 = 0x4;
+
+/// Save-slot entry word set by `cPS2MemCard_MarkSlotsWithoutSpace`.
+pub(crate) const MCU_ENTRY_NO_SPACE: u32 = 0x8;
+
+/// Save-slot entry: the save's directory name (ASCII).
+pub(crate) const MCU_ENTRY_NAME: u32 = 0xc;
+
+/// Save-slot entry: the ASCII text the status string shows for a saved slot
+/// (inside the title at +0x4c).
+pub(crate) const MCU_ENTRY_TITLE: u32 = 0x52;
+
+/// Save-slot entry: the save's timestamp, laid out as `sceMcStDateTime`
+/// (bytes: seconds, minutes, hours, day, month; then the year as a half).
+pub(crate) const MCU_ENTRY_SEC: u32 = 0x6f;
+
+pub(crate) const MCU_ENTRY_MIN: u32 = 0x70;
+
+pub(crate) const MCU_ENTRY_HOUR: u32 = 0x71;
+
+pub(crate) const MCU_ENTRY_DAY: u32 = 0x72;
+
+pub(crate) const MCU_ENTRY_MONTH: u32 = 0x73;
+
+pub(crate) const MCU_ENTRY_YEAR: u32 = 0x74;
+
+/// Size of one per-port record (`MCU_PORTS`, two of them).
+pub(crate) const MCU_PORT_INFO_SIZE: u32 = 0x14;
+
+/// Per-port record: the card's status word.
+pub(crate) const MCU_PORT_INFO_STATUS: u32 = 0x8;
+
+/// Per-port record: the card's formatted flag.
+pub(crate) const MCU_PORT_INFO_FORMATTED: u32 = 0xc;
+
+/// The port status word of an unformatted card.
+pub(crate) const MC_STATUS_NO_FORMAT: u32 = 0xffff_fffe;
+
+/// `cPS2MemCard`: the name `RequestListDir` copies (0x40 bytes).
+pub(crate) const MCU_LIST_NAME: u32 = 0x139;
+
+/// `cPS2MemCard`: the directory listing table (0x1000 bytes of 0x40-byte
+/// entries; the names sit at +0x20, `MCU_DIRBUF`).
+pub(crate) const MCU_DIR_TABLE: u32 = 0x4c0;
+
+/// `cPS2MemCard` vtable slots (`{delta, fn}` pairs; the base class's method in
+/// each slot, read from its vtable at 0x486f78).
+///
+/// 0x180: `cPS2MemCard_IsPortNotPS2Card(port)`.
+pub(crate) const MCU_VT_IS_PORT_NOT_PS2_CARD: u32 = 0x180;
+
+/// 0x190: `cPS2MemCard_v50(port)` (returns 0).
+pub(crate) const MCU_VT_V50: u32 = 0x190;
+
+/// 0x1a0: `cPS2MemCard_v52(port)`.
+pub(crate) const MCU_VT_V52: u32 = 0x1a0;
+
+/// 0x1a8: `cPS2MemCard_v53()`, `v52` of the current port.
+pub(crate) const MCU_VT_V53: u32 = 0x1a8;
+
+/// 0x1b8: `cPS2MemCard_v55()`, `IsPortFormatted` of the current port.
+pub(crate) const MCU_VT_V55: u32 = 0x1b8;
+
+/// 0x1c0: `cPS2MemCard_IsPortFormatted(port)`.
+pub(crate) const MCU_VT_IS_PORT_FORMATTED: u32 = 0x1c0;
+
+/// The game object (`gp - 0x848`) and its string table at +0x8c, whose
+/// vtable slot 0x20 returns the UTF-16 string for a key hash.
+pub(crate) const MC_GAME_GP_OFF: u32 = 0x848;
+
+pub(crate) const MC_GAME_STRINGS: u32 = 0x8c;
+
+pub(crate) const MC_STRINGS_FIND: u32 = 0x20;
+
+/// String-table keys of the card status texts: "kT_MEMFreePS2".
+pub(crate) const MC_KEY_FREE: u32 = 0x0048_61f8;
+
+/// "kT_MEMEmpty".
+pub(crate) const MC_KEY_EMPTY: u32 = 0x0048_6490;
+
+/// "kT_MEMUnavailable".
+pub(crate) const MC_KEY_UNAVAILABLE: u32 = 0x0048_64a0;
+
+/// "kT_MEMFileCorruptPS2".
+pub(crate) const MC_KEY_FILE_CORRUPT: u32 = 0x0048_64b8;
+
+/// "kT_MEMNoFreeSpace".
+pub(crate) const MC_KEY_NO_FREE_SPACE: u32 = 0x0048_64d0;
+
+/// The ASCII text (" ") of a port with no free-space figure.
+pub(crate) const MC_BLANK_TEXT: u32 = 0x004a_3968;
+
+/// `this->vt[slot](this + delta, a1, ...)` with `this` in register `this_reg`
+/// (`v1` = the vtable, `a0` = the adjusted `this`, `v0` = the method; the
+/// caller sets `a1`), returning to `ret`.
+pub(crate) fn mem_card_vcall(c: &mut Cpu, this_reg: usize, slot: u32, ret: u32) -> Flow {
+    let this = c.g[this_reg][0];
+    c.g[V1][0] = Addr(this as u32).lw(c);
+    let vt = c.g[V1][0];
+    let m = VSlot::read(c, vt, slot);
+    c.g[A0][0] = m.this(this);
+    c.g[V0][0] = m.func;
+    call_ptr(c, m.func as u32, ret)
+}
+
+/// The game object pointer at `gp - 0x848`.
+pub(crate) fn mem_card_game(c: &mut Cpu) -> u64 {
+    Addr(r32(c, GP).wrapping_sub(MC_GAME_GP_OFF)).lw(c)
+}
+
+/// Look up the localized string for the key in `a0` in the string table in
+/// `s0`: `s1` = its vtable, `s0` += the slot's delta, `StrHash(key)` (returns
+/// to `hashed`), then the table's find method (returns to `found`) with the
+/// hash. `v0` = the UTF-16 string.
+pub(crate) fn mem_card_localize(c: &mut Cpu, hashed: u32, found: u32) -> Flow {
+    c.g[S1][0] = Addr(r32(c, S0)).off(4).lw(c);
+    c.g[V0][0] = Addr(r32(c, S1)).off(MC_STRINGS_FIND).lh(c);
+    c.g[S0][0] = addu(c.g[S0][0], c.g[V0][0]);
+    call_ptr(c, callee::STR_HASH, hashed)?;
+    c.g[V1][0] = Addr(r32(c, S1)).off(MC_STRINGS_FIND + 4).lw(c);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[V0][0];
+    let find = r32(c, V1);
+    call_ptr(c, find, found)
+}
+
+// ---------------------------------------------------------------------------
+// cPS2MemCard_v17 (0x2c64f8)
+
+/// Event check head of `cPS2MemCard_v17`'s slot scan.
+pub(crate) const NEWEST_SAVE_HEAD: u32 = 0x002c_6568;
+
+/// "No slot" (-1) in `cPS2MemCard_v17`.
+pub(crate) const NEWEST_SAVE_NONE: u64 = u64::MAX;
+
+/// How one slot of `cPS2MemCard_v17`'s scan ends: the index (`s2`) advances
+/// in the branch delay slot, or in the 1-cycle join block at 0x2c666c.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum NewestSaveStep {
+    Next,
+    Join,
+}
+
+/// `int cPS2MemCard_v17(cPS2MemCard* self)` (0x2c64f8): the save slot with the
+/// latest timestamp among the slots whose three flag words are clear and that
+/// have a name (`HasSlotName`), or -1 (also when the current port's card is
+/// not formatted, `v55`). Dates compare by year, month, day, then
+/// `hours * 3600 + minutes * 60`, both sides adding the best slot's seconds.
+pub fn c_ps2_mem_card_v17(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S3, 0x60);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x90);
+        c.g[S3][0] = NEWEST_SAVE_NONE;
+        frame.save(c, S2, 0x70);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        mem_card_vcall(c, S1, MCU_VT_V55, 0x002c_6540)?;
+        let formatted = c.g[V0][0] != 0;
+        c.g[S2][0] = 0;
+        if !formatted {
+            c.cycles += 2;
+            c.g[V0][0] = NEWEST_SAVE_NONE;
+        } else {
+            // fp = slot size, s7/s6 = seconds per hour/minute, s0 = self +
+            // i * 0x78, s4 = slot i's entry, s5 = i * 0x78, s2 = i, s3 = best.
+            c.cycles += 6;
+            c.g[FP][0] = MCU_ENTRY_SIZE as u64;
+            c.g[S7][0] = 3600;
+            c.g[S6][0] = 60;
+            c.g[S0][0] = c.g[S1][0];
+            c.g[S4][0] = sx(r32(c, S1).wrapping_add(MCU_ENTRIES));
+            c.g[S5][0] = 0;
+            loop {
+                if newest_save_visit(c)? == NewestSaveStep::Join {
+                    c.cycles += 1;
+                }
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                c.cycles += 5;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(MCU_ENTRY_SIZE));
+                c.g[S4][0] = sx(r32(c, S4).wrapping_add(MCU_ENTRY_SIZE));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < MCU_ENTRY_COUNT as i64) as u64;
+                c.g[S5][0] = sx(r32(c, S5).wrapping_add(MCU_ENTRY_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, NEWEST_SAVE_HEAD);
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S3][0];
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Slot `s2` of `cPS2MemCard_v17`'s scan: skip it when a flag word is set or
+/// it has no name; else it becomes the best slot (`s3`) if it is the first
+/// candidate or later than the best one.
+pub(crate) fn newest_save_visit(c: &mut Cpu) -> Result<NewestSaveStep, Unwound> {
+    use NewestSaveStep::{Join, Next};
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, S4)).off(MCU_ENTRY_USED).lw(c);
+    if c.g[V0][0] != 0 {
+        return Ok(Next);
+    }
+    c.cycles += 4;
+    c.g[V0][0] = sx(r32(c, S1).wrapping_add(r32(c, S5)));
+    c.g[V1][0] = Addr(r32(c, V0)).off(MCU_ENTRIES + MCU_ENTRY_INVALID).lw(c);
+    if c.g[V1][0] != 0 {
+        return Ok(Next);
+    }
+    c.cycles += 8;
+    c.g[A1][0] = c.g[S2][0];
+    mem_card_vcall(c, S1, MCU_VT_HAS_SLOT_NAME, 0x002c_659c)?;
+    let named = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(r32(c, S1).wrapping_add(r32(c, S5)));
+    if !named {
+        return Ok(Join);
+    }
+    c.cycles += 3;
+    c.g[V1][0] = Addr(r32(c, V0)).off(MCU_ENTRIES + MCU_ENTRY_NO_SPACE).lw(c);
+    if c.g[V1][0] != 0 {
+        return Ok(Next);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = NEWEST_SAVE_NONE;
+    let first = c.g[S3][0] == c.g[V0][0];
+    c.mult(0, V0, S3, FP); // v0 = best * slot size
+    if first {
+        c.cycles += 1;
+        c.g[S3][0] = c.g[S2][0];
+        return Ok(Join);
+    }
+    c.cycles += 22;
+    newest_save_compare(c)
+}
+
+/// `cPS2MemCard_v17`: compare slot `s2`'s timestamp (entry at `s0`) with the
+/// best slot's (`v0` = its offset) and take the later one.
+///
+/// Registers as the original leaves them: `t2`/`t0` the years, `a0`/`t1` the
+/// months, `t4`/`t3` the days, `a2`/`v1` the times (candidate/best), `a3` the
+/// year test, `a1` the best slot's seconds.
+pub(crate) fn newest_save_compare(c: &mut Cpu) -> Result<NewestSaveStep, Unwound> {
+    use NewestSaveStep::{Join, Next};
+    let cand = r32(c, S0).wrapping_add(MCU_ENTRIES);
+    let best = r32(c, V0)
+        .wrapping_add(r32(c, S1))
+        .wrapping_add(MCU_ENTRIES);
+    c.g[A2][0] = Addr(cand).off(MCU_ENTRY_HOUR).lbu(c);
+    c.g[A1][0] = Addr(cand).off(MCU_ENTRY_MIN).lbu(c);
+    c.mult(0, A2, A2, S7); // hours * 3600
+    c.g[T2][0] = Addr(cand).off(MCU_ENTRY_YEAR).lhu(c);
+    c.mult(0, A1, A1, S6); // minutes * 60
+    c.g[T4][0] = Addr(cand).off(MCU_ENTRY_DAY).lbu(c);
+    c.g[V0][0] = Addr(best).off(MCU_ENTRY_HOUR).lbu(c);
+    c.g[V1][0] = Addr(best).off(MCU_ENTRY_MIN).lbu(c);
+    c.mult(0, V0, V0, S7);
+    c.g[A2][0] = addu(c.g[A2][0], c.g[A1][0]);
+    c.mult(0, V1, V1, S6);
+    c.g[A1][0] = Addr(best).off(MCU_ENTRY_SEC).lbu(c);
+    c.g[T0][0] = Addr(best).off(MCU_ENTRY_YEAR).lhu(c);
+    c.g[T3][0] = Addr(best).off(MCU_ENTRY_DAY).lbu(c);
+    c.g[A2][0] = addu(c.g[A2][0], c.g[A1][0]);
+    c.g[T1][0] = Addr(best).off(MCU_ENTRY_MONTH).lbu(c);
+    c.g[A3][0] = (c.g[T2][0] < c.g[T0][0]) as u64;
+    c.g[V0][0] = addu(c.g[V0][0], c.g[V1][0]);
+    c.g[A0][0] = Addr(cand).off(MCU_ENTRY_MONTH).lbu(c);
+    c.g[V1][0] = addu(c.g[V0][0], c.g[A1][0]);
+    // `rs < rt` into v0, 3 cycles per test after the first.
+    let less = |c: &mut Cpu, rs: usize, rt: usize| {
+        c.cycles += 3;
+        c.g[V0][0] = (c.g[rs][0] < c.g[rt][0]) as u64;
+        c.g[V0][0] != 0
+    };
+    // The candidate becomes the best slot.
+    let take = |c: &mut Cpu| -> Result<NewestSaveStep, Unwound> {
+        c.g[S3][0] = c.g[S2][0];
+        Ok(Join)
+    };
+    if c.g[A3][0] != 0 {
+        return Ok(Join); // older year
+    }
+    if less(c, T0, T2) {
+        return take(c); // newer year
+    }
+    if less(c, A0, T1) {
+        return Ok(Next); // older month
+    }
+    if less(c, T1, A0) {
+        return take(c); // newer month
+    }
+    if less(c, T4, T3) {
+        return Ok(Next); // older day
+    }
+    if less(c, T3, T4) {
+        return take(c); // newer day
+    }
+    if less(c, A2, V1) {
+        return Ok(Next); // earlier time
+    }
+    if less(c, V1, A2) {
+        return take(c); // later time
+    }
+    Ok(Join) // the same time
+}
+
+// ---------------------------------------------------------------------------
+// cPS2MemCard_GetStatusString (0x2c6128)
+
+/// `cPS2MemCard_GetStatusString`'s stack buffer: 64 UTF-16 units at `sp`;
+/// the unit at +0x40 (the 33rd) is cleared to cut the text to 32 units.
+pub(crate) const STATUS_STRING_CUT: u32 = 0x40;
+
+/// `void cPS2MemCard_GetStatusString(cPS2MemCard* self, int slot, u16* dst)`
+/// (0x2c6128): the status text of save slot `slot` into `dst`, at most 32
+/// UTF-16 units: "kT_MEMEmpty" when the current port's `v53` is false or the
+/// slot has no name, "kT_MEMUnavailable" when the card is not formatted
+/// (`v55`), "kT_MEMFileCorruptPS2" when the slot's used or invalid word is
+/// set, "kT_MEMNoFreeSpace" for its no-space word (all through the game's
+/// string table), else the slot's own text (entry +0x52, ASCII).
+pub fn c_ps2_mem_card_get_status_string(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S2, 0xa0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S3, 0x90);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S1, 0xb0);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_ra(c, 0x80);
+        mem_card_vcall(c, S0, MCU_VT_V53, 0x002c_6160)?;
+        // The string-table key of the message, or None for the slot's text
+        // (`a1` = the slot's entry offset then). `v0` = the game object.
+        let key = 'key: {
+            let card_ok = c.g[V0][0] != 0;
+            c.g[V0][0] = mem_card_game(c);
+            if !card_ok {
+                c.cycles += 2;
+                break 'key Some(MC_KEY_EMPTY);
+            }
+            c.cycles += 7;
+            mem_card_vcall(c, S0, MCU_VT_V55, 0x002c_617c)?;
+            let formatted = c.g[V0][0] != 0;
+            c.g[V0][0] = MCU_ENTRY_SIZE as u64;
+            if !formatted {
+                c.cycles += 4;
+                c.g[V0][0] = mem_card_game(c);
+                break 'key Some(MC_KEY_UNAVAILABLE);
+            }
+            c.cycles += 5;
+            c.mult(0, S1, S2, V0); // s1 = slot * 0x78
+            c.g[V1][0] = sx(r32(c, S0).wrapping_add(r32(c, S1)));
+            c.g[V0][0] = Addr(r32(c, V1)).off(MCU_ENTRIES + MCU_ENTRY_USED).lw(c);
+            let used = c.g[V0][0] != 0;
+            c.g[V0][0] = mem_card_game(c);
+            if !used {
+                c.cycles += 4;
+                c.g[V0][0] = c.g[V1][0];
+                c.g[V1][0] = Addr(r32(c, V0)).off(MCU_ENTRIES + MCU_ENTRY_INVALID).lw(c);
+                let invalid = c.g[V1][0] != 0;
+                c.g[V0][0] = mem_card_game(c);
+                if !invalid {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, S1)));
+                    c.g[V1][0] = Addr(r32(c, V0)).off(MCU_ENTRIES + MCU_ENTRY_NO_SPACE).lw(c);
+                    let full = c.g[V1][0] != 0;
+                    c.g[V0][0] = mem_card_game(c);
+                    if full {
+                        c.cycles += 3;
+                        break 'key Some(MC_KEY_NO_FREE_SPACE);
+                    }
+                    c.cycles += 8;
+                    c.g[A1][0] = c.g[S2][0];
+                    mem_card_vcall(c, S0, MCU_VT_HAS_SLOT_NAME, 0x002c_61f8)?;
+                    let named = c.g[V0][0] != 0;
+                    c.g[A1][0] = sx(r32(c, S1).wrapping_add(r32(c, S0)));
+                    if named {
+                        break 'key None;
+                    }
+                    // 1 cycle here, then the 2-cycle "empty" block.
+                    c.cycles += 1 + 2;
+                    c.g[V0][0] = mem_card_game(c);
+                    break 'key Some(MC_KEY_EMPTY);
+                }
+            }
+            c.cycles += 3;
+            Some(MC_KEY_FILE_CORRUPT)
+        };
+        match key {
+            Some(key) => {
+                c.g[A0][0] = sx(key);
+                c.cycles += 14;
+                c.g[S0][0] = Addr(r32(c, V0)).off(MC_GAME_STRINGS).lw(c);
+                mem_card_localize(c, 0x002c_6220, 0x002c_6230)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[SP][0];
+                callee::USTR_COPY.call(c, 0x002c_623c)?;
+            }
+            None => {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(MCU_ENTRIES + MCU_ENTRY_TITLE));
+                callee::USTR_FROM_ASCII_2.call(c, 0x002c_6250)?;
+            }
+        }
+        c.g[A0][0] = c.g[S3][0];
+        c.cycles += 10;
+        Addr(sp(c)).off(STATUS_STRING_CUT).sh(c, 0);
+        c.g[A1][0] = c.g[SP][0];
+        callee::USTR_COPY.call(c, 0x002c_6260)?;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cPS2MemCard_Init (0x2c4050)
+
+/// Event check head of `cPS2MemCard_Init`'s port-record loop.
+pub(crate) const MC_INIT_PORTS_HEAD: u32 = 0x002c_4128;
+
+/// `void cPS2MemCard_Init(cPS2MemCard* self)` (0x2c4050): reset the card
+/// object: state, ports, request words and the `sceMc` result globals to 0,
+/// the handle, result and slot to -1, the slot count to 6, then clear the
+/// name and path buffers, both port records, the directory entry and table,
+/// the save slots and the cached name.
+pub fn c_ps2_mem_card_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 54;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x1c;
+        frame.save(c, S0, 0x10);
+        c.g[V1][0] = u64::MAX;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let card = r32(c, S0);
+        let gp = r32(c, GP);
+        let (word_8, none) = (c.g[V0][0], c.g[V1][0]);
+        let zero = |c: &mut Cpu, at: u32| Addr(at).sw(c, 0);
+        Addr(card).off(MCU_TITLE_BREAK).sw(c, word_8);
+        zero(c, card.wrapping_add(MCU_STATE));
+        zero(c, card.wrapping_add(MCU_PORT));
+        zero(c, card.wrapping_add(MCU_PORT2));
+        zero(c, card.wrapping_add(MCU_BUSY));
+        zero(c, card.wrapping_add(0x4c)); // unknown word +0x4c
+        zero(c, gp.wrapping_add(MCU_GP_TYPE));
+        zero(c, gp.wrapping_add(MCU_GP_FREE));
+        zero(c, gp.wrapping_add(MCU_GP_RESULT));
+        Addr(card).off(MCU_HANDLE).sw(c, none);
+        c.g[V0][0] = MCU_ENTRY_COUNT;
+        Addr(card).off(MCU_COUNT).sw(c, MCU_ENTRY_COUNT);
+        Addr(card).off(MCU_RESULT).sw(c, none);
+        Addr(card).off(MCU_SLOT).sw(c, none);
+        for field in [
+            MCU_DIR_COUNT,
+            MCU_LIST_RESULT,
+            MCU_SIZE,
+            MCU_EXPECT,
+            0x2c, // the read/write buffer
+            MCU_ASYNC_A,
+            MCU_ASYNC_B,
+            MCU_REQ_1E,
+            MCU_REQ_18,
+        ] {
+            zero(c, card.wrapping_add(field));
+        }
+        zero(c, gp.wrapping_add(MCU_GP_FORMAT));
+        zero(c, card.wrapping_add(MCU_INDEX));
+        zero(c, card.wrapping_add(0x14e0)); // the open mode
+        zero(c, card.wrapping_add(0x14e8)); // the seek origin
+        zero(c, card.wrapping_add(0x14e4)); // the seek offset
+        zero(c, card.wrapping_add(MCU_ACTIVE));
+        for (field, ret) in [
+            (MCU_DIR, 0x002c_40ec),
+            (MCU_FILE, 0x002c_40fc),
+            (MCU_PATH, 0x002c_410c),
+            (MCU_LIST_NAME, 0x002c_411c),
+        ] {
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(field));
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0x40;
+            call_ptr(c, MCU_MEM_FILL, ret)?;
+        }
+        // Both port records (five words each); v0 walks the last word.
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(MCU_PORTS + 0x10));
+        c.g[V1][0] = 1;
+        loop {
+            c.cycles += 8;
+            let record = r32(c, V0).wrapping_sub(0x10);
+            for word in 0..5 {
+                zero(c, record.wrapping_add(4 * word));
+            }
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            let more = (c.g[V1][0] as i64) >= 0;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(MCU_PORT_INFO_SIZE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, MC_INIT_PORTS_HEAD);
+            }
+        }
+        c.cycles += 20;
+        for (field, len, ret) in [
+            (MCU_DIR_ENTRY, 0x40, 0x002c_4158),
+            (
+                MCU_ENTRIES,
+                MCU_ENTRY_SIZE * MCU_ENTRY_COUNT as u32,
+                0x002c_4168,
+            ),
+            (MCU_DIR_TABLE, 0x1000, 0x002c_4178),
+            (MCU_ICON_DIR, 0x20, 0x002c_4188),
+        ] {
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(field));
+            c.g[A1][0] = 0;
+            c.g[A2][0] = len as u64;
+            call_ptr(c, MCU_MEM_FILL, ret)?;
+        }
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cPS2MemCard_GetFreeSpaceString (0x2c53e0)
+
+/// `void cPS2MemCard_GetFreeSpaceString(cPS2MemCard* self, int port, u16* dst)`
+/// (0x2c53e0): the free-space text of card port `port` into `dst`: a blank
+/// (" ") unless the port's card is formatted and its status is 0; then
+/// "kT_MEMFreePS2" from the game's string table formatted with
+/// `GetFreeSpaceForPort(port)` (a negative value shows as 0).
+pub fn c_ps2_mem_card_get_free_space_string(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[V0][0] = MCU_PORT_INFO_SIZE as u64;
+        let frame = Frame::open(c, 0x50);
+        c.mult(0, A3, A1, V0); // a3 = port * 0x14
+        frame.save(c, S3, 0x10);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, A3)));
+        c.g[V1][0] = Addr(r32(c, V0))
+            .off(MCU_PORTS + MCU_PORT_INFO_FORMATTED)
+            .lw(c);
+        let formatted = c.g[V1][0] != 0;
+        c.g[S3][0] = c.g[A2][0];
+        // The blank text's call site (its block's charge and return
+        // address), or None for the free-space text.
+        let blank = if !formatted {
+            c.cycles += 1;
+            Some((5, 0x002c_5444))
+        } else {
+            c.cycles += 5;
+            c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, A3)));
+            c.g[V1][0] = sx(MC_STATUS_NO_FORMAT);
+            c.g[V0][0] = Addr(r32(c, V0)).off(MCU_PORTS + MCU_PORT_INFO_STATUS).lw(c);
+            if c.g[V0][0] == c.g[V1][0] {
+                Some((5, 0x002c_5444))
+            } else {
+                c.cycles += 2;
+                if c.g[V0][0] == 0 {
+                    None
+                } else {
+                    c.cycles += 2;
+                    Some((4, 0x002c_54b4))
+                }
+            }
+        };
+        match blank {
+            Some((charge, ret)) => {
+                c.cycles += charge;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = sx(MC_BLANK_TEXT);
+                callee::USTR_FROM_ASCII_2.call(c, ret)?;
+            }
+            None => {
+                c.cycles += 23;
+                c.g[S2][0] = 0;
+                callee::C_PS2_MEM_CARD_GET_FREE_SPACE_FOR_PORT.call(c, 0x002c_5454)?;
+                c.g[A1][0] = mem_card_game(c);
+                c.g[V1][0] = (-1i64 < c.g[V0][0] as i64) as u64;
+                c.g[A0][0] = sx(MC_KEY_FREE);
+                c.g[S0][0] = Addr(r32(c, A1)).off(MC_GAME_STRINGS).lw(c);
+                if c.g[V1][0] != 0 {
+                    c.g[S2][0] = c.g[V0][0];
+                }
+                mem_card_localize(c, 0x002c_5480, 0x002c_5490)?;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A2][0] = c.g[S2][0];
+                callee::U_STR_SPRINTF.call(c, 0x002c_54a0)?;
+            }
+        }
+        frame.restore(c, S0, 0x40);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cPS2MemCard_v54 (0x2d3840)
+
+/// `bool cPS2MemCard_v54(cPS2MemCard* self, int port)` (0x2d3840): whether
+/// the card in `port` is usable: not a non-PS2 card (`IsPortNotPS2Card`),
+/// `v50` false, formatted (`IsPortFormatted`), and `v52` true (all virtual).
+pub fn c_ps2_mem_card_v54(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = 0;
+        'done: {
+            mem_card_vcall(c, S0, MCU_VT_IS_PORT_NOT_PS2_CARD, 0x002d_3874)?;
+            let not_ps2 = c.g[V0][0] != 0;
+            c.g[V0][0] = c.g[S2][0];
+            if not_ps2 {
+                break 'done;
+            }
+            c.cycles += 8;
+            c.g[A1][0] = c.g[S1][0];
+            mem_card_vcall(c, S0, MCU_VT_V50, 0x002d_3894)?;
+            let v50 = c.g[V0][0] != 0;
+            c.g[V0][0] = c.g[S2][0];
+            if v50 {
+                break 'done;
+            }
+            c.cycles += 8;
+            c.g[A1][0] = c.g[S1][0];
+            mem_card_vcall(c, S0, MCU_VT_IS_PORT_FORMATTED, 0x002d_38b4)?;
+            let formatted = c.g[V0][0] != 0;
+            c.g[A1][0] = c.g[S1][0];
+            if formatted {
+                c.cycles += 6;
+                mem_card_vcall(c, S0, MCU_VT_V52, 0x002d_38d0)?;
+                c.g[S2][0] = (0 < c.g[V0][0]) as u64;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cPS2MemCard_DoDeleteSave (0x2c4410)
+
+/// `void cPS2MemCard_DoDeleteSave(cPS2MemCard* self)` (0x2c4410): start
+/// deleting the save in slot `+0x1c`: clear the active word, copy the slot's
+/// directory name to `+0xb9`, build the file path `/name/name` at `+0xf9` and
+/// enter state 0x36 (`SetState`), the delete request for that path.
+pub fn c_ps2_mem_card_do_delete_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = MCU_ENTRY_SIZE as u64;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let card = r32(c, S0);
+        c.g[S1][0] = sx(card.wrapping_add(MCU_DIR));
+        Addr(card).off(MCU_ACTIVE).sw(c, 0);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = Addr(card).off(MCU_SLOT).lw(c);
+        c.mult(0, V1, A1, V0); // v1 = slot * 0x78
+        c.g[A1][0] = sx(r32(c, V1)
+            .wrapping_add(r32(c, S0))
+            .wrapping_add(MCU_ENTRIES + MCU_ENTRY_NAME));
+        call_ptr(c, MCU_STRCPY, 0x002c_4448)?;
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(MCU_FILE));
+        c.g[A3][0] = c.g[A2][0];
+        c.g[A1][0] = sx(MCU_PATH_FMT);
+        call_ptr(c, MCU_SPRINTF, 0x002c_4460)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = MC_STATE_DELETE_FILE;
+        callee::MEM_CARD_SET_STATE.call(c, 0x002c_446c)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cPS2MemCard` field: the file offset of a seek request.
+pub(crate) const MCU_SEEK_OFFSET: u32 = 0x14e4;
+
+/// `cPS2MemCard` field: the origin (`sceMcSeek` mode) of a seek request.
+pub(crate) const MCU_SEEK_ORIGIN: u32 = 0x14e8;
+
+/// State 0x11: format the card if it is unformatted (`DoFormat`).
+pub(crate) const MC_STATE_FORMAT: u64 = 0x11;
+
+/// State 0x13: delete the save in slot `+0x1c` (`DoDeleteSave`).
+pub(crate) const MC_STATE_DELETE_SAVE: u64 = 0x13;
+
+/// State 0x22: read the directory entry of the save in slot `+0x1c`
+/// (`DoGetSaveDirEntry`).
+pub(crate) const MC_STATE_GET_SAVE_DIR_ENTRY: u64 = 0x22;
+
+/// State 0x41: seek the open file (`DoSeek`).
+pub(crate) const MC_STATE_SEEK: u64 = 0x41;
+
+/// State 0x43: read the open file (`DoRead`).
+pub(crate) const MC_STATE_READ: u64 = 0x43;
+
+/// State 0x45: write the open file (`DoWrite`).
+pub(crate) const MC_STATE_WRITE: u64 = 0x45;
+
+/// State 0x47: flush the open file (`DoFlush`).
+pub(crate) const MC_STATE_FLUSH: u64 = 0x47;
+
+/// State 0x49: close the open file (`DoClose`).
+pub(crate) const MC_STATE_CLOSE: u64 = 0x49;
+
+/// The shape of the `cPS2MemCard` request wrappers: charge `charge`, open a
+/// 0x10 frame holding `ra`, run the wrapper's own field stores (`fields`),
+/// then `cPS2MemCard_SetState(this, state)` returning to `ret`, and return.
+/// `this` stays in `a0` throughout.
+pub(crate) fn mem_card_request(
+    c: &mut Cpu,
+    charge: u64,
+    fields: impl FnOnce(&mut Cpu),
+    state: u64,
+    ret: u32,
+) {
+    guest(c, |c| {
+        c.cycles += charge;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        fields(c);
+        c.g[A1][0] = state;
+        callee::MEM_CARD_SET_STATE.call(c, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The field stores of the two-argument requests (10 cycles): `v0 = this`,
+/// then `this[first] = first_reg` and `this[second] = second_reg` (words), in
+/// that order.
+pub(crate) fn mem_card_request_store_pair(
+    c: &mut Cpu,
+    first: u32,
+    first_reg: usize,
+    second: u32,
+    second_reg: usize,
+) {
+    let this = c.g[A0][0];
+    c.g[V0][0] = this;
+    let card = Addr(this as u32);
+    let a = c.g[first_reg][0];
+    card.off(first).sw(c, a);
+    let b = c.g[second_reg][0];
+    card.off(second).sw(c, b);
+}
+
+/// The field store of the slot requests (8 cycles): `this[+0x1c] = slot`.
+pub(crate) fn mem_card_request_store_slot(c: &mut Cpu) {
+    let slot = c.g[A1][0];
+    Addr(c.g[A0][0] as u32).off(MCU_SLOT).sw(c, slot);
+}
+
+/// `void cPS2MemCard_RequestFormat(cPS2MemCard* this)` (0x2c4368): ask the
+/// card state machine to format the current port's card (state 0x11: the
+/// update runs `DoFormat` if the card is unformatted).
+pub fn c_ps2_mem_card_request_format(c: &mut Cpu) {
+    mem_card_request(c, 7, |_| {}, MC_STATE_FORMAT, 0x002c_4378);
+}
+
+/// `void cPS2MemCard_v32(cPS2MemCard* this)` (0x2c48a0): finish a save-file
+/// read (state 0x1e: close the open file, or go on to 0x1f if none is open).
+pub fn c_ps2_mem_card_v32(c: &mut Cpu) {
+    mem_card_request(c, 7, |_| {}, MC_STATE_CLOSE_AFTER_READ, 0x002c_48b0);
+}
+
+/// `void cPS2MemCard_v43(cPS2MemCard* this)` (0x2c4768): finish a save-file
+/// write (state 0x18: close the open file, or go on to 0x19 if none is open).
+pub fn c_ps2_mem_card_v43(c: &mut Cpu) {
+    mem_card_request(c, 7, |_| {}, MC_STATE_CLOSE_AFTER_WRITE, 0x002c_4778);
+}
+
+/// `void cPS2MemCard_RequestClose(cPS2MemCard* this)` (0x2c6a08): request
+/// closing the open file (state 0x49: the update runs `DoClose`).
+pub fn c_ps2_mem_card_request_close(c: &mut Cpu) {
+    mem_card_request(c, 7, |_| {}, MC_STATE_CLOSE, 0x002c_6a18);
+}
+
+/// `void cPS2MemCard_RequestFlush(cPS2MemCard* this)` (0x2c6ae0): request
+/// flushing the open file (state 0x47: the update runs `DoFlush`).
+pub fn c_ps2_mem_card_request_flush(c: &mut Cpu) {
+    mem_card_request(c, 7, |_| {}, MC_STATE_FLUSH, 0x002c_6af0);
+}
+
+/// `void cPS2MemCard_v76(cPS2MemCard* this, int slot)` (0x2c4290): store
+/// `slot` at `+0x1c` and request that save's directory entry (state 0x22:
+/// the update runs `DoGetSaveDirEntry`).
+pub fn c_ps2_mem_card_v76(c: &mut Cpu) {
+    mem_card_request(
+        c,
+        8,
+        mem_card_request_store_slot,
+        MC_STATE_GET_SAVE_DIR_ENTRY,
+        0x002c_42a4,
+    );
+}
+
+/// `void cPS2MemCard_v10(cPS2MemCard* this, int slot)` (0x2c43e0): store
+/// `slot` at `+0x1c` and request deleting that save (state 0x13: the update
+/// runs `DoDeleteSave`).
+pub fn c_ps2_mem_card_v10(c: &mut Cpu) {
+    mem_card_request(
+        c,
+        8,
+        mem_card_request_store_slot,
+        MC_STATE_DELETE_SAVE,
+        0x002c_43f4,
+    );
+}
+
+/// `void* cPS2MemCard_RequestWrite(cPS2MemCard* this, void* buffer, int size)`
+/// (0x2c6bd0): store the buffer (`+0x2c`) and size (`+0x24`) and request
+/// writing them to the open file (state 0x45: the update runs `DoWrite`).
+/// Leaves `this` in `v0` until the call.
+pub fn c_ps2_mem_card_request_write(c: &mut Cpu) {
+    mem_card_request(
+        c,
+        10,
+        |c| mem_card_request_store_pair(c, MCU_BUFFER, A1, MCU_EXPECT, A2),
+        MC_STATE_WRITE,
+        0x002c_6bec,
+    );
+}
+
+/// `void* cPS2MemCard_RequestRead(cPS2MemCard* this, void* buffer, int size)`
+/// (0x2c6b50): store the buffer (`+0x2c`) and size (`+0x24`) and request
+/// reading the open file into it (state 0x43: the update runs `DoRead`).
+pub fn c_ps2_mem_card_request_read(c: &mut Cpu) {
+    mem_card_request(
+        c,
+        10,
+        |c| mem_card_request_store_pair(c, MCU_BUFFER, A1, MCU_EXPECT, A2),
+        MC_STATE_READ,
+        0x002c_6b6c,
+    );
+}
+
+/// `void* cPS2MemCard_RequestSeek(cPS2MemCard* this, int offset, int origin)`
+/// (0x2c6a60): store the offset (`+0x14e4`) and origin (`+0x14e8`) and
+/// request seeking the open file (state 0x41: the update runs `DoSeek`).
+pub fn c_ps2_mem_card_request_seek(c: &mut Cpu) {
+    mem_card_request(
+        c,
+        10,
+        |c| mem_card_request_store_pair(c, MCU_SEEK_OFFSET, A1, MCU_SEEK_ORIGIN, A2),
+        MC_STATE_SEEK,
+        0x002c_6a7c,
+    );
+}
+
+/// `void* cPS2MemCard_RequestGetInfoNow(cPS2MemCard* this, int port)`
+/// (0x2c67e8): make `port` the current port (`+0x10`, then `+0xc`) and
+/// refresh its card info at once (state 3: `SetState` runs `DoGetInfo`).
+pub fn c_ps2_mem_card_request_get_info_now(c: &mut Cpu) {
+    mem_card_request(
+        c,
+        10,
+        |c| mem_card_request_store_pair(c, MCU_PORT2, A1, MCU_PORT, A1),
+        MC_STATE_GET_INFO_NOW,
+        0x002c_6804,
+    );
+}
+
+/// `void* cPS2MemCard_v30(cPS2MemCard* this, void* buffer, int size)`
+/// (0x2c4858): store the buffer (`+0x2c`) and size (`+0x20`) and read the
+/// open save file into it (state 0x1d: `SetState` starts `sceMcRead`; the
+/// update then checks the size read).
+pub fn c_ps2_mem_card_v30(c: &mut Cpu) {
+    mem_card_request(
+        c,
+        10,
+        |c| mem_card_request_store_pair(c, MCU_BUFFER, A1, MCU_SIZE, A2),
+        MC_STATE_READ_SAVE_FILE,
+        0x002c_4874,
+    );
+}
+
+/// `void* cPS2MemCard_v41(cPS2MemCard* this, void* buffer, int size)`
+/// (0x2c4720): store the buffer (`+0x2c`) and size (`+0x20`) and write it to
+/// the open save file (state 0x17: `SetState` starts `sceMcWrite`).
+pub fn c_ps2_mem_card_v41(c: &mut Cpu) {
+    mem_card_request(
+        c,
+        10,
+        |c| mem_card_request_store_pair(c, MCU_BUFFER, A1, MCU_SIZE, A2),
+        MC_STATE_WRITE_SAVE_FILE,
+        0x002c_473c,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// cPS2MemCard vtable slots the current-port thunks call (gcc 2.9x entries:
+// `{ short delta; short; void (*fn)(); }`, 8 bytes each).
+
+/// Slot 22: `cPS2MemCard_CalcSaveSizeKB(bytes)`.
+pub(crate) const MCU_VT_CALC_SAVE_SIZE_KB: u32 = 0xb0;
+
+/// Slot 61: `cPS2MemCard_v61(port)` (cPS2MemCard's own returns 1).
+pub(crate) const MCU_VT_V61: u32 = 0x1e8;
+
+/// Slot 70: `cPS2MemCard_GetSlotName(a1, a2, a3)`.
+pub(crate) const MCU_VT_GET_SLOT_NAME: u32 = 0x230;
+
+/// The memory-card base class's vtable (every method slot is
+/// `__pure_virtual`), put back by the base destructor.
+pub(crate) const MEM_CARD_BASE_VTABLE: u32 = 0x0048_71e8;
+
+/// The shape of one current-port vtable thunk: what differs between them.
+#[derive(Clone, Copy)]
+pub(crate) struct MemCardVThunk {
+    /// The block's cycle charge.
+    pub(crate) cycles: u64,
+    /// The `this` word passed in `a1` (`None`: the caller's `a1..a3` pass through).
+    pub(crate) field: Option<u32>,
+    /// The vtable slot called.
+    pub(crate) slot: u32,
+    /// Registers holding the vtable, the slot's `this` adjustment and its function.
+    pub(crate) vt: usize,
+    pub(crate) delta: usize,
+    pub(crate) func: usize,
+    /// The call's return address.
+    pub(crate) ret: u32,
+}
+
+/// `this->vt[slot](this + delta, field)` in a 0x10 frame holding `ra`; returns
+/// what the method returned.
+pub(crate) fn mem_card_vthunk(c: &mut Cpu, thunk: MemCardVThunk) {
+    guest(c, |c| {
+        c.cycles += thunk.cycles;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, A0);
+        let vt = Addr(this).lw(c);
+        c.g[thunk.vt][0] = vt;
+        if let Some(off) = thunk.field {
+            c.g[A1][0] = Addr(this).off(off).lw(c);
+        }
+        let entry = VSlot::read(c, vt, thunk.slot);
+        c.g[thunk.delta][0] = entry.delta;
+        c.g[thunk.func][0] = entry.func;
+        c.g[A0][0] = entry.this(c.g[A0][0]);
+        call_ptr(c, entry.func as u32, thunk.ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// A thunk passing the current port (`+0xc`), registers `v1`/`a2`/`v0`.
+pub(crate) const fn mem_card_port_vthunk(slot: u32, ret: u32) -> MemCardVThunk {
+    MemCardVThunk {
+        cycles: 11,
+        field: Some(MCU_PORT),
+        slot,
+        vt: V1,
+        delta: A2,
+        func: V0,
+        ret,
+    }
+}
+
+/// `bool cPS2MemCard::v49()` (0x2d37e0): whether the card in the current port
+/// is not a PS2 card (`this->IsPortNotPS2Card(this->port)`, virtual).
+pub fn c_ps2_mem_card_v49(c: &mut Cpu) {
+    mem_card_vthunk(
+        c,
+        mem_card_port_vthunk(MCU_VT_IS_PORT_NOT_PS2_CARD, 0x002d_3800),
+    );
+}
+
+/// `int cPS2MemCard::v51()` (0x2c67b0): `this->v50(this->port)` (virtual) for
+/// the current port.
+pub fn c_ps2_mem_card_v51(c: &mut Cpu) {
+    mem_card_vthunk(c, mem_card_port_vthunk(MCU_VT_V50, 0x002c_67d0));
+}
+
+/// `bool cPS2MemCard::v53()` (0x2d3810): `this->v52(this->port)` (virtual),
+/// whether the current port's status word is a known card state.
+pub fn c_ps2_mem_card_v53(c: &mut Cpu) {
+    mem_card_vthunk(c, mem_card_port_vthunk(MCU_VT_V52, 0x002d_3830));
+}
+
+/// `bool cPS2MemCard::v55()` (0x2d38f0): whether the card in the current port
+/// is formatted (`this->IsPortFormatted(this->port)`, virtual).
+pub fn c_ps2_mem_card_v55(c: &mut Cpu) {
+    mem_card_vthunk(
+        c,
+        mem_card_port_vthunk(MCU_VT_IS_PORT_FORMATTED, 0x002d_3910),
+    );
+}
+
+/// `int cPS2MemCard::v23()` (0x2c6778): the card size in KB of the save whose
+/// byte size is the word at `+0x24` (`this->CalcSaveSizeKB(..)`, virtual).
+pub fn c_ps2_mem_card_v23(c: &mut Cpu) {
+    mem_card_vthunk(
+        c,
+        MemCardVThunk {
+            field: Some(MCU_EXPECT),
+            ..mem_card_port_vthunk(MCU_VT_CALC_SAVE_SIZE_KB, 0x002c_6798)
+        },
+    );
+}
+
+/// `int cPS2MemCard::v62()` (0x2c6718): `this->v61(this->port)` (virtual) for
+/// the current port.
+pub fn c_ps2_mem_card_v62(c: &mut Cpu) {
+    mem_card_vthunk(c, mem_card_port_vthunk(MCU_VT_V61, 0x002c_6738));
+}
+
+/// `cPS2MemCard::v71(a1, a2, a3)` (0x2d3980): forward to
+/// `this->GetSlotName(a1, a2, a3)` (virtual), arguments unchanged.
+pub fn c_ps2_mem_card_v71(c: &mut Cpu) {
+    mem_card_vthunk(
+        c,
+        MemCardVThunk {
+            cycles: 10,
+            field: None,
+            slot: MCU_VT_GET_SLOT_NAME,
+            vt: T0,
+            delta: V0,
+            func: V1,
+            ret: 0x002d_399c,
+        },
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Current-port getters: `f(this, this->port)`.
+
+/// Open the 0x10 frame (`ra` at 0), charge `cycles`, pass the current port in
+/// `a1` and call `target`; the caller closes the frame.
+pub(crate) fn mem_card_call_with_port(
+    c: &mut Cpu,
+    cycles: u64,
+    target: Callee,
+    ret: u32,
+) -> Result<Frame, Unwound> {
+    c.cycles += cycles;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[A1][0] = Addr(r32(c, A0)).off(MCU_PORT).lw(c);
+    target.call(c, ret)?;
+    frame.restore_ra(c, 0);
+    Ok(frame)
+}
+
+/// `bool cPS2MemCard::v63()` (0x2d3930): whether the current port's card
+/// changed (`GetPortChangedFlag(this, this->port)`).
+pub fn c_ps2_mem_card_v63(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = mem_card_call_with_port(
+            c,
+            7,
+            callee::C_PS2_MEM_CARD_GET_PORT_CHANGED_FLAG,
+            0x002d_3940,
+        )?;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPS2MemCard::v64(wchar_t* dst)` (0x2d3950): write the current port's
+/// free-space label into `dst` (`GetFreeSpaceString(this, this->port, dst)`).
+pub fn c_ps2_mem_card_v64(c: &mut Cpu) {
+    guest(c, |c| {
+        c.g[A2][0] = c.g[A1][0];
+        let frame = mem_card_call_with_port(
+            c,
+            8,
+            callee::C_PS2_MEM_CARD_GET_FREE_SPACE_STRING,
+            0x002d_3964,
+        )?;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int cPS2MemCard::GetCurrentPortError()` (0x2d39b8): the current port's
+/// error code (`GetPortError(this, this->port)`).
+pub fn c_ps2_mem_card_get_current_port_error(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = mem_card_call_with_port(c, 7, MCU_GET_PORT_ERROR, 0x002d_39c8)?;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int cPS2MemCard::GetFreeSpace()` (0x2c5338): the current port's free space
+/// (`GetFreeSpaceForPort(this, this->port)`).
+pub fn c_ps2_mem_card_get_free_space(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = mem_card_call_with_port(
+            c,
+            7,
+            callee::C_PS2_MEM_CARD_GET_FREE_SPACE_FOR_PORT,
+            0x002c_5348,
+        )?;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool cPS2MemCard::v73()` (0x2c5230): whether the current port has a
+/// non-zero error code (`GetPortError(this, this->port) != 0`).
+pub fn c_ps2_mem_card_v73(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = mem_card_call_with_port(c, 8, MCU_GET_PORT_ERROR, 0x002c_5240)?;
+        c.g[V0][0] = (0 < c.g[V0][0]) as u64;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Save names and the base destructor.
+
+/// `char* cPS2MemCard::GetSaveName(int slot, char* dst)` (0x2c54d0): copy save
+/// slot `slot`'s name into `dst` (returns `dst`, from `strcpy`).
+pub fn c_ps2_mem_card_get_save_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[V0][0] = MCU_ENTRY_SIZE as u64;
+        let frame = Frame::open(c, 0x10);
+        c.mult(0, V1, A1, V0); // v1 = slot * 0x78
+        frame.save_ra(c, 0);
+        let this = r32(c, A0);
+        let name = r32(c, V1)
+            .wrapping_add(this)
+            .wrapping_add(MCU_ENTRIES + MCU_ENTRY_NAME);
+        c.g[A0][0] = c.g[A2][0];
+        c.g[A1][0] = sx(name);
+        callee::STRCPY.call(c, 0x002c_54f0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `char* cPS2MemCard::v45(const wchar_t* title)` (0x2c5500): store `title` as
+/// the ASCII save title at `+0x58` (`UStr_ToAscii`; returns the title buffer).
+pub fn c_ps2_mem_card_v45(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(MCU_NAME));
+        callee::USTR_TO_ASCII.call(c, 0x002c_5510)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPS2MemCard_BaseDtor(cPS2MemCard* this, int flags)` (0x2d3788): the
+/// base-class destructor: put the base vtable back and free the object when
+/// `flags & 1`.
+pub fn c_ps2_mem_card_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        c.g[V0][0] = sx(MEM_CARD_BASE_VTABLE);
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] &= 1;
+        let vt = c.g[V0][0];
+        Addr(r32(c, A0)).sw(c, vt);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            callee::BUILTIN_DELETE_2.call(c, 0x002d_37ac)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11203,5 +13411,2337 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(fakes::ptr(&mut r));
             },
         );
+    }
+
+    use crate::difftest::check_paths;
+    use crate::difftest::check_paths_lohi;
+    use crate::difftest::events::Events;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::LOG_COUNT;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fresh;
+    use crate::difftest::require_paths;
+    use crate::difftest::run_generated;
+    use crate::difftest::SP as STACK_TOP;
+    use std::collections::HashMap;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Gate words of the `cPS2MemCard_SetState` fakes: one 16-byte slot each
+    /// from here, all holding this magic.
+    pub(crate) const SET_STATE_GATES: u32 = DATA + 0xf_f000;
+
+    pub(crate) const SET_STATE_MAGIC: u32 = 0x4d43_5353;
+
+    /// What each faked callee and the slot query charge (fixed, so the path
+    /// totals can be added up).
+    pub(crate) const SET_STATE_FAKE_CYCLES: u64 = 5;
+
+    pub(crate) const SET_STATE_QUERY_CYCLES: u64 = 4;
+
+    /// The card object (fields at non-zero low bytes), its vtable and the
+    /// slot query's answers (word i: slot i holds a save).
+    pub(crate) const SET_STATE_SELF: u32 = DATA + 0x1238;
+
+    pub(crate) const SET_STATE_VTABLE: u32 = DATA + 0x3468;
+
+    pub(crate) const SET_STATE_SLOT_SAVES: u32 = DATA + 0x3800;
+
+    /// The read/write buffer (`+0x2c`, size `+0x20`), the loaded icon
+    /// (`+0x30`, size `+0x34`), the port and the open file's descriptor.
+    pub(crate) const SET_STATE_BUFFER: u32 = DATA + 0x4123;
+
+    pub(crate) const SET_STATE_BUFFER_SIZE: u32 = 0x25;
+
+    pub(crate) const SET_STATE_ASYNC: u32 = DATA + 0x4561;
+
+    pub(crate) const SET_STATE_ASYNC_SIZE: u32 = 0x13;
+
+    pub(crate) const SET_STATE_PORT: u32 = 1;
+
+    pub(crate) const SET_STATE_FD: u32 = 3;
+
+    /// Three different icon file name pointers (the game's are all
+    /// 0x4860a8, "ssx1.ico").
+    pub(crate) const SET_STATE_ICON_FILES: [u32; 3] = [0x0048_60a8, DATA + 0x4a10, DATA + 0x4a50];
+
+    /// libmc's RPC client (+0x14 the server's receive buffer, +0x24 nonzero
+    /// once bound), libkernel's SIF RPC packet pool (+0 request counter, +4
+    /// the packets, +8 their number), the IOP command buffer word, and two
+    /// fixture packets.
+    pub(crate) const SET_STATE_MC_CLIENT: u32 = 0x0052_71c0;
+
+    pub(crate) const SET_STATE_SIF_RPC_POOL: u32 = 0x0052_d680;
+
+    pub(crate) const SET_STATE_SIF_CMD_WORD: u32 = 0x0052_bce0;
+
+    pub(crate) const SET_STATE_RPC_PACKETS: u32 = DATA + 0x6000;
+
+    /// The states the fixture enters: 0..=0x4f, two more out of range
+    /// (0xffff_ffff, 0x8000_0001) and 0x26 with junk in a1's high word.
+    pub(crate) const SET_STATE_VALUES: u32 = 0x53;
+
+    pub(crate) fn set_state_value(k: u32) -> u64 {
+        match k {
+            0..=0x4f => k as u64,
+            0x50 => 0xffff_ffff,
+            0x51 => 0x8000_0001,
+            _ => 0x5a5a_0000_0000_0026,
+        }
+    }
+
+    /// The fixture's variants: bit 0 libmc answered; 0-1 the title break and
+    /// busy word off (title break 0 for 0, negative for 1), 2-5 on; a file
+    /// open for 2-5 (descriptor 3 for 2, 3; 0 for 4, 5); an icon loaded for
+    /// 1, 2 and 4 (so every pair of the two shows).
+    pub(crate) const SET_STATE_VARIANTS: u32 = 6;
+
+    /// Whether variant `variant` has an icon loaded (`+0x30`).
+    pub(crate) fn set_state_loaded(variant: u32) -> bool {
+        matches!(variant, 1 | 2 | 4)
+    }
+
+    /// State 7's slot scans by variant: (slot count, first slot with a save);
+    /// the count is -1 for variant 3.
+    pub(crate) const SET_STATE_SCANS: [(u32, Option<u32>); 6] = [
+        (0, None),
+        (1, Some(0)),
+        (3, Some(2)),
+        (u32::MAX, None),
+        (2, Some(1)),
+        (5, None),
+    ];
+
+    /// A faked callee: log the call (every register), return a pointer (or
+    /// unwind at `LOG_UNWIND_AT`) and charge a fixed cost.
+    pub(crate) fn set_state_fake_call(c: &mut Cpu, addr: u32) {
+        let ra = r32(c, RA);
+        let start = c.cycles;
+        fakes::fake(c, addr, ra);
+        c.cycles = start + SET_STATE_FAKE_CYCLES;
+    }
+
+    macro_rules! set_state_fake {
+        ($name:ident, $k:expr, $addr:expr, $generated:path) => {
+            pub(crate) fn $name(c: &mut Cpu) {
+                if c.bus.read32(SET_STATE_GATES + 0x10 * $k) != SET_STATE_MAGIC {
+                    return fakes::fall_back(c, fakes::prev_cell($name), $generated);
+                }
+                set_state_fake_call(c, $addr);
+            }
+        };
+    }
+
+    set_state_fake!(
+        set_state_fake_self,
+        0,
+        0x002c_48c0,
+        ee::s08::f_002c48c0__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_get_info,
+        1,
+        0x002c_50e0,
+        ee::s08::f_002c50e0__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_mark_invalid,
+        2,
+        0x002c_5570,
+        ee::s08::f_002c5570__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_sjis,
+        3,
+        0x002c_2210,
+        ee::s08::f_002c2210__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_sprintf,
+        4,
+        0x0041_7828,
+        ee::s15::f_00417828__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_mem_set,
+        5,
+        0x003e_6448,
+        ee::s14::f_003e6448__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_mem_copy,
+        6,
+        0x003e_6574,
+        ee::s14::f_003e6574__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_strcpy,
+        7,
+        0x0041_66f4,
+        ee::s15::f_004166f4__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_strlen,
+        8,
+        0x0041_6810,
+        ee::s15::f_00416810__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_mem_free,
+        9,
+        0x0025_23a8,
+        ee::s06::f_002523a8__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_async_load,
+        10,
+        0x003d_f690,
+        ee::s14::f_003df690__generated
+    );
+
+    set_state_fake!(
+        set_state_fake_poll_sema,
+        11,
+        0x0042_3df0,
+        ee::s15::f_00423df0__generated
+    );
+
+    pub(crate) const SET_STATE_FAKES: u32 = 12;
+
+    pub(crate) fn set_state_hook(slot: *mut fn(&mut Cpu), fake: fn(&mut Cpu)) {
+        fakes::hook(slot, fake, fakes::prev_cell(fake));
+    }
+
+    /// Every callee with a slot faked (gated on this machine): `SetState`
+    /// itself (the recursive calls), the card's own helpers, the string and
+    /// memory helpers, `MEM_Free`, `AsyncFile_Load`, and `PollSema` (the
+    /// libmc sema is free).
+    pub(crate) fn set_state_fakes_on(c: &mut Cpu) {
+        set_state_hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C48C0),
+            set_state_fake_self,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C50E0),
+            set_state_fake_get_info,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C5570),
+            set_state_fake_mark_invalid,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C2210),
+            set_state_fake_sjis,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            set_state_fake_sprintf,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6448),
+            set_state_fake_mem_set,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6574),
+            set_state_fake_mem_copy,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004166F4),
+            set_state_fake_strcpy,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00416810),
+            set_state_fake_strlen,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s06::OVERRIDE_002523A8),
+            set_state_fake_mem_free,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DF690),
+            set_state_fake_async_load,
+        );
+        set_state_hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00423DF0),
+            set_state_fake_poll_sema,
+        );
+        for k in 0..SET_STATE_FAKES {
+            c.bus.write32(SET_STATE_GATES + 0x10 * k, SET_STATE_MAGIC);
+        }
+    }
+
+    /// The `miss` hook: the vtable's "slot holds a save" query (at `FAKE`),
+    /// logged like a fake, answered from `SET_STATE_SLOT_SAVES[a1]`.
+    pub(crate) fn set_state_slot_query(c: &mut Cpu, target: u32) {
+        let slot = r32(c, A1);
+        let ra = r32(c, RA);
+        let start = c.cycles;
+        fakes::fake(c, target, ra);
+        c.cycles = start + SET_STATE_QUERY_CYCLES;
+        c.g[V0][0] = c.bus.read32(SET_STATE_SLOT_SAVES + 4 * (slot & 0xf)) as u64;
+    }
+
+    /// libmc unbound (every `sceMc*` returns -100 at once) or answered: bound,
+    /// with two free SIF RPC packets, so `sceSifCallRpc` (no wait) sends its
+    /// command to plain IOP RAM and the call returns 0.
+    pub(crate) fn set_state_libmc(c: &mut Cpu, answered: bool) {
+        c.bus.write32(SET_STATE_MC_CLIENT + 0x24, answered as u32);
+        if !answered {
+            return;
+        }
+        put_words(c, SET_STATE_SIF_RPC_POOL, &[0x11, SET_STATE_RPC_PACKETS, 2]);
+        // Flag word (+0x10) bit 0 clear: both packets free.
+        for i in 0..0x20 {
+            c.bus.write32(SET_STATE_RPC_PACKETS + 4 * i, 0x5a5a_5a5a);
+        }
+        c.bus.write32(SET_STATE_SIF_CMD_WORD, 0x0001_f000);
+        c.bus.write32(SET_STATE_MC_CLIENT + 0x14, 0x0001_f400);
+    }
+
+    /// The open file's descriptor (`+0x18`) by variant: -1 (none), 3, or 0.
+    pub(crate) fn set_state_fd(variant: u32) -> u32 {
+        match variant {
+            0 | 1 => u32::MAX,
+            2 | 3 => SET_STATE_FD,
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn set_state_async(loaded: bool) -> u32 {
+        if loaded {
+            SET_STATE_ASYNC
+        } else {
+            0
+        }
+    }
+
+    /// State 7's scan: `count` slots, a save in slot `found` only.
+    pub(crate) fn set_state_scan(c: &mut Cpu, count: u32, found: Option<u32>) {
+        c.bus.write32(SET_STATE_SELF + MCU_COUNT, count);
+        for i in 0..16 {
+            c.bus
+                .write32(SET_STATE_SLOT_SAVES + 4 * i, (found == Some(i)) as u32);
+        }
+    }
+
+    /// `SetState(self, state)` on a card object. `variant` bit 0: libmc
+    /// answered (the `sceMc*` calls return 0; else -100). Variants 2-5
+    /// (`flag`): a file is open (`+0x18` = 3 for 2-3, 0 for 4-5; else -1),
+    /// the title has a line break (`+0x8`; negative for 1, else 0), a
+    /// request is running (`+0x40`). An icon is loaded (`+0x30`) by
+    /// [`set_state_loaded`]. State 7 scans slots by `SET_STATE_SCANS[variant]`.
+    pub(crate) fn set_state_fixture(c: &mut Cpu, seed: u32, state: u64, variant: u32) -> Rng {
+        let mut r = Rng(0x002c_48c0 ^ (seed as u64) << 20 ^ (variant as u64) << 12);
+        elf_image(c);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.hooks.miss = set_state_slot_query;
+        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+        set_state_fakes_on(c);
+        fill(c, &mut r, STACK_TOP - 0x100, 0x40);
+        let flag = variant >= 2;
+        let loaded = set_state_loaded(variant);
+        let title_break = match variant {
+            0 => 0,
+            1 => 0xffff_ffe4,
+            _ => 0x1c,
+        };
+        let this = SET_STATE_SELF;
+        fill(c, &mut r, this, 0x1500 / 4);
+        c.bus.write32(this, SET_STATE_VTABLE);
+        c.bus
+            .write16(SET_STATE_VTABLE + MCU_VT_HAS_SLOT_NAME, 0xfff8);
+        c.bus
+            .write32(SET_STATE_VTABLE + MCU_VT_HAS_SLOT_NAME + 4, FAKE + 0x10);
+        for (off, v) in [
+            (MCU_TITLE_BREAK, title_break),
+            (MCU_PORT, SET_STATE_PORT),
+            (MCU_RESULT, set_state_fd(variant)),
+            (MCU_SIZE, SET_STATE_BUFFER_SIZE),
+            (MCU_INDEX, 2),
+            (MCU_BUFFER, SET_STATE_BUFFER),
+            (MCU_ASYNC_A, set_state_async(loaded)),
+            (MCU_ASYNC_B, SET_STATE_ASYNC_SIZE),
+            (MCU_BUSY, flag as u32),
+        ] {
+            c.bus.write32(this + off, v);
+        }
+        for (off, s) in [
+            (MCU_NAME, "SSX 3"),
+            (MCU_PATH, "/BASLUS-20772/icon.sys"),
+            (MCU_DIR, "BASLUS-20772"),
+            (MCU_FILE, "BASLUS-20772SSX3"),
+            (MCU_ICON_DIR, "cdrom0:\\DATA\\MC"),
+        ] {
+            mcu_put_str(c, this + off, s.as_bytes());
+        }
+        let (count, found) = SET_STATE_SCANS[variant as usize];
+        set_state_scan(c, count, found);
+        fill(c, &mut r, SET_STATE_BUFFER & !3, 0x10);
+        fill(c, &mut r, SET_STATE_ASYNC & !3, 0x10);
+        fill(c, &mut r, MC_ICON_SYS, MC_ICON_SYS_SIZE / 4);
+        // The game's three icon file names are one pointer; on odd seeds
+        // three different ones, so each state's name index shows.
+        if seed & 1 != 0 {
+            put_words(c, MC_ICON_FILES, &SET_STATE_ICON_FILES);
+        }
+        // The last libmc result (`gp + 0x850`, 0 in the image): non-zero, so
+        // state 1's copy and every result store change RAM.
+        c.bus
+            .write32(GAME_GP + MCU_GP_RESULT, r.next_u32() | 0x8000_0001);
+        set_state_libmc(c, variant & 1 != 0);
+        // On the main guest thread (libkernel's interrupt helpers).
+        let regs = c.g;
+        ssx3_ps2::kernel::start_main_thread(c, MC_SET_STATE_ENTRY, 0, 0);
+        c.g = regs;
+        c.pc = MC_SET_STATE_ENTRY;
+        // `self` is copied whole into s2 (and from there into the calls'
+        // a0): junk in the high word on some seeds.
+        let high = if r.next_u32() & 1 != 0 {
+            (r.next_u32() as u64 | 1) << 32
+        } else {
+            0
+        };
+        c.g[A0][0] = high | this as u64;
+        c.g[A1][0] = state;
+        r
+    }
+
+    /// The cycles a real `sceMc*` call costs on the fixture (unbound or
+    /// answered), entered at `addr` with `args` and the caller's `sp`.
+    pub(crate) fn set_state_mc_cycles(addr: u32, answered: bool, args: &[(usize, u64)]) -> u64 {
+        let mut c = fresh();
+        set_state_fixture(&mut c, 0, 0, answered as u32);
+        c.g[SP][0] = (STACK_TOP - SET_STATE_FRAME.size) as u64;
+        for &(reg, v) in args {
+            c.g[reg][0] = v;
+        }
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = addr;
+        let start = c.cycles;
+        ssx3_ee_rt::funcs::call_indirect(&mut c, addr);
+        assert_eq!(c.pc, SENTINEL_RA, "sceMc call {addr:#x} did not return");
+        c.cycles - start
+    }
+
+    /// [`set_state_mc_cycles`] by call.
+    pub(crate) struct SetStateMcCosts(pub(crate) HashMap<(u32, bool, Vec<(usize, u64)>), u64>);
+
+    impl SetStateMcCosts {
+        pub(crate) fn of(&mut self, addr: u32, answered: bool, args: &[(usize, u64)]) -> u64 {
+            *self
+                .0
+                .entry((addr, answered, args.to_vec()))
+                .or_insert_with(|| set_state_mc_cycles(addr, answered, args))
+        }
+    }
+
+    /// The cycle total of seed `seed`'s path (state `seed % 0x53`, variant
+    /// `seed / 0x53 % 6`), added up from the generated body's block charges,
+    /// the fakes' fixed costs and the measured `sceMc*` calls.
+    pub(crate) fn set_state_expected(seed: u32, mc: &mut SetStateMcCosts) -> (u64, String) {
+        let value = set_state_value(seed % SET_STATE_VALUES);
+        let variant = seed / SET_STATE_VALUES % SET_STATE_VARIANTS;
+        let ok = variant & 1 != 0;
+        let flag = variant >= 2;
+        let loaded = set_state_loaded(variant);
+        let fd = sx(set_state_fd(variant));
+        let at = |off: u32| sx(SET_STATE_SELF + off);
+        let port = SET_STATE_PORT as u64;
+        const FC: u64 = SET_STATE_FAKE_CYCLES;
+        const QC: u64 = SET_STATE_QUERY_CYCLES;
+        // The shared exits: 0x2c50c4 (epilogue), 0x2c50c0, 0x2c5064,
+        // 0x2c4e44, 0x2c5054, 0x2c4e38, the close/open result, 0x2c50ac.
+        let epilogue = 7;
+        let done = 1 + epilogue;
+        let closed = 3 + done;
+        let fail = 4 + FC + epilogue;
+        let invalid = 4 + FC + epilogue;
+        let check = if ok { 2 + epilogue } else { 3 + fail };
+        let handle_done = if ok { closed } else { 4 + fail };
+        let refresh = 3 + if flag { epilogue } else { 2 + FC + done };
+        let label = format!("state {value:#x} variant {variant}");
+        if (value as u32).wrapping_sub(1) >= 0x4e {
+            return (12 + refresh, label);
+        }
+        let mut m = |addr: u32, args: &[(usize, u64)]| mc.of(addr, ok, args);
+        let close = [(A0, fd)];
+        let open = |name: u32, mode: u64| [(A0, port), (A1, 0), (A2, at(name)), (A3, mode)];
+        let delete = |name: u32| [(A0, port), (A1, 0), (A2, at(name))];
+        let get_dir = |name: u32| {
+            [
+                (A0, port),
+                (A1, 0),
+                (A2, at(name)),
+                (A3, 0),
+                (T0, 1),
+                (T1, at(MCU_DIR_ENTRY)),
+            ]
+        };
+        let write = |buf: u32, size: u32| [(A0, fd), (A1, sx(buf)), (A2, sx(size))];
+        let state = value as u32 as u64;
+        let icon = |set: [u64; 3]| if state == set[1] { 1 } else { 3 };
+        let arm = match state {
+            MC_STATE_FAILED => {
+                9 + (if loaded { 4 + FC } else { 0 })
+                    + 2
+                    + (if flag {
+                        4 + m(SCE_MC_CLOSE, &close) + (if ok { 3 + FC } else { 0 }) + 3
+                    } else {
+                        0
+                    })
+                    + 4
+                    + done
+            }
+            MC_STATE_GET_INFO_NOW => 4 + FC + epilogue,
+            MC_STATE_FIND_SAVE => {
+                3 + match SET_STATE_SCANS[variant as usize] {
+                    (n, _) if n as i32 <= 0 => done,
+                    (_, Some(k)) => k as u64 * (14 + QC) + 8 + QC + 15 + 2 * FC + epilogue,
+                    (n, None) => n as u64 * (14 + QC) + 2 + epilogue,
+                }
+            }
+            MC_STATE_OPEN_ICON_SYS => {
+                7 + m(callee::SCE_MC_OPEN, &open(MCU_PATH, 1))
+                    + if ok { closed } else { 7 + FC + invalid }
+            }
+            MC_STATE_CLOSE_ICON_SYS => {
+                4 + m(SCE_MC_CLOSE, &close) + if ok { closed } else { 2 + invalid }
+            }
+            MC_STATE_READ_ICON_SYS => {
+                7 + m(callee::SCE_MC_READ, &write(MC_ICON_SYS, MC_ICON_SYS_SIZE))
+                    + if ok { done } else { 8 + 2 * FC + epilogue }
+            }
+            MC_STATE_GET_SAVE_DIR => {
+                26 + 2 * FC
+                    + m(callee::SCE_MC_GET_DIR, &get_dir(MCU_FILE))
+                    + if ok { done } else { 2 + invalid }
+            }
+            s if MC_STATE_GET_ICON_DIR.contains(&s) => {
+                4 + icon(MC_STATE_GET_ICON_DIR)
+                    + 29
+                    + 2 * FC
+                    + m(callee::SCE_MC_GET_DIR, &get_dir(MCU_PATH))
+                    + if ok { done } else { 2 + invalid }
+            }
+            MC_STATE_CLOSE_BAD_SAVE => {
+                4 + m(SCE_MC_CLOSE, &close) + if ok { closed } else { 3 + invalid }
+            }
+            MC_STATE_OPEN_FOR_WRITE => {
+                7 + m(callee::SCE_MC_OPEN, &open(MCU_FILE, 0x203)) + handle_done
+            }
+            MC_STATE_WRITE_SAVE_FILE => {
+                8 + m(
+                    callee::SCE_MC_WRITE,
+                    &write(SET_STATE_BUFFER, SET_STATE_BUFFER_SIZE),
+                ) + check
+            }
+            MC_STATE_CLOSE_AFTER_WRITE | MC_STATE_CLOSE_AFTER_READ => {
+                3 + if flag {
+                    4 + m(SCE_MC_CLOSE, &close) + handle_done
+                } else {
+                    4 + FC + epilogue
+                }
+            }
+            MC_STATE_OPEN_FOR_READ => {
+                10 + m(callee::SCE_MC_OPEN, &open(MCU_FILE, 1)) + if ok { done } else { 2 + fail }
+            }
+            MC_STATE_READ_SAVE_FILE => {
+                6 + m(
+                    callee::SCE_MC_READ,
+                    &write(SET_STATE_BUFFER, SET_STATE_BUFFER_SIZE),
+                ) + if ok { done } else { 2 + fail }
+            }
+            MC_STATE_MAKE_DIR => {
+                7 + m(
+                    callee::SCE_MC_MKDIR,
+                    &[(A0, port), (A1, 0), (A2, at(MCU_FILE))],
+                ) + check
+            }
+            MC_STATE_CREATE_ICON_SYS => {
+                17 + FC + m(callee::SCE_MC_OPEN, &open(MCU_PATH, 0x203)) + check
+            }
+            MC_STATE_WRITE_ICON_SYS => {
+                22 + 2 * FC
+                    + (if flag { 2 } else { 3 + FC })
+                    + 41
+                    + 7 * FC
+                    + m(callee::SCE_MC_WRITE, &write(MC_ICON_SYS, MC_ICON_SYS_SIZE))
+                    + check
+            }
+            MC_STATE_CLOSE_NEW_ICON_SYS => 4 + m(SCE_MC_CLOSE, &close) + handle_done,
+            s if MC_STATE_LOAD_ICON.contains(&s) => {
+                3 + (if loaded { 4 + FC } else { 0 })
+                    + 3
+                    + icon(MC_STATE_LOAD_ICON)
+                    + 15
+                    + 2 * FC
+                    + done
+            }
+            s if MC_STATE_CREATE_ICON.contains(&s) => {
+                4 + icon(MC_STATE_CREATE_ICON)
+                    + 18
+                    + FC
+                    + m(callee::SCE_MC_OPEN, &open(MCU_PATH, 0x203))
+                    + handle_done
+            }
+            s if MC_STATE_WRITE_ICON.contains(&s) => {
+                6 + m(
+                    callee::SCE_MC_WRITE,
+                    &write(set_state_async(loaded), SET_STATE_ASYNC_SIZE),
+                ) + check
+            }
+            s if MC_STATE_CLOSE_ICON.contains(&s) => {
+                3 + (if loaded { 3 + FC } else { 0 }) + 4 + m(SCE_MC_CLOSE, &close) + handle_done
+            }
+            MC_STATE_DELETE_FILE => 9 + 3 + m(callee::SCE_MC_DELETE, &delete(MCU_FILE)) + check,
+            s if MC_STATE_DELETE_ICON.contains(&s) => {
+                4 + icon(MC_STATE_DELETE_ICON)
+                    + 15
+                    + FC
+                    + 3
+                    + m(callee::SCE_MC_DELETE, &delete(MCU_PATH))
+                    + check
+            }
+            MC_STATE_DELETE_ICON_SYS => {
+                12 + FC + 3 + m(callee::SCE_MC_DELETE, &delete(MCU_PATH)) + check
+            }
+            MC_STATE_DELETE_DIR => 3 + 3 + m(callee::SCE_MC_DELETE, &delete(MCU_DIR)) + check,
+            s if MC_SET_STATE_RECORD_ONLY.contains(&s) => done,
+            _ => refresh,
+        };
+        // The prologue (12) and the table dispatch (7).
+        (19 + arm, label)
+    }
+
+    /// Every state 0..=0x4f (and three more a1 values), each with libmc
+    /// unbound / answered and the `flag` fields off / on (file descriptor
+    /// -1, 3 or 0): all handler arms and sub-arms, the shared exits, the
+    /// recursive calls (through the faked slot), state 7's scans (none, -1,
+    /// first, second of 2, third of 3, all five empty).
+    #[test]
+    fn cps2_mem_card_set_state_matches() {
+        let seeds = SET_STATE_VALUES * SET_STATE_VARIANTS;
+        let mut costs = SetStateMcCosts(HashMap::new());
+        let setup = |c: &mut Cpu, seed: u32| {
+            set_state_fixture(
+                c,
+                seed,
+                set_state_value(seed % SET_STATE_VALUES),
+                seed / SET_STATE_VALUES % SET_STATE_VARIANTS,
+            );
+        };
+        check_lohi(
+            ee::s08::f_002c48c0__generated,
+            cps2_mem_card_set_state,
+            seeds,
+            &setup,
+        );
+        // Many arms share a total, so each seed's own total is checked.
+        for seed in 0..seeds {
+            let (total, label) = set_state_expected(seed, &mut costs);
+            let mut c = fresh();
+            setup(&mut c, seed);
+            let start = c.cycles;
+            run_generated(&mut c, ee::s08::f_002c48c0__generated);
+            assert_eq!(c.cycles - start, total, "seed {seed}: {label}");
+        }
+    }
+
+    /// The return address of every call `cPS2MemCard_SetState` makes (each
+    /// one can unwind: a slot fake, the vtable query, or a real `sceMc*`
+    /// call reaching the faked `PollSema`).
+    pub(crate) const SET_STATE_CALL_SITES: [u32; 57] = [
+        0x002c_4938,
+        0x002c_4950,
+        0x002c_4964,
+        0x002c_4988,
+        0x002c_49a4,
+        0x002c_49cc,
+        0x002c_49e0,
+        0x002c_4a0c,
+        0x002c_4a3c,
+        0x002c_4a58,
+        0x002c_4a80,
+        0x002c_4a94,
+        0x002c_4aa8,
+        0x002c_4abc,
+        0x002c_4ad0,
+        0x002c_4adc,
+        0x002c_4ae8,
+        0x002c_4af8,
+        0x002c_4b08,
+        0x002c_4b34,
+        0x002c_4b80,
+        0x002c_4b8c,
+        0x002c_4be0,
+        0x002c_4bf4,
+        0x002c_4c1c,
+        0x002c_4c38,
+        0x002c_4c44,
+        0x002c_4c70,
+        0x002c_4c98,
+        0x002c_4cbc,
+        0x002c_4cdc,
+        0x002c_4cfc,
+        0x002c_4d24,
+        0x002c_4d48,
+        0x002c_4d68,
+        0x002c_4de0,
+        0x002c_4e10,
+        0x002c_4e34,
+        0x002c_4e4c,
+        0x002c_4e78,
+        0x002c_4eb4,
+        0x002c_4ed0,
+        0x002c_4eec,
+        0x002c_4f00,
+        0x002c_4f0c,
+        0x002c_4f1c,
+        0x002c_4f60,
+        0x002c_4f70,
+        0x002c_4f8c,
+        0x002c_4ffc,
+        0x002c_500c,
+        0x002c_5028,
+        0x002c_5040,
+        0x002c_505c,
+        0x002c_5098,
+        0x002c_50a4,
+        0x002c_50c0,
+    ];
+
+    /// `PollSema`'s return address in each `sceMc*` function, with that
+    /// function's frame size and saved-`ra` offset.
+    pub(crate) const SET_STATE_MC_FRAMES: [(u32, u32, u32); 6] = [
+        (0x0040_9eac, 0x50, 0x40), // sceMcClose
+        (0x0040_9d68, 0x90, 0x80), // sceMcOpen
+        (0x0040_a1f8, 0x80, 0x70), // sceMcWrite
+        (0x0040_a6ec, 0xa0, 0x90), // sceMcGetDir
+        (0x0040_a0e4, 0x90, 0x80), // sceMcRead
+        (0x0040_aab8, 0x80, 0x70), // sceMcDelete
+    ];
+
+    /// `sceMcMkdir`'s call of `sceMcOpen` returns here (its 0x10 frame holds
+    /// `ra` at 0).
+    pub(crate) const SET_STATE_MKDIR_OPEN_RET: u32 = 0x0040_9e48;
+
+    /// The `SetState` call site of fake call `n`, from its log entry: the
+    /// logged `ra`, or for `PollSema` inside a `sceMc*` call, the `ra` that
+    /// call (and `sceMcMkdir` around `sceMcOpen`) saved on the stack.
+    pub(crate) fn set_state_unwound_site(c: &mut Cpu, n: u32) -> u32 {
+        let entry = fakes::LOG_START + 0x220 * n;
+        let target = c.bus.read32(entry);
+        let mut site = c.bus.read32(entry + 0x10 + 16 * RA as u32);
+        if target == 0x0042_3df0 {
+            let mut sp = c.bus.read32(entry + 0x10 + 16 * SP as u32);
+            let &(_, frame, ra_at) = SET_STATE_MC_FRAMES
+                .iter()
+                .find(|f| f.0 == site)
+                .unwrap_or_else(|| panic!("PollSema from {site:#x}"));
+            site = c.bus.read32(sp + ra_at);
+            if site == SET_STATE_MKDIR_OPEN_RET {
+                sp += frame;
+                site = c.bus.read32(sp);
+            }
+        }
+        site
+    }
+
+    /// The unwind cases: for every state value `k` and variant (see
+    /// [`set_state_fixture`]), one case per fake call `j` the path makes
+    /// (counted on an undisturbed run of the generated body).
+    pub(crate) fn set_state_unwind_cases() -> Vec<(u32, u32, u32)> {
+        let mut cases = Vec::new();
+        for k in 0..SET_STATE_VALUES {
+            for variant in 0..4 {
+                let mut c = fresh();
+                set_state_fixture(&mut c, k, set_state_value(k), variant);
+                run_generated(&mut c, ee::s08::f_002c48c0__generated);
+                for j in 0..c.bus.read32(fakes::LOG_COUNT) {
+                    cases.push((k, variant, j));
+                }
+            }
+        }
+        cases
+    }
+
+    /// Every fake call of every path unwinds in turn (case = state value,
+    /// variant, call index), and every one of the 57 call sites is among the
+    /// unwound ones.
+    #[test]
+    fn cps2_mem_card_set_state_unwinds() {
+        let cases = set_state_unwind_cases();
+        let setup = |c: &mut Cpu, seed: u32| {
+            let (k, variant, j) = cases[seed as usize];
+            set_state_fixture(c, k, set_state_value(k), variant);
+            c.bus.write32(LOG_UNWIND_AT, j);
+        };
+        let seeds = cases.len() as u32;
+        check_lohi(
+            ee::s08::f_002c48c0__generated,
+            cps2_mem_card_set_state,
+            seeds,
+            &setup,
+        );
+        let mut sites = std::collections::BTreeSet::new();
+        for seed in 0..seeds {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            run_generated(&mut c, ee::s08::f_002c48c0__generated);
+            let case = cases[seed as usize];
+            assert_eq!(
+                c.pc,
+                0xdead_0000 | case.2 << 4,
+                "case {case:x?} did not unwind at its call"
+            );
+            sites.insert(set_state_unwound_site(&mut c, case.2));
+        }
+        for site in SET_STATE_CALL_SITES {
+            assert!(
+                sites.contains(&site),
+                "call site {site:#x} never unwound (unwound: {sites:x?})"
+            );
+        }
+    }
+
+    driven!(set_state_gen_driven, ee::s08::f_002c48c0__generated);
+
+    driven!(set_state_hand_driven, cps2_mem_card_set_state);
+
+    /// State 7's slot scan with live events: 6-9 slots (`seed / 6 % 4`),
+    /// none or the last holding a save (`seed / 24 % 2`). Entered at the
+    /// start (`seed / 3 % 2 == 0`) or at the head 0x2c4e60 itself with the
+    /// frame open and the scan at slot `seed / 48 % 3`. The event mode is
+    /// `seed % 3` ([`schedule`]).
+    pub(crate) fn set_state_scan_setup(c: &mut Cpu, seed: u32) -> Events {
+        let config = seed / 6;
+        let mut r = set_state_fixture(c, config, MC_STATE_FIND_SAVE, 0);
+        let count = 6 + config % 4;
+        let found = if config / 4 % 2 == 1 {
+            Some(count - 1)
+        } else {
+            None
+        };
+        set_state_scan(c, count, found);
+        let entry = if seed / 3 % 2 == 0 {
+            MC_SET_STATE_ENTRY
+        } else {
+            let sp = STACK_TOP - SET_STATE_FRAME.size;
+            c.g[SP][0] = sp as u64;
+            fill(c, &mut r, sp + 0x50, 0x14);
+            c.bus.write64(sp + 0x40, SENTINEL_RA as u64);
+            c.g[S2][0] = SET_STATE_SELF as u64;
+            c.bus.write32(SET_STATE_SELF + MCU_INDEX, config / 8 % 3);
+            MC_SET_STATE_SCAN_HEAD
+        };
+        schedule(c, &mut r, seed, entry)
+    }
+
+    /// The scan with live events, driven: entered at the start, the event
+    /// lands on the scan head and is delivered, never unwinding there;
+    /// entered at the head, an unwinding event at the back edge returns and
+    /// the drive resumes at the head.
+    #[test]
+    fn cps2_mem_card_set_state_events() {
+        check_events(
+            set_state_gen_driven,
+            set_state_hand_driven,
+            144,
+            &|c, seed| set_state_scan_setup(c, seed),
+        );
+    }
+
+    /// The scan entered at its head with an unwinding event (seed `i` is
+    /// `set_state_scan_setup`'s seed `6i + 4`: resumed, `Events::Unwind`),
+    /// not driven: the return at the back edge itself is compared (`pc` and
+    /// the registers as left there), and some seeds must stop there (`pc` the
+    /// head, the low bit masked off).
+    #[test]
+    fn cps2_mem_card_set_state_scan_unwinds() {
+        let seeds = 48;
+        let setup = |c: &mut Cpu, i: u32| {
+            let mode = set_state_scan_setup(c, 6 * i + 4);
+            assert_eq!(mode, Events::Unwind);
+        };
+        check_lohi(
+            ee::s08::f_002c48c0__generated,
+            cps2_mem_card_set_state,
+            seeds,
+            &setup,
+        );
+        let mut stopped = 0;
+        for i in 0..seeds {
+            let mut c = fresh();
+            setup(&mut c, i);
+            run_generated(&mut c, ee::s08::f_002c48c0__generated);
+            if c.pc & !1 == MC_SET_STATE_SCAN_HEAD {
+                stopped += 1;
+            }
+        }
+        assert!(
+            stopped > 0,
+            "no seed stopped at the scan head (0 of {seeds})"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Card-query fakes shared by the tests below.
+
+    /// Gate word of the card-query fakes; fake k's control word is at
+    /// `CARD_QUERY_CTRL + 0x10 * k`.
+    pub(crate) const CARD_QUERY_MAGIC: u32 = 0x4d43_4d44;
+
+    pub(crate) const CARD_QUERY_CTRL: u32 = DATA + 0xf_f600;
+
+    pub(crate) const CARD_QUERY_FAKES: u32 = 9;
+
+    /// The v0 of faked call n is `sx(word n)` of this table.
+    pub(crate) const CARD_QUERY_ANSWERS: u32 = DATA + 0xf_e000;
+
+    pub(crate) const CARD_QUERY_MAX_CALLS: u32 = 64;
+
+    /// Cycles every faked call charges: fixed, so each path has one total.
+    pub(crate) const CARD_QUERY_CALL_COST: u64 = 6;
+
+    /// Fixture layout: the card object (non-zero low bytes), its vtable, the
+    /// destination string, the game object, its string table and the table's
+    /// vtable.
+    pub(crate) const CARD_QUERY_THIS: u32 = DATA + 0x1238;
+
+    pub(crate) const CARD_QUERY_VTABLE: u32 = DATA + 0x3010;
+
+    pub(crate) const CARD_QUERY_DST: u32 = DATA + 0x3a46;
+
+    pub(crate) const CARD_QUERY_GAME: u32 = DATA + 0x4124;
+
+    pub(crate) const CARD_QUERY_STRINGS: u32 = DATA + 0x4a38;
+
+    pub(crate) const CARD_QUERY_STRINGS_VT: u32 = DATA + 0x5010;
+
+    /// A faked call (the `miss` hook for the fixtures' vtable targets, and the
+    /// body of the gated slot fakes): logged, clobbering and unwinding as
+    /// `fakes::fake` does, but charging `CARD_QUERY_CALL_COST` and returning
+    /// the fixture's answer for its call index.
+    pub(crate) fn card_query_call(c: &mut Cpu, target: u32) {
+        let n = c.bus.read32(LOG_COUNT).min(CARD_QUERY_MAX_CALLS - 1);
+        let ra = c.g[RA][0] as u32;
+        let start = c.cycles;
+        fakes::fake(c, target, ra);
+        c.cycles = start + CARD_QUERY_CALL_COST;
+        let answer = c.bus.read32(CARD_QUERY_ANSWERS + 4 * n);
+        c.g[V0][0] = sx(answer);
+    }
+
+    /// A gated fake on an override slot: with the gate word at `$ctrl`, a
+    /// `card_query_call` to `$addr`; otherwise the slot's previous body.
+    macro_rules! card_query_slot_fake {
+        ($fake:ident, $prev:ident, $ctrl:expr, $addr:expr, $generated:path) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+
+            pub(crate) fn $fake(c: &mut Cpu) {
+                if c.bus.read32($ctrl) != CARD_QUERY_MAGIC {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                card_query_call(c, $addr);
+            }
+        };
+    }
+
+    card_query_slot_fake!(
+        card_query_fake_str_hash,
+        CARD_QUERY_PREV_STR_HASH,
+        CARD_QUERY_CTRL,
+        0x0031_7670,
+        ee::s10::f_00317670__generated
+    );
+
+    card_query_slot_fake!(
+        card_query_fake_ustr_copy,
+        CARD_QUERY_PREV_USTR_COPY,
+        CARD_QUERY_CTRL + 0x10,
+        0x002c_2508,
+        ee::s08::f_002c2508__generated
+    );
+
+    card_query_slot_fake!(
+        card_query_fake_ustr_from_ascii,
+        CARD_QUERY_PREV_USTR_FROM_ASCII,
+        CARD_QUERY_CTRL + 0x20,
+        0x002c_2540,
+        ee::s08::f_002c2540__generated
+    );
+
+    card_query_slot_fake!(
+        card_query_fake_mem_set,
+        CARD_QUERY_PREV_MEM_SET,
+        CARD_QUERY_CTRL + 0x30,
+        0x003e_6448,
+        ee::s14::f_003e6448__generated
+    );
+
+    card_query_slot_fake!(
+        card_query_fake_free_space_for_port,
+        CARD_QUERY_PREV_FREE_SPACE_FOR_PORT,
+        CARD_QUERY_CTRL + 0x40,
+        0x002c_5320,
+        ee::s08::f_002c5320__generated
+    );
+
+    card_query_slot_fake!(
+        card_query_fake_ustr_sprintf,
+        CARD_QUERY_PREV_USTR_SPRINTF,
+        CARD_QUERY_CTRL + 0x50,
+        0x002c_26d0,
+        ee::s08::f_002c26d0__generated
+    );
+
+    card_query_slot_fake!(
+        card_query_fake_strcpy,
+        CARD_QUERY_PREV_STRCPY,
+        CARD_QUERY_CTRL + 0x60,
+        0x0041_66f4,
+        ee::s15::f_004166f4__generated
+    );
+
+    card_query_slot_fake!(
+        card_query_fake_sprintf,
+        CARD_QUERY_PREV_SPRINTF,
+        CARD_QUERY_CTRL + 0x70,
+        0x0041_7828,
+        ee::s15::f_00417828__generated
+    );
+
+    card_query_slot_fake!(
+        card_query_fake_set_state,
+        CARD_QUERY_PREV_SET_STATE,
+        CARD_QUERY_CTRL + 0x80,
+        0x002c_48c0,
+        ee::s08::f_002c48c0__generated
+    );
+
+    /// Hook the nine gated fakes (once per process).
+    pub(crate) fn card_query_fakes_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317670),
+            card_query_fake_str_hash,
+            &CARD_QUERY_PREV_STR_HASH,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C2508),
+            card_query_fake_ustr_copy,
+            &CARD_QUERY_PREV_USTR_COPY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C2540),
+            card_query_fake_ustr_from_ascii,
+            &CARD_QUERY_PREV_USTR_FROM_ASCII,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6448),
+            card_query_fake_mem_set,
+            &CARD_QUERY_PREV_MEM_SET,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C5320),
+            card_query_fake_free_space_for_port,
+            &CARD_QUERY_PREV_FREE_SPACE_FOR_PORT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C26D0),
+            card_query_fake_ustr_sprintf,
+            &CARD_QUERY_PREV_USTR_SPRINTF,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004166F4),
+            card_query_fake_strcpy,
+            &CARD_QUERY_PREV_STRCPY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            card_query_fake_sprintf,
+            &CARD_QUERY_PREV_SPRINTF,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C48C0),
+            card_query_fake_set_state,
+            &CARD_QUERY_PREV_SET_STATE,
+        );
+    }
+
+    /// The machine of these tests: scrambled registers (`machine`), the
+    /// fakes hooked and gated on, and vtable calls answered by
+    /// `card_query_call`.
+    pub(crate) fn card_query_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        card_query_fakes_install();
+        let r = machine(c, seed, salt, 0);
+        c.hooks.miss = card_query_call;
+        for k in 0..CARD_QUERY_FAKES {
+            c.bus.write32(CARD_QUERY_CTRL + 0x10 * k, CARD_QUERY_MAGIC);
+        }
+        r
+    }
+
+    /// The faked calls' answers in call order, and the call that unwinds.
+    pub(crate) fn card_query_calls(c: &mut Cpu, answers: &[u32], unwind_at: Option<u32>) {
+        put_words(c, CARD_QUERY_ANSWERS, answers);
+        c.bus.write32(LOG_UNWIND_AT, unwind_at.unwrap_or(u32::MAX));
+    }
+
+    /// The card object filled with junk (`words` words), its vtable's
+    /// `slots` pointing at fake methods.
+    pub(crate) fn card_query_card(c: &mut Cpu, r: &mut Rng, words: u32, slots: &[u32]) {
+        fill(c, r, CARD_QUERY_THIS, words);
+        let vt = put_vtable(c, r, CARD_QUERY_VTABLE, slots);
+        c.bus.write32(CARD_QUERY_THIS, vt);
+    }
+
+    /// The game object at `gp - 0x848` and its string table, whose find
+    /// method is a fake.
+    pub(crate) fn card_query_strings(c: &mut Cpu, r: &mut Rng) {
+        c.bus.write32(GAME_GP - MC_GAME_GP_OFF, CARD_QUERY_GAME);
+        c.bus
+            .write32(CARD_QUERY_GAME + MC_GAME_STRINGS, CARD_QUERY_STRINGS);
+        c.bus.write32(CARD_QUERY_STRINGS + 4, CARD_QUERY_STRINGS_VT);
+        put_vtable(c, r, CARD_QUERY_STRINGS_VT, &[MC_STRINGS_FIND]);
+    }
+
+    /// Junk for the high half of a register the code copies whole (about
+    /// half the time).
+    pub(crate) fn card_query_high(r: &mut Rng) -> u64 {
+        if r.next_u32() % 2 == 1 {
+            ((r.next_u32() | 1) as u64) << 32
+        } else {
+            0
+        }
+    }
+
+    /// A random pointer-like answer.
+    pub(crate) fn card_query_ptr(r: &mut Rng) -> u32 {
+        DATA + 0x8000 + (r.next_u32() & 0x7_fff0)
+    }
+
+    /// Some seeds return to the caller and some stop at a faked call's
+    /// unwind address.
+    pub(crate) fn card_query_require_unwinds(
+        generated: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
+        let (mut returned, mut unwound) = (0, 0);
+        for seed in 0..seeds {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            run_generated(&mut c, generated);
+            if c.pc == SENTINEL_RA {
+                returned += 1;
+            } else if c.pc & 0xffff_0000 == 0xdead_0000 {
+                unwound += 1;
+            }
+        }
+        assert!(
+            returned > 0 && unwound > 0,
+            "returned {returned}, unwound {unwound}"
+        );
+    }
+
+    /// A flag word or a bool answer: non-zero when `set` (1, 0x100,
+    /// 0x8000_0000 or junk; the game tests the whole word, so bit 0 and the
+    /// low byte are clear on some seeds).
+    pub(crate) fn card_query_flag(r: &mut Rng, set: bool) -> u32 {
+        if !set {
+            return 0;
+        }
+        match r.next_u32() % 4 {
+            0 => 1,
+            1 => 0x100,
+            2 => 0x8000_0000,
+            _ => r.next_u32() | 0x0200_0000,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // cPS2MemCard_v17
+
+    /// Arms of one slot of the scan: skipped for a flag word or no name, the
+    /// first candidate, or compared with the best slot on year, month, day,
+    /// time; and the scan skipped (card not formatted).
+    pub(crate) const NS_USED: u32 = 0;
+
+    pub(crate) const NS_INVALID: u32 = 1;
+
+    pub(crate) const NS_NO_NAME: u32 = 2;
+
+    pub(crate) const NS_NO_SPACE: u32 = 3;
+
+    pub(crate) const NS_FIRST: u32 = 4;
+
+    pub(crate) const NS_OLDER_YEAR: u32 = 5;
+
+    pub(crate) const NS_NEWER_YEAR: u32 = 6;
+
+    pub(crate) const NS_OLDER_MONTH: u32 = 7;
+
+    pub(crate) const NS_NEWER_MONTH: u32 = 8;
+
+    pub(crate) const NS_OLDER_DAY: u32 = 9;
+
+    pub(crate) const NS_NEWER_DAY: u32 = 10;
+
+    pub(crate) const NS_OLDER_TIME: u32 = 11;
+
+    pub(crate) const NS_NEWER_TIME: u32 = 12;
+
+    pub(crate) const NS_SAME_TIME: u32 = 13;
+
+    pub(crate) const NS_NOT_FORMATTED: u32 = 14;
+
+    /// Cycles of one slot per arm: the generated charges including the
+    /// 5-cycle loop tail, without the name query's call.
+    pub(crate) const NS_SLOT_CYCLES: [u64; 14] =
+        [8, 12, 21, 23, 28, 49, 52, 54, 58, 60, 64, 66, 70, 70];
+
+    /// A timestamp: seconds, minutes, hours, day, month, year.
+    pub(crate) type NsDate = [u32; 6];
+
+    pub(crate) fn ns_random_date(r: &mut Rng) -> NsDate {
+        [
+            r.next_u32() % 60,
+            1 + r.next_u32() % 58,
+            1 + r.next_u32() % 22,
+            2 + r.next_u32() % 26,
+            2 + r.next_u32() % 10,
+            2001 + r.next_u32() % 28,
+        ]
+    }
+
+    /// A date that compares with `best` the way the compare `arm` names: the
+    /// fields above the deciding one equal, the deciding one one less or
+    /// more, the rest random. Times decide on the minutes (the seconds of
+    /// both sides are the best slot's); "same time" keeps random seconds.
+    pub(crate) fn ns_date_against(arm: u32, best: NsDate, r: &mut Rng) -> NsDate {
+        let mut d = ns_random_date(r);
+        let (field, newer) = match arm {
+            NS_OLDER_YEAR => (5, false),
+            NS_NEWER_YEAR => (5, true),
+            NS_OLDER_MONTH => (4, false),
+            NS_NEWER_MONTH => (4, true),
+            NS_OLDER_DAY => (3, false),
+            NS_NEWER_DAY => (3, true),
+            NS_OLDER_TIME => (1, false),
+            NS_NEWER_TIME => (1, true),
+            _ => (0, false),
+        };
+        d[field.max(1)..].copy_from_slice(&best[field.max(1)..]);
+        if field > 0 {
+            d[field] = if newer {
+                best[field] + 1
+            } else {
+                best[field] - 1
+            };
+        }
+        d
+    }
+
+    pub(crate) fn ns_put_date(c: &mut Cpu, entry: u32, d: NsDate) {
+        for (off, v) in [
+            (MCU_ENTRY_SEC, d[0]),
+            (MCU_ENTRY_MIN, d[1]),
+            (MCU_ENTRY_HOUR, d[2]),
+            (MCU_ENTRY_DAY, d[3]),
+            (MCU_ENTRY_MONTH, d[4]),
+        ] {
+            c.bus.write8(entry + off, v as u8);
+        }
+        c.bus.write16(entry + MCU_ENTRY_YEAR, d[5] as u16);
+    }
+
+    /// Seed digits: `seed % 15` the arm of slot 1 (slot 0 is the first
+    /// candidate; for `NS_FIRST` slot 0 is used and slot 1 the first) or
+    /// "not formatted"; `seed / 15 % 2` slots 2-5 used (invalid for
+    /// `NS_FIRST`) or compared with rotating arms; `seed / 30 % 4` the call
+    /// that unwinds (3: none); `seed / 120 % 2` junk in `a0`'s high half
+    /// (`s1 = a0`, `s0 = s1` whole).
+    pub(crate) fn newest_save_fixture(c: &mut Cpu, seed: u32) {
+        let focus = seed % 15;
+        let rest_compared = seed / 15 % 2 == 1;
+        let unwind = seed / 30 % 4;
+        let high = seed / 120 % 2 == 1;
+        let mut r = card_query_machine(c, seed, 0x2c_64f8);
+        card_query_card(c, &mut r, 0x480 / 4, &[MCU_VT_V55, MCU_VT_HAS_SLOT_NAME]);
+        let mut arms = [NS_USED; 6];
+        match focus {
+            NS_FIRST => {
+                arms[1] = NS_FIRST;
+                arms[2..].fill(NS_INVALID);
+            }
+            NS_NOT_FORMATTED => {}
+            arm => {
+                arms[0] = NS_FIRST;
+                arms[1] = arm;
+            }
+        }
+        if rest_compared {
+            for (i, arm) in arms.iter_mut().enumerate().skip(2) {
+                *arm = NS_OLDER_YEAR + (focus + i as u32) % 9;
+            }
+        }
+        let best = ns_random_date(&mut r);
+        // v55, then one name query per slot that gets that far.
+        let mut answers = vec![card_query_flag(&mut r, focus != NS_NOT_FORMATTED)];
+        for (i, &arm) in arms.iter().enumerate() {
+            let entry = CARD_QUERY_THIS + MCU_ENTRIES + MCU_ENTRY_SIZE * i as u32;
+            for (word, set) in [
+                (MCU_ENTRY_USED, arm == NS_USED),
+                (MCU_ENTRY_INVALID, arm == NS_INVALID),
+                (MCU_ENTRY_NO_SPACE, arm == NS_NO_SPACE),
+            ] {
+                let v = card_query_flag(&mut r, set);
+                c.bus.write32(entry + word, v);
+            }
+            if arm >= NS_NO_NAME {
+                answers.push(card_query_flag(&mut r, arm != NS_NO_NAME));
+            }
+            let date = match arm {
+                NS_FIRST => best,
+                a if a >= NS_OLDER_YEAR => ns_date_against(a, best, &mut r),
+                _ => ns_random_date(&mut r),
+            };
+            ns_put_date(c, entry, date);
+        }
+        card_query_calls(c, &answers, (unwind < 3).then_some(unwind));
+        let hi = if high {
+            ((r.next_u32() | 1) as u64) << 32
+        } else {
+            0
+        };
+        c.g[A0][0] = hi | CARD_QUERY_THIS as u64;
+    }
+
+    /// The total of each focus arm with slots 2-5 used (invalid), no unwind.
+    pub(crate) fn newest_save_totals() -> Vec<u64> {
+        let k = CARD_QUERY_CALL_COST;
+        let slot = |arm: u32| NS_SLOT_CYCLES[arm as usize];
+        // 20 + the v55 call + 6 before the scan, 1 + 12 after it; `calls`
+        // name queries.
+        let scan = |slots: u64, calls: u64| 20 + 6 + 1 + 12 + slots + (1 + calls) * k;
+        let mut totals = vec![20 + k + 2 + 12];
+        for arm in NS_USED..=NS_SAME_TIME {
+            totals.push(if arm == NS_FIRST {
+                scan(slot(NS_USED) + slot(NS_FIRST) + 4 * slot(NS_INVALID), 1)
+            } else {
+                let queries = 1 + (arm >= NS_NO_NAME) as u64;
+                scan(slot(NS_FIRST) + slot(arm) + 4 * slot(NS_USED), queries)
+            });
+        }
+        totals
+    }
+
+    /// Every arm (`NS_NEWER_TIME` and `NS_SAME_TIME` share a total; slot 1
+    /// reaches each arm as named, while the rotating slots 2-5 are dated
+    /// against slot 0, not the running best), every unwinding call.
+    #[test]
+    fn c_ps2_mem_card_v17_matches() {
+        check_paths_lohi(
+            ee::s08::f_002c64f8__generated,
+            c_ps2_mem_card_v17,
+            240,
+            &newest_save_totals(),
+            &newest_save_fixture,
+        );
+        card_query_require_unwinds(ee::s08::f_002c64f8__generated, 240, &newest_save_fixture);
+    }
+
+    driven!(newest_save_generated, ee::s08::f_002c64f8__generated);
+
+    driven!(newest_save_hand, c_ps2_mem_card_v17);
+
+    /// Events at the scan's back edge (head 0x2c6568): the original delivers
+    /// and carries on (no resume entry, nothing to resume). Every fixture
+    /// scans and no call unwinds.
+    #[test]
+    fn c_ps2_mem_card_v17_events() {
+        check_events(newest_save_generated, newest_save_hand, 120, &|c, seed| {
+            let i = seed / 3;
+            newest_save_fixture(c, i % 14 + 15 * (i / 14 % 2) + 30 * 3 + 120 * (i / 28 % 2));
+            let mut r = Rng(0x64f8 ^ u64::from(seed));
+            schedule(c, &mut r, seed, 0x002c_64f8)
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // cPS2MemCard_GetStatusString
+
+    /// Arms: no card (`v53`), not formatted (`v55`), slot used, invalid, no
+    /// space, no name, named.
+    pub(crate) const STATUS_NO_CARD: u32 = 0;
+
+    pub(crate) const STATUS_UNFORMATTED: u32 = 1;
+
+    pub(crate) const STATUS_USED: u32 = 2;
+
+    pub(crate) const STATUS_INVALID: u32 = 3;
+
+    pub(crate) const STATUS_NO_SPACE: u32 = 4;
+
+    pub(crate) const STATUS_NO_NAME: u32 = 5;
+
+    pub(crate) const STATUS_NAMED: u32 = 6;
+
+    /// Seed digits: `seed % 7` the arm, `seed / 7 % 8` the call that unwinds
+    /// (past the last call: none), `seed / 56 % 3` the slot (0, 2 or 5).
+    pub(crate) fn status_string_fixture(c: &mut Cpu, seed: u32) {
+        let arm = seed % 7;
+        let unwind = seed / 7 % 8;
+        let slot = [0, 2, 5][(seed / 56 % 3) as usize];
+        let mut r = card_query_machine(c, seed, 0x2c_6128);
+        card_query_card(
+            c,
+            &mut r,
+            0x480 / 4,
+            &[MCU_VT_V53, MCU_VT_V55, MCU_VT_HAS_SLOT_NAME],
+        );
+        card_query_strings(c, &mut r);
+        let entry = CARD_QUERY_THIS + MCU_ENTRIES + MCU_ENTRY_SIZE * slot;
+        for (word, set) in [
+            (MCU_ENTRY_USED, arm == STATUS_USED),
+            (MCU_ENTRY_INVALID, arm == STATUS_INVALID),
+            (MCU_ENTRY_NO_SPACE, arm == STATUS_NO_SPACE),
+        ] {
+            let v = card_query_flag(&mut r, set);
+            c.bus.write32(entry + word, v);
+        }
+        // The card queries in call order, then the hash, the found string
+        // and the copies.
+        let mut answers = vec![card_query_flag(&mut r, arm != STATUS_NO_CARD)];
+        if arm != STATUS_NO_CARD {
+            answers.push(card_query_flag(&mut r, arm != STATUS_UNFORMATTED));
+        }
+        if arm >= STATUS_NO_NAME {
+            answers.push(card_query_flag(&mut r, arm == STATUS_NAMED));
+        }
+        for _ in 0..4 {
+            answers.push(card_query_ptr(&mut r));
+        }
+        card_query_calls(c, &answers, Some(unwind));
+        c.g[A0][0] = card_query_high(&mut r) | CARD_QUERY_THIS as u64;
+        c.g[A1][0] = card_query_high(&mut r) | slot as u64;
+        c.g[A2][0] = card_query_high(&mut r) | CARD_QUERY_DST as u64;
+    }
+
+    /// Totals per arm: generated charges plus the faked calls (5, 6, 6, 6,
+    /// 6, 7, 5 calls).
+    #[test]
+    fn c_ps2_mem_card_get_status_string_matches() {
+        let k = CARD_QUERY_CALL_COST;
+        check_paths_lohi(
+            ee::s08::f_002c6128__generated,
+            c_ps2_mem_card_get_status_string,
+            168,
+            &[
+                42 + 5 * k,
+                51 + 6 * k,
+                55 + 6 * k,
+                59 + 6 * k,
+                63 + 6 * k,
+                71 + 7 * k,
+                58 + 5 * k,
+            ],
+            &status_string_fixture,
+        );
+        card_query_require_unwinds(ee::s08::f_002c6128__generated, 168, &status_string_fixture);
+    }
+
+    // -----------------------------------------------------------------------
+    // cPS2MemCard_Init
+
+    /// Seed digit: `seed % 9` the clearing call that unwinds (8: none).
+    pub(crate) fn init_fixture(c: &mut Cpu, seed: u32) {
+        let unwind = seed % 9;
+        let mut r = card_query_machine(c, seed, 0x2c_4050);
+        fill(c, &mut r, CARD_QUERY_THIS, 0x1500 / 4);
+        fill(c, &mut r, GAME_GP + MCU_GP_TYPE, 4);
+        let answers: Vec<u32> = (0..8).map(|_| card_query_ptr(&mut r)).collect();
+        card_query_calls(c, &answers, (unwind < 8).then_some(unwind));
+        c.g[A0][0] = card_query_high(&mut r) | CARD_QUERY_THIS as u64;
+    }
+
+    /// One path: 54 + two loop passes of 8 + 20, and eight faked clears.
+    #[test]
+    fn c_ps2_mem_card_init_matches() {
+        check_paths(
+            ee::s08::f_002c4050__generated,
+            c_ps2_mem_card_init,
+            108,
+            &[54 + 2 * 8 + 20 + 8 * CARD_QUERY_CALL_COST],
+            &init_fixture,
+        );
+        card_query_require_unwinds(ee::s08::f_002c4050__generated, 108, &init_fixture);
+    }
+
+    driven!(init_generated, ee::s08::f_002c4050__generated);
+
+    driven!(init_hand, c_ps2_mem_card_init);
+
+    /// Events at the port-record loop's back edge (head 0x2c4128, reached once
+    /// after 86 cycles, so every event seed's event is due there): delivered,
+    /// the loop carries on (no resume entry). No call unwinds.
+    #[test]
+    fn c_ps2_mem_card_init_events() {
+        check_events(init_generated, init_hand, 60, &|c, seed| {
+            init_fixture(c, 8 + 9 * (seed / 3));
+            let mut r = Rng(0x4050 ^ u64::from(seed));
+            schedule(c, &mut r, seed, 0x002c_4050)
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // cPS2MemCard_GetFreeSpaceString
+
+    /// Arms: not formatted, status -2, status 0 with a negative / zero /
+    /// positive free space, another status.
+    pub(crate) const FREE_UNFORMATTED: u32 = 0;
+
+    pub(crate) const FREE_NO_FORMAT: u32 = 1;
+
+    pub(crate) const FREE_NEGATIVE: u32 = 2;
+
+    pub(crate) const FREE_ZERO: u32 = 3;
+
+    pub(crate) const FREE_POSITIVE: u32 = 4;
+
+    pub(crate) const FREE_OTHER_STATUS: u32 = 5;
+
+    /// Seed digits: `seed % 6` the arm, `seed / 6 % 5` the call that unwinds
+    /// (4: none), `seed / 30 % 2` the port, `seed / 60 % 2` a negative free
+    /// space of -1 (0) or -100 and below (1).
+    pub(crate) fn free_space_fixture(c: &mut Cpu, seed: u32) {
+        let arm = seed % 6;
+        let unwind = seed / 6 % 5;
+        let port = seed / 30 % 2;
+        let minus_one = seed / 60 % 2 == 0;
+        let mut r = card_query_machine(c, seed, 0x2c_53e0);
+        fill(c, &mut r, CARD_QUERY_THIS, 0x480 / 4);
+        card_query_strings(c, &mut r);
+        let record = CARD_QUERY_THIS + MCU_PORTS + MCU_PORT_INFO_SIZE * port;
+        let formatted = card_query_flag(&mut r, arm != FREE_UNFORMATTED);
+        c.bus.write32(record + MCU_PORT_INFO_FORMATTED, formatted);
+        let status = match arm {
+            FREE_UNFORMATTED => r.next_u32(),
+            FREE_NO_FORMAT => MC_STATUS_NO_FORMAT,
+            FREE_OTHER_STATUS => [0xffff_ffff, 0xffff_d8ee, 5][(r.next_u32() % 3) as usize],
+            _ => 0,
+        };
+        c.bus.write32(record + MCU_PORT_INFO_STATUS, status);
+        // The free space (or the blank text call's result), then the hash,
+        // the found format and the formatter's result.
+        let first = match arm {
+            FREE_NEGATIVE if minus_one => u32::MAX,
+            FREE_NEGATIVE => 0xffff_ff9c - r.next_u32() % 0x1000,
+            FREE_ZERO => 0,
+            FREE_POSITIVE => 1 + r.next_u32() % 0x2000,
+            _ => card_query_ptr(&mut r),
+        };
+        let mut answers = vec![first];
+        for _ in 0..3 {
+            answers.push(card_query_ptr(&mut r));
+        }
+        card_query_calls(c, &answers, (unwind < 4).then_some(unwind));
+        c.g[A0][0] = card_query_high(&mut r) | CARD_QUERY_THIS as u64;
+        c.g[A1][0] = card_query_high(&mut r) | port as u64;
+        c.g[A2][0] = card_query_high(&mut r) | CARD_QUERY_DST as u64;
+    }
+
+    /// Totals: the two blank call sites (24 / 28 and 31 cycles, one call)
+    /// and the free-space text (48, four calls; the free-space clamp is a
+    /// conditional move, all three values share it).
+    #[test]
+    fn c_ps2_mem_card_get_free_space_string_matches() {
+        let k = CARD_QUERY_CALL_COST;
+        check_paths_lohi(
+            ee::s08::f_002c53e0__generated,
+            c_ps2_mem_card_get_free_space_string,
+            240,
+            &[24 + k, 28 + k, 31 + k, 48 + 4 * k],
+            &free_space_fixture,
+        );
+        card_query_require_unwinds(ee::s08::f_002c53e0__generated, 240, &free_space_fixture);
+    }
+
+    // -----------------------------------------------------------------------
+    // cPS2MemCard_v54
+
+    /// Arms: not a PS2 card, `v50` true, not formatted, `v52` false / true.
+    pub(crate) const USABLE_NOT_PS2: u32 = 0;
+
+    pub(crate) const USABLE_V50: u32 = 1;
+
+    pub(crate) const USABLE_UNFORMATTED: u32 = 2;
+
+    pub(crate) const USABLE_V52_FALSE: u32 = 3;
+
+    /// Seed digits: `seed % 5` the arm, `seed / 5 % 5` the call that unwinds
+    /// (4: none), `seed / 25 % 3` what a true `v52` returns (1, a large odd
+    /// word, a word that is negative once sign-extended).
+    pub(crate) fn usable_port_fixture(c: &mut Cpu, seed: u32) {
+        let arm = seed % 5;
+        let unwind = seed / 5 % 5;
+        let v52_true = [1, 0x0012_3457, 0x8000_0001][(seed / 25 % 3) as usize];
+        let mut r = card_query_machine(c, seed, 0x2d_3840);
+        card_query_card(
+            c,
+            &mut r,
+            0x480 / 4,
+            &[
+                MCU_VT_IS_PORT_NOT_PS2_CARD,
+                MCU_VT_V50,
+                MCU_VT_IS_PORT_FORMATTED,
+                MCU_VT_V52,
+            ],
+        );
+        let yes = r.next_u32() | 1;
+        let answers = match arm {
+            USABLE_NOT_PS2 => vec![yes],
+            USABLE_V50 => vec![0, yes],
+            USABLE_UNFORMATTED => vec![0, 0, 0],
+            USABLE_V52_FALSE => vec![0, 0, yes, 0],
+            _ => vec![0, 0, yes, v52_true],
+        };
+        card_query_calls(c, &answers, (unwind < 4).then_some(unwind));
+        c.g[A0][0] = card_query_high(&mut r) | CARD_QUERY_THIS as u64;
+        c.g[A1][0] = card_query_high(&mut r) | (r.next_u32() % 2) as u64;
+    }
+
+    /// Totals: 21, 29, 38 and 44 cycles with 1, 2, 3 and 4 calls (`v52`
+    /// false and true share the last).
+    #[test]
+    fn c_ps2_mem_card_v54_matches() {
+        let k = CARD_QUERY_CALL_COST;
+        check_paths(
+            ee::s09::f_002d3840__generated,
+            c_ps2_mem_card_v54,
+            200,
+            &[21 + k, 29 + 2 * k, 38 + 3 * k, 44 + 4 * k],
+            &usable_port_fixture,
+        );
+        card_query_require_unwinds(ee::s09::f_002d3840__generated, 200, &usable_port_fixture);
+    }
+
+    // -----------------------------------------------------------------------
+    // cPS2MemCard_DoDeleteSave
+
+    /// Seed digits: `seed % 4` the call that unwinds (`strcpy`, `sprintf`,
+    /// `SetState`; 3: none), `seed / 4 % 6` the slot.
+    pub(crate) fn delete_save_fixture(c: &mut Cpu, seed: u32) {
+        let unwind = seed % 4;
+        let slot = seed / 4 % 6;
+        let mut r = card_query_machine(c, seed, 0x2c_4410);
+        fill(c, &mut r, CARD_QUERY_THIS, 0x480 / 4);
+        c.bus.write32(CARD_QUERY_THIS + MCU_SLOT, slot);
+        let answers: Vec<u32> = (0..3).map(|_| card_query_ptr(&mut r)).collect();
+        card_query_calls(c, &answers, (unwind < 3).then_some(unwind));
+        c.g[A0][0] = card_query_high(&mut r) | CARD_QUERY_THIS as u64;
+    }
+
+    /// One path: 28 cycles and three faked calls.
+    #[test]
+    fn c_ps2_mem_card_do_delete_save_matches() {
+        check_paths_lohi(
+            ee::s08::f_002c4410__generated,
+            c_ps2_mem_card_do_delete_save,
+            120,
+            &[28 + 3 * CARD_QUERY_CALL_COST],
+            &delete_save_fixture,
+        );
+        card_query_require_unwinds(ee::s08::f_002c4410__generated, 120, &delete_save_fixture);
+    }
+
+    /// Gate of the `cPS2MemCard_SetState` fake the request-wrapper tests use.
+    pub(crate) const SET_STATE_WRAPPER_CTRL: u32 = DATA + 0xf_f520;
+
+    pub(crate) const SET_STATE_WRAPPER_MAGIC: u32 = 0x4d43_5752;
+
+    pub(crate) static SET_STATE_WRAPPER_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// `cPS2MemCard_SetState` for the request-wrapper tests: log the call
+    /// (every register: `a0` = this, `a1` = the state, the stored arguments,
+    /// `v0`, `ra`) and return or unwind; with the gate off, the slot's
+    /// previous body.
+    pub(crate) fn fake_set_state_for_wrappers(c: &mut Cpu) {
+        if c.bus.read32(SET_STATE_WRAPPER_CTRL) != SET_STATE_WRAPPER_MAGIC {
+            return fakes::fall_back(c, &SET_STATE_WRAPPER_PREV, ee::s08::f_002c48c0__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x002c_48c0, ra);
+    }
+
+    pub(crate) fn set_state_wrapper_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C48C0),
+            fake_set_state_for_wrappers,
+            &SET_STATE_WRAPPER_PREV,
+        );
+    }
+
+    /// One request-wrapper call. Seed digits: `seed % 3` = 0 makes the
+    /// `SetState` call unwind (else it returns); `seed / 3 % 5` places the
+    /// card object (non-zero low bytes, pre-filled with junk so every store
+    /// shows); `seed / 15 % 2` = 1 puts junk in the high half of `a0` (only
+    /// its low word addresses the object; `v0 = a0` copies it whole). `a1`
+    /// and `a2` keep the machine's full 64-bit junk: the stores keep their low
+    /// words, and the fake logs what the wrapper leaves in each register.
+    pub(crate) fn set_state_wrapper_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 1);
+        c.bus
+            .write32(SET_STATE_WRAPPER_CTRL, SET_STATE_WRAPPER_MAGIC);
+        let unwind_at = if seed % 3 == 0 { 0 } else { u32::MAX };
+        c.bus.write32(LOG_UNWIND_AT, unwind_at);
+        let this = DATA + 0x1238 + (seed / 3 % 5) * 0x2_0134;
+        fill(c, &mut r, this, 0x540);
+        let high = if seed / 15 % 2 == 1 {
+            (r.next_u32() as u64 | 1) << 32
+        } else {
+            0
+        };
+        c.g[A0][0] = high | this as u64;
+    }
+
+    /// Both arms of a request wrapper are taken: `SetState` returns (the
+    /// wrapper returns to the caller's `ra`) and unwinds (the wrapper stops at
+    /// the fake's unwind address).
+    pub(crate) fn set_state_wrapper_arms(generated: GuestFn, salt: u64) {
+        let (mut returned, mut unwound) = (0, 0);
+        for seed in 0..30 {
+            let mut c = fresh();
+            set_state_wrapper_setup(&mut c, seed, salt);
+            run_generated(&mut c, generated);
+            if seed % 3 == 0 {
+                assert_eq!(c.pc, 0xdead_0000, "seed {seed}: SetState did not unwind");
+                unwound += 1;
+            } else {
+                assert_eq!(
+                    c.pc,
+                    crate::difftest::RA,
+                    "seed {seed}: wrapper did not return"
+                );
+                returned += 1;
+            }
+        }
+        assert!(returned > 0 && unwound > 0);
+    }
+
+    /// Differential test of one request wrapper against its generated body,
+    /// with `SetState` faked (calls logged, unwinds on `seed % 3 == 0`).
+    pub(crate) fn set_state_wrapper_check(generated: GuestFn, hand: GuestFn, salt: u64) {
+        set_state_wrapper_install();
+        set_state_wrapper_arms(generated, salt);
+        fakes::covered(generated, hand, 300, &|c, seed| {
+            set_state_wrapper_setup(c, seed, salt)
+        });
+    }
+
+    #[test]
+    fn c_ps2_mem_card_request_format_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c4368__generated,
+            c_ps2_mem_card_request_format,
+            0x2c_4368,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v32_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c48a0__generated,
+            c_ps2_mem_card_v32,
+            0x2c_48a0,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v43_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c4768__generated,
+            c_ps2_mem_card_v43,
+            0x2c_4768,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_request_close_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c6a08__generated,
+            c_ps2_mem_card_request_close,
+            0x2c_6a08,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_request_flush_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c6ae0__generated,
+            c_ps2_mem_card_request_flush,
+            0x2c_6ae0,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v76_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c4290__generated,
+            c_ps2_mem_card_v76,
+            0x2c_4290,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v10_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c43e0__generated,
+            c_ps2_mem_card_v10,
+            0x2c_43e0,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_request_write_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c6bd0__generated,
+            c_ps2_mem_card_request_write,
+            0x2c_6bd0,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_request_read_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c6b50__generated,
+            c_ps2_mem_card_request_read,
+            0x2c_6b50,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_request_seek_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c6a60__generated,
+            c_ps2_mem_card_request_seek,
+            0x2c_6a60,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_request_get_info_now_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c67e8__generated,
+            c_ps2_mem_card_request_get_info_now,
+            0x2c_67e8,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v30_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c4858__generated,
+            c_ps2_mem_card_v30,
+            0x2c_4858,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v41_matches() {
+        set_state_wrapper_check(
+            ee::s08::f_002c4720__generated,
+            c_ps2_mem_card_v41,
+            0x2c_4720,
+        );
+    }
+
+    /// The gate word of this unit's port-getter fakes.
+    pub(crate) const PORT_GETTER_FAKE_MAGIC: u32 = 0x4d43_5448;
+
+    /// One gate word per faked callee.
+    pub(crate) const PORT_GETTER_CTRL_CHANGED_FLAG: u32 = DATA + 0xf_f600;
+
+    pub(crate) const PORT_GETTER_CTRL_PORT_ERROR: u32 = DATA + 0xf_f610;
+
+    pub(crate) const PORT_GETTER_CTRL_FREE_SPACE: u32 = DATA + 0xf_f620;
+
+    pub(crate) const PORT_GETTER_CTRL_SPRINTF: u32 = DATA + 0xf_f630;
+
+    pub(crate) const PORT_GETTER_CTRL_STRCPY: u32 = DATA + 0xf_f640;
+
+    pub(crate) const PORT_GETTER_CTRL_DELETE: u32 = DATA + 0xf_f650;
+
+    /// The card object (word aligned, non-zero low bytes) and the size of
+    /// the per-port info block (four ports of 0x14 bytes).
+    pub(crate) const PORT_GETTER_THIS: u32 = DATA + 0x1238;
+
+    pub(crate) const PORT_INFO_SIZE: u32 = 0x14;
+
+    macro_rules! port_getter_fake {
+        ($name:ident, $prev:ident, $ctrl:expr, $addr:expr, $gen:path) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+            pub(crate) fn $name(c: &mut Cpu) {
+                if c.bus.read32($ctrl) != PORT_GETTER_FAKE_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $addr, ra);
+            }
+        };
+    }
+
+    port_getter_fake!(
+        fake_changed_flag_for_port_getters,
+        PREV_CHANGED_FLAG_FOR_PORT_GETTERS,
+        PORT_GETTER_CTRL_CHANGED_FLAG,
+        0x002c_53c8,
+        ee::s08::f_002c53c8__generated
+    );
+
+    port_getter_fake!(
+        fake_port_error_for_port_getters,
+        PREV_PORT_ERROR_FOR_PORT_GETTERS,
+        PORT_GETTER_CTRL_PORT_ERROR,
+        0x002c_51d0,
+        ee::s08::f_002c51d0__generated
+    );
+
+    port_getter_fake!(
+        fake_free_space_for_port_getters,
+        PREV_FREE_SPACE_FOR_PORT_GETTERS,
+        PORT_GETTER_CTRL_FREE_SPACE,
+        0x002c_5320,
+        ee::s08::f_002c5320__generated
+    );
+
+    port_getter_fake!(
+        fake_ustr_sprintf_for_port_getters,
+        PREV_USTR_SPRINTF_FOR_PORT_GETTERS,
+        PORT_GETTER_CTRL_SPRINTF,
+        0x002c_26d0,
+        ee::s08::f_002c26d0__generated
+    );
+
+    port_getter_fake!(
+        fake_strcpy_for_port_getters,
+        PREV_STRCPY_FOR_PORT_GETTERS,
+        PORT_GETTER_CTRL_STRCPY,
+        0x0041_66f4,
+        ee::s15::f_004166f4__generated
+    );
+
+    port_getter_fake!(
+        fake_delete_for_port_getters,
+        PREV_DELETE_FOR_PORT_GETTERS,
+        PORT_GETTER_CTRL_DELETE,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    pub(crate) fn install_port_getter_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C53C8),
+            fake_changed_flag_for_port_getters,
+            &PREV_CHANGED_FLAG_FOR_PORT_GETTERS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C51D0),
+            fake_port_error_for_port_getters,
+            &PREV_PORT_ERROR_FOR_PORT_GETTERS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C5320),
+            fake_free_space_for_port_getters,
+            &PREV_FREE_SPACE_FOR_PORT_GETTERS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C26D0),
+            fake_ustr_sprintf_for_port_getters,
+            &PREV_USTR_SPRINTF_FOR_PORT_GETTERS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004166F4),
+            fake_strcpy_for_port_getters,
+            &PREV_STRCPY_FOR_PORT_GETTERS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            fake_delete_for_port_getters,
+            &PREV_DELETE_FOR_PORT_GETTERS,
+        );
+    }
+
+    /// The one faked call unwinds (`LOG_UNWIND_AT` 0) or returns: a seed
+    /// digit, not `machine`'s draw.
+    pub(crate) fn unwind_first(c: &mut Cpu, unwind: bool) {
+        c.bus
+            .write32(LOG_UNWIND_AT, if unwind { 0 } else { u32::MAX });
+    }
+
+    /// A pointer or index register: sign-extended, or with a junk upper half.
+    pub(crate) fn junk_high(r: &mut Rng, low: u32, junk: bool) -> u64 {
+        let high = if junk { (r.next_u32() as u64) << 32 } else { 0 };
+        high | low as u64
+    }
+
+    /// A card whose vtable slot `slot` is `{delta, fake method}`: the delta is
+    /// negative on even seeds and positive on odd ones (digit `seed % 2`);
+    /// `a0`'s upper half is junk when `seed / 2 % 2` is 1. The fake unwinds
+    /// when `seed / 4 % 3` is 0.
+    pub(crate) fn mem_card_vthunk_setup(c: &mut Cpu, seed: u32, salt: u64, slot: u32) {
+        let mut r = machine(c, seed, salt, 1);
+        unwind_first(c, seed / 4 % 3 == 0);
+        let this = PORT_GETTER_THIS;
+        let vt = DATA + 0x4564;
+        let mag = (r.next_u32() % 0x7fff + 1) as i32;
+        let delta = if seed % 2 == 0 { -mag } else { mag };
+        c.bus.write16(vt + slot, delta as u16);
+        c.bus.write16(vt + slot + 2, r.next_u32() as u16);
+        c.bus.write32(vt + slot + 4, FAKE + 0x10);
+        c.bus.write32(this, vt);
+        fill(c, &mut r, this + 4, 0xc);
+        c.g[A0][0] = junk_high(&mut r, this, seed / 2 % 2 == 1);
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v49_matches() {
+        covered(
+            ee::s09::f_002d37e0__generated,
+            c_ps2_mem_card_v49,
+            200,
+            &|c, seed| mem_card_vthunk_setup(c, seed, 0x2d_37e0, MCU_VT_IS_PORT_NOT_PS2_CARD),
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v51_matches() {
+        covered(
+            ee::s08::f_002c67b0__generated,
+            c_ps2_mem_card_v51,
+            200,
+            &|c, seed| mem_card_vthunk_setup(c, seed, 0x2c_67b0, MCU_VT_V50),
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v53_matches() {
+        covered(
+            ee::s09::f_002d3810__generated,
+            c_ps2_mem_card_v53,
+            200,
+            &|c, seed| mem_card_vthunk_setup(c, seed, 0x2d_3810, MCU_VT_V52),
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v55_matches() {
+        covered(
+            ee::s09::f_002d38f0__generated,
+            c_ps2_mem_card_v55,
+            200,
+            &|c, seed| mem_card_vthunk_setup(c, seed, 0x2d_38f0, MCU_VT_IS_PORT_FORMATTED),
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v23_matches() {
+        covered(
+            ee::s08::f_002c6778__generated,
+            c_ps2_mem_card_v23,
+            200,
+            &|c, seed| mem_card_vthunk_setup(c, seed, 0x2c_6778, MCU_VT_CALC_SAVE_SIZE_KB),
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v62_matches() {
+        covered(
+            ee::s08::f_002c6718__generated,
+            c_ps2_mem_card_v62,
+            200,
+            &|c, seed| mem_card_vthunk_setup(c, seed, 0x2c_6718, MCU_VT_V61),
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v71_matches() {
+        covered(
+            ee::s09::f_002d3980__generated,
+            c_ps2_mem_card_v71,
+            200,
+            &|c, seed| mem_card_vthunk_setup(c, seed, 0x2d_3980, MCU_VT_GET_SLOT_NAME),
+        );
+    }
+
+    /// A card at `PORT_GETTER_THIS` with random per-port info. Even seeds
+    /// switch on the callee's fake (`gate`; any port, unwinding when
+    /// `seed / 32 % 2` is 1); odd seeds run the real callee on port
+    /// `seed / 2 % 4`. `a0`'s upper half is junk when `seed / 8 % 2` is 1.
+    /// Returns the port's info block for the caller's per-callee words.
+    pub(crate) fn port_getter_setup(c: &mut Cpu, seed: u32, salt: u64, gate: u32) -> (Rng, u32) {
+        install_port_getter_fakes();
+        let mut r = machine(c, seed, salt, 1);
+        unwind_first(c, seed / 32 % 2 == 1);
+        let this = PORT_GETTER_THIS;
+        let faked = seed % 2 == 0;
+        let port = if faked { r.next_u32() } else { seed / 2 % 4 };
+        if faked {
+            c.bus.write32(gate, PORT_GETTER_FAKE_MAGIC);
+        }
+        c.bus.write32(this + MCU_PORT, port);
+        fill(c, &mut r, this + MCU_PORTS, 4 * PORT_INFO_SIZE / 4);
+        c.g[A0][0] = junk_high(&mut r, this, seed / 8 % 2 == 1);
+        let info = this + MCU_PORTS + (port % 4) * PORT_INFO_SIZE;
+        (r, info)
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v63_matches() {
+        // Real callee: 7 + 6 cycles.
+        let setup = |c: &mut Cpu, seed: u32| {
+            let (mut r, info) =
+                port_getter_setup(c, seed, 0x2d_3930, PORT_GETTER_CTRL_CHANGED_FLAG);
+            let changed = if seed / 16 % 2 == 0 { 0 } else { r.next_u32() };
+            c.bus.write32(info + 0x10, changed);
+        };
+        covered(
+            ee::s09::f_002d3930__generated,
+            c_ps2_mem_card_v63,
+            200,
+            &setup,
+        );
+        require_paths(ee::s09::f_002d3930__generated, 200, &[13], &setup);
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v64_matches() {
+        // Real `GetFreeSpaceString` on each of its paths (digit `seed % 4`:
+        // no save data, status -2, another status, status 0); on status 0 it
+        // calls the localiser through a fake vtable slot and the gated
+        // `UStr_Sprintf` fake; `seed / 32 % 3` the one that unwinds (2: none).
+        let setup = |c: &mut Cpu, seed: u32| {
+            install_port_getter_fakes();
+            let mut r = machine(c, seed, 0x2d_3950, 2);
+            let unwind = seed / 32 % 3;
+            c.bus
+                .write32(LOG_UNWIND_AT, if unwind < 2 { unwind } else { u32::MAX });
+            c.bus
+                .write32(PORT_GETTER_CTRL_SPRINTF, PORT_GETTER_FAKE_MAGIC);
+            let this = PORT_GETTER_THIS;
+            let port = seed / 4 % 4;
+            c.bus.write32(this + MCU_PORT, port);
+            fill(c, &mut r, this + MCU_PORTS, 4 * PORT_INFO_SIZE / 4);
+            let info = this + MCU_PORTS + port * PORT_INFO_SIZE;
+            let status = match seed % 4 {
+                0 | 2 => match r.next_u32() {
+                    0 | 0xffff_fffe => 5,
+                    s => s,
+                },
+                1 => 0xffff_fffe,
+                _ => 0,
+            };
+            let data = if seed % 4 == 0 { 0 } else { r.next_u32() | 1 };
+            c.bus.write32(info + 0xc, data);
+            c.bus.write32(info + 8, status);
+            let free = r.next_u32() & 0x7fff_ffff;
+            let free = if seed / 16 % 2 == 0 {
+                free | 0x8000_0000
+            } else {
+                free
+            };
+            c.bus.write32(info + 4, free);
+            // The localiser object: *(gp-0x848) + 0x8c, its vtable at +4,
+            // slot 0x20 = {delta, fake}.
+            let world = DATA + 0x5674;
+            let obj = DATA + 0x6788;
+            let vt = DATA + 0x78a4;
+            c.bus.write32(GAME_GP - 0x848, world);
+            c.bus.write32(world + 0x8c, obj);
+            c.bus.write32(obj + 4, vt);
+            let mag = (r.next_u32() % 0x7fff + 1) as i32;
+            let delta = if seed / 32 % 2 == 0 { -mag } else { mag };
+            c.bus.write16(vt + 0x20, delta as u16);
+            c.bus.write32(vt + 0x24, FAKE + 0x20);
+            let dst = DATA + 0x8a12;
+            fill(c, &mut r, DATA + 0x8a10, 0x10);
+            c.g[A0][0] = junk_high(&mut r, this, seed / 64 % 2 == 1);
+            c.g[A1][0] = ((r.next_u32() as u64) << 32) | dst as u64;
+        };
+        covered(
+            ee::s09::f_002d3950__generated,
+            c_ps2_mem_card_v64,
+            200,
+            &setup,
+        );
+    }
+
+    /// The port status word for the real `GetPortError` (digit
+    /// `seed / 16 % 6`): 0 and 1 give fixed cycle totals.
+    pub(crate) fn port_error_status(r: &mut Rng, seed: u32) -> u32 {
+        match seed / 16 % 6 {
+            0 => 0,
+            1 => 1,
+            2 => (-7i32) as u32,
+            3 => (-10i32) as u32,
+            4 => (-10001i32) as u32,
+            _ => r.next_u32(),
+        }
+    }
+
+    #[test]
+    fn c_ps2_mem_card_get_current_port_error_matches() {
+        // Real callee: 7 + 14 (status 0) and 7 + 12 (status 1).
+        let setup = |c: &mut Cpu, seed: u32| {
+            let (mut r, info) = port_getter_setup(c, seed, 0x2d_39b8, PORT_GETTER_CTRL_PORT_ERROR);
+            let status = port_error_status(&mut r, seed);
+            c.bus.write32(info + 8, status);
+        };
+        covered(
+            ee::s09::f_002d39b8__generated,
+            c_ps2_mem_card_get_current_port_error,
+            200,
+            &setup,
+        );
+        require_paths(ee::s09::f_002d39b8__generated, 200, &[21, 19], &setup);
+    }
+
+    #[test]
+    fn c_ps2_mem_card_get_free_space_matches() {
+        // Real callee: 7 + 5 cycles.
+        let setup = |c: &mut Cpu, seed: u32| {
+            port_getter_setup(c, seed, 0x2c_5338, PORT_GETTER_CTRL_FREE_SPACE);
+        };
+        covered(
+            ee::s08::f_002c5338__generated,
+            c_ps2_mem_card_get_free_space,
+            200,
+            &setup,
+        );
+        require_paths(ee::s08::f_002c5338__generated, 200, &[12], &setup);
+    }
+
+    #[test]
+    fn c_ps2_mem_card_get_save_name_matches() {
+        // Slot `seed % 6`; strcpy faked when `seed / 6 % 2` is 0 (unwinding
+        // when `seed / 24 % 2` is 1), else real on a 0..7-character name;
+        // slot and dst registers carry junk upper halves when `seed / 12 % 2`
+        // is 1.
+        let setup = |c: &mut Cpu, seed: u32| {
+            install_port_getter_fakes();
+            let mut r = machine(c, seed, 0x2c_54d0, 1);
+            unwind_first(c, seed / 24 % 2 == 1);
+            if seed / 6 % 2 == 0 {
+                c.bus
+                    .write32(PORT_GETTER_CTRL_STRCPY, PORT_GETTER_FAKE_MAGIC);
+            }
+            let this = PORT_GETTER_THIS;
+            for i in 0..6 {
+                let name = this + MCU_ENTRIES + MCU_ENTRY_NAME + i * MCU_ENTRY_SIZE;
+                fill(c, &mut r, name, 4);
+                let len = r.next_u32() % 8;
+                for k in 0..len {
+                    c.bus.write8(name + k, (r.next_u32() % 94 + 33) as u8);
+                }
+                c.bus.write8(name + len, 0);
+            }
+            let dst = DATA + 0x9a35;
+            fill(c, &mut r, DATA + 0x9a30, 4);
+            let junk = seed / 12 % 2 == 1;
+            c.g[A0][0] = this as u64;
+            c.g[A1][0] = junk_high(&mut r, seed % 6, junk);
+            c.g[A2][0] = junk_high(&mut r, dst, junk);
+        };
+        covered(
+            ee::s08::f_002c54d0__generated,
+            c_ps2_mem_card_get_save_name,
+            240,
+            &setup,
+        );
+        check_lohi(
+            ee::s08::f_002c54d0__generated,
+            c_ps2_mem_card_get_save_name,
+            240,
+            &setup,
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v45_matches() {
+        // Real UStr_ToAscii on a title of `seed % 6` characters: 7 + 6 for the
+        // empty one, 7 + 7 + 7n otherwise.
+        check_paths(
+            ee::s08::f_002c5500__generated,
+            c_ps2_mem_card_v45,
+            200,
+            &[13, 21, 28, 35, 42, 49],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2c_5500, 0);
+                let this = PORT_GETTER_THIS;
+                fill(c, &mut r, this + MCU_NAME, 0x10);
+                let title = DATA + 0x2346;
+                let len = seed % 6;
+                for k in 0..len {
+                    c.bus.write16(title + 2 * k, (r.next_u32() as u16) | 1);
+                }
+                c.bus.write16(title + 2 * len, 0);
+                c.g[A0][0] = junk_high(&mut r, this, seed / 6 % 2 == 1);
+                c.g[A1][0] = title as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn c_ps2_mem_card_v73_matches() {
+        // Real callee: 8 + 14 (status 0, result 0) and 8 + 12 (status 1).
+        let setup = |c: &mut Cpu, seed: u32| {
+            let (mut r, info) = port_getter_setup(c, seed, 0x2c_5230, PORT_GETTER_CTRL_PORT_ERROR);
+            let status = port_error_status(&mut r, seed);
+            c.bus.write32(info + 8, status);
+        };
+        covered(
+            ee::s08::f_002c5230__generated,
+            c_ps2_mem_card_v73,
+            200,
+            &setup,
+        );
+        require_paths(ee::s08::f_002c5230__generated, 200, &[22, 20], &setup);
+    }
+
+    #[test]
+    fn c_ps2_mem_card_base_dtor_matches() {
+        // Delete flag bit 0 from `seed % 2`: 7 + 3 cycles without the call;
+        // with it the gated `__builtin_delete` fake returns or unwinds
+        // (`seed / 4 % 2`).
+        let setup = |c: &mut Cpu, seed: u32| {
+            install_port_getter_fakes();
+            let mut r = machine(c, seed, 0x2d_3788, 1);
+            unwind_first(c, seed / 4 % 2 == 1);
+            c.bus
+                .write32(PORT_GETTER_CTRL_DELETE, PORT_GETTER_FAKE_MAGIC);
+            let this = PORT_GETTER_THIS;
+            fill(c, &mut r, this, 4);
+            c.g[A0][0] = junk_high(&mut r, this, seed / 2 % 2 == 1);
+            let flags = ((r.next_u32() as u64) << 32 | r.next_u32() as u64) & !1;
+            c.g[A1][0] = flags | (seed % 2) as u64;
+        };
+        covered(
+            ee::s09::f_002d3788__generated,
+            c_ps2_mem_card_base_dtor,
+            200,
+            &setup,
+        );
+        require_paths(ee::s09::f_002d3788__generated, 200, &[10], &setup);
     }
 }
