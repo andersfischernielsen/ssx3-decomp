@@ -57,8 +57,8 @@ equivalence is defined anew (step 1) before anything changes.
 | 3 SND | ✅ the mixer round runs as a frame step: `SND_EeThread` is a *step thread* (`kernel::register_step_entry`, `STEP_THREAD_ENTRIES`); the SIF handler's `iSignalSema` only wakes it, and `kernel::run_steps` runs the round from the top of the frame driver loop when nothing is nested and no thread is inside a lock. No preemption, no mutex wait for the round. The round is still guest code (a hand port); a command queue for game-thread SND calls is not done. `SSX3_SND_THREAD=1` keeps the old priority schedule (the gate uses it). Acceptance: `tools/accept.py` (race, 4 scenarios without halts; screenshots differ by sub-frame jitter only, 2nd/6, same clock) |
 | 4 Worker and loading | ✅ the worker (0x31ac60) is a step thread like SND: woken by its job semaphore, run from the frame driver loop, no priority preemption. Race RAM at exit and 2 scenarios are identical to the SND-step run. Jobs are still guest functions. The VSync thread (0x31ac08) cannot be a step: it has to preempt main (tried: the picture is wrong) |
 | 5 Main's waits | ✅ `DelayTicks` etc. wait in place (the machine idles on main's frames) |
-| 6 Delete | 🟡 `threads.rs`, `threads_switcher.rs`, `corosensei` and the `StackSwitcher` deleted; the kernel scheduler stays (it is the guest syscall layer) |
-| 7 Threads for real | ⬜ |
+| 6 Delete | 🟡 `threads.rs`, `threads_switcher.rs`, `corosensei` and the `StackSwitcher` deleted. The scheduler and the thread/semaphore syscalls stay while guest code calls them: main (the game loop), VSync and four threads that park once are still guest threads (main and VSync cannot be steps: VSync must preempt main). They go when the code that creates and waits on them is ported to Rust (the game-logic residue) |
+| 7 Threads for real | ⬜ not started: needs a profile of the step-mode build first (the SND and worker rounds are the first candidates for another thread, since they now run to completion at the top of the frame) |
 
 Result: the byte-identical gate still passes (the final RAM of the race replay is
 identical to the old baseline) with every thread native.
