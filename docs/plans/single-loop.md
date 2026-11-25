@@ -85,6 +85,30 @@ identical to the old baseline) with every thread native.
 - Adding the resume labels moved 3 cycles of block cost to after the wait call in the
   generated VSync and worker thread bodies; their ports follow it.
 
+## Step 3 design: the SND round as a frame step
+
+Today `SND_EeThread` (0x3c19a8) is a native guest thread: it waits on the mixer
+semaphore (`state + 0x1aa4`), which the SIF command handler (`SND_SifCmdHandler`,
+0x3c1578, command 0) signals once per audio frame through `iSignalSema`; it then
+runs one mix round and waits again.
+
+Plan:
+
+1. Split `snd_ee_thread` into the setup (the constants it loads into the saved
+   registers) and `snd_round(c)`, one round from the mix-flag test to the
+   post-mix hooks. The thread body becomes `loop { wait; snd_round }`, so the
+   gate stays identical while this is done.
+2. Register the entry as a *step entry* in the kernel: StartThread of it creates
+   no runnable thread; the signal on its semaphore only counts a pending round.
+3. The frame step (`run_frame`, after the frame's guest work) runs the pending
+   rounds on the driver's stack (`call_guest` with the sound stack as sp), unless
+   a thread holds the SND lock (`Kernel.held`); then the round is deferred to the
+   next frame step. No thread, no mutex wait, no mid-body block.
+4. The byte-identical gate stops holding at this step (the mixer runs at a
+   different point of the frame). Acceptance is `tools/accept.py` (race result,
+   per-frame state hash, screenshots) and the audio output; the old baseline
+   stays for bisecting.
+
 ## Step 1: acceptance (done)
 
 `SSX3_STATE_LOG=path` (headless) writes, every `SSX3_STATE_EVERY` frames, a hash of each
