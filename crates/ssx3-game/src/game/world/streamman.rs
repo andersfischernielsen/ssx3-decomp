@@ -548,7 +548,7 @@ pub(crate) fn stream_man_update_active(
 }
 
 /// `EAC_Unpack` (0x3b47f8).
-pub(crate) const OC327_EAC_UNPACK: Callee = Callee {
+pub(crate) const EAC_UNPACK: Callee = Callee {
     addr: 0x003b_47f8,
     f: ee::s13::EAC_Unpack,
 };
@@ -562,7 +562,7 @@ pub fn cstream_man_decompress(c: &mut Cpu) {
         frame.save_ra(c, 0);
         c.g[RA][0] = sx(0x003a_7228);
         c.g[A0][0] = c.g[A3][0];
-        OC327_EAC_UNPACK.call(c, 0x003a_7228)?;
+        EAC_UNPACK.call(c, 0x003a_7228)?;
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())

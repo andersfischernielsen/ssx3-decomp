@@ -32,6 +32,7 @@ pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::particle::deleting_dtor;
+use crate::game::render::particle::man;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -103,6 +104,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0036_7bc0, tex_man_free_texture, "TexMan_FreeTexture"),
     (0x0036_7440, tex_man_load_texture, "TexMan_LoadTexture"),
+    (
+        0x0036_96c8,
+        ps2_graphics_man_get_texture_by_name,
+        "PS2GraphicsMan_GetTextureByName",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -124,6 +130,11 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::festatetrophyroom::callee::MEM_MAN_FREE;
 
     pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
+
+    pub(crate) use crate::game::lib::libc::callee::STRCMP;
+    pub(crate) use crate::game::lib::snd::callee::STRCPY;
+
+    pub(crate) use crate::game::render::particle::callee::SHPS_FIND_ENTRY_BY_NAME;
 }
 
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
@@ -2179,6 +2190,203 @@ pub(crate) fn tex_load_texture_exit(c: &mut Cpu, frame: Frame) {
     frame.close(c);
 }
 
+pub(crate) mod ps2gm {
+    pub(crate) use crate::game::render::particle::ps2gm::SHAPE_BANKS;
+    pub(crate) use crate::game::render::particle::ps2gm::SHAPE_BANK_COUNT;
+    pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE;
+    pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE_COUNT;
+    pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE_ENTRY;
+    pub(crate) use crate::game::render::particle::ps2gm::TEX_CACHE_NAME;
+}
+
+/// `int PS2GraphicsMan::GetTextureByName(const char* name)` (0x3696c8): the
+/// texture handle for the first four characters of `name`. A key already in
+/// the name cache returns its handle; otherwise the key goes into the next
+/// cache entry, the shape banks are searched for a shape of that name and the
+/// first one found is loaded through vtable slot +0x170 (`"charshp"`, 0, 1,
+/// -1); a key found nowhere is cached as -1.
+pub fn ps2_graphics_man_get_texture_by_name(c: &mut Cpu) {
+    use ps2gm::*;
+    const COPY_HEAD: u32 = 0x0036_9700;
+    const CACHE_HEAD: u32 = 0x0036_9748;
+    const BANK_HEAD: u32 = 0x0036_97b0;
+    /// `"charshp"`: the texture group of shapes loaded from the banks.
+    const CHARSHP: u32 = 0x004a_41a0;
+    const LOAD_SHAPE_SLOT: u32 = 0x170;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save(c, S5, 0x20);
+        frame.save_ra(c, 0x10);
+        // The key: at most four characters of the name, in a buffer at sp.
+        c.g[V0][0] = Addr(r32(c, A1)).lb(c);
+        c.g[A0][0] = c.g[A1][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[A2][0] = c.g[SP][0];
+            c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
+            loop {
+                c.cycles += 5;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                Addr(r32(c, A2)).sb(c, c.g[V0][0]);
+                c.g[V1][0] = Addr(r32(c, A0)).lb(c);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                c.cycles += 4;
+                let copied = sx(r32(c, A0).wrapping_sub(r32(c, A1)));
+                c.g[V0][0] = ((copied as i64) < 4) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
+                if event_due(c) {
+                    deliver_event_here(c, COPY_HEAD);
+                }
+            }
+        }
+        'exit: {
+            c.cycles += 7;
+            let key_len = sx(r32(c, A0).wrapping_sub(r32(c, A1)));
+            c.g[V0][0] = key_len;
+            c.g[S3][0] = 0;
+            let this = Addr(r32(c, S0));
+            c.g[A0][0] = this.off(TEX_CACHE_COUNT).lw(c);
+            c.g[V1][0] = sx(sp(c).wrapping_add(key_len as u32));
+            Addr(r32(c, V1)).sb(c, 0);
+            c.g[S4][0] = sx(this.off(TEX_CACHE).0);
+            // Search the cache (s3 = index, s2 = entry, s1 = its name).
+            if (c.g[A0][0] as i64) > 0 {
+                c.cycles += 2;
+                c.g[S2][0] = c.g[S4][0];
+                c.g[S1][0] = sx(this.off(TEX_CACHE + TEX_CACHE_NAME).0);
+                loop {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    callee::STRCMP.call(c, 0x0036_9754)?;
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 2;
+                        c.g[V0][0] = Addr(r32(c, S2)).lw(c);
+                        break 'exit;
+                    }
+                    c.g[V0][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
+                    c.cycles += 5;
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(TEX_CACHE_ENTRY));
+                    c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(TEX_CACHE_ENTRY));
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, CACHE_HEAD);
+                    }
+                }
+            }
+            // Not cached: the key becomes the name of the next entry.
+            c.cycles += 11;
+            c.g[A0][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
+            c.g[V0][0] = TEX_CACHE_ENTRY as u64;
+            c.g[A1][0] = c.g[SP][0];
+            c.g[S1][0] = 0;
+            c.mult(0, V1, A0, V0);
+            c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, S0)));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(TEX_CACHE + TEX_CACHE_NAME));
+            callee::STRCPY.call(c, 0x0036_9798)?;
+            // Look for a shape of that name in each bank (s1 = bank index).
+            c.g[V1][0] = Addr(r32(c, S0)).off(SHAPE_BANK_COUNT).lw(c);
+            c.g[S3][0] = TEX_CACHE_ENTRY as u64;
+            if (c.g[V1][0] as i64) > 0 {
+                c.cycles += 3;
+                c.g[S5][0] = 0x4a_0000;
+                c.g[S2][0] = c.g[S4][0];
+                c.g[A1][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
+                loop {
+                    c.cycles += 10;
+                    c.g[V0][0] = sx(r32(c, S1) << 2);
+                    c.g[V1][0] = Addr(r32(c, S0)).off(SHAPE_BANKS).lw(c);
+                    c.mult(0, A0, A1, S3);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.g[A1][0] = sx(r32(c, A0).wrapping_add(r32(c, S0)));
+                    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(TEX_CACHE + TEX_CACHE_NAME));
+                    callee::SHPS_FIND_ENTRY_BY_NAME.call(c, 0x0036_97d0)?;
+                    c.g[A1][0] = c.g[V0][0];
+                    if c.g[V0][0] != 0 {
+                        // Load the shape and cache its handle.
+                        c.cycles += 20;
+                        let vt = Addr(r32(c, S0)).off(man::DISPLAY).lw(c);
+                        c.g[V1][0] = vt;
+                        c.g[A2][0] = sx(r32(c, S5).wrapping_add(CHARSHP & 0xffff));
+                        c.g[A3][0] = 0;
+                        c.g[A0][0] = Addr(vt as u32).off(LOAD_SHAPE_SLOT).lh(c);
+                        c.g[T0][0] = 1;
+                        c.g[V0][0] = Addr(vt as u32).off(LOAD_SHAPE_SLOT + 4).lw(c);
+                        c.g[T1][0] = u64::MAX;
+                        let method = r32(c, V0);
+                        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+                        call_ptr(c, method, 0x0036_97fc)?;
+                        c.g[V1][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
+                        c.mult(0, A0, V1, S3);
+                        c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S2)));
+                        Addr(r32(c, V1)).sw(c, c.g[V0][0]);
+                        c.g[A0][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
+                        c.mult(0, V0, A0, S3);
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                        c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
+                        c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                        Addr(r32(c, S0)).off(TEX_CACHE_COUNT).sw(c, c.g[A0][0]);
+                        break 'exit;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(r32(c, S0)).off(SHAPE_BANK_COUNT).lw(c);
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    c.g[A1][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, BANK_HEAD);
+                    }
+                }
+            }
+            // Found nowhere: cache the key as missing (-1).
+            c.cycles += 12;
+            c.g[V0][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
+            c.g[A0][0] = TEX_CACHE_ENTRY as u64;
+            c.g[A1][0] = u64::MAX;
+            c.mult(0, V1, V0, A0);
+            c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, S4)));
+            Addr(r32(c, V0)).sw(c, c.g[A1][0]);
+            c.g[V1][0] = Addr(r32(c, S0)).off(TEX_CACHE_COUNT).lw(c);
+            c.mult(0, V0, V1, A0);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, S4)));
+            c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+            Addr(r32(c, S0)).off(TEX_CACHE_COUNT).sw(c, c.g[V1][0]);
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2950,6 +3158,161 @@ pub(crate) mod tests {
                 c.g[SP][0] = sx(STACK_TOP);
                 c.g[RA][0] = sx(crate::difftest::RA);
                 c.pc = 0x0036_7440;
+            },
+        );
+    }
+
+    use crate::game::dirtysock::buddyapi::tests::require_arm_values;
+
+    pub(crate) use crate::game::render::particle::tests::PS2GM_RET;
+    pub(crate) use crate::game::render::particle::tests::PS2GM_STACK;
+
+    pub(crate) use crate::game::render::particle::tests::GTN_MAN;
+
+    pub(crate) use crate::game::render::particle::tests::GTN_BEFORE;
+
+    pub(crate) use crate::game::render::particle::tests::get_texture_by_name_setup;
+    pub(crate) use crate::game::render::particle::tests::GTN_NAMES;
+
+    /// GetTextureByName against the generated body: every key length, cache
+    /// hits and misses, bank hits and misses (fake unwinds included).
+    #[test]
+    fn ps2_graphics_man_get_texture_by_name_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            get_texture_by_name_setup(c, seed);
+        };
+        check_lohi(
+            ee::s12::f_003696c8__generated,
+            ps2_graphics_man_get_texture_by_name,
+            216,
+            &setup,
+        );
+        // The key copy: empty, ended by the NUL, cut at four characters.
+        require_arm_values(
+            ee::s12::f_003696c8__generated,
+            216,
+            &setup,
+            &|c, seed| {
+                let buf = PS2GM_STACK - 0x80;
+                let len = (0..5).take_while(|&i| c.bus.read8(buf + i) != 0).count();
+                match len {
+                    0 => 0,
+                    1..=3 => 1,
+                    4 if GTN_NAMES[(seed % 4) as usize].len() == 4 => 2,
+                    4 => 3,
+                    _ => 9,
+                }
+            },
+            &[0, 1, 2, 3],
+        );
+        // The outcome (0 cached, 1 loaded from a bank, 2 missing) with
+        // whether the cache and the banks were searched.
+        require_arm_values(
+            ee::s12::f_003696c8__generated,
+            216,
+            &setup,
+            &|c, _| {
+                if c.pc != PS2GM_RET {
+                    return (9, false, false);
+                }
+                let before = c.bus.read32(GTN_BEFORE);
+                let banks = c.bus.read32(GTN_BEFORE + 4);
+                let after = c.bus.read32(GTN_MAN + ps2gm::TEX_CACHE_COUNT);
+                let outcome = if after == before {
+                    0
+                } else if c.g[V0][0] == u64::MAX {
+                    2
+                } else {
+                    1
+                };
+                (outcome, before > 0, outcome != 0 && banks > 0)
+            },
+            &[
+                (0, true, false),
+                (1, false, true),
+                (1, true, true),
+                (2, false, false),
+                (2, false, true),
+                (2, true, false),
+                (2, true, true),
+            ],
+        );
+        // The returns and unwinds (`pc`, the copy flag at `GTN_UNWIND + 4`):
+        // the renderer's texture load (fake call 0), strcmp before and after
+        // the key was copied in, strcpy.
+        require_arm_values(
+            ee::s12::f_003696c8__generated,
+            216,
+            &setup,
+            &|c, _| match c.pc {
+                PS2GM_RET => (0, 0),
+                pc => (pc, c.bus.read32(GTN_UNWIND + 4)),
+            },
+            &[
+                (0, 0),
+                (0xdead_0000, 1),
+                (0xdead_0100, 0),
+                (0xdead_0100, 1),
+                (0xdead_0200, 1),
+            ],
+        );
+    }
+
+    use crate::difftest::events::driven;
+    use crate::difftest::events::Events;
+    use crate::difftest::fakes;
+    use crate::game::render::particle::tests::ps2gm_deliver_only;
+    use crate::game::render::particle::tests::ps2gm_put_str;
+    use crate::game::render::particle::tests::GTN_BANKS;
+    use crate::game::render::particle::tests::GTN_BANK_LIST;
+    use crate::game::render::particle::tests::GTN_NAME;
+    use crate::game::render::particle::tests::GTN_UNWIND;
+
+    driven!(gen_get_texture_by_name, ee::s12::f_003696c8__generated);
+
+    driven!(
+        hand_get_texture_by_name,
+        ps2_graphics_man_get_texture_by_name
+    );
+
+    /// The bank loop's event fixture: key `"sky"`, an empty cache, and three
+    /// banks of one entry whose shape's long name is empty (misses that make
+    /// no event check: `strcmp` returns at the empty string's first byte); the
+    /// event falls due when `strcpy` returns, so it lands on the bank loop's
+    /// back edge.
+    pub(crate) fn gtn_bank_head_fixture(c: &mut Cpu) {
+        ps2gm_put_str(c, GTN_NAME, b"sky");
+        c.bus.write32(GTN_MAN + ps2gm::TEX_CACHE_COUNT, 0);
+        c.bus.write32(GTN_MAN + ps2gm::SHAPE_BANK_COUNT, 3);
+        for k in 0..3 {
+            let bank = GTN_BANKS + 0x1000 * k;
+            c.bus.write32(GTN_BANK_LIST + 4 * k, bank);
+            c.bus.write32(bank + 8, 1);
+            c.bus.write32(bank + 0x14, 0x400);
+            c.bus.write32(bank + 0x400, 0x70);
+            ps2gm_put_str(c, bank + 0x404, b"");
+        }
+        c.bus.write32(GTN_UNWIND + 8, 1);
+    }
+
+    /// GetTextureByName with events at the copy, cache and bank loops' back
+    /// edges (structured loops: delivered, never unwinding there): `seed / 3
+    /// % 2` aims the event at the bank loop (0x3697b0).
+    #[test]
+    fn ps2_graphics_man_get_texture_by_name_events_match() {
+        check_events(
+            gen_get_texture_by_name,
+            hand_get_texture_by_name,
+            300,
+            &|c, seed| {
+                let mut r = get_texture_by_name_setup(c, seed / 6);
+                c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+                c.bus.write32(GTN_UNWIND, 0);
+                let mode = schedule(c, &mut r, seed, 0x0036_96c8);
+                if seed / 3 % 2 == 1 && mode != Events::Off {
+                    gtn_bank_head_fixture(c);
+                }
+                ps2gm_deliver_only(c, mode)
             },
         );
     }

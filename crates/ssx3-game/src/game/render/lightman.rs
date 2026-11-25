@@ -106,6 +106,49 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         render2d_transform_point,
         "Render2D_TransformPoint",
     ),
+    (0x0038_dbd0, light_man_create, "LightMan_Create"),
+    (0x0038_dc50, light_man_empty_hook_a, "LightMan_EmptyHookA"),
+    (0x0038_dc58, light_man_empty_hook_b, "LightMan_EmptyHookB"),
+    (0x0038_dc60, light_man_empty_hook_c, "LightMan_EmptyHookC"),
+    (0x0038_dc68, light_man_empty_hook_d, "LightMan_EmptyHookD"),
+    (0x0038_dc70, light_man_v05, "LightMan_v05"),
+    (0x0038_e118, render2d_draw_quad, "Render2D_DrawQuad"),
+    (
+        0x0038_e200,
+        render2d_draw_quad_rot90,
+        "Render2D_DrawQuadRot90",
+    ),
+    (
+        0x0038_e2e8,
+        render2d_draw_quad_xform,
+        "Render2D_DrawQuadXform",
+    ),
+    (
+        0x0038_e468,
+        render2d_draw_quad_rot90_xform,
+        "Render2D_DrawQuadRot90Xform",
+    ),
+    (0x0038_e5e8, render2d_draw_quad_uv, "Render2D_DrawQuadUV"),
+    (
+        0x0038_e738,
+        render2d_draw_quad_uv_rot90,
+        "Render2D_DrawQuadUVRot90",
+    ),
+    (
+        0x0038_e880,
+        render2d_draw_quad_uv_xform,
+        "Render2D_DrawQuadUVXform",
+    ),
+    (
+        0x0038_ea60,
+        render2d_draw_quad_uv_rot90_xform,
+        "Render2D_DrawQuadUVRot90Xform",
+    ),
+    (
+        0x0038_ec40,
+        render2d_draw_filled_rect,
+        "Render2D_DrawFilledRect",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -207,6 +250,46 @@ pub(crate) mod callee {
     pub const DMA_WAIT_TO_SCRATCHPAD: Callee = Callee {
         addr: 0x0038_f7b0,
         f: ee::s12::Dma_WaitToScratchpad,
+    };
+    pub(crate) use crate::game::movie::movieplayer::callee::MEM_ALLOC_NAMED;
+
+    /// `void LightMan_EmptyHookB(void*, ...)`: the directional-light hook
+    /// (empty).
+    pub const LIGHT_MAN_EMPTY_HOOK_B: Callee = Callee {
+        addr: 0x0038_dc58,
+        f: ee::s12::LightMan_EmptyHookB,
+    };
+
+    /// `LightMan_ctor(LightMan*)`: install the base vtable and register the
+    /// manager.
+    pub const LIGHT_MAN_CTOR: Callee = Callee {
+        addr: 0x0038_ae10,
+        f: ee::s12::LightMan_ctor,
+    };
+
+    /// `LightMan::~LightMan(LightMan*, int flags)`.
+    pub const LIGHT_MAN_DTOR: Callee = Callee {
+        addr: 0x0038_ae28,
+        f: ee::s12::LightMan_dtor,
+    };
+
+    /// `float Math_Asin(float)`.
+    pub const MATH_ASIN: Callee = Callee {
+        addr: 0x0031_c128,
+        f: ee::s10::Math_Asin,
+    };
+
+    /// `void Dma_SendGifChain(void* tadr, int flags)`: start a chain-mode
+    /// GIF DMA at `tadr`.
+    pub const DMA_SEND_GIF_CHAIN: Callee = Callee {
+        addr: 0x0037_1f98,
+        f: ee::s12::Dma_SendGifChain,
+    };
+
+    /// `Render2D_TransformPoint(Vec4 *out, const Vec2 *p, const Mat3 *m)`.
+    pub(crate) const RENDER2D_TRANSFORM_POINT: Callee = Callee {
+        addr: 0x0038_e0a8,
+        f: ee::s12::Render2D_TransformPoint,
     };
 }
 
@@ -2268,6 +2351,873 @@ pub fn render2d_transform_point(c: &mut Cpu) {
     abi::ret(c);
 }
 
+pub(crate) mod light_record {
+
+    pub const SIZE: u32 = 0x70;
+
+    /// 0 directional, 1 spot, 2 point, 3 ambient; others are skipped.
+    pub const TYPE: u32 = 0x10;
+
+    pub const INTENSITY: u32 = 0x14;
+
+    /// Red, green, blue (floats).
+    pub const COLOUR: u32 = 0x20;
+
+    /// Direction x, y, z (floats).
+    pub const DIR: u32 = 0x2c;
+
+    pub const POS: u32 = 0x38;
+
+    /// The spot cone: its angle is `pi/2 - asin(cone)`.
+    pub const CONE: u32 = 0x5c;
+
+    /// Unknown signed bytes passed to the hooks (+0x65 as a float).
+    pub const BYTE_64: u32 = 0x64;
+
+    pub const BYTE_65: u32 = 0x65;
+
+    pub const DIRECTIONAL: u64 = 0;
+
+    pub const SPOT: u64 = 1;
+
+    pub const POINT: u64 = 2;
+
+    pub const AMBIENT: u64 = 3;
+}
+
+// ---------------------------------------------------------------------------
+// The light manager (render/lightman.cpp, render/font.cpp).
+//
+// A LightMan is 0x14 bytes: the vtable at +0, the instance table (one word
+// per light id) at +0x4, then the base id (+0x8), the next index (+0xc) and
+// the table's capacity (+0x10).
+
+pub(crate) const LIGHT_MAN_INSTANCES: u32 = 0x4;
+
+/// `LightMan_Create`'s allocation: 0x14 bytes named "LightMan" (0x492ee0).
+pub(crate) const LIGHT_MAN_SIZE: u32 = 0x14;
+
+pub(crate) const LIGHT_MAN_ALLOC_NAME: u32 = 0x0049_2ee0;
+
+/// The PS2 light manager's vtable.
+pub(crate) const LIGHT_MAN_PS2_VTABLE: u32 = 0x0049_3650;
+
+/// `LightMan* cLightMan::construct()` (0x38dbd0): allocate the light
+/// manager (`EA_MemAllocNamed(0x14, "LightMan", 0, 0)`), construct it with
+/// `LightMan_ctor` and install the PS2 vtable (0x493650). Returns it.
+pub fn light_man_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0x0049_0000;
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = sx(LIGHT_MAN_ALLOC_NAME);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx(LIGHT_MAN_SIZE);
+        callee::MEM_ALLOC_NAMED.call(c, 0x0038_dbf4)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        callee::LIGHT_MAN_CTOR.call(c, 0x0038_dc00)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[V1][0] = sx(LIGHT_MAN_PS2_VTABLE);
+        frame.restore_ra(c, 0);
+        c.sw(r32(c, S0), c.g[V1][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void LightMan_EmptyHookA(void* light, float* colour, float intensity)`
+/// (0x38dc50): the ambient-light hook; does nothing on the PS2.
+pub fn light_man_empty_hook_a(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void LightMan_EmptyHookB(void* light, float* colour, float* dir, float
+/// intensity)` (0x38dc58): the directional-light hook; does nothing.
+pub fn light_man_empty_hook_b(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void LightMan_EmptyHookC(void* light, float* colour, float* pos, int
+/// unknown, float intensity)` (0x38dc60): the point-light hook; does
+/// nothing.
+pub fn light_man_empty_hook_c(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void LightMan_EmptyHookD(void* light, float* colour, float* pos, float*
+/// dir, float angle, float intensity, float unknown, int unknown)`
+/// (0x38dc68): the spot-light hook; does nothing.
+pub fn light_man_empty_hook_d(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `LightMan_v05`'s stack frame: the colour `{1.0, r, g, b}` the hooks get,
+/// the unit direction, and the saved first id.
+pub(crate) const LIGHT_V05_COLOUR: u32 = 0x0;
+
+pub(crate) const LIGHT_V05_DIR: u32 = 0x10;
+
+pub(crate) const LIGHT_V05_FIRST_ID: u32 = 0x20;
+
+/// `pi / 2` (gp - 0x26b0).
+pub(crate) const LIGHT_V05_HALF_PI_GP: u32 = 0x26b0;
+
+/// The direction (`f4` = x already loaded) normalised into the frame's
+/// direction slot; a zero-length one is stored as it is.
+pub(crate) fn light_man_v05_direction(c: &mut Cpu) {
+    let light = r32(c, S0);
+    c.lwc1(5, light.wrapping_add(light_record::DIR + 4));
+    c.mul_s(0, 4, 4);
+    c.lwc1(3, light.wrapping_add(light_record::DIR + 8));
+    c.mul_s(1, 5, 5);
+    c.mul_s(2, 3, 3);
+    c.add_s(0, 0, 1);
+    c.add_s(0, 0, 2);
+    c.sqrt_s(0, 0);
+    c.c_eq_s(0, 21);
+    let dir = sp(c).wrapping_add(LIGHT_V05_DIR);
+    if c.fcc() {
+        c.swc1(4, dir);
+        c.cycles += 2;
+        c.swc1(5, dir + 4);
+        c.swc1(3, dir + 8);
+    } else {
+        c.cycles += 8;
+        c.div_s(0, 20, 0);
+        c.mul_s(1, 3, 0);
+        c.mul_s(2, 4, 0);
+        c.mul_s(0, 5, 0);
+        c.swc1(1, dir + 8);
+        c.swc1(2, dir);
+        c.swc1(0, dir + 4);
+    }
+}
+
+/// One light of `LightMan_v05` (s0 the record, s3 its index, s1 the slot
+/// once fetched), up to its hook call.
+pub(crate) fn light_man_v05_light(c: &mut Cpu) -> crate::call::Flow {
+    use light_record::*;
+    c.cycles += 19;
+    let this = r32(c, S6);
+    c.g[V1][0] = Addr(this).lw(c);
+    c.g[V0][0] = Addr(sp(c).wrapping_add(LIGHT_V05_FIRST_ID)).lw(c);
+    // Virtual `GetInstance(first + i)` (slot +0x10: this adjustment, method).
+    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x10)).lh(c);
+    c.g[A1][0] = sx(r32(c, V0).wrapping_add(r32(c, S3)));
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x14)).lw(c);
+    let get_instance = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, S6).wrapping_add(r32(c, A0)));
+    call_ptr(c, get_instance, 0x0038_dcf4)?;
+    c.g[S1][0] = c.g[V0][0];
+    c.sw(r32(c, S1), c.g[S0][0]);
+    c.g[V0][0] = 1;
+    let light = r32(c, S0);
+    let colour = sp(c).wrapping_add(LIGHT_V05_COLOUR);
+    c.swc1(20, colour);
+    c.lwc1(0, light.wrapping_add(COLOUR));
+    c.lwc1(1, light.wrapping_add(COLOUR + 4));
+    c.lwc1(2, light.wrapping_add(COLOUR + 8));
+    c.g[V1][0] = Addr(light.wrapping_add(TYPE)).lw(c);
+    c.swc1(0, colour + 4);
+    c.swc1(1, colour + 8);
+    let kind = c.g[V1][0];
+    c.swc1(2, colour + 0xc);
+
+    if kind == SPOT {
+        c.cycles += 14;
+        c.lwc1(4, light.wrapping_add(DIR));
+        c.g[S2][0] = c.g[S5][0];
+        light_man_v05_direction(c);
+        c.cycles += 16;
+        c.lwc1(12, r32(c, S0).wrapping_add(CONE));
+        callee::MATH_ASIN.call(c, 0x0038_de54)?;
+        let light = r32(c, S0);
+        let half_pi = r32(c, GP).wrapping_sub(LIGHT_V05_HALF_PI_GP);
+        c.lwc1(12, half_pi);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[V0][0] = Addr(light.wrapping_add(BYTE_65)).lb(c);
+        c.g[A2][0] = c.g[S2][0];
+        c.sub_s(12, 12, 0);
+        c.lwc1(13, light.wrapping_add(INTENSITY));
+        c.mtc1(V0, 14);
+        c.cvt_s_w(14, 14);
+        c.g[T0][0] = Addr(light.wrapping_add(BYTE_64)).lb(c);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A3][0] = c.g[FP][0];
+        return callee::LIGHT_MAN_EMPTY_HOOK_D.call(c, 0x0038_de84);
+    }
+
+    c.cycles += 3;
+    c.g[V0][0] = 2;
+    if (kind as i64) < 2 {
+        c.cycles += 2;
+        if kind != DIRECTIONAL {
+            c.cycles += 2;
+            return Ok(());
+        }
+        c.lwc1(4, light.wrapping_add(DIR));
+        c.cycles += 12;
+        light_man_v05_direction(c);
+        c.cycles += 7;
+        c.lwc1(12, r32(c, S0).wrapping_add(INTENSITY));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = sx(sp(c).wrapping_add(LIGHT_V05_DIR));
+        return callee::LIGHT_MAN_EMPTY_HOOK_B.call(c, 0x0038_ddc4);
+    }
+
+    c.cycles += 2;
+    c.g[V0][0] = 3;
+    if kind == POINT {
+        c.cycles += 8;
+        c.lwc1(12, light.wrapping_add(INTENSITY));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A3][0] = Addr(light.wrapping_add(BYTE_64)).lb(c);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = c.g[S4][0];
+        return callee::LIGHT_MAN_EMPTY_HOOK.call(c, 0x0038_dde4);
+    }
+
+    c.cycles += 2;
+    if kind != AMBIENT {
+        c.cycles += 2;
+        return Ok(());
+    }
+    c.lwc1(12, light.wrapping_add(INTENSITY));
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[SP][0];
+    callee::LIGHT_MAN_EMPTY_HOOK_A.call(c, 0x0038_de98)
+}
+
+/// `void LightMan::v05(LightMan* self, Light* lights, int count, int
+/// firstId)` (0x38dc70): register `count` light records (0x70 bytes each):
+/// the record's address goes in instance slot `firstId + i` (virtual
+/// `GetInstance`), then by type the matching hook gets the slot, the colour
+/// `{1.0, r, g, b}` and: directional the unit direction and intensity;
+/// point the position, intensity and byte +0x64; spot the position, unit
+/// direction, cone angle `pi/2 - asin(cone)`, intensity, byte +0x64 and
+/// (float) byte +0x65; ambient the intensity. Other types are skipped.
+pub fn light_man_v05(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xe0);
+        frame.save(c, S3, 0x90);
+        frame.save(c, S6, 0x60);
+        c.g[S3][0] = 0; // the light index
+        frame.save(c, S7, 0x50);
+        c.g[S6][0] = c.g[A0][0]; // self
+        frame.save(c, S0, 0xc0);
+        c.g[S7][0] = c.g[A2][0]; // count
+        frame.save(c, S1, 0xb0);
+        frame.save(c, S2, 0xa0);
+        frame.save(c, S4, 0x80);
+        frame.save(c, S5, 0x70);
+        frame.save(c, FP, 0x40);
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 21, 0xd8);
+        frame.save_fpr(c, 20, 0xd0);
+        let any = (c.g[S7][0] as i64) > 0;
+        let first_id = frame.at(c, LIGHT_V05_FIRST_ID);
+        c.sw(first_id, c.g[A3][0]);
+        if any {
+            c.cycles += 8;
+            c.g[S0][0] = c.g[A1][0]; // the light record
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 20); // 1.0
+            c.g[S4][0] = sx(r32(c, S0).wrapping_add(light_record::POS));
+            c.mtc1(ZERO, 21); // 0.0
+            c.g[FP][0] = sx(sp(c).wrapping_add(LIGHT_V05_DIR));
+            c.g[S5][0] = c.g[S4][0];
+            loop {
+                light_man_v05_light(c)?;
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                c.cycles += 5;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(light_record::SIZE));
+                c.g[S5][0] = sx(r32(c, S5).wrapping_add(light_record::SIZE));
+                let more = (c.g[S3][0] as i64) < (c.g[S7][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[S4][0] = sx(r32(c, S4).wrapping_add(light_record::SIZE));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_dcd8);
+                }
+            }
+        }
+        c.cycles += 14;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore(c, S5, 0x70);
+        frame.restore(c, S6, 0x60);
+        frame.restore(c, S7, 0x50);
+        frame.restore(c, FP, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 21, 0xd8);
+        frame.restore_fpr(c, 20, 0xd0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 2D quads
+
+/// The renderer pointer (`gp+0x2a90`), the renderer's vtable pointer and the
+/// vtable slot of its `DrawPrims(count, verts, 0)` method.
+pub(crate) const RENDER2D_RENDERER: u32 = 0x2a90;
+
+pub(crate) const RENDER2D_RENDERER_VPTR: u32 = 0x10d8;
+
+pub(crate) const RENDER2D_DRAW_PRIMS: u32 = 0x238;
+
+/// A quad vertex (0x30 bytes): texture coordinates (s, t, q) at +0, four
+/// colour words (r, g, b, a) at +0x10, the position quadword (x, y, z, w) at
+/// +0x20.
+pub(crate) const RENDER2D_VERTEX_SIZE: u32 = 0x30;
+
+pub(crate) const RENDER2D_VERTEX_S: u32 = 0x0;
+
+pub(crate) const RENDER2D_VERTEX_T: u32 = 0x4;
+
+pub(crate) const RENDER2D_VERTEX_Q: u32 = 0x8;
+
+pub(crate) const RENDER2D_VERTEX_COLOR: u32 = 0x10;
+
+pub(crate) const RENDER2D_VERTEX_POS: u32 = 0x20;
+
+/// Rects are four floats `{x, y, w, h}` (texture rects `{u, v, du, dv}`):
+/// each axis's extent sits 8 bytes after its origin.
+pub(crate) const RENDER2D_RECT_X: u32 = 0x0;
+
+pub(crate) const RENDER2D_RECT_Y: u32 = 0x4;
+
+pub(crate) const RENDER2D_RECT_EXTENT: u32 = 0x8;
+
+/// `1.0f`, the w of every position (and of the constant register).
+pub(crate) const RENDER2D_ONE_BITS: u64 = 0x3f80_0000;
+
+/// A rect corner: `x` or `x + w` across, `y` or `y + h` down.
+#[derive(Clone, Copy)]
+pub(crate) struct Render2dCorner {
+    pub(crate) right: bool,
+    pub(crate) bottom: bool,
+}
+
+pub(crate) const RENDER2D_TOP_LEFT: Render2dCorner = Render2dCorner {
+    right: false,
+    bottom: false,
+};
+
+pub(crate) const RENDER2D_TOP_RIGHT: Render2dCorner = Render2dCorner {
+    right: true,
+    bottom: false,
+};
+
+pub(crate) const RENDER2D_BOTTOM_LEFT: Render2dCorner = Render2dCorner {
+    right: false,
+    bottom: true,
+};
+
+pub(crate) const RENDER2D_BOTTOM_RIGHT: Render2dCorner = Render2dCorner {
+    right: true,
+    bottom: true,
+};
+
+/// The position corners in the order every quad helper stores them.
+pub(crate) const RENDER2D_POS_CORNERS: [Render2dCorner; 4] = [
+    RENDER2D_TOP_LEFT,
+    RENDER2D_TOP_RIGHT,
+    RENDER2D_BOTTOM_LEFT,
+    RENDER2D_BOTTOM_RIGHT,
+];
+
+/// How a quad helper fills its four vertices.
+pub(crate) struct Render2dQuadLayout {
+    /// The vertex (0..3) that takes each of [`RENDER2D_POS_CORNERS`].
+    pub(crate) pos_vertex: [u32; 4],
+    /// Textured quads: the texture-rect corner that gives that same vertex
+    /// its (s, t).
+    pub(crate) uv_corner: Option<[Render2dCorner; 4]>,
+}
+
+/// Vertex 0..3 = top-left, top-right, bottom-left, bottom-right.
+pub(crate) const RENDER2D_LAYOUT_PLAIN: Render2dQuadLayout = Render2dQuadLayout {
+    pos_vertex: [0, 1, 2, 3],
+    uv_corner: None,
+};
+
+/// The positions turned a quarter: vertex 0..3 = bottom-left, top-left,
+/// bottom-right, top-right.
+pub(crate) const RENDER2D_LAYOUT_ROT90: Render2dQuadLayout = Render2dQuadLayout {
+    pos_vertex: [1, 3, 0, 2],
+    uv_corner: None,
+};
+
+/// Textured, positions as [`RENDER2D_LAYOUT_PLAIN`]: vertex 0..3 take the
+/// texture rect's top-left, top-right, bottom-left, bottom-right corner.
+pub(crate) const RENDER2D_LAYOUT_UV: Render2dQuadLayout = Render2dQuadLayout {
+    pos_vertex: [0, 1, 2, 3],
+    uv_corner: Some([
+        RENDER2D_TOP_LEFT,
+        RENDER2D_TOP_RIGHT,
+        RENDER2D_BOTTOM_LEFT,
+        RENDER2D_BOTTOM_RIGHT,
+    ]),
+};
+
+/// Textured with the texture turned a quarter: vertex 0..3 take the texture
+/// rect's top-right, bottom-right, top-left, bottom-left corner.
+pub(crate) const RENDER2D_LAYOUT_UV_ROT90: Render2dQuadLayout = Render2dQuadLayout {
+    pos_vertex: [0, 1, 2, 3],
+    uv_corner: Some([
+        RENDER2D_TOP_RIGHT,
+        RENDER2D_BOTTOM_RIGHT,
+        RENDER2D_TOP_LEFT,
+        RENDER2D_BOTTOM_LEFT,
+    ]),
+};
+
+/// One rect corner of `rect` along one axis: `rect[origin]`, plus the extent
+/// on the far side. Returns the coordinate and the extent (0 when unread).
+pub(crate) fn render2d_rect_axis(
+    c: &mut Cpu,
+    rect: Addr,
+    origin: u32,
+    far: bool,
+) -> (FpuF32, FpuF32) {
+    let start = rect.off(origin).read_fpu(c);
+    if far {
+        let extent = rect.off(origin + RENDER2D_RECT_EXTENT).read_fpu(c);
+        (start + extent, extent)
+    } else {
+        (start, FpuF32::ZERO)
+    }
+}
+
+/// `*pos = Vec4(x, y, 0, 1)`: the vector is built in the scratch quadword at
+/// `0(sp)` and copied through `v0` (`lq`/`sq`).
+pub(crate) fn render2d_put_position(c: &mut Cpu, pos: Addr, x: FpuF32, y: FpuF32) {
+    let scratch = Addr(sp(c));
+    scratch.write_fpu(c, x);
+    scratch.off(0x4).write_fpu(c, y);
+    scratch.off(0x8).sw(c, 0);
+    scratch.off(0xc).write_fpu(c, FpuF32::ONE);
+    c.lq(V0, scratch.0);
+    c.sq(V0, pos.0);
+}
+
+/// Fill the positions (and, for textured layouts, the texture coordinates)
+/// of the four vertices at `verts` from `rect` (and `uv_rect`).
+pub(crate) fn render2d_fill_quad(
+    c: &mut Cpu,
+    verts: Addr,
+    rect: Addr,
+    uv_rect: Addr,
+    layout: &Render2dQuadLayout,
+) {
+    // f0..f3 as the compiled code leaves them: the last vertex's y and x
+    // (untextured) or its t and the dv added to it (textured, both layouts
+    // end on a bottom texture corner), then the w and h of the last
+    // (bottom-right) position.
+    let mut f0 = FpuF32::ZERO;
+    let mut f1 = FpuF32::ZERO;
+    let mut width = FpuF32::ZERO;
+    let mut height = FpuF32::ZERO;
+    for (k, corner) in RENDER2D_POS_CORNERS.iter().enumerate() {
+        let vertex = verts.off(RENDER2D_VERTEX_SIZE * layout.pos_vertex[k]);
+        let (x, w) = render2d_rect_axis(c, rect, RENDER2D_RECT_X, corner.right);
+        let (y, h) = render2d_rect_axis(c, rect, RENDER2D_RECT_Y, corner.bottom);
+        render2d_put_position(c, vertex.off(RENDER2D_VERTEX_POS), x, y);
+        (f0, f1, width, height) = (y, x, w, h);
+        if let Some(uv_corner) = layout.uv_corner {
+            // s is stored before t is read (the two rects may overlap).
+            let (s, _) = render2d_rect_axis(c, uv_rect, RENDER2D_RECT_X, uv_corner[k].right);
+            vertex.off(RENDER2D_VERTEX_S).write_fpu(c, s);
+            let (t, dv) = render2d_rect_axis(c, uv_rect, RENDER2D_RECT_Y, uv_corner[k].bottom);
+            vertex.off(RENDER2D_VERTEX_T).write_fpu(c, t);
+            (f0, f1) = (t, dv);
+        }
+    }
+    c.f[0] = f0.0;
+    c.f[1] = f1.0;
+    c.f[2] = width.0;
+    c.f[3] = height.0;
+    // Untextured quads keep the 1.0 they build positions with in f4
+    // (textured ones in f3, overwritten by h).
+    if layout.uv_corner.is_none() {
+        c.f[4] = FpuF32::ONE.0;
+    }
+}
+
+/// `renderer->DrawPrims(4, verts, 0)` through the renderer at `gp+0x2a90`,
+/// leaving the renderer, its vtable and the method in the given registers
+/// (the caller has set `a1`..`a3`).
+pub(crate) fn render2d_draw_prims(
+    c: &mut Cpu,
+    renderer_reg: usize,
+    vtable_reg: usize,
+    method_reg: usize,
+    ret_to: u32,
+) -> Flow {
+    let renderer = Addr(r32(c, GP)).off(RENDER2D_RENDERER).lw(c);
+    c.g[renderer_reg][0] = renderer;
+    let vtable = Addr(renderer as u32).off(RENDER2D_RENDERER_VPTR).lw(c);
+    c.g[vtable_reg][0] = vtable;
+    let method = VSlot::read(c, vtable, RENDER2D_DRAW_PRIMS);
+    c.g[method_reg][0] = method.func;
+    c.g[A0][0] = method.this(c.g[renderer_reg][0]);
+    call_ptr(c, method.func as u32, ret_to)
+}
+
+/// The untransformed quads (`ctx` in a0 is unused, `verts` in a1, the rect
+/// in a2, a textured quad's texture rect in a3): fill the vertices, then
+/// draw them, returning to `ret_to`.
+pub(crate) fn render2d_draw_rect_quad(
+    c: &mut Cpu,
+    layout: &Render2dQuadLayout,
+    cycles: u64,
+    ret_to: u32,
+) {
+    guest(c, |c| {
+        c.cycles += cycles;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.g[A1][0];
+        c.g[AT][0] = RENDER2D_ONE_BITS;
+        let textured = layout.uv_corner.is_some();
+        if textured {
+            c.g[T0][0] = c.g[A3][0];
+        }
+        c.g[A2][0] = c.g[A0][0];
+        c.g[A1][0] = 4;
+        c.g[A3][0] = 0;
+        let verts = Addr(r32(c, A0));
+        let rect = Addr(r32(c, V1));
+        let uv_rect = Addr(r32(c, T0));
+        render2d_fill_quad(c, verts, rect, uv_rect, layout);
+        if textured {
+            render2d_draw_prims(c, T1, V0, V1, ret_to)?;
+        } else {
+            render2d_draw_prims(c, T0, V1, V0, ret_to)?;
+        }
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Render2D_DrawQuad(void *ctx, QuadVertex v[4], const float rect[4])`
+/// (0x38e118): sets the positions of `v[0..3]` to the top-left, top-right,
+/// bottom-left and bottom-right corners of `rect` `{x, y, w, h}` (z 0, w 1)
+/// and draws them with the renderer's `DrawPrims(4, v, 0)`.
+pub fn render2d_draw_quad(c: &mut Cpu) {
+    render2d_draw_rect_quad(c, &RENDER2D_LAYOUT_PLAIN, 58, 0x0038_e1f4);
+}
+
+/// `void Render2D_DrawQuadRot90(void *ctx, QuadVertex v[4], const float
+/// rect[4])` (0x38e200): [`render2d_draw_quad`] with the corners turned a
+/// quarter: `v[0..3]` = bottom-left, top-left, bottom-right, top-right.
+pub fn render2d_draw_quad_rot90(c: &mut Cpu) {
+    render2d_draw_rect_quad(c, &RENDER2D_LAYOUT_ROT90, 58, 0x0038_e2dc);
+}
+
+/// The transformed quads (`verts` in a1, the rect in a2, the texture rect of
+/// a textured quad in a3, the matrix in `matrix_reg`): fill the vertices,
+/// transform the four positions in place with `Render2D_TransformPoint`
+/// (through the scratch quadword at `0(sp)`), then draw them. `rets`: the
+/// return addresses of the four transforms and of the draw call.
+pub(crate) fn render2d_draw_rect_quad_xform(
+    c: &mut Cpu,
+    layout: &Render2dQuadLayout,
+    cycles: u64,
+    matrix_reg: usize,
+    rets: &[u32; 5],
+) {
+    guest(c, |c| {
+        c.cycles += cycles;
+        let frame = Frame::open(c, 0x70);
+        c.g[V1][0] = c.g[A2][0];
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save_ra(c, 0x10);
+        // s0 = verts, s1 = the matrix, s2..s4 = the positions of vertices 1..3.
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[matrix_reg][0];
+        c.g[S2][0] = crate::abi::addu(c.g[S0][0], 0x50);
+        c.g[S3][0] = crate::abi::addu(c.g[S0][0], 0x80);
+        c.g[S4][0] = crate::abi::addu(c.g[S0][0], 0xb0);
+        c.g[AT][0] = RENDER2D_ONE_BITS;
+        let verts = Addr(r32(c, S0));
+        let rect = Addr(r32(c, V1));
+        let uv_rect = Addr(r32(c, A3));
+        render2d_fill_quad(c, verts, rect, uv_rect, layout);
+        for (i, &ret_to) in rets[..4].iter().enumerate() {
+            let point = match i {
+                0 => crate::abi::addu(c.g[S0][0], RENDER2D_VERTEX_POS as u64),
+                1 => c.g[S2][0],
+                2 => c.g[S3][0],
+                _ => c.g[S4][0],
+            };
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = point;
+            c.g[A2][0] = c.g[S1][0];
+            callee::RENDER2D_TRANSFORM_POINT.call(c, ret_to)?;
+            c.lq(V0, sp(c));
+            let pos =
+                r32(c, S0).wrapping_add(RENDER2D_VERTEX_SIZE * i as u32 + RENDER2D_VERTEX_POS);
+            c.sq(V0, pos);
+        }
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A1][0] = 4;
+        c.g[A3][0] = 0;
+        render2d_draw_prims(c, T0, V0, V1, rets[4])?;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Render2D_DrawQuadXform(void *ctx, QuadVertex v[4], const float
+/// rect[4], const Mat3 *m)` (0x38e2e8): [`render2d_draw_quad`] with each
+/// corner position transformed by the 3x3 row-vector matrix `m` before the
+/// draw.
+pub fn render2d_draw_quad_xform(c: &mut Cpu) {
+    render2d_draw_rect_quad_xform(
+        c,
+        &RENDER2D_LAYOUT_PLAIN,
+        96,
+        A3,
+        &[
+            0x0038_e3d4,
+            0x0038_e3ec,
+            0x0038_e404,
+            0x0038_e41c,
+            0x0038_e448,
+        ],
+    );
+}
+
+/// `void Render2D_DrawQuadRot90Xform(void *ctx, QuadVertex v[4], const float
+/// rect[4], const Mat3 *m)` (0x38e468): [`render2d_draw_quad_rot90`] with
+/// each position transformed by `m` before the draw.
+pub fn render2d_draw_quad_rot90_xform(c: &mut Cpu) {
+    render2d_draw_rect_quad_xform(
+        c,
+        &RENDER2D_LAYOUT_ROT90,
+        96,
+        A3,
+        &[
+            0x0038_e554,
+            0x0038_e56c,
+            0x0038_e584,
+            0x0038_e59c,
+            0x0038_e5c8,
+        ],
+    );
+}
+
+/// `void Render2D_DrawQuadUV(void *ctx, QuadVertex v[4], const float
+/// rect[4], const float uv[4])` (0x38e5e8): [`render2d_draw_quad`] that also
+/// sets each vertex's (s, t) to the matching corner of the texture rect `uv`
+/// `{u, v, du, dv}`.
+pub fn render2d_draw_quad_uv(c: &mut Cpu) {
+    render2d_draw_rect_quad(c, &RENDER2D_LAYOUT_UV, 83, 0x0038_e728);
+}
+
+/// `void Render2D_DrawQuadUVRot90(void *ctx, QuadVertex v[4], const float
+/// rect[4], const float uv[4])` (0x38e738): [`render2d_draw_quad_uv`] with
+/// the texture turned a quarter: `v[0..3]` take the texture's top-right,
+/// bottom-right, top-left and bottom-left corners.
+pub fn render2d_draw_quad_uv_rot90(c: &mut Cpu) {
+    render2d_draw_rect_quad(c, &RENDER2D_LAYOUT_UV_ROT90, 82, 0x0038_e874);
+}
+
+/// `void Render2D_DrawQuadUVXform(void *ctx, QuadVertex v[4], const float
+/// rect[4], const float uv[4], const Mat3 *m)` (0x38e880):
+/// [`render2d_draw_quad_uv`] with each position transformed by `m` (in t0)
+/// before the draw.
+pub fn render2d_draw_quad_uv_xform(c: &mut Cpu) {
+    render2d_draw_rect_quad_xform(
+        c,
+        &RENDER2D_LAYOUT_UV,
+        120,
+        T0,
+        &[
+            0x0038_e9cc,
+            0x0038_e9e4,
+            0x0038_e9fc,
+            0x0038_ea14,
+            0x0038_ea40,
+        ],
+    );
+}
+
+/// `void Render2D_DrawQuadUVRot90Xform(void *ctx, QuadVertex v[4], const
+/// float rect[4], const float uv[4], const Mat3 *m)` (0x38ea60):
+/// [`render2d_draw_quad_uv_rot90`] with each position transformed by `m` (in
+/// t0) before the draw.
+pub fn render2d_draw_quad_uv_rot90_xform(c: &mut Cpu) {
+    render2d_draw_rect_quad_xform(
+        c,
+        &RENDER2D_LAYOUT_UV_ROT90,
+        119,
+        T0,
+        &[
+            0x0038_eba8,
+            0x0038_ebc0,
+            0x0038_ebd8,
+            0x0038_ebf0,
+            0x0038_ec1c,
+        ],
+    );
+}
+
+/// The vertex-array constructor loop head of [`render2d_draw_filled_rect`].
+pub(crate) const RENDER2D_DRAW_FILLED_RECT_LOOP: u32 = 0x0038_ec60;
+
+/// `void Render2D_DrawFilledRect(void *self, const float p0[2], const float
+/// p1[2], const float colour[4], float z)` (0x38ec40): draws the untextured
+/// rect with corners `p0` (top-left) and `p1` (bottom-right) at depth `z`
+/// from a vertex array on its stack: every vertex gets q = 1, the colour
+/// `{a, r, g, b}` as integer words (r, g, b scaled by 255, a by 128) and
+/// texture coordinates of its corner (0 or 1). `self` is unused.
+pub fn render2d_draw_filled_rect(c: &mut Cpu) {
+    // Stack frame: the four vertices at 0, the position being built at
+    // +0xc0, the saved ra at +0xd0.
+    const FRAME: u32 = 0xe0;
+    const POS_SCRATCH: u32 = 0xc0;
+    const RA_SLOT: u32 = 0xd0;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, FRAME);
+        c.g[T0][0] = c.g[A1][0];
+        frame.save_ra(c, RA_SLOT);
+        c.g[T1][0] = c.g[A2][0];
+        c.g[V1][0] = c.g[A3][0];
+        // The vertex array's constructor: an empty body, run once per vertex
+        // (v0 counts 3 down to -1).
+        c.g[V0][0] = 3;
+        c.g[A0][0] = u64::MAX;
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            c.g[A1][0] = 4;
+            if c.g[V0][0] == c.g[A0][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, RENDER2D_DRAW_FILLED_RECT_LOOP);
+            }
+        }
+        c.cycles += 68;
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A3][0] = 0;
+        let p0 = Addr(r32(c, T0));
+        let p1 = Addr(r32(c, T1));
+        let colour = Addr(r32(c, V1));
+        let byte_scale = FpuF32::from_f32(255.0);
+        let alpha_scale = FpuF32::from_f32(128.0);
+        let red = colour.off(0x4).read_fpu(c) * byte_scale;
+        let green = colour.off(0x8).read_fpu(c) * byte_scale;
+        let blue = colour.off(0xc).read_fpu(c) * byte_scale;
+        let alpha = colour.read_fpu(c) * alpha_scale;
+        let x0 = p0.read_fpu(c);
+        let y0 = p0.off(0x4).read_fpu(c);
+        let z = crate::abi::farg(c, 0);
+
+        // Vertex 0: colour, q, and the position (x0, y0, z, 1); its s, t and
+        // word +0xc are still the stack's old contents here.
+        let verts = frame.at(c, 0);
+        let vertex = |i: u32| Addr(verts.wrapping_add(RENDER2D_VERTEX_SIZE * i));
+        let first = vertex(0);
+        let rgba = [red, green, blue, alpha];
+        for (i, channel) in rgba.iter().enumerate() {
+            let word = channel.to_i32() as u32;
+            first
+                .off(RENDER2D_VERTEX_COLOR + 4 * i as u32)
+                .write_u32(c, word);
+        }
+        let scratch = Addr(frame.at(c, POS_SCRATCH));
+        scratch.write_fpu(c, x0);
+        scratch.off(0x4).write_fpu(c, y0);
+        scratch.off(0x8).write_fpu(c, z);
+        scratch.off(0xc).write_fpu(c, FpuF32::ONE);
+        first.off(RENDER2D_VERTEX_Q).write_fpu(c, FpuF32::ONE);
+
+        // v[1..3] = v[0] (copied as quadwords through v0, v1 and a0), then
+        // the far corners and the texture coordinates.
+        c.lq(A0, scratch.0);
+        c.lq(V0, first.0);
+        c.lq(V1, first.0.wrapping_add(RENDER2D_VERTEX_COLOR));
+        c.sq(A0, first.off(RENDER2D_VERTEX_POS).0);
+        for i in 1..4 {
+            let v = vertex(i);
+            c.sq(V0, v.0);
+            c.sq(V1, v.off(RENDER2D_VERTEX_COLOR).0);
+            c.sq(A0, v.off(RENDER2D_VERTEX_POS).0);
+        }
+        let x1 = p1.read_fpu(c);
+        let y1 = p1.off(0x4).read_fpu(c);
+        let pos = RENDER2D_VERTEX_POS;
+        vertex(1).off(pos).write_fpu(c, x1);
+        vertex(3).off(pos).write_fpu(c, x1);
+        vertex(3).off(pos + 0x4).write_fpu(c, y1);
+        vertex(2).off(pos + 0x4).write_fpu(c, y1);
+        for i in 0..4 {
+            let s = if i & 1 != 0 {
+                FpuF32::ONE
+            } else {
+                FpuF32::ZERO
+            };
+            let t = if i & 2 != 0 {
+                FpuF32::ONE
+            } else {
+                FpuF32::ZERO
+            };
+            vertex(i).off(RENDER2D_VERTEX_S).write_fpu(c, s);
+            vertex(i).off(RENDER2D_VERTEX_T).write_fpu(c, t);
+        }
+
+        // The registers the compiled code leaves for the call.
+        c.g[AT][0] = RENDER2D_ONE_BITS;
+        c.f[0] = FpuF32::ZERO.0;
+        c.f[1] = x1.0;
+        c.f[2] = y1.0;
+        c.f[3] = blue.0;
+        c.f[4] = red.to_i32() as u32;
+        c.f[5] = y0.0;
+        c.f[6] = FpuF32::ONE.0;
+        c.f[7] = alpha.0;
+        render2d_draw_prims(c, T0, V0, V1, 0x0038_ed80)?;
+        frame.restore_ra(c, RA_SLOT);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3115,6 +4065,700 @@ pub(crate) mod tests {
                 for off in [0, 4, 0xc, 0x10, 0x18, 0x1c] {
                     c.bus.write32(DATA + 0x200 + off, r.edge_f32());
                 }
+            },
+        );
+    }
+
+    use crate::difftest::check_paths;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    // ------------------------------------------------ light manager
+
+    /// The allocator fake's gate (a magic word in the machine's RAM).
+    pub(crate) const LIGHT_MAN_CREATE_GATE: u32 = DATA + 0x8_0000;
+
+    pub(crate) const LIGHT_MAN_CREATE_MAGIC: u32 = 0x4c4d_4372;
+
+    pub(crate) static LIGHT_MAN_CREATE_PREV_ALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemAllocNamed` for `LightMan_Create`'s test: the logging fake
+    /// (returns a pointer into the data area, may unwind) when the gate is
+    /// set.
+    pub(crate) fn light_man_create_fake_alloc(c: &mut Cpu) {
+        if c.bus.read32(LIGHT_MAN_CREATE_GATE) != LIGHT_MAN_CREATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                &LIGHT_MAN_CREATE_PREV_ALLOC,
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_7d70, ra);
+    }
+
+    pub(crate) static LIGHT_MAN_CREATE_PREV_CTOR: AtomicUsize = AtomicUsize::new(0);
+
+    /// `LightMan_ctor` for `LightMan_Create`'s test: the logging fake (may
+    /// unwind) when the gate and its own control word (gate + 4) are set,
+    /// else the real constructor.
+    pub(crate) fn light_man_create_fake_ctor(c: &mut Cpu) {
+        if c.bus.read32(LIGHT_MAN_CREATE_GATE) != LIGHT_MAN_CREATE_MAGIC
+            || c.bus.read32(LIGHT_MAN_CREATE_GATE + 4) != LIGHT_MAN_CREATE_MAGIC
+        {
+            return fakes::fall_back(
+                c,
+                &LIGHT_MAN_CREATE_PREV_CTOR,
+                ee::s12::f_0038ae10__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0038_ae10, ra);
+    }
+
+    /// `LightMan_Create`: a fake allocator (logs the arguments, returns a
+    /// pointer); `LightMan_ctor` real (vtable and the global at gp+0x2a9c)
+    /// or faked (`seed % 2`); no unwind, an unwind in the allocator or one
+    /// in the faked constructor (`seed / 2 % 3`); the vtable store after it.
+    /// Paths: full, unwound after the allocation, unwound after the
+    /// constructor (seeds = 5 mod 6).
+    #[test]
+    fn light_man_create_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            light_man_create_fake_alloc,
+            &LIGHT_MAN_CREATE_PREV_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038AE10),
+            light_man_create_fake_ctor,
+            &LIGHT_MAN_CREATE_PREV_CTOR,
+        );
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x0038_dbd0, 2);
+            c.bus.write32(LIGHT_MAN_CREATE_GATE, LIGHT_MAN_CREATE_MAGIC);
+            if seed % 2 == 1 {
+                c.bus
+                    .write32(LIGHT_MAN_CREATE_GATE + 4, LIGHT_MAN_CREATE_MAGIC);
+            }
+            c.bus.write32(
+                fakes::LOG_UNWIND_AT,
+                [u32::MAX, 0, 1][(seed / 2 % 3) as usize],
+            );
+            fill(c, &mut r, DATA, 0x1_0000);
+            // The allocation (fake call 0): a non-zero low byte.
+            c.bus
+                .write32(fakes::LOG_RESULTS, DATA + 0x2_0010 + 0x20 * (seed / 6 % 8));
+            c.bus.write32(GAME_GP + 0x2a9c, r.next_u32());
+            c.pc = 0x0038_dbd0;
+        };
+        fakes::covered(
+            ee::s12::f_0038dbd0__generated,
+            light_man_create,
+            204,
+            &setup,
+        );
+        // (constructor faked, fake calls made, ran to the end): the full
+        // runs, the allocator unwinding, the faked constructor unwinding.
+        crate::game::dirtysock::buddyapi::tests::require_arm_values(
+            ee::s12::f_0038dbd0__generated,
+            204,
+            &setup,
+            &|c, seed| {
+                let ended = c.pc == crate::difftest::RA;
+                (seed % 2, c.bus.read32(fakes::LOG_COUNT), ended)
+            },
+            &[
+                (0, 1, true),
+                (0, 1, false),
+                (1, 1, false),
+                (1, 2, true),
+                (1, 2, false),
+            ],
+        );
+    }
+
+    /// Methods that only return (2 cycles): scrambled registers and an
+    /// object of random words at `a0`; a body that touched anything or took
+    /// another cycle count would differ.
+    pub(crate) fn light_man_empty_method_check(generated: GuestFn, hand: GuestFn, salt: u64) {
+        check_paths(generated, hand, 100, &[2], &|c, seed| {
+            let mut r = Rng(salt ^ (seed as u64) << 24);
+            scramble(c, &mut r);
+            fill(c, &mut r, DATA, 0x100);
+            c.g[A0][0] = sx(DATA + 0x34 + (seed % 4) * 0x40);
+        });
+    }
+
+    #[test]
+    fn light_man_empty_hook_a_matches() {
+        light_man_empty_method_check(
+            ee::s12::f_0038dc50__generated,
+            light_man_empty_hook_a,
+            0x38dc50,
+        );
+    }
+
+    #[test]
+    fn light_man_empty_hook_b_matches() {
+        light_man_empty_method_check(
+            ee::s12::f_0038dc58__generated,
+            light_man_empty_hook_b,
+            0x38dc58,
+        );
+    }
+
+    #[test]
+    fn light_man_empty_hook_c_matches() {
+        light_man_empty_method_check(
+            ee::s12::f_0038dc60__generated,
+            light_man_empty_hook_c,
+            0x38dc60,
+        );
+    }
+
+    #[test]
+    fn light_man_empty_hook_d_matches() {
+        light_man_empty_method_check(
+            ee::s12::f_0038dc68__generated,
+            light_man_empty_hook_d,
+            0x38dc68,
+        );
+    }
+
+    /// Light types of the `LightMan_v05` tests: light `i` takes entry
+    /// `(digit + i) % 6`.
+    pub(crate) const LIGHT_V05_TEST_TYPES: [i32; 6] = [0, 1, 2, 3, 4, -1];
+
+    pub(crate) const LIGHT_V05_TEST_SELF: u32 = DATA + 0x124;
+
+    pub(crate) const LIGHT_V05_TEST_INSTANCES: u32 = DATA + 0x1000;
+
+    pub(crate) const LIGHT_V05_TEST_LIGHTS: u32 = DATA + 0x4234;
+
+    /// A light manager with the PS2 vtable (the real `GetInstance`, empty
+    /// hooks, `Math_Asin`), a random instance table, and `count` light
+    /// records of random words with: types from `seed % 6`, directions from
+    /// `seed / 6 % 3` (0 random, 1 zero, 2 signed zeros and denormals, i.e.
+    /// zero length), random colours, intensities and cones in [-1, 1]. The
+    /// first id is random.
+    pub(crate) fn light_man_v05_setup(c: &mut Cpu, seed: u32, count: i32) -> Rng {
+        use light_record::*;
+        let mut r = Rng(0x0038_dc70 ^ (seed as u64) << 16);
+        scramble(c, &mut r);
+        elf_image(c);
+        c.g[GP][0] = GAME_GP as u64;
+        c.pc = 0x0038_dc70;
+        fill(c, &mut r, LIGHT_V05_TEST_INSTANCES, 0x80);
+        c.bus.write32(LIGHT_V05_TEST_SELF, LIGHT_MAN_PS2_VTABLE);
+        c.bus.write32(
+            LIGHT_V05_TEST_SELF + LIGHT_MAN_INSTANCES,
+            LIGHT_V05_TEST_INSTANCES,
+        );
+        let types = seed % 6;
+        let dirs = seed / 6 % 3;
+        for i in 0..count.max(0) as u32 {
+            let light = LIGHT_V05_TEST_LIGHTS + i * SIZE;
+            fill(c, &mut r, light, SIZE / 4);
+            let kind = LIGHT_V05_TEST_TYPES[((types + i) % 6) as usize];
+            c.bus.write32(light + TYPE, kind as u32);
+            c.bus.write32(light + INTENSITY, r.f32(10.0));
+            for k in 0..3 {
+                c.bus.write32(light + COLOUR + 4 * k, r.f32(2.0));
+            }
+            let dir = match (dirs + i) % 3 {
+                0 => [r.f32(1000.0), r.f32(1000.0), r.f32(1000.0)],
+                1 => [0, 0, 0],
+                _ => [0x8000_0000, 0x0000_0123, 0x8000_0001],
+            };
+            for k in 0..3 {
+                c.bus.write32(light + DIR + 4 * k as u32, dir[k]);
+            }
+            c.bus.write32(light + CONE, r.f32(1.0));
+        }
+        c.g[A0][0] = sx(LIGHT_V05_TEST_SELF);
+        c.g[A1][0] = sx(LIGHT_V05_TEST_LIGHTS);
+        c.g[A2][0] = sx(count as u32);
+        c.g[A3][0] = sx(r.next_u32() % 40);
+        r
+    }
+
+    /// Gate of the `Math_Asin` fake of the `LightMan_v05` test: set, the
+    /// call unwinds (the first spot light's `Math_Asin` returns elsewhere).
+    pub(crate) const LIGHT_V05_ASIN_GATE: u32 = DATA + 0x9_0000;
+
+    pub(crate) const LIGHT_V05_ASIN_MAGIC: u32 = 0x4153_494e;
+
+    pub(crate) static LIGHT_V05_PREV_ASIN: AtomicUsize = AtomicUsize::new(0);
+
+    /// `Math_Asin` for the `LightMan_v05` test: unwinds (pc away from the
+    /// return address, nothing else changed) when the gate is set, else the
+    /// real body.
+    pub(crate) fn light_man_v05_fake_asin(c: &mut Cpu) {
+        if c.bus.read32(LIGHT_V05_ASIN_GATE) != LIGHT_V05_ASIN_MAGIC {
+            return fakes::fall_back(c, &LIGHT_V05_PREV_ASIN, ee::s10::f_0031c128__generated);
+        }
+        c.pc = 0xdead_0000;
+    }
+
+    /// `LightMan_v05`: 1, 2, 3, 0 or -2 lights (`seed % 5`), each type
+    /// (`seed / 5 % 6`) and direction kind (`seed / 30 % 3`). Single-light
+    /// paths: no lights 32, type -1 75, type 4 77, ambient 81, point 83,
+    /// directional with a zero direction 96, with a random one 102 (spot
+    /// lights include `Math_Asin`, so their totals are not listed). On
+    /// `seed / 90 % 2 == 1` a gated fake makes `Math_Asin` unwind, so the
+    /// function returns at once after it.
+    #[test]
+    fn light_man_v05_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0031C128),
+            light_man_v05_fake_asin,
+            &LIGHT_V05_PREV_ASIN,
+        );
+        const COUNTS: [i32; 5] = [1, 2, 3, 0, -2];
+        check_paths(
+            ee::s12::f_0038dc70__generated,
+            light_man_v05,
+            180,
+            &[32, 75, 77, 81, 83, 96, 102],
+            &|c, seed| {
+                light_man_v05_setup(c, seed / 5, COUNTS[(seed % 5) as usize]);
+                if seed / 90 % 2 == 1 {
+                    c.bus.write32(LIGHT_V05_ASIN_GATE, LIGHT_V05_ASIN_MAGIC);
+                }
+            },
+        );
+        // The single-light totals by the light's type and direction kind
+        // (random, zero, zero length): directional 102 / 96 / 96, spot (with
+        // `Math_Asin`) 132 / 127, point 83, ambient 81, type 4 77, type -1
+        // 75, so a total another path shares still names its arm.
+        crate::game::dirtysock::buddyapi::tests::require_arm_values(
+            ee::s12::f_0038dc70__generated,
+            90,
+            &|c, seed| {
+                light_man_v05_setup(c, seed / 5, COUNTS[(seed % 5) as usize]);
+            },
+            &|c, seed| {
+                if seed % 5 != 0 {
+                    return (9, 9, 0);
+                }
+                let k = seed / 5;
+                (LIGHT_V05_TEST_TYPES[(k % 6) as usize], k / 6 % 3, c.cycles)
+            },
+            &[
+                (0, 0, 102),
+                (0, 1, 96),
+                (0, 2, 96),
+                (1, 0, 132),
+                (1, 2, 127),
+                (2, 0, 83),
+                (3, 0, 81),
+                (4, 0, 77),
+                (-1, 0, 75),
+            ],
+        );
+    }
+
+    /// `LightMan_v05` with events due at the light loop's back edge (head
+    /// 0x38dcd8, structured: not resumed): 2..4 lights (`seed / 3 % 3`),
+    /// types and directions from `seed / 9`.
+    #[test]
+    fn light_man_v05_events() {
+        driven!(gen_v05, ee::s12::f_0038dc70__generated);
+        driven!(hand_v05, light_man_v05);
+        check_events(gen_v05, hand_v05, 162, &|c, seed| {
+            let count = 2 + (seed / 3 % 3) as i32;
+            let mut r = light_man_v05_setup(c, seed / 9, count);
+            schedule(c, &mut r, seed, 0x0038_dc70)
+        });
+    }
+
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::require_paths;
+
+    /// Fixture addresses: the vertex buffer, the rect, the texture rect (also
+    /// the colour), the matrix, the renderer and its vtable.
+    pub(crate) const RENDER2D_TEST_VERTS: u32 = DATA + 0x1230;
+
+    pub(crate) const RENDER2D_TEST_RECT: u32 = DATA + 0x2014;
+
+    pub(crate) const RENDER2D_TEST_UV: u32 = DATA + 0x2038;
+
+    pub(crate) const RENDER2D_TEST_MATRIX: u32 = DATA + 0x2104;
+
+    pub(crate) const RENDER2D_TEST_RENDERER: u32 = DATA + 0x3344;
+
+    pub(crate) const RENDER2D_TEST_VTABLE: u32 = DATA + 0x5108;
+
+    /// A real leaf that returns 0 (`v0 = 0; jr ra`, 2 cycles).
+    pub(crate) const RENDER2D_TEST_LEAF: u32 = 0x0014_06c0;
+
+    /// The quad helpers' machine. Seed digits: `seed % 2` makes `DrawPrims`
+    /// the real leaf (0, a fixed cycle total) or the logging fake (1);
+    /// `seed / 2 % 3 == 0` makes the fake unwind (when `unwinds`);
+    /// `seed / 6 % 2 == 0` uses edge-case floats, else screen-sized values.
+    /// The vertex buffer starts as random bytes; a1 = verts, a2 = rect.
+    pub(crate) fn render2d_quad_setup(c: &mut Cpu, seed: u32, entry: u32, unwinds: bool) -> Rng {
+        let mut r = machine(c, seed, entry as u64, 0);
+        let method = if seed % 2 == 0 {
+            RENDER2D_TEST_LEAF
+        } else {
+            FAKE
+        };
+        let unwind = unwinds && seed / 2 % 3 == 0;
+        c.bus
+            .write32(LOG_UNWIND_AT, if unwind { 0 } else { u32::MAX });
+        let edge = seed / 6 % 2 == 0;
+        c.bus
+            .write32(GAME_GP + RENDER2D_RENDERER, RENDER2D_TEST_RENDERER);
+        c.bus.write32(
+            RENDER2D_TEST_RENDERER + RENDER2D_RENDERER_VPTR,
+            RENDER2D_TEST_VTABLE,
+        );
+        let delta = r.next_u32() as u16;
+        c.bus
+            .write16(RENDER2D_TEST_VTABLE + RENDER2D_DRAW_PRIMS, delta);
+        c.bus
+            .write32(RENDER2D_TEST_VTABLE + RENDER2D_DRAW_PRIMS + 4, method);
+        // Four vertices of 0x30 bytes.
+        fill(c, &mut r, RENDER2D_TEST_VERTS, 4 * RENDER2D_VERTEX_SIZE / 4);
+        for (base, words) in [
+            (RENDER2D_TEST_RECT, 4),
+            (RENDER2D_TEST_UV, 4),
+            (RENDER2D_TEST_MATRIX, 8),
+        ] {
+            for i in 0..words {
+                let v = if edge { r.edge_f32() } else { r.f32(640.0) };
+                c.bus.write32(base + 4 * i, v);
+            }
+        }
+        c.g[A1][0] = sx(RENDER2D_TEST_VERTS);
+        c.g[A2][0] = sx(RENDER2D_TEST_RECT);
+        c.pc = entry;
+        r
+    }
+
+    /// Gate word, unwinding call index and call counter of
+    /// [`render2d_fake_transform_point`].
+    pub(crate) const RENDER2D_TEST_TRANSFORM_CTRL: u32 = DATA + 0x6010;
+
+    pub(crate) const RENDER2D_TEST_TRANSFORM_MAGIC: u32 = 0x5832_44d7;
+
+    pub(crate) static RENDER2D_PREV_TRANSFORM_POINT: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    /// `Render2D_TransformPoint` for the transformed quads: with the gate word
+    /// in this machine's RAM, the call whose index is at CTRL+4 unwinds
+    /// (`pc = 0xdead_0000 | n << 4`) instead of transforming; every other call
+    /// runs the body the slot held.
+    pub(crate) fn render2d_fake_transform_point(c: &mut Cpu) {
+        let ctrl = RENDER2D_TEST_TRANSFORM_CTRL;
+        if c.bus.read32(ctrl) == RENDER2D_TEST_TRANSFORM_MAGIC {
+            let n = c.bus.read32(ctrl + 8);
+            c.bus.write32(ctrl + 8, n + 1);
+            if n == c.bus.read32(ctrl + 4) {
+                c.pc = 0xdead_0000 | n << 4;
+                return;
+            }
+        }
+        crate::difftest::fakes::fall_back(
+            c,
+            &RENDER2D_PREV_TRANSFORM_POINT,
+            ee::s12::f_0038e0a8__generated,
+        );
+    }
+
+    /// The transformed quads' machine: [`render2d_quad_setup`] plus the matrix
+    /// (a3, or t0 with the texture rect in a3 when `textured`) and the gated
+    /// transform fake. Seed digit `seed / 12 % 8`: the transform call (0..3)
+    /// that unwinds, 4..7 none (half the seeds reach the draw call).
+    pub(crate) fn render2d_xform_setup(c: &mut Cpu, seed: u32, entry: u32, textured: bool) {
+        render2d_quad_setup(c, seed, entry, true);
+        if textured {
+            c.g[A3][0] = sx(RENDER2D_TEST_UV);
+            c.g[T0][0] = sx(RENDER2D_TEST_MATRIX);
+        } else {
+            c.g[A3][0] = sx(RENDER2D_TEST_MATRIX);
+        }
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s12::OVERRIDE_0038E0A8),
+            render2d_fake_transform_point,
+            &RENDER2D_PREV_TRANSFORM_POINT,
+        );
+        let ctrl = RENDER2D_TEST_TRANSFORM_CTRL;
+        let unwind_at = seed / 12 % 8;
+        c.bus.write32(ctrl, RENDER2D_TEST_TRANSFORM_MAGIC);
+        c.bus
+            .write32(ctrl + 4, if unwind_at < 4 { unwind_at } else { u32::MAX });
+        c.bus.write32(ctrl + 8, 0);
+    }
+
+    /// Plain rect: the four positions, the draw call's registers (logged by
+    /// the fake), its return or unwind. Path (real leaf): 58 + 2.
+    #[test]
+    fn render2d_draw_quad_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            render2d_quad_setup(c, seed, 0x0038_e118, true);
+        };
+        covered(
+            ee::s12::f_0038e118__generated,
+            render2d_draw_quad,
+            300,
+            &setup,
+        );
+        require_paths(ee::s12::f_0038e118__generated, 300, &[60], &setup);
+    }
+
+    /// The quarter-turned corners. Path (real leaf): 58 + 2.
+    #[test]
+    fn render2d_draw_quad_rot90_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            render2d_quad_setup(c, seed, 0x0038_e200, true);
+        };
+        covered(
+            ee::s12::f_0038e200__generated,
+            render2d_draw_quad_rot90,
+            300,
+            &setup,
+        );
+        require_paths(ee::s12::f_0038e200__generated, 300, &[60], &setup);
+    }
+
+    /// Plain rect, positions through `Render2D_TransformPoint` with the
+    /// matrix in a3. Paths: transform n unwinds 96 + 28 * n (n = 0..3); all
+    /// return, real leaf 96 + 4 * 28 + 2.
+    #[test]
+    fn render2d_draw_quad_xform_matches() {
+        let setup = |c: &mut Cpu, seed: u32| render2d_xform_setup(c, seed, 0x0038_e2e8, false);
+        covered(
+            ee::s12::f_0038e2e8__generated,
+            render2d_draw_quad_xform,
+            300,
+            &setup,
+        );
+        require_paths(
+            ee::s12::f_0038e2e8__generated,
+            300,
+            &[96, 124, 152, 180, 210],
+            &setup,
+        );
+    }
+
+    /// Quarter-turned corners, transformed. Paths: transform n unwinds
+    /// 96 + 28 * n; all return, real leaf 96 + 4 * 28 + 2.
+    #[test]
+    fn render2d_draw_quad_rot90_xform_matches() {
+        let setup = |c: &mut Cpu, seed: u32| render2d_xform_setup(c, seed, 0x0038_e468, false);
+        covered(
+            ee::s12::f_0038e468__generated,
+            render2d_draw_quad_rot90_xform,
+            300,
+            &setup,
+        );
+        require_paths(
+            ee::s12::f_0038e468__generated,
+            300,
+            &[96, 124, 152, 180, 210],
+            &setup,
+        );
+    }
+
+    /// Textured: positions plus (s, t) from the texture rect in a3 (kept in
+    /// t0). Path (real leaf): 83 + 2.
+    #[test]
+    fn render2d_draw_quad_uv_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            render2d_quad_setup(c, seed, 0x0038_e5e8, true);
+            c.g[A3][0] = sx(RENDER2D_TEST_UV);
+        };
+        covered(
+            ee::s12::f_0038e5e8__generated,
+            render2d_draw_quad_uv,
+            300,
+            &setup,
+        );
+        require_paths(ee::s12::f_0038e5e8__generated, 300, &[85], &setup);
+    }
+
+    /// Textured with the texture turned a quarter. Path (real leaf): 82 + 2.
+    #[test]
+    fn render2d_draw_quad_uv_rot90_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            render2d_quad_setup(c, seed, 0x0038_e738, true);
+            c.g[A3][0] = sx(RENDER2D_TEST_UV);
+        };
+        covered(
+            ee::s12::f_0038e738__generated,
+            render2d_draw_quad_uv_rot90,
+            300,
+            &setup,
+        );
+        require_paths(ee::s12::f_0038e738__generated, 300, &[84], &setup);
+    }
+
+    /// Textured and transformed (texture rect in a3, matrix in t0). Paths:
+    /// transform n unwinds 120 + 28 * n; all return, real leaf
+    /// 120 + 4 * 28 + 2.
+    #[test]
+    fn render2d_draw_quad_uv_xform_matches() {
+        let setup = |c: &mut Cpu, seed: u32| render2d_xform_setup(c, seed, 0x0038_e880, true);
+        covered(
+            ee::s12::f_0038e880__generated,
+            render2d_draw_quad_uv_xform,
+            300,
+            &setup,
+        );
+        require_paths(
+            ee::s12::f_0038e880__generated,
+            300,
+            &[120, 148, 176, 204, 234],
+            &setup,
+        );
+    }
+
+    /// Quarter-turned texture, transformed. Paths: transform n unwinds
+    /// 119 + 28 * n; all return, real leaf 119 + 4 * 28 + 2.
+    #[test]
+    fn render2d_draw_quad_uv_rot90_xform_matches() {
+        let setup = |c: &mut Cpu, seed: u32| render2d_xform_setup(c, seed, 0x0038_ea60, true);
+        covered(
+            ee::s12::f_0038ea60__generated,
+            render2d_draw_quad_uv_rot90_xform,
+            300,
+            &setup,
+        );
+        require_paths(
+            ee::s12::f_0038ea60__generated,
+            300,
+            &[119, 147, 175, 203, 233],
+            &setup,
+        );
+    }
+
+    /// Seeds per overlap test: every texture-rect start `seed % 48` times
+    /// the setup digits `seed / 48`.
+    pub(crate) const RENDER2D_OVERLAP_SEEDS: u32 = 48 * 24;
+
+    /// Put the texture rect (a3) inside the vertex buffer: one word before
+    /// the buffer up to its last word (`seed % 48`), so a texture coordinate
+    /// stored for one corner is the next coordinate read.
+    pub(crate) fn render2d_overlap_uv(c: &mut Cpu, seed: u32) {
+        let start = RENDER2D_TEST_VERTS - 4 + 4 * (seed % 48);
+        c.g[A3][0] = sx(start);
+    }
+
+    /// [`render2d_draw_quad_uv_matches`] with the texture rect overlapping
+    /// the vertex buffer.
+    #[test]
+    fn render2d_draw_quad_uv_overlap_matches() {
+        check(
+            ee::s12::f_0038e5e8__generated,
+            render2d_draw_quad_uv,
+            RENDER2D_OVERLAP_SEEDS,
+            &|c, seed| {
+                render2d_quad_setup(c, seed / 48, 0x0038_e5e8, true);
+                render2d_overlap_uv(c, seed);
+            },
+        );
+    }
+
+    /// [`render2d_draw_quad_uv_rot90_matches`] with overlapping rects.
+    #[test]
+    fn render2d_draw_quad_uv_rot90_overlap_matches() {
+        check(
+            ee::s12::f_0038e738__generated,
+            render2d_draw_quad_uv_rot90,
+            RENDER2D_OVERLAP_SEEDS,
+            &|c, seed| {
+                render2d_quad_setup(c, seed / 48, 0x0038_e738, true);
+                render2d_overlap_uv(c, seed);
+            },
+        );
+    }
+
+    /// [`render2d_draw_quad_uv_xform_matches`] with overlapping rects.
+    #[test]
+    fn render2d_draw_quad_uv_xform_overlap_matches() {
+        check(
+            ee::s12::f_0038e880__generated,
+            render2d_draw_quad_uv_xform,
+            RENDER2D_OVERLAP_SEEDS,
+            &|c, seed| {
+                render2d_xform_setup(c, seed / 48, 0x0038_e880, true);
+                render2d_overlap_uv(c, seed);
+            },
+        );
+    }
+
+    /// [`render2d_draw_quad_uv_rot90_xform_matches`] with overlapping rects.
+    #[test]
+    fn render2d_draw_quad_uv_rot90_xform_overlap_matches() {
+        check(
+            ee::s12::f_0038ea60__generated,
+            render2d_draw_quad_uv_rot90_xform,
+            RENDER2D_OVERLAP_SEEDS,
+            &|c, seed| {
+                render2d_xform_setup(c, seed / 48, 0x0038_ea60, true);
+                render2d_overlap_uv(c, seed);
+            },
+        );
+    }
+
+    /// The filled rect's machine ([`render2d_quad_setup`]'s seed digits):
+    /// p0 and p1 in the rect (a1, a2), the colour in the texture rect (a3,
+    /// colour-sized floats or edge cases), z in f12. The stack below `sp`
+    /// holds random words (the vertex array's unset s, t and +0xc).
+    pub(crate) fn render2d_filled_rect_setup(c: &mut Cpu, seed: u32, unwinds: bool) -> Rng {
+        let mut r = render2d_quad_setup(c, seed, 0x0038_ec40, unwinds);
+        let edge = seed / 6 % 2 == 0;
+        for i in 0..4 {
+            let v = if edge { r.edge_f32() } else { r.f32(1.2) };
+            c.bus.write32(RENDER2D_TEST_UV + 4 * i, v);
+        }
+        c.f[12] = if edge { r.edge_f32() } else { r.f32(64.0) };
+        c.g[A1][0] = sx(RENDER2D_TEST_RECT);
+        c.g[A2][0] = sx(RENDER2D_TEST_RECT + 0x8);
+        c.g[A3][0] = sx(RENDER2D_TEST_UV);
+        r
+    }
+
+    /// The constructor loop (three back edges, then the exit), the vertex
+    /// array, the draw call's registers and its return or unwind. Path (real
+    /// leaf): 8 + 4 * 7 + 68 + 2.
+    #[test]
+    fn render2d_draw_filled_rect_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            render2d_filled_rect_setup(c, seed, true);
+        };
+        covered(
+            ee::s12::f_0038ec40__generated,
+            render2d_draw_filled_rect,
+            300,
+            &setup,
+        );
+        require_paths(ee::s12::f_0038ec40__generated, 300, &[106], &setup);
+    }
+
+    driven!(
+        render2d_gen_draw_filled_rect,
+        ee::s12::f_0038ec40__generated
+    );
+
+    driven!(render2d_hand_draw_filled_rect, render2d_draw_filled_rect);
+
+    /// Events due at the constructor loop's back edges (15, 22 and 29 cycles
+    /// in; the schedule puts the first one 0..47 cycles in), delivered in
+    /// place at 0x38ec60. The draw call never unwinds here.
+    #[test]
+    fn render2d_draw_filled_rect_events() {
+        check_events(
+            render2d_gen_draw_filled_rect,
+            render2d_hand_draw_filled_rect,
+            300,
+            &|c, seed| {
+                let mut r = render2d_filled_rect_setup(c, seed / 3, false);
+                schedule(c, &mut r, seed, 0x0038_ec40)
             },
         );
     }

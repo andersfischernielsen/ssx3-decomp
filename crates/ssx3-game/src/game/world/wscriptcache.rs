@@ -13,6 +13,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::sd;
@@ -21,10 +22,8 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_4;
 pub(crate) use crate::game::dirtysock::tagsunk::gp_3 as gp;
 pub(crate) use crate::game::fe::feasyncfile::at as at_2;
 pub(crate) use crate::game::fe::feasyncfile::gp_12 as gp_2;
-pub(crate) use crate::game::fe::feasyncfile::lw as lw_5;
 pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_6;
 pub(crate) use crate::game::fe::feasyncfile::lw_at_2 as lw_at;
-pub(crate) use crate::game::fe::feasyncfile::sw_6 as sw_2;
 pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_3;
 pub(crate) use crate::game::fe::fepopup::at as at_5;
 pub(crate) use crate::game::fe::fepopup::ld;
@@ -335,6 +334,37 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "World_StaticInitDestroy",
     ),
     (0x003a_dda0, world_global_ctors, "World_GlobalCtors"),
+    (0x003b_2528, shp_normalize_bpp, "SHP_NormalizeBpp"),
+    (0x003b_2558, shp_calc_image_size, "SHP_CalcImageSize"),
+    (0x003b_27c8, shp_init_header, "SHP_InitHeader"),
+    (0x003b_2a68, shp_create, "SHP_Create"),
+    (
+        0x003b_2b90,
+        shp_decode_dxt_alpha_block,
+        "SHP_DecodeDXTAlphaBlock",
+    ),
+    (0x003b_3308, shp_dxt_alpha_is_opaque, "SHP_DXTAlphaIsOpaque"),
+    (0x003b_33b0, shp_decode_dxt, "SHP_DecodeDXT"),
+    (0x003b_3578, shp_unpack, "SHP_Unpack"),
+    (
+        0x003b_38b8,
+        shp_palette_format_for_bpp,
+        "SHP_PaletteFormatForBpp",
+    ),
+    (0x003b_3a10, shp_find_long_name, "SHP_FindLongName"),
+    (
+        0x003b_3a50,
+        shp_calc_pixel_data_size,
+        "SHP_CalcPixelDataSize",
+    ),
+    (0x003b_3bb0, shp_get_block_size, "SHP_GetBlockSize"),
+    (0x003b_3d40, shp_find_info_data, "SHP_FindInfoData"),
+    (0x003b_4010, shp_get_pixel_ptr, "SHP_GetPixelPtr"),
+    (0x003b_4218, shp_swizzle_addr, "SHP_SwizzleAddr"),
+    (0x003b_4478, shp_calc_total_size, "SHP_CalcTotalSize"),
+    (0x003b_4540, shp_relocate, "SHP_Relocate"),
+    (0x003b_4690, shp_clone, "SHP_Clone"),
+    (0x003b_4708, shp_is_palette_format, "SHP_IsPaletteFormat"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -575,6 +605,171 @@ pub(crate) mod callee {
     pub const FEED_BITSTREAM: Callee = Callee {
         addr: 0x003b_0b40,
         f: ee::s13::PS2_SONY_CODEC_INTERNAL_FeedBitstream,
+    };
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::SPRINTF;
+    pub(crate) use crate::game::fe::ovstatepause::callee::EA_MEM_SET;
+
+    pub(crate) use crate::game::lib::eafile::callee::EA_MEM_COPY;
+    pub(crate) use crate::game::lib::libc::callee::STRLEN;
+
+    /// `int SHP_CalcAllocSize(int w, int h, int bpp, int palBpp, int
+    /// maxLevel, int extra1, int extra2)`: bytes of a whole image chain.
+    pub const SHP_CALC_ALLOC_SIZE: Callee = Callee {
+        addr: 0x003b_26b8,
+        f: ee::s13::SHP_CalcAllocSize,
+    };
+
+    /// `void SHP_DecodeDXTColorBlock(u64* dst, int pitch, const u8* block)`.
+    pub const SHP_DECODE_DXT_COLOR_BLOCK: Callee = Callee {
+        addr: 0x003b_2e78,
+        f: ee::s13::SHP_DecodeDXTColorBlock,
+    };
+
+    /// `SHP_DecodeDXTAlphaBlock`: a block's alpha into its pixels.
+    pub const SHP_DECODE_DXT_ALPHA_BLOCK: Callee = Callee {
+        addr: 0x003b_2b90,
+        f: ee::s13::SHP_DecodeDXTAlphaBlock,
+    };
+
+    /// `SHP_DXTAlphaIsOpaque`: 1 when some DXT block is not fully opaque.
+    pub const SHP_DXT_ALPHA_IS_OPAQUE: Callee = Callee {
+        addr: 0x003b_3308,
+        f: ee::s13::SHP_DXTAlphaIsOpaque,
+    };
+
+    /// `int SHP_CalcPixelDataSize(int format, int w, int h, int maxLevel,
+    /// int swizzled)`.
+    pub const SHP_CALC_PIXEL_DATA_SIZE: Callee = Callee {
+        addr: 0x003b_3a50,
+        f: ee::s13::SHP_CalcPixelDataSize,
+    };
+
+    /// `int RefPack_GetSizes(const u8* src, int* packedSize)`: the unpacked
+    /// size of a RefPack stream (and its packed size).
+    pub const REFPACK_GET_SIZES: Callee = Callee {
+        addr: 0x003b_4d00,
+        f: ee::s13::RefPack_GetSizes,
+    };
+
+    /// `const char* SHP_FindLongName(const SHPHeader*)`.
+    pub const SHP_FIND_LONG_NAME: Callee = Callee {
+        addr: 0x003b_3a10,
+        f: ee::s13::SHP_FindLongName,
+    };
+
+    /// `char* SHPS_GetEntryName(SHPSheet*, int index, char* out)`.
+    pub const SHPS_GET_ENTRY_NAME: Callee = Callee {
+        addr: 0x003b_3d00,
+        f: ee::s13::SHPS_GetEntryName,
+    };
+
+    /// `SHPHeader* SHPS_FindEntryByName(SHPSheet*, const char* name)`.
+    pub const SHPS_FIND_ENTRY_BY_NAME: Callee = Callee {
+        addr: 0x003b_3900,
+        f: ee::s13::SHPS_FindEntryByName,
+    };
+
+    /// `uint SHP_SwizzleAddr(int x, int y, int w, int h, int bpp)`.
+    pub const SHP_SWIZZLE_ADDR: Callee = Callee {
+        addr: 0x003b_4218,
+        f: ee::s13::SHP_SwizzleAddr,
+    };
+
+    /// `uint SHP_SwizzleAddrPSMT4(uint x, uint y, uint w)` and the 8, 16 and
+    /// 32-bit forms: a pixel's bit offset in GS swizzled order.
+    pub const SHP_SWIZZLE_ADDR_PSMT4: Callee = Callee {
+        addr: 0x003b_42b0,
+        f: ee::s13::SHP_SwizzleAddrPSMT4,
+    };
+
+    pub const SHP_SWIZZLE_ADDR_PSMT8: Callee = Callee {
+        addr: 0x003b_4338,
+        f: ee::s13::SHP_SwizzleAddrPSMT8,
+    };
+
+    pub const SHP_SWIZZLE_ADDR_PSMCT16: Callee = Callee {
+        addr: 0x003b_43c0,
+        f: ee::s13::SHP_SwizzleAddrPSMCT16,
+    };
+
+    pub const SHP_SWIZZLE_ADDR_PSMCT32: Callee = Callee {
+        addr: 0x003b_4448,
+        f: ee::s13::SHP_SwizzleAddrPSMCT32,
+    };
+
+    /// `int SHP_GetBlockSize(const SHPHeader* block)`.
+    pub const SHP_GET_BLOCK_SIZE: Callee = Callee {
+        addr: 0x003b_3bb0,
+        f: ee::s13::SHP_GetBlockSize,
+    };
+
+    /// `bool SHP_IsPaletteFormat(int format)`.
+    pub const SHP_IS_PALETTE_FORMAT: Callee = Callee {
+        addr: 0x003b_4708,
+        f: ee::s13::SHP_IsPaletteFormat,
+    };
+
+    /// `int SHP_CalcTotalSize(const SHPHeader* img)`.
+    pub const SHP_CALC_TOTAL_SIZE: Callee = Callee {
+        addr: 0x003b_4478,
+        f: ee::s13::SHP_CalcTotalSize,
+    };
+
+    /// `void SHP_Relocate(SHPHeader* dst, const SHPHeader* src)`.
+    pub const SHP_RELOCATE: Callee = Callee {
+        addr: 0x003b_4540,
+        f: ee::s13::SHP_Relocate,
+    };
+
+    /// `void* EA_MemMove(void* dst, const void* src, int n)`.
+    pub const EA_MEM_MOVE: Callee = Callee {
+        addr: 0x003e_6188,
+        f: ee::s14::EA_MemMove,
+    };
+
+    pub(crate) use crate::game::world::streamman::EAC_UNPACK;
+
+    /// `u8* SHP_GetPixelPtr(const SHPHeader*, int x, int y, int level)`.
+    pub const SHP_GET_PIXEL_PTR: Callee = Callee {
+        addr: 0x003b_4010,
+        f: ee::s13::SHP_GetPixelPtr,
+    };
+
+    /// `SHP_DecodeDXT`: decodes a DXT image.
+    pub const SHP_DECODE_DXT: Callee = Callee {
+        addr: 0x003b_33b0,
+        f: ee::s13::SHP_DecodeDXT,
+    };
+
+    /// `SHPHeader* SHP_Clone(const SHPHeader*)`.
+    pub const SHP_CLONE: Callee = Callee {
+        addr: 0x003b_4690,
+        f: ee::s13::SHP_Clone,
+    };
+
+    /// `SHP_InitHeader`: writes an image chain in place.
+    pub const SHP_INIT_HEADER: Callee = Callee {
+        addr: 0x003b_27c8,
+        f: ee::s13::SHP_InitHeader,
+    };
+
+    /// `int SHP_PaletteFormatForBpp(int bpp)`: the palette format for a
+    /// palette entry depth.
+    pub const SHP_PALETTE_FORMAT_FOR_BPP: Callee = Callee {
+        addr: 0x003b_38b8,
+        f: ee::s13::SHP_PaletteFormatForBpp,
+    };
+
+    /// `int SHP_FormatFromBpp(int bpp)`: the SHP pixel format for a bit depth.
+    pub const SHP_FORMAT_FROM_BPP: Callee = Callee {
+        addr: 0x003b_3da8,
+        f: ee::s13::SHP_FormatFromBpp,
+    };
+
+    /// `int SHP_GetBpp(const SHPHeader*)`: bits per pixel of a header's format.
+    pub const SHP_GET_BPP: Callee = Callee {
+        addr: 0x003b_39d8,
+        f: ee::s13::SHP_GetBpp,
     };
 }
 
@@ -3590,111 +3785,6 @@ pub fn mpeg2_copyright_extension(c: &mut Cpu) {
     })
 }
 
-/// `int SHP_DXTAlphaIsOpaque(const void* buf, int size, int type)` (0x3b3308):
-/// scan 16-byte DXT blocks for a non-opaque alpha pattern.
-pub fn shp_dxt_alpha_is_opaque(c: &mut Cpu) {
-    c.cycles += 3;
-    c.g[V0][0] = 3;
-    let other = c.g[A2][0] != c.g[V0][0];
-    c.g[V0][0] = sx(0xffff_ffff);
-    if other {
-        c.cycles += 6;
-        c.g[V1][0] = sx(r32(c, A1).wrapping_add(0xf));
-        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A1][0] as i64)) as u64;
-        if c.g[V0][0] != 0 {
-            c.g[V1][0] = c.g[A1][0];
-        }
-        c.g[V1][0] = sx(((r32(c, V1) as i32) >> 4) as u32);
-        let empty = (c.g[V1][0] as i64) <= 0;
-        c.g[A1][0] = 0;
-        if empty {
-            c.cycles += 2;
-            c.g[V0][0] = 1;
-            abi::ret(c);
-            return;
-        }
-        c.cycles += 1;
-        c.g[A2][0] = 0xffff;
-        loop {
-            c.cycles += 3;
-            c.g[V0][0] = Addr(r32(c, A0)).lhu(c);
-            let mismatch = c.g[V0][0] != c.g[A2][0];
-            c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
-            if mismatch {
-                c.cycles += 3;
-                c.g[V0][0] = 0;
-                abi::ret(c);
-                return;
-            }
-            c.cycles += 3;
-            c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V1][0] as i64)) as u64;
-            let more = c.g[V0][0] != 0;
-            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x20));
-            if !more {
-                c.cycles += 2;
-                c.g[V0][0] = 1;
-                abi::ret(c);
-                return;
-            }
-            if event_due(c) {
-                deliver_event_here(c, 0x003b_3388);
-            }
-        }
-    }
-    c.cycles += 6;
-    c.g[V1][0] = sx(r32(c, A1).wrapping_add(0xf));
-    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A1][0] as i64)) as u64;
-    if c.g[V0][0] != 0 {
-        c.g[V1][0] = c.g[A1][0];
-    }
-    c.g[V1][0] = sx(((r32(c, V1) as i32) >> 4) as u32);
-    let empty = (c.g[V1][0] as i64) <= 0;
-    c.g[A2][0] = 0;
-    if empty {
-        c.cycles += 2;
-        c.g[V0][0] = 1;
-        abi::ret(c);
-        return;
-    }
-    c.cycles += 3;
-    c.g[A3][0] = sx(0xffff);
-    loop {
-        c.cycles += 3;
-        c.g[A1][0] = Addr(r32(c, A0)).ld(c);
-        let mismatch = c.g[A1][0] != c.g[A3][0];
-        c.g[A0][0] = sx(r32(c, A0).wrapping_add(8));
-        if mismatch {
-            c.cycles += 3;
-            c.g[V0][0] = 0;
-            abi::ret(c);
-            return;
-        }
-        c.cycles += 3;
-        c.g[V0][0] = Addr(r32(c, A0)).ld(c);
-        let mismatch = c.g[V0][0] != c.g[A1][0];
-        c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
-        if mismatch {
-            c.cycles += 3;
-            c.g[V0][0] = 0;
-            abi::ret(c);
-            return;
-        }
-        c.cycles += 3;
-        c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V1][0] as i64)) as u64;
-        let more = c.g[V0][0] != 0;
-        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x18));
-        if !more {
-            c.cycles += 2;
-            c.g[V0][0] = 0;
-            abi::ret(c);
-            return;
-        }
-        if event_due(c) {
-            deliver_event_here(c, 0x003b_3338);
-        }
-    }
-}
-
 /// `MPEG2_picture_spatial_scalable_extension()` (0x3b2230): read the spatial
 /// scalability fields (lower/upper layer, priority, horizontal and vertical
 /// sub-sampling) from the MPEG-2 bit reader.
@@ -4229,94 +4319,6 @@ pub fn mpeg2_picture_display_extension(c: &mut Cpu) {
         frame.restore(c, 19, 0x20);
         frame.restore(c, 20, 0x10);
         frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `SHP_Create(a, b, c, d, e, f, g, h)` (0x3b2a68): format a texture header
-/// into a stack buffer, allocate the calculated size, and initialise the
-/// header; returns the new texture or null.
-pub fn shp_create(c: &mut Cpu) {
-    const CALC_ALLOC_SIZE: Callee = Callee {
-        addr: 0x003b_26b8,
-        f: ee::s13::SHP_CalcAllocSize,
-    };
-    const INIT_HEADER: Callee = Callee {
-        addr: 0x003b_27c8,
-        f: ee::s13::SHP_InitHeader,
-    };
-    const SPRINTF: u32 = 0x0041_7828;
-
-    guest(c, |c| {
-        c.cycles += 25;
-        let frame = Frame::open(c, 0xc0);
-        frame.save(c, 18, 0x90);
-        c.g[S2][0] = c.g[A0][0];
-        frame.save(c, 19, 0x80);
-        c.g[S3][0] = c.g[A1][0];
-        frame.save(c, 20, 0x70);
-        c.g[S4][0] = c.g[A2][0];
-        frame.save(c, 21, 0x60);
-        c.g[S5][0] = c.g[T1][0];
-        frame.save(c, 22, 0x50);
-        c.g[S6][0] = c.g[A3][0];
-        frame.save(c, 23, 0x40);
-        c.g[S7][0] = c.g[T0][0];
-        sw_2(c, frame.at(c, 0x10), c.g[T3][0]);
-        c.g[FP][0] = c.g[T2][0];
-        frame.save(c, 16, 0xb0);
-        frame.save(c, 17, 0xa0);
-        frame.save_ra(c, 0x20);
-        c.g[T1][0] = c.g[FP][0];
-        c.g[T2][0] = c.g[T3][0];
-        CALC_ALLOC_SIZE.call(c, 0x003b_2ac0)?;
-        c.g[S1][0] = c.g[V0][0];
-        let none = c.g[S1][0] == 0;
-        c.g[S0][0] = 0;
-        if !none {
-            c.cycles += 18;
-            c.g[A1][0] = 0x0049_56b0;
-            c.g[A0][0] = c.g[SP][0];
-            c.g[A2][0] = c.g[S2][0];
-            c.g[A3][0] = c.g[S3][0];
-            c.g[T0][0] = c.g[S4][0];
-            call_ptr(c, SPRINTF, 0x003b_2ae8)?;
-            c.g[V1][0] = 0x0045_0000;
-            c.g[A1][0] = c.g[S1][0];
-            c.g[V0][0] = lw_5(c, (c.g[V1][0] as u32).wrapping_sub(0x3bac));
-            c.g[T0][0] = c.g[S5][0];
-            c.g[A0][0] = c.g[SP][0];
-            c.g[A2][0] = 0;
-            c.g[A3][0] = 0x10;
-            call_ptr(c, c.g[V0][0] as u32, 0x003b_2b08)?;
-            c.g[S0][0] = c.g[V0][0];
-            let failed = c.g[S0][0] == 0;
-            c.g[T3][0] = lw_5(c, frame.at(c, 0x10));
-            if !failed {
-                c.cycles += 8;
-                c.g[A1][0] = c.g[S2][0];
-                c.g[A2][0] = c.g[S3][0];
-                c.g[A3][0] = c.g[S4][0];
-                c.g[T0][0] = c.g[S6][0];
-                c.g[T1][0] = c.g[S7][0];
-                c.g[T2][0] = c.g[FP][0];
-                c.g[A0][0] = c.g[S0][0];
-                INIT_HEADER.call(c, 0x003b_2b34)?;
-            }
-        }
-        c.cycles += 13;
-        c.g[V0][0] = c.g[S0][0];
-        frame.restore(c, 17, 0xa0);
-        frame.restore(c, 16, 0xb0);
-        frame.restore(c, 18, 0x90);
-        frame.restore(c, 19, 0x80);
-        frame.restore(c, 20, 0x70);
-        frame.restore(c, 21, 0x60);
-        frame.restore(c, 22, 0x50);
-        frame.restore(c, 23, 0x40);
-        frame.restore(c, 30, 0x30);
-        frame.restore_ra(c, 0x20);
         frame.close(c);
         Ok(())
     })
@@ -6278,12 +6280,2641 @@ pub fn world_global_ctors(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SHP image headers.
+//
+// An SHP image starts with a 16-byte header: the format byte at +0 (low
+// seven bits the pixel format, bit 7 set when the pixels are RefPack
+// compressed), the offset of the next block in the chain in the upper 24
+// bits of the word at +0, the width (+4) and height (+6) as halves, and a
+// flags word at +0xc (bits 28-31 the last mip level, bit 13 set when the
+// pixels are swizzled, bit 12 when the pixel data lives at the offset
+// stored at +0x10 instead of right after the header). Other blocks of a
+// chain ("o", "i", "p", "|") have their own formats.
+
+/// Header fields.
+pub(crate) const SHP_WIDTH: u32 = 0x4;
+
+pub(crate) const SHP_HEIGHT: u32 = 0x6;
+
+pub(crate) const SHP_FLAGS: u32 = 0xc;
+
+/// The pixel data (or, with [`SHP_FLAG_DATA_AT_OFFSET`], its offset).
+pub(crate) const SHP_DATA: u32 = 0x10;
+
+pub(crate) const SHP_HEADER_SIZE: u64 = 0x10;
+
+/// Flags bit: the pixel data is at the offset stored at [`SHP_DATA`].
+pub(crate) const SHP_FLAG_DATA_AT_OFFSET: u64 = 0x1000;
+
+/// Format byte of an extra "o" block (unknown contents) and of the "i"
+/// block that ends with the tag `"USE"`.
+pub(crate) const SHP_BLOCK_O: u64 = 0x6f;
+
+pub(crate) const SHP_BLOCK_I: u64 = 0x69;
+
+pub(crate) const SHP_BLOCK_I_TAG: u64 = 0x0045_5355;
+
+/// `int SHP_NormalizeBpp(int bpp)` (0x3b2528): the bit depth a requested
+/// depth is stored at (0 means 32): the depth of the format
+/// `SHP_FormatFromBpp` picks for it, read back through a one-byte header on
+/// the stack (16 becomes 15, unknown depths 0).
+pub fn shp_normalize_bpp(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x20;
+        frame.save_ra(c, 0x10);
+        if c.g[A0][0] == 0 {
+            c.g[A0][0] = c.g[V0][0];
+        }
+        callee::SHP_FORMAT_FROM_BPP.call(c, 0x003b_253c)?;
+        // The format byte of a header at sp.
+        let header = frame.at(c, 0);
+        Addr(header).sb(c, c.g[V0][0]);
+        c.g[A0][0] = c.g[SP][0];
+        callee::SHP_GET_BPP.call(c, 0x003b_2548)?;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SHP_CalcImageSize`'s entry, its mip loop's two heads (the next level,
+/// and the level test reached after a 1-pixel-wide level) and its end.
+pub(crate) const CALC_IMAGE_SIZE_ENTRY: u32 = 0x003b_2558;
+
+pub(crate) const CALC_IMAGE_SIZE_NEXT_LEVEL: u32 = 0x003b_2600;
+
+pub(crate) const CALC_IMAGE_SIZE_LEVEL: u32 = 0x003b_2604;
+
+pub(crate) const CALC_IMAGE_SIZE_END: u32 = 0x003b_2684;
+
+/// Largest pixel count (`w * h`) an image may have.
+pub(crate) const SHP_MAX_PIXELS: u64 = 1_000_000_000;
+
+/// `int SHP_CalcImageSize(int w, int h, int bpp, int maxLevel)` (0x3b2558):
+/// the bytes of the pixel data of a `w` x `h` image at `bpp` (normalised; 15
+/// counts as 16 bits) with mip levels 0..=`maxLevel`, each level's rows
+/// rounded up to whole bytes and each level after the first starting on a 16
+/// byte boundary; the chain stops early at a 1x1 level. 0 for a width or
+/// height outside 1..=0x10000, more than 10^9 pixels or a depth with no
+/// format. Resumable at the mip loop's two heads (registers hold the state:
+/// s0 total, s1 h, s2 w, s3 bits per pixel, s4 maxLevel, t0 level).
+pub fn shp_calc_image_size(c: &mut Cpu) {
+    guest(c, |c| {
+        let resume = match c.pc {
+            CALC_IMAGE_SIZE_ENTRY => None,
+            CALC_IMAGE_SIZE_NEXT_LEVEL | CALC_IMAGE_SIZE_LEVEL => Some(c.pc),
+            pc => {
+                c.jump_out(pc, CALC_IMAGE_SIZE_ENTRY, CALC_IMAGE_SIZE_END);
+                return Ok(());
+            }
+        };
+        let frame = Frame { size: 0x60 };
+        'exit: {
+            let mut head = match resume {
+                Some(head) => head,
+                None => {
+                    c.cycles += 21;
+                    let frame = Frame::open(c, 0x60);
+                    frame.save(c, S2, 0x30);
+                    frame.save(c, S1, 0x40);
+                    c.g[S2][0] = c.g[A0][0];
+                    frame.save(c, S4, 0x10);
+                    c.g[S1][0] = c.g[A1][0];
+                    frame.save(c, S0, 0x50);
+                    c.g[A0][0] = c.g[A2][0];
+                    frame.save(c, S3, 0x20);
+                    c.g[S4][0] = c.g[A3][0];
+                    frame.save_ra(c, 0);
+                    c.g[S3][0] = 0x10;
+                    callee::SHP_NORMALIZE_BPP.call(c, 0x003b_258c)?;
+                    c.g[S0][0] = 0;
+                    c.g[A1][0] = c.g[V0][0];
+                    c.g[V1][0] = 0xffff;
+                    c.g[V0][0] = sx(r32(c, S2).wrapping_sub(1));
+                    c.g[A0][0] = c.g[A1][0] ^ 0xf;
+                    // Width outside 1..=0x10000 (unsigned w - 1 > 0xffff).
+                    c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                    let bad_width = c.g[V1][0] != 0;
+                    // 15 bits per pixel are stored in 16.
+                    if c.g[A0][0] != 0 {
+                        c.g[S3][0] = c.g[A1][0];
+                    }
+                    let known = 'check: {
+                        if bad_width {
+                            break 'check false;
+                        }
+                        c.cycles += 2;
+                        let no_height = (c.g[S1][0] as i64) <= 0;
+                        c.g[V0][0] = 0x10000;
+                        if no_height {
+                            break 'check false;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                        let too_tall = c.g[V0][0] != 0;
+                        c.g[V0][0] = 0;
+                        if too_tall {
+                            break 'exit;
+                        }
+                        c.cycles += 6;
+                        c.mult(0, V1, S2, S1);
+                        c.g[V0][0] = SHP_MAX_PIXELS;
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                        let too_big = c.g[V0][0] != 0;
+                        c.g[V0][0] = 0;
+                        if too_big {
+                            break 'exit;
+                        }
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[A1][0];
+                        callee::SHP_FORMAT_FROM_BPP.call(c, 0x003b_25e0)?;
+                        let known = c.g[V0][0] != 0;
+                        c.g[T0][0] = 0;
+                        known
+                    };
+                    if !known {
+                        c.cycles += 2;
+                        c.g[V0][0] = 0;
+                        break 'exit;
+                    }
+                    c.cycles += 4;
+                    c.g[T1][0] = 0;
+                    c.g[T3][0] = !0xf;
+                    c.g[T2][0] = u64::MAX;
+                    CALC_IMAGE_SIZE_LEVEL
+                }
+            };
+            // One mip level per pass: t0 the level, a1/a2 its width and
+            // height (at least 1), s0 the running total.
+            loop {
+                if head == CALC_IMAGE_SIZE_NEXT_LEVEL {
+                    c.cycles += 1;
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                }
+                c.cycles += 3;
+                let level = r32(c, T0) & 31;
+                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                let past_last = c.g[V0][0] != 0;
+                c.g[A1][0] = sx(((r32(c, S2) as i32) >> level) as u32);
+                if past_last {
+                    break;
+                }
+                c.cycles += 7;
+                c.g[A2][0] = sx(((r32(c, S1) as i32) >> level) as u32);
+                c.g[A3][0] = 1;
+                c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                c.g[V1][0] = ((c.g[T1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[A1][0] = c.g[A3][0];
+                }
+                let first = c.g[S0][0] == 0;
+                if c.g[V1][0] == 0 {
+                    c.g[A2][0] = c.g[A3][0];
+                }
+                if !first {
+                    // Later levels start 16-byte aligned.
+                    c.cycles += 2;
+                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(0xf));
+                    c.g[S0][0] = c.g[V0][0] & c.g[T3][0];
+                }
+                // Row bytes (bits rounded up to bytes, as a signed divide by
+                // 8), times the rows.
+                c.cycles += 9;
+                c.mult(0, V0, A1, S3);
+                c.g[A0][0] = sx(r32(c, V0).wrapping_add(7));
+                c.g[V1][0] = ((c.g[T2][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(0xe));
+                if c.g[V1][0] != 0 {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.g[V0][0] = sx(((r32(c, V0) as i32) >> 3) as u32);
+                c.mult(0, V1, V0, A2);
+                let wide = c.g[A1][0] != c.g[A3][0];
+                c.g[S0][0] = sx(r32(c, V1).wrapping_add(r32(c, S0)));
+                if wide {
+                    if back_edge_unwinds(c, CALC_IMAGE_SIZE_NEXT_LEVEL) {
+                        return Ok(());
+                    }
+                    head = CALC_IMAGE_SIZE_NEXT_LEVEL;
+                    continue;
+                }
+                c.cycles += 2;
+                if c.g[A2][0] != c.g[A1][0] {
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                    if back_edge_unwinds(c, CALC_IMAGE_SIZE_LEVEL) {
+                        return Ok(());
+                    }
+                    head = CALC_IMAGE_SIZE_LEVEL;
+                    continue;
+                }
+                // A 1x1 level ends the chain.
+                break;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SHP_InitHeader(SHPHeader* img, int w, int h, int bpp, int palBpp,
+/// int maxLevel, int extra1, int extra2)` (0x3b27c8): write an image chain
+/// in place: the image header (cleared; the format for `bpp`, 0 meaning 32;
+/// the size; the last mip level in the flags' top nibble) followed by
+/// room for its pixels; for an indexed image (`bpp` < 9) with a palette
+/// depth, a palette header at the next 16-byte boundary (one row of
+/// `SHP_PaletteEntriesForBpp` entries) whose entries are a grey ramp with
+/// alpha 0xff (`palBpp` >= 32) or all 0xff bytes; then an optional "o"
+/// block of `extra1` bytes (+8 header) and an optional "i" block of
+/// `extra2` bytes (+16 header, tagged "USE"). Each block's next-offset
+/// links to the one after it.
+pub fn shp_init_header(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 47;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S7, 0x30);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S6, 0x40);
+        frame.save(c, FP, 0x20);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S5, 0x50);
+        frame.save_ra(c, 0x10);
+        // s0/s5 the image (s5: the block last linked), s7 bpp, s2 w, s3 h,
+        // s4 maxLevel, s6 palette depth, fp extra1; extra2 at 0(sp).
+        c.g[S7][0] = 0x20;
+        c.g[S0][0] = c.g[A0][0];
+        if c.g[A3][0] != 0 {
+            c.g[S7][0] = c.g[A3][0];
+        }
+        c.g[A0][0] = c.g[S7][0];
+        c.g[S2][0] = c.g[A1][0];
+        c.g[S3][0] = c.g[A2][0];
+        c.g[S4][0] = c.g[T1][0];
+        c.g[S6][0] = c.g[T0][0];
+        c.g[FP][0] = c.g[T2][0];
+        c.g[S5][0] = c.g[S0][0];
+        let extra2_slot = frame.at(c, 0);
+        Addr(extra2_slot).sw(c, c.g[T3][0]);
+        callee::SHP_FORMAT_FROM_BPP.call(c, 0x003b_2824)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = SHP_HEADER_SIZE;
+        callee::EA_MEM_SET.call(c, 0x003b_2838)?;
+        let image = Addr(r32(c, S0));
+        c.g[V1][0] = image.off(SHP_FLAGS).lw(c);
+        c.g[V0][0] = 0x0fff_ffff;
+        c.g[A0][0] = sx(r32(c, S4) << 28);
+        c.g[V1][0] &= c.g[V0][0];
+        image.sb(c, c.g[S1][0]);
+        c.g[V1][0] |= c.g[A0][0];
+        image.off(SHP_WIDTH).sh(c, c.g[S2][0]);
+        image.off(SHP_HEIGHT).sh(c, c.g[S3][0]);
+        c.g[A0][0] = c.g[S2][0];
+        image.off(SHP_FLAGS).sw(c, c.g[V1][0]);
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A3][0] = c.g[S4][0];
+        c.g[A2][0] = c.g[S7][0];
+        callee::SHP_CALC_IMAGE_SIZE.call(c, 0x003b_2874)?;
+        // s1: the end of the chain so far.
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(SHP_HEADER_SIZE as u32));
+        c.g[V1][0] = ((c.g[S7][0] as i64) < 9) as u64;
+        let indexed = c.g[V1][0] != 0;
+        c.g[S1][0] = sx(r32(c, S5).wrapping_add(r32(c, V0)));
+        if indexed {
+            c.cycles += 2;
+            let has_palette = c.g[S6][0] != 0;
+            c.g[A0][0] = c.g[S7][0];
+            if has_palette {
+                shp_init_header_palette(c)?;
+            }
+        }
+        c.cycles += 2;
+        let has_extra1 = c.g[FP][0] != 0;
+        c.g[V0][0] = sx(r32(c, S1).wrapping_sub(r32(c, S5)));
+        if has_extra1 {
+            c.cycles += 14;
+            shp_link_block(c);
+            c.g[S0][0] = sx(r32(c, FP).wrapping_add(8));
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = c.g[S0][0];
+            c.g[S5][0] = c.g[S1][0];
+            callee::EA_MEM_SET.call(c, 0x003b_29d8)?;
+            c.g[V0][0] = SHP_BLOCK_O;
+            let block = Addr(r32(c, S1));
+            block.off(4).sw(c, c.g[FP][0]);
+            block.sb(c, c.g[V0][0]);
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, S0)));
+        }
+        c.cycles += 3;
+        let extra2_slot = Addr(frame.at(c, 0));
+        c.g[V0][0] = extra2_slot.lw(c);
+        let has_extra2 = c.g[V0][0] != 0;
+        c.g[A0][0] = extra2_slot.lw(c);
+        if has_extra2 {
+            c.cycles += 16;
+            c.g[V0][0] = sx(r32(c, S1).wrapping_sub(r32(c, S5)));
+            c.g[A2][0] = sx(r32(c, A0).wrapping_add(SHP_HEADER_SIZE as u32));
+            c.g[A1][0] = 0;
+            shp_link_block(c);
+            c.g[A0][0] = c.g[S1][0];
+            callee::EA_MEM_SET.call(c, 0x003b_2a18)?;
+            c.g[V0][0] = SHP_BLOCK_I_TAG;
+            c.g[V1][0] = SHP_BLOCK_I;
+            c.g[A0][0] = SHP_HEADER_SIZE;
+            let block = Addr(r32(c, S1));
+            block.off(SHP_DATA).sw(c, c.g[V0][0]);
+            block.sb(c, c.g[V1][0]);
+            block.off(SHP_HEIGHT).sh(c, c.g[A0][0]);
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Link the block at s5 to the one starting `v0` bytes later: its format
+/// byte with the offset in the upper 24 bits (`v1`, `v0` left as the
+/// original leaves them).
+pub(crate) fn shp_link_block(c: &mut Cpu) {
+    let block = Addr(r32(c, S5));
+    c.g[V1][0] = block.lbu(c);
+    c.g[V0][0] = sx(r32(c, V0) << 8);
+    c.g[V1][0] |= c.g[V0][0];
+    block.sw(c, c.g[V1][0]);
+}
+
+/// `SHP_InitHeader`'s palette block (s1 the chain's end, s5 the image, s6
+/// the palette depth, a0 the image depth): the palette header at the next
+/// 16-byte boundary, `entries` x 1 in the palette format, its entries
+/// filled, and s1 past them (s5 the palette).
+pub(crate) fn shp_init_header_palette(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 27;
+    // s3: bits per palette entry (15 is stored in 16).
+    c.g[S3][0] = 0x10;
+    callee::SHP_PALETTE_ENTRIES_FOR_BPP.call(c, 0x003b_2894)?;
+    c.g[A0][0] = c.g[S6][0];
+    c.g[S2][0] = c.g[V0][0];
+    callee::SHP_PALETTE_FORMAT_FOR_BPP.call(c, 0x003b_28a0)?;
+    c.g[V1][0] = sx(r32(c, S1).wrapping_sub(r32(c, S5)));
+    c.g[A1][0] = !0xf;
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(0xf));
+    let image = Addr(r32(c, S5));
+    c.g[A0][0] = image.lbu(c);
+    c.g[V1][0] &= c.g[A1][0];
+    c.g[A2][0] = c.g[S6][0] ^ 0xf;
+    c.g[A1][0] = sx(r32(c, V1) << 8);
+    c.g[S1][0] = sx(r32(c, S5).wrapping_add(r32(c, V1)));
+    c.g[A0][0] |= c.g[A1][0];
+    if c.g[A2][0] != 0 {
+        c.g[S3][0] = c.g[S6][0];
+    }
+    image.sw(c, c.g[A0][0]);
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = 0;
+    c.g[A2][0] = SHP_HEADER_SIZE;
+    callee::EA_MEM_SET.call(c, 0x003b_28e0)?;
+    c.g[V0][0] = 1;
+    let palette = Addr(r32(c, S1));
+    palette.sb(c, c.g[S0][0]);
+    palette.off(SHP_HEIGHT).sh(c, c.g[V0][0]);
+    c.g[V1][0] = ((c.g[S6][0] as i64) < 32) as u64;
+    let masked = c.g[V1][0] != 0;
+    palette.off(SHP_WIDTH).sh(c, c.g[S2][0]);
+    if masked {
+        // All bytes 0xff: entries * bits / 8 (signed, rounded toward 0).
+        c.cycles += 4;
+        c.g[V0][0] = palette.off(SHP_FLAGS).lw(c) & SHP_FLAG_DATA_AT_OFFSET;
+        let at_offset = c.g[V0][0] != 0;
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(SHP_DATA));
+        if at_offset {
+            c.cycles += 2;
+            c.g[V0][0] = palette.off(SHP_DATA).lw(c);
+            c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+        }
+        c.cycles += 9;
+        c.mult(0, V1, S2, S3);
+        c.g[V0][0] = u64::MAX;
+        c.g[A1][0] = u64::MAX;
+        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        c.g[A2][0] = sx(r32(c, V1).wrapping_add(7));
+        if c.g[V0][0] != 0 {
+            c.g[A2][0] = c.g[V1][0];
+        }
+        c.g[A2][0] = sx(((r32(c, A2) as i32) >> 3) as u32);
+        callee::EA_MEM_SET.call(c, 0x003b_2984)?;
+        c.cycles += 1;
+        c.mult(0, A0, S2, S3);
+    } else {
+        // A grey ramp: entry i is (i, i, i, 0xff).
+        c.cycles += 4;
+        c.g[V0][0] = palette.off(SHP_FLAGS).lw(c) & SHP_FLAG_DATA_AT_OFFSET;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = sx(r32(c, S1).wrapping_add(SHP_DATA));
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = palette.off(SHP_DATA).lw(c);
+            c.g[V0][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+        }
+        c.cycles += 2;
+        let empty = (c.g[S2][0] as i64) <= 0;
+        c.g[A0][0] = 0;
+        if empty {
+            c.cycles += 1;
+        } else {
+            c.cycles += 2;
+            c.g[V1][0] = c.g[V0][0];
+            c.g[A1][0] = 0xff;
+            loop {
+                c.cycles += 8;
+                let entry = Addr(r32(c, V1));
+                entry.off(2).sb(c, c.g[A0][0]);
+                entry.off(1).sb(c, c.g[A0][0]);
+                entry.sb(c, c.g[A0][0]);
+                entry.off(3).sb(c, c.g[A1][0]);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, SHP_INIT_HEADER_RAMP);
+                }
+            }
+            c.cycles += 2;
+        }
+        c.mult(0, A0, S2, S3);
+    }
+    // s1 past the entries (bytes rounded toward 0, as a signed divide).
+    c.cycles += 8;
+    c.g[V1][0] = u64::MAX;
+    c.g[S5][0] = c.g[S1][0];
+    c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(7));
+    if c.g[V1][0] != 0 {
+        c.g[V0][0] = c.g[A0][0];
+    }
+    c.g[V0][0] = sx(((r32(c, V0) as i32) >> 3) as u32);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(SHP_HEADER_SIZE as u32));
+    c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+    Ok(())
+}
+
+/// The grey-ramp loop's head in `SHP_InitHeader`.
+pub(crate) const SHP_INIT_HEADER_RAMP: u32 = 0x003b_2920;
+
+/// The allocator the SHP code calls through (`void* (*)(const char* name,
+/// int size, int, int align, int heap)`; `MEM_AllocNamedAlignedHook` in the
+/// image) and the matching free hook after it.
+pub(crate) const SHP_ALLOC_HOOK: u32 = 0x0044_c454;
+
+/// The allocator `SHP_Unpack` calls through (`void* (*)(const char* name,
+/// int size, int)`).
+pub(crate) const SHP_UNPACK_ALLOC_HOOK: u32 = 0x0044_c450;
+
+/// `"SHP%dx%dx%d"`: the allocation name of a new image.
+pub(crate) const SHP_NAME_FORMAT: u64 = 0x0049_56b0;
+
+/// `SHPHeader* SHP_Create(int w, int h, int bpp, int palBpp, int maxLevel,
+/// int heap, int extra1, int extra2)` (0x3b2a68): allocate an image chain
+/// (`SHP_CalcAllocSize` bytes, 16-byte aligned, named `"SHP<w>x<h>x<bpp>"`,
+/// through the allocator hook with `heap`) and lay it out with
+/// `SHP_InitHeader`. Null when the size is 0 or the allocation fails.
+pub fn shp_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S5, 0x60);
+        frame.save(c, S6, 0x50);
+        frame.save(c, S7, 0x40);
+        frame.save(c, FP, 0x30);
+        // s2 w, s3 h, s4 bpp, s6 palBpp, s7 maxLevel, s5 heap, fp extra1;
+        // extra2 at 0x10(sp); the name is built at 0(sp).
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S3][0] = c.g[A1][0];
+        c.g[S4][0] = c.g[A2][0];
+        c.g[S5][0] = c.g[T1][0];
+        c.g[S6][0] = c.g[A3][0];
+        c.g[S7][0] = c.g[T0][0];
+        let extra2_slot = Addr(frame.at(c, 0x10));
+        extra2_slot.sw(c, c.g[T3][0]);
+        c.g[FP][0] = c.g[T2][0];
+        frame.save(c, S0, 0xb0);
+        frame.save(c, S1, 0xa0);
+        frame.save_ra(c, 0x20);
+        c.g[T1][0] = c.g[FP][0];
+        c.g[T2][0] = c.g[T3][0];
+        callee::SHP_CALC_ALLOC_SIZE.call(c, 0x003b_2ac0)?;
+        c.g[S1][0] = c.g[V0][0];
+        let empty = c.g[S1][0] == 0;
+        c.g[S0][0] = 0;
+        if !empty {
+            c.cycles += 18;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = SHP_NAME_FORMAT;
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A3][0] = c.g[S3][0];
+            c.g[T0][0] = c.g[S4][0];
+            callee::SPRINTF.call(c, 0x003b_2ae8)?;
+            c.g[V1][0] = 0x45_0000;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[V0][0] = Addr(SHP_ALLOC_HOOK).lw(c);
+            c.g[T0][0] = c.g[S5][0];
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0x10;
+            call_ptr(c, r32(c, V0), 0x003b_2b08)?;
+            c.g[S0][0] = c.g[V0][0];
+            let failed = c.g[S0][0] == 0;
+            let extra2_slot = Addr(frame.at(c, 0x10));
+            c.g[T3][0] = extra2_slot.lw(c);
+            if !failed {
+                c.cycles += 8;
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A2][0] = c.g[S3][0];
+                c.g[A3][0] = c.g[S4][0];
+                c.g[T0][0] = c.g[S6][0];
+                c.g[T1][0] = c.g[S7][0];
+                c.g[T2][0] = c.g[FP][0];
+                c.g[A0][0] = c.g[S0][0];
+                callee::SHP_INIT_HEADER.call(c, 0x003b_2b34)?;
+            }
+        }
+        c.cycles += 13;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S0, 0xb0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore(c, S7, 0x40);
+        frame.restore(c, FP, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SHP_DecodeDXTAlphaBlock`'s entry and end, and the loop heads where it
+/// checks events.
+pub(crate) const DXT_ALPHA_ENTRY: u32 = 0x003b_2b90;
+
+pub(crate) const DXT_ALPHA_END: u32 = 0x003b_2e74;
+
+pub(crate) const DXT_ALPHA_EXPLICIT_ROW: u32 = 0x003b_2bc0;
+
+pub(crate) const DXT_ALPHA_EXPLICIT_BYTE: u32 = 0x003b_2bc8;
+
+pub(crate) const DXT_ALPHA_HALF: u32 = 0x003b_2db0;
+
+pub(crate) const DXT_ALPHA_ROW: u32 = 0x003b_2dc0;
+
+pub(crate) const DXT_ALPHA_PIXEL: u32 = 0x003b_2dc8;
+
+/// The original's jump table on the 3-bit alpha index (one store per
+/// palette register).
+pub(crate) const DXT_ALPHA_INDEX_TABLE: u32 = 0x0049_56c0;
+
+/// `SHP_DecodeDXT`'s block mode with explicit 4-bit alpha (DXT3).
+pub(crate) const DXT_MODE_EXPLICIT_ALPHA: u64 = 3;
+
+/// The jump-table function computed a target outside its own cases.
+pub(crate) struct DxtJumpedOut;
+
+/// `void SHP_DecodeDXTAlphaBlock(u64* dst, int pitch, const u8* src, int
+/// mode)` (0x3b2b90): put a DXT block's alpha into the top byte of each of
+/// its 4x4 destination pixels. Mode 3 (DXT3): 4-bit alphas, two per source
+/// byte, widened to 8 bits, into 64-bit pixels (8 bytes apart; the word is
+/// rewritten with the new byte sign-extended into its upper half). Other
+/// modes (DXT5): two end alphas and 3-bit indices into the 8-entry palette
+/// between them (alpha0 > alpha1: six interpolated values in sevenths;
+/// otherwise four in fifths, then 0 and 0xff), one byte per 32-bit pixel.
+/// `pitch` is the destination row stride. Resume entries go to the
+/// generated twin.
+pub fn shp_decode_dxt_alpha_block(c: &mut Cpu) {
+    if c.pc != DXT_ALPHA_ENTRY {
+        return ee::s13::f_003b2b90__entries(c);
+    }
+    c.cycles += 8;
+    let frame = Frame::open(c, 0x20);
+    // t0 the destination, t1 the source, s0 the pitch.
+    c.g[T0][0] = c.g[A0][0];
+    frame.save(c, S0, 0x10);
+    c.g[T1][0] = c.g[A2][0];
+    frame.save(c, S1, 0);
+    c.g[V0][0] = DXT_MODE_EXPLICIT_ALPHA;
+    let explicit = c.g[A3][0] == c.g[V0][0];
+    c.g[S0][0] = c.g[A1][0];
+    if explicit {
+        dxt_explicit_alpha(c, frame);
+    } else if dxt_interpolated_alpha(c, frame).is_err() {
+        return;
+    }
+    c.cycles += 3;
+    frame.restore(c, S1, 0);
+    frame.close(c);
+}
+
+/// DXT3 alpha: four rows of two source bytes (t3 the RGB mask), each byte
+/// two pixels.
+pub(crate) fn dxt_explicit_alpha(c: &mut Cpu, frame: Frame) {
+    c.cycles += 4;
+    c.g[A0][0] = 0;
+    c.g[T3][0] = 0x00ff_ffff;
+    loop {
+        c.cycles += 2;
+        c.g[T2][0] = sx(r32(c, A0).wrapping_add(1));
+        c.g[A3][0] = 0;
+        loop {
+            c.cycles += 23;
+            c.g[V1][0] = Addr(r32(c, T1)).lbu(c);
+            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+            c.g[A0][0] = Addr(r32(c, T0)).ld(c);
+            c.g[T1][0] = sx(r32(c, T1).wrapping_add(1));
+            // Low nibble: the first pixel's alpha (n | n << 4).
+            c.g[V0][0] = c.g[V1][0] & 0xf;
+            c.g[A1][0] = sx(r32(c, V0) << 4);
+            c.g[A0][0] &= c.g[T3][0];
+            c.g[V0][0] |= c.g[A1][0];
+            c.g[V1][0] &= 0xf0;
+            c.g[V0][0] = sx(r32(c, V0) << 24);
+            c.g[A2][0] = sx(r32(c, V1) >> 4);
+            c.g[A0][0] |= c.g[V0][0];
+            c.g[V1][0] |= c.g[A2][0];
+            Addr(r32(c, T0)).sd(c, c.g[A0][0]);
+            // High nibble: the second pixel's.
+            c.g[V1][0] = sx(r32(c, V1) << 24);
+            c.g[T0][0] = sx(r32(c, T0).wrapping_add(8));
+            c.g[A1][0] = (c.g[A3][0] < 2) as u64;
+            c.g[V0][0] = Addr(r32(c, T0)).ld(c);
+            c.g[V0][0] &= c.g[T3][0];
+            c.g[V0][0] |= c.g[V1][0];
+            Addr(r32(c, T0)).sd(c, c.g[V0][0]);
+            let more = c.g[A1][0] != 0;
+            c.g[T0][0] = sx(r32(c, T0).wrapping_add(8));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, DXT_ALPHA_EXPLICIT_BYTE);
+            }
+        }
+        // Next row: back over the row's 32 bytes, then one pitch on.
+        c.cycles += 5;
+        c.g[V1][0] = sx(r32(c, T0).wrapping_add(r32(c, S0)));
+        c.g[A0][0] = c.g[T2][0];
+        c.g[V0][0] = (c.g[A0][0] < 4) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[T0][0] = sx(r32(c, V1).wrapping_sub(0x20));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, DXT_ALPHA_EXPLICIT_ROW);
+        }
+    }
+    c.cycles += 2;
+    frame.restore(c, S0, 0x10);
+}
+
+/// DXT5 alpha: the palette into registers (t6, t5, a3, a1, t1, t8, t9, t2
+/// for indices 0..7), then two halves of two rows of four 3-bit indices
+/// (a2, read 48 bits at a time from t7), each stored through the jump
+/// table to the alpha byte at t4.
+pub(crate) fn dxt_interpolated_alpha(c: &mut Cpu, frame: Frame) -> Result<(), DxtJumpedOut> {
+    c.cycles += 8;
+    c.g[T7][0] = c.g[T1][0];
+    c.g[T4][0] = sx(r32(c, T0).wrapping_add(3));
+    c.g[T6][0] = Addr(r32(c, T7)).lbu(c);
+    c.g[T7][0] = sx(r32(c, T7).wrapping_add(1));
+    c.g[T5][0] = Addr(r32(c, T7)).lbu(c);
+    c.g[V0][0] = (c.g[T5][0] < c.g[T6][0]) as u64;
+    let sevenths = c.g[V0][0] != 0;
+    c.g[T7][0] = sx(r32(c, T7).wrapping_add(1));
+    if sevenths {
+        dxt_alpha_palette_sevenths(c);
+    } else {
+        dxt_alpha_palette_fifths(c);
+    }
+    c.cycles += 3;
+    c.g[S1][0] = sx(r32(c, S0).wrapping_sub(0x10));
+    c.g[V1][0] = 0;
+    c.g[A2][0] = Addr(r32(c, T7)).ld(c);
+    loop {
+        c.cycles += 4;
+        c.g[S0][0] = sx(r32(c, V1).wrapping_add(1));
+        c.g[T7][0] = sx(r32(c, T7).wrapping_add(3));
+        c.g[V1][0] = 0;
+        loop {
+            c.cycles += 2;
+            c.g[T3][0] = sx(r32(c, V1).wrapping_add(1));
+            c.g[T0][0] = 0;
+            loop {
+                c.cycles += 5;
+                c.g[V0][0] = c.g[A2][0] & 7;
+                c.g[A0][0] = c.g[V0][0] & 0xff;
+                c.g[V0][0] = (c.g[A0][0] < 8) as u64;
+                let in_table = c.g[V0][0] != 0;
+                c.g[A2][0] >>= 3;
+                if in_table {
+                    c.cycles += 7;
+                    c.g[V0][0] = DXT_ALPHA_INDEX_TABLE as u64;
+                    c.g[A0][0] = sx(r32(c, A0) << 2);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                    c.g[V1][0] = Addr(r32(c, A0)).lw(c);
+                    let (alpha, cost) = match r32(c, V1) {
+                        0x003b_2df8 => (T6, 2),
+                        0x003b_2e00 => (T5, 2),
+                        0x003b_2e08 => (A3, 2),
+                        0x003b_2e10 => (A1, 2),
+                        0x003b_2e18 => (T1, 2),
+                        0x003b_2e20 => (T8, 2),
+                        0x003b_2e28 => (T9, 2),
+                        0x003b_2e30 => (T2, 1),
+                        target => {
+                            c.jump_out(target, DXT_ALPHA_ENTRY, DXT_ALPHA_END);
+                            return Err(DxtJumpedOut);
+                        }
+                    };
+                    c.cycles += cost;
+                    Addr(r32(c, T4)).sb(c, c.g[alpha][0]);
+                }
+                c.cycles += 4;
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                c.g[V0][0] = ((c.g[T0][0] as i64) < 4) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[T4][0] = sx(r32(c, T4).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, DXT_ALPHA_PIXEL);
+                }
+            }
+            // Next row (s1: the pitch less the row's 16 bytes).
+            c.cycles += 4;
+            c.g[V1][0] = c.g[T3][0];
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[T4][0] = sx(r32(c, T4).wrapping_add(r32(c, S1)));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, DXT_ALPHA_ROW);
+            }
+        }
+        c.cycles += 4;
+        c.g[V1][0] = c.g[S0][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        c.g[A2][0] = Addr(r32(c, T7)).ld(c);
+        if event_due(c) {
+            deliver_event_here(c, DXT_ALPHA_HALF);
+        }
+    }
+    c.cycles += 1;
+    frame.restore(c, S0, 0x10);
+    Ok(())
+}
+
+/// alpha0 > alpha1: indices 2..7 are (6a0 + a1 + 3) / 7 .. (a0 + 6a1 + 3) / 7
+/// (a3, a1, t1, t8, t9, t2), from t6 = alpha0 and t5 = alpha1.
+pub(crate) fn dxt_alpha_palette_sevenths(c: &mut Cpu) {
+    c.cycles += 29;
+    c.g[A3][0] = 6;
+    c.g[T1][0] = sx(r32(c, T6) << 2);
+    c.mult(0, V0, T5, A3);
+    c.g[T3][0] = sx(r32(c, T5) << 1);
+    c.g[A1][0] = sx(r32(c, T1).wrapping_add(r32(c, T6)));
+    c.g[T0][0] = sx(r32(c, T6) << 1);
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, T3)));
+    c.g[A0][0] = sx(r32(c, T5) << 2);
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(3));
+    c.g[A2][0] = sx(r32(c, T0).wrapping_add(r32(c, T6)));
+    c.g[T2][0] = sx(r32(c, V0).wrapping_add(r32(c, T6)));
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+    c.mult(0, V0, T6, A3);
+    c.g[T2][0] = sx(r32(c, T2).wrapping_add(3));
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(3));
+    c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, T5)));
+    c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, V1)));
+    c.g[A0][0] = 7;
+    c.g[T0][0] = sx(r32(c, T0).wrapping_add(3));
+    c.g[V1][0] = 7;
+    c.g[A3][0] = sx(r32(c, V0).wrapping_add(r32(c, T5)));
+    c.g[V0][0] = sx(r32(c, T3).wrapping_add(r32(c, T5)));
+    c.g[A3][0] = sx(r32(c, A3).wrapping_add(3));
+    c.g[T1][0] = sx(r32(c, T1).wrapping_add(r32(c, V0)));
+    c.g[V0][0] = 7;
+    c.g[T1][0] = sx(r32(c, T1).wrapping_add(3));
+    // Each sum / 7, kept as a byte.
+    c.div(0, T2, V0);
+    c.cycles += 18;
+    c.g[T2][0] = c.lo[0];
+    c.div(0, A3, V0);
+    c.g[T2][0] &= 0xff;
+    c.g[A3][0] = c.lo[0];
+    c.div(0, A1, V0);
+    c.g[A3][0] &= 0xff;
+    c.g[A1][0] = c.lo[0];
+    c.div(0, T1, V0);
+    c.g[A1][0] &= 0xff;
+    c.g[T1][0] = c.lo[0];
+    c.div(0, A2, V0);
+    c.g[T1][0] &= 0xff;
+    c.g[A2][0] = c.lo[0];
+    c.div(0, T0, V0);
+    c.g[T8][0] = c.g[A2][0] & 0xff;
+    c.g[T0][0] = c.lo[0];
+    c.g[T9][0] = c.g[T0][0] & 0xff;
+}
+
+/// alpha0 <= alpha1: indices 2..5 are (4a0 + a1 + 2) / 5 .. (a0 + 4a1 + 2) / 5
+/// (a3, a1, t1, t8), 6 is 0 (t9) and 7 is 0xff (t2).
+pub(crate) fn dxt_alpha_palette_fifths(c: &mut Cpu) {
+    c.cycles += 19;
+    c.g[A3][0] = sx(r32(c, T5) << 1);
+    c.g[A2][0] = sx(r32(c, T6) << 1);
+    c.g[V0][0] = sx(r32(c, A3).wrapping_add(r32(c, T5)));
+    c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, T6)));
+    c.g[V1][0] = sx(r32(c, T5) << 2);
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, V0)));
+    c.g[V1][0] = sx(r32(c, T6).wrapping_add(r32(c, V1)));
+    c.g[V0][0] = 5;
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(2));
+    c.g[A0][0] = sx(r32(c, T6) << 2);
+    c.div(0, V1, V0);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, T5)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(2));
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, A3)));
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(2));
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(2));
+    c.g[T1][0] = 5;
+    c.cycles += 15;
+    c.g[A3][0] = 5;
+    c.g[T0][0] = 5;
+    c.g[T9][0] = 0;
+    c.g[T2][0] = 0xff;
+    c.g[V1][0] = c.lo[0];
+    c.div(0, A0, V0);
+    c.g[T8][0] = c.g[V1][0] & 0xff;
+    c.g[A0][0] = c.lo[0];
+    c.div(0, A1, V0);
+    c.g[A3][0] = c.g[A0][0] & 0xff;
+    c.g[A1][0] = c.lo[0];
+    c.div(0, A2, V0);
+    c.g[A1][0] &= 0xff;
+    c.g[A2][0] = c.lo[0];
+    c.g[T1][0] = c.g[A2][0] & 0xff;
+}
+
+/// `SHP_DXTAlphaIsOpaque`'s loop heads (mode 3, other modes).
+pub(crate) const DXT_OPAQUE_EXPLICIT_LOOP: u32 = 0x003b_3338;
+
+pub(crate) const DXT_OPAQUE_LOOP: u32 = 0x003b_3388;
+
+/// Bytes per block in the buffers `SHP_DXTAlphaIsOpaque` scans.
+pub(crate) const DXT_OPAQUE_BLOCK: u32 = 0x20;
+
+/// `int SHP_DXTAlphaIsOpaque(const void* blocks, int size, int mode)`
+/// (0x3b3308): despite the name, 1 when some of the `size / 16` blocks
+/// (32 bytes apart) is not fully opaque, else 0. Mode 3 (DXT3) blocks are
+/// opaque when their first two doublewords are both 0xffffffff; other modes
+/// when the first half-word is 0xffff.
+pub fn shp_dxt_alpha_is_opaque(c: &mut Cpu) {
+    'transparent: {
+        'opaque: {
+            c.cycles += 3;
+            c.g[V0][0] = DXT_MODE_EXPLICIT_ALPHA;
+            let explicit = c.g[A2][0] == c.g[V0][0];
+            c.g[V0][0] = u64::MAX;
+            // Blocks: size / 16, rounded toward 0.
+            c.cycles += 6;
+            c.g[V1][0] = sx(r32(c, A1).wrapping_add(0xf));
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            if c.g[V0][0] != 0 {
+                c.g[V1][0] = c.g[A1][0];
+            }
+            c.g[V1][0] = sx(((r32(c, V1) as i32) >> 4) as u32);
+            let empty = (c.g[V1][0] as i64) <= 0;
+            if !explicit {
+                c.g[A1][0] = 0;
+                if empty {
+                    break 'opaque;
+                }
+                c.cycles += 1;
+                c.g[A2][0] = 0xffff;
+                loop {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, A0)).lhu(c);
+                    let differs = c.g[V0][0] != c.g[A2][0];
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                    if differs {
+                        break 'transparent;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(DXT_OPAQUE_BLOCK));
+                    if !more {
+                        break 'opaque;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, DXT_OPAQUE_LOOP);
+                    }
+                }
+            }
+            c.g[A2][0] = 0;
+            if empty {
+                break 'opaque;
+            }
+            c.cycles += 3;
+            c.g[A3][0] = 0xffff_ffff;
+            loop {
+                c.cycles += 3;
+                c.g[A1][0] = Addr(r32(c, A0)).ld(c);
+                let differs = c.g[A1][0] != c.g[A3][0];
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(8));
+                if differs {
+                    break 'transparent;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, A0)).ld(c);
+                let differs = c.g[V0][0] != c.g[A1][0];
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                if differs {
+                    break 'transparent;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(DXT_OPAQUE_BLOCK - 8));
+                if !more {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    ret(c);
+                    return;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, DXT_OPAQUE_EXPLICIT_LOOP);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = 0;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+
+/// `SHP_DecodeDXT`'s mode with interpolated alpha (DXT5).
+pub(crate) const DXT_MODE_INTERPOLATED_ALPHA: u64 = 5;
+
+/// How `SHP_DecodeDXT` walks the blocks: 16-byte blocks with their alpha
+/// decoded too, 16-byte blocks colour only (all opaque), or 8-byte DXT1
+/// blocks. `skip` holds the rest of a block row (w * 24, added to the
+/// output after each one).
+pub(crate) struct DxtRows {
+    alpha: bool,
+    block_bytes: u32,
+    color_at: u32,
+    pitch_shift: u32,
+    skip: usize,
+    setup: u64,
+    row_head: u32,
+    block_head: u32,
+    color_ret: u32,
+}
+
+pub(crate) const DXT_ROWS_ALPHA: DxtRows = DxtRows {
+    alpha: true,
+    block_bytes: 0x10,
+    color_at: 8,
+    pitch_shift: 3,
+    skip: FP,
+    setup: 2,
+    row_head: 0x003b_3430,
+    block_head: 0x003b_3440,
+    color_ret: 0x003b_3454,
+};
+
+pub(crate) const DXT_ROWS_OPAQUE: DxtRows = DxtRows {
+    alpha: false,
+    block_bytes: 0x10,
+    color_at: 8,
+    pitch_shift: 3,
+    skip: S3,
+    setup: 2,
+    row_head: 0x003b_34a0,
+    block_head: 0x003b_34b0,
+    color_ret: 0x003b_34c4,
+};
+
+pub(crate) const DXT_ROWS_DXT1: DxtRows = DxtRows {
+    alpha: false,
+    block_bytes: 8,
+    color_at: 0,
+    pitch_shift: 2,
+    skip: S3,
+    setup: 3,
+    row_head: 0x003b_3500,
+    block_head: 0x003b_3510,
+    color_ret: 0x003b_3524,
+};
+
+/// `void SHP_DecodeDXT(const u8* blocks, u64* out, int w, int h, int mode)`
+/// (0x3b33b0): decode a `w` x `h` DXT image block by block (4x4 pixels,
+/// rows of `w / 4` blocks). Modes 3 and 5 have 16-byte blocks (alpha, then
+/// colour); when `SHP_DXTAlphaIsOpaque` finds the blocks all opaque only
+/// the colour halves are decoded. Other modes are DXT1 (8-byte blocks).
+pub fn shp_decode_dxt(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = DXT_MODE_EXPLICIT_ALPHA;
+        frame.save(c, S4, 0x50);
+        frame.save(c, S6, 0x30);
+        // s2 the blocks, s1 the output, s4 w, s6 h, s7 the mode.
+        c.g[S4][0] = c.g[A2][0];
+        frame.save(c, S1, 0x80);
+        c.g[S6][0] = c.g[A3][0];
+        frame.save(c, S2, 0x70);
+        c.mult(0, V1, S4, S6);
+        frame.save(c, S7, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x90);
+        c.g[S7][0] = c.g[T0][0];
+        frame.save(c, S3, 0x60);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S5, 0x40);
+        frame.save(c, FP, 0x10);
+        let mut paired = c.g[S7][0] == c.g[V0][0];
+        frame.save_ra(c, 0);
+        if !paired {
+            c.cycles += 3;
+            c.g[V0][0] = DXT_MODE_INTERPOLATED_ALPHA;
+            paired = c.g[S7][0] == c.g[V0][0];
+        }
+        let rows = if paired {
+            c.cycles += 6;
+            c.g[A1][0] = c.g[V1][0];
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S7][0];
+            callee::SHP_DXT_ALPHA_IS_OPAQUE.call(c, 0x003b_3418)?;
+            if c.g[V0][0] == 0 {
+                &DXT_ROWS_OPAQUE
+            } else {
+                &DXT_ROWS_ALPHA
+            }
+        } else {
+            &DXT_ROWS_DXT1
+        };
+        c.cycles += 2;
+        let none = (c.g[S6][0] as i64) <= 0;
+        c.g[V1][0] = 0;
+        if none || rows.block_bytes == 8 {
+            if !none {
+                shp_decode_dxt_rows(c, rows)?;
+            }
+            c.cycles += 1;
+        } else {
+            shp_decode_dxt_rows(c, rows)?;
+            c.cycles += 2;
+        }
+        frame.restore(c, S0, 0x90);
+        c.cycles += 11;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SHP_DecodeDXT`'s block rows (v1 the row, s5 the next one, s0 the
+/// column, both stepping by 4 pixels).
+pub(crate) fn shp_decode_dxt_rows(c: &mut Cpu, rows: &DxtRows) -> crate::call::Flow {
+    c.cycles += rows.setup;
+    c.g[V0][0] = 0x18;
+    c.mult(0, rows.skip, S4, V0);
+    loop {
+        c.cycles += 3;
+        c.g[S5][0] = sx(r32(c, V1).wrapping_add(4));
+        let empty = (c.g[S4][0] as i64) <= 0;
+        c.g[S0][0] = 0;
+        if !empty {
+            c.cycles += 1;
+            if rows.alpha {
+                c.g[S3][0] = sx(r32(c, S4) << 3);
+            }
+            loop {
+                if rows.alpha {
+                    c.cycles += 14;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A2][0] = sx(r32(c, S2).wrapping_add(rows.color_at));
+                    c.g[A1][0] = c.g[S3][0];
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                    callee::SHP_DECODE_DXT_COLOR_BLOCK.call(c, rows.color_ret)?;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A2][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S3][0];
+                    c.g[A3][0] = c.g[S7][0];
+                    callee::SHP_DECODE_DXT_ALPHA_BLOCK.call(c, 0x003b_3468)?;
+                } else {
+                    c.cycles += 9;
+                    c.g[A0][0] = c.g[S1][0];
+                    // DXT1's colour half is the block itself: a plain move.
+                    c.g[A2][0] = if rows.color_at == 0 {
+                        c.g[S2][0]
+                    } else {
+                        sx(r32(c, S2).wrapping_add(rows.color_at))
+                    };
+                    c.g[A1][0] = sx(r32(c, S4) << rows.pitch_shift);
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                    callee::SHP_DECODE_DXT_COLOR_BLOCK.call(c, rows.color_ret)?;
+                }
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(0x20));
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S4][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(rows.block_bytes));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, rows.block_head);
+                }
+            }
+        }
+        c.cycles += 4;
+        c.g[V1][0] = c.g[S5][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[S6][0] as i64)) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, rows.skip)));
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, rows.row_head);
+        }
+    }
+}
+
+/// Allocation names of `SHP_Unpack`'s copies: `"unShp"` (decompressed),
+/// `"undxt"` (DXT decoded).
+pub(crate) const SHP_UNPACK_NAME: u64 = 0x0049_56e0;
+
+pub(crate) const SHP_UNDXT_NAME: u64 = 0x0049_56e8;
+
+/// The format DXT images are decoded to (32-bit).
+pub(crate) const SHP_FORMAT_32: u64 = 5;
+
+/// The mip loop head of `SHP_Unpack`'s DXT decode.
+pub(crate) const UNPACK_DXT_LEVEL: u32 = 0x003b_37c8;
+
+/// Copy the 16-byte header at s7 to 0(sp) through two registers (the
+/// original's unaligned `ldl`/`ldr`, `sdl`/`sdr` pairs).
+pub(crate) fn shp_unpack_copy_header(c: &mut Cpu, lo: usize, hi: usize) {
+    let (src, dst) = (r32(c, S7), sp(c));
+    c.ldl(lo, src.wrapping_add(7));
+    c.ldr(lo, src);
+    c.ldl(hi, src.wrapping_add(0xf));
+    c.ldr(hi, src.wrapping_add(8));
+    c.sdl(lo, dst.wrapping_add(7));
+    c.sdr(lo, dst);
+    c.sdl(hi, dst.wrapping_add(0xf));
+    c.sdr(hi, dst.wrapping_add(8));
+}
+
+/// `SHPHeader* SHP_Unpack(const SHPHeader* img)` (0x3b3578): a copy of the
+/// image chain with its first image in a plain format. A RefPack-compressed
+/// image (format bit 7) is decompressed (`EAC_Unpack`) into a new block
+/// from the unpack allocator ("unShp"); a DXT image (0x60/0x61/0x62: DXT1,
+/// 3, 5) is decoded level by level to 32 bits, its size rounded up to
+/// whole 4x4 blocks ("undxt"); the rest of the chain is then copied after
+/// it (`SHP_Relocate`). Any other image is cloned whole (`SHP_Clone`).
+/// Null for null.
+pub fn shp_unpack(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S7, 0x40);
+        // s7 the source image, s1 the result; the rest of the chain's size
+        // at 0x10(sp), the new first block's size at 0x14(sp).
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0xb0);
+        c.g[S7][0] = c.g[S1][0];
+        frame.save(c, S2, 0x90);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S5, 0x60);
+        frame.save(c, S6, 0x50);
+        frame.save(c, FP, 0x30);
+        frame.save_ra(c, 0x20);
+        Addr(frame.at(c, 0x10)).sw(c, 0);
+        Addr(frame.at(c, 0x14)).sw(c, 0);
+        let none = c.g[S1][0] == 0;
+        c.g[V0][0] = 0;
+        'exit: {
+            if none {
+                break 'exit;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+            c.g[V0][0] = sx(((r32(c, V0) as i32) >> 8) as u32);
+            let last = c.g[V0][0] == 0;
+            c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+            if last {
+                c.cycles += 1;
+            } else {
+                c.cycles += 2;
+                if c.g[A0][0] != 0 {
+                    c.cycles += 3;
+                    callee::SHP_CALC_TOTAL_SIZE.call(c, 0x003b_35dc)?;
+                    let tail_slot = frame.at(c, 0x10);
+                    Addr(tail_slot).sw(c, c.g[V0][0]);
+                    c.cycles += 1;
+                }
+            }
+            c.g[V1][0] = Addr(r32(c, S1)).lbu(c);
+            c.cycles += 3;
+            c.g[V0][0] = c.g[V1][0] & SHP_FORMAT_COMPRESSED;
+            let compressed = c.g[V0][0] != 0;
+            c.g[V1][0] &= 0xff;
+            // Whether the DXT level loop ran (it charges its own exit).
+            let decoded_levels = 'copied: {
+                if compressed {
+                    c.cycles += 35;
+                    shp_unpack_copy_header(c, V0, V1);
+                    let header = Addr(sp(c));
+                    c.g[V0][0] = header.lbu(c) & 0x7f;
+                    c.g[A0][0] = c.g[SP][0];
+                    header.sb(c, c.g[V0][0]);
+                    callee::SHP_GET_BLOCK_SIZE.call(c, 0x003b_3624)?;
+                    shp_unpack_alloc(c, frame, SHP_UNPACK_NAME, true, 0x003b_364c)?;
+                    c.g[A0][0] = sx(r32(c, S7).wrapping_add(SHP_DATA));
+                    c.g[A1][0] = sx(r32(c, S1).wrapping_add(SHP_DATA));
+                    callee::EAC_UNPACK.call(c, 0x003b_366c)?;
+                    let copy = Addr(r32(c, S1));
+                    c.g[V1][0] = copy.lbu(c) & 0x7f;
+                    copy.sb(c, c.g[V1][0]);
+                    break 'copied false;
+                }
+                // fp: the DXT mode (1, 3, 5) or 0.
+                c.cycles += 3;
+                c.g[V0][0] = SHP_FORMAT_DXT1;
+                let dxt1 = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = SHP_FORMAT_DXT1 + 1;
+                if dxt1 {
+                    c.cycles += 2;
+                    c.g[FP][0] = 1;
+                } else {
+                    c.cycles += 2;
+                    let dxt3 = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = c.g[V1][0] ^ (SHP_FORMAT_DXT1 + 2);
+                    c.cycles += 2;
+                    if dxt3 {
+                        c.g[FP][0] = DXT_MODE_EXPLICIT_ALPHA;
+                    } else {
+                        c.g[FP][0] = DXT_MODE_INTERPOLATED_ALPHA;
+                        if c.g[V0][0] != 0 {
+                            c.g[FP][0] = 0;
+                        }
+                    }
+                }
+                c.cycles += 2;
+                let plain = c.g[FP][0] == 0;
+                c.g[A0][0] = c.g[S1][0];
+                if plain {
+                    c.cycles += 3;
+                    let tail_slot = frame.at(c, 0x10);
+                    Addr(tail_slot).sw(c, 0);
+                    callee::SHP_CLONE.call(c, 0x003b_384c)?;
+                    c.g[S1][0] = c.g[V0][0];
+                    break 'copied false;
+                }
+                shp_unpack_decode_dxt(c, frame)?
+            };
+            if !decoded_levels {
+                c.cycles += 1;
+            }
+            c.g[V0][0] = Addr(frame.at(c, 0x10)).lw(c);
+            shp_unpack_link_tail(c, frame)?;
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xb0);
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore(c, S7, 0x40);
+        frame.restore(c, FP, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SHP_Unpack`'s new first block (v0 its size from `SHP_GetBlockSize`):
+/// the size to 0x14(sp), a block of it plus the tail from the unpack
+/// allocator into s1 (`name`), the source header copied in. The two callers
+/// load the slots in opposite orders: the size into a2 and the tail into v1
+/// (`size_in_a2`), or the other way round.
+pub(crate) fn shp_unpack_alloc(
+    c: &mut Cpu,
+    frame: Frame,
+    name: u64,
+    size_in_a2: bool,
+    back: u32,
+) -> crate::call::Flow {
+    let size_slot = Addr(frame.at(c, 0x14));
+    let tail_slot = Addr(frame.at(c, 0x10));
+    size_slot.sw(c, c.g[V0][0]);
+    c.g[V1][0] = 0x45_0000;
+    c.g[V0][0] = Addr(SHP_UNPACK_ALLOC_HOOK).lw(c);
+    c.g[A0][0] = name;
+    if size_in_a2 {
+        c.g[A2][0] = size_slot.lw(c);
+        c.g[V1][0] = tail_slot.lw(c);
+        c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, V1)));
+    } else {
+        c.g[A2][0] = tail_slot.lw(c);
+        c.g[V1][0] = size_slot.lw(c);
+        c.g[A1][0] = sx(r32(c, V1).wrapping_add(r32(c, A2)));
+    }
+    c.g[A2][0] = 0;
+    call_ptr(c, r32(c, V0), back)?;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S7][0];
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A2][0] = SHP_HEADER_SIZE;
+    callee::EA_MEM_COPY.call(c, back + 0x14)?;
+    Ok(())
+}
+
+/// `SHP_Unpack`'s DXT decode (fp the mode): a 32-bit image of the size
+/// rounded up to 4x4 blocks, then each level decoded (s2 the level, s4/s3
+/// its size). True when the level loop ran (its exit charges differ).
+pub(crate) fn shp_unpack_decode_dxt(
+    c: &mut Cpu,
+    frame: Frame,
+) -> Result<bool, crate::call::Unwound> {
+    c.cycles += 34;
+    shp_unpack_copy_header(c, A0, A1);
+    let header = Addr(sp(c));
+    c.g[A1][0] = header.off(SHP_HEIGHT).lhu(c);
+    c.g[A2][0] = u64::MAX;
+    c.g[A0][0] = header.off(SHP_WIDTH).lhu(c);
+    c.g[A1][0] = sx(((r32(c, A1) << 16) as i32 >> 16) as u32);
+    c.g[A0][0] = sx(((r32(c, A0) << 16) as i32 >> 16) as u32);
+    // w % 4 and h % 4 (signed).
+    c.g[A3][0] = ((c.g[A2][0] as i64) < (c.g[A1][0] as i64)) as u64;
+    c.g[A2][0] = ((c.g[A2][0] as i64) < (c.g[A0][0] as i64)) as u64;
+    c.g[V1][0] = sx(r32(c, A0).wrapping_add(3));
+    c.g[V0][0] = sx(r32(c, A1).wrapping_add(3));
+    if c.g[A2][0] != 0 {
+        c.g[V1][0] = c.g[A0][0];
+    }
+    if c.g[A3][0] != 0 {
+        c.g[V0][0] = c.g[A1][0];
+    }
+    c.g[V1][0] = sx(((r32(c, V1) as i32) >> 2) as u32);
+    c.g[V0][0] = sx(((r32(c, V0) as i32) >> 2) as u32);
+    c.g[V1][0] = sx(r32(c, V1) << 2);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V1][0] = sx(r32(c, A0).wrapping_sub(r32(c, V1)));
+    c.g[V0][0] = sx(r32(c, A1).wrapping_sub(r32(c, V0)));
+    c.g[V1][0] = sx(((r32(c, V1) << 16) as i32 >> 16) as u32);
+    c.g[A2][0] = sx(((r32(c, V0) << 16) as i32 >> 16) as u32);
+    c.g[S5][0] = c.g[A0][0];
+    let w_rest = c.g[V1][0] != 0;
+    c.g[S6][0] = c.g[A1][0];
+    if w_rest {
+        c.cycles += 2;
+        c.g[V0][0] = sx(r32(c, S5).wrapping_add(4));
+        c.g[S5][0] = sx(r32(c, V0).wrapping_sub(r32(c, V1)));
+    }
+    c.cycles += 2;
+    let h_rest = c.g[A2][0] != 0;
+    c.g[V0][0] = sx(r32(c, S6).wrapping_add(4));
+    if h_rest {
+        c.cycles += 1;
+        c.g[S6][0] = sx(r32(c, V0).wrapping_sub(r32(c, A2)));
+    }
+    // The new header: 32-bit, the rounded size.
+    c.cycles += 31;
+    c.g[S0][0] = SHP_FORMAT_32;
+    c.g[A0][0] = c.g[SP][0];
+    let header = Addr(sp(c));
+    header.off(SHP_WIDTH).sh(c, c.g[S5][0]);
+    c.g[S4][0] = c.g[S5][0];
+    header.off(SHP_HEIGHT).sh(c, c.g[S6][0]);
+    c.g[S3][0] = c.g[S6][0];
+    header.sb(c, c.g[S0][0]);
+    c.g[S2][0] = 0;
+    callee::SHP_GET_BLOCK_SIZE.call(c, 0x003b_3770)?;
+    shp_unpack_alloc(c, frame, SHP_UNDXT_NAME, false, 0x003b_3798)?;
+    let copy = Addr(r32(c, S1));
+    c.g[V0][0] = copy.off(SHP_FLAGS).lw(c);
+    copy.sb(c, c.g[S0][0]);
+    c.g[V0][0] = sx(r32(c, V0) >> 28);
+    copy.off(SHP_WIDTH).sh(c, c.g[S5][0]);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+    let no_levels = (c.g[V0][0] as i64) <= 0;
+    copy.off(SHP_HEIGHT).sh(c, c.g[S6][0]);
+    if no_levels {
+        return Ok(false);
+    }
+    loop {
+        c.cycles += 29;
+        c.g[A3][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S7][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0;
+        callee::SHP_GET_PIXEL_PTR.call(c, 0x003b_37dc)?;
+        c.g[A3][0] = c.g[S2][0];
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0;
+        c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+        callee::SHP_GET_PIXEL_PTR.call(c, 0x003b_37f8)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A2][0] = c.g[S4][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A3][0] = c.g[S3][0];
+        c.g[T0][0] = c.g[FP][0];
+        callee::SHP_DECODE_DXT.call(c, 0x003b_3810)?;
+        // The next level: half the size (at least 1).
+        c.g[V0][0] = Addr(r32(c, S1)).off(SHP_FLAGS).lw(c);
+        c.g[A2][0] = ((c.g[S4][0] as i64) < 2) as u64;
+        c.g[A0][0] = sx(((r32(c, S4) as i32) >> 1) as u32);
+        c.g[A1][0] = ((c.g[S3][0] as i64) < 2) as u64;
+        c.g[V0][0] = sx(r32(c, V0) >> 28);
+        c.g[V1][0] = sx(((r32(c, S3) as i32) >> 1) as u32);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+        if c.g[A2][0] == 0 {
+            c.g[S4][0] = c.g[A0][0];
+        }
+        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let more = c.g[V0][0] != 0;
+        if c.g[A1][0] == 0 {
+            c.g[S3][0] = c.g[V1][0];
+        }
+        if !more {
+            c.cycles += 2;
+            return Ok(true);
+        }
+        if event_due(c) {
+            deliver_event_here(c, UNPACK_DXT_LEVEL);
+        }
+    }
+}
+
+/// `SHP_Unpack`'s tail (v0 the rest of the chain's size): when there is
+/// one, link the new first block to it and copy the rest of the source
+/// chain there (`SHP_Relocate`).
+pub(crate) fn shp_unpack_link_tail(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 2;
+    let no_tail = c.g[V0][0] == 0;
+    c.g[A0][0] = Addr(frame.at(c, 0x14)).lw(c);
+    if !no_tail {
+        c.cycles += 10;
+        let first = Addr(r32(c, S1));
+        c.g[V1][0] = first.lbu(c);
+        c.g[V0][0] = sx(r32(c, A0) << 8);
+        c.g[V1][0] |= c.g[V0][0];
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+        first.sw(c, c.g[V1][0]);
+        c.g[V0][0] = Addr(r32(c, S7)).lw(c);
+        c.g[V0][0] = sx(((r32(c, V0) as i32) >> 8) as u32);
+        c.g[A1][0] = sx(r32(c, S7).wrapping_add(r32(c, V0)));
+        if c.g[V0][0] == 0 {
+            c.g[A1][0] = 0;
+        }
+        callee::SHP_RELOCATE.call(c, 0x003b_3884)?;
+    }
+    Ok(())
+}
+
+/// `SHP_PaletteFormatForBpp`'s entry and end, and its jump table on
+/// `bpp - 15` (15..=32).
+pub(crate) const PALETTE_FORMAT_ENTRY: u32 = 0x003b_38b8;
+
+pub(crate) const PALETTE_FORMAT_END: u32 = 0x003b_3900;
+
+pub(crate) const PALETTE_FORMAT_TABLE: u32 = 0x0049_56f0;
+
+/// `int SHP_PaletteFormatForBpp(int bpp)` (0x3b38b8): the format of a
+/// palette with `bpp`-bit entries: 0x20 for 15/16, 0x21 for 32, 0 otherwise
+/// (also for 18 and 24). Resume entries go to the generated twin.
+pub fn shp_palette_format_for_bpp(c: &mut Cpu) {
+    if c.pc != PALETTE_FORMAT_ENTRY {
+        return ee::s13::f_003b38b8__entries(c);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = sx(r32(c, A0).wrapping_sub(15));
+    c.g[V0][0] = (c.g[V1][0] < 0x12) as u64;
+    let in_table = c.g[V0][0] != 0;
+    c.g[A1][0] = 0;
+    if in_table {
+        c.cycles += 7;
+        c.g[V0][0] = PALETTE_FORMAT_TABLE as u64;
+        c.g[V1][0] = sx(r32(c, V1) << 2);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+        match r32(c, A0) {
+            0x003b_38e4 => {
+                c.cycles += 2;
+                c.g[A1][0] = 0x20;
+            }
+            0x003b_38ec => {
+                c.cycles += 2;
+                c.g[A1][0] = 0;
+            }
+            0x003b_38f4 => {
+                c.cycles += 1;
+                c.g[A1][0] = 0x21;
+            }
+            0x003b_38f8 => {}
+            target => {
+                c.jump_out(target, PALETTE_FORMAT_ENTRY, PALETTE_FORMAT_END);
+                return;
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A1][0];
+    ret(c);
+}
+
+/// Format byte of the block holding an image's long name (from +4).
+pub(crate) const SHP_BLOCK_LONG_NAME: u64 = 0x70;
+
+/// The loop head of `SHP_FindLongName`.
+pub(crate) const FIND_LONG_NAME_LOOP: u32 = 0x003b_3a20;
+
+/// `const char* SHP_FindLongName(const SHPHeader* img)` (0x3b3a10): walk
+/// the block chain from `img` (itself included) to the first "p" block and
+/// return its name (+4); null at the end of the chain.
+pub fn shp_find_long_name(c: &mut Cpu) {
+    c.cycles += 2;
+    let none = c.g[A0][0] == 0;
+    c.g[A1][0] = SHP_BLOCK_LONG_NAME;
+    if !none {
+        c.cycles += 2;
+        c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
+        loop {
+            c.cycles += 2;
+            if c.g[V0][0] == c.g[A1][0] {
+                c.cycles += 2;
+                c.g[V0][0] = sx(r32(c, A0).wrapping_add(4));
+                ret(c);
+                return;
+            }
+            // The next block: the offset in the upper 24 bits, 0 at the end.
+            c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+            c.cycles += 6;
+            c.g[V0][0] = sx(((r32(c, V0) as i32) >> 8) as u32);
+            c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.g[A0][0] = c.g[V1][0];
+            }
+            if c.g[A0][0] == 0 {
+                break;
+            }
+            c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
+            if event_due(c) {
+                deliver_event_here(c, FIND_LONG_NAME_LOOP);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+/// Palette formats (0x20 with 16-bit, 0x21 with 32-bit entries) and the
+/// DXT formats (0x60..0x62).
+pub(crate) const SHP_FORMAT_PALETTE16: u64 = 0x20;
+
+pub(crate) const SHP_FORMAT_DXT1: u64 = 0x60;
+
+/// The mip loop head of `SHP_CalcPixelDataSize`.
+pub(crate) const PIXEL_DATA_SIZE_LEVEL: u32 = 0x003b_3b20;
+
+/// `int SHP_CalcPixelDataSize(int format, int w, int h, int maxLevel, int
+/// swizzled)` (0x3b3a50): the bytes of an image's pixel data plus its
+/// 16-byte header (0 when there are none). A palette (formats 0x20/0x21)
+/// stored swizzled pads its entry count (16..23 extra entries per 32 to 24,
+/// 8..15 by 8) and has no mip levels; other images sum levels
+/// 0..=`maxLevel` (each at least 1x1, DXT levels rounded up to 4x4, each
+/// level after the first 16-byte aligned) of rows rounded up to bytes.
+pub fn shp_calc_pixel_data_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S1, 0x60);
+        // s1 the format, s0 w, s5 h, s4 maxLevel, s3 swizzled, s2 the total.
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x70);
+        frame.save(c, S3, 0x40);
+        c.g[A0][0] = c.g[SP][0];
+        frame.save(c, S4, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S5, 0x20);
+        c.g[S4][0] = c.g[A3][0];
+        frame.save(c, S2, 0x50);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        c.g[S3][0] = c.g[T0][0];
+        // A one-byte header on the stack for SHP_GetBpp.
+        let header = frame.at(c, 0);
+        Addr(header).sb(c, c.g[S1][0]);
+        c.g[S2][0] = 0;
+        callee::SHP_GET_BPP.call(c, 0x003b_3a94)?;
+        // t3: bits per pixel (15 is stored in 16).
+        c.g[T3][0] = 0x10;
+        c.g[A0][0] = c.g[V0][0] ^ 0xf;
+        c.g[V1][0] = sx(r32(c, S1).wrapping_sub(SHP_FORMAT_PALETTE16 as u32));
+        c.g[V1][0] = (c.g[V1][0] < 2) as u64;
+        let palette = c.g[V1][0] != 0;
+        if c.g[A0][0] != 0 {
+            c.g[T3][0] = c.g[V0][0];
+        }
+        'exit: {
+            if palette {
+                c.cycles += 2;
+                let swizzled = c.g[S3][0] != 0;
+                c.g[V1][0] = c.g[S0][0] & 0x1f;
+                if swizzled {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(r32(c, V1).wrapping_sub(0x10));
+                    c.g[V0][0] = (c.g[V0][0] < 8) as u64;
+                    let upper = c.g[V0][0] != 0;
+                    c.g[V0][0] = !0x1f;
+                    if upper {
+                        c.cycles += 3;
+                        c.g[V0][0] &= c.g[S0][0];
+                        c.g[S0][0] = sx(r32(c, V0).wrapping_add(0x18));
+                    } else {
+                        c.cycles += 5;
+                        c.g[V0][0] = sx(r32(c, V1).wrapping_sub(8));
+                        c.g[A0][0] = sx(r32(c, S0).wrapping_add(8));
+                        c.g[V1][0] = 7;
+                        c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                        if c.g[V1][0] == 0 {
+                            c.g[S0][0] = c.g[A0][0];
+                        }
+                    }
+                    // Entries * bits / 8 (signed, rounded toward 0).
+                    c.cycles += 7;
+                    c.mult(0, A0, S0, T3);
+                    c.g[V1][0] = u64::MAX;
+                    c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(7));
+                    if c.g[V1][0] != 0 {
+                        c.g[V0][0] = c.g[A0][0];
+                    }
+                    c.g[S2][0] = sx(((r32(c, V0) as i32) >> 3) as u32);
+                    break 'exit;
+                }
+            }
+            c.cycles += 8;
+            c.g[V0][0] = sx(r32(c, S1).wrapping_sub(SHP_FORMAT_DXT1 as u32));
+            c.g[A3][0] = 0;
+            c.g[T4][0] = (c.g[V0][0] < 3) as u64;
+            c.g[T2][0] = 1;
+            c.g[T1][0] = 0;
+            c.g[T0][0] = !3;
+            c.g[T6][0] = !0xf;
+            c.g[T5][0] = u64::MAX;
+            // One mip level per pass (a3 the level, a0/a2 its size).
+            loop {
+                c.cycles += 7;
+                let level = r32(c, A3) & 31;
+                c.g[A0][0] = sx(((r32(c, S0) as i32) >> level) as u32);
+                c.g[A2][0] = sx(((r32(c, S5) as i32) >> level) as u32);
+                c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                c.g[V1][0] = ((c.g[T1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[A0][0] = c.g[T2][0];
+                }
+                let dxt = c.g[T4][0] != 0;
+                if c.g[V1][0] == 0 {
+                    c.g[A2][0] = c.g[T2][0];
+                }
+                if dxt {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(3));
+                    c.g[V1][0] = sx(r32(c, A2).wrapping_add(3));
+                    c.g[A0][0] = c.g[V0][0] & c.g[T0][0];
+                    c.g[A2][0] = c.g[V1][0] & c.g[T0][0];
+                }
+                c.cycles += 2;
+                let first = c.g[S2][0] == 0;
+                c.g[V0][0] = sx(r32(c, S2).wrapping_add(0xf));
+                if !first {
+                    c.cycles += 1;
+                    c.g[S2][0] = c.g[V0][0] & c.g[T6][0];
+                }
+                c.cycles += 11;
+                c.mult(0, V0, A0, T3);
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                c.g[A1][0] = (c.g[S4][0] < c.g[A3][0]) as u64;
+                c.g[A0][0] = sx(r32(c, V0).wrapping_add(7));
+                c.g[V1][0] = ((c.g[T5][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(0xe));
+                if c.g[V1][0] != 0 {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.g[V0][0] = sx(((r32(c, V0) as i32) >> 3) as u32);
+                c.mult(0, V1, V0, A2);
+                let done = c.g[A1][0] != 0;
+                c.g[S2][0] = sx(r32(c, V1).wrapping_add(r32(c, S2)));
+                if done {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, PIXEL_DATA_SIZE_LEVEL);
+                }
+            }
+        }
+        c.cycles += 11;
+        c.g[V0][0] = sx(r32(c, S2).wrapping_add(SHP_HEADER_SIZE as u32));
+        frame.restore(c, S0, 0x70);
+        if c.g[S2][0] == 0 {
+            c.g[V0][0] = 0;
+        }
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Block formats with their own size rules: the "i" block (+6 bit 4: a
+/// size at +4, 0 meaning 0xf0), an "o" block (size at +4), the long-name
+/// block (a string) and the "|" block (+4 counts 8-byte entries).
+pub(crate) const SHP_BLOCK_PIPE: u64 = 0x7c;
+
+/// Format bit 7: an image whose pixels are RefPack-compressed.
+pub(crate) const SHP_FORMAT_COMPRESSED: u64 = 0x80;
+
+/// `int SHP_GetBlockSize(const SHPHeader* block)` (0x3b3bb0): the bytes of
+/// one block of an image chain. "o": its size + 8; "|": 8 per entry + 8;
+/// "p": the long name + NUL + 4; "i": 16, or 16 + its size; images: the
+/// header and pixel data (`SHP_CalcPixelDataSize` from the header's format,
+/// size, mip levels and swizzle flag bit 13), or for compressed images the
+/// RefPack stream's packed size + 16 (0 when its unpacked size is 0).
+pub fn shp_get_block_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        // v1 the block.
+        c.g[V1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = SHP_BLOCK_O;
+        frame.save_ra(c, 0x10);
+        let block = Addr(r32(c, V1));
+        c.g[A0][0] = block.lbu(c);
+        let o_block = c.g[A0][0] == c.g[V0][0];
+        c.g[S0][0] = 0;
+        'size: {
+            if o_block {
+                c.cycles += 3;
+                c.g[V0][0] = block.off(4).lw(c);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(8));
+                break 'size;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[A0][0] < SHP_BLOCK_LONG_NAME) as u64;
+            let below = c.g[V0][0] != 0;
+            c.g[V0][0] = SHP_BLOCK_I;
+            if below {
+                c.cycles += 2;
+                if c.g[A0][0] == c.g[V0][0] {
+                    c.g[V0][0] = block.off(6).lhu(c);
+                    c.cycles += 3;
+                    c.g[V0][0] &= 0x10;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = SHP_HEADER_SIZE;
+                        break 'size;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = block.off(4).lhu(c);
+                    c.g[V1][0] = 0xf0;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = c.g[V1][0];
+                    }
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(SHP_HEADER_SIZE as u32));
+                    break 'size;
+                }
+                c.cycles += 2;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = SHP_BLOCK_LONG_NAME;
+                if c.g[A0][0] == c.g[V0][0] {
+                    c.cycles += 4;
+                    c.g[A0][0] = sx(r32(c, V1).wrapping_add(4));
+                    callee::STRLEN.call(c, 0x003b_3c14)?;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(5));
+                    break 'size;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = SHP_BLOCK_PIPE;
+                if c.g[A0][0] == c.g[V0][0] {
+                    c.g[V0][0] = block.off(4).lw(c);
+                    c.cycles += 3;
+                    c.g[V0][0] = sx(r32(c, V0) << 3);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(8));
+                    break 'size;
+                }
+                c.cycles += 2;
+            }
+            // An image.
+            c.g[V0][0] = block.lbu(c);
+            c.cycles += 3;
+            c.g[V0][0] &= SHP_FORMAT_COMPRESSED;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[V0][0] = block.off(SHP_FLAGS).lw(c) & SHP_FLAG_DATA_AT_OFFSET;
+                let at_offset = c.g[V0][0] != 0;
+                let packed_size = frame.at(c, 0);
+                Addr(packed_size).sw(c, 0);
+                if at_offset {
+                    c.cycles += 3;
+                    c.g[V0][0] = block.off(SHP_DATA).lw(c);
+                    c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                } else {
+                    c.cycles += 1;
+                    c.g[A0][0] = sx(r32(c, V1).wrapping_add(SHP_DATA));
+                }
+                c.cycles += 4;
+                c.g[A1][0] = c.g[SP][0];
+                callee::REFPACK_GET_SIZES.call(c, 0x003b_3c88)?;
+                let empty = c.g[V0][0] == 0;
+                c.g[V0][0] = Addr(frame.at(c, 0)).lw(c);
+                if !empty {
+                    c.cycles += 2;
+                    c.g[S0][0] = sx(r32(c, V0).wrapping_add(SHP_HEADER_SIZE as u32));
+                }
+            } else {
+                c.g[A3][0] = block.off(SHP_FLAGS).lw(c);
+                c.cycles += 8;
+                c.g[A2][0] = block.off(SHP_HEIGHT).lh(c);
+                c.g[T0][0] = sx(((r32(c, A3) as i32) >> 13) as u32);
+                c.g[A0][0] = block.lbu(c);
+                c.g[A1][0] = block.off(SHP_WIDTH).lh(c);
+                c.g[A3][0] = sx(r32(c, A3) >> 28);
+                c.g[T0][0] &= 1;
+                callee::SHP_CALC_PIXEL_DATA_SIZE.call(c, 0x003b_3cb4)?;
+                c.g[S0][0] = c.g[V0][0];
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The loop head of `SHP_FindInfoData`.
+pub(crate) const FIND_INFO_DATA_LOOP: u32 = 0x003b_3d68;
+
+/// "i" block flags (+6): bit 4 set when the block has data.
+pub(crate) const SHP_INFO_HAS_DATA: u64 = 0x10;
+
+/// `void* SHP_FindInfoData(const SHPHeader* img)` (0x3b3d40): walk the
+/// block chain from `img` (itself included) to the first "i" block; its
+/// data (+0x10) when its +6 flags have bit 4, else null (also when there is
+/// no "i" block).
+pub fn shp_find_info_data(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[A1][0] = c.g[A0][0];
+    let none = c.g[A1][0] == 0;
+    c.g[A2][0] = 0;
+    if !none {
+        c.cycles += 4;
+        c.g[V1][0] = Addr(r32(c, A1)).lbu(c);
+        c.g[V0][0] = SHP_BLOCK_I;
+        let mut found = c.g[V1][0] == c.g[V0][0];
+        if found {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, A1)).off(SHP_HEIGHT).lhu(c);
+            c.g[A2][0] = sx(r32(c, A1).wrapping_add(SHP_DATA));
+        } else {
+            c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+            loop {
+                // The next block (a0, also a1), or the end.
+                c.cycles += 6;
+                c.g[A0][0] = 0;
+                c.g[V0][0] = sx(((r32(c, V0) as i32) >> 8) as u32);
+                c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                if c.g[V0][0] != 0 {
+                    c.g[A0][0] = c.g[V1][0];
+                }
+                let end = c.g[A0][0] == 0;
+                c.g[A1][0] = c.g[A0][0];
+                if end {
+                    break;
+                }
+                c.cycles += 4;
+                let block = Addr(r32(c, A0));
+                c.g[V1][0] = block.lbu(c);
+                c.g[V0][0] = SHP_BLOCK_I;
+                if c.g[V1][0] == c.g[V0][0] {
+                    c.cycles += 2;
+                    c.g[V0][0] = block.off(SHP_HEIGHT).lhu(c);
+                    c.g[A2][0] = sx(r32(c, A0).wrapping_add(SHP_DATA));
+                    found = true;
+                    break;
+                }
+                c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, FIND_INFO_DATA_LOOP);
+                }
+            }
+        }
+        if found {
+            c.cycles += 2;
+            c.g[V0][0] &= SHP_INFO_HAS_DATA;
+            if c.g[V0][0] == 0 {
+                c.g[A2][0] = 0;
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A2][0];
+    ret(c);
+}
+
+/// Flags bit 13: the pixels are stored in GS swizzled order.
+pub(crate) const SHP_FLAG_SWIZZLED: u64 = 0x2000;
+
+/// The level loop head of `SHP_GetPixelPtr`.
+pub(crate) const PIXEL_PTR_LEVEL: u32 = 0x003b_40d8;
+
+/// `u8* SHP_GetPixelPtr(const SHPHeader* img, int x, int y, int level)`
+/// (0x3b4010): the address of pixel (`x`, `y`) of mip `level`. Levels are
+/// skipped by their bit sizes (each 16-bit aligned, halving w and h down to
+/// 1); DXT1 (0x60) images count in 4x4 blocks of 64 bits. Palettes stored
+/// swizzled index their entries as the GS does (entries 8..15 and 16..23 of
+/// each 32 swapped), other swizzled images go through `SHP_SwizzleAddr`;
+/// otherwise rows are 16-bit aligned. Bits 15 count as 16.
+pub fn shp_get_pixel_ptr(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, FP, 0x20);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S7, 0x30);
+        frame.save_ra(c, 0x10);
+        // s0 the image, s6/s4 x, s5/s7 y, fp the level; s1/s2 w and h, s3
+        // the levels' bits, t1 bits per pixel; the pixel data at 0(sp).
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S5][0] = c.g[A2][0];
+        c.g[S6][0] = c.g[A1][0];
+        let image = Addr(r32(c, S0));
+        c.g[V0][0] = image.off(SHP_FLAGS).lw(c) & SHP_FLAG_DATA_AT_OFFSET;
+        let at_offset = c.g[V0][0] != 0;
+        c.g[FP][0] = c.g[A3][0];
+        if at_offset {
+            c.cycles += 3;
+            c.g[V0][0] = image.off(SHP_DATA).lw(c);
+            c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = sx(r32(c, S0).wrapping_add(SHP_DATA));
+        }
+        c.cycles += 18;
+        let data_slot = Addr(frame.at(c, 0));
+        data_slot.sw(c, c.g[V0][0]);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[S1][0] = image.off(SHP_WIDTH).lh(c);
+        c.g[S2][0] = image.off(SHP_HEIGHT).lh(c);
+        c.g[S4][0] = c.g[S6][0];
+        callee::SHP_GET_BPP.call(c, 0x003b_4080)?;
+        c.g[S7][0] = c.g[S5][0];
+        c.g[A3][0] = Addr(r32(c, S0)).lbu(c);
+        c.g[A0][0] = c.g[V0][0] ^ 0xf;
+        c.g[T1][0] = 0x10;
+        c.g[A2][0] = 0x40;
+        c.g[A1][0] = c.g[A3][0] & 0xff;
+        if c.g[A0][0] != 0 {
+            c.g[T1][0] = c.g[V0][0];
+        }
+        c.g[V1][0] = c.g[A1][0] ^ SHP_FORMAT_DXT1;
+        c.g[S3][0] = 0;
+        c.g[V0][0] = SHP_FORMAT_DXT1;
+        let dxt1 = c.g[A1][0] == c.g[V0][0];
+        if c.g[V1][0] == 0 {
+            c.g[T1][0] = c.g[A2][0];
+        }
+        if dxt1 {
+            // The size in 4x4 blocks.
+            c.cycles += 4;
+            c.g[V0][0] = sx(r32(c, S1).wrapping_add(3));
+            c.g[V1][0] = sx(r32(c, S2).wrapping_add(3));
+            c.g[S1][0] = sx(((r32(c, V0) as i32) >> 2) as u32);
+            c.g[S2][0] = sx(((r32(c, V1) as i32) >> 2) as u32);
+        }
+        c.cycles += 3;
+        c.g[T3][0] = Addr(r32(c, S0)).off(SHP_FLAGS).lw(c);
+        let skip_levels = (c.g[FP][0] as i64) > 0;
+        c.g[T2][0] = c.g[A3][0];
+        if skip_levels {
+            c.cycles += 3;
+            c.g[A3][0] = c.g[FP][0];
+            c.g[T0][0] = !0xf;
+            loop {
+                c.cycles += 13;
+                c.mult(0, A0, S1, S2);
+                c.g[V0][0] = sx(r32(c, S3).wrapping_add(0xf));
+                c.g[S3][0] = c.g[V0][0] & c.g[T0][0];
+                c.g[A1][0] = ((c.g[S1][0] as i64) < 2) as u64;
+                c.g[V0][0] = sx(((r32(c, S1) as i32) >> 1) as u32);
+                c.g[A2][0] = ((c.g[S2][0] as i64) < 2) as u64;
+                c.g[V1][0] = sx(((r32(c, S2) as i32) >> 1) as u32);
+                if c.g[A1][0] == 0 {
+                    c.g[S1][0] = c.g[V0][0];
+                }
+                c.mult(0, A0, A0, T1);
+                if c.g[A2][0] == 0 {
+                    c.g[S2][0] = c.g[V1][0];
+                }
+                c.g[A3][0] = sx(r32(c, A3).wrapping_sub(1));
+                let more = c.g[A3][0] != 0;
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, PIXEL_PTR_LEVEL);
+                }
+            }
+        }
+        c.cycles += 4;
+        c.g[A3][0] = c.g[T2][0] & 0xff;
+        c.g[V0][0] = SHP_FORMAT_DXT1;
+        let dxt1 = c.g[A3][0] == c.g[V0][0];
+        c.g[V0][0] = sx(r32(c, T2).wrapping_sub(SHP_FORMAT_PALETTE16 as u32));
+        if dxt1 {
+            // x and y in blocks (signed, rounded toward 0).
+            c.cycles += 10;
+            c.g[V0][0] = u64::MAX;
+            c.g[A0][0] = sx(r32(c, S6).wrapping_add(3));
+            c.g[A1][0] = ((c.g[V0][0] as i64) < (c.g[S5][0] as i64)) as u64;
+            c.g[V1][0] = sx(r32(c, S5).wrapping_add(3));
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S6][0] as i64)) as u64;
+            if c.g[A1][0] != 0 {
+                c.g[V1][0] = c.g[S5][0];
+            }
+            if c.g[V0][0] != 0 {
+                c.g[A0][0] = c.g[S6][0];
+            }
+            c.g[S7][0] = sx(((r32(c, V1) as i32) >> 2) as u32);
+            c.g[S4][0] = sx(((r32(c, A0) as i32) >> 2) as u32);
+            c.g[V0][0] = sx(r32(c, T2).wrapping_sub(SHP_FORMAT_PALETTE16 as u32));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+        let palette = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[T3][0] & SHP_FLAG_SWIZZLED;
+        // v0: the pixel's bit offset in the data.
+        'offset: {
+            let swizzled = c.g[V0][0] != 0;
+            c.cycles += 2;
+            if palette {
+                c.g[A2][0] = c.g[S4][0];
+                if swizzled {
+                    c.cycles += 8;
+                    c.g[V1][0] = 0xf;
+                    c.g[V0][0] = c.g[A2][0] & 0x1f;
+                    c.g[A1][0] = c.g[A2][0] ^ 0x18;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(8));
+                    c.g[A0][0] = 0x21;
+                    c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                    let entries32 = c.g[A3][0] == c.g[A0][0];
+                    if c.g[V1][0] == 0 {
+                        c.g[A2][0] = c.g[A1][0];
+                    }
+                    if entries32 {
+                        c.cycles += 2;
+                        c.g[A2][0] = sx(r32(c, A2) << 5);
+                    } else {
+                        c.cycles += 3;
+                        c.g[V1][0] = c.g[A3][0] ^ SHP_FORMAT_PALETTE16;
+                        c.g[V0][0] = sx(r32(c, A2) << 4);
+                        if c.g[V1][0] == 0 {
+                            c.g[A2][0] = c.g[V0][0];
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[A2][0];
+                    break 'offset;
+                }
+            } else {
+                c.g[A2][0] = c.g[S1][0];
+                if swizzled {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = c.g[S7][0];
+                    c.g[A3][0] = c.g[S2][0];
+                    c.g[T0][0] = c.g[T1][0];
+                    callee::SHP_SWIZZLE_ADDR.call(c, 0x003b_41b0)?;
+                    c.g[A2][0] = c.g[V0][0];
+                    c.cycles += 1;
+                    c.g[V0][0] = sx(r32(c, A2).wrapping_add(r32(c, S3)));
+                    break 'offset;
+                }
+            }
+            // Linear: rows of w * bits, 16-bit aligned.
+            c.cycles += 7;
+            c.mult(0, V0, S1, T1);
+            c.g[V1][0] = !0xf;
+            c.mult(0, A0, S4, T1);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0xf));
+            c.g[V0][0] &= c.g[V1][0];
+            c.mult(0, V0, S7, V0);
+            c.g[A2][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.cycles += 1;
+            c.g[V0][0] = sx(r32(c, A2).wrapping_add(r32(c, S3)));
+        }
+        c.cycles += 15;
+        c.g[V1][0] = Addr(frame.at(c, 0)).lw(c);
+        c.g[V0][0] = sx(((r32(c, V0) as i32) >> 3) as u32);
+        c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SHP_SwizzleAddr`'s entry and end, and its jump table on `bpp - 4`
+/// (4..=32).
+pub(crate) const SWIZZLE_ADDR_ENTRY: u32 = 0x003b_4218;
+
+pub(crate) const SWIZZLE_ADDR_END: u32 = 0x003b_42ac;
+
+pub(crate) const SWIZZLE_ADDR_TABLE: u32 = 0x0049_5740;
+
+/// `uint SHP_SwizzleAddr(int x, int y, int w, int h, int bpp)` (0x3b4218):
+/// the bit offset of pixel (`x`, `y`) in a swizzled image of width `w`, by
+/// the GS layout for the depth (PSMT4, PSMT8, PSMCT16 for 15 and 16,
+/// PSMCT32); 0 for other depths. Resume entries go to the generated twin.
+pub fn shp_swizzle_addr(c: &mut Cpu) {
+    if c.pc != SWIZZLE_ADDR_ENTRY {
+        return ee::s13::f_003b4218__entries(c);
+    }
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = sx(r32(c, T0).wrapping_sub(4));
+        frame.save_ra(c, 0);
+        // a3: x (a0 is the jump table's scratch).
+        c.g[A3][0] = c.g[A0][0];
+        c.g[V0][0] = (c.g[V1][0] < 0x1d) as u64;
+        let in_table = c.g[V0][0] != 0;
+        c.g[T1][0] = 0;
+        if in_table {
+            c.cycles += 7;
+            c.g[V0][0] = SWIZZLE_ADDR_TABLE as u64;
+            c.g[V1][0] = sx(r32(c, V1) << 2);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+            let layout = match r32(c, A0) {
+                0x003b_4250 => Some((callee::SHP_SWIZZLE_ADDR_PSMT4, 4, 0x003b_4258)),
+                0x003b_4260 => Some((callee::SHP_SWIZZLE_ADDR_PSMT8, 4, 0x003b_4268)),
+                0x003b_4270 => Some((callee::SHP_SWIZZLE_ADDR_PSMCT16, 4, 0x003b_4278)),
+                0x003b_4280 => Some((callee::SHP_SWIZZLE_ADDR_PSMCT16, 4, 0x003b_4288)),
+                0x003b_4290 => Some((callee::SHP_SWIZZLE_ADDR_PSMCT32, 3, 0x003b_4298)),
+                0x003b_429c => None,
+                target => {
+                    c.jump_out(target, SWIZZLE_ADDR_ENTRY, SWIZZLE_ADDR_END);
+                    return Ok(());
+                }
+            };
+            if let Some((swizzle, cost, back)) = layout {
+                c.cycles += cost;
+                c.g[A0][0] = c.g[A3][0];
+                swizzle.call(c, back)?;
+                c.g[T1][0] = c.g[V0][0];
+            }
+        }
+        c.cycles += 4;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = c.g[T1][0];
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The loop head of `SHP_CalcTotalSize`.
+pub(crate) const CALC_TOTAL_SIZE_LOOP: u32 = 0x003b_44c0;
+
+/// Where a block after the first starts, `offset` bytes into a chain whose
+/// start is `pad` bytes below a 16-byte boundary (s4: -16, s5: pad - 16):
+/// the next boundary after `offset`. Palette blocks get there another way
+/// (`+ 0x1f`, then `pad - 16`): the same offset, one cycle more. Shared by
+/// `SHP_CalcTotalSize` and `SHP_Relocate` (registers `offset`, `pad`,
+/// `mask`, `pad16` and the format byte at `block`).
+pub(crate) fn shp_align_next_block(
+    c: &mut Cpu,
+    block: usize,
+    offset: usize,
+    pad: usize,
+    mask: usize,
+    pad16: usize,
+    ret_addr: u32,
+) -> crate::call::Flow {
+    c.cycles += 4;
+    c.g[A0][0] = Addr(r32(c, block)).lbu(c);
+    callee::SHP_IS_PALETTE_FORMAT.call(c, ret_addr)?;
+    let palette = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(r32(c, offset).wrapping_sub(r32(c, pad)));
+    if palette {
+        c.cycles += 4;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x1f));
+        c.g[V0][0] &= c.g[mask][0];
+        c.g[offset][0] = sx(r32(c, V0).wrapping_add(r32(c, pad16)));
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0xf));
+        c.g[V0][0] &= c.g[mask][0];
+        c.g[offset][0] = sx(r32(c, V0).wrapping_add(r32(c, pad)));
+    }
+    Ok(())
+}
+
+/// The next block of a chain into `reg` (null at the end), from the
+/// offset in the upper 24 bits of its first word (v1 the offset, v0 the
+/// address).
+pub(crate) fn shp_next_block(c: &mut Cpu, reg: usize) {
+    c.g[V1][0] = sx(((r32(c, V1) as i32) >> 8) as u32);
+    c.g[V0][0] = sx(r32(c, reg).wrapping_add(r32(c, V1)));
+    c.g[reg][0] = 0;
+    if c.g[V1][0] != 0 {
+        c.g[reg][0] = c.g[V0][0];
+    }
+}
+
+/// `int SHP_CalcTotalSize(const SHPHeader* img)` (0x3b4478): the bytes of
+/// a whole block chain laid out as `SHP_Relocate` lays it out: each block
+/// after the first starts at the next 16-byte boundary (relative to `img`'s
+/// own alignment).
+pub fn shp_calc_total_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x70);
+        c.g[V1][0] = !0xf;
+        frame.save(c, S0, 0x60);
+        // s0 the block, s1 the size, s2 the pad to a 16-byte boundary, s3
+        // the block's own size.
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x50);
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(0xf));
+        frame.save(c, S2, 0x40);
+        c.g[V0][0] &= c.g[V1][0];
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S5, 0x10);
+        c.g[S2][0] = sx(r32(c, V0).wrapping_sub(r32(c, S0)));
+        let none = c.g[S0][0] == 0;
+        frame.save_ra(c, 0);
+        if !none {
+            c.cycles += 3;
+            c.g[S4][0] = !0xf;
+            c.g[S5][0] = sx(r32(c, S2).wrapping_sub(0x10));
+            loop {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                callee::SHP_GET_BLOCK_SIZE.call(c, 0x003b_44c8)?;
+                let first = c.g[S1][0] == 0;
+                c.g[S3][0] = c.g[V0][0];
+                if !first {
+                    shp_align_next_block(c, S0, S1, S2, S4, S5, 0x003b_44d8)?;
+                }
+                c.cycles += 7;
+                c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+                shp_next_block(c, S0);
+                let more = c.g[S0][0] != 0;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, S3)));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, CALC_TOTAL_SIZE_LOOP);
+                }
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The loop head of `SHP_Relocate`.
+pub(crate) const RELOCATE_LOOP: u32 = 0x003b_45a0;
+
+/// `"EAGL%d"`: the text `SHP_Relocate` writes into a copied "i" block.
+pub(crate) const SHP_INFO_TEXT_FORMAT: u32 = 0x0049_57b8;
+
+/// The smallest "i" block that gets that text.
+pub(crate) const SHP_INFO_TEXT_MIN_SIZE: i64 = 21;
+
+/// `void SHP_Relocate(SHPHeader* dst, const SHPHeader* src)` (0x3b4540):
+/// copy the block chain at `src` to `dst`, block by block at the offsets
+/// `SHP_CalcTotalSize` counts, relinking each copied block's next offset
+/// (the last one ends the chain). A copied "i" block of 21 bytes or more
+/// gets `"EAGL<w>"` (its +4 half) written at +0x10.
+pub fn shp_relocate(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V1][0] = !0xf;
+        frame.save(c, S0, 0x90);
+        // s0 the source block, s7 dst, s3 the offset, s2 the copied block,
+        // s1 the block's size, s4 the pad to a 16-byte boundary.
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x70);
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(0xf));
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        c.g[V0][0] &= c.g[V1][0];
+        frame.save(c, S7, 0x20);
+        c.g[S3][0] = 0;
+        frame.save(c, S1, 0x80);
+        c.g[S7][0] = c.g[A0][0];
+        frame.save(c, S5, 0x40);
+        c.g[S4][0] = sx(r32(c, V0).wrapping_sub(r32(c, S0)));
+        frame.save(c, S6, 0x30);
+        c.g[S2][0] = 0;
+        frame.save(c, FP, 0x10);
+        let none = c.g[S0][0] == 0;
+        frame.save_ra(c, 0);
+        if !none {
+            c.cycles += 4;
+            c.g[S5][0] = !0xf;
+            c.g[S6][0] = sx(r32(c, S4).wrapping_sub(0x10));
+            c.g[FP][0] = 0x49_0000;
+            loop {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                callee::SHP_GET_BLOCK_SIZE.call(c, 0x003b_45a8)?;
+                let first = c.g[S3][0] == 0;
+                c.g[S1][0] = c.g[V0][0];
+                if !first {
+                    shp_align_next_block(c, S0, S3, S4, S5, S6, 0x003b_45b8)?;
+                }
+                // Link the previous copy to this one.
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S2][0];
+                let first_copy = c.g[A0][0] == 0;
+                c.g[S2][0] = sx(r32(c, S7).wrapping_add(r32(c, S3)));
+                if !first_copy {
+                    c.cycles += 5;
+                    let prev = Addr(r32(c, A0));
+                    c.g[V1][0] = prev.lbu(c);
+                    c.g[V0][0] = sx(r32(c, S2).wrapping_sub(r32(c, A0)));
+                    c.g[V0][0] = sx(r32(c, V0) << 8);
+                    c.g[V1][0] |= c.g[V0][0];
+                    prev.sw(c, c.g[V1][0]);
+                }
+                c.cycles += 3;
+                let copy = Addr(r32(c, S2));
+                c.g[V0][0] = copy.lbu(c);
+                let empty = c.g[S1][0] == 0;
+                copy.sw(c, c.g[V0][0]);
+                'next: {
+                    if !empty {
+                        c.cycles += 8;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S1][0];
+                        callee::EA_MEM_MOVE.call(c, 0x003b_4618)?;
+                        c.g[V0][0] = Addr(r32(c, S2)).lbu(c);
+                        c.g[V1][0] = SHP_BLOCK_I;
+                        if c.g[V0][0] == c.g[V1][0] {
+                            c.cycles += 3;
+                            c.g[V0][0] = ((c.g[S1][0] as i64) < SHP_INFO_TEXT_MIN_SIZE) as u64;
+                            if c.g[V0][0] == 0 {
+                                c.cycles += 4;
+                                c.g[A2][0] = Addr(r32(c, S2)).off(SHP_WIDTH).lh(c);
+                                c.g[A0][0] = sx(r32(c, S2).wrapping_add(SHP_DATA));
+                                c.g[A1][0] =
+                                    sx(r32(c, FP).wrapping_add(SHP_INFO_TEXT_FORMAT & 0xffff));
+                                callee::SPRINTF.call(c, 0x003b_4644)?;
+                            } else {
+                                c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+                                break 'next;
+                            }
+                        } else {
+                            c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+                            break 'next;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+                }
+                c.cycles += 6;
+                shp_next_block(c, S0);
+                let more = c.g[S0][0] != 0;
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(r32(c, S1)));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, RELOCATE_LOOP);
+                }
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SHPHeader* SHP_Clone(const SHPHeader* img)` (0x3b4690): a copy of the
+/// whole chain in a new block from the allocator hook (`SHP_CalcTotalSize`
+/// bytes, 16-byte aligned, named after the image's long name, flags
+/// 0x400). The allocation is not checked.
+pub fn shp_clone(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = 0x45_0000;
+        callee::SHP_CALC_TOTAL_SIZE.call(c, 0x003b_46b0)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        callee::SHP_FIND_LONG_NAME.call(c, 0x003b_46bc)?;
+        c.g[V1][0] = Addr(SHP_ALLOC_HOOK).lw(c);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0x10;
+        c.g[T0][0] = 0x400;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, r32(c, V1), 0x003b_46d8)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        callee::SHP_RELOCATE.call(c, 0x003b_46e8)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SHP_IsPaletteFormat`'s entry and end, and its jump table on
+/// `format - 0x20` (0x20..=0x38).
+pub(crate) const IS_PALETTE_FORMAT_ENTRY: u32 = 0x003b_4708;
+
+pub(crate) const IS_PALETTE_FORMAT_END: u32 = 0x003b_4740;
+
+pub(crate) const IS_PALETTE_FORMAT_TABLE: u32 = 0x0049_57c0;
+
+/// `bool SHP_IsPaletteFormat(int format)` (0x3b4708): whether the format
+/// is a palette's (0x20-0x22, 0x24, 0x29, 0x2a, 0x2c-0x2e, 0x30-0x33,
+/// 0x38). Resume entries go to the generated twin.
+pub fn shp_is_palette_format(c: &mut Cpu) {
+    if c.pc != IS_PALETTE_FORMAT_ENTRY {
+        return ee::s13::f_003b4708__entries(c);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = sx(r32(c, A0).wrapping_sub(SHP_FORMAT_PALETTE16 as u32));
+    c.g[V0][0] = (c.g[V1][0] < 0x19) as u64;
+    let in_table = c.g[V0][0] != 0;
+    c.g[A1][0] = 0;
+    if in_table {
+        c.cycles += 7;
+        c.g[V0][0] = IS_PALETTE_FORMAT_TABLE as u64;
+        c.g[V1][0] = sx(r32(c, V1) << 2);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+        match r32(c, A0) {
+            0x003b_4734 => {
+                c.cycles += 1;
+                c.g[A1][0] = 1;
+            }
+            0x003b_4738 => {}
+            target => {
+                c.jump_out(target, IS_PALETTE_FORMAT_ENTRY, IS_PALETTE_FORMAT_END);
+                return;
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A1][0];
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::game::render::shps::{SHPS_COUNT, SHPS_ENTRIES, SHPS_ENTRY_OFFSET, SHPS_ENTRY_SIZE};
     use crate::game::replay::replaycache::tests::oc420_hook_mem_free;
 
     use crate::difftest::events::check_events;
@@ -8410,5 +11041,2240 @@ pub(crate) mod tests {
                 machine_2(c, seed, 0x3add, 0x003a_dda0);
             },
         );
+    }
+
+    use crate::difftest::check_paths;
+    use crate::difftest::check_paths_lohi;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::Events;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// A machine for the SHP tests: scrambled registers, the game's gp and
+    /// its image (the bits-per-pixel table `SHP_GetBpp` reads), `pc` at the
+    /// function's entry.
+    pub(crate) fn shp_machine(c: &mut Cpu, seed: u32, salt: u64, entry: u32) -> Rng {
+        let mut r = Rng(0x5e1f_7a3b_0c4d_9e21 ^ (seed as u64) << 12 ^ salt);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        elf_image(c);
+        c.pc = entry;
+        r
+    }
+
+    /// Gate of the counted unwinds: magic, the index of the counted call
+    /// that unwinds, the calls counted so far. Every fake below (and the
+    /// cost fakes) counts its calls while the gate is set, so a seed can
+    /// make the k-th counted call of a run unwind; otherwise they run the
+    /// real body.
+    pub(crate) const SHP_UNWIND_GATE: u32 = DATA + 0xf_eb00;
+
+    pub(crate) const SHP_UNWIND_MAGIC: u32 = 0x5348_5057;
+
+    /// Count a call; true (with `pc` at an unwind address) when it is the
+    /// one the gate names.
+    pub(crate) fn shp_unwind_at_count(c: &mut Cpu) -> bool {
+        if c.bus.read32(SHP_UNWIND_GATE) != SHP_UNWIND_MAGIC {
+            return false;
+        }
+        let n = c.bus.read32(SHP_UNWIND_GATE + 8);
+        c.bus.write32(SHP_UNWIND_GATE + 8, n + 1);
+        if n != c.bus.read32(SHP_UNWIND_GATE + 4) {
+            return false;
+        }
+        c.pc = 0xdead_0000 | (n & 0xfff) << 4;
+        true
+    }
+
+    /// A counting fake for a callee slot: the real body unless the count
+    /// says unwind.
+    macro_rules! shp_counting_fake {
+        ($fake:ident, $prev:ident, $generated:path) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+            pub(crate) fn $fake(c: &mut Cpu) {
+                if shp_unwind_at_count(c) {
+                    return;
+                }
+                fakes::fall_back(c, &$prev, $generated)
+            }
+        };
+    }
+
+    shp_counting_fake!(
+        shp_count_format_from_bpp,
+        SHP_COUNT_PREV_FORMAT_FROM_BPP,
+        ee::s13::f_003b3da8__generated
+    );
+
+    shp_counting_fake!(
+        shp_count_get_bpp,
+        SHP_COUNT_PREV_GET_BPP,
+        ee::s13::f_003b39d8__generated
+    );
+
+    shp_counting_fake!(
+        shp_count_palette_entries,
+        SHP_COUNT_PREV_PALETTE_ENTRIES,
+        ee::s13::f_003b2688__generated
+    );
+
+    shp_counting_fake!(
+        shp_count_get_entry_name,
+        SHP_COUNT_PREV_GET_ENTRY_NAME,
+        ee::s13::f_003b3d00__generated
+    );
+
+    shp_counting_fake!(
+        shp_count_psmt4,
+        SHP_COUNT_PREV_PSMT4,
+        ee::s13::f_003b42b0__generated
+    );
+
+    shp_counting_fake!(
+        shp_count_psmt8,
+        SHP_COUNT_PREV_PSMT8,
+        ee::s13::f_003b4338__generated
+    );
+
+    shp_counting_fake!(
+        shp_count_psmct16,
+        SHP_COUNT_PREV_PSMCT16,
+        ee::s13::f_003b43c0__generated
+    );
+
+    shp_counting_fake!(
+        shp_count_psmct32,
+        SHP_COUNT_PREV_PSMCT32,
+        ee::s13::f_003b4448__generated
+    );
+
+    /// Hook every counting fake (and the cost fakes, which count too) and
+    /// make the `target`-th counted call unwind.
+    pub(crate) fn shp_unwind_setup(c: &mut Cpu, target: u32) {
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B3DA8),
+            shp_count_format_from_bpp,
+            &SHP_COUNT_PREV_FORMAT_FROM_BPP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B39D8),
+            shp_count_get_bpp,
+            &SHP_COUNT_PREV_GET_BPP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B2688),
+            shp_count_palette_entries,
+            &SHP_COUNT_PREV_PALETTE_ENTRIES,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B3D00),
+            shp_count_get_entry_name,
+            &SHP_COUNT_PREV_GET_ENTRY_NAME,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B42B0),
+            shp_count_psmt4,
+            &SHP_COUNT_PREV_PSMT4,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B4338),
+            shp_count_psmt8,
+            &SHP_COUNT_PREV_PSMT8,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B43C0),
+            shp_count_psmct16,
+            &SHP_COUNT_PREV_PSMCT16,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B4448),
+            shp_count_psmct32,
+            &SHP_COUNT_PREV_PSMCT32,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6448),
+            shp_init_header_fake_mem_set,
+            &SHP_INIT_HEADER_PREV_MEM_SET,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            shp_fake_sprintf_alloc,
+            &SHP_ALLOC_PREV_SPRINTF,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6574),
+            shp_fake_mem_copy,
+            &SHP_COPY_PREV_MEM_COPY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B2E78),
+            shp_decode_dxt_fake_color_block,
+            &SHP_DECODE_DXT_PREV_COLOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004165A8),
+            shps_fake_strcmp,
+            &SHPS_PREV_STRCMP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00416810),
+            shp_block_size_fake_strlen,
+            &SHP_BLOCK_SIZE_PREV_STRLEN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B47F8),
+            shp_fake_eac_unpack,
+            &SHP_UNPACK_PREV_EAC,
+        );
+        put_words(c, SHP_UNWIND_GATE, &[SHP_UNWIND_MAGIC, target, 0]);
+    }
+
+    /// Seeds past a test's `base` seeds are unwind seeds: fixture seed
+    /// `fixtures[s % len]`, unwinding at counted call `s / len` (`s` the
+    /// seed less `base`). Returns the fixture seed and the target.
+    pub(crate) fn shp_unwind_seed(seed: u32, base: u32, fixtures: &[u32]) -> (u32, Option<u32>) {
+        if seed < base {
+            return (seed, None);
+        }
+        let s = seed - base;
+        let n = fixtures.len() as u32;
+        (fixtures[(s % n) as usize], Some(s / n))
+    }
+
+    /// Bit depths the SHP code knows (4, 8, 15/16, 32, 0 meaning 32) and
+    /// one it does not (24).
+    pub(crate) const SHP_TEST_DEPTHS: [u64; 7] = [0, 4, 8, 15, 16, 24, 32];
+
+    /// Every known and unknown depth, and random ones (one path: the
+    /// totals differ only by `SHP_FormatFromBpp`'s branch for the depth).
+    #[test]
+    fn shp_normalize_bpp_matches() {
+        // Seeds 160..163 unwind at FormatFromBpp or GetBpp (4 and 8 bpp).
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let (seed, unwind) = shp_unwind_seed(seed, 160, &[1, 2]);
+            let mut r = shp_machine(c, seed, 0x2528, 0x003b_2528);
+            c.g[A0][0] = match seed % 8 {
+                7 => r.next_u32() as u64,
+                k => SHP_TEST_DEPTHS[k as usize],
+            };
+            if let Some(k) = unwind {
+                shp_unwind_setup(c, k);
+            }
+        };
+        // 16/15: 29, 4: 31, 0/24/32: 32, 8: 33.
+        check_paths(
+            ee::s13::f_003b2528__generated,
+            shp_normalize_bpp,
+            164,
+            &[29, 31, 32, 33],
+            setup,
+        );
+    }
+
+    /// Size bits (sizes up to `1 << bits`) and max levels of the mip loop.
+    pub(crate) const CALC_IMAGE_SIZE_BITS: [u32; 6] = [0, 1, 2, 4, 9, 16];
+
+    pub(crate) const CALC_IMAGE_SIZE_LEVELS: [i32; 5] = [-1, 0, 1, 3, 17];
+
+    /// Seeds that give every mip-loop sample `u` below 1260 (three per 8).
+    pub(crate) const CALC_IMAGE_SIZE_SEEDS: u32 = 1260 / 3 * 8;
+
+    /// `SHP_CalcImageSize` call state: the rejects (`seed % 8` 0-4: bad
+    /// width, no height, too tall, too many pixels, unknown depth; depth
+    /// `seed / 8 % 7`, the variant `seed / 56 % 2` or `% 4`: for the size
+    /// rejects one of them is the limit itself, which passes) and the mip
+    /// loop (5-7), numbering its seeds `u` = 0, 1, 2, ...: depth `u % 7`,
+    /// width and height up to `1 << bits` with bits `u / 7 % 6` and
+    /// `u / 42 % 6`, max level `u / 252 % 5`.
+    pub(crate) fn calc_image_size_call(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = shp_machine(c, seed, 0x2558, CALC_IMAGE_SIZE_ENTRY);
+        let depth = SHP_TEST_DEPTHS[(seed / 8 % 7) as usize];
+        let mut max_level = -1;
+        let (w, h, depth): (u32, u32, u64) = match seed % 8 {
+            0 => ([0, 0x10001, 0, 0x10000][(seed / 56 % 4) as usize], 4, depth),
+            1 => (8, if seed / 56 % 2 == 0 { 0 } else { 0xffff_fff0 }, depth),
+            2 => (8, if seed / 56 % 2 == 0 { 0x10001 } else { 0x10000 }, depth),
+            // 31250 x 32000 is exactly the most pixels.
+            3 if seed / 56 % 2 == 0 => (0x8000, 0x8000, depth),
+            3 => (31250, 32000, depth),
+            4 => (8, 8, 24),
+            k => {
+                let u = seed / 8 * 3 + (k - 5);
+                let depth = SHP_TEST_DEPTHS[(u % 7) as usize];
+                let w_bits = CALC_IMAGE_SIZE_BITS[(u / 7 % 6) as usize];
+                let h_bits = CALC_IMAGE_SIZE_BITS[(u / 42 % 6) as usize];
+                max_level = CALC_IMAGE_SIZE_LEVELS[(u / 252 % 5) as usize];
+                (
+                    1 + r.next_u32() % (1 << w_bits),
+                    1 + r.next_u32() % (1 << h_bits),
+                    if depth == 24 { 4 } else { depth },
+                )
+            }
+        };
+        c.g[A0][0] = w as u64;
+        c.g[A1][0] = sx(h);
+        c.g[A2][0] = depth;
+        c.g[A3][0] = max_level as i64 as u64;
+        r
+    }
+
+    /// Paths claimed (4 bpp, NormalizeBpp 31, FormatFromBpp 13): bad width
+    /// 62, no height 64, too tall 65, too many pixels 71, unknown depth (24,
+    /// 32 + 14) 92; the fixed shapes of `calc_image_size_fixed`: maxLevel -1
+    /// 96, 1x1 114, 2x2 with maxLevel 0 116, 2x1 136, 1x2 137.
+    #[test]
+    fn shp_calc_image_size_matches() {
+        // The last three seeds unwind at each counted call of a 4x4 image
+        // (NormalizeBpp's FormatFromBpp and GetBpp, then FormatFromBpp).
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let (seed, unwind) = shp_unwind_seed(seed, CALC_IMAGE_SIZE_SEEDS, &[4]);
+            calc_image_size_call(c, seed);
+            calc_image_size_fixed(c, seed);
+            if let Some(k) = unwind {
+                shp_unwind_setup(c, k);
+            }
+        };
+        check_paths_lohi(
+            ee::s13::f_003b2558__generated,
+            shp_calc_image_size,
+            CALC_IMAGE_SIZE_SEEDS + 3,
+            &[62, 64, 65, 71, 92, 96, 114, 116, 136, 137],
+            setup,
+        );
+    }
+
+    /// For the unknown-depth seeds of depth digit 0 (`seed % 56 == 4`;
+    /// that reject ignores the digit, so they repeat the others): a 4 bpp
+    /// image of a fixed shape picked by `seed / 56 % 5`.
+    pub(crate) fn calc_image_size_fixed(c: &mut Cpu, seed: u32) {
+        if seed % 56 != 4 {
+            return;
+        }
+        let (w, h, max_level): (u64, u64, u64) = match seed / 56 % 5 {
+            0 => (4, 4, u64::MAX),
+            1 => (1, 1, 5),
+            2 => (2, 2, 0),
+            3 => (2, 1, 5),
+            _ => (1, 2, 5),
+        };
+        c.g[A0][0] = w;
+        c.g[A1][0] = h;
+        c.g[A2][0] = 4;
+        c.g[A3][0] = max_level;
+    }
+
+    driven!(gen_shp_calc_image_size, ee::s13::f_003b2558__generated);
+
+    driven!(hand_shp_calc_image_size, shp_calc_image_size);
+
+    /// The mip loop with live events: the first back edge is past the event
+    /// deadline, so unwinds land on the next-level head (images wider than
+    /// one pixel) and on the level-test head (1-pixel-wide, taller images).
+    #[test]
+    fn shp_calc_image_size_events() {
+        check_events(
+            gen_shp_calc_image_size,
+            hand_shp_calc_image_size,
+            300,
+            &|c, seed| {
+                let mut r = calc_image_size_call(c, seed / 3 * 8 + 5 + seed / 3 % 3);
+                if seed / 9 % 2 == 0 {
+                    c.g[A0][0] = 1;
+                    c.g[A1][0] = 0x40 + (r.next_u32() % 0x400) as u64;
+                }
+                c.g[A3][0] = 17;
+                schedule(c, &mut r, seed, CALC_IMAGE_SIZE_ENTRY)
+            },
+        );
+    }
+
+    /// Where the SHP tests build images (16-byte aligned, inside the
+    /// filled area).
+    pub(crate) const SHP_TEST_IMAGE: u32 = DATA + 0x1230;
+
+    /// Gate of the `EA_MemSet` fake below: magic, the image (whose header
+    /// clear stays real), the palette data offset the fake leaves.
+    pub(crate) const SHP_INIT_HEADER_GATE: u32 = DATA + 0xf_e400;
+
+    pub(crate) const SHP_INIT_HEADER_MAGIC: u32 = 0x5348_5049;
+
+    pub(crate) static SHP_INIT_HEADER_PREV_MEM_SET: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemSet` for `SHP_InitHeader`'s palette tests: with the gate set,
+    /// a 16-byte clear of any block but the image instead leaves a header
+    /// whose data is at the offset stored at gate+8 (flags bit 12), so the
+    /// palette fill takes its "data elsewhere" arm.
+    pub(crate) fn shp_init_header_fake_mem_set(c: &mut Cpu) {
+        if shp_unwind_at_count(c) {
+            return;
+        }
+        let gate = SHP_INIT_HEADER_GATE;
+        if c.bus.read32(gate) != SHP_INIT_HEADER_MAGIC
+            || c.g[A2][0] != SHP_HEADER_SIZE
+            || r32(c, A0) == c.bus.read32(gate + 4)
+        {
+            return fakes::fall_back(
+                c,
+                &SHP_INIT_HEADER_PREV_MEM_SET,
+                ee::s14::f_003e6448__generated,
+            );
+        }
+        let block = r32(c, A0);
+        let offset = c.bus.read32(gate + 8);
+        put_words(c, block, &[0, 0, 0, SHP_FLAG_DATA_AT_OFFSET as u32, offset]);
+        c.cycles += 4;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// One `SHP_InitHeader` call: (w, h, bpp, palette bpp, maxLevel,
+    /// extra1, extra2, palette header kept by the fake).
+    pub(crate) type InitHeaderCall = (u32, u32, u32, u32, u32, u32, u32, bool);
+
+    /// The shapes whose totals `shp_init_header_matches` claims.
+    pub(crate) const INIT_HEADER_FIXED: [InitHeaderCall; 10] = [
+        (1, 1, 32, 0, 0, 0, 0, false),
+        (1, 1, 4, 0, 0, 0, 0, false),
+        (1, 1, 4, 16, 0, 0, 0, false),
+        (1, 1, 4, 32, 0, 0, 0, false),
+        (1, 1, 2, 32, 0, 0, 0, false),
+        (4, 1, 32, 0, 0, 0x18, 0x20, false),
+        (1, 1, 4, 16, 0, 0, 0, true),
+        (1, 1, 4, 32, 0, 0, 0, true),
+        (1, 1, 4, 0xffff_fff8, 0, 0, 0, false),
+        (1, 1, 4, 16, 0, 0x18, 0x20, false),
+    ];
+
+    /// Machine, filled image area and fake for an `SHP_InitHeader` call.
+    pub(crate) fn init_header_setup(c: &mut Cpu, seed: u32, call: InitHeaderCall) -> Rng {
+        let mut r = shp_machine(c, seed, 0x27c8, 0x003b_27c8);
+        fill(c, &mut r, DATA + 0x1000, 0x800);
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6448),
+            shp_init_header_fake_mem_set,
+            &SHP_INIT_HEADER_PREV_MEM_SET,
+        );
+        let (w, h, bpp, palette, max_level, extra1, extra2, keep) = call;
+        c.g[A0][0] = sx(SHP_TEST_IMAGE);
+        c.g[A1][0] = sx(w);
+        c.g[A2][0] = sx(h);
+        c.g[A3][0] = sx(bpp);
+        c.g[T0][0] = sx(palette);
+        c.g[T1][0] = sx(max_level);
+        c.g[T2][0] = sx(extra1);
+        c.g[T3][0] = sx(extra2);
+        if keep {
+            put_words(
+                c,
+                SHP_INIT_HEADER_GATE,
+                &[
+                    SHP_INIT_HEADER_MAGIC,
+                    SHP_TEST_IMAGE,
+                    0x40 + (r.next_u32() % 4) * 0x10,
+                ],
+            );
+        }
+        r
+    }
+
+    /// Every arm: `seed % 10 == 0` the fixed shapes (`seed / 10 % 10`);
+    /// otherwise the palette depth by `seed % 10` (none, out of range, 15,
+    /// 16, 18, 24, 32, 64, -8), the depth by `seed / 10 % 9` (0, 2, 4, 8,
+    /// 9, 16, 24, 32, -1), the kept palette header by `seed / 90 % 2`, random
+    /// sizes, levels and extra blocks. Seeds 480..489 unwind at each of the
+    /// ten counted calls of the palette-and-extras shape.
+    pub(crate) fn init_header_call(c: &mut Cpu, seed: u32) {
+        let (seed, unwind) = shp_unwind_seed(seed, 480, &[90]);
+        let call = if seed % 10 == 0 {
+            INIT_HEADER_FIXED[(seed / 10 % 10) as usize]
+        } else {
+            let mut r = Rng(0x27c8 ^ (seed as u64) << 20);
+            const PALETTES: [u32; 9] = [0, 4, 15, 16, 18, 24, 32, 0x40, 0xffff_fff8];
+            const DEPTHS: [u32; 9] = [0, 2, 4, 8, 9, 16, 24, 32, 0xffff_ffff];
+            let extra = |r: &mut Rng| {
+                if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    0x10 + r.next_u32() % 0x30
+                }
+            };
+            (
+                1 + r.next_u32() % 16,
+                1 + r.next_u32() % 16,
+                DEPTHS[(seed / 10 % 9) as usize],
+                PALETTES[(seed % 10 - 1) as usize],
+                (r.next_u32() % 6).wrapping_sub(1),
+                extra(&mut r),
+                extra(&mut r),
+                seed / 90 % 2 == 1,
+            )
+        };
+        init_header_setup(c, seed, call);
+        if let Some(k) = unwind {
+            shp_unwind_setup(c, k);
+        }
+    }
+
+    /// Totals of the fixed shapes: 32 bpp (no palette) 235; 4 bpp without a
+    /// palette 234, 0xff palette 393, grey ramp 467; 2 bpp (no entries) ramp
+    /// 317; 32 bpp 4x1 with both extra blocks 373; the kept palette header
+    /// (data at an offset) with 0xff bytes 358, with the ramp 432; a
+    /// palette of -8-bit entries (negative byte counts) 357; 0xff palette
+    /// and both extra blocks 529.
+    #[test]
+    fn shp_init_header_matches() {
+        check_paths_lohi(
+            ee::s13::f_003b27c8__generated,
+            shp_init_header,
+            490,
+            &[235, 234, 393, 467, 317, 373, 358, 432, 357, 529],
+            &|c, seed| init_header_call(c, seed),
+        );
+    }
+
+    driven!(gen_shp_init_header, ee::s13::f_003b27c8__generated);
+
+    driven!(hand_shp_init_header, shp_init_header);
+
+    /// The grey-ramp loop (16 or 256 entries) with live events at its back
+    /// edge (no other loop runs before it: a 1x1 image, 16-byte clears).
+    #[test]
+    fn shp_init_header_events() {
+        check_events(
+            gen_shp_init_header,
+            hand_shp_init_header,
+            240,
+            &|c, seed| {
+                let call = (
+                    1,
+                    1,
+                    if seed / 3 % 2 == 0 { 4 } else { 8 },
+                    if seed / 6 % 2 == 0 { 32 } else { 0x40 },
+                    0,
+                    0,
+                    0,
+                    seed / 12 % 2 == 1,
+                );
+                let mut r = init_header_setup(c, seed, call);
+                schedule(c, &mut r, seed, 0x003b_27c8)
+            },
+        );
+    }
+
+    /// Gate of `shp_fake_sprintf_alloc`: magic, the block the allocator
+    /// returns (0: fails), and which kind of call unwinds (1 a name, 2 an
+    /// allocation, 3 an "i" text, else none).
+    pub(crate) const SHP_ALLOC_GATE: u32 = DATA + 0xf_e500;
+
+    pub(crate) const SHP_ALLOC_MAGIC: u32 = 0x5348_5043;
+
+    pub(crate) static SHP_ALLOC_PREV_SPRINTF: AtomicUsize = AtomicUsize::new(0);
+
+    /// `sprintf` for the SHP tests, also standing in for the allocator
+    /// (the tests point the allocator hooks at `sprintf`), told apart by
+    /// the return address. With the gate set: `SHP_Create`'s name costs 24
+    /// cycles and returns 11; the allocations of `SHP_Create`, `SHP_Clone`
+    /// and `SHP_Unpack` cost 9 and return the gate's block;
+    /// `SHP_Relocate`'s "i" text costs 24 and returns 6 (nothing written).
+    /// Any of them can unwind instead.
+    pub(crate) fn shp_fake_sprintf_alloc(c: &mut Cpu) {
+        if shp_unwind_at_count(c) {
+            return;
+        }
+        let gate = SHP_ALLOC_GATE;
+        let ra = c.g[RA][0] as u32;
+        let kind = match ra {
+            0x003b_2ae8 => 1,
+            0x003b_2b08 | 0x003b_46d8 | 0x003b_364c | 0x003b_3798 => 2,
+            0x003b_4644 => 3,
+            _ => 0,
+        };
+        if c.bus.read32(gate) != SHP_ALLOC_MAGIC || kind == 0 {
+            return fakes::fall_back(c, &SHP_ALLOC_PREV_SPRINTF, ee::s15::f_00417828__generated);
+        }
+        match kind {
+            1 => {
+                c.cycles += 24;
+                c.g[V0][0] = 11;
+            }
+            2 => {
+                c.cycles += 9;
+                c.g[V0][0] = c.bus.read32(gate + 4) as u64;
+            }
+            _ => {
+                c.cycles += 24;
+                c.g[V0][0] = 6;
+            }
+        }
+        c.g[V1][0] = 0x5348_5000 | kind as u64;
+        c.pc = if c.bus.read32(gate + 8) == kind {
+            0xdead_0000 | kind << 4
+        } else {
+            ra
+        };
+    }
+
+    /// Hook `shp_fake_sprintf_alloc` and point both allocator hooks at
+    /// `sprintf`; with `block` the gate is set (`unwind` as above).
+    pub(crate) fn shp_alloc_setup(c: &mut Cpu, block: Option<u32>, unwind: u32) {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            shp_fake_sprintf_alloc,
+            &SHP_ALLOC_PREV_SPRINTF,
+        );
+        c.bus.write32(SHP_ALLOC_HOOK, 0x0041_7828);
+        c.bus.write32(SHP_UNPACK_ALLOC_HOOK, 0x0041_7828);
+        if let Some(block) = block {
+            put_words(c, SHP_ALLOC_GATE, &[SHP_ALLOC_MAGIC, block, unwind]);
+        }
+    }
+
+    /// Gate of `shp_fake_mem_copy`.
+    pub(crate) const SHP_COPY_GATE: u32 = DATA + 0xf_e900;
+
+    pub(crate) const SHP_COPY_MAGIC: u32 = 0x5348_504d;
+
+    pub(crate) static SHP_COPY_PREV_MEM_COPY: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemCopy` at a fixed cost (20 cycles) for the chain tests' path
+    /// totals: copies the bytes front to back.
+    pub(crate) fn shp_fake_mem_copy(c: &mut Cpu) {
+        if shp_unwind_at_count(c) {
+            return;
+        }
+        if c.bus.read32(SHP_COPY_GATE) != SHP_COPY_MAGIC {
+            return fakes::fall_back(c, &SHP_COPY_PREV_MEM_COPY, ee::s14::f_003e6574__generated);
+        }
+        let (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2) as i32);
+        for i in 0..n.max(0) as u32 {
+            let b = c.bus.read8(src + i);
+            c.bus.write8(dst + i, b);
+        }
+        c.cycles += 20;
+        c.g[V0][0] = c.g[A0][0];
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Hook `shp_fake_mem_copy`, gate set or not.
+    pub(crate) fn shp_copy_setup(c: &mut Cpu, on: bool) {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6574),
+            shp_fake_mem_copy,
+            &SHP_COPY_PREV_MEM_COPY,
+        );
+        if on {
+            c.bus.write32(SHP_COPY_GATE, SHP_COPY_MAGIC);
+        }
+    }
+
+    /// `SHP_Create` call state: `seed % 6` picks a fixed shape (0: the size
+    /// comes to 0; 1: the allocation fails; 2: 1x1 at 32 bpp) or random
+    /// sizes, depths, palettes and extras (3-5); the allocation fails for
+    /// `seed / 6 % 5 == 0`; the name or the allocation unwinds for
+    /// `seed / 30 % 4` 1 or 2.
+    pub(crate) fn create_call(c: &mut Cpu, seed: u32) {
+        let (seed, unwind_at) = shp_unwind_seed(seed, 360, &[2]);
+        let mut r = shp_machine(c, seed, 0x2a68, 0x003b_2a68);
+        fill(c, &mut r, DATA + 0x1000, 0x800);
+        let fails = seed % 6 == 1 || (seed % 6 >= 3 && seed / 6 % 5 == 0);
+        let unwind = if seed % 6 < 3 { 0 } else { seed / 30 % 4 };
+        shp_alloc_setup(c, Some(if fails { 0 } else { SHP_TEST_IMAGE }), unwind);
+        // (w, h, bpp, palBpp, maxLevel, extra1, extra2)
+        let args: [u32; 7] = match seed % 6 {
+            0 => [1, 1, 32, 0, 0, 0, 0xffff_ffdc],
+            1 | 2 => [1, 1, 32, 0, 0, 0, 0],
+            _ => {
+                const DEPTHS: [u32; 5] = [0, 4, 8, 16, 32];
+                const PALETTES: [u32; 5] = [0, 15, 16, 24, 32];
+                let extra = |r: &mut Rng| {
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        0x10 + r.next_u32() % 0x30
+                    }
+                };
+                [
+                    1 + r.next_u32() % 16,
+                    1 + r.next_u32() % 16,
+                    DEPTHS[(r.next_u32() % 5) as usize],
+                    PALETTES[(r.next_u32() % 5) as usize],
+                    r.next_u32() % 5,
+                    extra(&mut r),
+                    extra(&mut r),
+                ]
+            }
+        };
+        let [w, h, bpp, palette, max_level, extra1, extra2] = args;
+        c.g[A0][0] = sx(w);
+        c.g[A1][0] = sx(h);
+        c.g[A2][0] = sx(bpp);
+        c.g[A3][0] = sx(palette);
+        c.g[T0][0] = sx(max_level);
+        c.g[T1][0] = sx(r.next_u32());
+        c.g[T2][0] = sx(extra1);
+        c.g[T3][0] = sx(extra2);
+        if let Some(k) = unwind_at {
+            shp_unwind_setup(c, k);
+        }
+    }
+
+    /// Totals: the size comes to 0 (extra2 -0x24 cancels a 1x1 32 bpp
+    /// image) 232; the allocation fails 282; a 1x1 32 bpp image 525. Seeds
+    /// 360..371 unwind at each counted call of the 1x1 image (inside
+    /// CalcAllocSize, the name, the allocation, inside InitHeader).
+    #[test]
+    fn shp_create_matches() {
+        check_paths(
+            ee::s13::f_003b2a68__generated,
+            shp_create,
+            372,
+            &[232, 282, 525],
+            &|c, seed| create_call(c, seed),
+        );
+    }
+
+    /// A DXT block and its destination: alpha ends (`seed / 3 % 2`: alpha0
+    /// above alpha1 or not), indices all 0, all 7 or random (`seed / 6 %
+    /// 3`), the source at an odd address, a filled destination and a
+    /// random pitch. The index doublewords are loaded from `src + 2` and
+    /// `src + 5`, which the bus rounds down to 8 bytes: the index pattern
+    /// also goes into the three low bytes of each of those doublewords.
+    pub(crate) fn dxt_alpha_block(c: &mut Cpu, r: &mut Rng, seed: u32, src: u32, dst: u32) {
+        let (hi, lo) = (0x80 + r.next_u32() % 0x80, r.next_u32() % 0x80);
+        let (a0, a1) = match seed / 3 % 2 {
+            0 => (hi, lo),
+            _ if seed / 18 % 3 == 0 => (lo, lo),
+            _ => (lo, hi),
+        };
+        let mut block = [a0 as u8, a1 as u8, 0, 0, 0, 0, 0, 0];
+        for b in block[2..].iter_mut() {
+            *b = match seed / 6 % 3 {
+                0 => 0,
+                1 => 0xff,
+                _ => r.next_u32() as u8,
+            };
+        }
+        for (i, b) in block.iter().enumerate() {
+            c.bus.write8(src + i as u32, *b);
+        }
+        for half in [src.wrapping_add(2) & !7, src.wrapping_add(5) & !7] {
+            for i in 0..3 {
+                let b = match seed / 6 % 3 {
+                    0 => 0,
+                    1 => 0xff,
+                    _ => r.next_u32() as u8,
+                };
+                if half + i < src || half + i >= src + 2 {
+                    c.bus.write8(half + i, b);
+                }
+            }
+        }
+        fill(c, r, dst, 0x100);
+    }
+
+    /// Mode 3 or DXT5 (`seed % 3`), both palettes, all index values.
+    pub(crate) fn dxt_alpha_call(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = shp_machine(c, seed, 0x2b90, DXT_ALPHA_ENTRY);
+        let (src, dst) = (DATA + 0x1235, DATA + 0x2008);
+        dxt_alpha_block(c, &mut r, seed, src, dst);
+        c.g[A0][0] = sx(dst);
+        c.g[A1][0] = sx(0x20 + (r.next_u32() % 8) * 8);
+        c.g[A2][0] = sx(src);
+        c.g[A3][0] = match seed % 3 {
+            0 => DXT_MODE_EXPLICIT_ALPHA,
+            1 => 5,
+            _ => (r.next_u32() % 3) as u64,
+        };
+        r
+    }
+
+    /// Totals: mode 3 229; DXT5 sevenths palette 398 with indices 0, 382
+    /// with indices 7; fifths 385 / 369 (index 7 stores cost one cycle
+    /// less). Random indices reach every jump-table case.
+    #[test]
+    fn shp_decode_dxt_alpha_block_matches() {
+        check_paths_lohi(
+            ee::s13::f_003b2b90__generated,
+            shp_decode_dxt_alpha_block,
+            216,
+            &[229, 398, 382, 385, 369],
+            &|c, seed| {
+                dxt_alpha_call(c, seed);
+            },
+        );
+    }
+
+    driven!(
+        gen_shp_decode_dxt_alpha_block,
+        ee::s13::f_003b2b90__generated
+    );
+
+    driven!(hand_shp_decode_dxt_alpha_block, shp_decode_dxt_alpha_block);
+
+    /// Events at every loop head (delivered; the loops do not unwind).
+    /// `seed / 3 % 3`: random blocks with the default early deadline (the
+    /// first pixel or byte back edge), or a DXT5 sevenths block with indices
+    /// 0 whose deadline lands at the first row back edge (cycle 140 of the
+    /// run: the pixel checks fall at 90, 108, 126, the row check at 148) or
+    /// at the half back edge (220: last pixel check 204, half check 230).
+    #[test]
+    fn shp_decode_dxt_alpha_block_events() {
+        check_events(
+            gen_shp_decode_dxt_alpha_block,
+            hand_shp_decode_dxt_alpha_block,
+            216,
+            &|c, seed| {
+                let pick = seed / 3 % 3;
+                let mut r = dxt_alpha_call(c, if pick == 0 { seed / 9 } else { 1 });
+                let mode = schedule(c, &mut r, seed, DXT_ALPHA_ENTRY);
+                if mode != Events::Off && pick != 0 {
+                    c.next_event = c.cycles + if pick == 1 { 140 } else { 220 };
+                }
+                mode
+            },
+        );
+    }
+
+    /// `SHP_DXTAlphaIsOpaque` call: mode 3 or another (`seed % 2`); no
+    /// blocks (sizes <= 15, negative ones too) or 1..4 of them (`seed / 2 %
+    /// 4`, 0 meaning none); all opaque, or one block failing on its first
+    /// or (mode 3) second word (`seed / 8 % 3`); `blocks` overrides the
+    /// count.
+    pub(crate) fn dxt_opaque_call(c: &mut Cpu, seed: u32, blocks: Option<u32>) -> Rng {
+        let mut r = shp_machine(c, seed, 0x3308, 0x003b_3308);
+        let buf = DATA + 0x1238;
+        let explicit = seed % 2 == 0;
+        let n = blocks.unwrap_or(seed / 2 % 4 + seed / 24 % 2);
+        let size = match n {
+            0 => [0, 7, 15, 0xffff_fffb, 0xffff_ff9c, 0xffff_ffff][(r.next_u32() % 6) as usize],
+            _ => n * 16 + r.next_u32() % 16,
+        };
+        fill(c, &mut r, buf, 0x20 * (n + 1));
+        for i in 0..n {
+            let block = buf + i * 0x20;
+            if explicit {
+                c.bus.write64(block, 0xffff_ffff);
+                c.bus.write64(block + 8, 0xffff_ffff);
+            } else {
+                c.bus.write16(block, 0xffff);
+            }
+        }
+        if n > 0 {
+            let block = buf + r.next_u32() % n * 0x20;
+            let bit = 1u64 << (r.next_u32() % 64);
+            match seed / 8 % 3 {
+                0 => {}
+                1 if explicit => c.bus.write64(block, 0xffff_ffff ^ bit),
+                2 if explicit => c.bus.write64(block + 8, 0xffff_ffff ^ bit),
+                _ => c
+                    .bus
+                    .write16(block, 0xffff ^ (1 << (r.next_u32() % 16)) as u16),
+            }
+        }
+        c.g[A0][0] = sx(buf);
+        c.g[A1][0] = sx(size);
+        c.g[A2][0] = if explicit {
+            DXT_MODE_EXPLICIT_ALPHA
+        } else {
+            (r.next_u32() % 3) as u64
+        };
+        r
+    }
+
+    /// Totals: no blocks 12; other modes, one opaque block 19, failing 15;
+    /// mode 3, one opaque block 23, failing on the first word 17, on the
+    /// second 20.
+    #[test]
+    fn shp_dxt_alpha_is_opaque_matches() {
+        check_paths(
+            ee::s13::f_003b3308__generated,
+            shp_dxt_alpha_is_opaque,
+            288,
+            &[12, 19, 15, 23, 17, 20],
+            &|c, seed| {
+                dxt_opaque_call(c, seed, None);
+            },
+        );
+    }
+
+    driven!(gen_shp_dxt_alpha_is_opaque, ee::s13::f_003b3308__generated);
+
+    driven!(hand_shp_dxt_alpha_is_opaque, shp_dxt_alpha_is_opaque);
+
+    /// 40..63 blocks with live events at both loops' back edges.
+    #[test]
+    fn shp_dxt_alpha_is_opaque_events() {
+        check_events(
+            gen_shp_dxt_alpha_is_opaque,
+            hand_shp_dxt_alpha_is_opaque,
+            192,
+            &|c, seed| {
+                let mut r = dxt_opaque_call(c, seed / 3, Some(40 + seed % 24));
+                schedule(c, &mut r, seed, 0x003b_3308)
+            },
+        );
+    }
+
+    /// Gate of `shp_decode_dxt_fake_color_block`.
+    pub(crate) const SHP_DECODE_DXT_GATE: u32 = DATA + 0xf_e600;
+
+    pub(crate) const SHP_DECODE_DXT_MAGIC: u32 = 0x5348_5044;
+
+    pub(crate) static SHP_DECODE_DXT_PREV_COLOR: AtomicUsize = AtomicUsize::new(0);
+
+    /// `SHP_DecodeDXTColorBlock` for `SHP_DecodeDXT`'s path totals: with
+    /// the gate set it costs 10 cycles and leaves the block's first word
+    /// xor the pitch at the output.
+    pub(crate) fn shp_decode_dxt_fake_color_block(c: &mut Cpu) {
+        if shp_unwind_at_count(c) {
+            return;
+        }
+        if c.bus.read32(SHP_DECODE_DXT_GATE) != SHP_DECODE_DXT_MAGIC {
+            return fakes::fall_back(
+                c,
+                &SHP_DECODE_DXT_PREV_COLOR,
+                ee::s13::f_003b2e78__generated,
+            );
+        }
+        let block = r32(c, A2);
+        let v = c.bus.read32(block) ^ r32(c, A1);
+        let out = r32(c, A0);
+        c.bus.write32(out, v);
+        c.cycles += 10;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// `SHP_DecodeDXT` call: mode 3, 5 or DXT1 (`seed % 3`); the colour
+    /// fake on (`seed / 3 % 2`); 4x4, no rows (h 0 or -4), empty rows (w 0),
+    /// random sizes up to 16x16, -4 x -4 (a positive pixel count with no
+    /// rows) or w = 0x80000001 x 16 (16 pixels by 32-bit wrap, empty rows)
+    /// (`seed / 6 % 6`); opaque or transparent alpha (`seed / 36 % 2`; the
+    /// first DXT5 block's alpha ends 0xc0 > 0x40 with indices 0).
+    pub(crate) fn decode_dxt_call(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = shp_machine(c, seed, 0x33b0, 0x003b_33b0);
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B2E78),
+            shp_decode_dxt_fake_color_block,
+            &SHP_DECODE_DXT_PREV_COLOR,
+        );
+        let (blocks, out) = (DATA + 0x1230, DATA + 0x3008);
+        fill(c, &mut r, blocks, 0x200);
+        fill(c, &mut r, out, 0x300);
+        if seed / 3 % 2 == 1 {
+            c.bus.write32(SHP_DECODE_DXT_GATE, SHP_DECODE_DXT_MAGIC);
+        }
+        let mode = match seed % 3 {
+            0 => DXT_MODE_EXPLICIT_ALPHA,
+            1 => DXT_MODE_INTERPOLATED_ALPHA,
+            _ => [0, 1, 2, 4, 6][(r.next_u32() % 5) as usize],
+        };
+        let (w, h): (u32, u32) = match seed / 6 % 6 {
+            0 => (4, 4),
+            1 => (
+                4,
+                if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    0xffff_fffc
+                },
+            ),
+            2 => (0, 4),
+            3 => (1 + r.next_u32() % 16, 1 + r.next_u32() % 16),
+            4 => (0xffff_fffc, 0xffff_fffc),
+            _ => (0x8000_0001, 16),
+        };
+        let opaque = seed / 36 % 2 == 0;
+        for i in 0..16 {
+            let block = blocks + i * 0x20;
+            match (mode, opaque) {
+                (DXT_MODE_EXPLICIT_ALPHA, true) => {
+                    c.bus.write64(block, 0xffff_ffff);
+                    c.bus.write64(block + 8, 0xffff_ffff);
+                }
+                (DXT_MODE_EXPLICIT_ALPHA, false) if i == 0 => {
+                    c.bus.write64(block, 0x1234_5678_9abc_def0);
+                }
+                (DXT_MODE_INTERPOLATED_ALPHA, true) => c.bus.write16(block, 0xffff),
+                (DXT_MODE_INTERPOLATED_ALPHA, false) if i == 0 => {
+                    c.bus.write64(block, 0x40c0);
+                }
+                _ => {}
+            }
+        }
+        c.g[A0][0] = sx(blocks);
+        c.g[A1][0] = sx(out);
+        c.g[A2][0] = sx(w);
+        c.g[A3][0] = sx(h);
+        c.g[T0][0] = mode;
+        r
+    }
+
+    /// Totals with the colour fake: DXT1 4x4 66, no rows 36, empty rows
+    /// 46; mode 3 4x4 opaque 92, transparent 320, no rows 51, empty rows 61;
+    /// mode 5 4x4 opaque 91, transparent 490, no rows 54, empty rows 64;
+    /// transparent -4 x -4 (alpha walk, no rows) mode 3 56, mode 5 57;
+    /// transparent 0x80000001 x 16 (alpha walk, four empty rows) mode 3 87,
+    /// mode 5 88, DXT1 67. Seeds 432..434 unwind at the first colour block
+    /// of the alpha, opaque and DXT1 walks.
+    #[test]
+    fn shp_decode_dxt_matches() {
+        check_paths_lohi(
+            ee::s13::f_003b33b0__generated,
+            shp_decode_dxt,
+            435,
+            &[
+                66, 36, 46, 92, 320, 51, 61, 91, 490, 54, 64, 56, 57, 87, 88, 67,
+            ],
+            &|c, seed| {
+                let (seed, unwind) = shp_unwind_seed(seed, 432, &[39, 3, 5]);
+                decode_dxt_call(c, seed);
+                if let Some(k) = unwind {
+                    shp_unwind_setup(c, k);
+                }
+            },
+        );
+    }
+
+    /// The source pointer with a non-zero upper half (the low word as in
+    /// `decode_dxt_call`): the first colour block of a DXT1 image is passed
+    /// the whole register, an alpha image's the sign-extended word + 8.
+    #[test]
+    fn shp_decode_dxt_wide_source_matches() {
+        check_lohi(
+            ee::s13::f_003b33b0__generated,
+            shp_decode_dxt,
+            216,
+            &|c, seed| {
+                decode_dxt_call(c, seed);
+                c.g[A0][0] = c.g[A0][0] as u32 as u64 | 0x95e6_c37f << 32;
+            },
+        );
+    }
+
+    driven!(gen_shp_decode_dxt, ee::s13::f_003b33b0__generated);
+
+    driven!(hand_shp_decode_dxt, shp_decode_dxt);
+
+    /// Live events (`seed / 3 % 4`): random sizes with the default early
+    /// deadline (0; events land in the block decoders and the walks); an
+    /// 8x8 transparent mode 3 image (colour fake on) whose deadline lands
+    /// at the alpha walk's block back edge (1: cycle 290 of the run; the
+    /// first alpha block's last check is at 270, the block check at 303) or
+    /// at its row back edge (2: 545; last alpha check 523, row check 560);
+    /// a 4x8 opaque mode 3 image (one block per row, colour fake on) whose
+    /// deadline lands at the opaque walk's row back edge (3: cycle 70; the
+    /// only earlier check is DXTAlphaIsOpaque's at 46, the row check at 88).
+    #[test]
+    fn shp_decode_dxt_events() {
+        check_events(gen_shp_decode_dxt, hand_shp_decode_dxt, 240, &|c, seed| {
+            let pick = seed / 3 % 4;
+            let s = seed / 12;
+            let mut r = match pick {
+                0 => decode_dxt_call(c, s % 6 + 18 + s / 6 % 2 * 36 + s / 12 * 72),
+                3 => {
+                    let r = decode_dxt_call(c, 3);
+                    c.g[A3][0] = 8;
+                    r
+                }
+                _ => {
+                    let r = decode_dxt_call(c, 39);
+                    c.g[A2][0] = 8;
+                    c.g[A3][0] = 8;
+                    r
+                }
+            };
+            let mode = schedule(c, &mut r, seed, 0x003b_33b0);
+            if mode != Events::Off && pick != 0 {
+                c.next_event = c.cycles
+                    + match pick {
+                        1 => 290,
+                        2 => 545,
+                        _ => 70,
+                    };
+            }
+            mode
+        });
+    }
+
+    /// Every bit depth from 0 to 39 (each jump-table case) and random ones.
+    #[test]
+    fn shp_palette_format_for_bpp_matches() {
+        check_paths(
+            ee::s13::f_003b38b8__generated,
+            shp_palette_format_for_bpp,
+            200,
+            &[6, 15, 14, 13],
+            &|c, seed| {
+                let mut r = shp_machine(c, seed, 0x38b8, PALETTE_FORMAT_ENTRY);
+                c.g[A0][0] = if seed < 160 {
+                    (seed % 40) as u64
+                } else {
+                    sx(r.next_u32())
+                };
+            },
+        );
+    }
+
+    /// Entered at a jump-table case (0x3b38e4), the port hands the call to
+    /// the generated twin.
+    #[test]
+    fn shp_palette_format_for_bpp_inner_entry_matches() {
+        check(
+            ee::s13::f_003b38b8__generated,
+            shp_palette_format_for_bpp,
+            8,
+            &|c, seed| {
+                shp_machine(c, seed, 0x38b9, 0x003b_38e4);
+            },
+        );
+    }
+
+    /// Where the shape-sheet tests put the sheet, the name looked up and
+    /// the images (one 0x100-byte slot each).
+    pub(crate) const SHPS_TEST_SHEET: u32 = DATA + 0x1230;
+
+    pub(crate) const SHPS_TEST_NAME: u32 = DATA + 0x1101;
+
+    pub(crate) const SHPS_TEST_IMAGES: u32 = SHPS_TEST_SHEET + 0x200;
+
+    /// Write a NUL-terminated string.
+    pub(crate) fn shps_put_str(c: &mut Cpu, at: u32, text: &[u8]) {
+        for (i, b) in text.iter().chain(&[0]).enumerate() {
+            c.bus.write8(at + i as u32, *b);
+        }
+    }
+
+    /// One entry's image: a chain of `blocks` blocks 0x20 apart (format
+    /// bytes 0x05, 0x6f, ...), the one at `long_at` (if any) a "p" block
+    /// with the long name `"long<i>"`.
+    pub(crate) fn shps_put_image(c: &mut Cpu, i: u32, blocks: u32, long_at: Option<u32>) {
+        let image = SHPS_TEST_IMAGES + i * 0x100;
+        for k in 0..blocks {
+            let block = image + k * 0x20;
+            let format = if long_at == Some(k) {
+                0x70
+            } else {
+                [0x05, 0x6f, 0x69, 0x21][k as usize % 4]
+            };
+            let next = if k + 1 < blocks { 0x20 } else { 0 };
+            c.bus.write32(block, format | next << 8);
+            if long_at == Some(k) {
+                shps_put_str(c, block + 4, format!("long{i}").as_bytes());
+            }
+        }
+    }
+
+    /// A sheet of `count` entries named `"e<i>__"` (4 bytes), entry `i`'s
+    /// image `1 + r % 3` blocks long with or without a long name; `name`
+    /// the looked-up string.
+    pub(crate) fn shps_put_sheet(c: &mut Cpu, r: &mut Rng, count: u32, name: &[u8]) {
+        fill(c, r, SHPS_TEST_SHEET, 0x40);
+        c.bus.write32(SHPS_TEST_SHEET + SHPS_COUNT, count);
+        for i in 0..count.min(32) {
+            let entry = SHPS_TEST_SHEET + SHPS_ENTRIES + i * SHPS_ENTRY_SIZE;
+            for (k, b) in [b'e', b'0' + i as u8 % 10, b'_', b'_'].iter().enumerate() {
+                c.bus.write8(entry + k as u32, *b);
+            }
+            c.bus.write32(entry + SHPS_ENTRY_OFFSET, 0x200 + i * 0x100);
+            let blocks = 1 + r.next_u32() % 3;
+            let long_at = if r.next_u32() % 2 == 0 {
+                Some(r.next_u32() % blocks)
+            } else {
+                None
+            };
+            shps_put_image(c, i, blocks, long_at);
+        }
+        shps_put_str(c, SHPS_TEST_NAME, name);
+    }
+
+    /// Gate of `shps_fake_strcmp`.
+    pub(crate) const SHPS_GATE: u32 = DATA + 0xf_e700;
+
+    pub(crate) const SHPS_MAGIC: u32 = 0x5348_5053;
+
+    pub(crate) static SHPS_PREV_STRCMP: AtomicUsize = AtomicUsize::new(0);
+
+    /// `strcmp` at a fixed cost (12 cycles) for the shape-sheet path
+    /// totals: 0 when the strings are equal, else 1.
+    pub(crate) fn shps_fake_strcmp(c: &mut Cpu) {
+        if shp_unwind_at_count(c) {
+            return;
+        }
+        if c.bus.read32(SHPS_GATE) != SHPS_MAGIC {
+            return fakes::fall_back(c, &SHPS_PREV_STRCMP, ee::s15::f_004165a8__generated);
+        }
+        let (a, b) = (r32(c, A0), r32(c, A1));
+        let mut differs = 0;
+        for i in 0..64 {
+            let (x, y) = (c.bus.read8(a + i), c.bus.read8(b + i));
+            if x != y {
+                differs = 1;
+                break;
+            }
+            if x == 0 {
+                break;
+            }
+        }
+        c.cycles += 12;
+        c.g[V0][0] = differs;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// `SHPS_FindEntryByName` / `SHPS_Find` call: the strcmp fake on
+    /// (`seed % 2`); no entries (0 or negative), one entry that is itself
+    /// a "p" block, one without a long name, or 2..6 random entries
+    /// (`seed / 2 % 5`); the name matching an entry (its long name if it
+    /// has one) or not (`seed / 10 % 2`).
+    pub(crate) fn shps_find_call(c: &mut Cpu, seed: u32, entry: u32) -> Rng {
+        let mut r = shp_machine(c, seed, 0x3900, entry);
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004165A8),
+            shps_fake_strcmp,
+            &SHPS_PREV_STRCMP,
+        );
+        if seed % 2 == 1 {
+            c.bus.write32(SHPS_GATE, SHPS_MAGIC);
+        }
+        let matches = seed / 10 % 2 == 0;
+        let shape = seed / 2 % 5;
+        let count = match shape {
+            0 => [0, 0xffff_fffe][(r.next_u32() % 2) as usize],
+            1 | 2 => 1,
+            _ => 2 + r.next_u32() % 5,
+        };
+        shps_put_sheet(c, &mut r, count, b"nope");
+        if shape == 1 {
+            shps_put_image(c, 0, 1, Some(0));
+        } else if shape == 2 {
+            shps_put_image(c, 0, 1, None);
+        }
+        if matches && count < 32 && count > 0 {
+            // The name of a random entry, as the search will see it.
+            let i = r.next_u32() % count;
+            let long = shps_test_long_name(c, SHPS_TEST_IMAGES + i * 0x100);
+            let mut name = Vec::new();
+            match long {
+                Some(at) => {
+                    for k in 0..16 {
+                        let b = c.bus.read8(at + k);
+                        if b == 0 {
+                            break;
+                        }
+                        name.push(b);
+                    }
+                }
+                None => name.extend_from_slice(&[b'e', b'0' + i as u8 % 10, b'_', b'_']),
+            }
+            shps_put_str(c, SHPS_TEST_NAME, &name);
+        }
+        c.g[A0][0] = sx(SHPS_TEST_SHEET);
+        c.g[A1][0] = sx(SHPS_TEST_NAME);
+        r
+    }
+
+    /// Where the test images' long names are (the fixture's own walk).
+    pub(crate) fn shps_test_long_name(c: &mut Cpu, mut block: u32) -> Option<u32> {
+        loop {
+            let word = c.bus.read32(block);
+            if word & 0xff == 0x70 {
+                return Some(block + 4);
+            }
+            let next = (word as i32 >> 8) as u32;
+            if next == 0 {
+                return None;
+            }
+            block = block.wrapping_add(next);
+        }
+    }
+
+    /// `SHP_FindLongName`: chains of 1..4 blocks (`seed / 2 % 4`) with the
+    /// "p" block at some position or none (`seed / 8 % 4`); null for
+    /// `seed % 16 == 15`.
+    pub(crate) fn find_long_name_call(c: &mut Cpu, seed: u32, blocks: Option<u32>) -> Rng {
+        let mut r = shp_machine(c, seed, 0x3a10, 0x003b_3a10);
+        let blocks = blocks.unwrap_or(1 + seed / 2 % 4);
+        let long_at = match seed / 8 % 4 {
+            0 => None,
+            k => Some((k - 1 + r.next_u32()) % blocks),
+        };
+        fill(c, &mut r, SHPS_TEST_IMAGES, 0x400);
+        shps_put_image(c, 0, blocks, long_at);
+        c.g[A0][0] = if seed % 16 == 15 {
+            0
+        } else {
+            sx(SHPS_TEST_IMAGES)
+        };
+        r
+    }
+
+    /// Totals: null 4; found in the first block 8, the second 16; not
+    /// found in one block 14, in two 22.
+    #[test]
+    fn shp_find_long_name_matches() {
+        check_paths(
+            ee::s13::f_003b3a10__generated,
+            shp_find_long_name,
+            256,
+            &[4, 8, 16, 14, 22],
+            &|c, seed| {
+                find_long_name_call(c, seed, None);
+            },
+        );
+    }
+
+    driven!(gen_shp_find_long_name, ee::s13::f_003b3a10__generated);
+
+    driven!(hand_shp_find_long_name, shp_find_long_name);
+
+    /// Chains of 8..15 blocks with live events at the back edge.
+    #[test]
+    fn shp_find_long_name_events() {
+        check_events(
+            gen_shp_find_long_name,
+            hand_shp_find_long_name,
+            150,
+            &|c, seed| {
+                let mut r = find_long_name_call(c, seed / 3 % 4 * 8 + 2, Some(8 + seed % 8));
+                schedule(c, &mut r, seed, 0x003b_3a10)
+            },
+        );
+    }
+
+    /// `SHP_CalcPixelDataSize` call: a palette (or 0x22), DXT (or 0x63),
+    /// plain or random format (`seed % 4`); not swizzled, swizzled or random (`seed / 4 %
+    /// 3`); levels 0, 1 or random (`seed / 12 % 3`); a width with 16..23
+    /// extra entries, a random one, a negative one or 0x7fffffff (`seed /
+    /// 36 % 4`).
+    pub(crate) fn pixel_data_size_call(c: &mut Cpu, seed: u32, max_level: Option<u32>) -> Rng {
+        let mut r = shp_machine(c, seed, 0x3a50, 0x003b_3a50);
+        let format = match seed % 4 {
+            0 => SHP_FORMAT_PALETTE16 + (r.next_u32() % 3) as u64,
+            1 => SHP_FORMAT_DXT1 + (r.next_u32() % 4) as u64,
+            2 => 1 + (r.next_u32() % 5) as u64,
+            _ => (r.next_u32() & 0xff) as u64,
+        };
+        let swizzled = match seed / 4 % 3 {
+            0 => 0,
+            1 => 1,
+            _ => sx(r.next_u32()),
+        };
+        let max_level = max_level.unwrap_or(match seed / 12 % 3 {
+            0 => 0,
+            1 => 1,
+            _ => r.next_u32() % 16,
+        });
+        let w = match seed / 36 % 4 {
+            0 => 16 + r.next_u32() % 8 + 32 * (r.next_u32() % 2),
+            1 => r.next_u32() % 65,
+            // Negative widths (a negative palette byte count).
+            2 => 0u32.wrapping_sub(1 + r.next_u32() % 31),
+            // Rows of more than 2^31 bits (a negative product).
+            _ => 0x7fff_ffff,
+        };
+        c.g[A0][0] = format;
+        c.g[A1][0] = sx(w);
+        c.g[A2][0] = sx(r.next_u32() % 65);
+        c.g[A3][0] = max_level as u64;
+        c.g[T0][0] = swizzled;
+        r
+    }
+
+    /// Totals: a swizzled palette with 16..23 extra entries 57, other
+    /// widths 59; one level of a palette 71, a plain image 69, a DXT image
+    /// 73; two levels of a plain image 90.
+    #[test]
+    fn shp_calc_pixel_data_size_matches() {
+        check_paths_lohi(
+            ee::s13::f_003b3a50__generated,
+            shp_calc_pixel_data_size,
+            289,
+            &[57, 59, 71, 69, 73, 90],
+            &|c, seed| {
+                // Seed 288: a plain image unwinding at SHP_GetBpp.
+                let (seed, unwind) = shp_unwind_seed(seed, 288, &[2]);
+                pixel_data_size_call(c, seed, None);
+                if let Some(k) = unwind {
+                    shp_unwind_setup(c, k);
+                }
+            },
+        );
+    }
+
+    /// Swizzled palettes (both formats, one or two levels) whose width
+    /// leaves 24 or 15 extra entries: each one past an edge of the two
+    /// compares on `w % 32`.
+    #[test]
+    fn shp_calc_pixel_data_size_swizzled_widths_matches() {
+        check_lohi(
+            ee::s13::f_003b3a50__generated,
+            shp_calc_pixel_data_size,
+            16,
+            &|c, seed| {
+                pixel_data_size_call(c, seed, Some(seed / 8 % 2));
+                c.g[A0][0] = SHP_FORMAT_PALETTE16 + (seed % 2) as u64;
+                c.g[A1][0] = [24, 15, 56, 47][(seed / 2 % 4) as usize];
+                c.g[T0][0] = 1;
+            },
+        );
+    }
+
+    driven!(gen_shp_calc_pixel_data_size, ee::s13::f_003b3a50__generated);
+
+    driven!(hand_shp_calc_pixel_data_size, shp_calc_pixel_data_size);
+
+    /// 16 mip levels with live events at the loop's back edge.
+    #[test]
+    fn shp_calc_pixel_data_size_events() {
+        check_events(
+            gen_shp_calc_pixel_data_size,
+            hand_shp_calc_pixel_data_size,
+            150,
+            &|c, seed| {
+                let mut r = pixel_data_size_call(c, seed / 3 % 2 + 1 + seed / 6 * 4, Some(15));
+                schedule(c, &mut r, seed, 0x003b_3a50)
+            },
+        );
+    }
+
+    /// Gate of `shp_block_size_fake_strlen`.
+    pub(crate) const SHP_BLOCK_SIZE_GATE: u32 = DATA + 0xf_e800;
+
+    pub(crate) const SHP_BLOCK_SIZE_MAGIC: u32 = 0x5348_504c;
+
+    pub(crate) static SHP_BLOCK_SIZE_PREV_STRLEN: AtomicUsize = AtomicUsize::new(0);
+
+    /// `strlen` at a fixed cost (9 cycles) for `SHP_GetBlockSize`'s path
+    /// totals.
+    pub(crate) fn shp_block_size_fake_strlen(c: &mut Cpu) {
+        if shp_unwind_at_count(c) {
+            return;
+        }
+        if c.bus.read32(SHP_BLOCK_SIZE_GATE) != SHP_BLOCK_SIZE_MAGIC {
+            return fakes::fall_back(
+                c,
+                &SHP_BLOCK_SIZE_PREV_STRLEN,
+                ee::s15::f_00416810__generated,
+            );
+        }
+        let at = r32(c, A0);
+        let mut n = 0;
+        while n < 0x100 && c.bus.read8(at + n) != 0 {
+            n += 1;
+        }
+        c.cycles += 9;
+        c.g[V0][0] = n as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// A RefPack stream of `unpacked` bytes that ends at once (6 bytes).
+    pub(crate) fn shp_put_refpack_header(c: &mut Cpu, at: u32, unpacked: u32) {
+        let bytes = [
+            0x10,
+            0xfb,
+            (unpacked >> 16) as u8,
+            (unpacked >> 8) as u8,
+            unpacked as u8,
+            0xfc,
+        ];
+        for (i, b) in bytes.iter().enumerate() {
+            c.bus.write8(at + i as u32, *b);
+        }
+    }
+
+    /// `SHP_GetBlockSize` call on one block (`seed % 9`): "o"; "i" without
+    /// and with a size; "|"; "p" (strlen fake on for `seed / 9 % 2 == 0`);
+    /// a 4x4 32-bit image; a compressed image (its stream at +0x10, or at
+    /// an offset for `seed / 9 % 2 == 1`); one whose stream is empty; a
+    /// random image header.
+    pub(crate) fn block_size_call(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = shp_machine(c, seed, 0x3bb0, 0x003b_3bb0);
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00416810),
+            shp_block_size_fake_strlen,
+            &SHP_BLOCK_SIZE_PREV_STRLEN,
+        );
+        let block = SHP_TEST_IMAGE;
+        fill(c, &mut r, block, 0x40);
+        let alt = seed / 9 % 2 == 1;
+        let word0 = r.next_u32() & !0xff;
+        let set_format = |c: &mut Cpu, format: u32| c.bus.write32(block, word0 | format);
+        match seed % 9 {
+            0 => set_format(c, SHP_BLOCK_O as u32),
+            1 => {
+                set_format(c, SHP_BLOCK_I as u32);
+                c.bus.write16(block + 6, (r.next_u32() as u16) & !0x10);
+            }
+            2 => {
+                set_format(c, SHP_BLOCK_I as u32);
+                c.bus.write16(block + 6, (r.next_u32() as u16) | 0x10);
+                c.bus
+                    .write16(block + 4, if alt { 0 } else { r.next_u32() as u16 });
+            }
+            3 => set_format(c, SHP_BLOCK_PIPE as u32),
+            4 => {
+                set_format(c, SHP_BLOCK_LONG_NAME as u32);
+                let len = r.next_u32() % 20;
+                let name: Vec<u8> = (0..len).map(|i| b'a' + (i % 26) as u8).collect();
+                shps_put_str(c, block + 4, &name);
+                if !alt {
+                    c.bus.write32(SHP_BLOCK_SIZE_GATE, SHP_BLOCK_SIZE_MAGIC);
+                }
+            }
+            5 => {
+                put_words(c, block, &[word0 | 5, 4 | 4 << 16, 0, 0]);
+            }
+            6 | 7 => {
+                set_format(c, 0x85);
+                let unpacked = if seed % 9 == 7 {
+                    0
+                } else {
+                    1 + r.next_u32() % 0x1000
+                };
+                let flags = r.next_u32() & !(SHP_FLAG_DATA_AT_OFFSET as u32);
+                if alt && seed % 9 == 6 {
+                    c.bus
+                        .write32(block + SHP_FLAGS, flags | SHP_FLAG_DATA_AT_OFFSET as u32);
+                    c.bus.write32(block + SHP_DATA, 0x21);
+                    shp_put_refpack_header(c, block + 0x21, unpacked);
+                } else {
+                    c.bus.write32(block + SHP_FLAGS, flags);
+                    shp_put_refpack_header(c, block + SHP_DATA, unpacked);
+                }
+            }
+            _ => {
+                const FORMATS: [u32; 10] = [1, 2, 3, 4, 5, 0x20, 0x21, 0x60, 0x62, 0x7d];
+                set_format(c, FORMATS[(r.next_u32() % 10) as usize]);
+                c.bus.write16(block + 4, (r.next_u32() % 80) as u16);
+                c.bus.write16(block + 6, (r.next_u32() % 80) as u16);
+            }
+        }
+        c.g[A0][0] = sx(block);
+        r
+    }
+
+    /// Totals: "o" 15; "i" 20 / 25; "|" 24; "p" (strlen fake) 31; a 4x4
+    /// 32-bit image 100; compressed 77, with its stream at an offset 79,
+    /// empty 75.
+    #[test]
+    fn shp_get_block_size_matches() {
+        check_paths(
+            ee::s13::f_003b3bb0__generated,
+            shp_get_block_size,
+            272,
+            &[15, 20, 25, 24, 31, 100, 77, 79, 75],
+            &|c, seed| {
+                // Seeds 270, 271: unwinding at strlen ("p") and inside
+                // SHP_CalcPixelDataSize (the 4x4 image).
+                let (seed, unwind) = shp_unwind_seed(seed, 270, &[4, 5]);
+                block_size_call(c, seed);
+                if let Some(k) = unwind {
+                    shp_unwind_setup(c, k);
+                }
+            },
+        );
+    }
+
+    /// A block chain at `at`: one block per format, 0x20 apart, linked by
+    /// their next offsets (the last ends it).
+    pub(crate) fn shp_put_chain(c: &mut Cpu, at: u32, formats: &[u32]) {
+        for (k, format) in formats.iter().enumerate() {
+            let next = if k + 1 < formats.len() { 0x20 } else { 0 };
+            c.bus.write32(at + 0x20 * k as u32, format | next << 8);
+        }
+    }
+
+    /// `SHP_FindInfoData` call: null for `seed % 16 == 15`; chains of
+    /// 1..4 blocks (`seed / 2 % 4`) with an "i" block at some position or
+    /// none (`seed / 8 % 4`), its data flag set or not (`seed % 2`).
+    pub(crate) fn find_info_data_call(c: &mut Cpu, seed: u32, blocks: Option<u32>) -> Rng {
+        let mut r = shp_machine(c, seed, 0x3d40, 0x003b_3d40);
+        let blocks = blocks.unwrap_or(1 + seed / 2 % 4);
+        let info_at = match seed / 8 % 4 {
+            0 => None,
+            k => Some((k - 1 + r.next_u32()) % blocks),
+        };
+        fill(c, &mut r, SHP_TEST_IMAGE, 0x200);
+        let formats: Vec<u32> = (0..blocks)
+            .map(|k| {
+                if Some(k) == info_at {
+                    SHP_BLOCK_I as u32
+                } else {
+                    [0x05, 0x6f, 0x70, 0x7c][k as usize % 4]
+                }
+            })
+            .collect();
+        shp_put_chain(c, SHP_TEST_IMAGE, &formats);
+        if let Some(k) = info_at {
+            let flags = r.next_u32() as u16 & !(SHP_INFO_HAS_DATA as u16);
+            let flags = if seed % 2 == 0 {
+                flags | SHP_INFO_HAS_DATA as u16
+            } else {
+                flags
+            };
+            c.bus.write16(SHP_TEST_IMAGE + 0x20 * k + 6, flags);
+        }
+        c.g[A0][0] = if seed % 16 == 15 {
+            0
+        } else {
+            sx(SHP_TEST_IMAGE)
+        };
+        r
+    }
+
+    /// Totals: null 5; the image itself an "i" block 14; one block, none
+    /// 15; found second 23; two blocks, none 25.
+    #[test]
+    fn shp_find_info_data_matches() {
+        check_paths(
+            ee::s13::f_003b3d40__generated,
+            shp_find_info_data,
+            256,
+            &[5, 14, 15, 23, 25],
+            &|c, seed| {
+                find_info_data_call(c, seed, None);
+            },
+        );
+    }
+
+    driven!(gen_shp_find_info_data, ee::s13::f_003b3d40__generated);
+
+    driven!(hand_shp_find_info_data, shp_find_info_data);
+
+    /// Chains of 8..15 blocks with live events at the back edge.
+    #[test]
+    fn shp_find_info_data_events() {
+        check_events(
+            gen_shp_find_info_data,
+            hand_shp_find_info_data,
+            150,
+            &|c, seed| {
+                let mut r = find_info_data_call(c, seed / 3 % 8 * 2, Some(8 + seed % 8));
+                schedule(c, &mut r, seed, 0x003b_3d40)
+            },
+        );
+    }
+
+    /// `SHP_GetPixelPtr` call: 32-bit, DXT1, a palette (0x20/0x21) or 0x22,
+    /// another depth or a random format (`seed % 5`); data at an offset or
+    /// not (`seed / 5 % 2`); swizzled or not (`seed / 10 % 2`); level 0, 1
+    /// or random -1..5 (`seed / 20 % 3`); random sizes and coordinates,
+    /// negated for `seed / 60 % 2 == 1` (x = -1 for DXT1 with `seed / 120
+    /// % 2 == 1`).
+    pub(crate) fn pixel_ptr_call(c: &mut Cpu, seed: u32, level: Option<u32>) -> Rng {
+        let mut r = shp_machine(c, seed, 0x4010, 0x003b_4010);
+        let image = SHP_TEST_IMAGE;
+        fill(c, &mut r, image, 0x10);
+        let format = match seed % 5 {
+            0 => 5,
+            1 => SHP_FORMAT_DXT1 as u32,
+            2 => SHP_FORMAT_PALETTE16 as u32 + r.next_u32() % 3,
+            3 => 1 + r.next_u32() % 4,
+            _ => r.next_u32() & 0xff,
+        };
+        let mut flags = r.next_u32() & !((SHP_FLAG_DATA_AT_OFFSET | SHP_FLAG_SWIZZLED) as u32);
+        if seed / 5 % 2 == 1 {
+            flags |= SHP_FLAG_DATA_AT_OFFSET as u32;
+        }
+        if seed / 10 % 2 == 1 {
+            flags |= SHP_FLAG_SWIZZLED as u32;
+        }
+        let (w, h) = (1 + r.next_u32() % 256, 1 + r.next_u32() % 256);
+        c.bus.write32(image, r.next_u32() & !0xff | format);
+        c.bus.write16(image + SHP_WIDTH, w as u16);
+        c.bus.write16(image + SHP_HEIGHT, h as u16);
+        c.bus.write32(image + SHP_FLAGS, flags);
+        let level = level.unwrap_or(match seed / 20 % 3 {
+            0 => 0,
+            1 => 1,
+            _ => (r.next_u32() % 7).wrapping_sub(1),
+        });
+        // Negative coordinates for `seed / 60 % 2 == 1`.
+        let (x, y) = (r.next_u32() % w, r.next_u32() % h);
+        let (x, y) = if seed / 60 % 2 == 1 {
+            (x.wrapping_neg(), y.wrapping_neg().wrapping_sub(1))
+        } else {
+            (x, y)
+        };
+        let x = if seed % 5 == 1 && seed / 60 % 2 == 1 && seed / 120 % 2 == 1 {
+            u32::MAX
+        } else {
+            x
+        };
+        c.g[A0][0] = sx(image);
+        c.g[A1][0] = sx(x);
+        c.g[A2][0] = sx(y);
+        c.g[A3][0] = sx(level);
+        r
+    }
+
+    /// Totals: level 0 of a linear 32-bit image (or a linear palette) 79,
+    /// with the data at an offset 81; level 1 95; DXT1 93; swizzled
+    /// palettes of 32-bit entries 83, 16-bit 84; a swizzled 32-bit image
+    /// 104.
+    #[test]
+    fn shp_get_pixel_ptr_matches() {
+        check_paths_lohi(
+            ee::s13::f_003b4010__generated,
+            shp_get_pixel_ptr,
+            362,
+            &[79, 81, 95, 93, 83, 84, 104],
+            &|c, seed| {
+                // Seeds 360, 361: a swizzled 32-bit image unwinding at
+                // SHP_GetBpp, then inside SHP_SwizzleAddr.
+                let (seed, unwind) = shp_unwind_seed(seed, 360, &[10]);
+                pixel_ptr_call(c, seed, None);
+                if let Some(k) = unwind {
+                    shp_unwind_setup(c, k);
+                }
+            },
+        );
+    }
+
+    driven!(gen_shp_get_pixel_ptr, ee::s13::f_003b4010__generated);
+
+    driven!(hand_shp_get_pixel_ptr, shp_get_pixel_ptr);
+
+    /// 30..45 levels skipped with live events at the loop's back edge.
+    #[test]
+    fn shp_get_pixel_ptr_events() {
+        check_events(
+            gen_shp_get_pixel_ptr,
+            hand_shp_get_pixel_ptr,
+            150,
+            &|c, seed| {
+                let mut r = pixel_ptr_call(c, seed / 3, Some(30 + seed % 16));
+                schedule(c, &mut r, seed, 0x003b_4010)
+            },
+        );
+    }
+
+    /// `SHP_SwizzleAddr`: every depth case of the jump table and others
+    /// (`seed % 11`); for 16 bits the PSMCT16 arm by `seed / 11 % 2` (x in
+    /// the first page of a wide image, or a narrow one).
+    #[test]
+    fn shp_swizzle_addr_matches() {
+        check_paths(
+            ee::s13::f_003b4218__generated,
+            shp_swizzle_addr,
+            225,
+            &[11, 56, 55, 50, 51, 25, 18],
+            &|c, seed| {
+                // Seeds 220..224: unwinding in each layout (4, 8, 15, 16, 32).
+                let (seed, unwind) = shp_unwind_seed(seed, 220, &[0, 1, 2, 3, 4]);
+                let mut r = shp_machine(c, seed, 0x4218, SWIZZLE_ADDR_ENTRY);
+                const DEPTHS: [u32; 10] = [4, 8, 15, 16, 32, 24, 5, 3, 33, 100];
+                let bpp = match seed % 11 {
+                    10 => r.next_u32(),
+                    k => DEPTHS[k as usize],
+                };
+                let (x, w) = if seed / 11 % 2 == 0 {
+                    (r.next_u32() % 64, 128 + r.next_u32() % 512)
+                } else {
+                    (r.next_u32() % 128, 1 + r.next_u32() % 127)
+                };
+                c.g[A0][0] = sx(x);
+                c.g[A1][0] = sx(r.next_u32() % 512);
+                c.g[A2][0] = sx(w);
+                c.g[A3][0] = sx(r.next_u32() % 512);
+                c.g[T0][0] = sx(bpp);
+                if let Some(k) = unwind {
+                    shp_unwind_setup(c, k);
+                }
+            },
+        );
+    }
+
+    /// Entered at the jump-table dispatch (0x3b4234, case `seed % 0x1d`),
+    /// the port hands the call to the generated twin.
+    #[test]
+    fn shp_swizzle_addr_inner_entry_matches() {
+        check(
+            ee::s13::f_003b4218__generated,
+            shp_swizzle_addr,
+            29,
+            &|c, seed| {
+                shp_machine(c, seed, 0x4219, 0x003b_4234);
+                c.g[V1][0] = (seed % 0x1d) as u64;
+                c.bus.write64(c.g[SP][0] as u32, crate::difftest::RA as u64);
+            },
+        );
+    }
+
+    /// One block of a test chain.
+    #[derive(Clone, Copy)]
+    pub(crate) enum TestBlock {
+        /// An "o" block whose size field is the value (bytes: + 8).
+        O(u32),
+        /// An "i" block: size half, data flag.
+        I(u16, bool),
+        /// A palette (format 0x21) of w x h entries.
+        Palette(u16, u16),
+        /// A "p" block with a name of n letters.
+        Long(u32),
+        /// A "|" block of n entries.
+        Pipe(u32),
+    }
+
+    /// Write `blocks` as a chain at `at`, 0x40 bytes apart.
+    pub(crate) fn shp_put_test_chain(c: &mut Cpu, at: u32, blocks: &[TestBlock]) {
+        for (k, block) in blocks.iter().enumerate() {
+            let b = at + 0x40 * k as u32;
+            let next = if k + 1 < blocks.len() { 0x40 << 8 } else { 0 };
+            match *block {
+                TestBlock::O(n) => put_words(c, b, &[SHP_BLOCK_O as u32 | next, n]),
+                TestBlock::I(n, data) => {
+                    c.bus.write32(b, SHP_BLOCK_I as u32 | next);
+                    c.bus.write16(b + 4, n);
+                    c.bus.write16(b + 6, if data { 0x13 } else { 0x2 });
+                }
+                TestBlock::Palette(w, h) => {
+                    put_words(c, b, &[0x21 | next, w as u32 | (h as u32) << 16, 0, 0]);
+                }
+                TestBlock::Long(n) => {
+                    c.bus.write32(b, SHP_BLOCK_LONG_NAME as u32 | next);
+                    let name: Vec<u8> = (0..n).map(|i| b'a' + i as u8 % 26).collect();
+                    shps_put_str(c, b + 4, &name);
+                }
+                TestBlock::Pipe(n) => put_words(c, b, &[SHP_BLOCK_PIPE as u32 | next, n]),
+            }
+        }
+    }
+
+    /// A random chain of 1..5 blocks (small sizes).
+    pub(crate) fn shp_random_chain(r: &mut Rng, len: u32) -> Vec<TestBlock> {
+        (0..len)
+            .map(|_| match r.next_u32() % 5 {
+                0 => TestBlock::O(r.next_u32() % 0x30),
+                1 => TestBlock::I((r.next_u32() % 0x30) as u16, r.next_u32() % 2 == 0),
+                2 => {
+                    TestBlock::Palette(1 + (r.next_u32() % 8) as u16, 1 + (r.next_u32() % 2) as u16)
+                }
+                3 => TestBlock::Long(r.next_u32() % 12),
+                _ => TestBlock::Pipe(r.next_u32() % 4),
+            })
+            .collect()
+    }
+
+    /// The fixed chains whose totals the chain tests claim, by `k`: one
+    /// "o" block, two, an "o" then a palette, a palette alone.
+    pub(crate) fn shp_fixed_chain(k: u32) -> Vec<TestBlock> {
+        match k {
+            0 => vec![TestBlock::O(0x10)],
+            1 => vec![TestBlock::O(0x10), TestBlock::O(0x8)],
+            2 => vec![TestBlock::O(0x10), TestBlock::Palette(4, 1)],
+            _ => vec![TestBlock::Palette(4, 1)],
+        }
+    }
+
+    /// `SHP_CalcTotalSize` call: null (`seed % 8 == 7`), a fixed chain
+    /// (`seed % 8` 0..3) or a random one, at a 16-byte boundary or 8 past
+    /// one (`seed / 8 % 2`).
+    pub(crate) fn calc_total_size_call(c: &mut Cpu, seed: u32, len: Option<u32>) -> Rng {
+        let mut r = shp_machine(c, seed, 0x4478, 0x003b_4478);
+        let at = SHP_TEST_IMAGE + 8 * (seed / 8 % 2);
+        fill(c, &mut r, SHP_TEST_IMAGE, 0x800);
+        let chain = match (len, seed % 8) {
+            (Some(n), _) => shp_random_chain(&mut r, n),
+            (None, k @ 0..=3) => shp_fixed_chain(k),
+            _ => {
+                let n = 1 + r.next_u32() % 5;
+                shp_random_chain(&mut r, n)
+            }
+        };
+        shp_put_test_chain(c, at, &chain);
+        c.g[A0][0] = if seed % 8 == 7 { 0 } else { sx(at) };
+        r
+    }
+
+    /// Totals: null 25; one "o" block 54; two 93; "o" then a palette 189;
+    /// a palette alone 141.
+    #[test]
+    fn shp_calc_total_size_matches() {
+        check_paths(
+            ee::s13::f_003b4478__generated,
+            shp_calc_total_size,
+            161,
+            &[25, 54, 93, 189, 141],
+            &|c, seed| {
+                // Seed 160: the palette alone, unwinding inside its size.
+                let (seed, unwind) = shp_unwind_seed(seed, 160, &[3]);
+                calc_total_size_call(c, seed, None);
+                if let Some(k) = unwind {
+                    shp_unwind_setup(c, k);
+                }
+            },
+        );
+    }
+
+    driven!(gen_shp_calc_total_size, ee::s13::f_003b4478__generated);
+
+    driven!(hand_shp_calc_total_size, shp_calc_total_size);
+
+    /// Chains of 10..20 blocks with live events at the back edge (and in
+    /// the block-size callees).
+    #[test]
+    fn shp_calc_total_size_events() {
+        check_events(
+            gen_shp_calc_total_size,
+            hand_shp_calc_total_size,
+            150,
+            &|c, seed| {
+                let mut r = calc_total_size_call(c, seed / 3 % 2 * 8, Some(10 + seed % 11));
+                schedule(c, &mut r, seed, 0x003b_4478)
+            },
+        );
+    }
+
+    /// Where the chain tests copy to.
+    pub(crate) const SHP_TEST_COPY: u32 = DATA + 0x3008;
+
+    /// `SHP_Relocate` call: null source (`seed % 8 == 7`); one or two empty
+    /// "o" blocks (0, 1); one "o" block of 0x18 bytes (2); an "i" block with
+    /// text room (3; exactly the 21 bytes for `seed / 32 % 2`) or without
+    /// (4); a palette (5); random chains (6). The copy and
+    /// text fakes on for `seed / 8 % 2 == 0`; the source 16-byte aligned or
+    /// 8 past (`seed / 16 % 2`).
+    pub(crate) fn relocate_call(c: &mut Cpu, seed: u32, len: Option<u32>) -> Rng {
+        let mut r = shp_machine(c, seed, 0x4540, 0x003b_4540);
+        let fakes_on = seed / 8 % 2 == 0;
+        shp_copy_setup(c, fakes_on);
+        shp_alloc_setup(c, if fakes_on { Some(0) } else { None }, 0);
+        let at = SHP_TEST_IMAGE + 8 * (seed / 16 % 2);
+        fill(c, &mut r, SHP_TEST_IMAGE, 0x800);
+        fill(c, &mut r, SHP_TEST_COPY, 0x400);
+        let chain = match (len, seed % 8) {
+            (Some(n), _) => shp_random_chain(&mut r, n),
+            (None, 0) => vec![TestBlock::O(0xffff_fff8)],
+            (None, 1) => vec![TestBlock::O(0xffff_fff8), TestBlock::O(0xffff_fff8)],
+            (None, 2) => vec![TestBlock::O(0x10)],
+            (None, 3) if seed / 32 % 2 == 0 => vec![TestBlock::I(0x20, true)],
+            (None, 3) => vec![TestBlock::I(5, true)],
+            (None, 4) => vec![TestBlock::I(0x20, false)],
+            (None, 5) => vec![TestBlock::Palette(4, 1)],
+            _ => {
+                let n = 1 + r.next_u32() % 5;
+                shp_random_chain(&mut r, n)
+            }
+        };
+        shp_put_test_chain(c, at, &chain);
+        c.g[A0][0] = sx(SHP_TEST_COPY);
+        c.g[A1][0] = if seed % 8 == 7 { 0 } else { sx(at) };
+        r
+    }
+
+    /// Totals with the fakes: null 32; one empty block 68, two 105; one
+    /// "o" block copied 109; an "i" block with its text 151, without 117;
+    /// a palette 196.
+    #[test]
+    fn shp_relocate_matches() {
+        check_paths(
+            ee::s13::f_003b4540__generated,
+            shp_relocate,
+            228,
+            &[32, 68, 105, 109, 151, 117, 196],
+            &|c, seed| {
+                // Seeds 224..227: the palette unwinding inside its size and
+                // at its copy; the "i" block at its copy and at its text.
+                let (seed, unwind) = shp_unwind_seed(seed, 224, &[5, 3]);
+                relocate_call(c, seed, None);
+                if let Some(k) = unwind {
+                    shp_unwind_setup(c, k);
+                }
+            },
+        );
+    }
+
+    driven!(gen_shp_relocate, ee::s13::f_003b4540__generated);
+
+    driven!(hand_shp_relocate, shp_relocate);
+
+    /// Chains of 6..12 blocks (copy and text fakes on) with live events at
+    /// the back edge.
+    #[test]
+    fn shp_relocate_events() {
+        check_events(gen_shp_relocate, hand_shp_relocate, 150, &|c, seed| {
+            // The fakes on (a real sprintf could unwind mid-call).
+            let mut r = relocate_call(c, seed / 3 % 2 * 16, Some(6 + seed % 7));
+            schedule(c, &mut r, seed, 0x003b_4540)
+        });
+    }
+
+    /// `SHP_Clone` call: null (`seed % 5 == 3`), one empty "o" block (0),
+    /// one of 0x18 bytes (1), random chains (2), a palette (4); the copy
+    /// fake on for `seed / 5 % 2 == 0` (the allocation always faked); the
+    /// allocation unwinding for random chains with `seed / 10 % 3 == 1`.
+    /// Seeds 150..153 unwind at each counted call of the palette (inside
+    /// its total size, the allocation, inside its copy's size, the copy).
+    pub(crate) fn clone_call(c: &mut Cpu, seed: u32) {
+        let (seed, unwind_at) = shp_unwind_seed(seed, 150, &[4]);
+        let mut r = shp_machine(c, seed, 0x4690, 0x003b_4690);
+        let fakes_on = seed / 5 % 2 == 0;
+        shp_copy_setup(c, fakes_on);
+        let unwind = if seed % 5 == 2 && seed / 10 % 3 == 1 {
+            2
+        } else {
+            0
+        };
+        shp_alloc_setup(c, Some(SHP_TEST_COPY), unwind);
+        fill(c, &mut r, SHP_TEST_IMAGE, 0x800);
+        fill(c, &mut r, SHP_TEST_COPY, 0x400);
+        let chain = match seed % 5 {
+            0 => vec![TestBlock::O(0xffff_fff8)],
+            1 => vec![TestBlock::O(0x10)],
+            4 => vec![TestBlock::Palette(4, 1)],
+            _ => {
+                let n = 1 + r.next_u32() % 5;
+                shp_random_chain(&mut r, n)
+            }
+        };
+        shp_put_test_chain(c, SHP_TEST_IMAGE, &chain);
+        c.g[A0][0] = if seed % 5 == 3 { 0 } else { sx(SHP_TEST_IMAGE) };
+        if let Some(k) = unwind_at {
+            shp_unwind_setup(c, k);
+        }
+    }
+
+    /// Totals with the fakes: null 99; one empty block 174; one copied
+    /// 215; a palette 389.
+    #[test]
+    fn shp_clone_matches() {
+        check_paths(
+            ee::s13::f_003b4690__generated,
+            shp_clone,
+            154,
+            &[99, 174, 215, 389],
+            &|c, seed| clone_call(c, seed),
+        );
+    }
+
+    /// Every format from 0x18 to 0x3f (each jump-table case) and random
+    /// ones.
+    #[test]
+    fn shp_is_palette_format_matches() {
+        check_paths(
+            ee::s13::f_003b4708__generated,
+            shp_is_palette_format,
+            160,
+            &[6, 14, 13],
+            &|c, seed| {
+                let mut r = shp_machine(c, seed, 0x4708, IS_PALETTE_FORMAT_ENTRY);
+                c.g[A0][0] = if seed < 120 {
+                    0x18 + (seed % 40) as u64
+                } else {
+                    sx(r.next_u32())
+                };
+            },
+        );
+    }
+
+    /// Entered at a jump-table case (0x3b4734), the port hands the call to
+    /// the generated twin.
+    #[test]
+    fn shp_is_palette_format_inner_entry_matches() {
+        check(
+            ee::s13::f_003b4708__generated,
+            shp_is_palette_format,
+            8,
+            &|c, seed| {
+                shp_machine(c, seed, 0x4709, 0x003b_4734);
+            },
+        );
+    }
+
+    /// Gate of `shp_fake_eac_unpack`.
+    pub(crate) const SHP_UNPACK_GATE: u32 = DATA + 0xf_ea00;
+
+    pub(crate) const SHP_UNPACK_MAGIC: u32 = 0x5348_5055;
+
+    pub(crate) static SHP_UNPACK_PREV_EAC: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EAC_Unpack` for `SHP_Unpack`'s tests (the streams are not real):
+    /// 30 cycles, the first source word xor a pattern to the destination.
+    pub(crate) fn shp_fake_eac_unpack(c: &mut Cpu) {
+        if shp_unwind_at_count(c) {
+            return;
+        }
+        if c.bus.read32(SHP_UNPACK_GATE) != SHP_UNPACK_MAGIC {
+            return fakes::fall_back(c, &SHP_UNPACK_PREV_EAC, ee::s13::f_003b47f8__generated);
+        }
+        let (src, dst) = (r32(c, A0), r32(c, A1));
+        let v = c.bus.read32(src) ^ 0x5a5a_5a5a;
+        c.bus.write32(dst, v);
+        c.cycles += 30;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// An image whose next offset reaches address 0 (the chain's "end"
+    /// by wrap-around).
+    pub(crate) const SHP_TEST_LOW_IMAGE: u32 = 0x007f_1230;
+
+    /// `SHP_Unpack` call (`seed % 14`): null; one plain "o" block
+    /// (cloned); a compressed 4x4 image; a DXT3 4x4 opaque image; a
+    /// compressed image followed by an "o" block; a plain block whose next
+    /// offset wraps to 0; random (DXT1/3/5 of random sizes and levels,
+    /// compressed with a random tail, or a random plain chain); a DXT5
+    /// image of -5 x -6 (negative sizes rounded to blocks); a compressed
+    /// image whose new block is allocated 16 bytes below it, so the
+    /// decompression overwrites the source's next offset with 0; the DXT3
+    /// image with two levels; a compressed image followed by a 4x4 32-bit
+    /// image; a DXT1 4x4 image; DXT1 images of 2x8 and 8x2 with four levels
+    /// (the width, then the height, held at 1 for the last levels). The
+    /// copy and colour-block fakes on for `seed / 14 % 2 == 0` (the
+    /// allocator and `EAC_Unpack` always faked); the allocation unwinding
+    /// for `seed / 28 % 4 == 1`.
+    pub(crate) fn unpack_call(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = shp_machine(c, seed, 0x3578, 0x003b_3578);
+        let kind = seed % 14;
+        let fakes_on = seed / 14 % 2 == 0;
+        shp_copy_setup(c, fakes_on);
+        let unwind = if seed / 28 % 4 == 1 { 2 } else { 0 };
+        let block = if kind == 8 {
+            SHP_TEST_IMAGE - 0x10
+        } else {
+            SHP_TEST_COPY
+        };
+        shp_alloc_setup(c, Some(block), unwind);
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B47F8),
+            shp_fake_eac_unpack,
+            &SHP_UNPACK_PREV_EAC,
+        );
+        c.bus.write32(SHP_UNPACK_GATE, SHP_UNPACK_MAGIC);
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B2E78),
+            shp_decode_dxt_fake_color_block,
+            &SHP_DECODE_DXT_PREV_COLOR,
+        );
+        if fakes_on {
+            c.bus.write32(SHP_DECODE_DXT_GATE, SHP_DECODE_DXT_MAGIC);
+        }
+        let image = SHP_TEST_IMAGE;
+        fill(c, &mut r, image, 0x400);
+        fill(c, &mut r, SHP_TEST_COPY, 0x800);
+        // An image header: format, next offset, w, h, flags.
+        let put_image =
+            |c: &mut Cpu, at: u32, format: u32, next: u32, w: u32, h: u32, flags: u32| {
+                put_words(c, at, &[format | next << 8, w | h << 16, 0, flags]);
+            };
+        let mut at = image;
+        match kind {
+            0 => {}
+            1 => shp_put_test_chain(c, image, &[TestBlock::O(0x10)]),
+            2 => put_image(c, image, 0x85, 0, 4, 4, 0),
+            3 | 9 => {
+                let levels = if kind == 9 { 1 << 28 } else { 0 };
+                put_image(c, image, 0x61, 0, 4, 4, levels);
+                c.bus.write64(image + 0x10, 0xffff_ffff);
+                c.bus.write64(image + 0x18, 0xffff_ffff);
+            }
+            4 | 8 => {
+                put_image(c, image, 0x85, 0x40, 4, 4, 0);
+                put_words(c, image + 0x40, &[SHP_BLOCK_O as u32, 0x10]);
+                if kind == 8 {
+                    // EAC_Unpack's fake writes this word ^ 0x5a5a5a5a over
+                    // the source header: format 0x5f, next offset 0.
+                    c.bus.write32(image + 0x10, 0x5a5a_5a05);
+                }
+            }
+            5 => {
+                at = SHP_TEST_LOW_IMAGE;
+                let next = SHP_TEST_LOW_IMAGE.wrapping_neg() & 0x00ff_ffff;
+                put_words(c, at, &[SHP_BLOCK_O as u32 | next << 8, 0x10]);
+            }
+            7 => put_image(c, image, 0x62, 0, 0xfffb, 0xfffa, 0),
+            10 => {
+                put_image(c, image, 0x85, 0x40, 4, 4, 0);
+                put_image(c, image + 0x40, 5, 0, 4, 4, 0);
+            }
+            11 => put_image(c, image, SHP_FORMAT_DXT1 as u32, 0, 4, 4, 0),
+            12 => put_image(c, image, SHP_FORMAT_DXT1 as u32, 0, 2, 8, 3 << 28),
+            13 => put_image(c, image, SHP_FORMAT_DXT1 as u32, 0, 8, 2, 3 << 28),
+            _ => {
+                let len = r.next_u32() % 3;
+                let tail = shp_random_chain(&mut r, len);
+                let next = if tail.is_empty() { 0 } else { 0x100 };
+                let (w, h) = (1 + r.next_u32() % 16, 1 + r.next_u32() % 16);
+                let flags = (r.next_u32() % 3) << 28 | r.next_u32() & SHP_FLAG_SWIZZLED as u32;
+                match r.next_u32() % 3 {
+                    0 => put_image(c, image, 0x60 + r.next_u32() % 3, next, w, h, flags),
+                    1 => put_image(c, image, 0x80 | (1 + r.next_u32() % 5), next, w, h, flags),
+                    _ => put_image(c, image, 1 + r.next_u32() % 5, next, w, h, flags),
+                }
+                shp_put_test_chain(c, image + 0x100, &tail);
+            }
+        }
+        c.g[A0][0] = if kind == 0 { 0 } else { sx(at) };
+        r
+    }
+
+    /// Totals with the fakes: null 29; a plain block cloned 268, the one
+    /// whose next offset wraps to 0 269; a compressed image 235, with an
+    /// "o" block after it 413, with a 4x4 image after it 583; a DXT3 image
+    /// 526; DXT1 images: 4x4 512, the four-level 2x8 1579 and 8x2 1570.
+    /// Seeds 448..461 unwind at each of the seven counted calls of the
+    /// compressed-plus-image chain (the tail's size, the new block's size,
+    /// the allocation, the header copy, the decompression, the tail's copy)
+    /// and of the DXT3 image (its size, the allocation, the header copy, both
+    /// pixel pointers, the colour block).
+    #[test]
+    fn shp_unpack_matches() {
+        check_paths(
+            ee::s13::f_003b3578__generated,
+            shp_unpack,
+            462,
+            &[29, 268, 269, 235, 413, 583, 526, 512, 1579, 1570],
+            &|c, seed| {
+                let (seed, unwind) = shp_unwind_seed(seed, 448, &[10, 3]);
+                unpack_call(c, seed);
+                if let Some(k) = unwind {
+                    shp_unwind_setup(c, k);
+                }
+            },
+        );
+    }
+
+    /// DXT1/3/5 images (fakes on and off) with a width or a height of -1
+    /// (0xffff), or source flags with bit 3 set (below the level count).
+    #[test]
+    fn shp_unpack_dxt_edges_matches() {
+        check(
+            ee::s13::f_003b3578__generated,
+            shp_unpack,
+            18,
+            &|c, seed| {
+                // Kind 11 (one DXT1 4x4 image), fakes by `seed % 2`.
+                unpack_call(c, 11 + 14 * (seed % 2));
+                let (w, h, flags) =
+                    [(0xffff, 4, 0), (4, 0xffff, 0), (4, 4, 8)][(seed / 2 % 3) as usize];
+                let format = SHP_FORMAT_DXT1 as u32 + seed / 6 % 3;
+                put_words(c, SHP_TEST_IMAGE, &[format, w | h << 16, 0, flags]);
+            },
+        );
+    }
+
+    driven!(gen_shp_unpack, ee::s13::f_003b3578__generated);
+
+    driven!(hand_shp_unpack, shp_unpack);
+
+    /// Live events: random DXT, compressed and plain chains with the
+    /// default early deadline (`seed / 3 % 2 == 0`; events land in the
+    /// callees' loops), or the two-level DXT3 image with the deadline at
+    /// cycle 400 of the run, between the size loop's check (185) and the
+    /// level loop's back edge (530), so the event is delivered there.
+    #[test]
+    fn shp_unpack_events() {
+        check_events(gen_shp_unpack, hand_shp_unpack, 150, &|c, seed| {
+            let level_head = seed / 3 % 2 == 1;
+            let s = seed / 6;
+            let mut r = if level_head {
+                unpack_call(c, 9)
+            } else {
+                unpack_call(c, 6 + s % 2 * 14 + s / 2 * 56)
+            };
+            let mode = schedule(c, &mut r, seed, 0x003b_3578);
+            if mode != Events::Off && level_head {
+                c.next_event = c.cycles + 400;
+            }
+            mode
+        });
     }
 }

@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
@@ -14,6 +15,7 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -461,6 +463,87 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bezier_patch_cache_tessellate_patch,
         "BezierPatchCache_TessellatePatch",
     ),
+    (
+        0x0037_bc40,
+        gs_calc_buffer_size_in_pages,
+        "Gs_CalcBufferSizeInPages",
+    ),
+    (0x0037_bd38, gs_is_valid_frame_psm, "Gs_IsValidFramePsm"),
+    (0x0038_3808, gs_upload_image, "Gs_UploadImage"),
+    (0x0038_5138, c_ps2_grid_mesh_ctor, "cPS2GridMesh_ctor"),
+    (0x0038_5410, c_ps2_grid_mesh_v04, "cPS2GridMesh_v04"),
+    (0x0038_5530, c_ps2_grid_mesh_v05, "cPS2GridMesh_v05"),
+    (0x0038_56b8, c_ps2_grid_mesh_v06, "cPS2GridMesh_v06"),
+    (
+        0x0038_5eb0,
+        c_ps2_grid_mesh_build_strips,
+        "cPS2GridMesh_BuildStrips",
+    ),
+    (
+        0x0038_6128,
+        c_ps2_grid_mesh_build_dma_packet,
+        "cPS2GridMesh_BuildDmaPacket",
+    ),
+    (0x0037_5a40, renderer_init, "Renderer_Init"),
+    (
+        0x0037_6268,
+        ps2_graphics_man_shutdown,
+        "PS2GraphicsMan_Shutdown",
+    ),
+    (
+        0x0037_62f8,
+        ps2_graphics_man_find_display_mode,
+        "PS2GraphicsMan_FindDisplayMode",
+    ),
+    (
+        0x0037_64c0,
+        ps2_graphics_man_select_display_mode,
+        "PS2GraphicsMan_SelectDisplayMode",
+    ),
+    (
+        0x0037_bb10,
+        ps2_graphics_man_build_display_mode_table,
+        "PS2GraphicsMan_BuildDisplayModeTable",
+    ),
+    (
+        0x0037_bd98,
+        renderer_set_display_mode,
+        "Renderer_SetDisplayMode",
+    ),
+    (
+        0x0037_c198,
+        ps2_graphics_man_set_dither_matrix,
+        "PS2GraphicsMan_SetDitherMatrix",
+    ),
+    (
+        0x0037_c808,
+        ps2_graphics_man_snapshot_texture_table,
+        "PS2GraphicsMan_SnapshotTextureTable",
+    ),
+    (0x0037_d0b0, ps2_graphics_man_v48, "PS2GraphicsMan_v48"),
+    (0x0037_d318, ps2_graphics_man_v49, "PS2GraphicsMan_v49"),
+    (
+        0x0037_d738,
+        ps2_graphics_man_lock_texture,
+        "PS2GraphicsMan_LockTexture",
+    ),
+    (0x0038_2170, ps2_graphics_man_v87, "PS2GraphicsMan_v87"),
+    (
+        0x0038_2740,
+        renderer_dma_kick_thread_entry,
+        "Renderer_DmaKickThreadEntry",
+    ),
+    (
+        0x0038_2760,
+        renderer_dma_kick_thread,
+        "Renderer_DmaKickThread",
+    ),
+    (
+        0x0038_66e0,
+        ps2_graphics_man_set_phase2_callback,
+        "PS2GraphicsMan_SetPhase2Callback",
+    ),
+    (0x0038_66f0, ps2_graphics_man_v109, "PS2GraphicsMan_v109"),
 ];
 
 /// Same-shard direct callees used above.
@@ -874,6 +957,238 @@ pub(crate) mod callee {
     pub const STRLEN: u32 = 0x0041_6810;
 
     pub const WORLD_CREATE_DEAD_NODE: u32 = 0x002d_1cc0;
+
+    pub(crate) use crate::game::main::gamemode::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MEM_SET;
+
+    pub(crate) use crate::game::render::lightman::callee::DMA_SEND_GIF_CHAIN;
+
+    pub(crate) const C_PS2_GRID_MESH_PACK_UV: Callee = Callee {
+        addr: 0x0038_5ba0,
+        f: ee::s12::cPS2GridMesh_PackUV,
+    };
+
+    pub(crate) const C_PS2_GRID_MESH_PACK_COLOR: Callee = Callee {
+        addr: 0x0038_5aa0,
+        f: ee::s12::cPS2GridMesh_PackColor,
+    };
+
+    pub(crate) const C_PS2_GRID_MESH_BUILD_STRIPS: Callee = Callee {
+        addr: 0x0038_5eb0,
+        f: ee::s12::cPS2GridMesh_BuildStrips,
+    };
+
+    pub(crate) const C_PS2_GRID_MESH_BUILD_DMA_PACKET: Callee = Callee {
+        addr: 0x0038_6128,
+        f: ee::s12::cPS2GridMesh_BuildDmaPacket,
+    };
+
+    pub(crate) const RENDERER_STATIC_INIT_DESTROY: Callee = Callee {
+        addr: 0x0039_3048,
+        f: ee::s13::Renderer_StaticInitDestroy,
+    };
+    pub(crate) use crate::game::bx::bxstringctor::callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::dirtysock::buddyapi::callee::{
+        ADD_INTC_HANDLER, CREATE_THREAD, DELETE_SEMA, DELETE_THREAD, ENABLE_INTC, START_THREAD,
+        TERMINATE_THREAD,
+    };
+    pub(crate) use crate::game::dirtysock::buddyapi::callee::{SIGNAL_SEMA, WAIT_SEMA};
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::SPRINTF;
+    pub(crate) use crate::game::fe::ovstatepause::callee::BUILTIN_DELETE;
+    pub(crate) use crate::game::lib::eafile::callee::EA_MEM_COPY;
+    pub(crate) use crate::game::lib::kernel::callee::{CREATE_SEMA, FLUSH_CACHE};
+    pub(crate) use crate::game::lib::sif::callee::MEMSET;
+    pub(crate) use crate::game::render::particle::GCC_EXTENDSFDF2;
+    pub(crate) use crate::game::ui::uitext::oc445_callee::EA_TIMER_SET_VIDEO_MODE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::{DISABLE_INTC, REMOVE_INTC_HANDLER};
+
+    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE;
+    pub(crate) use crate::game::render::graphicsman::PS2GM_MATCH_BLENDED_MATRIX;
+
+    pub(crate) const REMOVE_DMAC_HANDLER: Callee = Callee {
+        addr: 0x0042_3ad0,
+        f: ee::s15::RemoveDmacHandler,
+    };
+
+    pub(crate) const TEX_MAN_SHUTDOWN: Callee = Callee {
+        addr: 0x0036_7360,
+        f: ee::s12::TexMan_Shutdown,
+    };
+
+    pub(crate) const INTC_TABLE_SHUTDOWN: Callee = Callee {
+        addr: 0x0036_1f40,
+        f: ee::s12::IntcTable_Shutdown,
+    };
+
+    pub(crate) const SCE_DMA_GET_CHAN: Callee = Callee {
+        addr: 0x003f_df88,
+        f: ee::s15::sceDmaGetChan,
+    };
+
+    pub(crate) const VU0_UPLOAD_MICROCODE_A: Callee = Callee {
+        addr: 0x0039_12a8,
+        f: ee::s12::Vu0_UploadMicrocodeA,
+    };
+
+    pub(crate) const VU0_UPLOAD_MICROCODE_B: Callee = Callee {
+        addr: 0x0039_1360,
+        f: ee::s12::Vu0_UploadMicrocodeB,
+    };
+
+    pub(crate) const SCE_DEV_VIF0_RESET: Callee = Callee {
+        addr: 0x003f_f060,
+        f: ee::s15::sceDevVif0Reset,
+    };
+
+    pub(crate) const SCE_DEV_VU0_RESET: Callee = Callee {
+        addr: 0x003f_e690,
+        f: ee::s15::sceDevVu0Reset,
+    };
+
+    pub(crate) const SCE_DEV_VU1_RESET: Callee = Callee {
+        addr: 0x003f_ebc0,
+        f: ee::s15::sceDevVu1Reset,
+    };
+
+    pub(crate) const SCE_GS_RESET_PATH: Callee = Callee {
+        addr: 0x003f_dab0,
+        f: ee::s15::sceGsResetPath,
+    };
+
+    pub(crate) const SCE_DMA_RESET: Callee = Callee {
+        addr: 0x003f_dfb0,
+        f: ee::s15::sceDmaReset,
+    };
+
+    pub(crate) const DISABLE_DMAC: Callee = Callee {
+        addr: 0x0042_4950,
+        f: ee::s15::DisableDmac,
+    };
+
+    pub(crate) const ADD_DMAC_HANDLER: Callee = Callee {
+        addr: 0x0042_3ac0,
+        f: ee::s15::f_00423ac0,
+    };
+
+    pub(crate) const ENABLE_DMAC: Callee = Callee {
+        addr: 0x0042_49b8,
+        f: ee::s15::EnableDmac,
+    };
+
+    pub(crate) const PS2_GRAPHICS_MAN_BUILD_DISPLAY_MODE_TABLE: Callee = Callee {
+        addr: 0x0037_bb10,
+        f: ee::s12::PS2GraphicsMan_BuildDisplayModeTable,
+    };
+
+    pub(crate) const DEFER_MAN_CTOR: Callee = Callee {
+        addr: 0x0039_4d50,
+        f: ee::s13::DeferMan_ctor,
+    };
+
+    pub(crate) const DEFER_MAN_INIT: Callee = Callee {
+        addr: 0x0036_29b8,
+        f: ee::s12::DeferMan_Init,
+    };
+
+    pub(crate) const TEX_MAN_CTOR: Callee = Callee {
+        addr: 0x0036_6fe8,
+        f: ee::s12::TexMan_ctor,
+    };
+
+    pub(crate) const INTC_TABLE_INIT: Callee = Callee {
+        addr: 0x0036_1eb8,
+        f: ee::s12::IntcTable_Init,
+    };
+
+    pub(crate) const PS2_GRAPHICS_MAN_SET_DITHER_MATRIX: Callee = Callee {
+        addr: 0x0037_c198,
+        f: ee::s12::PS2GraphicsMan_SetDitherMatrix,
+    };
+
+    pub(crate) const PS2_GRAPHICS_MAN_SET_BRIGHTNESS_RGB: Callee = Callee {
+        addr: 0x0037_c570,
+        f: ee::s12::PS2GraphicsMan_SetBrightnessRGB,
+    };
+
+    pub(crate) const PS2_GRAPHICS_MAN_SET_BRIGHTNESS_ALPHA: Callee = Callee {
+        addr: 0x0037_c720,
+        f: ee::s12::PS2GraphicsMan_SetBrightnessAlpha,
+    };
+
+    pub(crate) const RENDERER_SET_DISPLAY_MODE: Callee = Callee {
+        addr: 0x0037_bd98,
+        f: ee::s12::Renderer_SetDisplayMode,
+    };
+
+    pub(crate) const GS_CALC_BUFFER_SIZE_IN_PAGES: Callee = Callee {
+        addr: 0x0037_bc40,
+        f: ee::s12::Gs_CalcBufferSizeInPages,
+    };
+
+    pub(crate) const GS_IS_VALID_FRAME_PSM: Callee = Callee {
+        addr: 0x0037_bd38,
+        f: ee::s12::Gs_IsValidFramePsm,
+    };
+
+    pub(crate) const TEX_MAN_RESET_VRAM: Callee = Callee {
+        addr: 0x0036_7078,
+        f: ee::s12::TexMan_ResetVram,
+    };
+
+    pub(crate) const TEX_MAN_ALLOC_FRAME_BUFFER: Callee = Callee {
+        addr: 0x0036_73d8,
+        f: ee::s12::TexMan_AllocFrameBuffer,
+    };
+
+    pub(crate) const TEX_MAN_INIT_TEMP_HEAP: Callee = Callee {
+        addr: 0x0036_7340,
+        f: ee::s12::TexMan_InitTempHeap,
+    };
+
+    pub(crate) const SCE_GS_RESET_GRAPH: Callee = Callee {
+        addr: 0x003f_d910,
+        f: ee::s15::sceGsResetGraph,
+    };
+
+    pub(crate) const RENDERER_SET_DISPLAY_REGS: Callee = Callee {
+        addr: 0x0038_2af0,
+        f: ee::s12::Renderer_SetDisplayRegs,
+    };
+
+    pub(crate) use crate::game::world::streamman::EAC_UNPACK;
+    pub(crate) use crate::game::world::wscriptcache::callee::EA_MEM_MOVE;
+    pub(crate) use crate::game::world::wscriptcache::callee::SHPS_FIND_ENTRY_BY_NAME;
+
+    pub(crate) const TEX_MAN_UPDATE_TEXTURE_DATA: Callee = Callee {
+        addr: 0x0036_7d20,
+        f: ee::s12::TexMan_UpdateTextureData,
+    };
+
+    pub(crate) const TEX_MAN_LOCK_TEXTURE: Callee = Callee {
+        addr: 0x0036_7cd0,
+        f: ee::s12::TexMan_LockTexture,
+    };
+
+    pub(crate) const RENDERER_DMA_KICK_THREAD: Callee = Callee {
+        addr: 0x0038_2760,
+        f: ee::s12::Renderer_DmaKickThread,
+    };
+
+    /// `int strncmp(const char*, const char*, size_t)`.
+    pub(crate) const STRNCMP: Callee = Callee {
+        addr: 0x0041_6b18,
+        f: ee::s15::strncmp,
+    };
+
+    pub(crate) const PS2_GRAPHICS_MAN_GET_TEXTURE_BY_NAME: Callee = Callee {
+        addr: 0x0036_96c8,
+        f: ee::s12::PS2GraphicsMan_GetTextureByName,
+    };
+
+    pub(crate) const PS2_GRAPHICS_MAN_ALLOC_BLENDED_MATRIX_HISTORY: Callee = Callee {
+        addr: 0x0036_98e0,
+        f: ee::s12::PS2GraphicsMan_AllocBlendedMatrixHistory,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -6591,49 +6906,6 @@ pub fn ps2_graphics_man_emit_model_lighting(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // PS2 graphics manager.
 
-/// `void PS2GraphicsMan_Shutdown(PS2GraphicsMan* self)` (0x376268): tear down
-/// the GS/DMA channels, the texture manager and the interrupt table.
-pub fn ps2_graphics_man_shutdown(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 35;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0);
-        c.g[A0][0] = 2;
-        call_ptr(c, 0x0042_4880, 0x0037_6280)?;
-        c.g[A1][0] = Addr(p(r32(c, S0), 0x5ac0)).lw(c);
-        c.g[A0][0] = 2;
-        call_ptr(c, 0x0042_3aa0, 0x0037_628c)?;
-        c.g[A0][0] = 1;
-        call_ptr(c, 0x0042_4950, 0x0037_6294)?;
-        c.g[A1][0] = Addr(p(r32(c, S0), 0x5ac4)).lw(c);
-        c.g[A0][0] = 0;
-        call_ptr(c, 0x0042_3ad0, 0x0037_62a0)?;
-        c.g[A0][0] = Addr(p(r32(c, S0), 0x5ad0)).lw(c);
-        call_ptr(c, 0x0042_3bf0, 0x0037_62a8)?;
-        c.g[A0][0] = Addr(p(r32(c, S0), 0x5ad0)).lw(c);
-        call_ptr(c, 0x0042_3bb0, 0x0037_62b0)?;
-        c.g[A0][0] = Addr(p(r32(c, S0), 0x5ac8)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0037_62b8)?;
-        c.g[A0][0] = Addr(p(r32(c, S0), 0x5acc)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0037_62c0)?;
-        c.g[A0][0] = Addr(p(r32(c, S0), 0x18f0)).lw(c);
-        call_ptr(c, 0x0031_7e50, 0x0037_62c8)?;
-        c.g[A0][0] = Addr(p(r32(c, S0), 0x18f4)).lw(c);
-        call_ptr(c, 0x0036_7360, 0x0037_62d0)?;
-        c.g[A0][0] = Addr(p(r32(c, S0), 0x18f4)).lw(c);
-        call_ptr(c, 0x0031_7e50, 0x0037_62d8)?;
-        c.g[A0][0] = 0x0050_0000;
-        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x59d8));
-        call_ptr(c, 0x0036_1f40, 0x0037_62e4)?;
-        frame.restore(c, S0, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Line strips.
 
@@ -7267,206 +7539,6 @@ pub fn line_strip_finish(c: &mut Cpu) {
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
     c.pc = ra;
     return;
-}
-
-/// `PS2GraphicsMan_FindDisplayMode` (0x003762f8): find the index of the
-/// display-mode texture matching `(width, height, bpp, clutBpp, fmt, id)` in
-/// the manager's texture list (`self+0x59c4` count, `self+0x59cc` array of
-/// 0xa4-byte records), or -1.  Each of the three format fields must be
-/// supported by the entry: bpp selects `psm` (+0x90), clutBpp selects
-/// `clutPsm` (+0x94) and fmt 24 selects `fmt` (+0x98).
-pub fn ps2_graphics_man_find_display_mode(c: &mut Cpu) {
-    c.cycles += 11;
-    let frame = Frame::open(c, 0x30);
-    let this = c.g[A0][0] as u32;
-    c.g[T4][0] = 0u64;
-    frame.save(c, S0, 0x20);
-    frame.save(c, S1, 0x10);
-    c.g[S0][0] = c.g[T1][0]; // fmt
-    frame.save(c, S2, 0x0);
-    c.g[S1][0] = c.g[A2][0]; // height
-    c.g[S2][0] = c.g[A1][0]; // width
-    c.g[V0][0] = c.lw(this.wrapping_add(0x59c4));
-    let empty = (c.g[V0][0] as i64) <= 0;
-    c.g[V1][0] = c.lw(this.wrapping_add(0x59cc));
-    // `i` in T4, the current record in V1, the record count in T1.
-    if empty {
-        c.cycles += 1;
-        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
-    } else {
-        c.cycles += 7;
-        c.g[T1][0] = c.g[V0][0];
-        c.g[T7][0] = 0x18;
-        c.g[A2][0] = (c.g[A3][0] < 0x19u64) as u64; // bpp < 25
-        c.g[T9][0] = 0x10;
-        c.g[T8][0] = 0x20;
-        c.g[T5][0] = 0x1;
-        c.g[A1][0] = (c.g[T0][0] < 0x19u64) as u64; // clutBpp < 25
-        loop {
-            let rec = c.g[V1][0] as u32;
-            c.cycles += 3;
-            c.g[V0][0] = c.lw(rec.wrapping_add(0x88)); // width
-            if c.g[V0][0] != c.g[S2][0] {
-                c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(1));
-            } else {
-                c.cycles += 3;
-                c.g[V0][0] = c.lw(rec.wrapping_add(0x8c)); // height
-                if c.g[V0][0] != c.g[S1][0] {
-                    c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(1));
-                } else {
-                    c.cycles += 3;
-                    c.g[V0][0] = c.lw(rec.wrapping_add(0xa0)); // id
-                    if c.g[V0][0] != c.g[T2][0] {
-                        c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(1));
-                    } else {
-                        // ok1: the entry's pixel format supports `bpp`.
-                        c.cycles += 4;
-                        c.g[T3][0] = 0u64;
-                        c.g[A0][0] = 0u64;
-                        let fmt_24 = c.g[A3][0] == c.g[T7][0];
-                        c.g[T6][0] = 0u64;
-                        'bpp: {
-                            if fmt_24 {
-                                c.cycles += 2;
-                                c.g[T3][0] = c.g[T5][0];
-                                if c.g[V0][0] != 0 {
-                                    c.g[T3][0] = 0;
-                                }
-                                break 'bpp;
-                            }
-                            if c.g[A2][0] != 0 {
-                                c.cycles += 2;
-                                c.cycles += 2;
-                                if c.g[A3][0] == c.g[T9][0] {
-                                    c.g[V0][0] = c.lw(rec.wrapping_add(0x90));
-                                    c.cycles += 3;
-                                    c.g[T3][0] = c.g[T5][0];
-                                    c.g[V0][0] = c.g[V0][0] ^ 0x2;
-                                    if c.g[V0][0] != 0 {
-                                        c.g[T3][0] = 0;
-                                    }
-                                    c.cycles += 2;
-                                    c.g[T3][0] = c.g[T5][0];
-                                    if c.g[V0][0] != 0 {
-                                        c.g[T3][0] = 0;
-                                    }
-                                    break 'bpp;
-                                }
-                                c.cycles += 2;
-                                break 'bpp;
-                            }
-                            c.cycles += 2;
-                            c.cycles += 2;
-                            if c.g[A3][0] == c.g[T8][0] {
-                                c.g[V0][0] = c.lw(rec.wrapping_add(0x90));
-                                c.cycles += 4;
-                                c.g[V0][0] = c.g[V0][0] ^ 0x1;
-                                if c.g[V0][0] == 0 {
-                                    c.g[T3][0] = c.g[T5][0];
-                                }
-                            } else {
-                                c.cycles += 2;
-                            }
-                        }
-                        // ok2: the entry's CLUT format supports `clutBpp`.
-                        c.cycles += 2;
-                        let clut_24 = c.g[T0][0] == c.g[T7][0];
-                        if clut_24 {
-                            c.g[V0][0] = c.lw(rec.wrapping_add(0x94));
-                            c.cycles += 3;
-                            c.g[A0][0] = c.g[T5][0];
-                            c.g[V0][0] = c.g[V0][0] ^ 0x1;
-                            c.cycles += 1;
-                            if c.g[V0][0] != 0 {
-                                c.g[A0][0] = 0;
-                            }
-                        } else if c.g[A1][0] != 0 {
-                            c.cycles += 2;
-                            c.cycles += 2;
-                            if c.g[T0][0] == c.g[T9][0] {
-                                c.g[V0][0] = c.lw(rec.wrapping_add(0x94));
-                                c.cycles += 3;
-                                c.g[A0][0] = c.g[T5][0];
-                                c.g[V0][0] = c.g[V0][0] ^ 0x2;
-                                c.cycles += 1;
-                                if c.g[V0][0] != 0 {
-                                    c.g[A0][0] = 0;
-                                }
-                            } else {
-                                c.cycles += 2;
-                            }
-                        } else {
-                            c.cycles += 2;
-                            c.cycles += 2;
-                            if c.g[T0][0] == c.g[T8][0] {
-                                c.g[V0][0] = c.lw(rec.wrapping_add(0x94));
-                                c.cycles += 1;
-                                c.g[A0][0] = c.g[T5][0];
-                                c.cycles += 1;
-                                if c.g[V0][0] != 0 {
-                                    c.g[A0][0] = 0;
-                                }
-                            } else {
-                                c.cycles += 2;
-                            }
-                        }
-                        // ok3: only fmt 24 constrains the texture format.
-                        c.cycles += 2;
-                        if c.g[S0][0] == c.g[T7][0] {
-                            c.cycles += 4;
-                            c.g[V0][0] = c.lw(rec.wrapping_add(0x98));
-                            c.g[T6][0] = c.g[T5][0];
-                            c.g[V0][0] = c.g[V0][0] ^ 0x31;
-                            if c.g[V0][0] != 0 {
-                                c.g[T6][0] = 0;
-                            }
-                        }
-                        c.cycles += 2;
-                        if c.g[T3][0] == 0 {
-                            c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(1));
-                        } else {
-                            c.cycles += 2;
-                            if c.g[A0][0] == 0 {
-                                c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(1));
-                            } else {
-                                c.cycles += 2;
-                                let found = c.g[T6][0] != 0;
-                                c.g[V0][0] = c.g[T4][0];
-                                if found {
-                                    // Return the index.
-                                    c.cycles += 5;
-                                    frame.restore(c, S0, 0x20);
-                                    frame.restore(c, S1, 0x10);
-                                    frame.restore(c, S2, 0x0);
-                                    frame.restore_ra(c, 0);
-                                    frame.close(c);
-                                    return;
-                                }
-                                c.cycles += 1;
-                                c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(1));
-                            }
-                        }
-                    }
-                }
-            }
-            c.cycles += 3;
-            c.g[V0][0] = ((c.g[T4][0] as i64) < (c.g[T1][0] as i64)) as u64;
-            let more = c.g[V0][0] != 0;
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xa4));
-            if !more {
-                break;
-            }
-            if event_due(c) {
-                deliver_event_here(c, 0x0037_6340);
-            }
-        }
-    }
-    c.cycles += 5;
-    frame.restore(c, S0, 0x20);
-    frame.restore(c, S1, 0x10);
-    frame.restore(c, S2, 0x0);
-    frame.restore_ra(c, 0);
-    frame.close(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -12126,6 +12198,5210 @@ pub fn bezier_patch_cache_tessellate_patch(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod gs_psm {
+
+    pub const CT32: u64 = 0x00;
+
+    pub const CT24: u64 = 0x01;
+
+    pub const CT16: u64 = 0x02;
+
+    pub const CT16S: u64 = 0x0a;
+
+    pub const T8: u64 = 0x13;
+
+    pub const T4: u64 = 0x14;
+
+    pub const Z32: u64 = 0x30;
+
+    pub const Z24: u64 = 0x31;
+
+    pub const Z16: u64 = 0x32;
+
+    pub const Z16S: u64 = 0x3a;
+}
+
+pub(crate) mod gs_upload_packet {
+
+    pub const DMA_TAG: u32 = 0x00;
+
+    pub const GIF_TAG: u32 = 0x10;
+
+    pub const BITBLTBUF: u32 = 0x20;
+
+    pub const TRXPOS: u32 = 0x30;
+
+    pub const TRXREG: u32 = 0x40;
+
+    pub const TEXFLUSH: u32 = 0x50;
+
+    pub const TRXDIR: u32 = 0x60;
+
+    pub const IMAGE_TAG: u32 = 0x70;
+
+    pub const PIXELS_TAG: u32 = 0x80;
+
+    pub const SIZE: u32 = 0x90;
+
+    /// DMA tag `cnt` (id 1) with 7 quadwords.
+    pub const DMA_CNT_7: u64 = 0x1000_0007;
+
+    /// DMA tag id `ref` (3); `refe` is id 0.
+    pub const DMA_REF: u64 = 0x3000_0000;
+
+    /// GIF tag: NREG 1, NLOOP 5 (the register is A+D).
+    pub const GIF_AD_5: u64 = 0x1000_0000_0000_0005;
+
+    pub const GIF_REG_AD: u64 = 0xe;
+
+    /// GIF tag FLG = IMAGE, and its EOP bit.
+    pub const GIF_IMAGE: u64 = 0x0800_0000_0000_0000;
+
+    pub const GIF_EOP: u64 = 0x8000;
+
+    /// GS register numbers of the A+D writes.
+    pub const GS_BITBLTBUF: u64 = 0x50;
+
+    pub const GS_TRXPOS: u64 = 0x51;
+
+    pub const GS_TRXREG: u64 = 0x52;
+
+    pub const GS_TRXDIR: u64 = 0x53;
+
+    pub const GS_TEXFLUSH: u64 = 0x3f;
+}
+
+pub(crate) mod gmesh {
+
+    /// The vtable pointer.
+    pub const VTABLE_PTR: u32 = 0x04;
+
+    /// `D_00493208`: the `cPS2GridMesh` vtable.
+    pub const VTABLE: u32 = 0x0049_3208;
+
+    /// Batch table: 12-byte entries `{size, rows, vertices}`.
+    pub const STRIPS: u32 = 0x0c;
+
+    pub const STRIP_STRIDE: u32 = 0x0c;
+
+    /// Running VU1 input size of a batch (kept below 219 quadwords).
+    pub const STRIP_SIZE: u32 = 0x0;
+
+    /// Rows in the batch.
+    pub const STRIP_ROWS: u32 = 0x4;
+
+    /// Vertices in the batch.
+    pub const STRIP_VERTS: u32 = 0x8;
+
+    /// Number of batches.
+    pub const STRIP_COUNT: u32 = 0x18c;
+
+    /// Vertices per vertex row (u16).
+    pub const COLUMNS: u32 = 0x190;
+
+    /// Vertex rows (u16).
+    pub const VERTEX_ROWS: u32 = 0x192;
+
+    /// The scale `cPS2GridMesh_SetScale` sets, and the factor
+    /// `cPS2GridMesh_PackPosition` multiplies positions by.
+    pub const SCALE: u32 = 0x194;
+
+    pub const PACK_SCALE: u32 = 0x198;
+
+    /// The one allocation holding both packets and both row tables.
+    pub const BUFFER: u32 = 0x19c;
+
+    /// Which row table is in front (negative: fill both next time).
+    pub const TAB_INDEX: u32 = 0x1a0;
+
+    /// Set to 1 once vertex data has been packed.
+    pub const PACKED: u32 = 0x1a4;
+
+    /// Quadwords of one DMA packet.
+    pub const PACKET_QWC: u32 = 0x1a8;
+
+    /// The two DMA packets.
+    pub const PACKETS: u32 = 0x1ac;
+
+    /// The two row tables (one 16-byte entry per row, see `ROW_*`).
+    pub const ROW_TABS: u32 = 0x1b4;
+
+    /// Strip rows (`VERTEX_ROWS - 1`).
+    pub const ROWS: u32 = 0x1bc;
+
+    /// Vertices per strip row (`2 * COLUMNS`).
+    pub const ROW_VERTS: u32 = 0x1c0;
+
+    /// Unknown field +0x1c4 (the constructor's fourth argument).
+    pub const FIELD_1C4: u32 = 0x1c4;
+
+    /// 1 once the buffer was allocated and both packets built.
+    pub const VALID: u32 = 0x1c8;
+
+    /// Row table entry: `{vertices, positions, uvs, colours}` (pointers into
+    /// the packet's unpack data).
+    pub const ROW_STRIDE: u32 = 0x10;
+
+    pub const ROW_POSITIONS: u32 = 0x4;
+
+    pub const ROW_UVS: u32 = 0x8;
+
+    pub const ROW_COLORS: u32 = 0xc;
+
+    /// `"GridMeshMem"`, the allocation name.
+    pub const ALLOC_NAME: u32 = 0x0049_2e18;
+}
+
+/// Formats covered by the jump tables of the buffer helpers (`psm < 0x3b`).
+pub(crate) const GS_PSM_CASES: u64 = 0x3b;
+
+/// The jump tables (`.rodata`, 59 entries) of `Gs_CalcBufferSizeInPages`:
+/// the frame and the texture buffer's page count by pixel format.
+pub(crate) const GS_FRAME_PAGES_TABLE: u32 = 0x0049_2900;
+
+pub(crate) const GS_TEXTURE_PAGES_TABLE: u32 = 0x0049_29f0;
+
+/// log2 of the pixel rows in one GS page of a colour format as the
+/// buffer-size tables class them: 5 for the 32- and 24-bit formats (64x32
+/// pages), 6 for the 16-bit ones (64x64); `None` for formats the tables send
+/// to "no pages".
+pub(crate) fn gs_page_rows_log2(psm: u64) -> Option<u32> {
+    use gs_psm::{CT16, CT16S, CT24, CT32, Z16, Z16S, Z24, Z32};
+    match psm {
+        CT32 | CT24 | Z32 | Z24 => Some(5),
+        CT16 | CT16S | Z16 | Z16S => Some(6),
+        _ => None,
+    }
+}
+
+/// One table-driven buffer of `Gs_CalcBufferSizeInPages` (`psm` in range):
+/// the case address is loaded from `table` into `a0`, then `dest` = the
+/// width in 64-pixel blocks (`a1`) times the page rows of the height (`a2`),
+/// or 0 for a format without pages.
+pub(crate) fn gs_buffer_pages(c: &mut Cpu, psm: u64, table: u32, dest: usize) {
+    let entry = table.wrapping_add((psm as u32) << 2);
+    c.g[V0][0] = sx(table);
+    c.g[V1][0] = sx(entry);
+    c.g[A0][0] = Addr(entry).lw(c);
+    match gs_page_rows_log2(psm) {
+        Some(shift) => {
+            c.cycles += 4;
+            let rows = r32(c, A2).wrapping_add((1 << shift) - 1);
+            c.g[V0][0] = sx(((rows as i32) >> shift) as u32);
+            let (blocks, pages_high) = (r32(c, A1), r32(c, V0));
+            let pages = abi::mult(c, blocks, pages_high);
+            c.g[dest][0] = sx(pages);
+        }
+        None => {
+            c.cycles += 1;
+            c.g[dest][0] = 0;
+        }
+    }
+}
+
+/// `int Gs_CalcBufferSizeInPages(void* self, int width, int height, int
+/// framePsm, int texPsm, int zPsm)` (0x37bc40): the GS memory a `width` x
+/// `height` screen needs for its frame, texture and depth buffers, in
+/// 256-byte blocks: 32 per page, pages counted per 64-pixel column block
+/// and per page height of each buffer's format (0 pages for formats it does
+/// not know). Leaves the frame pages in `a3`, the texture pages in `v1` and
+/// the depth pages in `a1`.
+pub fn gs_calc_buffer_size_in_pages(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x3f));
+    let frame_psm = c.g[A3][0];
+    c.g[V0][0] = (frame_psm < GS_PSM_CASES) as u64;
+    // The width in 64-pixel blocks.
+    c.g[A1][0] = sx(((r32(c, A1) as i32) >> 6) as u32);
+    if frame_psm < GS_PSM_CASES {
+        c.cycles += 7;
+        gs_buffer_pages(c, frame_psm, GS_FRAME_PAGES_TABLE, A3);
+    } else {
+        c.cycles += 1;
+        c.g[A3][0] = 0;
+    }
+
+    c.cycles += 3;
+    let texture_psm = c.g[T0][0];
+    c.g[V0][0] = 0x0049_0000;
+    if texture_psm < GS_PSM_CASES {
+        c.cycles += 6;
+        gs_buffer_pages(c, texture_psm, GS_TEXTURE_PAGES_TABLE, V1);
+    } else {
+        c.cycles += 1;
+        c.g[V1][0] = 0;
+    }
+
+    // The depth buffer (signed compares): Z32/Z24 in 32-row pages, Z16/Z16S
+    // in 64-row pages, anything else none.
+    'depth: {
+        c.cycles += 3;
+        let depth_psm = c.g[T1][0];
+        let below_z32 = (depth_psm as i64) < gs_psm::Z32 as i64;
+        c.g[V0][0] = below_z32 as u64;
+        if below_z32 {
+            c.g[A1][0] = 0;
+            break 'depth;
+        }
+        c.cycles += 3;
+        let below_z16 = (depth_psm as i64) < gs_psm::Z16 as i64;
+        let height = r32(c, A2);
+        c.g[V0][0] = sx(height.wrapping_add(0x1f));
+        if below_z16 {
+            c.cycles += 3;
+            c.g[V0][0] = sx(((r32(c, V0) as i32) >> 5) as u32);
+            let (blocks, pages_high) = (r32(c, A1), r32(c, V0));
+            c.g[A1][0] = sx(abi::mult(c, blocks, pages_high));
+            break 'depth;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = gs_psm::Z16;
+        let z16 = depth_psm == gs_psm::Z16;
+        c.g[V0][0] = sx(height.wrapping_add(0x3f));
+        if !z16 {
+            c.cycles += 3;
+            c.g[V0][0] = gs_psm::Z16S;
+            if depth_psm != gs_psm::Z16S {
+                c.cycles += 2;
+                c.g[A1][0] = 0;
+                break 'depth;
+            }
+            c.g[V0][0] = sx(height.wrapping_add(0x3f));
+        }
+        c.cycles += 2;
+        c.g[V0][0] = sx(((r32(c, V0) as i32) >> 6) as u32);
+        let (blocks, pages_high) = (r32(c, A1), r32(c, V0));
+        c.g[A1][0] = sx(abi::mult(c, blocks, pages_high));
+    }
+
+    c.cycles += 4;
+    c.g[V0][0] = sx(r32(c, A3).wrapping_add(r32(c, V1)));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+    c.g[V0][0] = sx(r32(c, V0) << 5);
+    ret(c);
+}
+
+/// The jump table (`.rodata`, 59 entries) of `Gs_IsValidFramePsm`.
+pub(crate) const GS_FRAME_PSM_TABLE: u32 = 0x0049_2ae0;
+
+/// `bool Gs_IsValidFramePsm(void* self, int psm, int zPsm)` (0x37bd38):
+/// whether depth format `zPsm` goes with frame format `psm`: the 32/24-bit
+/// frame formats (and CT16S, Z32, Z24, Z16S) take Z32, Z24 or Z16S, CT16
+/// and Z16 only Z16; other formats none. (Z32/Z24 are matched on the low
+/// word only, Z16 and Z16S on the whole register.) The other entries (the
+/// jump table's cases) are served by the generated `__entries` twin.
+pub fn gs_is_valid_frame_psm(c: &mut Cpu) {
+    if c.pc != 0x0037_bd38 {
+        return ee::s12::f_0037bd38__entries(c);
+    }
+    'ret: {
+        'invalid: {
+            c.cycles += 3;
+            let psm = c.g[A1][0];
+            let zpsm = c.g[A2][0];
+            c.g[V0][0] = 0x0049_0000;
+            if psm >= GS_PSM_CASES {
+                break 'invalid;
+            }
+            c.cycles += 6;
+            let entry = GS_FRAME_PSM_TABLE.wrapping_add((psm as u32) << 2);
+            c.g[V0][0] = sx(GS_FRAME_PSM_TABLE);
+            c.g[V1][0] = sx(entry);
+            c.g[A0][0] = Addr(entry).lw(c);
+            use gs_psm::{CT16, CT16S, CT24, CT32, Z16, Z16S, Z24, Z32};
+            match psm {
+                CT32 | CT24 | CT16S | Z32 | Z24 | Z16S => {
+                    c.cycles += 4;
+                    let z32_or_z24 = sx((zpsm as u32).wrapping_sub(Z32 as u32)) < 2;
+                    c.g[V0][0] = Z16S;
+                    if !z32_or_z24 {
+                        c.cycles += 2;
+                        let z16s = zpsm == Z16S;
+                        c.g[V0][0] = 0;
+                        if !z16s {
+                            break 'ret;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                    ret(c);
+                    return;
+                }
+                CT16 | Z16 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = Z16;
+                    c.g[V0][0] = 1;
+                    if zpsm == Z16 {
+                        break 'ret;
+                    }
+                }
+                _ => {}
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = 0;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Gs_UploadImage (0x383808)
+
+/// The jump table (`.rodata`, 21 entries) of `Gs_UploadImage`: bytes per
+/// pixel row by format (`psm < 0x15`).
+pub(crate) const GS_UPLOAD_ROW_BYTES_TABLE: u32 = 0x0049_2dc0;
+
+pub(crate) const GS_UPLOAD_PSM_CASES: u64 = 0x15;
+
+/// The upload's DMA chain is built at the start of the scratchpad, one
+/// packet per chunk.
+pub(crate) const GS_UPLOAD_PACKET: u32 = 0x7000_0000;
+
+/// At most this many bytes of pixels go in one chunk.
+pub(crate) const GS_UPLOAD_CHUNK_BYTES: u64 = 0x7_fff0;
+
+/// `sd reg, off(t5)`: a doubleword of the current chunk's packet.
+pub(crate) fn gs_upload_put(c: &mut Cpu, off: u32, reg: usize) {
+    let at = r32(c, T5).wrapping_add(off);
+    let v = c.g[reg][0];
+    c.sd(at, v);
+}
+
+/// `sd zero, off(t5)`.
+pub(crate) fn gs_upload_put_zero(c: &mut Cpu, off: u32) {
+    let at = r32(c, T5).wrapping_add(off);
+    c.sd(at, 0);
+}
+
+/// `void Gs_UploadImage(void* self, void* pixels, int dbp, int width, int
+/// height, int dbw, int psm, int x, int y)` (0x383808): upload a `width` x
+/// `height` image of format `psm` to GS memory at block `dbp` (buffer width
+/// `dbw` pixels), position (`x`, `y`). Waits for the GIF channel, then
+/// builds in the scratchpad one packet per chunk of at most 0x7fff0 bytes
+/// (BITBLTBUF, TRXPOS, TRXREG, TEXFLUSH, TRXDIR, an IMAGE tag and a DMA
+/// reference to the chunk's pixels), and sends the chain with
+/// `Dma_SendGifChain(scratchpad, 6)`. Bytes per row come from the format
+/// (CT32 4, CT24 3, CT16/CT16S 2, T8 1, T4 1/2 per pixel; 0 for others).
+/// The other entries (the jump table's cases and the loop heads) are served
+/// by the generated `__entries` twin.
+pub fn gs_upload_image(c: &mut Cpu) {
+    use gs_upload_packet::*;
+    if c.pc != 0x0038_3808 {
+        return ee::s12::f_00383808__entries(c);
+    }
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xa0);
+        c.g[T4][0] = c.g[T1][0]; // dbw
+        frame.save(c, S0, 0x90);
+        c.g[T7][0] = 0; // bytes per row
+        frame.save(c, S1, 0x80);
+        c.g[S0][0] = c.g[A1][0]; // the pixels
+        frame.save(c, S2, 0x70);
+        c.g[T5][0] = sx(GS_UPLOAD_PACKET);
+        frame.save(c, S3, 0x60);
+        let psm = c.g[T2][0];
+        c.g[V0][0] = (psm < GS_UPLOAD_PSM_CASES) as u64;
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        // `y`, the ninth argument, on the caller's stack.
+        let y_arg = frame.at(c, 0xa0);
+        c.g[T1][0] = Addr(y_arg).lw(c);
+        if psm < GS_UPLOAD_PSM_CASES {
+            c.cycles += 7;
+            let entry = GS_UPLOAD_ROW_BYTES_TABLE.wrapping_add((psm as u32) << 2);
+            c.g[V0][0] = sx(GS_UPLOAD_ROW_BYTES_TABLE);
+            c.g[V1][0] = sx(entry);
+            c.g[A0][0] = Addr(entry).lw(c);
+            let width = r32(c, A3);
+            match psm {
+                gs_psm::CT32 => {
+                    c.cycles += 2;
+                    c.g[T7][0] = sx(width << 2);
+                }
+                gs_psm::CT24 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = sx(width << 1);
+                    c.g[T7][0] = sx((width << 1).wrapping_add(width));
+                }
+                gs_psm::CT16 | gs_psm::CT16S => {
+                    c.cycles += 2;
+                    c.g[T7][0] = sx(width << 1);
+                }
+                gs_psm::T8 => {
+                    c.cycles += 2;
+                    c.g[T7][0] = c.g[A3][0];
+                }
+                gs_psm::T4 => {
+                    c.cycles += 1;
+                    c.g[T7][0] = sx(((width as i32) >> 1) as u32);
+                }
+                _ => {}
+            }
+        }
+
+        // Wait for the GIF channel.
+        c.cycles += 5;
+        c.g[A1][0] = sx(GIF_CHCR);
+        c.g[V1][0] = sx(((r32(c, T4) as i32) >> 6) as u32); // DBW in 64-pixel units
+        c.g[A0][0] = c.g[T2][0];
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw(r32(c, A1)) & DMA_CHCR_STR;
+            let busy = c.g[V0][0] != 0;
+            c.g[V0][0] = c.g[A2][0] << 32; // DBP
+            if !busy {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0038_38a8);
+            }
+        }
+
+        // The words every chunk's packet repeats.
+        c.cycles += 21;
+        c.g[V1][0] <<= 48;
+        c.g[V0][0] |= c.g[V1][0];
+        c.g[A0][0] <<= 56;
+        c.g[T8][0] = GS_UPLOAD_CHUNK_BYTES;
+        c.g[A0][0] |= c.g[V0][0]; // BITBLTBUF: DBP | DBW << 48 | DPSM << 56
+        c.g[T3][0] <<= 32; // TRXPOS: DSAX
+        c.g[FP][0] = DMA_CNT_7;
+        c.g[S7][0] = GIF_AD_5;
+        c.g[S6][0] = GIF_REG_AD;
+        c.g[S5][0] = GS_BITBLTBUF;
+        c.g[S4][0] = GS_TRXPOS;
+        c.g[S3][0] = GS_TRXREG;
+        c.g[S2][0] = GS_TEXFLUSH;
+        c.g[S1][0] = GS_TRXDIR;
+        c.g[T2][0] = GIF_IMAGE;
+        c.g[A2][0] = DMA_REF;
+
+        // One packet per chunk; t0 counts the rows left, t1 is the row's y.
+        loop {
+            c.cycles += 4;
+            let (limit, row_bytes) = (r32(c, T8), r32(c, T7));
+            abi::div(c, limit, row_bytes); // rows that fit in a chunk (LO)
+            c.g[V0][0] = c.g[T1][0] << 48; // TRXPOS: DSAY
+
+            c.cycles += 32;
+            c.g[V0][0] |= c.g[T3][0];
+            gs_upload_put(c, TRXPOS, V0);
+            c.g[T9][0] = sx(r32(c, T5).wrapping_add(PIXELS_TAG));
+            gs_upload_put(c, DMA_TAG, FP);
+            c.g[T6][0] = c.g[S0][0] << 32; // the pixels' address in a DMA tag
+            gs_upload_put_zero(c, DMA_TAG + 8);
+            gs_upload_put(c, GIF_TAG, S7);
+            gs_upload_put(c, GIF_TAG + 8, S6);
+            gs_upload_put(c, BITBLTBUF, A0);
+            gs_upload_put(c, BITBLTBUF + 8, S5);
+            gs_upload_put(c, TRXPOS + 8, S4);
+            gs_upload_put(c, TRXREG + 8, S3);
+            gs_upload_put_zero(c, TEXFLUSH);
+            gs_upload_put(c, TEXFLUSH + 8, S2);
+            gs_upload_put_zero(c, TRXDIR); // host to local
+            gs_upload_put(c, TRXDIR + 8, S1);
+            gs_upload_put_zero(c, IMAGE_TAG + 8);
+            // The chunk's rows: what fits, at most the rows left (signed).
+            c.g[V1][0] = c.lo[0];
+            c.g[A1][0] = c.g[V1][0];
+            c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            if c.g[V0][0] != 0 {
+                c.g[A1][0] = c.g[T0][0];
+            }
+            let (row_bytes, rows) = (r32(c, T7), r32(c, A1));
+            c.g[V1][0] = sx(abi::mult(c, row_bytes, rows));
+            c.g[V0][0] = c.g[A3][0] | c.g[A1][0] << 32; // TRXREG: RRW | RRH << 32
+            c.g[T0][0] = sx(r32(c, T0).wrapping_sub(r32(c, A1)));
+            gs_upload_put(c, TRXREG, V0);
+            c.g[V1][0] = sx(((r32(c, V1) as i32) >> 4) as u32); // quadwords
+            c.g[T4][0] = c.g[V1][0];
+            c.g[V1][0] |= GIF_EOP;
+            c.g[V0][0] = c.g[V1][0] | c.g[T2][0];
+            let last = c.g[T0][0] == 0;
+            gs_upload_put(c, IMAGE_TAG, V0);
+            if last {
+                c.cycles += 1;
+                c.g[V0][0] = c.g[T4][0] | c.g[T6][0]; // refe: the chain ends
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[T6][0] | c.g[A2][0];
+                c.g[V0][0] |= c.g[T4][0]; // ref
+            }
+
+            c.cycles += 7;
+            c.sd(r32(c, T9), c.g[V0][0]);
+            c.g[T1][0] = sx(r32(c, T1).wrapping_add(r32(c, A1)));
+            let (row_bytes, rows) = (r32(c, T7), r32(c, A1));
+            c.g[V0][0] = sx(abi::mult(c, row_bytes, rows));
+            gs_upload_put_zero(c, PIXELS_TAG + 8);
+            c.g[T5][0] = sx(r32(c, T5).wrapping_add(SIZE));
+            let more = c.g[T0][0] != 0;
+            c.g[S0][0] = sx(r32(c, V0).wrapping_add(r32(c, S0)));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0038_3918);
+            }
+        }
+
+        c.cycles += 15;
+        c.g[A0][0] = sx(GS_UPLOAD_PACKET);
+        c.g[A1][0] = 6; // wait for the channel before and after
+        callee::DMA_SEND_GIF_CHAIN.call(c, 0x0038_39e0)?;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `slt`: signed 64-bit compare.
+#[inline]
+pub(crate) fn grid_mesh_slt(a: u64, b: u64) -> u64 {
+    ((a as i64) < (b as i64)) as u64
+}
+
+/// The back row table's index: 1 when the front one (`TAB_INDEX`) is 0.
+#[inline]
+pub(crate) fn grid_mesh_back_index(tab_index: u64) -> u64 {
+    (tab_index < 1) as u64
+}
+
+/// `cPS2GridMesh* cPS2GridMesh_ctor(cPS2GridMesh* self, int columns,
+/// int vertex_rows, int a3, int alloc_flags)` (0x385138): set up the grid
+/// (vtable, sizes, scale from `gp-0x2738`/`gp-0x2734`), split it into VU1
+/// batches, allocate one block ("GridMeshMem") for the two DMA packets and
+/// the two row tables, and build both packets. `VALID` says whether the
+/// allocation succeeded. Returns `self`.
+pub fn c_ps2_grid_mesh_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 39;
+        let frame = Frame::open(c, 0x40);
+        c.g[T2][0] = c.g[A1][0];
+        frame.save(c, S1, 0x20);
+        c.g[T3][0] = c.g[A2][0];
+        let gp = r32(c, GP);
+        c.lwc1(0, gp.wrapping_sub(0x2738));
+        c.g[V0][0] = 0x49_0000;
+        c.lwc1(1, gp.wrapping_sub(0x2734));
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        let row_verts = shl32(c.g[T2][0], 1);
+        c.g[T1][0] = row_verts;
+        frame.save(c, S2, 0x10);
+        let rows = sx((c.g[T3][0] as u32).wrapping_sub(1));
+        c.g[V1][0] = rows;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(gmesh::VTABLE);
+        // BuildStrips(self, rows, row_verts); alloc_flags kept in s0.
+        c.g[A1][0] = rows;
+        c.g[A2][0] = row_verts;
+        c.g[S0][0] = c.g[T0][0];
+        let this = Addr(r32(c, S1));
+        this.off(gmesh::ROW_VERTS).sw(c, row_verts);
+        this.off(gmesh::FIELD_1C4).sw(c, c.g[A3][0]);
+        c.swc1(0, this.0.wrapping_add(gmesh::SCALE));
+        c.swc1(1, this.0.wrapping_add(gmesh::PACK_SCALE));
+        this.off(gmesh::COLUMNS).sh(c, c.g[T2][0]);
+        this.off(gmesh::VERTEX_ROWS).sh(c, c.g[T3][0]);
+        this.off(gmesh::ROWS).sw(c, rows);
+        this.off(gmesh::VTABLE_PTR).sw(c, c.g[V0][0]);
+        C_PS2_GRID_MESH_BUILD_STRIPS.call(c, 0x0038_51a0)?;
+
+        // One block: two packets (BuildStrips returned one packet's
+        // bytes) and two row tables of 16 bytes per row.
+        let this = Addr(r32(c, S1));
+        c.g[A0][0] = this.off(gmesh::ROWS).lw(c);
+        c.g[S2][0] = c.g[V0][0];
+        c.g[V0][0] = shl32(c.g[S2][0], 1);
+        c.g[A1][0] = sx(gmesh::ALLOC_NAME);
+        c.g[A0][0] = shl32(c.g[A0][0], 5);
+        c.g[A0][0] = addu(c.g[V0][0], c.g[A0][0]);
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A3][0] = 0;
+        OPERATOR_NEW_NAMED.call(c, 0x0038_51c8)?;
+
+        let this = Addr(r32(c, S1));
+        c.g[T1][0] = c.g[V0][0];
+        let allocated = c.g[T1][0] != 0;
+        this.off(gmesh::BUFFER).sw(c, c.g[T1][0]);
+        if !allocated {
+            c.cycles += 2;
+            this.off(gmesh::VALID).sw(c, 0);
+        } else {
+            c.cycles += 25;
+            let packet_bytes = c.g[S2][0];
+            c.g[V0][0] = addu(c.g[T1][0], packet_bytes);
+            c.g[A1][0] = this.off(gmesh::ROWS).lw(c);
+            this.off(gmesh::PACKETS + 4).sw(c, c.g[V0][0]);
+            c.g[A0][0] = 1;
+            c.g[V0][0] = addu(c.g[V0][0], packet_bytes);
+            c.g[V1][0] = shl32(c.g[A1][0], 4);
+            this.off(gmesh::ROW_TABS).sw(c, c.g[V0][0]);
+            c.g[T0][0] = c.g[T1][0];
+            c.g[V0][0] = addu(c.g[V0][0], c.g[V1][0]);
+            c.g[A2][0] = this.off(gmesh::ROW_VERTS).lw(c);
+            c.g[A3][0] = this.off(gmesh::ROW_TABS).lw(c);
+            this.off(gmesh::VALID).sw(c, c.g[A0][0]);
+            this.off(gmesh::ROW_TABS + 4).sw(c, c.g[V0][0]);
+            c.g[A0][0] = c.g[S1][0];
+            this.off(gmesh::PACKETS).sw(c, c.g[T1][0]);
+            // BuildDmaPacket(self, rows, row_verts, row_tab[0], packet[0])
+            C_PS2_GRID_MESH_BUILD_DMA_PACKET.call(c, 0x0038_521c)?;
+
+            let this = Addr(r32(c, S1));
+            c.g[A1][0] = this.off(gmesh::ROWS).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = this.off(gmesh::ROW_VERTS).lw(c);
+            c.g[A3][0] = this.off(gmesh::ROW_TABS + 4).lw(c);
+            c.g[T0][0] = this.off(gmesh::PACKETS + 4).lw(c);
+            C_PS2_GRID_MESH_BUILD_DMA_PACKET.call(c, 0x0038_5234)?;
+
+            // Nothing packed yet: the first update fills both row tables.
+            let this = Addr(r32(c, S1));
+            c.g[V0][0] = u64::MAX;
+            this.off(gmesh::PACKED).sw(c, 0);
+            this.off(gmesh::TAB_INDEX).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 7;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPS2GridMesh_v04(cPS2GridMesh* self, const float (*uvs)[2])`
+/// (0x385410, vtable +0x24): pack the texture coordinates of every vertex
+/// pair (this row's vertex, the next row's) into the back row table, then
+/// mark the mesh packed.
+pub fn c_ps2_grid_mesh_v04(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S7, 0x20);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x90);
+        c.g[S7][0] = c.g[A1][0];
+        frame.save(c, S1, 0x80);
+        c.g[A1][0] = 0;
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        let this = Addr(r32(c, S2));
+        c.g[V1][0] = this.off(gmesh::TAB_INDEX).lw(c);
+        c.g[V0][0] = this.off(gmesh::ROWS).lw(c);
+        let no_rows = (c.g[V0][0] as i64) <= 0;
+        c.g[V1][0] = grid_mesh_back_index(c.g[V1][0]);
+        if !no_rows {
+            c.cycles += 4;
+            c.g[V1][0] = shl32(c.g[V1][0], 2);
+            c.g[V0][0] = sx(this.0.wrapping_add(gmesh::ROW_TABS));
+            c.g[FP][0] = addu(c.g[V0][0], c.g[V1][0]);
+            c.g[V0][0] = this.off(gmesh::COLUMNS).lhu(c);
+            // a1: row, s3: column, s5: vertex index in the strip row.
+            loop {
+                c.cycles += 9;
+                c.g[A0][0] = shl32(c.g[A1][0], 4);
+                c.g[S6][0] = addu(c.g[A1][0], 1);
+                c.g[V1][0] = Addr(r32(c, FP)).lw(c);
+                c.mult(0, A1, A1, V0);
+                c.g[S5][0] = 0;
+                c.g[S4][0] = addu(c.g[V1][0], c.g[A0][0]);
+                c.g[S3][0] = 0;
+                let empty = c.g[V0][0] == 0;
+                c.g[V1][0] = addu(c.g[A1][0], c.g[V0][0]);
+                if !empty {
+                    c.cycles += 5;
+                    c.g[V0][0] = shl32(c.g[V1][0], 3);
+                    c.g[V1][0] = shl32(c.g[A1][0], 3);
+                    c.g[S1][0] = addu(c.g[V0][0], c.g[S7][0]);
+                    c.g[S0][0] = addu(c.g[V1][0], c.g[S7][0]);
+                    loop {
+                        c.cycles += 17;
+                        c.g[A1][0] = Addr(r32(c, S4)).off(gmesh::ROW_UVS).lw(c);
+                        c.g[A2][0] = c.g[S5][0];
+                        c.g[A3][0] = c.g[S0][0];
+                        c.g[A0][0] = c.g[S2][0];
+                        C_PS2_GRID_MESH_PACK_UV.call(c, 0x0038_54b4)?;
+                        c.g[S3][0] = addu(c.g[S3][0], 1);
+                        c.g[A1][0] = Addr(r32(c, S4)).off(gmesh::ROW_UVS).lw(c);
+                        c.g[A2][0] = addu(c.g[S5][0], 1);
+                        c.g[A3][0] = c.g[S1][0];
+                        c.g[A0][0] = c.g[S2][0];
+                        C_PS2_GRID_MESH_PACK_UV.call(c, 0x0038_54cc)?;
+                        c.g[S5][0] = addu(c.g[S5][0], 2);
+                        c.g[V0][0] = Addr(r32(c, S2)).off(gmesh::COLUMNS).lhu(c);
+                        c.g[S0][0] = addu(c.g[S0][0], 8);
+                        c.g[V0][0] = grid_mesh_slt(c.g[S3][0], c.g[V0][0]);
+                        let more = c.g[V0][0] != 0;
+                        c.g[S1][0] = addu(c.g[S1][0], 8);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0038_54a0);
+                        }
+                    }
+                }
+                c.cycles += 5;
+                let this = Addr(r32(c, S2));
+                c.g[V0][0] = this.off(gmesh::ROWS).lw(c);
+                c.g[A1][0] = c.g[S6][0];
+                c.g[V0][0] = grid_mesh_slt(c.g[A1][0], c.g[V0][0]);
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[V0][0] = this.off(gmesh::COLUMNS).lhu(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_5468);
+                }
+            }
+        }
+        c.cycles += 14;
+        c.g[V0][0] = 1;
+        frame.restore(c, S0, 0x90);
+        Addr(r32(c, S2)).off(gmesh::PACKED).sw(c, c.g[V0][0]);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPS2GridMesh_v05(cPS2GridMesh* self, const Vec3* positions,
+/// const float (*colours)[4])` (0x385530, vtable +0x2c): pack the colour
+/// and position of every vertex pair (this row's vertex, the next row's)
+/// into the back row table, then mark the mesh packed.
+pub fn c_ps2_grid_mesh_v05(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S1, 0x90);
+        Addr(sp(c)).sw(c, c.g[A1][0]);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0xa0);
+        c.g[A1][0] = 0;
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        // Stack: +0 positions, +4 colours, +8 &row_tabs[back], +0xc next row.
+        let this = Addr(r32(c, S1));
+        c.g[V1][0] = this.off(gmesh::TAB_INDEX).lw(c);
+        Addr(sp(c)).off(4).sw(c, c.g[A2][0]);
+        c.g[V0][0] = this.off(gmesh::ROWS).lw(c);
+        let no_rows = (c.g[V0][0] as i64) <= 0;
+        c.g[V1][0] = grid_mesh_back_index(c.g[V1][0]);
+        if !no_rows {
+            c.cycles += 5;
+            c.g[V1][0] = shl32(c.g[V1][0], 2);
+            c.g[V0][0] = sx(this.0.wrapping_add(gmesh::ROW_TABS));
+            c.g[V0][0] = addu(c.g[V0][0], c.g[V1][0]);
+            Addr(sp(c)).off(8).sw(c, c.g[V0][0]);
+            c.g[A2][0] = Addr(sp(c)).off(8).lw(c);
+            // a1: row, s7: column, fp: vertex index in the strip row.
+            loop {
+                c.cycles += 11;
+                c.g[A0][0] = shl32(c.g[A1][0], 4);
+                c.g[V0][0] = Addr(r32(c, S1)).off(gmesh::COLUMNS).lhu(c);
+                c.g[FP][0] = 0;
+                c.g[V1][0] = Addr(r32(c, A2)).lw(c);
+                c.g[S7][0] = 0;
+                c.g[A2][0] = addu(c.g[A1][0], 1);
+                c.mult(0, A1, A1, V0);
+                c.g[S3][0] = addu(c.g[V1][0], c.g[A0][0]);
+                Addr(sp(c)).off(0xc).sw(c, c.g[A2][0]);
+                let empty = c.g[V0][0] == 0;
+                c.g[V1][0] = addu(c.g[A1][0], c.g[V0][0]);
+                if !empty {
+                    c.cycles += 13;
+                    // s6/s5: next/this row's positions, s4/s2: colours.
+                    c.g[V0][0] = Addr(sp(c)).lw(c);
+                    c.g[A0][0] = Addr(sp(c)).off(4).lw(c);
+                    c.lo[0] = c.g[V0][0];
+                    c.g[V0][0] = 0xc;
+                    c.madd(0, S6, V1, V0);
+                    c.g[V0][0] = Addr(sp(c)).lw(c);
+                    c.lo[0] = c.g[V0][0];
+                    c.g[V0][0] = 0xc;
+                    c.madd(0, S5, A1, V0);
+                    c.g[V0][0] = shl32(c.g[V1][0], 4);
+                    c.g[V1][0] = shl32(c.g[A1][0], 4);
+                    c.g[S4][0] = addu(c.g[V0][0], c.g[A0][0]);
+                    c.g[S2][0] = addu(c.g[V1][0], c.g[A0][0]);
+                    loop {
+                        c.cycles += 30;
+                        c.g[A1][0] = Addr(r32(c, S3)).off(gmesh::ROW_COLORS).lw(c);
+                        c.g[A2][0] = c.g[FP][0];
+                        c.g[A3][0] = c.g[S2][0];
+                        c.g[A0][0] = c.g[S1][0];
+                        C_PS2_GRID_MESH_PACK_COLOR.call(c, 0x0038_5604)?;
+                        c.g[S0][0] = addu(c.g[FP][0], 1);
+                        c.g[A1][0] = Addr(r32(c, S3)).off(gmesh::ROW_POSITIONS).lw(c);
+                        c.g[A2][0] = c.g[FP][0];
+                        c.g[A3][0] = c.g[S5][0];
+                        c.g[A0][0] = c.g[S1][0];
+                        PACK_POSITION.call(c, 0x0038_561c)?;
+                        c.g[S7][0] = addu(c.g[S7][0], 1);
+                        c.g[A1][0] = Addr(r32(c, S3)).off(gmesh::ROW_COLORS).lw(c);
+                        c.g[A3][0] = c.g[S4][0];
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        C_PS2_GRID_MESH_PACK_COLOR.call(c, 0x0038_5634)?;
+                        c.g[FP][0] = addu(c.g[FP][0], 2);
+                        c.g[A1][0] = Addr(r32(c, S3)).off(gmesh::ROW_POSITIONS).lw(c);
+                        c.g[A3][0] = c.g[S6][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        c.g[A0][0] = c.g[S1][0];
+                        PACK_POSITION.call(c, 0x0038_564c)?;
+                        c.g[S5][0] = addu(c.g[S5][0], 0xc);
+                        c.g[V0][0] = Addr(r32(c, S1)).off(gmesh::COLUMNS).lhu(c);
+                        c.g[S2][0] = addu(c.g[S2][0], 0x10);
+                        c.g[S6][0] = addu(c.g[S6][0], 0xc);
+                        c.g[V0][0] = grid_mesh_slt(c.g[S7][0], c.g[V0][0]);
+                        let more = c.g[V0][0] != 0;
+                        c.g[S4][0] = addu(c.g[S4][0], 0x10);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0038_55f0);
+                        }
+                    }
+                }
+                c.cycles += 5;
+                c.g[V0][0] = Addr(r32(c, S1)).off(gmesh::ROWS).lw(c);
+                c.g[A1][0] = Addr(sp(c)).off(0xc).lw(c);
+                c.g[V0][0] = grid_mesh_slt(c.g[A1][0], c.g[V0][0]);
+                let more = c.g[V0][0] != 0;
+                c.g[A2][0] = Addr(sp(c)).off(8).lw(c);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_5590);
+                }
+            }
+        }
+        c.cycles += 14;
+        c.g[V0][0] = 1;
+        frame.restore(c, S0, 0xa0);
+        Addr(r32(c, S1)).off(gmesh::PACKED).sw(c, c.g[V0][0]);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One `cPS2GridMesh_v06` pass over a row table: its stack slots, the
+/// return addresses of its six pack calls and its column loop head.
+#[derive(Clone, Copy)]
+pub(crate) struct GridMeshV06Pass {
+    /// Stack slot of the column counter.
+    pub count_slot: u32,
+    /// Stack slot of the next row's position pointer.
+    pub next_pos_slot: u32,
+    pub rets: [u32; 6],
+    pub column_head: u32,
+}
+
+/// The back-table pass of `cPS2GridMesh_v06`.
+pub(crate) const GRID_MESH_V06_BACK: GridMeshV06Pass = GridMeshV06Pass {
+    count_slot: 0x14,
+    next_pos_slot: 0x28,
+    rets: [
+        0x0038_57cc,
+        0x0038_57e4,
+        0x0038_5814,
+        0x0038_5828,
+        0x0038_5840,
+        0x0038_5858,
+    ],
+    column_head: 0x0038_57b8,
+};
+
+/// The front-table pass of `cPS2GridMesh_v06` (only after a reset).
+pub(crate) const GRID_MESH_V06_FRONT: GridMeshV06Pass = GridMeshV06Pass {
+    count_slot: 0x1c,
+    next_pos_slot: 0x24,
+    rets: [
+        0x0038_5944,
+        0x0038_595c,
+        0x0038_598c,
+        0x0038_59a0,
+        0x0038_59b8,
+        0x0038_59d0,
+    ],
+    column_head: 0x0038_5930,
+};
+
+/// One row of a `cPS2GridMesh_v06` pass (`a1` the row, `a2` the row
+/// table): pack uv, colour and position of each vertex pair.
+pub(crate) fn grid_mesh_v06_row(c: &mut Cpu, pass: GridMeshV06Pass) -> crate::call::Flow {
+    c.cycles += 11;
+    c.g[A0][0] = shl32(c.g[A1][0], 4);
+    c.g[V0][0] = Addr(r32(c, S1)).off(gmesh::COLUMNS).lhu(c);
+    c.g[S7][0] = 0;
+    c.g[V1][0] = Addr(r32(c, A2)).lw(c);
+    c.g[A2][0] = addu(c.g[A1][0], 1);
+    Addr(sp(c)).off(pass.count_slot).sw(c, 0);
+    Addr(sp(c)).off(0x20).sw(c, c.g[A2][0]);
+    c.g[S2][0] = addu(c.g[V1][0], c.g[A0][0]);
+    c.mult(0, A2, A1, V0);
+    let empty = c.g[V0][0] == 0;
+    c.g[V1][0] = addu(c.g[A2][0], c.g[V0][0]);
+    if empty {
+        return Ok(());
+    }
+    // fp / [next_pos_slot]: this / next row's positions (12 bytes each),
+    // s4 / s6 colours (16), s3 / s5 uvs (8); s7 the vertex index.
+    c.cycles += 21;
+    c.g[V0][0] = Addr(sp(c)).lw(c);
+    c.g[A0][0] = shl32(c.g[V1][0], 3);
+    c.g[A1][0] = shl32(c.g[A2][0], 3);
+    c.lo[0] = c.g[V0][0];
+    c.g[V0][0] = 0xc;
+    c.madd(0, 0, V1, V0);
+    c.g[V0][0] = c.lo[0];
+    Addr(sp(c)).off(pass.next_pos_slot).sw(c, c.g[V0][0]);
+    c.g[V0][0] = Addr(sp(c)).lw(c);
+    c.lo[0] = c.g[V0][0];
+    c.g[V0][0] = 0xc;
+    c.madd(0, FP, A2, V0);
+    c.g[V0][0] = shl32(c.g[V1][0], 4);
+    c.g[V1][0] = shl32(c.g[A2][0], 4);
+    c.g[A2][0] = Addr(sp(c)).off(4).lw(c);
+    c.g[S6][0] = addu(c.g[V0][0], c.g[A2][0]);
+    c.g[S4][0] = addu(c.g[V1][0], c.g[A2][0]);
+    c.g[V0][0] = Addr(sp(c)).off(8).lw(c);
+    c.g[S5][0] = addu(c.g[A0][0], c.g[V0][0]);
+    c.g[S3][0] = addu(c.g[A1][0], c.g[V0][0]);
+    loop {
+        c.cycles += 47;
+        // This row's vertex.
+        c.g[A1][0] = Addr(r32(c, S2)).off(gmesh::ROW_UVS).lw(c);
+        c.g[A2][0] = c.g[S7][0];
+        c.g[A3][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S1][0];
+        C_PS2_GRID_MESH_PACK_UV.call(c, pass.rets[0])?;
+        c.g[S0][0] = addu(c.g[S7][0], 1);
+        c.g[A1][0] = Addr(r32(c, S2)).off(gmesh::ROW_COLORS).lw(c);
+        c.g[A2][0] = c.g[S7][0];
+        c.g[A3][0] = c.g[S4][0];
+        c.g[A0][0] = c.g[S1][0];
+        C_PS2_GRID_MESH_PACK_COLOR.call(c, pass.rets[1])?;
+        c.g[S4][0] = addu(c.g[S4][0], 0x10);
+        c.g[V1][0] = Addr(sp(c)).off(pass.count_slot).lw(c);
+        c.g[A2][0] = c.g[S7][0];
+        c.g[A3][0] = c.g[FP][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[V1][0] = addu(c.g[V1][0], 1);
+        c.g[S7][0] = addu(c.g[S7][0], 2);
+        Addr(sp(c)).off(pass.count_slot).sw(c, c.g[V1][0]);
+        c.g[FP][0] = addu(c.g[FP][0], 0xc);
+        c.g[S3][0] = addu(c.g[S3][0], 8);
+        c.g[A1][0] = Addr(r32(c, S2)).off(gmesh::ROW_POSITIONS).lw(c);
+        PACK_POSITION.call(c, pass.rets[2])?;
+        // The next row's vertex.
+        c.g[A1][0] = Addr(r32(c, S2)).off(gmesh::ROW_UVS).lw(c);
+        c.g[A3][0] = c.g[S5][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S0][0];
+        C_PS2_GRID_MESH_PACK_UV.call(c, pass.rets[3])?;
+        c.g[S5][0] = addu(c.g[S5][0], 8);
+        c.g[A1][0] = Addr(r32(c, S2)).off(gmesh::ROW_COLORS).lw(c);
+        c.g[A3][0] = c.g[S6][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S0][0];
+        C_PS2_GRID_MESH_PACK_COLOR.call(c, pass.rets[4])?;
+        c.g[S6][0] = addu(c.g[S6][0], 0x10);
+        c.g[A3][0] = Addr(sp(c)).off(pass.next_pos_slot).lw(c);
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A1][0] = Addr(r32(c, S2)).off(gmesh::ROW_POSITIONS).lw(c);
+        c.g[A0][0] = c.g[S1][0];
+        PACK_POSITION.call(c, pass.rets[5])?;
+        c.g[A2][0] = Addr(sp(c)).off(pass.next_pos_slot).lw(c);
+        c.g[V0][0] = Addr(r32(c, S1)).off(gmesh::COLUMNS).lhu(c);
+        c.g[V1][0] = Addr(sp(c)).off(pass.count_slot).lw(c);
+        c.g[A2][0] = addu(c.g[A2][0], 0xc);
+        c.g[V0][0] = grid_mesh_slt(c.g[V1][0], c.g[V0][0]);
+        let more = c.g[V0][0] != 0;
+        Addr(sp(c)).off(pass.next_pos_slot).sw(c, c.g[A2][0]);
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, pass.column_head);
+        }
+    }
+}
+
+/// `void cPS2GridMesh_v06(cPS2GridMesh* self, const Vec3* positions,
+/// const float (*colours)[4], const float (*uvs)[2])` (0x3856b8, vtable
+/// +0x34): pack uv, colour and position of every vertex pair into the back
+/// row table; after a reset (`TAB_INDEX` negative, as the constructor
+/// leaves it) select table 0 and fill the front table too. Marks the mesh
+/// packed.
+pub fn c_ps2_grid_mesh_v06(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S1, 0xb0);
+        frame.save(c, S0, 0xc0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0xa0);
+        frame.save(c, S3, 0x90);
+        frame.save(c, S4, 0x80);
+        frame.save(c, S5, 0x70);
+        frame.save(c, S6, 0x60);
+        frame.save(c, S7, 0x50);
+        frame.save(c, FP, 0x40);
+        frame.save_ra(c, 0x30);
+        // Stack: +0 positions, +4 colours, +8 uvs, +0xc fill both tables,
+        // +0x10 / +0x18 the passes' row tables, +0x20 next row.
+        Addr(sp(c)).sw(c, c.g[A1][0]);
+        let this = Addr(r32(c, S1));
+        c.g[V0][0] = this.off(gmesh::TAB_INDEX).lw(c);
+        Addr(sp(c)).off(4).sw(c, c.g[A2][0]);
+        Addr(sp(c)).off(8).sw(c, c.g[A3][0]);
+        let reset = (c.g[V0][0] as i64) < 0;
+        Addr(sp(c)).off(0xc).sw(c, 0);
+        if reset {
+            c.cycles += 3;
+            this.off(gmesh::TAB_INDEX).sw(c, 0);
+            c.g[V0][0] = 1;
+            Addr(sp(c)).off(0xc).sw(c, c.g[V0][0]);
+        }
+
+        c.cycles += 6;
+        c.g[V1][0] = this.off(gmesh::TAB_INDEX).lw(c);
+        c.g[A1][0] = 0;
+        c.g[V0][0] = this.off(gmesh::ROWS).lw(c);
+        c.g[V1][0] = grid_mesh_back_index(c.g[V1][0]);
+        let no_rows = (c.g[V0][0] as i64) <= 0;
+        c.g[A0][0] = c.g[V0][0];
+        if !no_rows {
+            c.cycles += 5;
+            c.g[V1][0] = shl32(c.g[V1][0], 2);
+            c.g[V0][0] = sx(this.0.wrapping_add(gmesh::ROW_TABS));
+            c.g[V0][0] = addu(c.g[V0][0], c.g[V1][0]);
+            Addr(sp(c)).off(0x10).sw(c, c.g[V0][0]);
+            c.g[A2][0] = Addr(sp(c)).off(0x10).lw(c);
+            loop {
+                grid_mesh_v06_row(c, GRID_MESH_V06_BACK)?;
+                c.cycles += 6;
+                c.g[V0][0] = Addr(r32(c, S1)).off(gmesh::ROWS).lw(c);
+                c.g[A1][0] = Addr(sp(c)).off(0x20).lw(c);
+                c.g[A0][0] = c.g[V0][0];
+                c.g[V0][0] = grid_mesh_slt(c.g[A1][0], c.g[V0][0]);
+                let more = c.g[V0][0] != 0;
+                c.g[A2][0] = Addr(sp(c)).off(0x10).lw(c);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_5738);
+                }
+            }
+        }
+
+        'front: {
+            c.cycles += 3;
+            c.g[A2][0] = Addr(sp(c)).off(0xc).lw(c);
+            let both = c.g[A2][0] != 0;
+            c.g[V0][0] = 1;
+            if !both {
+                break 'front;
+            }
+            c.cycles += 2;
+            let no_rows = (c.g[A0][0] as i64) <= 0;
+            c.g[A1][0] = 0;
+            if no_rows {
+                break 'front;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = sx(r32(c, S1).wrapping_add(gmesh::ROW_TABS));
+            Addr(sp(c)).off(0x18).sw(c, c.g[V0][0]);
+            c.g[A2][0] = Addr(sp(c)).off(0x18).lw(c);
+            loop {
+                grid_mesh_v06_row(c, GRID_MESH_V06_FRONT)?;
+                c.cycles += 5;
+                c.g[V0][0] = Addr(r32(c, S1)).off(gmesh::ROWS).lw(c);
+                c.g[A1][0] = Addr(sp(c)).off(0x20).lw(c);
+                c.g[V0][0] = grid_mesh_slt(c.g[A1][0], c.g[V0][0]);
+                if c.g[V0][0] == 0 {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                    break;
+                }
+                c.g[A2][0] = Addr(sp(c)).off(0x18).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_58b0);
+                }
+            }
+        }
+        c.cycles += 13;
+        frame.restore(c, S0, 0xc0);
+        Addr(r32(c, S1)).off(gmesh::PACKED).sw(c, c.g[V0][0]);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore(c, S5, 0x70);
+        frame.restore(c, S6, 0x60);
+        frame.restore(c, S7, 0x50);
+        frame.restore(c, FP, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The rounding step of `cPS2GridMesh_BuildStrips`'s size pass:
+/// `v1 = a3 + v1`, one more when the part does not fill whole quadwords.
+pub(crate) fn grid_strip_round_up(c: &mut Cpu, whole: bool) {
+    if whole {
+        c.cycles += 1;
+        c.g[V1][0] = addu(c.g[A3][0], c.g[V1][0]);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = addu(c.g[A3][0], 1);
+        c.g[V1][0] = addu(c.g[V0][0], c.g[V1][0]);
+    }
+}
+
+/// `int cPS2GridMesh_BuildStrips(cPS2GridMesh* self, int rows,
+/// int row_verts)` (0x385eb0): split the strip rows into VU1 batches whose
+/// estimated input size stays below 219 quadwords (the first batch starts
+/// at 29, later ones at 2; a row adds `3 * row_verts + 1`), then add up
+/// the DMA packet's quadwords (per batch: headers plus the row, uv,
+/// position and colour data rounded to quadwords; plus 2 for the packet's
+/// head and tail) into `PACKET_QWC`. Returns the packet's bytes.
+pub fn c_ps2_grid_mesh_build_strips(c: &mut Cpu) {
+    c.cycles += 16;
+    c.g[T5][0] = c.g[A2][0];
+    let frame = Frame::open(c, 0x10);
+    frame.save(c, S0, 0);
+    c.g[T0][0] = c.g[A0][0];
+    let this = Addr(r32(c, T0));
+    c.g[V0][0] = shl32(c.g[T5][0], 1);
+    this.off(gmesh::STRIP_COUNT).sw(c, 0);
+    c.g[V0][0] = addu(c.g[V0][0], c.g[T5][0]);
+    this.off(gmesh::STRIPS + gmesh::STRIP_ROWS).sw(c, 0);
+    this.off(gmesh::STRIPS + gmesh::STRIP_VERTS).sw(c, 0);
+    c.g[T7][0] = sx(this.0.wrapping_add(gmesh::STRIPS));
+    // t6: what a row adds; t2: rows left; s0 / t9: a batch's starting size.
+    c.g[T6][0] = addu(c.g[V0][0], 1);
+    c.g[T2][0] = c.g[A1][0];
+    c.g[S0][0] = 2;
+    c.g[T9][0] = 0x1d;
+    c.g[T8][0] = gmesh::STRIP_STRIDE as u64;
+    c.g[V0][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+    loop {
+        // Restart the current batch's size.
+        c.cycles += 2;
+        let first = c.g[V0][0] == 0;
+        c.mult(0, V1, V0, T8);
+        c.cycles += 3;
+        if first {
+            this.off(gmesh::STRIPS + gmesh::STRIP_SIZE)
+                .sw(c, c.g[T9][0]);
+            c.g[A3][0] = sx(this.0.wrapping_add(gmesh::STRIPS));
+        } else {
+            c.g[A3][0] = sx(this.0.wrapping_add(gmesh::STRIPS));
+            c.g[V0][0] = addu(c.g[V1][0], c.g[T7][0]);
+            Addr(r32(c, V0)).sw(c, c.g[S0][0]);
+        }
+
+        // size += rows + 3 * vertices; does one more row fit?
+        c.cycles += 31;
+        c.g[A0][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+        c.g[T1][0] = gmesh::STRIP_STRIDE as u64;
+        c.g[V1][0] = sx(this.0.wrapping_add(gmesh::STRIPS + gmesh::STRIP_ROWS));
+        c.g[A2][0] = sx(this.0.wrapping_add(gmesh::STRIPS + gmesh::STRIP_VERTS));
+        c.mult(0, A0, A0, T1);
+        c.g[T4][0] = c.g[V1][0];
+        c.g[T3][0] = c.g[A2][0];
+        c.g[V1][0] = addu(c.g[V1][0], c.g[A0][0]);
+        c.g[A0][0] = addu(c.g[A3][0], c.g[A0][0]);
+        c.g[A1][0] = Addr(r32(c, V1)).lw(c);
+        c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[A1][0]);
+        Addr(r32(c, A0)).sw(c, c.g[V0][0]);
+        c.g[V1][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+        c.mult(0, V1, V1, T1);
+        c.g[A2][0] = addu(c.g[A2][0], c.g[V1][0]);
+        c.g[A1][0] = Addr(r32(c, A2)).lw(c);
+        c.g[V1][0] = addu(c.g[A3][0], c.g[V1][0]);
+        c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+        c.g[V0][0] = shl32(c.g[A1][0], 1);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[A1][0]);
+        c.g[A0][0] = addu(c.g[A0][0], c.g[V0][0]);
+        Addr(r32(c, V1)).sw(c, c.g[A0][0]);
+        c.g[A1][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+        c.mult(0, V0, A1, T1);
+        c.g[A0][0] = addu(c.g[V0][0], c.g[A3][0]);
+        c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+        c.g[V0][0] = addu(c.g[V0][0], c.g[T6][0]);
+        c.g[V1][0] = grid_mesh_slt(c.g[V0][0], 219);
+        if c.g[V1][0] == 0 {
+            // Full: open the next batch and retry the row there.
+            c.g[V0][0] = addu(c.g[A1][0], 1);
+            c.cycles += 8;
+            c.mult(0, A0, V0, T1);
+            this.off(gmesh::STRIP_COUNT).sw(c, c.g[V0][0]);
+            c.g[V1][0] = addu(c.g[A0][0], c.g[T4][0]);
+            Addr(r32(c, V1)).sw(c, 0);
+            c.g[V0][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+            c.mult(0, V1, V0, T1);
+            c.g[V0][0] = addu(c.g[V1][0], c.g[T3][0]);
+            Addr(r32(c, V0)).sw(c, 0);
+        } else {
+            // The row goes in this batch.
+            c.cycles += 15;
+            Addr(r32(c, A0)).sw(c, c.g[V0][0]);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(1));
+            c.g[V1][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+            c.mult(0, V0, V1, T1);
+            c.g[V1][0] = addu(c.g[V0][0], c.g[T4][0]);
+            c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+            c.g[V0][0] = addu(c.g[V0][0], 1);
+            Addr(r32(c, V1)).sw(c, c.g[V0][0]);
+            c.g[A0][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+            c.mult(0, V0, A0, T1);
+            c.g[A0][0] = addu(c.g[V0][0], c.g[T3][0]);
+            c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+            c.g[V0][0] = addu(c.g[V0][0], c.g[T5][0]);
+            let last = c.g[T2][0] == 0;
+            Addr(r32(c, A0)).sw(c, c.g[V0][0]);
+            if last {
+                // Close the last batch.
+                c.cycles += 4;
+                c.g[V0][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+                c.g[V0][0] = addu(c.g[V0][0], 1);
+                this.off(gmesh::STRIP_COUNT).sw(c, c.g[V0][0]);
+            }
+        }
+        c.cycles += 2;
+        if (c.g[T2][0] as i64) <= 0 {
+            break;
+        }
+        c.g[V0][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+        if event_due(c) {
+            deliver_event_here(c, 0x0038_5ef0);
+        }
+    }
+
+    // Packet quadwords, batch by batch (t3 / t1 walk the rows / vertices
+    // fields; t4 holds -1 for the sign tests).
+    c.cycles += 4;
+    c.g[V0][0] = 1;
+    c.g[V1][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+    let no_strips = (c.g[V1][0] as i64) <= 0;
+    this.off(gmesh::PACKET_QWC).sw(c, c.g[V0][0]);
+    if !no_strips {
+        c.cycles += 6;
+        c.g[T1][0] = c.g[T3][0];
+        c.g[T2][0] = c.g[V1][0];
+        c.g[T3][0] = c.g[T4][0];
+        c.g[T5][0] = 6;
+        c.g[T4][0] = u64::MAX;
+        loop {
+            // Headers (7 or 6 + 1) and the row data: rows halfwords.
+            c.cycles += 19;
+            c.g[A0][0] = Addr(r32(c, T3)).lw(c);
+            c.g[A1][0] = Addr(r32(c, T1)).lw(c);
+            c.g[V0][0] = grid_mesh_slt(c.g[T4][0], c.g[A0][0]);
+            c.g[V1][0] = addu(c.g[A0][0], 7);
+            if c.g[V0][0] != 0 {
+                c.g[V1][0] = c.g[A0][0];
+            }
+            c.g[A2][0] = grid_mesh_slt(c.g[T4][0], c.g[A1][0]);
+            c.g[V1][0] = sra32(c.g[V1][0], 3);
+            c.g[V0][0] = addu(c.g[A1][0], 3);
+            c.g[A3][0] = addu(c.g[V1][0], 7);
+            c.g[A0][0] = shl32(c.g[A0][0], 1);
+            c.g[V1][0] = addu(c.g[V1][0], 6);
+            if c.g[A2][0] != 0 {
+                c.g[V0][0] = c.g[A1][0];
+            }
+            c.g[A0][0] &= 0xf;
+            c.g[A1][0] = shl32(c.g[A1][0], 2);
+            if c.g[A0][0] == 0 {
+                c.g[A3][0] = c.g[V1][0];
+            }
+            c.g[A1][0] &= 0xf;
+            c.g[V1][0] = sra32(c.g[V0][0], 2);
+            let whole = c.g[A1][0] == 0;
+            c.g[A3][0] = addu(c.g[A3][0], 1);
+            // + uvs: 4 per quadword.
+            grid_strip_round_up(c, whole);
+
+            // + colours: 8 per quadword.
+            c.cycles += 9;
+            c.g[V0][0] = Addr(r32(c, T1)).lw(c);
+            c.g[A3][0] = addu(c.g[V1][0], 1);
+            c.g[V1][0] = grid_mesh_slt(c.g[T4][0], c.g[V0][0]);
+            c.g[A0][0] = addu(c.g[V0][0], 7);
+            if c.g[V1][0] != 0 {
+                c.g[A0][0] = c.g[V0][0];
+            }
+            c.g[V0][0] = shl32(c.g[V0][0], 1) & 0xf;
+            let whole = c.g[V0][0] == 0;
+            c.g[V1][0] = sra32(c.g[A0][0], 3);
+            grid_strip_round_up(c, whole);
+
+            // + positions: 6 bytes each.
+            c.cycles += 9;
+            c.g[V0][0] = Addr(r32(c, T1)).lw(c);
+            c.g[A3][0] = addu(c.g[V1][0], 1);
+            c.mult(0, V0, V0, T5);
+            c.g[V1][0] = grid_mesh_slt(c.g[T4][0], c.g[V0][0]);
+            c.g[A0][0] = addu(c.g[V0][0], 0xf);
+            if c.g[V1][0] != 0 {
+                c.g[A0][0] = c.g[V0][0];
+            }
+            c.g[V0][0] &= 0xf;
+            let whole = c.g[V0][0] == 0;
+            c.g[V1][0] = sra32(c.g[A0][0], 4);
+            grid_strip_round_up(c, whole);
+
+            c.cycles += 8;
+            c.g[V0][0] = this.off(gmesh::PACKET_QWC).lw(c);
+            c.g[A3][0] = addu(c.g[V1][0], 1);
+            c.g[T1][0] = addu(c.g[T1][0], gmesh::STRIP_STRIDE as u64);
+            c.g[T3][0] = addu(c.g[T3][0], gmesh::STRIP_STRIDE as u64);
+            c.g[V0][0] = addu(c.g[V0][0], c.g[A3][0]);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(1));
+            let more = c.g[T2][0] != 0;
+            this.off(gmesh::PACKET_QWC).sw(c, c.g[V0][0]);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0038_6028);
+            }
+        }
+    }
+    c.cycles += 7;
+    c.g[V0][0] = this.off(gmesh::PACKET_QWC).lw(c);
+    frame.restore(c, S0, 0);
+    c.g[V0][0] = addu(c.g[V0][0], 2);
+    this.off(gmesh::PACKET_QWC).sw(c, c.g[V0][0]);
+    c.g[V0][0] = shl32(c.g[V0][0], 4);
+    frame.close(c);
+}
+
+/// DMA tag `cnt` (id 1; quadwords in the low half).
+pub(crate) const GRID_DMA_CNT: u64 = 0x1000_0000;
+
+/// DMA tag `ret` with one quadword: the packet's tail.
+pub(crate) const GRID_DMA_RET_1: u64 = 0x6000_0001;
+
+/// VIF `STCYCL 1,1` / `STMOD 0` pair, then `STROW` (next quadword: the
+/// row registers, 1.0f x 4).
+pub(crate) const GRID_VIF_STCYCL_STMOD: u64 = 0x0500_0000_0100_0101;
+
+pub(crate) const GRID_VIF_STROW_HI: u64 = 0x3000_0000_0000_0000;
+
+pub(crate) const GRID_VIF_ONES: u64 = 0x3f80_0000_3f80_0000;
+
+/// VIF `ITOP 0` (high half; low half a NOP).
+pub(crate) const GRID_VIF_ITOP_HI: u64 = 0x0400_0000_0000_0000;
+
+/// VIF `UNPACK V4-32` of 2 quadwords (the GIF tag and its registers),
+/// `TOPS`-relative.
+pub(crate) const GRID_VIF_UNPACK_V4_32_2: u64 = 0x6c02_8000;
+
+/// VIF `UNPACK` commands (the vertex count goes in bits 16-23).
+pub(crate) const GRID_VIF_UNPACK_V2_8: u64 = 0x6600_0000;
+
+pub(crate) const GRID_VIF_UNPACK_V2_16_MASKED: u64 = 0x7500_0000;
+
+pub(crate) const GRID_VIF_UNPACK_V3_16_MASKED: u64 = 0x7900_0000;
+
+pub(crate) const GRID_VIF_UNPACK_V4_5: u64 = 0x6f00_0000;
+
+/// `UNPACK` address flag: relative to `TOPS`.
+pub(crate) const GRID_VIF_TOPS: u64 = 0x8000;
+
+/// VIF `STMASK` (low half) with its mask word (high half).
+pub(crate) const GRID_VIF_STMASK_UV: u64 = 0x5050_5050_2000_0000;
+
+pub(crate) const GRID_VIF_STMASK_POS: u64 = 0x4040_4040_2000_0000;
+
+/// VIF `STCYCL 1,1` in the high half.
+pub(crate) const GRID_VIF_STCYCL_HI: u64 = 0x0100_0101 << 32;
+
+/// VIF `MSCAL` (the microprogram address goes in the low bits).
+pub(crate) const GRID_VIF_MSCAL: u64 = 0x1400_0000;
+
+/// The VU1 microprograms (byte addresses): the first batch's and the rest.
+pub(crate) const GRID_VU1_FIRST: u64 = 0x2320;
+
+pub(crate) const GRID_VU1_NEXT: u64 = 0x2358;
+
+/// GIF tag: `EOP`, `PRE` + `PRIM` 0x5c (textured, Gouraud triangle strip),
+/// `NREG` 3; registers `ST`, `RGBAQ`, `XYZ2`.
+pub(crate) const GRID_GIF_EOP: u64 = 0x8000;
+
+pub(crate) const GRID_GIF_PRIM: u64 = 0xb900 << 38;
+
+pub(crate) const GRID_GIF_NREG_3: u64 = 3 << 60;
+
+pub(crate) const GRID_GIF_REGS: u64 = 0x412;
+
+/// Bytes `count` elements take in the packet, rounded up to whole quadwords
+/// (`1 << shift` elements per quadword), as `BuildDmaPacket` computes them:
+/// `a0 = count / per_qw` (toward zero; `v1 = count > s3`, s3 = -1),
+/// `v0 = (a0 + (remainder != 0)) * 16`.
+pub(crate) fn grid_dma_qw_bytes(c: &mut Cpu, count: u64, shift: u32) {
+    c.g[A0][0] = addu(count, (1u64 << shift) - 1);
+    c.g[V1][0] = grid_mesh_slt(c.g[S3][0], count);
+    if c.g[V1][0] != 0 {
+        c.g[A0][0] = count;
+    }
+    c.g[V0][0] = shl32(count, 4 - shift) & 0xf;
+    let whole = c.g[V0][0] == 0;
+    c.g[A0][0] = sra32(c.g[A0][0], shift);
+    if whole {
+        c.cycles += 1;
+        c.g[V0][0] = shl32(c.g[A0][0], 4);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = addu(c.g[A0][0], 1);
+        c.g[V0][0] = shl32(c.g[V0][0], 4);
+    }
+}
+
+/// `void cPS2GridMesh_BuildDmaPacket(cPS2GridMesh* self, int rows,
+/// int row_verts, RowEntry* row_tab, u128* packet)` (0x386128): clear the
+/// packet and write it: a `cnt` tag, then per batch the VIF set-up, the
+/// GIF tag, the row data (`row_verts` per row), the masked uv / position /
+/// colour unpacks with room for the vertex data and an `MSCAL`, and a `ret`
+/// tail. Each row's entry in `row_tab` gets its vertex count and where its
+/// positions, uvs and colours go in the packet.
+pub fn c_ps2_grid_mesh_build_dma_packet(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0xb0);
+        c.g[V1][0] = 0;
+        frame.save(c, S0, 0xa0);
+        c.g[V0][0] = 0;
+        frame.save(c, S1, 0x90);
+        c.g[S0][0] = c.g[T0][0];
+        frame.save(c, S2, 0x80);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S3, 0x70);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x60);
+        c.g[V1][0] = GRID_VU1_FIRST;
+        frame.save(c, S5, 0x50);
+        c.g[V0][0] = GRID_VU1_NEXT;
+        frame.save(c, S6, 0x40);
+        c.g[S4][0] = GRID_VU1_FIRST >> 3;
+        frame.save(c, S7, 0x30);
+        c.g[S3][0] = GRID_VU1_NEXT >> 3;
+        frame.save(c, FP, 0x20);
+        c.g[A1][0] = 0;
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = Addr(r32(c, S2)).off(gmesh::PACKET_QWC).lw(c);
+        Addr(sp(c)).sw(c, c.g[A3][0]);
+        c.g[A2][0] = shl32(c.g[A0][0], 4);
+        c.g[A0][0] = c.g[S0][0];
+        EA_MEM_SET.call(c, 0x0038_6190)?;
+
+        // Head: cnt tag over the whole packet but the head and the tail.
+        let this = Addr(r32(c, S2));
+        let head = Addr(r32(c, S0));
+        c.g[V0][0] = this.off(gmesh::PACKET_QWC).lw(c);
+        c.g[V1][0] = GRID_DMA_CNT;
+        head.off(8).sd(c, 0);
+        c.g[T8][0] = 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(3));
+        c.g[T2][0] = 0;
+        c.g[V0][0] |= c.g[V1][0];
+        head.sd(c, c.g[V0][0]);
+        c.g[V0][0] = this.off(gmesh::STRIP_COUNT).lw(c);
+        let no_strips = (c.g[V0][0] as i64) <= 0;
+        c.g[S0][0] = addu(c.g[S0][0], 0x10);
+        if !no_strips {
+            // s0: write cursor; t2: batch; t8: rows done; t3: the unpack
+            // base (0x1b for the first batch); s6 / s7: the MSCALs.
+            c.cycles += 15;
+            c.g[V0][0] = GRID_VIF_MSCAL;
+            c.g[S5][0] = GRID_VIF_ONES;
+            c.g[V1][0] = c.g[S3][0] | c.g[V0][0];
+            c.g[T7][0] = gmesh::STRIP_STRIDE as u64;
+            c.g[V0][0] = c.g[S4][0] | c.g[V0][0];
+            c.g[S6][0] = c.g[V1][0] << 32;
+            c.g[S7][0] = c.g[V0][0] << 32;
+            c.g[T5][0] = sx(this.0.wrapping_add(gmesh::STRIPS + gmesh::STRIP_VERTS));
+            c.g[T4][0] = sx(this.0.wrapping_add(gmesh::STRIPS + gmesh::STRIP_ROWS));
+            c.g[S3][0] = u64::MAX;
+            c.g[T9][0] = gmesh::STRIP_STRIDE as u64;
+            c.g[T3][0] = 0x1b;
+            loop {
+                // VIF set-up, the GIF tag and the row-count unpack.
+                c.cycles += 55;
+                if c.g[T2][0] != 0 {
+                    c.g[T3][0] = 0;
+                }
+                c.mult(0, A2, T2, T7);
+                c.g[V1][0] = GRID_VIF_STCYCL_STMOD;
+                c.g[A0][0] = GRID_VIF_STROW_HI;
+                c.g[V0][0] = GRID_VIF_UNPACK_V4_32_2;
+                let q = Addr(r32(c, S0));
+                q.sd(c, c.g[V1][0]);
+                q.off(8).sd(c, c.g[A0][0]);
+                c.g[V0][0] |= c.g[T3][0];
+                q.off(0x10).sd(c, c.g[S5][0]);
+                c.g[V0][0] <<= 32;
+                q.off(0x18).sd(c, c.g[S5][0]);
+                c.g[V1][0] = GRID_VIF_ITOP_HI;
+                c.g[S0][0] = addu(c.g[S0][0], 0x20);
+                c.g[A3][0] = addu(c.g[T5][0], c.g[A2][0]);
+                let q = Addr(r32(c, S0));
+                q.sd(c, c.g[V1][0]);
+                c.g[FP][0] = GRID_GIF_REGS;
+                q.off(8).sd(c, c.g[V0][0]);
+                c.g[A0][0] = GRID_GIF_NREG_3;
+                c.g[A2][0] = addu(c.g[T4][0], c.g[A2][0]);
+                c.g[V0][0] = Addr(r32(c, A3)).lw(c);
+                c.g[V1][0] = GRID_GIF_PRIM;
+                q.off(0x18).sd(c, c.g[FP][0]);
+                c.g[A1][0] = addu(c.g[T3][0], 2);
+                c.g[V0][0] |= GRID_GIF_EOP;
+                c.g[T0][0] = GRID_VIF_UNPACK_V2_8;
+                c.g[V0][0] |= c.g[V1][0];
+                c.g[T1][0] = 0;
+                c.g[V0][0] |= c.g[A0][0];
+                c.g[S4][0] = addu(c.g[T2][0], 1);
+                q.off(0x10).sd(c, c.g[V0][0]);
+                c.g[V1][0] = Addr(r32(c, A2)).lw(c);
+                q.off(0x20).sd(c, c.g[V1][0]);
+                c.g[A0][0] = Addr(r32(c, A3)).lw(c);
+                q.off(0x30).sd(c, 0);
+                q.off(0x28).sd(c, c.g[A0][0]);
+                c.g[V0][0] = Addr(r32(c, A2)).lw(c);
+                c.g[V0][0] = shl32(c.g[V0][0], 16);
+                c.g[V0][0] |= GRID_VIF_TOPS;
+                c.g[A1][0] |= c.g[V0][0];
+                c.g[A1][0] |= c.g[T0][0];
+                c.g[A1][0] <<= 32;
+                q.off(0x38).sd(c, c.g[A1][0]);
+                c.g[S0][0] = addu(c.g[S0][0], 0x40);
+                c.g[V0][0] = Addr(r32(c, A2)).lw(c);
+                let no_rows = (c.g[V0][0] as i64) <= 0;
+                c.g[V1][0] = c.g[S0][0];
+                if !no_rows {
+                    // One halfword per row: its vertex count.
+                    c.cycles += 3;
+                    c.mult(0, V0, T2, T9);
+                    c.g[A0][0] = addu(c.g[V0][0], c.g[T4][0]);
+                    loop {
+                        c.cycles += 7;
+                        Addr(r32(c, V1)).sh(c, c.g[S1][0]);
+                        c.g[T1][0] = addu(c.g[T1][0], 1);
+                        c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+                        c.g[V0][0] = grid_mesh_slt(c.g[T1][0], c.g[V0][0]);
+                        let more = c.g[V0][0] != 0;
+                        c.g[V1][0] = addu(c.g[V1][0], 2);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0038_62e0);
+                        }
+                    }
+                }
+                c.cycles += 10;
+                c.mult(0, V0, T2, T7);
+                c.g[V1][0] = addu(c.g[V0][0], c.g[T4][0]);
+                let rows = Addr(r32(c, V1)).lw(c);
+                c.g[V0][0] = rows;
+                grid_dma_qw_bytes(c, rows, 3);
+
+                // Masked unpack of the uvs (V2-16); t3: where they go.
+                c.cycles += 35;
+                c.g[A0][0] = addu(c.g[S0][0], c.g[V0][0]);
+                c.mult(0, V1, T2, T7);
+                c.g[S0][0] = c.g[A0][0];
+                c.g[A3][0] = GRID_VIF_UNPACK_V2_16_MASKED;
+                c.g[A1][0] = addu(c.g[T5][0], c.g[V1][0]);
+                c.g[V1][0] = addu(c.g[T4][0], c.g[V1][0]);
+                c.g[A0][0] = Addr(r32(c, A1)).lw(c);
+                c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                Addr(r32(c, S0)).sd(c, GRID_VIF_STMASK_UV);
+                c.g[V0][0] = addu(c.g[V0][0], 2);
+                c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+                // a2: position base, v0: uv base, t1: colour base.
+                c.g[A2][0] = addu(c.g[T3][0], c.g[V0][0]);
+                c.g[V0][0] = addu(c.g[A2][0], c.g[A0][0]);
+                c.g[V1][0] = shl32(c.g[V1][0], 16);
+                c.g[T1][0] = addu(c.g[V0][0], c.g[A0][0]);
+                c.g[V1][0] |= GRID_VIF_TOPS;
+                c.g[V0][0] |= c.g[V1][0];
+                c.g[V0][0] |= c.g[A3][0];
+                c.g[V0][0] <<= 32;
+                Addr(r32(c, S0)).off(8).sd(c, c.g[V0][0]);
+                c.g[S0][0] = addu(c.g[S0][0], 0x10);
+                let verts = Addr(r32(c, A1)).lw(c);
+                c.g[V0][0] = verts;
+                c.g[T3][0] = c.g[S0][0];
+                grid_dma_qw_bytes(c, verts, 2);
+
+                // Masked unpack of the positions (V3-16); t6: where.
+                c.cycles += 29;
+                c.g[T0][0] = addu(c.g[S0][0], c.g[V0][0]);
+                c.mult(0, V0, T2, T7);
+                c.g[S0][0] = c.g[T0][0];
+                c.g[V1][0] = GRID_VIF_UNPACK_V3_16_MASKED;
+                c.g[A1][0] = 6;
+                c.g[A0][0] = addu(c.g[V0][0], c.g[T5][0]);
+                Addr(r32(c, S0)).sd(c, GRID_VIF_STMASK_POS);
+                c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+                c.g[V0][0] = shl32(c.g[V0][0], 16);
+                c.g[V0][0] |= GRID_VIF_TOPS;
+                c.g[V0][0] |= c.g[A2][0];
+                c.g[V0][0] |= c.g[V1][0];
+                c.g[V0][0] <<= 32;
+                Addr(r32(c, S0)).off(8).sd(c, c.g[V0][0]);
+                c.g[S0][0] = addu(c.g[S0][0], 0x10);
+                c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+                c.g[T6][0] = c.g[S0][0];
+                c.mult(0, V0, V0, A1);
+                let position_bytes = c.g[V0][0];
+                grid_dma_qw_bytes(c, position_bytes, 4);
+
+                // Unpack of the colours (V4-5); a1: where.
+                c.cycles += 26;
+                c.g[A0][0] = addu(c.g[S0][0], c.g[V0][0]);
+                c.mult(0, V0, T2, T7);
+                c.g[S0][0] = c.g[A0][0];
+                c.g[V1][0] = GRID_VIF_STCYCL_HI;
+                c.g[A0][0] = GRID_VIF_UNPACK_V4_5;
+                Addr(r32(c, S0)).sd(c, c.g[V1][0]);
+                c.g[A1][0] = addu(c.g[V0][0], c.g[T5][0]);
+                c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+                c.g[V0][0] = shl32(c.g[V0][0], 16);
+                c.g[V0][0] |= GRID_VIF_TOPS;
+                c.g[V0][0] |= c.g[T1][0];
+                c.g[V0][0] |= c.g[A0][0];
+                c.g[V0][0] <<= 32;
+                Addr(r32(c, S0)).off(8).sd(c, c.g[V0][0]);
+                c.g[S0][0] = addu(c.g[S0][0], 0x10);
+                let verts = Addr(r32(c, A1)).lw(c);
+                c.g[V0][0] = verts;
+                c.g[A1][0] = c.g[S0][0];
+                grid_dma_qw_bytes(c, verts, 3);
+
+                // Start the microprogram.
+                c.cycles += 3;
+                c.g[A0][0] = addu(c.g[S0][0], c.g[V0][0]);
+                let later = c.g[T2][0] != 0;
+                c.g[S0][0] = c.g[A0][0];
+                let q = Addr(r32(c, S0));
+                if later {
+                    c.cycles += 2;
+                    q.sd(c, 0);
+                    q.off(8).sd(c, c.g[S6][0]);
+                } else {
+                    c.cycles += 3;
+                    q.sd(c, 0);
+                    q.off(8).sd(c, c.g[S7][0]);
+                }
+
+                // Row table entries: vertex count and data pointers.
+                c.cycles += 6;
+                c.g[S0][0] = addu(c.g[S0][0], 0x10);
+                c.mult(0, V0, T2, T7);
+                c.g[V1][0] = addu(c.g[V0][0], c.g[T4][0]);
+                c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                let no_rows = (c.g[V0][0] as i64) <= 0;
+                c.g[T0][0] = 0;
+                if !no_rows {
+                    c.cycles += 11;
+                    c.mult(0, V0, T2, T9);
+                    c.g[A2][0] = Addr(sp(c)).lw(c);
+                    c.g[A3][0] = c.g[A1][0];
+                    c.g[T1][0] = 0;
+                    c.g[A1][0] = c.g[T3][0];
+                    c.g[T2][0] = shl32(c.g[S1][0], 2);
+                    c.g[T3][0] = shl32(c.g[S1][0], 1);
+                    c.g[V1][0] = addu(c.g[V0][0], c.g[T4][0]);
+                    c.g[V0][0] = shl32(c.g[T8][0], 4);
+                    c.g[A0][0] = addu(c.g[V0][0], c.g[A2][0]);
+                    c.g[A2][0] = 6;
+                    loop {
+                        // fp: the row's first vertex times 6 (position bytes).
+                        c.cycles += 15;
+                        c.mult(0, FP, T1, A2);
+                        let entry = Addr(r32(c, A0));
+                        entry.off(gmesh::ROW_UVS).sw(c, c.g[A1][0]);
+                        entry.off(gmesh::ROW_COLORS).sw(c, c.g[A3][0]);
+                        c.g[T0][0] = addu(c.g[T0][0], 1);
+                        entry.sw(c, c.g[S1][0]);
+                        c.g[T8][0] = addu(c.g[T8][0], 1);
+                        c.g[A3][0] = addu(c.g[A3][0], c.g[T3][0]);
+                        c.g[A1][0] = addu(c.g[A1][0], c.g[T2][0]);
+                        c.g[V0][0] = addu(c.g[FP][0], c.g[T6][0]);
+                        c.g[T1][0] = addu(c.g[T1][0], c.g[S1][0]);
+                        entry.off(gmesh::ROW_POSITIONS).sw(c, c.g[V0][0]);
+                        c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                        c.g[V0][0] = grid_mesh_slt(c.g[T0][0], c.g[V0][0]);
+                        let more = c.g[V0][0] != 0;
+                        c.g[A0][0] = addu(c.g[A0][0], gmesh::ROW_STRIDE as u64);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0038_6530);
+                        }
+                    }
+                }
+                c.cycles += 5;
+                c.g[V0][0] = Addr(r32(c, S2)).off(gmesh::STRIP_COUNT).lw(c);
+                c.g[T2][0] = c.g[S4][0];
+                c.g[V0][0] = grid_mesh_slt(c.g[T2][0], c.g[V0][0]);
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[T3][0] = 0x1b;
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_61f8);
+                }
+            }
+        }
+        // Tail: ret tag and STCYCL.
+        c.cycles += 21;
+        c.g[V1][0] = GRID_DMA_RET_1;
+        c.g[V0][0] = GRID_VIF_STCYCL_HI;
+        let tail = Addr(r32(c, S0));
+        tail.off(0x18).sd(c, c.g[V0][0]);
+        tail.sd(c, c.g[V1][0]);
+        tail.off(8).sd(c, 0);
+        tail.off(0x10).sd(c, 0);
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) mod renderer_fields {
+
+    /// The default camera matrix; `man::CAMERA` starts out pointing at it.
+    pub(crate) const DEFAULT_CAMERA: u32 = 0x10e0;
+
+    /// Matrix stack depth: `PopMatrix` steps it down with `man::CAMERA`
+    /// (0x40 bytes a level); `Renderer_Init` clears it.
+    pub(crate) const MATRIX_DEPTH: u32 = 0x13e0;
+
+    /// Pointer to the scratchpad (0x70000000).
+    pub(crate) const SCRATCHPAD: u32 = 0x13e8;
+
+    /// The display-mode table: entry count, current index, entries.
+    pub(crate) const MODE_COUNT: u32 = 0x59c4;
+
+    pub(crate) const CUR_MODE: u32 = 0x59c8;
+
+    pub(crate) const MODE_TABLE: u32 = 0x59cc;
+
+    /// Set when the display buffer is a 16-bit format.
+    pub(crate) const DISP_16BIT: u32 = 0x59d0;
+
+    /// The GS `DIMX` value (4x4 dither matrix, 4 bits per entry).
+    pub(crate) const DITHER: u32 = 0x59e0;
+
+    /// Unknown word set to 1 at start-up.
+    pub(crate) const F59E8: u32 = 0x59e8;
+
+    /// Unknown float set to 1.0 at start-up.
+    pub(crate) const F59FC: u32 = 0x59fc;
+
+    /// The VIF packet buffer: the 128-byte aligned start (three copies), the
+    /// raw allocation and a cleared word.
+    pub(crate) const VIF_BUF: [u32; 3] = [0x5a00, 0x5a0c, 0x5a04];
+
+    pub(crate) const VIF_BUF_RAW: u32 = 0x5a08;
+
+    pub(crate) const VIF_BUF_USED: u32 = 0x5a10;
+
+    /// The GIF packet buffer, laid out the same way.
+    pub(crate) const GIF_BUF: [u32; 3] = [0x5a14, 0x5a20, 0x5a18];
+
+    pub(crate) const GIF_BUF_RAW: u32 = 0x5a1c;
+
+    pub(crate) const GIF_BUF_USED: u32 = 0x5a24;
+
+    /// Unknown words cleared at the end of start-up.
+    pub(crate) const F5A28: u32 = 0x5a28;
+
+    pub(crate) const F5A2C: u32 = 0x5a2c;
+
+    /// The display mode: frame size and pixel formats.
+    pub(crate) const WIDTH: u32 = 0x5a30;
+
+    pub(crate) const HEIGHT: u32 = 0x5a34;
+
+    /// Display (front) and draw buffer formats, also read together as one
+    /// doubleword (the depth buffer's is `man::MODE`).
+    pub(crate) const DISP_PSM: u32 = 0x5a38;
+
+    pub(crate) const DRAW_PSM: u32 = 0x5a3c;
+
+    /// `sceGsResetGraph` arguments (halfwords): interlace, field/frame,
+    /// video mode (2 = NTSC).
+    pub(crate) const INTERLACE: u32 = 0x5a44;
+
+    pub(crate) const FFMODE: u32 = 0x5a46;
+
+    pub(crate) const OMODE: u32 = 0x5a48;
+
+    /// Progressive (480p) output.
+    pub(crate) const PROGRESSIVE: u32 = 0x5a4c;
+
+    /// Frame width in 64-pixel pages.
+    pub(crate) const WIDTH_PAGES: u32 = 0x5a50;
+
+    /// The displayed area and its width in pages.
+    pub(crate) const DISP_WIDTH: u32 = 0x5a54;
+
+    pub(crate) const DISP_HEIGHT: u32 = 0x5a58;
+
+    pub(crate) const DISP_WIDTH_PAGES: u32 = 0x5a5c;
+
+    /// Unknown word cleared by `Renderer_SetDisplayMode`.
+    pub(crate) const F5A60: u32 = 0x5a60;
+
+    /// Horizontal magnification for the display width.
+    pub(crate) const MAGH: u32 = 0x5a64;
+
+    /// GS pages of the display, draw and depth buffers.
+    pub(crate) const DISP_PAGES: u32 = 0x5a68;
+
+    pub(crate) const DRAW_PAGES: u32 = 0x5a6c;
+
+    pub(crate) const Z_PAGES: u32 = 0x5a70;
+
+    /// Read by `GetFlipCount` (the symbol table's name); cleared by
+    /// `Renderer_SetDisplayMode`.
+    pub(crate) const FLIP_COUNT: u32 = 0x5a74;
+
+    /// The draw, display and depth buffers' VRAM blocks.
+    pub(crate) const DRAW_FB: u32 = 0x5a78;
+
+    pub(crate) const DISP_FB: u32 = 0x5a7c;
+
+    pub(crate) const Z_BUF: u32 = 0x5a80;
+
+    /// The vblank INTC handler and the VIF1 DMAC handler ids.
+    pub(crate) const VBLANK_HANDLER: u32 = 0x5ac0;
+
+    pub(crate) const DMAC_HANDLER: u32 = 0x5ac4;
+
+    /// The DMA kick thread and its 0x1000-byte stack.
+    pub(crate) const KICK_THREAD: u32 = 0x5ad0;
+
+    pub(crate) const KICK_STACK: u32 = 0x5ae0;
+
+    /// Unknown words cleared at start-up (0x6c54..0x6c60 is four words).
+    pub(crate) const F6C50: u32 = 0x6c50;
+
+    pub(crate) const F6C54: u32 = 0x6c54;
+
+    /// Unknown word: cleared at start-up, set by `PS2GraphicsMan_v98`.
+    pub(crate) const F6D14: u32 = 0x6d14;
+
+    pub(crate) const F6D3C: u32 = 0x6d3c;
+}
+
+pub(crate) mod display_mode_entry {
+
+    pub(crate) const DISP_WIDTH: u32 = 0x80;
+
+    pub(crate) const DISP_HEIGHT: u32 = 0x84;
+
+    pub(crate) const WIDTH: u32 = 0x88;
+
+    pub(crate) const HEIGHT: u32 = 0x8c;
+
+    pub(crate) const DISP_PSM: u32 = 0x90;
+
+    pub(crate) const DRAW_PSM: u32 = 0x94;
+
+    pub(crate) const ZPSM: u32 = 0x98;
+
+    pub(crate) const INTERLACE: u32 = 0x9c;
+
+    pub(crate) const PROGRESSIVE: u32 = 0xa0;
+
+    pub(crate) const MODE_STRIDE: u32 = 0xa4;
+
+    /// The game's eight modes (in the image's data).
+    pub(crate) const DISPLAY_MODES: u32 = 0x0044_b440;
+
+    pub(crate) const DISPLAY_MODE_COUNT: u64 = 8;
+
+    /// `"%dx%dx%d (%.2fk)"`.
+    pub(crate) const NAME_FORMAT: u32 = 0x0049_28e8;
+}
+
+pub(crate) mod renderer_hw {
+
+    pub(crate) const VIF1_CHCR: u32 = 0x1000_9000;
+
+    pub(crate) const VIF1_MADR: u32 = 0x1000_9010;
+
+    pub(crate) const VIF1_QWC: u32 = 0x1000_9020;
+
+    pub(crate) const VIF1_TADR: u32 = 0x1000_9030;
+
+    pub(crate) const GIF_TADR: u32 = 0x1000_a030;
+
+    pub(crate) const SPR_FROM_CHCR: u32 = 0x1000_d000;
+
+    pub(crate) const D_STAT: u32 = 0x1000_e010;
+
+    pub(crate) const GIF_CTRL: u32 = 0x1000_3000;
+
+    pub(crate) const VIF1_STAT: u32 = 0x1000_3c00;
+
+    pub(crate) const VIF1_FBRST: u32 = 0x1000_3c10;
+
+    pub(crate) const VIF1_ERR: u32 = 0x1000_3c20;
+
+    pub(crate) const GS_CSR: u32 = 0x1200_1000;
+
+    pub(crate) const SCRATCHPAD: u32 = 0x7000_0000;
+
+    /// `VIF1_STAT` busy bits (VPS, FQC).
+    pub(crate) const VIF1_BUSY: u64 = 0x1f00_0003;
+
+    /// `CSR.FIFO` and its "empty" value.
+    pub(crate) const CSR_FIFO: u64 = 0xc000;
+
+    pub(crate) const CSR_FIFO_EMPTY: u64 = 0x4000;
+
+    /// `CSR.VSINT`.
+    pub(crate) const CSR_VSINT: u64 = 0x8;
+}
+
+pub(crate) mod ps2gm {
+
+    /// Number of shape banks searched for textures (`int`).
+    pub(crate) const SHAPE_BANK_COUNT: u32 = 0x278;
+
+    /// The shape banks (`SHPS**`).
+    pub(crate) const SHAPE_BANKS: u32 = 0x27c;
+
+    /// Texture name cache: 12-byte entries `{ int handle; char name[8]; }`.
+    pub(crate) const TEX_CACHE: u32 = 0x280;
+
+    pub(crate) const TEX_CACHE_ENTRY: u32 = 0xc;
+
+    pub(crate) const TEX_CACHE_NAME: u32 = 0x4;
+
+    /// Entries in the texture name cache.
+    pub(crate) const TEX_CACHE_COUNT: u32 = 0xe80;
+
+    /// Pointer to the current render state (`+0x4` flags, `+0x10` texture
+    /// handle); `Renderer_Init` copies its first 0x14 bytes in.
+    pub(crate) const CUR_STATE: u32 = 0xe84;
+
+    /// The texture slot table (2000 words), and a second table of the same
+    /// size right after it.
+    pub(crate) const TEX_SLOTS: u32 = 0x18f8;
+
+    pub(crate) const TEX_SLOTS_SAVED: u32 = 0x3838;
+
+    pub(crate) const TEX_SLOTS_BYTES: u32 = 0x1f40;
+}
+
+pub(crate) mod kick {
+
+    /// `int bufState[2]`: 2 queued, 3 in flight.
+    pub(crate) const BUF_STATE: u32 = 0x5a90;
+
+    pub(crate) const IN_FLIGHT: u32 = 0x5a98;
+
+    pub(crate) const IN_FLIGHT_VIF2: u32 = 0x5a9c;
+
+    pub(crate) const IN_FLIGHT_GIF2: u32 = 0x5aa0;
+
+    pub(crate) const QUEUED: u32 = 0x5aa4;
+
+    pub(crate) const QUEUED_VIF1: u32 = 0x5aa8;
+
+    pub(crate) const QUEUED_VIF2: u32 = 0x5aac;
+
+    pub(crate) const QUEUED_GIF1: u32 = 0x5ab0;
+
+    pub(crate) const QUEUED_GIF2: u32 = 0x5ab4;
+
+    /// A binary semaphore (max 1, starts signalled) the kick thread holds
+    /// for each pass over the queue.
+    pub(crate) const QUEUE_MUTEX: u32 = 0x5acc;
+
+    /// `void (*phase2Callback)(void*)` and its argument.
+    pub(crate) const PHASE2_CALLBACK: u32 = 0x6d0c;
+
+    pub(crate) const PHASE2_ARG: u32 = 0x6d10;
+
+    /// Chain-mode starts: VIF1 with TIE, GIF.
+    pub(crate) const VIF1_CHAIN: u64 = 0x185;
+
+    pub(crate) const GIF_CHAIN: u64 = 0x105;
+
+    /// The VIF1 code quadword sent ahead of each kick (`D_0044B9C0`:
+    /// MSKPATH3), and the GIF_MODE value (IMT).
+    pub(crate) const VIF_PRELUDE: u32 = 0x0044_b9c0;
+
+    pub(crate) const GIF_MODE_IMT: u64 = 4;
+}
+
+pub(crate) mod model_fixup {
+
+    /// 0x50-byte records (unknown; +0x10 a remap index, +0x12 a value it
+    /// offsets when not negative).
+    pub(crate) const RECORDS_50: u32 = 0x18;
+
+    /// Texture references: 0x14 bytes `{ flags (0x8000 alpha), name index
+    /// (then the texture handle), short env, short scale, count, sublists }`;
+    /// the name table at `base + 32 * index` holds the name and, at +0x10, an
+    /// environment name and at +0x14 a float.
+    pub(crate) const TEXTURES: u32 = 0x20;
+
+    pub(crate) const TEXTURE_SIZE: u32 = 0x14;
+
+    /// Matrix lists (8 bytes `{ count, u32* groups }`), offset and pointer.
+    pub(crate) const MATRIX_LISTS_OFF: u32 = 0x30;
+
+    pub(crate) const MATRIX_LISTS: u32 = 0x3c;
+
+    /// Blend groups (12 bytes `{ count, u32* weights, matrix slot }`),
+    /// offset and pointer.
+    pub(crate) const BLEND_GROUPS_OFF: u32 = 0x34;
+
+    pub(crate) const BLEND_GROUPS: u32 = 0x38;
+
+    /// The caller's t2 argument.
+    pub(crate) const USER: u32 = 0x40;
+
+    /// Counts (`short`).
+    pub(crate) const BLEND_GROUP_COUNT: u32 = 0x44;
+
+    pub(crate) const MATRIX_LIST_COUNT: u32 = 0x46;
+
+    pub(crate) const TEXTURE_COUNT: u32 = 0x48;
+
+    pub(crate) const RECORD_50_COUNT: u32 = 0x4a;
+}
+
+/// GS page rows for a pixel format: 32 for the 32/24-bit colour and depth
+/// formats, 64 for the 16-bit ones, none for anything else (the games'
+/// `switch` over the format).
+pub(crate) fn gs_page_rows(psm: u64) -> Option<u32> {
+    match psm {
+        0x00 | 0x01 | 0x30 | 0x31 => Some(32),
+        0x02 | 0x0a | 0x32 | 0x3a => Some(64),
+        _ => None,
+    }
+}
+
+/// `(v + rows - 1) / rows` the way the game rounds (32-bit add, logical shift).
+pub(crate) fn gs_pages_up(v: u64, rows: u32) -> u64 {
+    let shift = rows.trailing_zeros();
+    sx((v as u32).wrapping_add(rows - 1) >> shift)
+}
+
+// ---------------------------------------------------------------------------
+// Renderer_Init (0x375a40)
+
+#[cfg(test)]
+pub(crate) const RENDERER_INIT: u32 = 0x0037_5a40;
+
+/// Loop heads (event checks): the settle delay, the five hardware waits,
+/// the cleared block and the per-layer setup.
+pub(crate) const RENDERER_INIT_SETTLE: u32 = 0x0037_5be8;
+
+pub(crate) const RENDERER_INIT_WAIT_D1: u32 = 0x0037_5c38;
+
+pub(crate) const RENDERER_INIT_WAIT_D1_FLUSH: u32 = 0x0037_5c98;
+
+pub(crate) const RENDERER_INIT_WAIT_D2: u32 = 0x0037_5cc0;
+
+pub(crate) const RENDERER_INIT_WAIT_VIF1: u32 = 0x0037_5ce8;
+
+pub(crate) const RENDERER_INIT_WAIT_GS_FIFO: u32 = 0x0037_5d10;
+
+pub(crate) const RENDERER_INIT_CLEAR: u32 = 0x0037_61c8;
+
+pub(crate) const RENDERER_INIT_LAYERS: u32 = 0x0037_61f8;
+
+/// `gp`-relative word holding the VIF0 DMA channel.
+pub(crate) const RENDERER_GP_VIF0_CHANNEL: u32 = 0x2930;
+
+/// The packet buffers: sizes and allocation names (`"VifBuff"`, `"GifBuff"`).
+pub(crate) const RENDERER_VIF_BUF_SIZE: u64 = 0x0019_9940;
+
+pub(crate) const RENDERER_VIF_BUF_NAME: u32 = 0x004a_4368;
+
+pub(crate) const RENDERER_GIF_BUF_SIZE: u64 = 0x0004_cc40;
+
+pub(crate) const RENDERER_GIF_BUF_NAME: u32 = 0x004a_4370;
+
+/// `addiu v0, 0x7f; and v0, ~0x7f`: 128-byte alignment.
+pub(crate) const RENDERER_ALIGN_128: u64 = 0xffff_ffff_ffff_ff80;
+
+/// The DMA kick thread: `Renderer_DmaKickThreadEntry`, stack size, `gp`,
+/// priority.
+pub(crate) const RENDERER_KICK_ENTRY: u32 = 0x0038_2740;
+
+pub(crate) const RENDERER_KICK_STACK_SIZE: u64 = 0x1000;
+
+pub(crate) const RENDERER_KICK_GP: u32 = 0x004a_30f0;
+
+pub(crate) const RENDERER_KICK_PRIORITY: u64 = 5;
+
+/// `Renderer_VBlankStartIntc` (INTC 2, vblank start) and
+/// `Renderer_Vif1DmacHandler` (DMAC channel 1).
+pub(crate) const RENDERER_VBLANK_HANDLER: u32 = 0x0038_25c0;
+
+pub(crate) const RENDERER_VIF1_DMAC_HANDLER: u32 = 0x0038_2650;
+
+/// The defer and texture managers: sizes and names (`"DEFER MAN"`,
+/// `"TEX MAN"`).
+pub(crate) const RENDERER_DEFER_MAN_SIZE: u64 = 0x0006_b100;
+
+pub(crate) const RENDERER_DEFER_MAN_NAME: u32 = 0x0049_2888;
+
+pub(crate) const RENDERER_TEX_MAN_SIZE: u64 = 0x6740;
+
+pub(crate) const RENDERER_TEX_MAN_NAME: u32 = 0x004a_4378;
+
+/// The interrupt table global.
+pub(crate) const RENDERER_INTC_TABLE: u32 = 0x0050_59d8;
+
+/// Unknown 0x14-byte block copied to `INIT_BLOCK_DEST`.
+pub(crate) const RENDERER_INIT_BLOCK: u32 = 0x0050_1420;
+
+/// The default 4x4 dither matrix (16 words).
+pub(crate) const RENDERER_DEFAULT_DITHER: u32 = 0x0049_2898;
+
+/// TexMan fields set up before its constructor: the VRAM node list points
+/// at the VRAM heap, `+0x6340` at the second heap.
+pub(crate) const RENDERER_TEX_VRAM_HEAP: u32 = 0x1f60;
+
+pub(crate) const RENDERER_TEX_VRAM_NODES: u32 = 0x3f50;
+
+pub(crate) const RENDERER_TEX_HEAP2: u32 = 0x4350;
+
+pub(crate) const RENDERER_TEX_HEAP2_PTR: u32 = 0x6340;
+
+/// Callee-saved registers `Renderer_Init` keeps in its 0x160 frame.
+pub(crate) const RENDERER_INIT_SAVES: [(usize, u32); 9] = [
+    (S2, 0x120),
+    (S0, 0x140),
+    (S1, 0x130),
+    (S3, 0x110),
+    (S5, 0xf0),
+    (S6, 0xe0),
+    (FP, 0xc0),
+    (S4, 0x100),
+    (S7, 0xd0),
+];
+
+/// Float constants `Renderer_Init` stores into three global tables (unknown
+/// meaning: a 9-float block at 0x504730, a 4x4 matrix at 0x508380 and four
+/// 1.0s at 0x5083c0), in the order the game stores them, with the FPU
+/// register holding each value.
+pub(crate) const RENDERER_INIT_FLOAT_STORES: [(u32, usize); 28] = [
+    (0x0050_4730, 4),
+    (0x0050_4750, 2),
+    (0x0050_83bc, 1),
+    (0x0050_83cc, 0),
+    (0x0050_4738, 6),
+    (0x0050_4740, 7),
+    (0x0050_4744, 8),
+    (0x0050_4748, 9),
+    (0x0050_8380, 0),
+    (0x0050_8388, 10),
+    (0x0050_8394, 12),
+    (0x0050_8398, 11),
+    (0x0050_83a4, 3),
+    (0x0050_83a8, 13),
+    (0x0050_83b8, 5),
+    (0x0050_83c0, 0),
+    (0x0050_4734, 3),
+    (0x0050_474c, 3),
+    (0x0050_8384, 0),
+    (0x0050_838c, 0),
+    (0x0050_8390, 12),
+    (0x0050_839c, 0),
+    (0x0050_83a0, 13),
+    (0x0050_83ac, 0),
+    (0x0050_83b0, 5),
+    (0x0050_83b4, 5),
+    (0x0050_83c4, 0),
+    (0x0050_83c8, 0),
+];
+
+/// The one integer zero among them.
+pub(crate) const RENDERER_INIT_ZERO_STORE: u32 = 0x0050_473c;
+
+/// `gp`-relative float literals loaded into f4, f7, f8, f9, f5, f12, f13,
+/// f10 and f11.
+pub(crate) const RENDERER_INIT_LITERALS: [(usize, u32); 9] = [
+    (4, 0x27ec),
+    (7, 0x27e8),
+    (8, 0x27e4),
+    (9, 0x27e0),
+    (5, 0x27dc),
+    (12, 0x27d8),
+    (13, 0x27d4),
+    (10, 0x27d0),
+    (11, 0x27cc),
+];
+
+/// The manager's field `off` (the manager is in s2 throughout).
+pub(crate) fn renderer_init_field(c: &Cpu, off: u32) -> u32 {
+    r32(c, S2).wrapping_add(off)
+}
+
+/// A virtual call on the manager (s2) through slot `slot` of the vtable
+/// `vt`; the method's address is left in `fn_reg`.
+pub(crate) fn renderer_init_vcall(
+    c: &mut Cpu,
+    vt: u64,
+    slot: u32,
+    fn_reg: usize,
+    ret_to: u32,
+) -> Flow {
+    let method = VSlot::read(c, vt, slot);
+    c.g[A0][0] = method.this(c.g[S2][0]);
+    c.g[fn_reg][0] = method.func;
+    call_ptr(c, method.func as u32, ret_to)
+}
+
+/// gcc's `(float)(unsigned)v0`: halve (keeping the low bit) and double when
+/// the top bit is set. Leaves the halved value in v1 (and the adjusted one
+/// in v0) as the game does; charges the arm.
+pub(crate) fn renderer_init_unsigned_to_float(c: &mut Cpu) -> FpuF32 {
+    let v = c.g[V0][0];
+    c.g[V1][0] = sx((v as u32) >> 1);
+    if (v as i64) < 0 {
+        c.cycles += 6;
+        c.g[V0][0] = (v & 1) | c.g[V1][0];
+        let half = FpuF32::from_i32(c.g[V0][0] as u32 as i32);
+        half + half
+    } else {
+        c.cycles += 4;
+        FpuF32::from_i32(v as u32 as i32)
+    }
+}
+
+/// Wait until the DMA channel whose `CHCR` is at v1 stops (`STR` clear).
+pub(crate) fn renderer_init_wait_dma(c: &mut Cpu, head: u32) {
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = c.lw(r32(c, V1)) & DMA_CHCR_STR;
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// Store a freshly allocated packet buffer (v0): the raw pointer, the
+/// 128-byte aligned start (v1, three copies) and a cleared word.
+pub(crate) fn renderer_init_store_packet_buffer(
+    c: &mut Cpu,
+    used: u32,
+    aligned: [u32; 3],
+    raw: u32,
+) {
+    c.g[V1][0] = sx(r32(c, V0).wrapping_add(0x7f)) & c.g[S1][0];
+    c.sw(renderer_init_field(c, used), 0);
+    for off in aligned {
+        c.sw(renderer_init_field(c, off), c.g[V1][0]);
+    }
+    c.sw(renderer_init_field(c, raw), c.g[V0][0]);
+}
+
+/// `void Renderer_Init(PS2GraphicsMan* self)` (0x375a40): bring up the
+/// renderer. Uploads the VU0 microcode, resets VIF0/VU0/VU1/the GS path and
+/// DMA, allocates the 128-byte aligned VIF and GIF packet buffers, makes the
+/// first virtual setup call, resets DMA channels 1/2, the GIF and VIF1 and
+/// waits (after a ~10000-iteration settle loop) for them, the VIF1 FIFO and
+/// the GS FIFO to drain; then creates the vblank and binary semaphores and
+/// the DMA kick thread, installs the vblank and VIF1 DMA handlers, builds
+/// the display-mode table, creates the defer and texture managers, sets up
+/// the interrupt table, the default dither matrix, brightness, the viewport
+/// (from the display's width and height, converted as unsigned), some
+/// global float tables, and finally the per-layer setup (layers 0, 1, then
+/// -1) through the vtable.
+pub fn renderer_init(c: &mut Cpu) {
+    use renderer_fields::*;
+    use renderer_hw::*;
+    guest(c, |c| {
+        c.cycles += 106;
+        let frame = Frame::open(c, 0x160);
+        for (reg, off) in RENDERER_INIT_SAVES {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0xb0);
+        frame.save_fpr(c, 20, 0x150);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[A0][0] = 0;
+        c.g[S0][0] = sx(r32(c, GP).wrapping_add(RENDERER_GP_VIF0_CHANNEL));
+        c.g[S1][0] = RENDERER_ALIGN_128;
+        callee::SCE_DMA_GET_CHAN.call(c, 0x0037_5a88)?;
+
+        // VU0 microcode through the VIF0 channel (kept in a global).
+        c.sw(
+            r32(c, GP).wrapping_add(RENDERER_GP_VIF0_CHANNEL),
+            c.g[V0][0],
+        );
+        c.g[A0][0] = c.g[S0][0];
+        callee::VU0_UPLOAD_MICROCODE_A.call(c, 0x0037_5a94)?;
+        c.g[A0][0] = c.g[S0][0];
+        callee::VU0_UPLOAD_MICROCODE_B.call(c, 0x0037_5a9c)?;
+
+        c.g[V1][0] = sx(renderer_hw::SCRATCHPAD);
+        c.g[A0][0] = sx(renderer_init_field(c, DEFAULT_CAMERA));
+        c.g[V0][0] = u64::MAX;
+        c.sw(renderer_init_field(c, MATRIX_DEPTH), 0);
+        c.sw(renderer_init_field(c, man::CUR_VIEW), 0);
+        c.sw(renderer_init_field(c, F6D3C), 0);
+        c.sw(
+            renderer_init_field(c, renderer_fields::SCRATCHPAD),
+            c.g[V1][0],
+        );
+        c.sw(renderer_init_field(c, man::CAMERA), c.g[A0][0]);
+        c.sw(renderer_init_field(c, CUR_MODE), c.g[V0][0]);
+        callee::SCE_DEV_VIF0_RESET.call(c, 0x0037_5ac4)?;
+        callee::SCE_DEV_VU0_RESET.call(c, 0x0037_5acc)?;
+        callee::SCE_DEV_VU1_RESET.call(c, 0x0037_5ad4)?;
+        callee::SCE_GS_RESET_PATH.call(c, 0x0037_5adc)?;
+        c.g[A0][0] = 1;
+        callee::SCE_DMA_RESET.call(c, 0x0037_5ae4)?;
+
+        // The VIF and GIF packet buffers.
+        c.sw(renderer_init_field(c, man::TEX_READY), 0);
+        c.g[A0][0] = RENDERER_VIF_BUF_SIZE;
+        c.g[A1][0] = sx(RENDERER_VIF_BUF_NAME);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        callee::OPERATOR_NEW_NAMED.call(c, 0x0037_5b04)?;
+        renderer_init_store_packet_buffer(c, VIF_BUF_USED, VIF_BUF, VIF_BUF_RAW);
+        c.g[A0][0] = RENDERER_GIF_BUF_SIZE;
+        c.g[A1][0] = sx(RENDERER_GIF_BUF_NAME);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        callee::OPERATOR_NEW_NAMED.call(c, 0x0037_5b3c)?;
+        renderer_init_store_packet_buffer(c, GIF_BUF_USED, GIF_BUF, GIF_BUF_RAW);
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0;
+        let vt = c.lw(renderer_init_field(c, man::DISPLAY));
+        c.g[A3][0] = vt;
+        renderer_init_vcall(c, vt, 0x3a8, V0, 0x0037_5b74)?;
+
+        // Reset the DMA status, channels 1 and 2, the GIF and VIF1.
+        c.g[V0][0] = sx(D_STAT);
+        c.g[A0][0] = 0xa006;
+        c.sw(D_STAT, 0xa006);
+        c.g[V1][0] = sx(VIF1_CHCR);
+        c.g[A1][0] = 0x81;
+        c.sw(VIF1_CHCR, 0x81);
+        c.g[V0][0] = sx(GIF_CHCR);
+        c.sw(GIF_CHCR, 0x81);
+        c.g[V1][0] = sx(GIF_CTRL);
+        c.g[V0][0] = 1;
+        c.sw(GIF_CTRL, 1);
+        c.g[A0][0] = sx(VIF1_FBRST);
+        c.g[V1][0] = 9;
+        c.sw(VIF1_FBRST, 9);
+        c.g[V0][0] = sx(VIF1_ERR);
+        c.sw(VIF1_ERR, 0);
+        let stack = sp(c);
+        c.g[S3][0] = sx(stack.wrapping_add(0x20));
+        c.g[S6][0] = sx(stack.wrapping_add(0x50));
+        c.g[S5][0] = sx(stack.wrapping_add(0x90));
+        c.g[FP][0] = sx(stack.wrapping_add(0xa0));
+
+        // Let the resets settle.
+        c.g[V1][0] = 0x270e;
+        loop {
+            c.cycles += 7;
+            let more = (c.g[V1][0] as i64) >= 0;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, RENDERER_INIT_SETTLE);
+            }
+        }
+
+        // Clear two scratchpad doublewords, wait for channel 1.
+        c.cycles += 11;
+        c.g[AT][0] = sx(renderer_hw::SCRATCHPAD);
+        c.sd(renderer_hw::SCRATCHPAD + 8, 0);
+        c.g[A1][0] = sx(renderer_hw::SCRATCHPAD);
+        c.sd(renderer_hw::SCRATCHPAD, 0);
+        c.g[V0][0] = sx(VIF1_CHCR);
+        c.g[S4][0] = sx(renderer_init_field(c, KICK_STACK));
+        c.g[V1][0] = c.lw(VIF1_CHCR) & DMA_CHCR_STR;
+        c.g[S7][0] = sx(renderer_init_field(c, F6C54));
+        if c.g[V1][0] != 0 {
+            c.cycles += 2;
+            c.g[V1][0] = sx(VIF1_CHCR);
+            renderer_init_wait_dma(c, RENDERER_INIT_WAIT_D1);
+        }
+
+        // Send one quadword from the (cleared) scratchpad down VIF1.
+        c.cycles += 16;
+        c.g[V0][0] = sx(VIF1_MADR);
+        c.g[V1][0] = sx(0x8000_0000);
+        c.sw(VIF1_MADR, c.g[V1][0]);
+        c.g[A0][0] = sx(VIF1_QWC);
+        c.g[V0][0] = 1;
+        c.sw(VIF1_QWC, 1);
+        c.g[V1][0] = sx(VIF1_CHCR);
+        c.g[A0][0] = 0x101;
+        c.sw(VIF1_CHCR, 0x101);
+        c.g[V0][0] = c.lw(VIF1_CHCR) & DMA_CHCR_STR;
+        let busy = c.g[V0][0] != 0;
+        c.g[V1][0] = 0x1000_0000;
+        if busy {
+            c.cycles += 1;
+            c.g[V1][0] = sx(VIF1_CHCR);
+            renderer_init_wait_dma(c, RENDERER_INIT_WAIT_D1_FLUSH);
+        }
+
+        // Wait for channel 2, VIF1 and the GS FIFO.
+        c.cycles += 3;
+        c.g[V1][0] = sx(GIF_CHCR);
+        c.g[A0][0] = 0x1000_0000;
+        renderer_init_wait_dma(c, RENDERER_INIT_WAIT_D2);
+        c.cycles += 3;
+        c.g[V1][0] = VIF1_BUSY;
+        c.g[A0][0] = sx(VIF1_STAT);
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw(VIF1_STAT) & c.g[V1][0];
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, RENDERER_INIT_WAIT_VIF1);
+            }
+        }
+        c.cycles += 3;
+        c.g[V1][0] = sx(GS_CSR);
+        c.g[A0][0] = CSR_FIFO_EMPTY;
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = c.ld(GS_CSR) & CSR_FIFO;
+            if c.g[V0][0] == c.g[A0][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, RENDERER_INIT_WAIT_GS_FIFO);
+            }
+        }
+
+        // Frame-swap state, the two semaphores, the DMA kick thread.
+        c.cycles += 196;
+        c.sw(renderer_init_field(c, VBLANK_SWAP_STATE), 0);
+        c.sw(renderer_init_field(c, kick::BUF_STATE), 0);
+        c.sw(renderer_init_field(c, kick::BUF_STATE + 4), 0);
+        c.sw(renderer_init_field(c, kick::IN_FLIGHT), u64::MAX);
+        c.sw(renderer_init_field(c, kick::QUEUED), 1);
+        c.sw(renderer_init_field(c, VBLANK_WAIT_COUNT), 1);
+        c.sw(renderer_init_field(c, VBLANK_COUNTER), 0);
+        c.g[V0][0] = u64::MAX;
+        c.g[S1][0] = 1;
+        c.g[S0][0] = 0x10;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x18;
+        callee::MEMSET.call(c, 0x0037_5d64)?;
+        // SemaParam {count, max_count = 16, init_count = 0, ...}.
+        c.g[A0][0] = c.g[SP][0];
+        c.sw(sp(c).wrapping_add(4), c.g[S0][0]);
+        c.sw(sp(c).wrapping_add(8), 0);
+        callee::CREATE_SEMA.call(c, 0x0037_5d74)?;
+        c.sw(renderer_init_field(c, VBLANK_SEMA), c.g[V0][0]);
+        // max_count = 1, init_count = 1.
+        c.g[A0][0] = c.g[SP][0];
+        c.sw(sp(c).wrapping_add(4), c.g[S1][0]);
+        c.sw(sp(c).wrapping_add(8), c.g[S1][0]);
+        callee::CREATE_SEMA.call(c, 0x0037_5d88)?;
+        c.sw(renderer_init_field(c, kick::QUEUE_MUTEX), c.g[V0][0]);
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x30;
+        callee::MEMSET.call(c, 0x0037_5d9c)?;
+        // ThreadParam {status, entry, stack, stack size, gp, priority x2, ...}.
+        let param = r32(c, S3);
+        c.g[V1][0] = sx(RENDERER_KICK_ENTRY);
+        c.g[A1][0] = RENDERER_KICK_PRIORITY;
+        c.g[V0][0] = sx(RENDERER_KICK_GP);
+        c.g[A0][0] = c.g[S3][0];
+        c.sw(param.wrapping_add(0xc), RENDERER_KICK_STACK_SIZE);
+        c.sw(param, c.g[S0][0]);
+        c.sw(param.wrapping_add(4), c.g[V1][0]);
+        c.sw(param.wrapping_add(0x18), RENDERER_KICK_PRIORITY);
+        c.sw(param.wrapping_add(0x14), RENDERER_KICK_PRIORITY);
+        c.sw(param.wrapping_add(8), c.g[S4][0]);
+        c.sw(param.wrapping_add(0x10), c.g[V0][0]);
+        c.sw(param.wrapping_add(0x1c), 0);
+        c.sw(param.wrapping_add(0x20), 0);
+        callee::CREATE_THREAD.call(c, 0x0037_5de0)?;
+        c.sw(renderer_init_field(c, KICK_THREAD), c.g[V0][0]);
+
+        // The vblank-start INTC handler and the VIF1 DMAC handler.
+        c.g[A0][0] = 2;
+        callee::DISABLE_INTC.call(c, 0x0037_5dec)?;
+        c.g[A0][0] = 2;
+        c.g[A1][0] = sx(RENDERER_VBLANK_HANDLER);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = c.g[S2][0];
+        callee::ADD_INTC_HANDLER.call(c, 0x0037_5e04)?;
+        c.sw(renderer_init_field(c, VBLANK_HANDLER), c.g[V0][0]);
+        c.g[A0][0] = 2;
+        callee::ENABLE_INTC.call(c, 0x0037_5e10)?;
+        c.g[A0][0] = 1;
+        callee::DISABLE_DMAC.call(c, 0x0037_5e18)?;
+        c.g[A0][0] = 1;
+        c.g[A1][0] = sx(RENDERER_VIF1_DMAC_HANDLER);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = c.g[S2][0];
+        callee::ADD_DMAC_HANDLER.call(c, 0x0037_5e30)?;
+        c.sw(renderer_init_field(c, DMAC_HANDLER), c.g[V0][0]);
+        c.g[A0][0] = 1;
+        callee::ENABLE_DMAC.call(c, 0x0037_5e3c)?;
+        c.g[A0][0] = c.lw(renderer_init_field(c, KICK_THREAD));
+        c.g[A1][0] = c.g[S2][0];
+        callee::START_THREAD.call(c, 0x0037_5e48)?;
+
+        c.g[A0][0] = c.g[S2][0];
+        callee::PS2_GRAPHICS_MAN_BUILD_DISPLAY_MODE_TABLE.call(c, 0x0037_5e50)?;
+
+        // The defer manager.
+        c.g[A0][0] = RENDERER_DEFER_MAN_SIZE;
+        c.g[A1][0] = sx(RENDERER_DEFER_MAN_NAME);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0037_5e6c)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::DEFER_MAN_CTOR.call(c, 0x0037_5e74)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.sw(renderer_init_field(c, man::DEFER), c.g[V0][0]);
+        callee::DEFER_MAN_INIT.call(c, 0x0037_5e80)?;
+
+        // The texture manager.
+        c.g[A0][0] = RENDERER_TEX_MAN_SIZE;
+        c.g[A1][0] = sx(RENDERER_TEX_MAN_NAME);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0037_5e98)?;
+        let tex = r32(c, V0);
+        c.g[V1][0] = sx(tex.wrapping_add(RENDERER_TEX_VRAM_HEAP));
+        c.g[A1][0] = sx(tex.wrapping_add(RENDERER_TEX_HEAP2));
+        c.sw(tex.wrapping_add(RENDERER_TEX_VRAM_NODES), c.g[V1][0]);
+        c.g[A0][0] = c.g[V0][0];
+        c.sw(tex.wrapping_add(RENDERER_TEX_HEAP2_PTR), c.g[A1][0]);
+        c.sw(renderer_init_field(c, GM_TEXTURES), c.g[V0][0]);
+        callee::TEX_MAN_CTOR.call(c, 0x0037_5eb4)?;
+        c.g[A0][0] = sx(RENDERER_INTC_TABLE);
+        callee::INTC_TABLE_INIT.call(c, 0x0037_5ec0)?;
+
+        // Copy the 0x14-byte block (unaligned doubleword pairs).
+        c.g[V1][0] = c.lw(renderer_init_field(c, ps2gm::CUR_STATE));
+        c.g[V0][0] = 0x0050_0000;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[T1][0] = sx(RENDERER_INIT_BLOCK);
+        c.g[A2][0] = Addr(RENDERER_INIT_BLOCK).read_u64_unaligned(c);
+        c.g[A3][0] = Addr(RENDERER_INIT_BLOCK + 8).read_u64_unaligned(c);
+        c.g[T0][0] = c.lw(RENDERER_INIT_BLOCK + 0x10);
+        let dest = r32(c, V1);
+        let (lo, hi, tail) = (c.g[A2][0], c.g[A3][0], c.g[T0][0]);
+        Addr(dest).write_u64_unaligned(c, lo);
+        Addr(dest.wrapping_add(8)).write_u64_unaligned(c, hi);
+        c.sw(dest.wrapping_add(0x10), tail);
+        c.sw(renderer_init_field(c, DISP_16BIT), c.g[S1][0]);
+
+        // The default dither matrix, copied to the stack (v1/a2/a3 in turn).
+        c.g[V0][0] = 0x0049_0000;
+        c.g[T0][0] = sx(RENDERER_DEFAULT_DITHER);
+        let matrix = r32(c, S6);
+        for i in 0..8u32 {
+            let reg = [V1, A2, A3][(i % 3) as usize];
+            let word = Addr(RENDERER_DEFAULT_DITHER + 8 * i).read_u64_unaligned(c);
+            c.g[reg][0] = word;
+            Addr(matrix.wrapping_add(8 * i)).write_u64_unaligned(c, word);
+        }
+        c.g[A1][0] = c.g[S6][0];
+        callee::PS2_GRAPHICS_MAN_SET_DITHER_MATRIX.call(c, 0x0037_5f8c)?;
+
+        // A cleared colour to the vtable, then brightness 1.0 for r, g, b.
+        let vt = c.lw(renderer_init_field(c, man::DISPLAY));
+        c.g[V1][0] = vt;
+        c.g[A1][0] = c.g[S5][0];
+        let rgb = r32(c, S5);
+        for i in 0..3 {
+            c.sw(rgb.wrapping_add(4 * i), 0);
+        }
+        renderer_init_vcall(c, vt, 0x78, V0, 0x0037_5fb0)?;
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[0] = FpuF32::ONE.0;
+        c.g[A1][0] = c.g[S5][0];
+        c.sw(renderer_init_field(c, F59E8), c.g[S1][0]);
+        c.g[A0][0] = c.g[S2][0];
+        let rgb = r32(c, S5);
+        for off in [8, 0, 4] {
+            c.swc1(0, rgb.wrapping_add(off));
+        }
+        c.swc1(0, renderer_init_field(c, F59FC));
+        callee::PS2_GRAPHICS_MAN_SET_BRIGHTNESS_RGB.call(c, 0x0037_5fd8)?;
+        c.f[12] = 0;
+        c.g[A0][0] = c.g[S2][0];
+        callee::PS2_GRAPHICS_MAN_SET_BRIGHTNESS_ALPHA.call(c, 0x0037_5fe4)?;
+
+        // Two more setup calls with 0.
+        let vt = c.lw(renderer_init_field(c, man::DISPLAY));
+        c.g[V0][0] = vt;
+        c.g[A1][0] = 0;
+        renderer_init_vcall(c, vt, 0x140, V1, 0x0037_5ffc)?;
+        let vt = c.lw(renderer_init_field(c, man::DISPLAY));
+        c.g[V0][0] = vt;
+        c.g[A1][0] = 0;
+        renderer_init_vcall(c, vt, 0x40, A2, 0x0037_6014)?;
+
+        // The viewport {0, 0, width, height}: the display's size as floats.
+        let vt = c.lw(renderer_init_field(c, man::DISPLAY));
+        c.g[V1][0] = vt;
+        c.g[V0][0] = c.lh((vt as u32).wrapping_add(0xc0));
+        c.g[S1][0] = sx((vt as u32).wrapping_add(0xc4));
+        c.g[S0][0] = abi::addu(c.g[S2][0], c.g[V0][0]);
+        renderer_init_vcall(c, vt, 0x50, V0, 0x0037_6034)?;
+        let width = renderer_init_unsigned_to_float(c);
+        c.f[20] = width.0;
+        c.g[V1][0] = c.lw(renderer_init_field(c, man::DISPLAY));
+        c.cycles += 6;
+        let vt = c.g[V1][0];
+        renderer_init_vcall(c, vt, 0x58, V0, 0x0037_6074)?;
+        let height = renderer_init_unsigned_to_float(c);
+        c.f[0] = height.0;
+        c.swc1(0, sp(c).wrapping_add(0xac));
+        c.cycles += 73;
+        c.g[A0][0] = c.g[S0][0];
+        c.swc1(20, sp(c).wrapping_add(0xa8));
+        c.g[A1][0] = c.g[FP][0];
+        let rect = r32(c, FP);
+        c.sw(rect, 0);
+        c.sw(rect.wrapping_add(4), 0);
+        c.g[V0][0] = c.lw(r32(c, S1));
+        c.g[A2][0] = 1;
+        let set_viewport = r32(c, V0);
+        call_ptr(c, set_viewport, 0x0037_60c4)?;
+        let vt = c.lw(renderer_init_field(c, man::DISPLAY));
+        c.g[V1][0] = vt;
+        renderer_init_vcall(c, vt, 0x128, V0, 0x0037_60d8)?;
+
+        // The global float tables.
+        let gp = r32(c, GP);
+        for (f, off) in RENDERER_INIT_LITERALS {
+            c.lwc1(f, gp.wrapping_sub(off));
+        }
+        c.f[0] = FpuF32::ONE.0;
+        c.f[1] = 0x4300_0000; // 128.0
+        c.f[2] = 0xc0c0_0000; // -6.0
+        c.f[3] = 0x3f00_0000; // 0.5
+        c.f[6] = 0x40c0_0000; // 6.0
+        c.sw(renderer_init_field(c, F6D14), 0);
+        for (addr, f) in RENDERER_INIT_FLOAT_STORES {
+            c.swc1(f, addr);
+        }
+        c.sw(RENDERER_INIT_ZERO_STORE, 0);
+        c.sw(renderer_init_field(c, F6C50), 0);
+        c.g[AT][0] = 0x3f00_0000;
+        c.g[A0][0] = 0x0050_83c0;
+        c.g[A3][0] = 0x0050_0000;
+        c.g[V0][0] = 0x0050_8380;
+        c.g[V1][0] = 0x0050_4730;
+        c.g[T0][0] = 0x0051_0000;
+        c.g[T1][0] = 0x0051_0000;
+
+        // Clear four words, top down.
+        c.g[A1][0] = sx(r32(c, S7).wrapping_add(0xc));
+        c.g[A2][0] = 3;
+        loop {
+            c.cycles += 7;
+            c.sw(r32(c, A1), 0);
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            let more = (c.g[A2][0] as i64) >= 0;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_sub(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, RENDERER_INIT_CLEAR);
+            }
+        }
+
+        // Per-layer setup for layers 0 and 1, then -1.
+        c.cycles += 5;
+        c.sw(renderer_init_field(c, F5A28), 0);
+        c.g[S0][0] = 0;
+        c.sw(renderer_init_field(c, F5A2C), 0);
+        c.g[V0][0] = c.lw(renderer_init_field(c, man::DISPLAY));
+        loop {
+            c.cycles += 9;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+            let vt = c.g[V0][0];
+            renderer_init_vcall(c, vt, 0x3a0, V1, 0x0037_6210)?;
+            let more = (c.g[S0][0] as i64) < 2;
+            c.g[V0][0] = c.lw(renderer_init_field(c, man::DISPLAY));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, RENDERER_INIT_LAYERS);
+            }
+        }
+        c.cycles += 18;
+        c.g[A1][0] = u64::MAX;
+        let vt = c.g[V0][0];
+        renderer_init_vcall(c, vt, 0x3a0, V1, 0x0037_6230)?;
+
+        for (reg, off) in RENDERER_INIT_SAVES {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0xb0);
+        frame.restore_fpr(c, 20, 0x150);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_Shutdown (0x376268)
+
+#[cfg(test)]
+pub(crate) const PS2_GRAPHICS_MAN_SHUTDOWN: u32 = 0x0037_6268;
+
+/// `void PS2GraphicsMan_Shutdown(PS2GraphicsMan* self)` (0x376268): undo
+/// `Renderer_Init`: remove the vblank INTC handler and the VIF1 DMAC handler
+/// (with the interrupts disabled), stop and delete the DMA kick thread,
+/// delete both semaphores, free the defer manager, shut down and free the
+/// texture manager, and shut down the interrupt table.
+pub fn ps2_graphics_man_shutdown(c: &mut Cpu) {
+    use renderer_fields::*;
+    guest(c, |c| {
+        c.cycles += 35;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 2;
+        callee::DISABLE_INTC.call(c, 0x0037_6280)?;
+        c.g[A1][0] = c.lw(at(c, S0, VBLANK_HANDLER));
+        c.g[A0][0] = 2;
+        callee::REMOVE_INTC_HANDLER.call(c, 0x0037_628c)?;
+        c.g[A0][0] = 1;
+        callee::DISABLE_DMAC.call(c, 0x0037_6294)?;
+        // The game passes channel 0 here (the handler was added on 1).
+        c.g[A1][0] = c.lw(at(c, S0, DMAC_HANDLER));
+        c.g[A0][0] = 0;
+        callee::REMOVE_DMAC_HANDLER.call(c, 0x0037_62a0)?;
+        c.g[A0][0] = c.lw(at(c, S0, KICK_THREAD));
+        callee::TERMINATE_THREAD.call(c, 0x0037_62a8)?;
+        c.g[A0][0] = c.lw(at(c, S0, KICK_THREAD));
+        callee::DELETE_THREAD.call(c, 0x0037_62b0)?;
+        c.g[A0][0] = c.lw(at(c, S0, VBLANK_SEMA));
+        callee::DELETE_SEMA.call(c, 0x0037_62b8)?;
+        c.g[A0][0] = c.lw(at(c, S0, kick::QUEUE_MUTEX));
+        callee::DELETE_SEMA.call(c, 0x0037_62c0)?;
+        c.g[A0][0] = c.lw(at(c, S0, man::DEFER));
+        callee::BUILTIN_DELETE.call(c, 0x0037_62c8)?;
+        c.g[A0][0] = c.lw(at(c, S0, GM_TEXTURES));
+        callee::TEX_MAN_SHUTDOWN.call(c, 0x0037_62d0)?;
+        c.g[A0][0] = c.lw(at(c, S0, GM_TEXTURES));
+        callee::BUILTIN_DELETE.call(c, 0x0037_62d8)?;
+        c.g[A0][0] = sx(RENDERER_INTC_TABLE);
+        callee::INTC_TABLE_SHUTDOWN.call(c, 0x0037_62e4)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_FindDisplayMode (0x3762f8)
+
+#[cfg(test)]
+pub(crate) const FIND_DISPLAY_MODE: u32 = 0x0037_62f8;
+
+/// The scan loop's head (event check).
+pub(crate) const FIND_DISPLAY_MODE_NEXT: u32 = 0x0037_6340;
+
+/// Count the current entry as a miss (t4 is the index).
+pub(crate) fn find_display_mode_skip(c: &mut Cpu) {
+    c.g[T4][0] = sx(r32(c, T4).wrapping_add(1));
+}
+
+/// Test the entry at v1 against the request (s2 width, s1 height, a3 bpp,
+/// t0 draw bpp, s0 depth bpp, t2 progressive). True when it matches (its
+/// index t4 is then in v0); otherwise t4 has moved on.
+pub(crate) fn find_display_mode_entry(c: &mut Cpu) -> bool {
+    use display_mode_entry::*;
+    let entry = r32(c, V1);
+    for (field, want) in [(WIDTH, S2), (HEIGHT, S1), (PROGRESSIVE, T2)] {
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(entry.wrapping_add(field));
+        if c.g[V0][0] != c.g[want][0] {
+            find_display_mode_skip(c);
+            return false;
+        }
+    }
+
+    // Display format against the bpp (t3): 24 wants PSMCT24, 32 PSMCT32,
+    // 16 PSMCT16 -- or PSMCT24, the 16 case falling into the 24 one.
+    c.cycles += 4;
+    c.g[T3][0] = 0;
+    c.g[A0][0] = 0;
+    c.g[T6][0] = 0;
+    let bpp = c.g[A3][0];
+    let psm = entry.wrapping_add(DISP_PSM);
+    let mut test_24 = bpp == 24;
+    if !test_24 {
+        c.cycles += 2 + 2;
+        if c.g[A2][0] != 0 {
+            // Below 25 bits.
+            if bpp == 16 {
+                c.g[V0][0] = c.lw(psm);
+                c.cycles += 3;
+                c.g[T3][0] = c.g[T5][0];
+                c.g[V0][0] ^= 2;
+                if c.g[V0][0] != 0 {
+                    c.g[T3][0] = 0;
+                }
+                test_24 = true;
+            } else {
+                c.cycles += 2;
+            }
+        } else if bpp == 32 {
+            c.g[V0][0] = c.lw(psm);
+            c.cycles += 2;
+            c.g[T3][0] = c.g[T5][0];
+            if c.g[V0][0] != 0 {
+                c.g[T3][0] = 0;
+            }
+        } else {
+            c.cycles += 2;
+        }
+    }
+    if test_24 {
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(psm) ^ 1;
+        if c.g[V0][0] == 0 {
+            c.g[T3][0] = c.g[T5][0];
+        }
+    }
+
+    // Draw format against the draw bpp (a0).
+    let bpp = c.g[T0][0];
+    let psm = entry.wrapping_add(DRAW_PSM);
+    c.cycles += 2;
+    let mut tested = true;
+    if bpp == 24 {
+        c.g[V0][0] = c.lw(psm);
+        c.cycles += 3;
+        c.g[A0][0] = c.g[T5][0];
+        c.g[V0][0] ^= 1;
+    } else {
+        c.cycles += 2 + 2;
+        if c.g[A1][0] != 0 {
+            if bpp == 16 {
+                c.g[V0][0] = c.lw(psm);
+                c.cycles += 3;
+                c.g[A0][0] = c.g[T5][0];
+                c.g[V0][0] ^= 2;
+            } else {
+                c.cycles += 2;
+                tested = false;
+            }
+        } else if bpp == 32 {
+            c.g[V0][0] = c.lw(psm);
+            c.cycles += 1;
+            c.g[A0][0] = c.g[T5][0];
+        } else {
+            c.cycles += 2;
+            tested = false;
+        }
+    }
+    if tested {
+        c.cycles += 1;
+        if c.g[V0][0] != 0 {
+            c.g[A0][0] = 0;
+        }
+    }
+
+    // A 24-bit depth request wants PSMZ24 (t6); anything else never matches.
+    c.cycles += 2;
+    if c.g[S0][0] == c.g[T7][0] {
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(entry.wrapping_add(ZPSM));
+        c.g[T6][0] = c.g[T5][0];
+        c.g[V0][0] ^= gs_psm::Z24;
+        if c.g[V0][0] != 0 {
+            c.g[T6][0] = 0;
+        }
+    }
+
+    c.cycles += 2;
+    if c.g[T3][0] == 0 {
+        find_display_mode_skip(c);
+        return false;
+    }
+    c.cycles += 2;
+    if c.g[A0][0] == 0 {
+        find_display_mode_skip(c);
+        return false;
+    }
+    c.cycles += 2;
+    let found = c.g[T6][0] != 0;
+    c.g[V0][0] = c.g[T4][0];
+    if found {
+        return true;
+    }
+    c.cycles += 1;
+    find_display_mode_skip(c);
+    false
+}
+
+/// `int PS2GraphicsMan_FindDisplayMode(PS2GraphicsMan* self, int width, int
+/// height, int bpp, int drawBpp, int zBpp, int progressive)` (0x3762f8): the
+/// index of the first display mode with that frame size and scan type whose
+/// display format suits `bpp` (16: PSMCT16 or PSMCT24, 24: PSMCT24, 32:
+/// PSMCT32), whose draw format suits `drawBpp` (16/24/32: PSMCT16/24/32)
+/// and, with `zBpp` 24, whose depth format is PSMZ24 (any other `zBpp`
+/// never matches); -1 if none.
+pub fn ps2_graphics_man_find_display_mode(c: &mut Cpu) {
+    c.cycles += 11;
+    let frame = Frame::open(c, 0x30);
+    c.g[T4][0] = 0;
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    frame.save(c, S2, 0);
+    c.g[S0][0] = c.g[T1][0];
+    c.g[S1][0] = c.g[A2][0];
+    c.g[S2][0] = c.g[A1][0];
+    let gm = r32(c, A0);
+    c.g[V0][0] = c.lw(gm.wrapping_add(renderer_fields::MODE_COUNT));
+    let none = (c.g[V0][0] as i64) <= 0;
+    c.g[V1][0] = c.lw(gm.wrapping_add(renderer_fields::MODE_TABLE));
+    'found: {
+        if !none {
+            c.cycles += 7;
+            c.g[T1][0] = c.g[V0][0];
+            c.g[T7][0] = 24;
+            c.g[A2][0] = (c.g[A3][0] < 25) as u64;
+            c.g[T9][0] = 16;
+            c.g[T8][0] = 32;
+            c.g[T5][0] = 1;
+            c.g[A1][0] = (c.g[T0][0] < 25) as u64;
+            loop {
+                if find_display_mode_entry(c) {
+                    break 'found;
+                }
+                c.cycles += 3;
+                let more = (c.g[T4][0] as i64) < (c.g[T1][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(display_mode_entry::MODE_STRIDE));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, FIND_DISPLAY_MODE_NEXT);
+                }
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = u64::MAX;
+    }
+    c.cycles += 5;
+    frame.restore(c, S0, 0x20);
+    frame.restore(c, S1, 0x10);
+    frame.restore(c, S2, 0);
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_SelectDisplayMode (0x3764c0)
+
+#[cfg(test)]
+pub(crate) const SELECT_DISPLAY_MODE: u32 = 0x0037_64c0;
+
+/// `int PS2GraphicsMan_SelectDisplayMode(PS2GraphicsMan* self, int index)`
+/// (0x3764c0): switch to display mode `index` unless it is already current:
+/// `Renderer_SetDisplayMode` with the entry's sizes and formats, GS reset
+/// mode 0, interlaced and field mode from the entry's interlace flag, and
+/// its progressive flag; then remember the index. Returns 1.
+pub fn ps2_graphics_man_select_display_mode(c: &mut Cpu) {
+    use display_mode_entry::*;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(renderer_fields::CUR_MODE));
+        let current = c.g[V0][0] == c.g[S1][0];
+        c.g[V0][0] = MODE_STRIDE as u64;
+        if !current {
+            c.cycles += 24;
+            c.g[A3][0] = c.lw(r32(c, S0).wrapping_add(renderer_fields::MODE_TABLE));
+            let index = r32(c, S1);
+            let offset = abi::mult(c, index, MODE_STRIDE);
+            let entry = r32(c, A3).wrapping_add(offset);
+            c.g[V0][0] = sx(entry);
+            c.g[A0][0] = c.g[S0][0];
+            // Stack arguments: GS reset mode 0, interlace = flag, field mode =
+            // !flag, progressive.
+            let args = sp(c);
+            c.sw(args, 0);
+            c.g[A1][0] = c.lw(entry.wrapping_add(INTERLACE));
+            c.g[V1][0] = (c.g[A1][0] != 0) as u64;
+            c.sw(args.wrapping_add(8), c.g[V1][0]);
+            c.g[A1][0] = c.lw(entry.wrapping_add(INTERLACE));
+            c.g[A2][0] = (c.g[A1][0] == 0) as u64;
+            c.sw(args.wrapping_add(0x10), c.g[A2][0]);
+            c.g[V1][0] = c.lw(entry.wrapping_add(PROGRESSIVE));
+            c.sw(args.wrapping_add(0x18), c.g[V1][0]);
+            c.g[T3][0] = c.lw(entry.wrapping_add(ZPSM));
+            c.g[A1][0] = c.lw(entry.wrapping_add(DISP_WIDTH));
+            c.g[A2][0] = c.lw(entry.wrapping_add(DISP_HEIGHT));
+            c.g[A3][0] = c.lw(entry.wrapping_add(WIDTH));
+            c.g[T0][0] = c.lw(entry.wrapping_add(HEIGHT));
+            c.g[T1][0] = c.lw(entry.wrapping_add(DISP_PSM));
+            c.g[T2][0] = c.lw(entry.wrapping_add(DRAW_PSM));
+            callee::RENDERER_SET_DISPLAY_MODE.call(c, 0x0037_6540)?;
+            c.sw(
+                r32(c, S0).wrapping_add(renderer_fields::CUR_MODE),
+                c.g[S1][0],
+            );
+        }
+        c.cycles += 6;
+        c.g[V0][0] = 1;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_BuildDisplayModeTable (0x37bb10)
+
+#[cfg(test)]
+pub(crate) const BUILD_DISPLAY_MODE_TABLE: u32 = 0x0037_bb10;
+
+/// The loop's head (event check).
+pub(crate) const BUILD_DISPLAY_MODE_TABLE_NEXT: u32 = 0x0037_bb80;
+
+/// `1 / 1024`.
+pub(crate) const BUILD_DISPLAY_MODE_TABLE_PER_K: u32 = 0x3a80_0000;
+
+/// Callee-saved registers in the 0xb0 frame.
+pub(crate) const BUILD_DISPLAY_MODE_TABLE_SAVES: [(usize, u32); 9] = [
+    (S2, 0x70),
+    (S0, 0x90),
+    (S3, 0x60),
+    (S4, 0x50),
+    (S5, 0x40),
+    (S6, 0x30),
+    (S7, 0x20),
+    (FP, 0x10),
+    (S1, 0x80),
+];
+
+/// `void PS2GraphicsMan_BuildDisplayModeTable(PS2GraphicsMan* self)`
+/// (0x37bb10): point the manager at the game's eight display modes and name
+/// each one `"<width>x<height>x<bpp> (<size>k)"`: the bpp from the draw
+/// format (PSMCT16: 16, PSMCT24: 24, else 32), the size in KiB from
+/// `Gs_CalcBufferSizeInPages` (its count times 256 bytes).
+pub fn ps2_graphics_man_build_display_mode_table(c: &mut Cpu) {
+    use display_mode_entry::*;
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0xb0);
+        for (reg, off) in BUILD_DISPLAY_MODE_TABLE_SAVES {
+            frame.save(c, reg, off);
+        }
+        frame.save_fpr(c, 20, 0xa0);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(DISPLAY_MODES);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[V1][0] = DISPLAY_MODE_COUNT;
+        // s3: the entry (its name), s0: the entry's height field, s4 its
+        // offset from the first one, s5 the entries done.
+        c.g[S3][0] = c.g[V0][0];
+        c.g[S0][0] = sx(DISPLAY_MODES.wrapping_add(HEIGHT));
+        c.g[S5][0] = 0;
+        c.g[S4][0] = 0;
+        c.g[S7][0] = 24;
+        c.g[FP][0] = sx(DISPLAY_MODES.wrapping_add(DISP_PSM));
+        c.g[S6][0] = 2;
+        let gm = r32(c, S2);
+        c.sw(gm.wrapping_add(renderer_fields::MODE_COUNT), c.g[V1][0]);
+        c.sw(gm.wrapping_add(renderer_fields::MODE_TABLE), c.g[V0][0]);
+        c.g[AT][0] = BUILD_DISPLAY_MODE_TABLE_PER_K as u64;
+        c.f[20] = BUILD_DISPLAY_MODE_TABLE_PER_K;
+        loop {
+            // The bpp in the name.
+            c.cycles += 8;
+            let height_field = r32(c, S0);
+            c.g[V0][0] = c.lw(height_field.wrapping_add(DRAW_PSM - HEIGHT));
+            c.g[A3][0] = sx(r32(c, S4).wrapping_add(r32(c, FP)));
+            c.g[A0][0] = c.g[S2][0];
+            c.g[S5][0] = sx(r32(c, S5).wrapping_add(1));
+            c.g[S4][0] = sx(r32(c, S4).wrapping_add(MODE_STRIDE));
+            c.g[S1][0] = 32;
+            let psm16 = c.g[V0][0] == c.g[S6][0];
+            c.g[V1][0] = c.g[V0][0] ^ 1;
+            if psm16 {
+                c.cycles += 1;
+                c.g[S1][0] = 16;
+            } else {
+                c.cycles += 2;
+                if c.g[V1][0] == 0 {
+                    c.g[S1][0] = c.g[S7][0];
+                }
+            }
+
+            // The buffers' size.
+            c.cycles += 24;
+            c.g[A1][0] = c.lw(height_field.wrapping_sub(HEIGHT - WIDTH));
+            c.g[A2][0] = c.lw(height_field);
+            c.g[T0][0] = c.lw(height_field.wrapping_add(DRAW_PSM - HEIGHT));
+            c.g[T1][0] = c.lw(height_field.wrapping_add(ZPSM - HEIGHT));
+            c.g[A3][0] = c.lw(r32(c, A3));
+            callee::GS_CALC_BUFFER_SIZE_IN_PAGES.call(c, 0x0037_bbc4)?;
+            c.g[V0][0] = sx(r32(c, V0) << 8);
+            let kib = FpuF32::from_i32(r32(c, V0) as i32) * FpuF32(c.f[20]);
+            c.f[12] = kib.0;
+            callee::GCC_EXTENDSFDF2.call(c, 0x0037_bbd8)?;
+
+            // The name.
+            let height_field = r32(c, S0);
+            c.g[A2][0] = c.lw(height_field.wrapping_sub(HEIGHT - WIDTH));
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A3][0] = c.lw(height_field);
+            c.g[T0][0] = c.g[S1][0];
+            c.g[A1][0] = sx(NAME_FORMAT);
+            c.g[T1][0] = c.g[V0][0];
+            callee::SPRINTF.call(c, 0x0037_bbf8)?;
+
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(MODE_STRIDE));
+            c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(renderer_fields::MODE_COUNT));
+            let more = (c.g[S5][0] as i64) < (c.g[V0][0] as i64);
+            c.g[V0][0] = more as u64;
+            c.g[S3][0] = sx(r32(c, S3).wrapping_add(MODE_STRIDE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, BUILD_DISPLAY_MODE_TABLE_NEXT);
+            }
+        }
+        c.cycles += 13;
+        for (reg, off) in BUILD_DISPLAY_MODE_TABLE_SAVES {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Renderer_SetDisplayMode (0x37bd98)
+
+pub(crate) const SET_DISPLAY_MODE: u32 = 0x0037_bd98;
+
+/// The vsync wait's head, where an unwinding event leaves the function and
+/// the trampoline re-enters it.
+pub(crate) const SET_DISPLAY_MODE_VSYNC_WAIT: u32 = 0x0037_c0f8;
+
+pub(crate) const SET_DISPLAY_MODE_END: u32 = 0x0037_c194;
+
+/// The stack arguments, from the function's own frame: GS reset mode,
+/// interlace, field mode (halfwords) and progressive; and the two words
+/// the function keeps in its frame (display format, reset mode).
+pub(crate) const SET_DISPLAY_MODE_ARG_RESET_MODE: u32 = 0xb0;
+
+pub(crate) const SET_DISPLAY_MODE_ARG_INTERLACE: u32 = 0xb8;
+
+pub(crate) const SET_DISPLAY_MODE_ARG_FFMODE: u32 = 0xc0;
+
+pub(crate) const SET_DISPLAY_MODE_ARG_PROGRESSIVE: u32 = 0xc8;
+
+pub(crate) const SET_DISPLAY_MODE_LOCAL_PSM: u32 = 0;
+
+pub(crate) const SET_DISPLAY_MODE_LOCAL_RESET_MODE: u32 = 4;
+
+/// `sceGsResetGraph`'s video mode for progressive output (480p).
+pub(crate) const SET_DISPLAY_MODE_DTV480P: u64 = 0x50;
+
+/// The display and draw formats read as one doubleword: both PSMCT24.
+pub(crate) const SET_DISPLAY_MODE_BOTH_24: u64 = 1 << 32 | 1;
+
+/// Callee-saved registers in the 0xb0 frame.
+pub(crate) const SET_DISPLAY_MODE_SAVES: [(usize, u32); 9] = [
+    (S0, 0xa0),
+    (S1, 0x90),
+    (S3, 0x70),
+    (S4, 0x60),
+    (FP, 0x20),
+    (S2, 0x80),
+    (S5, 0x50),
+    (S6, 0x40),
+    (S7, 0x30),
+];
+
+/// The display width's horizontal magnification (`None`: not one of the
+/// five widths), charging the compare chain the game runs.
+pub(crate) fn set_display_mode_magh(c: &mut Cpu, disp_width: u64) -> Option<u64> {
+    if disp_width == 0x180 {
+        c.cycles += 2;
+        return Some(6);
+    }
+    if disp_width < 0x181 {
+        c.cycles += 3 + 2;
+        if disp_width == 0x100 {
+            c.cycles += 2;
+            return Some(9);
+        }
+        c.cycles += 2;
+        if disp_width == 0x140 {
+            return Some(7);
+        }
+        c.cycles += 2;
+        return None;
+    }
+    c.cycles += 3 + 3;
+    if disp_width == 0x200 {
+        c.cycles += 1;
+        return Some(4);
+    }
+    c.cycles += 2;
+    if disp_width == 0x280 {
+        return Some(3);
+    }
+    c.cycles += 2;
+    None
+}
+
+/// `int Renderer_SetDisplayMode(PS2GraphicsMan* self, int dispWidth, int
+/// dispHeight, int width, int height, int dispPsm, int drawPsm, int zPsm,
+/// short resetMode, short interlace, short ffMode, int progressive)`
+/// (0x37bd98): 0 if `Gs_IsValidFramePsm` rejects the draw/depth formats.
+/// Otherwise records the mode, the magnification for the display width and
+/// the buffers' sizes in GS pages (32 rows for 32/24-bit formats, 64 for
+/// 16-bit ones), resets the VRAM heap and allocates the draw, display and
+/// depth buffers, sets up the temporary texture heap after them, flushes the
+/// cache, acknowledges `CSR.VSINT` and waits for the next vsync, resets the
+/// GS (`sceGsResetGraph`, 480p when progressive), sets the timer's video
+/// mode and the display registers. Returns 1. Resumable at the vsync wait.
+pub fn renderer_set_display_mode(c: &mut Cpu) {
+    use renderer_fields::*;
+    use renderer_hw::*;
+    guest(c, |c| {
+        let resumed = match c.pc {
+            SET_DISPLAY_MODE => false,
+            SET_DISPLAY_MODE_VSYNC_WAIT => true,
+            pc => {
+                c.jump_out(pc, SET_DISPLAY_MODE, SET_DISPLAY_MODE_END);
+                return Ok(());
+            }
+        };
+        let frame = Frame { size: 0xb0 };
+        'exit: {
+            let mut wait = resumed;
+            if !resumed {
+                c.cycles += 28;
+                let frame = Frame::open(c, 0xb0);
+                for (reg, off) in SET_DISPLAY_MODE_SAVES {
+                    frame.save(c, reg, off);
+                }
+                frame.save_ra(c, 0x10);
+                // s1: self, s0/fp: display size, s6/s7: frame size, s3/s4:
+                // draw/depth format, s5/s2: interlace/field mode.
+                c.g[S0][0] = c.g[A1][0];
+                c.g[S1][0] = c.g[A0][0];
+                c.g[S3][0] = c.g[T2][0];
+                c.g[S4][0] = c.g[T3][0];
+                c.g[FP][0] = c.g[A2][0];
+                c.g[S6][0] = c.g[A3][0];
+                c.g[S7][0] = c.g[T0][0];
+                c.g[V0][0] = c.lh(frame.at(c, SET_DISPLAY_MODE_ARG_RESET_MODE));
+                c.g[A1][0] = c.g[S3][0];
+                c.g[A2][0] = c.g[S4][0];
+                c.sw(frame.at(c, SET_DISPLAY_MODE_LOCAL_PSM), c.g[T1][0]);
+                c.sw(frame.at(c, SET_DISPLAY_MODE_LOCAL_RESET_MODE), c.g[V0][0]);
+                c.g[S5][0] = c.lh(frame.at(c, SET_DISPLAY_MODE_ARG_INTERLACE));
+                c.g[S2][0] = c.lh(frame.at(c, SET_DISPLAY_MODE_ARG_FFMODE));
+                callee::GS_IS_VALID_FRAME_PSM.call(c, 0x0037_be00)?;
+                let gm = r32(c, S1);
+                if c.g[V0][0] == 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    break 'exit;
+                }
+
+                // Record the mode.
+                c.sw(gm.wrapping_add(DISP_HEIGHT), c.g[FP][0]);
+                c.cycles += 17;
+                c.g[V0][0] = 2;
+                c.g[V1][0] = 0x180;
+                c.sw(gm.wrapping_add(WIDTH), c.g[S6][0]);
+                c.sw(gm.wrapping_add(HEIGHT), c.g[S7][0]);
+                c.sw(gm.wrapping_add(DRAW_PSM), c.g[S3][0]);
+                c.g[A0][0] = c.lw(frame.at(c, SET_DISPLAY_MODE_LOCAL_PSM));
+                c.sw(gm.wrapping_add(man::MODE), c.g[S4][0]);
+                c.sw(gm.wrapping_add(DISP_PSM), c.g[A0][0]);
+                c.sh(gm.wrapping_add(INTERLACE), c.g[S5][0]);
+                c.sh(gm.wrapping_add(FFMODE), c.g[S2][0]);
+                c.sw(gm.wrapping_add(FLIP_COUNT), 0);
+                c.sw(gm.wrapping_add(DISP_WIDTH), c.g[S0][0]);
+                c.sh(gm.wrapping_add(OMODE), c.g[V0][0]);
+                c.g[V0][0] = c.lw(frame.at(c, SET_DISPLAY_MODE_ARG_PROGRESSIVE));
+                c.sw(gm.wrapping_add(F5A60), 0);
+                c.sw(gm.wrapping_add(PROGRESSIVE), c.g[V0][0]);
+                let disp_width = c.g[S0][0];
+                if let Some(magh) = set_display_mode_magh(c, disp_width) {
+                    c.cycles += 2;
+                    c.sw(gm.wrapping_add(MAGH), magh);
+                }
+                c.g[V0][0] = c.lw(gm.wrapping_add(WIDTH));
+
+                // Sizes in pages: widths in 64-pixel pages, then the display
+                // buffer by its format.
+                c.cycles += 10;
+                c.g[V1][0] = c.lw(gm.wrapping_add(DISP_WIDTH));
+                c.g[A0][0] = c.lw(gm.wrapping_add(DISP_PSM));
+                c.g[V0][0] = gs_pages_up(c.g[V0][0], 64);
+                c.g[V1][0] = gs_pages_up(c.g[V1][0], 64);
+                c.sw(gm.wrapping_add(WIDTH_PAGES), c.g[V0][0]);
+                let disp_psm = c.g[A0][0];
+                c.g[V0][0] = (disp_psm < 0x3b) as u64;
+                c.sw(gm.wrapping_add(DISP_WIDTH_PAGES), c.g[V1][0]);
+                if disp_psm < 0x3b {
+                    c.cycles += 7;
+                    c.g[V0][0] = 0x0049_2bd0;
+                    c.g[V1][0] = sx(((disp_psm as u32) << 2).wrapping_add(0x0049_2bd0));
+                    c.g[A0][0] = c.lw(r32(c, V1));
+                    if let Some(rows) = gs_page_rows(disp_psm) {
+                        c.cycles += 6;
+                        c.g[V0][0] = c.lw(gm.wrapping_add(DISP_HEIGHT));
+                        c.g[V1][0] = c.lw(gm.wrapping_add(DISP_WIDTH_PAGES));
+                        let sixteen = (rows == 64) as u64;
+                        if rows == 64 {
+                            c.g[A0][0] = 1;
+                        }
+                        c.sw(gm.wrapping_add(DISP_16BIT), sixteen);
+                        c.g[V0][0] = gs_pages_up(c.g[V0][0], rows);
+                        c.cycles += 2;
+                        let pages = {
+                            let (a, b) = (r32(c, V1), r32(c, V0));
+                            abi::mult(c, a, b)
+                        };
+                        c.g[V1][0] = sx(pages);
+                        c.sw(gm.wrapping_add(DISP_PAGES), c.g[V1][0]);
+                    }
+                }
+
+                // The draw buffer.
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(gm.wrapping_add(DRAW_PSM));
+                let draw_psm = c.g[V1][0];
+                c.g[V0][0] = 0x0049_0000;
+                if draw_psm < 0x3b {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx(((draw_psm as u32) << 2).wrapping_add(0x0049_2cc0));
+                    c.g[V0][0] = 0x0049_2cc0;
+                    c.g[A0][0] = c.lw(r32(c, V1));
+                    if let Some(rows) = gs_page_rows(draw_psm) {
+                        c.cycles += if rows == 32 { 5 } else { 4 };
+                        c.g[V0][0] = c.lw(gm.wrapping_add(HEIGHT));
+                        c.g[V1][0] = c.lw(gm.wrapping_add(WIDTH_PAGES));
+                        c.g[V0][0] = gs_pages_up(c.g[V0][0], rows);
+                        c.cycles += 2;
+                        let pages = {
+                            let (a, b) = (r32(c, V1), r32(c, V0));
+                            abi::mult(c, a, b)
+                        };
+                        c.g[V1][0] = sx(pages);
+                        c.sw(gm.wrapping_add(DRAW_PAGES), c.g[V1][0]);
+                    }
+                }
+
+                // The depth buffer (only the depth formats).
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(gm.wrapping_add(man::MODE));
+                let zpsm = c.g[V1][0];
+                c.g[V0][0] = (zpsm < 0x30) as u64;
+                let z_rows = if zpsm < 0x30 {
+                    None
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = (zpsm < 0x32) as u64;
+                    if zpsm < 0x32 {
+                        c.g[V0][0] = c.lw(gm.wrapping_add(HEIGHT));
+                        c.cycles += 4;
+                        Some(32)
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x3a;
+                        if zpsm == 0x32 {
+                            c.cycles += 1;
+                            c.g[V0][0] = c.lw(gm.wrapping_add(HEIGHT));
+                            c.cycles += 3;
+                            Some(64)
+                        } else {
+                            c.cycles += 2;
+                            if zpsm == 0x3a {
+                                c.g[V0][0] = c.lw(gm.wrapping_add(HEIGHT));
+                                c.cycles += 3;
+                                Some(64)
+                            } else {
+                                c.cycles += 2;
+                                None
+                            }
+                        }
+                    }
+                };
+                if let Some(rows) = z_rows {
+                    c.g[V1][0] = c.lw(gm.wrapping_add(WIDTH_PAGES));
+                    c.g[V0][0] = gs_pages_up(c.g[V0][0], rows);
+                    c.cycles += 3;
+                    let pages = {
+                        let (a, b) = (r32(c, V1), r32(c, V0));
+                        abi::mult(c, a, b)
+                    };
+                    c.g[V1][0] = sx(pages);
+                    c.sw(gm.wrapping_add(Z_PAGES), c.g[V1][0]);
+                }
+                c.g[S0][0] = c.lw(gm.wrapping_add(GM_TEXTURES));
+
+                // Reset the VRAM heap; allocate the buffers (pages of 8 KiB).
+                c.cycles += 23;
+                c.g[A0][0] = c.g[S0][0];
+                callee::TEX_MAN_RESET_VRAM.call(c, 0x0037_bfec)?;
+                let mut gm = r32(c, S1);
+                for (pages, ret_to, prev) in [
+                    (DRAW_PAGES, 0x0037_bffc, None),
+                    (DISP_PAGES, 0x0037_c010, Some(DRAW_FB)),
+                    (Z_PAGES, 0x0037_c024, Some(DISP_FB)),
+                ] {
+                    c.g[A1][0] = c.lw(gm.wrapping_add(pages));
+                    c.g[A0][0] = c.g[S0][0];
+                    if let Some(prev) = prev {
+                        c.sw(gm.wrapping_add(prev), c.g[V0][0]);
+                    }
+                    c.g[A1][0] = sx(r32(c, A1) << 13);
+                    callee::TEX_MAN_ALLOC_FRAME_BUFFER.call(c, ret_to)?;
+                    gm = r32(c, S1);
+                }
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V1][0] = c.ld(gm.wrapping_add(DISP_PSM));
+                c.g[V0][0] = SET_DISPLAY_MODE_BOTH_24;
+                let both_24 = c.g[V1][0] == c.g[V0][0];
+                c.sw(gm.wrapping_add(Z_BUF), c.g[A1][0]);
+
+                // The temporary texture heap: after the draw buffer when both
+                // buffers are 24-bit (display + 2 frames), after the display
+                // buffer for a 24-bit display (display + 1 frame), else after
+                // the depth buffer (1 frame).
+                if both_24 {
+                    c.cycles += 11;
+                    c.g[A2][0] = c.lw(gm.wrapping_add(WIDTH));
+                    c.g[V1][0] = c.lw(gm.wrapping_add(HEIGHT));
+                    c.g[A0][0] = c.lw(gm.wrapping_add(DISP_HEIGHT));
+                    c.g[V0][0] = c.lw(gm.wrapping_add(DISP_WIDTH));
+                    let frame_px = {
+                        let (a, b) = (r32(c, A2), r32(c, V1));
+                        abi::mult(c, a, b)
+                    };
+                    c.g[A2][0] = sx(frame_px);
+                    c.g[A1][0] = c.lw(gm.wrapping_add(DRAW_FB));
+                    let disp_px = {
+                        let (a, b) = (r32(c, V0), r32(c, A0));
+                        abi::mult(c, a, b)
+                    };
+                    c.g[V0][0] = sx(disp_px);
+                    c.g[A0][0] = c.lw(gm.wrapping_add(GM_TEXTURES));
+                    c.g[A1][0] = sx(r32(c, A1) << 11);
+                    c.g[A2][0] = sx(r32(c, A2) << 1);
+                    c.cycles += 4;
+                    c.g[A2][0] = sx(r32(c, V0).wrapping_add(r32(c, A2)));
+                    callee::TEX_MAN_INIT_TEMP_HEAP.call(c, 0x0037_c0a8)?;
+                } else {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(gm.wrapping_add(DISP_PSM));
+                    c.g[V0][0] = 1;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[A2][0] = c.lw(gm.wrapping_add(HEIGHT));
+                        c.cycles += 6;
+                        c.g[A1][0] = sx(r32(c, A1) << 11);
+                        c.g[V0][0] = c.lw(gm.wrapping_add(WIDTH));
+                        {
+                            let (a, b) = (r32(c, V0), r32(c, A2));
+                            abi::mult(c, a, b)
+                        };
+                        c.g[A2][0] = c.lo[0];
+                        c.g[A0][0] = c.lw(gm.wrapping_add(GM_TEXTURES));
+                        callee::TEX_MAN_INIT_TEMP_HEAP.call(c, 0x0037_c0c8)?;
+                    } else {
+                        c.cycles += 9;
+                        c.g[A0][0] = c.lw(gm.wrapping_add(HEIGHT));
+                        c.g[V0][0] = c.lw(gm.wrapping_add(DISP_WIDTH));
+                        c.g[V1][0] = c.lw(gm.wrapping_add(DISP_HEIGHT));
+                        c.g[A2][0] = c.lw(gm.wrapping_add(WIDTH));
+                        let disp_px = {
+                            let (a, b) = (r32(c, V0), r32(c, V1));
+                            abi::mult(c, a, b)
+                        };
+                        c.g[V0][0] = sx(disp_px);
+                        c.g[A1][0] = c.lw(gm.wrapping_add(DISP_FB));
+                        let frame_px = {
+                            let (a, b) = (r32(c, A2), r32(c, A0));
+                            abi::mult(c, a, b)
+                        };
+                        c.g[A2][0] = sx(frame_px);
+                        c.g[A0][0] = c.lw(gm.wrapping_add(GM_TEXTURES));
+                        c.g[A1][0] = sx(r32(c, A1) << 11);
+                        c.cycles += 4;
+                        c.g[A2][0] = sx(r32(c, V0).wrapping_add(r32(c, A2)));
+                        callee::TEX_MAN_INIT_TEMP_HEAP.call(c, 0x0037_c0a8)?;
+                    }
+                }
+
+                // Acknowledge VSINT; wait for the next vsync unless it is set.
+                c.cycles += 10;
+                c.g[A0][0] = 0;
+                callee::FLUSH_CACHE.call(c, 0x0037_c0d0)?;
+                c.g[V0][0] = sx(GS_CSR);
+                c.g[A0][0] = CSR_VSINT;
+                c.sd(GS_CSR, CSR_VSINT);
+                c.g[V1][0] = c.ld(GS_CSR) & CSR_VSINT;
+                let seen = c.g[V1][0] != 0;
+                c.g[V0][0] = 0x1200_0000;
+                if !seen {
+                    c.cycles += 2;
+                    c.g[V1][0] = sx(GS_CSR);
+                    wait = true;
+                }
+            }
+            if wait {
+                loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = c.ld(r32(c, V1)) & CSR_VSINT;
+                    let pending = c.g[V0][0] == 0;
+                    c.g[V0][0] = 0x1200_0000;
+                    if !pending {
+                        break;
+                    }
+                    if back_edge_unwinds(c, SET_DISPLAY_MODE_VSYNC_WAIT) {
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Reset the GS for the mode, the timer's video mode, the display
+            // registers.
+            c.cycles += 6;
+            let gm = r32(c, S1);
+            c.g[A1][0] = c.lh(gm.wrapping_add(INTERLACE));
+            c.g[V0][0] = sx(GS_CSR);
+            c.g[V1][0] = c.ld(GS_CSR);
+            c.g[V0][0] = c.lw(frame.at(c, SET_DISPLAY_MODE_ARG_PROGRESSIVE));
+            let progressive = c.g[V0][0] != 0;
+            c.g[A2][0] = SET_DISPLAY_MODE_DTV480P;
+            if !progressive {
+                c.cycles += 1;
+                c.g[A2][0] = c.lh(gm.wrapping_add(OMODE));
+            }
+            c.cycles += 13;
+            c.g[A0][0] = c.lw(frame.at(c, SET_DISPLAY_MODE_LOCAL_RESET_MODE));
+            c.g[A3][0] = c.lh(gm.wrapping_add(FFMODE));
+            callee::SCE_GS_RESET_GRAPH.call(c, 0x0037_c13c)?;
+            c.g[V1][0] = c.lw(frame.at(c, SET_DISPLAY_MODE_ARG_PROGRESSIVE));
+            c.g[V0][0] = 1;
+            c.g[A0][0] = if c.g[V1][0] == 0 { 1 } else { 3 };
+            callee::EA_TIMER_SET_VIDEO_MODE.call(c, 0x0037_c150)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 1;
+            callee::RENDERER_SET_DISPLAY_REGS.call(c, 0x0037_c160)?;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 12;
+        for (reg, off) in SET_DISPLAY_MODE_SAVES {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_SetDitherMatrix (0x37c198)
+
+#[cfg(test)]
+pub(crate) const SET_DITHER_MATRIX: u32 = 0x0037_c198;
+
+/// Callee-saved registers in the 0x90 frame (the game uses them as masks).
+pub(crate) const SET_DITHER_MATRIX_SAVES: [(usize, u32); 9] = [
+    (S0, 0x80),
+    (S1, 0x70),
+    (S2, 0x60),
+    (S3, 0x50),
+    (S4, 0x40),
+    (S5, 0x30),
+    (S6, 0x20),
+    (S7, 0x10),
+    (FP, 0),
+];
+
+/// The masks the game leaves in its scratch registers: the field masks of
+/// the last entries it set and of the sign bits it cleared.
+pub(crate) const SET_DITHER_MATRIX_LEFTOVERS: [(usize, u64); 13] = [
+    (V1, !(1 << 19)),
+    (A2, !(1 << 63)),
+    (A3, !(7 << 24)),
+    (T0, !(1 << 55)),
+    (T1, !(1 << 59)),
+    (T2, !(7 << 20)),
+    (T3, !(7 << 28)),
+    (T4, !(7 << 32)),
+    (T5, !(7 << 36)),
+    (T6, !(7 << 40)),
+    (T7, !(7 << 44)),
+    (T8, !(1 << 39)),
+    (T9, !(1 << 23)),
+];
+
+/// `void PS2GraphicsMan_SetDitherMatrix(PS2GraphicsMan* self, const int*
+/// matrix)` (0x37c198): pack the 16 entries of a 4x4 dither matrix (low 3
+/// bits each) into the manager's `DIMX` value, entry i at bits 4i..4i+2
+/// (stored after each of the first 15), then clear every entry's sign bit
+/// (bit 4i+3) and store it once more.
+pub fn ps2_graphics_man_set_dither_matrix(c: &mut Cpu) {
+    use renderer_fields::DITHER;
+    c.cycles += 246;
+    let frame = Frame::open(c, 0x90);
+    for (reg, off) in SET_DITHER_MATRIX_SAVES {
+        frame.save(c, reg, off);
+    }
+    let dimx_at = r32(c, A0).wrapping_add(DITHER);
+    let matrix = r32(c, A1);
+    let first = c.lw(matrix) & 7;
+    let mut dimx = c.ld(dimx_at);
+    for i in 0..16u32 {
+        let entry = if i == 0 {
+            first
+        } else {
+            c.lw(matrix.wrapping_add(4 * i)) & 7
+        };
+        dimx = (dimx & !(7 << (4 * i))) | (entry << (4 * i));
+        if i < 15 {
+            c.sd(dimx_at, dimx);
+        }
+    }
+    dimx &= 0x7777_7777_7777_7777;
+    c.sd(dimx_at, dimx);
+    for (reg, value) in SET_DITHER_MATRIX_LEFTOVERS {
+        c.g[reg][0] = value;
+    }
+    c.g[V0][0] = dimx;
+    for (reg, off) in SET_DITHER_MATRIX_SAVES {
+        frame.restore(c, reg, off);
+    }
+    frame.close(c);
+}
+
+/// `void PS2GraphicsMan::SnapshotTextureTable()` (0x37c808): copy the
+/// 0x1f40-byte table at +0x3838 over the texture slot table at +0x18f8
+/// (`EA_MemCopy`).
+pub fn ps2_graphics_man_snapshot_texture_table(c: &mut Cpu) {
+    use ps2gm::*;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        let this = Addr(r32(c, A0));
+        c.g[A1][0] = sx(this.off(TEX_SLOTS_SAVED).0);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = TEX_SLOTS_BYTES as u64;
+        c.g[A0][0] = sx(this.off(TEX_SLOTS).0);
+        callee::EA_MEM_COPY.call(c, 0x0037_c820)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The palette format of a shape with a CLUT record (`format` 1 or 2):
+/// the PSM in s3 (`psm`, or `psm_flagged` when the header flag 0x2000 is
+/// set), s6 = 1, and the CLUT pixels in s5 (the record's data at +0x10, or
+/// at its own offset +0x10 when its flag 0x1000 is set). The record follows
+/// the header at `header >> 8` (0: none, read from address 0). `v0` holds the
+/// header word.
+pub(crate) fn v48_clut_format(c: &mut Cpu, psm: u64, psm_flagged: u64) {
+    let shape = Addr(r32(c, S0));
+    c.g[S3][0] = psm;
+    c.g[V1][0] = shape.off(0xc).lw(c);
+    c.g[A1][0] = psm_flagged;
+    let next = sx(((c.g[V0][0] as u32) as i32 >> 8) as u32);
+    c.g[V0][0] = next;
+    c.g[S6][0] = 1;
+    c.g[A0][0] = sx(shape.0.wrapping_add(next as u32));
+    c.g[V1][0] &= 0x2000;
+    if next == 0 {
+        c.g[A0][0] = 0;
+    }
+    let clut = Addr(r32(c, A0));
+    c.g[V0][0] = clut.off(0xc).lw(c) & 0x1000;
+    if c.g[V1][0] != 0 {
+        c.g[S3][0] = c.g[A1][0];
+    }
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        c.g[V0][0] = clut.off(0x10).lw(c);
+        c.g[S5][0] = sx(clut.0.wrapping_add(r32(c, V0)));
+    } else {
+        c.cycles += 2;
+        c.g[S5][0] = sx(clut.off(0x10).0);
+    }
+}
+
+/// `void PS2GraphicsMan::v48(int a1, Shape* shape, int a3)` (0x37d0b0):
+/// upload a shape's texture. The format byte picks the PSM (1: 0xb/0xc and
+/// 2: 9/0xa with a CLUT, 3: 2, others 0); a shape whose data is EAC-packed
+/// (`0x10, 0xfb`, 24-bit big-endian unpacked size) is unpacked into a new
+/// `"unpack"` buffer (freed afterwards). Calls vtable slot +0x188 with `(a1,
+/// pixels, width, height, header word >> 28, psm, has_clut)` and the CLUT
+/// and `a3` on the stack.
+pub fn ps2_graphics_man_v48(c: &mut Cpu) {
+    /// `"unpack"`: the allocation name of the unpack buffer.
+    const UNPACK_NAME: u32 = 0x004a_4390;
+    const UPLOAD_SLOT: u32 = 0x188;
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0xc0);
+        c.g[V0][0] = 2;
+        frame.save(c, S0, 0xb0);
+        frame.save(c, S3, 0x80);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S5, 0x60);
+        c.g[S3][0] = 0;
+        frame.save(c, S6, 0x50);
+        c.g[S5][0] = 0;
+        frame.save(c, FP, 0x30);
+        c.g[S6][0] = 0;
+        frame.save(c, S1, 0xa0);
+        c.g[FP][0] = c.g[A0][0];
+        frame.save(c, S2, 0x90);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S7, 0x40);
+        frame.save_ra(c, 0x20);
+        let shape = Addr(r32(c, S0));
+        let format = shape.lbu(c);
+        c.g[V1][0] = format;
+        let a1_slot = frame.at(c, 0x10);
+        Addr(a1_slot).sw(c, c.g[A1][0]);
+        let a3_slot = frame.at(c, 0x14);
+        Addr(a3_slot).sw(c, c.g[A3][0]);
+        // The format: psm (s3), has_clut (s6), CLUT pixels (s5).
+        let joined = if format == 2 {
+            c.cycles += 13;
+            c.g[V0][0] = shape.lw(c);
+            v48_clut_format(c, 9, 0xa);
+            true
+        } else if format < 3 {
+            c.cycles += 5;
+            c.g[V0][0] = 1;
+            if format == 1 {
+                c.g[V0][0] = shape.lw(c);
+                c.cycles += 12;
+                v48_clut_format(c, 0xb, 0xc);
+                true
+            } else {
+                c.cycles += 2;
+                false
+            }
+        } else {
+            // The `< 3` test, then the `== 3` test.
+            c.cycles += 6;
+            c.g[V0][0] = 5;
+            if format == 3 {
+                c.cycles += 1;
+                c.g[S3][0] = 2;
+                true
+            } else {
+                c.cycles += 2;
+                if format == 5 {
+                    c.g[S3][0] = 0;
+                    true
+                } else {
+                    c.cycles += 2;
+                    false
+                }
+            }
+        };
+        if joined {
+            c.cycles += 1;
+        }
+        c.g[V1][0] = shape.off(0x10).lbu(c);
+        // The pixels (a0) and the header word (t1).
+        c.cycles += 5;
+        c.g[S7][0] = 0;
+        c.g[S1][0] = 0;
+        c.g[V0][0] = 0x10;
+        c.g[S4][0] = sx(shape.off(0x10).0);
+        'pixels: {
+            if c.g[V1][0] == 0x10 {
+                c.cycles += 4;
+                c.g[V1][0] = shape.off(0x11).lbu(c);
+                c.g[V0][0] = 0xfb;
+                if c.g[V1][0] == 0xfb {
+                    // EAC-packed: unpack into a new buffer (s1, pixels s2).
+                    c.cycles += 30;
+                    c.g[A0][0] = shape.off(0x12).lbu(c);
+                    c.g[A1][0] = 0x4a_0000;
+                    c.g[V0][0] = shape.off(0x13).lbu(c);
+                    c.g[A2][0] = 0xffff_ffff_8000_0000;
+                    c.g[V1][0] = shape.off(0x14).lbu(c);
+                    c.g[A0][0] = sx(r32(c, A0) << 16);
+                    c.g[V0][0] = sx(r32(c, V0) << 8);
+                    c.g[A3][0] = 0;
+                    c.g[A0][0] |= c.g[V0][0];
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(UNPACK_NAME & 0xffff));
+                    c.g[A0][0] |= c.g[V1][0];
+                    c.g[A2][0] |= 0x100;
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+                    c.g[S7][0] = 1;
+                    callee::OPERATOR_NEW_NAMED.call(c, 0x0037_d224)?;
+                    c.g[S1][0] = c.g[V0][0];
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A2][0] = 0x10;
+                    callee::EA_MEM_MOVE.call(c, 0x0037_d238)?;
+                    c.g[S2][0] = sx(r32(c, S1).wrapping_add(0x10));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = c.g[S2][0];
+                    callee::EAC_UNPACK.call(c, 0x0037_d248)?;
+                    let unpacked = Addr(r32(c, S1));
+                    c.g[V1][0] = unpacked.lbu(c) & 0x7f;
+                    c.g[V0][0] = unpacked.off(0xc).lw(c) & 0x1000;
+                    unpacked.sb(c, c.g[V1][0]);
+                    let header = Addr(r32(c, S0)).off(0xc);
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[T1][0] = header.lw(c);
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = unpacked.off(0x10).lw(c);
+                        c.g[T1][0] = header.lw(c);
+                        c.g[A0][0] = sx(unpacked.0.wrapping_add(r32(c, V0)));
+                    }
+                    break 'pixels;
+                }
+                c.g[V0][0] = shape.off(0xc).lw(c);
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = shape.off(0xc).lw(c);
+            }
+            c.cycles += 4;
+            c.g[T1][0] = c.g[V0][0];
+            c.g[V0][0] &= 0x1000;
+            c.g[A0][0] = c.g[S4][0];
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = shape.off(0x10).lw(c);
+                c.g[A0][0] = sx(shape.0.wrapping_add(r32(c, V0)));
+            }
+        }
+        // Upload through the renderer.
+        c.cycles += 17;
+        let vt = Addr(r32(c, FP)).off(man::DISPLAY).lw(c);
+        c.g[V1][0] = vt;
+        c.g[A2][0] = c.g[A0][0];
+        c.g[V0][0] = Addr(a3_slot).lw(c);
+        c.g[T1][0] = sx(r32(c, T1) >> 28);
+        c.g[A0][0] = Addr(vt as u32).off(UPLOAD_SLOT).lh(c);
+        c.g[T2][0] = c.g[S3][0];
+        let shape = Addr(r32(c, S0));
+        c.g[T0][0] = shape.off(0x6).lh(c);
+        c.g[T3][0] = c.g[S6][0];
+        let out = sp(c);
+        Addr(out).sw(c, c.g[S5][0]);
+        c.g[A0][0] = sx(r32(c, FP).wrapping_add(r32(c, A0)));
+        Addr(out).off(0x8).sw(c, c.g[V0][0]);
+        c.g[A1][0] = Addr(a1_slot).lw(c);
+        c.g[V0][0] = Addr(vt as u32).off(UPLOAD_SLOT + 4).lw(c);
+        let method = r32(c, V0);
+        c.g[A3][0] = shape.off(0x4).lh(c);
+        call_ptr(c, method, 0x0037_d2d4)?;
+        frame.restore(c, S0, 0xb0);
+        if c.g[S7][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            callee::MEM_FREE.call(c, 0x0037_d2e4)?;
+            frame.restore(c, S0, 0xb0);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore(c, S7, 0x40);
+        frame.restore(c, FP, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PS2GraphicsMan::v49(int a1, .., int t3, int stack0, int stack1)`
+/// (0x37d318): `TexMan_UpdateTextureData` on the texture manager at
+/// +0x18f4 with the same register arguments and the two stack arguments.
+pub fn ps2_graphics_man_v49(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        let args = frame.at(c, 0x20);
+        c.g[V0][0] = Addr(args).lw(c);
+        c.g[V1][0] = Addr(args).off(0x8).lw(c);
+        frame.save_ra(c, 0x10);
+        let out = sp(c);
+        Addr(out).sw(c, c.g[V0][0]);
+        Addr(out).off(0x8).sw(c, c.g[V1][0]);
+        c.g[A0][0] = Addr(r32(c, A0)).off(GM_TEXTURES).lw(c);
+        callee::TEX_MAN_UPDATE_TEXTURE_DATA.call(c, 0x0037_d338)?;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PS2GraphicsMan::LockTexture(a1, a2, a3)` (0x37d738):
+/// `TexMan_LockTexture` on the texture manager at +0x18f4.
+pub fn ps2_graphics_man_lock_texture(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        Some(GM_TEXTURES),
+        crate::call::Target::Direct(callee::TEX_MAN_LOCK_TEXTURE),
+        0x0037_d748,
+    );
+}
+
+/// `void PS2GraphicsMan::v87(const Vec4* center, const float* rgba, int
+/// segments, float radius)` (0x382170): draw a filled circle facing the
+/// camera. The centre goes through the view matrix (vtable +0x118); nothing
+/// is drawn beyond 3000 units. `segments > 0` is the ring step, else it
+/// follows the distance (4 beyond 2000, 2 beyond 750, else 1). Builds the
+/// 16-point unit ring once (flag at gp+0x28b0), then sends the ring points
+/// scaled by `radius` around the centre (colour `rgba * 128`, ints, the ring
+/// closed by its first point again) through vtable +0x248, between +0xf8 /
+/// +0x128 and +0x100, untextured (state texture -1, flag bits 0x7c = 4).
+pub fn ps2_graphics_man_v87(c: &mut Cpu) {
+    use ps2gm::*;
+    const VERTS_HEAD: u32 = 0x0038_23f0;
+    const RING_HEAD: u32 = 0x0038_2430;
+    /// `int` ring-built flag (gp+0x28b0) and the unit ring (16 vec4s).
+    const RING_BUILT: u32 = 0x28b0;
+    const RING_END: u32 = 0x0050_0000;
+    const RING: u32 = RING_END - 0x440;
+    /// Distances (`.lit4`, gp-relative): the cut-off 3000 and the step 2
+    /// threshold 750 (the step 4 one, 2000.0, is an immediate).
+    const FAR: u32 = 0x2758;
+    const NEAR: u32 = 0x2754;
+    /// The ring's sines (gp-relative `.lit4`): 0.38, 0.92, 0.71, -0.38,
+    /// -0.71, -0.92 into f2, f3, f1, f6, f4, f5.
+    const RING_LITS: [(usize, u32); 6] = [
+        (2, 0x2750),
+        (3, 0x274c),
+        (1, 0x2748),
+        (6, 0x2744),
+        (4, 0x2740),
+        (5, 0x273c),
+    ];
+    /// The ring points as (x, y) float registers (`None`: 0): f0 = 1.0,
+    /// f7 = -1.0.
+    const RING_POINTS: [(Option<usize>, Option<usize>); 16] = [
+        (None, Some(0)),
+        (Some(2), Some(3)),
+        (Some(1), Some(1)),
+        (Some(3), Some(2)),
+        (Some(0), None),
+        (Some(3), Some(6)),
+        (Some(1), Some(4)),
+        (Some(2), Some(5)),
+        (None, Some(7)),
+        (Some(6), Some(5)),
+        (Some(4), Some(4)),
+        (Some(5), Some(6)),
+        (Some(7), None),
+        (Some(5), Some(2)),
+        (Some(4), Some(1)),
+        (Some(6), Some(3)),
+    ];
+    /// Render state flags: the primitive bits (0x7c) set to 4.
+    const STATE_FLAGS: u32 = 0x4;
+    const STATE_TEX: u32 = 0x10;
+    const PRIM_MASK: u64 = 0xffff_ffff_ffff_ff83;
+    /// Vertices on the stack: 0x30 bytes, `int rgba[4]` at +0x10, the
+    /// position at +0x20.
+    const VERTS: u32 = 0x60;
+    const VERT_SIZE: u32 = 0x30;
+    const CENTER: u32 = 0x40;
+    fn vcall(c: &mut Cpu, slot: u32, ret: u32) -> crate::call::Flow {
+        let vt = Addr(r32(c, S3)).off(man::DISPLAY).lw(c);
+        c.g[V1][0] = vt;
+        c.g[A0][0] = Addr(vt as u32).off(slot).lh(c);
+        c.g[V0][0] = Addr(vt as u32).off(slot + 4).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+        call_ptr(c, method, ret)
+    }
+    guest(c, |c| {
+        c.cycles += 43;
+        let frame = Frame::open(c, 0x410);
+        frame.save(c, S0, 0x3f0);
+        frame.save(c, S1, 0x3e0);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x3d0);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S3, 0x3c0);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save_fpr(c, 20, 0x400);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x3b0);
+        c.mov_s(20, 12);
+        // The centre in view space (sp+0x40): the matrix copied to sp, then
+        // m0*x + m1*y + m2*z + m3*w.
+        let vt = Addr(r32(c, S3)).off(man::DISPLAY).lw(c);
+        c.g[V1][0] = vt;
+        c.g[A0][0] = Addr(vt as u32).off(0x118).lh(c);
+        c.g[V0][0] = Addr(vt as u32).off(0x11c).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0038_21b4)?;
+        let matrix = r32(c, V0);
+        let stack = sp(c);
+        for row in 0..4u32 {
+            c.lqc2(1 + row as usize, matrix.wrapping_add(0x10 * row));
+        }
+        for row in 0..4u32 {
+            c.sqc2(1 + row as usize, stack.wrapping_add(0x10 * row));
+        }
+        c.lqc2(8, r32(c, S0));
+        for row in 0..4u32 {
+            c.lqc2(4 + row as usize, stack.wrapping_add(0x10 * row));
+        }
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, stack.wrapping_add(0x50));
+        let gp = r32(c, GP);
+        c.lwc1(0, gp.wrapping_sub(FAR));
+        c.lq(V0, stack.wrapping_add(0x50));
+        c.sq(V0, stack.wrapping_add(CENTER));
+        c.lwc1(1, stack.wrapping_add(CENTER + 8));
+        c.c_lt_s(0, 1);
+        let beyond = c.fcc();
+        frame.restore(c, S0, 0x3f0);
+        if !beyond {
+            // The step (s0).
+            c.cycles += 2;
+            let given = (c.g[S2][0] as i64) > 0;
+            c.g[S0][0] = c.g[S2][0];
+            if !given {
+                c.cycles += 6;
+                c.g[AT][0] = 0x44fa_0000;
+                c.mtc1(AT, 0);
+                c.c_lt_s(0, 1);
+                let far = c.fcc();
+                c.g[S0][0] = 4;
+                if !far {
+                    c.cycles += 5;
+                    c.lwc1(0, gp.wrapping_sub(NEAR));
+                    c.c_lt_s(0, 1);
+                    let near = !c.fcc();
+                    c.g[S0][0] = 1;
+                    if !near {
+                        c.cycles += 1;
+                        c.g[S0][0] = 2;
+                    }
+                }
+            }
+            // The unit ring, built on first use.
+            c.cycles += 3;
+            c.g[V0][0] = Addr(gp).off(RING_BUILT).lw(c);
+            c.g[S2][0] = RING_END as u64;
+            if c.g[V0][0] == 0 {
+                c.cycles += 77;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 0);
+                c.g[V0][0] = RING as u64;
+                for (f, lit) in RING_LITS {
+                    c.lwc1(f, gp.wrapping_sub(lit));
+                }
+                c.g[V1][0] = 1;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.mtc1(AT, 7);
+                for (i, (x, y)) in RING_POINTS.into_iter().enumerate() {
+                    let point = RING + 0x10 * i as u32;
+                    for (k, f) in [x, y].into_iter().enumerate() {
+                        let at = point + 4 * k as u32;
+                        match f {
+                            Some(f) => c.swc1(f, at),
+                            None => c.sw(at, 0),
+                        }
+                    }
+                    c.sw(point + 8, 0);
+                    c.sw(point + 0xc, 0);
+                }
+                Addr(gp).off(RING_BUILT).sw(c, c.g[V1][0]);
+            }
+            // Untextured.
+            c.cycles += 23;
+            c.g[V1][0] = Addr(r32(c, S3)).off(CUR_STATE).lw(c);
+            c.g[V0][0] = u64::MAX;
+            c.g[A1][0] = PRIM_MASK;
+            Addr(r32(c, V1)).off(STATE_TEX).sh(c, c.g[V0][0]);
+            c.g[A0][0] = Addr(r32(c, S3)).off(CUR_STATE).lw(c);
+            let flags = Addr(r32(c, A0)).off(4);
+            c.g[V0][0] = flags.lw(c) & c.g[A1][0] | STATE_FLAGS as u64;
+            flags.sw(c, c.g[V0][0]);
+            c.g[V1][0] = Addr(r32(c, S3)).off(man::DISPLAY).lw(c);
+            let vt = r32(c, V1);
+            c.g[A0][0] = Addr(vt).off(0xf8).lh(c);
+            c.g[A1][0] = Addr(vt).off(0xfc).lw(c);
+            let method = r32(c, A1);
+            c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+            call_ptr(c, method, 0x0038_23cc)?;
+            let vt = Addr(r32(c, S3)).off(man::DISPLAY).lw(c);
+            c.g[V0][0] = vt;
+            c.g[A0][0] = Addr(vt as u32).off(0x128).lh(c);
+            c.g[V1][0] = Addr(vt as u32).off(0x12c).lw(c);
+            let method = r32(c, V1);
+            c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+            call_ptr(c, method, 0x0038_23e0)?;
+            // The vertex array's (empty) constructor loop: 17 elements.
+            let stack = sp(c);
+            c.g[T1][0] = sx(stack.wrapping_add(VERTS));
+            c.g[V1][0] = u64::MAX;
+            c.g[V0][0] = 0x10;
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                c.g[A1][0] = 0;
+                if c.g[V0][0] == c.g[V1][0] {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, VERTS_HEAD);
+                }
+            }
+            // One vertex per ring step (a1 = count, t0 = ring index, a3 =
+            // ring point, a0/a2 = vertex colour/position).
+            c.cycles += 9;
+            c.g[V0][0] = RING_END as u64;
+            c.g[AT][0] = 0x4300_0000;
+            c.mtc1(AT, 4);
+            c.g[A3][0] = RING as u64;
+            c.g[T0][0] = 0;
+            c.g[A2][0] = sx(stack.wrapping_add(VERTS + 0x20));
+            c.g[A0][0] = c.g[T1][0];
+            c.g[T2][0] = sx(r32(c, S0) << 4);
+            let rgba = r32(c, S1);
+            loop {
+                c.cycles += 37;
+                c.lwc1(3, rgba.wrapping_add(4));
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, S0)));
+                c.lwc1(2, rgba.wrapping_add(8));
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                c.lwc1(1, rgba.wrapping_add(0xc));
+                c.mul_s(3, 3, 4);
+                c.lwc1(0, rgba);
+                c.mul_s(2, 2, 4);
+                c.mul_s(1, 1, 4);
+                c.g[V1][0] = ((c.g[T0][0] as i64) < 16) as u64;
+                let color = r32(c, A0);
+                c.cvt_w_s(5, 3);
+                c.swc1(5, color.wrapping_add(0x10));
+                c.mul_s(0, 0, 4);
+                c.cvt_w_s(3, 2);
+                c.swc1(3, color.wrapping_add(0x14));
+                c.cvt_w_s(2, 1);
+                c.swc1(2, color.wrapping_add(0x18));
+                c.cvt_w_s(1, 0);
+                c.swc1(1, color.wrapping_add(0x1c));
+                // centre + ring point * radius
+                c.mfc1(V0, 20);
+                c.lqc2(4, r32(c, A3));
+                c.qmtc2(V0, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, stack.wrapping_add(0x3a0));
+                c.g[A0][0] = sx(color.wrapping_add(VERT_SIZE));
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, T2)));
+                c.lq(V0, stack.wrapping_add(0x3a0));
+                c.sq(V0, stack.wrapping_add(0x390));
+                c.lqc2(3, stack.wrapping_add(CENTER));
+                c.lqc2(4, stack.wrapping_add(0x390));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, stack.wrapping_add(0x3a0));
+                c.lq(V0, stack.wrapping_add(0x3a0));
+                c.sq(V0, stack.wrapping_add(0x50));
+                c.sq(V0, r32(c, A2));
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(VERT_SIZE));
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, RING_HEAD);
+                }
+            }
+            // The closing vertex (ring point 0), then draw.
+            c.cycles += 56;
+            c.g[A0][0] = VERT_SIZE as u64;
+            c.lwc1(4, rgba);
+            c.lwc1(3, rgba.wrapping_add(4));
+            c.mult(0, A0, A1, A0);
+            c.lwc1(2, rgba.wrapping_add(8));
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+            c.lwc1(1, rgba.wrapping_add(0xc));
+            c.g[A2][0] = c.g[T1][0];
+            c.g[AT][0] = 0x4300_0000;
+            c.mtc1(AT, 0);
+            c.g[A3][0] = 0;
+            c.g[V0][0] = sx(r32(c, T1).wrapping_add(r32(c, A0)));
+            c.mul_s(4, 4, 0);
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(stack));
+            c.mul_s(3, 3, 0);
+            c.mul_s(2, 2, 0);
+            c.mul_s(1, 1, 0);
+            let color = r32(c, V0);
+            for (f, off) in [(4, 0x1c), (3, 0x10), (2, 0x14), (1, 0x18)] {
+                c.cvt_w_s(0, f);
+                c.swc1(0, color.wrapping_add(off));
+            }
+            c.mfc1(V1, 20);
+            c.lqc2(4, RING);
+            c.qmtc2(V1, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, stack.wrapping_add(0x3a0));
+            c.lq(V0, stack.wrapping_add(0x3a0));
+            c.sq(V0, stack.wrapping_add(0x390));
+            c.lqc2(3, stack.wrapping_add(CENTER));
+            c.lqc2(4, stack.wrapping_add(0x390));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, stack.wrapping_add(0x3a0));
+            c.lq(V0, stack.wrapping_add(0x3a0));
+            c.g[V1][0] = Addr(r32(c, S3)).off(man::DISPLAY).lw(c);
+            c.sq(V0, stack.wrapping_add(0x50));
+            c.sq(V0, r32(c, A0).wrapping_add(0x80));
+            let vt = r32(c, V1);
+            c.g[A0][0] = Addr(vt).off(0x248).lh(c);
+            c.g[V0][0] = Addr(vt).off(0x24c).lw(c);
+            let method = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+            call_ptr(c, method, 0x0038_2574)?;
+            c.g[A0][0] = Addr(r32(c, S3)).off(CUR_STATE).lw(c);
+            c.g[V1][0] = PRIM_MASK;
+            let flags = Addr(r32(c, A0)).off(4);
+            c.g[V0][0] = flags.lw(c) & c.g[V1][0] | STATE_FLAGS as u64;
+            flags.sw(c, c.g[V0][0]);
+            vcall(c, 0x100, 0x0038_25a0)?;
+            frame.restore(c, S0, 0x3f0);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x3e0);
+        frame.restore(c, S2, 0x3d0);
+        frame.restore(c, S3, 0x3c0);
+        frame.restore_ra(c, 0x3b0);
+        frame.restore_fpr(c, 20, 0x400);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Renderer_DmaKickThreadEntry(void* gm)` (0x382740): the DMA kick
+/// thread's entry: runs `Renderer_DmaKickThread(gm)`.
+pub fn renderer_dma_kick_thread_entry(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(callee::RENDERER_DMA_KICK_THREAD),
+        0x0038_2750,
+    );
+}
+
+/// Busy-wait while `(reg & mask) != 0` (`lw` through the address in
+/// `addr_reg`, the masked value in v0), with an event check at `head`.
+pub(crate) fn kick_wait_clear(c: &mut Cpu, addr_reg: usize, mask: u64, head: u32) {
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(r32(c, addr_reg)).lw(c) & mask;
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// Busy-wait for the GS FIFO to drain (`ld GS_CSR` through v1, compared
+/// with a0 = 0x4000), with an event check at `head`.
+pub(crate) fn kick_wait_gs_fifo(c: &mut Cpu, head: u32) {
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(r32(c, V1)).ld(c) & renderer_hw::CSR_FIFO;
+        if c.g[V0][0] == c.g[A0][0] {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// Send the VIF1 prelude, set GIF_MODE and wait until VIF1 and the GS FIFO
+/// are idle (the generated block at `cycles`, the VIF1 wait at `vif_head`,
+/// the GS wait at `gs_head`); leaves a1 = the GIF chain address at `gif`.
+pub(crate) fn kick_prelude(c: &mut Cpu, cycles: u64, gif: u32, vif_head: u32, gs_head: u32) {
+    use kick::*;
+    use renderer_hw::*;
+    c.cycles += cycles;
+    c.g[V1][0] = VIF_PRELUDE as u64;
+    c.lq(V0, VIF_PRELUDE);
+    c.sq(V0, r32(c, FP));
+    c.g[V0][0] = GIF_MODE_IMT;
+    Addr(r32(c, S7)).sw(c, c.g[V0][0]);
+    c.g[V0][0] = Addr(r32(c, S3)).lw(c) & c.g[S2][0];
+    c.g[A0][0] = 0x1000_0000;
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        c.g[V1][0] = VIF1_BUSY;
+        c.g[A0][0] = VIF1_STAT as u64;
+        kick_wait_clear(c, A0, VIF1_BUSY, vif_head);
+    }
+    c.cycles += 5;
+    c.g[V1][0] = GS_CSR as u64;
+    c.g[A1][0] = Addr(r32(c, S0)).off(gif).lw(c);
+    c.g[A0][0] = CSR_FIFO_EMPTY;
+    kick_wait_gs_fifo(c, gs_head);
+}
+
+/// `void Renderer_DmaKickThread(PS2GraphicsMan* gm)` (0x382760): the render
+/// DMA thread. Forever: wait for a kick request and the queue mutex; a
+/// finished frame (state 5) frees its buffer and is shown
+/// (`Renderer_SetDisplayRegs(gm, 1, 0)`); an idle pipeline with a queued
+/// buffer starts it (waits for VIF1, GIF, VIF1 and the GS to go idle, marks
+/// it in flight, `FlushCache(0)`, waits for the SPR channel, then the first
+/// GIF and VIF1 chains: state 1); a finished first half (state 2) runs the
+/// phase-2 callback and starts the second chains (state 3). Then releases
+/// the mutex. It leaves only by a callee unwinding.
+pub fn renderer_dma_kick_thread(c: &mut Cpu) {
+    use kick::*;
+    use renderer_hw::*;
+    const LOOP_HEAD: u32 = 0x0038_27d8;
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(BUF_STATE));
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        let stack = sp(c);
+        Addr(stack).sw(c, c.g[V0][0]);
+        c.g[S1][0] = VIF1_CHCR as u64;
+        c.g[FP][0] = VIF1_FIFO as u64;
+        c.g[S7][0] = GIF_MODE as u64;
+        c.g[S6][0] = GIF_TADR as u64;
+        c.g[S5][0] = GIF_CHCR as u64;
+        c.g[S4][0] = VIF1_TADR as u64;
+        c.g[S3][0] = VIF1_STAT as u64;
+        c.g[S2][0] = VIF1_BUSY;
+        loop {
+            c.cycles += 8;
+            c.g[A0][0] = Addr(r32(c, S0)).off(VBLANK_SEMA).lw(c);
+            callee::WAIT_SEMA.call(c, 0x0038_27e0)?;
+            c.g[A0][0] = Addr(r32(c, S0)).off(QUEUE_MUTEX).lw(c);
+            callee::WAIT_SEMA.call(c, 0x0038_27e8)?;
+            let gm = Addr(r32(c, S0));
+            c.g[V1][0] = gm.off(VBLANK_SWAP_STATE).lw(c);
+            c.g[V0][0] = 5;
+            if c.g[V1][0] == 5 {
+                // The frame is done: free its buffer and show it.
+                c.cycles += 11;
+                c.g[V0][0] = gm.off(IN_FLIGHT).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                c.g[V1][0] = Addr(stack).lw(c);
+                c.g[A1][0] = 1;
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[A2][0] = 0;
+                c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                Addr(r32(c, V0)).sw(c, 0);
+                gm.off(VBLANK_SWAP_STATE).sw(c, 0);
+                callee::RENDERER_SET_DISPLAY_REGS.call(c, 0x0038_2824)?;
+            }
+            'unlock: {
+                let gm = Addr(r32(c, S0));
+                c.cycles += 3;
+                c.g[V0][0] = gm.off(VBLANK_SWAP_STATE).lw(c);
+                if c.g[V0][0] == 0 {
+                    c.cycles += 9;
+                    c.g[V0][0] = gm.off(QUEUED).lw(c);
+                    c.g[A2][0] = sx(gm.off(BUF_STATE).0);
+                    c.g[V1][0] = Addr(stack).lw(c);
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                    c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                    c.g[V0][0] = 2;
+                    if c.g[V1][0] == 2 {
+                        // Start the queued buffer: wait for VIF1, GIF, VIF1
+                        // and the GS to go idle.
+                        c.cycles += 4;
+                        c.g[V0][0] = Addr(r32(c, S1)).lw(c) & DMA_CHCR_STR;
+                        c.g[V1][0] = 0x1000_0000;
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 1;
+                            c.g[V1][0] = VIF1_CHCR as u64;
+                            kick_wait_clear(c, V1, DMA_CHCR_STR, 0x0038_2868);
+                        }
+                        c.cycles += 3;
+                        c.g[V1][0] = GIF_CHCR as u64;
+                        loop {
+                            c.cycles += 7;
+                            c.g[V0][0] = Addr(r32(c, V1)).lw(c) & DMA_CHCR_STR;
+                            c.g[A0][0] = 0x1000_0000;
+                            if c.g[V0][0] == 0 {
+                                break;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0038_2890);
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[V1][0] = VIF1_BUSY;
+                        c.g[A0][0] = VIF1_STAT as u64;
+                        kick_wait_clear(c, A0, VIF1_BUSY, 0x0038_28b8);
+                        c.cycles += 3;
+                        c.g[V1][0] = GS_CSR as u64;
+                        c.g[A0][0] = CSR_FIFO_EMPTY;
+                        kick_wait_gs_fifo(c, 0x0038_28e0);
+                        // Mark it in flight (state 1).
+                        c.cycles += 21;
+                        let gm = Addr(r32(c, S0));
+                        c.g[V1][0] = gm.off(QUEUED).lw(c);
+                        c.g[A1][0] = 1;
+                        c.g[A0][0] = 0;
+                        gm.off(IN_FLIGHT).sw(c, c.g[V1][0]);
+                        c.g[V1][0] = 3;
+                        c.g[V0][0] = gm.off(IN_FLIGHT).lw(c);
+                        c.g[V0][0] = sx(r32(c, V0) << 2);
+                        c.g[V0][0] = sx(r32(c, A2).wrapping_add(r32(c, V0)));
+                        Addr(r32(c, V0)).sw(c, c.g[V1][0]);
+                        gm.off(VBLANK_SWAP_STATE).sw(c, c.g[A1][0]);
+                        c.g[V0][0] = gm.off(QUEUED_VIF2).lw(c);
+                        c.g[V1][0] = gm.off(QUEUED_GIF2).lw(c);
+                        gm.off(IN_FLIGHT_VIF2).sw(c, c.g[V0][0]);
+                        gm.off(IN_FLIGHT_GIF2).sw(c, c.g[V1][0]);
+                        callee::FLUSH_CACHE.call(c, 0x0038_2938)?;
+                        c.g[V0][0] = SPR_FROM_CHCR as u64;
+                        c.g[V1][0] = Addr(SPR_FROM_CHCR).lw(c) & DMA_CHCR_STR;
+                        let busy = c.g[V1][0] != 0;
+                        c.g[V1][0] = 0x1000_0000;
+                        if busy {
+                            c.cycles += 2;
+                            c.g[V1][0] = SPR_FROM_CHCR as u64;
+                            kick_wait_clear(c, V1, DMA_CHCR_STR, 0x0038_2958);
+                        }
+                        kick_prelude(c, 10, QUEUED_GIF1, 0x0038_29a8, 0x0038_29d8);
+                        // The first chains: GIF, then VIF1.
+                        c.cycles += 9;
+                        Addr(r32(c, S6)).sw(c, c.g[A1][0]);
+                        c.g[V1][0] = GIF_CHAIN;
+                        Addr(r32(c, S5)).sw(c, c.g[V1][0]);
+                        c.g[V0][0] = Addr(r32(c, S0)).off(QUEUED_VIF1).lw(c);
+                        Addr(r32(c, S4)).sw(c, c.g[V0][0]);
+                        c.g[V0][0] = VIF1_CHAIN;
+                        Addr(r32(c, S1)).sw(c, c.g[V0][0]);
+                        break 'unlock;
+                    }
+                }
+                c.cycles += 4;
+                c.g[V0][0] = Addr(r32(c, S0)).off(VBLANK_SWAP_STATE).lw(c);
+                c.g[V1][0] = 2;
+                if c.g[V0][0] == 2 {
+                    // The first half is done: phase 2, then the second chains.
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, S0)).off(PHASE2_CALLBACK).lw(c);
+                    c.g[V1][0] = 0x45_0000;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 3;
+                        let callback = r32(c, V0);
+                        c.g[A0][0] = Addr(r32(c, S0)).off(PHASE2_ARG).lw(c);
+                        call_ptr(c, callback, 0x0038_2a3c)?;
+                        c.g[V1][0] = 0x45_0000;
+                    }
+                    kick_prelude(c, 9, IN_FLIGHT_GIF2, 0x0038_2a70, 0x0038_2aa0);
+                    c.cycles += 9;
+                    Addr(r32(c, S6)).sw(c, c.g[A1][0]);
+                    c.g[V1][0] = GIF_CHAIN;
+                    Addr(r32(c, S5)).sw(c, c.g[V1][0]);
+                    c.g[V0][0] = 3;
+                    let gm = Addr(r32(c, S0));
+                    gm.off(VBLANK_SWAP_STATE).sw(c, c.g[V0][0]);
+                    c.g[V1][0] = VIF1_CHAIN;
+                    c.g[V0][0] = gm.off(IN_FLIGHT_VIF2).lw(c);
+                    Addr(r32(c, S4)).sw(c, c.g[V0][0]);
+                    Addr(r32(c, S1)).sw(c, c.g[V1][0]);
+                }
+            }
+            c.cycles += 4;
+            c.g[A0][0] = Addr(r32(c, S0)).off(QUEUE_MUTEX).lw(c);
+            callee::SIGNAL_SEMA.call(c, 0x0038_2ae8)?;
+            if event_due(c) {
+                deliver_event_here(c, LOOP_HEAD);
+            }
+        }
+    })
+}
+
+/// `void PS2GraphicsMan::SetPhase2Callback(void (*fn)(void*), void* arg)`
+/// (0x3866e0): the callback the DMA kick thread runs between the two halves
+/// of a frame.
+pub fn ps2_graphics_man_set_phase2_callback(c: &mut Cpu) {
+    c.cycles += 3;
+    let gm = Addr(r32(c, A0));
+    gm.off(kick::PHASE2_ARG).sw(c, c.g[A2][0]);
+    gm.off(kick::PHASE2_CALLBACK).sw(c, c.g[A1][0]);
+    ret(c);
+}
+
+/// `void PS2GraphicsMan::v109(Model* model, char* base, const u32* remap,
+/// int* history_count, BlendedMatrix* history, int user)` (0x3866f0): fix up
+/// a loaded model. Relocates its tables by `base`; for each texture
+/// reference relocates its sublists and their items (`item.end +=
+/// item.start`), sets the scale `(short)(f * 128)`, the alpha flag 0x8000
+/// (names `"alph"`, `"ea…"`), the environment index (`"env<digit>"`) and the
+/// texture handle (`GetTextureByName`); remaps the 0x50-byte records' values
+/// and the blend groups' bone bytes through `remap`; gives each blend group a
+/// history slot (an equal blended matrix, or a new entry); and replaces the
+/// matrix lists' group indices by those slots.
+pub fn ps2_graphics_man_v109(c: &mut Cpu) {
+    use model_fixup::*;
+    const LISTS_HEAD: u32 = 0x0038_6778;
+    const TEXTURES_HEAD: u32 = 0x0038_67b8;
+    const SUBLISTS_HEAD: u32 = 0x0038_67f0;
+    const ITEMS_HEAD: u32 = 0x0038_6828;
+    const RECORDS_HEAD: u32 = 0x0038_69b8;
+    const GROUPS_HEAD: u32 = 0x0038_6a08;
+    const WEIGHTS_HEAD: u32 = 0x0038_6a38;
+    const HISTORY_HEAD: u32 = 0x0038_6a90;
+    const SLOTS_HEAD: u32 = 0x0038_6b38;
+    const SLOT_ITEMS_HEAD: u32 = 0x0038_6b58;
+    /// `"alph"` (4 characters compared).
+    const ALPH: u32 = 0x004a_4398;
+    /// Stack slots: this, remap, history, the 0x50-byte records, the next
+    /// texture index.
+    const THIS: u32 = 0x0;
+    const REMAP: u32 = 0x4;
+    const HISTORY: u32 = 0x8;
+    const RECORDS: u32 = 0xc;
+    const NEXT_TEXTURE: u32 = 0x10;
+    fn base_plus(c: &Cpu, r: usize) -> u64 {
+        sx(r32(c, S7).wrapping_add(r32(c, r)))
+    }
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S6, 0x50);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S7, 0x40);
+        c.g[S6][0] = c.g[T0][0];
+        frame.save(c, S0, 0xb0);
+        c.g[S7][0] = c.g[A2][0];
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S5, 0x60);
+        frame.save(c, FP, 0x30);
+        frame.save_ra(c, 0x20);
+        let stack = Addr(sp(c));
+        let model = Addr(r32(c, S4));
+        c.g[V1][0] = model.off(BLEND_GROUPS_OFF).lw(c);
+        stack.off(THIS).sw(c, c.g[A0][0]);
+        c.g[V1][0] = base_plus(c, V1);
+        c.g[V0][0] = model.off(MATRIX_LISTS_OFF).lw(c);
+        stack.off(REMAP).sw(c, c.g[A3][0]);
+        c.g[V0][0] = base_plus(c, V0);
+        c.g[A0][0] = model.off(RECORDS_50).lw(c);
+        c.g[A1][0] = model.off(TEXTURES).lw(c);
+        c.g[A0][0] = base_plus(c, A0);
+        stack.off(RECORDS).sw(c, c.g[A0][0]);
+        c.g[S3][0] = base_plus(c, A1);
+        c.g[A1][0] = 0;
+        c.g[A2][0] = model.off(MATRIX_LIST_COUNT).lh(c);
+        stack.off(HISTORY).sw(c, c.g[T1][0]);
+        model.off(BLEND_GROUPS).sw(c, c.g[V1][0]);
+        model.off(MATRIX_LISTS).sw(c, c.g[V0][0]);
+        model.off(USER).sw(c, c.g[T2][0]);
+        // Relocate the matrix lists' group arrays.
+        if (c.g[A2][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[V1][0] = model.off(MATRIX_LISTS).lw(c);
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = sx(r32(c, A1) << 3);
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                let groups = Addr(r32(c, A0)).off(4);
+                c.g[V0][0] = groups.lw(c);
+                c.g[V0][0] = base_plus(c, V0);
+                groups.sw(c, c.g[V0][0]);
+                c.g[V1][0] = model.off(MATRIX_LIST_COUNT).lh(c);
+                c.g[V1][0] = ((c.g[A1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                c.g[V1][0] = model.off(MATRIX_LISTS).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, LISTS_HEAD);
+                }
+            }
+        }
+        // Texture references (s2 = index, v1 = its offset, fp = 0x14).
+        c.cycles += 3;
+        c.g[V0][0] = model.off(TEXTURE_COUNT).lh(c);
+        c.g[S2][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[FP][0] = TEXTURE_SIZE as u64;
+            c.mult(0, V1, S2, FP);
+            loop {
+                c.cycles += 9;
+                c.g[A0][0] = sx(r32(c, S2).wrapping_add(1));
+                Addr(sp(c)).off(NEXT_TEXTURE).sw(c, c.g[A0][0]);
+                c.g[A1][0] = 0;
+                c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, S3)));
+                let texture = Addr(r32(c, V0));
+                c.g[V1][0] = texture.off(0x10).lw(c);
+                c.g[A0][0] = texture.off(0xc).lw(c);
+                c.g[V1][0] = base_plus(c, V1);
+                texture.off(0x10).sw(c, c.g[V1][0]);
+                if (c.g[A0][0] as i64) > 0 {
+                    // Its sublists (a1 = index, a3 = offset; t2 = texture).
+                    c.cycles += 5;
+                    c.g[V0][0] = TEXTURE_SIZE as u64;
+                    c.mult(0, V0, S2, V0);
+                    c.g[T4][0] = c.g[V0][0];
+                    c.g[T2][0] = sx(r32(c, V0).wrapping_add(r32(c, S3)));
+                    c.g[A0][0] = Addr(r32(c, T2)).off(0x10).lw(c);
+                    loop {
+                        c.cycles += 11;
+                        c.g[A3][0] = sx(r32(c, A1) << 3);
+                        c.g[T3][0] = sx(r32(c, A1).wrapping_add(1));
+                        c.g[A0][0] = sx(r32(c, A3).wrapping_add(r32(c, A0)));
+                        let items = Addr(r32(c, A0));
+                        c.g[V0][0] = items.lw(c);
+                        c.g[V0][0] = base_plus(c, V0);
+                        items.sw(c, c.g[V0][0]);
+                        c.g[V1][0] = Addr(r32(c, T2)).off(0x10).lw(c);
+                        c.g[V1][0] = sx(r32(c, A3).wrapping_add(r32(c, V1)));
+                        c.g[V0][0] = Addr(r32(c, V1)).off(4).lw(c);
+                        c.g[T0][0] = 0;
+                        if (c.g[V0][0] as i64) > 0 {
+                            // Its items (t0 = index): start += base,
+                            // end += start.
+                            c.cycles += 3;
+                            c.g[T1][0] = sx(r32(c, T4).wrapping_add(r32(c, S3)));
+                            c.g[V0][0] = Addr(r32(c, T1)).off(0x10).lw(c);
+                            loop {
+                                c.cycles += 23;
+                                c.g[A1][0] = sx(r32(c, T0) << 3);
+                                c.g[A2][0] = c.g[A3][0];
+                                c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                                c.g[V0][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+                                c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                                c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                                let item = Addr(r32(c, A0));
+                                c.g[V0][0] = item.lw(c);
+                                c.g[V0][0] = base_plus(c, V0);
+                                item.sw(c, c.g[V0][0]);
+                                let sublists = Addr(r32(c, T1)).off(0x10);
+                                c.g[V1][0] = sublists.lw(c);
+                                c.g[V1][0] = sx(r32(c, A3).wrapping_add(r32(c, V1)));
+                                c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                                c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                                let item = Addr(r32(c, A1));
+                                c.g[A0][0] = item.off(4).lw(c);
+                                c.g[V0][0] = item.lw(c);
+                                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                                item.off(4).sw(c, c.g[A0][0]);
+                                c.g[V1][0] = sublists.lw(c);
+                                c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, V1)));
+                                c.g[V0][0] = Addr(r32(c, A2)).off(4).lw(c);
+                                c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                if c.g[V0][0] == 0 {
+                                    break;
+                                }
+                                c.g[V0][0] = sublists.lw(c);
+                                if event_due(c) {
+                                    deliver_event_here(c, ITEMS_HEAD);
+                                }
+                            }
+                        }
+                        c.cycles += 5;
+                        c.g[V0][0] = Addr(r32(c, T2)).off(0xc).lw(c);
+                        c.g[A1][0] = c.g[T3][0];
+                        c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        c.g[A0][0] = Addr(r32(c, T2)).off(0x10).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, SUBLISTS_HEAD);
+                        }
+                    }
+                }
+                // The name entry (s0) and its environment name (s1); the
+                // scale.
+                c.cycles += 8;
+                c.mult(0, V0, S2, FP);
+                c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, S3)));
+                let texture = Addr(r32(c, V1));
+                c.g[V0][0] = texture.off(4).lw(c);
+                c.g[V0][0] = sx(r32(c, V0) << 5);
+                c.g[S0][0] = base_plus(c, V0);
+                let name = Addr(r32(c, S0));
+                c.g[V0][0] = name.off(0x10).lb(c);
+                c.g[S1][0] = sx(name.off(0x10).0);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 8;
+                    c.lwc1(0, name.off(0x14).0);
+                    c.g[AT][0] = 0x4300_0000;
+                    c.mtc1(AT, 1);
+                    c.mul_s(0, 0, 1);
+                    c.cvt_w_s(1, 0);
+                    c.mfc1(V0, 1);
+                    texture.off(0xa).sh(c, c.g[V0][0]);
+                } else {
+                    c.cycles += 1;
+                    texture.off(0xa).sh(c, 0);
+                }
+                // Alpha: "alph…" or "ea…".
+                c.cycles += 7;
+                c.g[V0][0] = 0x4a_0000;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = ALPH as u64;
+                c.g[A2][0] = 4;
+                callee::STRNCMP.call(c, 0x0038_68f0)?;
+                let name = Addr(r32(c, S0));
+                let mut alpha = c.g[V0][0] == 0;
+                c.g[V1][0] = 0x65;
+                if !alpha {
+                    c.cycles += 3;
+                    c.g[V0][0] = name.lb(c);
+                    if c.g[V0][0] == c.g[V1][0] {
+                        c.cycles += 4;
+                        c.g[V1][0] = name.off(1).lb(c);
+                        c.g[V0][0] = 0x61;
+                        alpha = c.g[V1][0] == c.g[V0][0];
+                    }
+                }
+                if alpha {
+                    c.cycles += 6;
+                    c.mult(0, V0, S2, FP);
+                    c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, S3)));
+                    let flags = Addr(r32(c, V1));
+                    c.g[V0][0] = flags.lw(c) | 0x8000;
+                    flags.sw(c, c.g[V0][0]);
+                }
+                c.g[V0][0] = Addr(r32(c, S1)).lb(c);
+                // Environment: "env<digit>" (s5 = the digit).
+                c.cycles += 2;
+                c.g[S5][0] = 0;
+                let env = Addr(r32(c, S1));
+                let mut reload_this = c.g[V0][0] == 0;
+                if !reload_this {
+                    c.cycles += 3;
+                    c.g[V1][0] = 0x65;
+                    let e = c.g[V0][0] == c.g[V1][0];
+                    c.g[A0][0] = Addr(sp(c)).off(THIS).lw(c);
+                    if e {
+                        c.cycles += 4;
+                        c.g[V1][0] = env.off(1).lb(c);
+                        c.g[V0][0] = 0x6e;
+                        let n = c.g[V1][0] == c.g[V0][0];
+                        c.g[V0][0] = 0x76;
+                        if n {
+                            c.cycles += 3;
+                            c.g[V1][0] = env.off(2).lb(c);
+                            if c.g[V1][0] == c.g[V0][0] {
+                                c.cycles += 5;
+                                c.g[V1][0] = env.off(3).lbu(c);
+                                c.g[V0][0] = sx(r32(c, V1).wrapping_sub(0x30));
+                                c.g[V0][0] = (c.g[V0][0] < 0xa) as u64;
+                                let digit = c.g[V0][0] != 0;
+                                c.g[V0][0] = sx(r32(c, V1) << 24);
+                                if digit {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = sx((r32(c, V0) as i32 >> 24) as u32);
+                                    c.g[S5][0] = sx(r32(c, V0).wrapping_sub(0x30));
+                                    reload_this = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if reload_this {
+                    c.cycles += 1;
+                    c.g[A0][0] = Addr(sp(c)).off(THIS).lw(c);
+                }
+                // The texture handle.
+                c.cycles += 11;
+                c.g[A1][0] = c.g[S0][0];
+                callee::PS2_GRAPHICS_MAN_GET_TEXTURE_BY_NAME.call(c, 0x0038_6984)?;
+                c.mult(0, A0, S2, FP);
+                c.g[S2][0] = Addr(sp(c)).off(NEXT_TEXTURE).lw(c);
+                c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
+                let texture = Addr(r32(c, V1));
+                texture.off(8).sh(c, c.g[S5][0]);
+                texture.off(4).sw(c, c.g[V0][0]);
+                c.g[V0][0] = Addr(r32(c, S4)).off(TEXTURE_COUNT).lh(c);
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.mult(0, V1, S2, FP);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, TEXTURES_HEAD);
+                }
+            }
+        }
+        // The 0x50-byte records: +0x12 += remap[+0x10] when not negative.
+        let model = Addr(r32(c, S4));
+        c.cycles += 3;
+        c.g[V0][0] = model.off(RECORD_50_COUNT).lh(c);
+        c.g[A2][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 1;
+            c.g[A0][0] = Addr(sp(c)).off(RECORDS).lw(c);
+            loop {
+                c.cycles += 3;
+                let record = Addr(r32(c, A0));
+                c.g[V0][0] = record.off(0x12).lh(c);
+                c.g[A1][0] = record.off(0x12).lhu(c);
+                if (c.g[V0][0] as i64) >= 0 {
+                    c.cycles += 7;
+                    c.g[V0][0] = record.off(0x10).lh(c);
+                    c.g[V1][0] = Addr(sp(c)).off(REMAP).lw(c);
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.g[V1][0] = Addr(r32(c, V0)).lhu(c);
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+                    record.off(0x12).sh(c, c.g[V1][0]);
+                }
+                c.cycles += 5;
+                c.g[V0][0] = model.off(RECORD_50_COUNT).lh(c);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x50));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, RECORDS_HEAD);
+                }
+            }
+        }
+        // Blend groups (fp = next index, s0 = group).
+        c.cycles += 3;
+        c.g[V0][0] = model.off(BLEND_GROUP_COUNT).lh(c);
+        c.g[A2][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[V1][0] = 0xc;
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = Addr(r32(c, S4)).off(BLEND_GROUPS).lw(c);
+                c.mult(0, V1, A2, V1);
+                c.g[FP][0] = sx(r32(c, A2).wrapping_add(1));
+                c.g[A2][0] = 0;
+                c.g[S0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                let group = Addr(r32(c, S0));
+                c.g[V0][0] = group.off(4).lw(c);
+                c.g[V1][0] = group.lw(c);
+                c.g[V0][0] = base_plus(c, V0);
+                group.off(4).sw(c, c.g[V0][0]);
+                if (c.g[V1][0] as i64) > 0 {
+                    // Remap each weight's bone byte (+2) by remap[+3].
+                    c.cycles += 2;
+                    c.g[V1][0] = group.off(4).lw(c);
+                    loop {
+                        c.cycles += 15;
+                        c.g[A0][0] = sx(r32(c, A2) << 2);
+                        c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                        let weight = Addr(r32(c, A0));
+                        c.g[V0][0] = weight.off(3).lbu(c);
+                        c.g[V1][0] = Addr(sp(c)).off(REMAP).lw(c);
+                        c.g[V0][0] = sx(r32(c, V0) << 2);
+                        c.g[A1][0] = weight.off(2).lbu(c);
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                        c.g[V1][0] = Addr(r32(c, V0)).lbu(c);
+                        c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+                        weight.off(2).sb(c, c.g[A1][0]);
+                        c.g[V0][0] = group.lw(c);
+                        c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        c.g[V1][0] = group.off(4).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, WEIGHTS_HEAD);
+                        }
+                    }
+                }
+                // Its history slot (s3 = index, s1/s2 = entry).
+                c.cycles += 7;
+                c.g[S1][0] = Addr(sp(c)).off(HISTORY).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = Addr(sp(c)).off(THIS).lw(c);
+                c.g[S3][0] = 0;
+                c.g[S5][0] = 0xc;
+                c.g[S2][0] = c.g[S1][0];
+                callee::PS2_GRAPHICS_MAN_ALLOC_BLENDED_MATRIX_HISTORY.call(c, 0x0038_6a90)?;
+                loop {
+                    c.cycles += 3;
+                    let count = Addr(r32(c, S6));
+                    c.g[V0][0] = count.lw(c);
+                    c.g[A0][0] = c.g[S0][0];
+                    let group = Addr(r32(c, S0));
+                    if c.g[S3][0] == c.g[V0][0] {
+                        // None equal: append the group as a new entry.
+                        c.cycles += 19;
+                        c.g[V0][0] = group.lw(c);
+                        Addr(r32(c, S2)).sw(c, c.g[V0][0]);
+                        let history = Addr(sp(c)).off(HISTORY);
+                        c.g[V0][0] = history.lw(c);
+                        c.g[V1][0] = count.lw(c);
+                        c.lo[0] = c.g[V0][0];
+                        c.g[A0][0] = group.off(4).lw(c);
+                        c.madd(0, V1, V1, S5);
+                        let entry = Addr(r32(c, V1));
+                        entry.off(4).sw(c, c.g[A0][0]);
+                        c.g[A0][0] = history.lw(c);
+                        c.g[V0][0] = count.lw(c);
+                        c.lo[0] = c.g[A0][0];
+                        c.madd(0, V1, V0, S5);
+                        // The entry's +8: its index (v0 = the count).
+                        Addr(r32(c, V1)).off(8).sw(c, c.g[V0][0]);
+                        c.g[A0][0] = count.lw(c);
+                        group.off(8).sw(c, c.g[A0][0]);
+                        c.g[V0][0] = count.lw(c);
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                        count.sw(c, c.g[V0][0]);
+                        break;
+                    }
+                    c.cycles += 7;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A2][0] = 0;
+                    c.g[A3][0] = 0;
+                    c.g[T0][0] = 0;
+                    callee::PS2GM_MATCH_BLENDED_MATRIX.call(c, 0x0038_6afc)?;
+                    if c.g[V0][0] != 0 {
+                        Addr(r32(c, S0)).off(8).sw(c, c.g[S3][0]);
+                        break;
+                    }
+                    c.cycles += 4;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(0xc));
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(0xc));
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                    if event_due(c) {
+                        deliver_event_here(c, HISTORY_HEAD);
+                    }
+                }
+                c.cycles += 5;
+                c.g[V0][0] = Addr(r32(c, S4)).off(BLEND_GROUP_COUNT).lh(c);
+                c.g[A2][0] = c.g[FP][0];
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[V1][0] = 0xc;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, GROUPS_HEAD);
+                }
+            }
+        }
+        // Matrix lists: each group index becomes that group's slot.
+        let model = Addr(r32(c, S4));
+        c.cycles += 3;
+        c.g[V0][0] = model.off(MATRIX_LIST_COUNT).lh(c);
+        c.g[A1][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 1;
+            c.g[A0][0] = model.off(MATRIX_LISTS).lw(c);
+            loop {
+                c.cycles += 6;
+                c.g[V1][0] = sx(r32(c, A1) << 3);
+                c.g[T0][0] = sx(r32(c, A1).wrapping_add(1));
+                c.g[A3][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                let list = Addr(r32(c, A3));
+                c.g[V0][0] = list.lw(c);
+                c.g[A2][0] = 0;
+                if (c.g[V0][0] as i64) > 0 {
+                    c.cycles += 2;
+                    c.g[T1][0] = 0xc;
+                    c.g[V1][0] = list.off(4).lw(c);
+                    loop {
+                        c.cycles += 13;
+                        c.g[A0][0] = sx(r32(c, A2) << 2);
+                        c.g[A1][0] = model.off(BLEND_GROUPS).lw(c);
+                        c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                        let slot = Addr(r32(c, A0));
+                        c.g[V0][0] = slot.lw(c);
+                        c.mult(0, V0, V0, T1);
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+                        c.g[V1][0] = Addr(r32(c, V0)).off(8).lw(c);
+                        slot.sw(c, c.g[V1][0]);
+                        c.g[V0][0] = list.lw(c);
+                        c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        c.g[V1][0] = list.off(4).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, SLOT_ITEMS_HEAD);
+                        }
+                    }
+                }
+                c.cycles += 5;
+                c.g[V0][0] = model.off(MATRIX_LIST_COUNT).lh(c);
+                c.g[A1][0] = c.g[T0][0];
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A0][0] = model.off(MATRIX_LISTS).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, SLOTS_HEAD);
+                }
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xb0);
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore(c, S7, 0x40);
+        frame.restore(c, FP, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16018,5 +21294,3803 @@ pub(crate) mod tests {
                 c.g[T0][0] = (r.next_u32() % 2) as u64;
             },
         );
+    }
+
+    use crate::difftest::check_paths;
+    use crate::difftest::check_paths_lohi;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::Events;
+    use crate::difftest::fresh;
+    use crate::difftest::run_generated;
+    use std::ptr::addr_of_mut;
+
+    // ------------------------------------------------ GS buffer helpers
+
+    /// `Gs_CalcBufferSizeInPages`: every class of each buffer's format (the
+    /// 32-row, 64-row and no-page cases of both jump tables, formats past
+    /// the tables including set upper words, and the depth compares on
+    /// both sides of Z32/Z16 and Z16S), with random widths and heights
+    /// (junk in the upper words; with `seed / 512 % 2` the height is a
+    /// multiple of 64, so no rounding). The game image holds the tables. Paths:
+    /// all three buffers out of range or below Z32 16, the tables' no-page
+    /// cases and Z32 35, all paged with depth Z16S or another format 46,
+    /// frame paged, texture out of range, depth Z16 34.
+    #[test]
+    fn gs_calc_buffer_size_in_pages_matches() {
+        const FRAME: [u64; 8] = [0x00, 0x0a, 0x31, 0x32, 0x13, 0x3b, 0x1_0000_0000, 0x3a];
+        const TEXTURE: [u64; 8] = [
+            0x01,
+            0x02,
+            0x30,
+            0x3a,
+            0x2f,
+            0x3b,
+            0xffff_ffff_ffff_fff0,
+            0x00,
+        ];
+        const DEPTH: [u64; 8] = [0x30, 0x31, 0x32, 0x3a, 0x02, 0x33, u64::MAX, 0x1_0000_0032];
+        check_paths_lohi(
+            ee::s12::f_0037bc40__generated,
+            gs_calc_buffer_size_in_pages,
+            1024,
+            &[16, 35, 46, 34],
+            &|c, seed| {
+                let mut r = Rng(0x0037_bc40 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.pc = 0x0037_bc40;
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | (r.next_u32() % 0x900) as u64;
+                c.g[A2][0] = (r.next_u32() as u64) << 32 | (r.next_u32() % 0x900) as u64;
+                if seed / 512 % 2 == 1 {
+                    c.g[A2][0] &= !0x3f;
+                }
+                c.g[A3][0] = FRAME[(seed % 8) as usize];
+                c.g[T0][0] = TEXTURE[(seed / 8 % 8) as usize];
+                c.g[T1][0] = DEPTH[(seed / 64 % 8) as usize];
+            },
+        );
+    }
+
+    /// `Gs_IsValidFramePsm` entered at an inner label (0x37bd5c, the 16-bit
+    /// group's depth test): the port hands the call to the generated twin.
+    #[test]
+    fn gs_is_valid_frame_psm_inner_entry_matches() {
+        check(
+            ee::s12::f_0037bd38__generated,
+            gs_is_valid_frame_psm,
+            8,
+            &|c, seed| {
+                let mut r = Rng(0x0037_bd5c ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.pc = 0x0037_bd5c;
+                c.g[A2][0] = [0x30, 0x31, 0x32, 0x3a][(seed % 4) as usize];
+            },
+        );
+    }
+
+    /// `Gs_IsValidFramePsm`: every frame-format class of the jump table
+    /// (32-bit group, 16-bit group, a no-match case, past the table with a
+    /// low or an upper-word value) against depth formats Z32, Z24, Z16S,
+    /// Z16, a colour format, and Z24/Z16S/Z16 with junk in the upper word.
+    /// Paths: past the table 6, no-match case 12, 16-bit with Z16 14,
+    /// 16-bit without (or 32-bit with Z32/Z24) 15, 32-bit with Z16S or none
+    /// 17.
+    #[test]
+    fn gs_is_valid_frame_psm_matches() {
+        const PSM: [u64; 11] = [
+            0x00,
+            0x01,
+            0x0a,
+            0x30,
+            0x31,
+            0x3a,
+            0x02,
+            0x32,
+            0x13,
+            0x3b,
+            0x1_0000_0000,
+        ];
+        const ZPSM: [u64; 9] = [
+            0x30,
+            0x31,
+            0x3a,
+            0x32,
+            0x02,
+            0x1_0000_0030,
+            0x1_0000_003a,
+            0x1_0000_0032,
+            0x2f,
+        ];
+        check_paths(
+            ee::s12::f_0037bd38__generated,
+            gs_is_valid_frame_psm,
+            198,
+            &[6, 12, 14, 15, 17],
+            &|c, seed| {
+                let mut r = Rng(0x0037_bd38 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.pc = 0x0037_bd38;
+                c.g[A1][0] = PSM[(seed % 11) as usize];
+                c.g[A2][0] = ZPSM[(seed / 11 % 9) as usize];
+            },
+        );
+    }
+
+    // ------------------------------------------------ Gs_UploadImage
+
+    /// Formats of the upload tests: each bytes-per-row case, a case of the
+    /// table without one, past the table (low and upper word).
+    pub(crate) const GS_UPLOAD_TEST_PSMS: [u64; 9] = [
+        gs_psm::CT32,
+        gs_psm::CT24,
+        gs_psm::CT16,
+        gs_psm::CT16S,
+        gs_psm::T8,
+        gs_psm::T4,
+        0x07,
+        0x15,
+        0xffff_ffff_0000_0000,
+    ];
+
+    /// Where an upload test puts its pixels.
+    pub(crate) const GS_UPLOAD_TEST_PIXELS: u32 = DATA + 0x1230;
+
+    /// Bytes per row of a format as the upload computes them (0 without a
+    /// case).
+    pub(crate) fn gs_upload_test_row_bytes(psm: u64, width: u32) -> u32 {
+        match psm {
+            gs_psm::CT32 => width * 4,
+            gs_psm::CT24 => width * 3,
+            gs_psm::CT16 | gs_psm::CT16S => width * 2,
+            gs_psm::T8 => width,
+            gs_psm::T4 => width / 2,
+            _ => 0,
+        }
+    }
+
+    /// An upload of format `psm`: random destination (block, buffer width,
+    /// x, y with junk above the bits that reach the GS words), an even width
+    /// 16..78 (junk in the upper word) and a height by `kind`: 0 a few rows,
+    /// 1 none, 2 one full chunk plus 1..5 rows (two chunks), 3 -1 (one
+    /// chunk of minus one row). Formats without a row size get height -1 or
+    /// -7 (one empty chunk; 0 would never end). Random scratchpad and
+    /// pixels, the game image for the jump table.
+    pub(crate) fn gs_upload_image_setup(c: &mut Cpu, seed: u32, psm: u64, kind: u32) -> Rng {
+        let mut r = Rng(0x0038_3808 ^ (seed as u64) << 18);
+        scramble(c, &mut r);
+        elf_image(c);
+        c.pc = 0x0038_3808;
+        for i in 0..0x100 {
+            let w = r.next_u32();
+            c.bus.spr[4 * i..4 * i + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        fill(c, &mut r, GS_UPLOAD_TEST_PIXELS, 0x400);
+        let width = 16 + (r.next_u32() % 32) * 2;
+        let row_bytes = gs_upload_test_row_bytes(psm, width);
+        let height = if row_bytes == 0 {
+            [-1i32, -7, -1, -1][kind as usize]
+        } else {
+            let chunk_rows = GS_UPLOAD_CHUNK_BYTES as u32 / row_bytes;
+            [
+                (1 + r.next_u32() % 12) as i32,
+                0,
+                (chunk_rows + 1 + r.next_u32() % 5) as i32,
+                -1,
+            ][kind as usize]
+        };
+        c.g[A1][0] = sx(GS_UPLOAD_TEST_PIXELS);
+        c.g[A2][0] = (r.next_u32() as u64) << 32 | (r.next_u32() & 0x3fff) as u64;
+        c.g[A3][0] = (r.next_u32() as u64) << 32 | width as u64;
+        c.g[T0][0] = sx(height as u32);
+        c.g[T1][0] = sx(r.next_u32() % 0x800);
+        c.g[T2][0] = psm;
+        c.g[T3][0] = (r.next_u32() as u64) << 32 | (r.next_u32() % 0x800) as u64;
+        let stack = c.g[SP][0] as u32;
+        let y = (r.next_u32() & 0xffff_0000) | r.next_u32() % 0x800;
+        c.bus.write32(stack, y);
+        r
+    }
+
+    /// The machine's event hook while a GIF transfer is in flight: the
+    /// transfer finishes (CHCR.STR clears) at the next event, which is then
+    /// delivered as usual. Keeps the test machines' runaway budget.
+    pub(crate) fn gs_upload_test_gif_done_event(c: &mut Cpu) -> bool {
+        assert!(
+            c.cycles < crate::difftest::CYCLE_BUDGET,
+            "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+            c.cycles,
+            c.pc
+        );
+        let hw = &mut ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw;
+        hw.ch[ssx3_ps2::hw::ch::GIF].chcr &= !(DMA_CHCR_STR as u32);
+        (ssx3_ps2::platform::HOOKS.event)(c)
+    }
+
+    /// A GIF transfer in flight, so the upload's wait loop runs. The DMA
+    /// model finishes a transfer inside the CHCR store that starts it
+    /// (`ssx3-ps2/src/hw.rs` `dma_start`), so the test sets CHCR.STR
+    /// directly (nothing started) and lets the machine's next event, due
+    /// within 60 cycles, finish it: the wait loop makes a few passes, takes
+    /// the event at its back edge and exits. The machine needs a running
+    /// guest thread for the event (`schedule`, or
+    /// [`gs_upload_image_start_thread`]).
+    pub(crate) fn gs_upload_image_start_busy(c: &mut Cpu) {
+        let hw = &mut ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw;
+        hw.ch[ssx3_ps2::hw::ch::GIF].chcr = 0x101;
+        c.hooks.event = gs_upload_test_gif_done_event;
+        c.next_event = c.next_event.min(c.cycles + 60);
+    }
+
+    /// The main guest thread running the upload (as `schedule` starts it,
+    /// keeping a0, a1 and ra), for an event delivered without `schedule`.
+    pub(crate) fn gs_upload_image_start_thread(c: &mut Cpu) {
+        let saved = (c.g[A0], c.g[A1], c.g[RA]);
+        ssx3_ps2::kernel::start_main_thread(c, 0x0038_3808, 0, 0);
+        (c.g[A0], c.g[A1], c.g[RA]) = saved;
+    }
+
+    /// `Gs_UploadImage`: every format case (`seed % 9`), heights of a few
+    /// rows, none, or one chunk and a remainder (two packets: a `ref` and a
+    /// `refe`) (`seed / 9 % 3`), with the GIF channel idle or busy with a
+    /// transfer the next event finishes (`seed / 27 % 2`; the wait loop
+    /// runs a few passes, head 0x3838a8). The real `Dma_SendGifChain` runs
+    /// the chain into the GS. Also requires that the fixtures really made
+    /// the upload wait and split into chunks.
+    #[test]
+    fn gs_upload_image_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let psm = GS_UPLOAD_TEST_PSMS[(seed % 9) as usize];
+            gs_upload_image_setup(c, seed, psm, seed / 9 % 3);
+            if seed / 27 % 2 == 1 {
+                gs_upload_image_start_thread(c);
+                gs_upload_image_start_busy(c);
+            }
+        };
+        check_lohi(ee::s12::f_00383808__generated, gs_upload_image, 216, &setup);
+        let (mut busy, mut chunked) = (false, false);
+        for seed in 0..216 {
+            let mut machine_box = fresh();
+            let c: &mut Cpu = &mut machine_box;
+            setup(c, seed);
+            busy |= c.lw(GIF_CHCR) & DMA_CHCR_STR != 0;
+            run_generated(c, ee::s12::f_00383808__generated);
+            let second = (gs_upload_packet::SIZE + gs_upload_packet::DMA_TAG) as usize;
+            let tag = u32::from_le_bytes(c.bus.spr[second..second + 4].try_into().unwrap());
+            chunked |= tag as u64 == gs_upload_packet::DMA_CNT_7;
+        }
+        assert!(busy, "no seed found the GIF channel busy");
+        assert!(chunked, "no seed uploaded more than one chunk");
+    }
+
+    /// `Gs_UploadImage` with a height of -1 for each format with a row size:
+    /// the chunk's quadword count is negative (the tag's upper bits set).
+    /// The real `Dma_SendGifChain` runs the chain.
+    #[test]
+    fn gs_upload_image_negative_height_matches() {
+        const PSMS: [u64; 6] = [
+            gs_psm::CT32,
+            gs_psm::CT24,
+            gs_psm::CT16,
+            gs_psm::CT16S,
+            gs_psm::T8,
+            gs_psm::T4,
+        ];
+        check_lohi(
+            ee::s12::f_00383808__generated,
+            gs_upload_image,
+            24,
+            &|c, seed| {
+                gs_upload_image_setup(c, seed, PSMS[(seed % 6) as usize], 3);
+            },
+        );
+    }
+
+    /// `Gs_UploadImage` with events due: the busy-channel wait (head
+    /// 0x3838a8) and the two-chunk packet loop (head 0x383918) deliver
+    /// events (`seed / 3 % 2` busy, `seed / 6 % 2` two chunks or a few
+    /// rows, `seed / 12 % 3` the format). Structured loops: no head is
+    /// resumed.
+    #[test]
+    fn gs_upload_image_events() {
+        driven!(gen_upload, ee::s12::f_00383808__generated);
+        driven!(hand_upload, gs_upload_image);
+        const PSMS: [u64; 3] = [gs_psm::CT32, gs_psm::T8, gs_psm::CT16];
+        check_events(gen_upload, hand_upload, 108, &|c, seed| {
+            let psm = PSMS[(seed / 12 % 3) as usize];
+            let kind = [0, 2][(seed / 6 % 2) as usize];
+            let mut r = gs_upload_image_setup(c, seed / 3, psm, kind);
+            let events = schedule(c, &mut r, seed, 0x0038_3808);
+            if seed / 3 % 2 == 1 {
+                gs_upload_image_start_busy(c);
+            }
+            events
+        });
+    }
+
+    /// The grid mesh object.
+    pub(crate) const GRID_MESH_AT: u32 = DATA + 0x1230;
+
+    /// The constructor's allocation / a DMA packet.
+    pub(crate) const GRID_BUFFER_AT: u32 = DATA + 0x2_0010;
+
+    /// A row table for `BuildDmaPacket`.
+    pub(crate) const GRID_ROW_TAB_AT: u32 = DATA + 0x3_0004;
+
+    /// The packers' inputs: positions (12 bytes a vertex), colours (16), uvs (8).
+    pub(crate) const GRID_POSITIONS_AT: u32 = DATA + 0x4_0008;
+
+    pub(crate) const GRID_COLORS_AT: u32 = DATA + 0x4_1000;
+
+    pub(crate) const GRID_UVS_AT: u32 = DATA + 0x4_2004;
+
+    /// The packers' two row tables and the packet data their entries point at.
+    pub(crate) const GRID_PACK_TABS_AT: u32 = DATA + 0x5_0004;
+
+    pub(crate) const GRID_PACK_DATA_AT: u32 = DATA + 0x6_0000;
+
+    /// The allocator fake's control block: magic, result, unwind flag, log.
+    pub(crate) const GRID_CTOR_CTRL: u32 = DATA + 0x7_0000;
+
+    pub(crate) const GRID_CTOR_MAGIC: u32 = 0x4752_4944;
+
+    pub(crate) static GRID_CTOR_PREV_NEW: AtomicUsize = AtomicUsize::new(0);
+
+    /// `operator_new_named` for the constructor test: logs its arguments,
+    /// returns the pointer at `CTRL + 4` (0 too), or unwinds when `CTRL + 8`
+    /// is set; 5 cycles.
+    pub(crate) fn grid_ctor_fake_new(c: &mut Cpu) {
+        if c.bus.read32(GRID_CTOR_CTRL) != GRID_CTOR_MAGIC {
+            return fakes::fall_back(c, &GRID_CTOR_PREV_NEW, ee::s10::f_00317e30__generated);
+        }
+        for (i, reg) in [A0, A1, A2, A3, RA].into_iter().enumerate() {
+            c.bus
+                .write64(GRID_CTOR_CTRL + 0x10 + 8 * i as u32, c.g[reg][0]);
+        }
+        c.g[V0][0] = c.bus.read32(GRID_CTOR_CTRL + 4) as u64;
+        c.g[V1][0] = 0x5a5a_1234;
+        c.g[A0][0] = 0x1111_2222;
+        c.g[T0][0] = 0x3333_4444;
+        c.cycles += 5;
+        let ra = c.g[RA][0] as u32;
+        c.pc = if c.bus.read32(GRID_CTOR_CTRL + 8) != 0 {
+            0xdead_0010
+        } else {
+            ra
+        };
+    }
+
+    /// Control block of the unwinding fakes on `PackUV`, `PackColor`,
+    /// `PackPosition` and `EA_MemSet`: magic, the call index that unwinds,
+    /// the calls counted so far.
+    pub(crate) const GRID_UNWIND_CTRL: u32 = DATA + 0x7_1000;
+
+    pub(crate) const GRID_UNWIND_MAGIC: u32 = 0x554e_5744;
+
+    pub(crate) static GRID_PREV_PACK_UV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static GRID_PREV_PACK_COLOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static GRID_PREV_PACK_POSITION: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static GRID_PREV_MEM_SET: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gate off: the body the slot held. Gate on: count the call; the call
+    /// at the chosen index unwinds (`pc = 0xdead_0000 | n << 4`) without
+    /// running the body, the others run it.
+    pub(crate) fn grid_unwind_or_run(c: &mut Cpu, prev: &AtomicUsize, generated: fn(&mut Cpu)) {
+        if c.bus.read32(GRID_UNWIND_CTRL) != GRID_UNWIND_MAGIC {
+            return fakes::fall_back(c, prev, generated);
+        }
+        let n = c.bus.read32(GRID_UNWIND_CTRL + 8);
+        c.bus.write32(GRID_UNWIND_CTRL + 8, n + 1);
+        if n == c.bus.read32(GRID_UNWIND_CTRL + 4) {
+            c.pc = 0xdead_0000 | n << 4;
+            return;
+        }
+        fakes::fall_back(c, prev, generated)
+    }
+
+    pub(crate) fn grid_fake_pack_uv(c: &mut Cpu) {
+        grid_unwind_or_run(c, &GRID_PREV_PACK_UV, ee::s12::f_00385ba0__generated)
+    }
+
+    pub(crate) fn grid_fake_pack_color(c: &mut Cpu) {
+        grid_unwind_or_run(c, &GRID_PREV_PACK_COLOR, ee::s12::f_00385aa0__generated)
+    }
+
+    pub(crate) fn grid_fake_pack_position(c: &mut Cpu) {
+        grid_unwind_or_run(c, &GRID_PREV_PACK_POSITION, ee::s12::f_00385a38__generated)
+    }
+
+    pub(crate) fn grid_fake_mem_set(c: &mut Cpu) {
+        grid_unwind_or_run(c, &GRID_PREV_MEM_SET, ee::s14::f_003e6448__generated)
+    }
+
+    pub(crate) fn grid_install_unwind_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00385BA0),
+            grid_fake_pack_uv,
+            &GRID_PREV_PACK_UV,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00385AA0),
+            grid_fake_pack_color,
+            &GRID_PREV_PACK_COLOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00385A38),
+            grid_fake_pack_position,
+            &GRID_PREV_PACK_POSITION,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6448),
+            grid_fake_mem_set,
+            &GRID_PREV_MEM_SET,
+        );
+    }
+
+    /// Make the `n`-th call to the faked callees unwind.
+    pub(crate) fn grid_unwind_at(c: &mut Cpu, n: u32) {
+        c.bus.write32(GRID_UNWIND_CTRL, GRID_UNWIND_MAGIC);
+        c.bus.write32(GRID_UNWIND_CTRL + 4, n);
+        c.bus.write32(GRID_UNWIND_CTRL + 8, 0);
+    }
+
+    /// Constructor fixture: columns 1..8 (`seed % 8`), vertex rows 0..5
+    /// (`seed / 8 % 6`, so strip rows -1..4: none, one batch, two batches
+    /// at 8 x 5), and the outcome (`seed / 48 % 5`): the allocation fails,
+    /// succeeds, unwinds; the first / second packet's `EA_MemSet` unwinds.
+    pub(crate) fn grid_ctor_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x38_5138, 0);
+        c.pc = 0x0038_5138;
+        fill(c, &mut r, GRID_MESH_AT, 0x74);
+        fill(c, &mut r, GRID_BUFFER_AT, 0x800);
+        c.bus.write32(GAME_GP - 0x2738, r.f32(4.0));
+        c.bus.write32(GAME_GP - 0x2734, r.f32(4.0));
+        let columns = 1 + seed % 8;
+        let vertex_rows = seed / 8 % 6;
+        let outcome = seed / 48 % 5;
+        c.bus.write32(GRID_CTOR_CTRL, GRID_CTOR_MAGIC);
+        c.bus.write32(
+            GRID_CTOR_CTRL + 4,
+            if outcome == 0 { 0 } else { GRID_BUFFER_AT },
+        );
+        c.bus.write32(GRID_CTOR_CTRL + 8, (outcome == 2) as u32);
+        if outcome >= 3 {
+            grid_unwind_at(c, outcome - 3);
+        }
+        c.g[A0][0] = sx(GRID_MESH_AT);
+        c.g[A1][0] = columns as u64;
+        c.g[A2][0] = vertex_rows as u64;
+        c.g[A3][0] = sx(r.next_u32());
+        c.g[T0][0] = sx(r.next_u32());
+    }
+
+    /// `cPS2GridMesh_ctor` against the generated body, with the real
+    /// `BuildStrips`/`BuildDmaPacket` and a fake allocator. Paths: allocation
+    /// fails (1x1 grid: 133), succeeds with no batch (386), one batch
+    /// (3 x 2: 994), two batches (8 x 5: 2077); unwinds in the allocator
+    /// (124), in the first packet's `EA_MemSet` (186), in the second's (301).
+    #[test]
+    fn c_ps2_grid_mesh_ctor_matches() {
+        grid_install_unwind_fakes();
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            grid_ctor_fake_new,
+            &GRID_CTOR_PREV_NEW,
+        );
+        check_paths(
+            ee::s12::f_00385138__generated,
+            c_ps2_grid_mesh_ctor,
+            480,
+            &[133, 386, 994, 2077, 124, 186, 301],
+            &grid_ctor_setup,
+        );
+    }
+
+    /// The packers' grid: `columns` (u16), `rows` strip rows, `tab_index`,
+    /// both row tables (entries for 4 rows pointing at pre-filled packet
+    /// data) and pre-filled inputs (positions, uvs: random; colours: in
+    /// [0, 1.5) when `plain_colors`, else edge cases).
+    pub(crate) fn grid_packer_setup(
+        c: &mut Cpu,
+        r: &mut Rng,
+        columns: u32,
+        rows: i32,
+        tab_index: u32,
+        plain_colors: bool,
+    ) {
+        let this = GRID_MESH_AT;
+        fill(c, r, this, 0x74);
+        c.bus.write16(this + gmesh::COLUMNS, columns as u16);
+        c.bus.write32(this + gmesh::ROWS, rows as u32);
+        c.bus.write32(this + gmesh::TAB_INDEX, tab_index);
+        c.bus.write32(this + gmesh::PACK_SCALE, r.f32(16.0));
+        fill(c, r, GRID_PACK_DATA_AT, 0x2000);
+        for tab in 0..2u32 {
+            let table = GRID_PACK_TABS_AT + tab * 0x400;
+            c.bus.write32(this + gmesh::ROW_TABS + 4 * tab, table);
+            fill(c, r, table, 0x10);
+            for row in 0..4u32 {
+                let entry = table + row * gmesh::ROW_STRIDE;
+                let data = GRID_PACK_DATA_AT + tab * 0x4000 + row * 0x400;
+                c.bus.write32(entry + gmesh::ROW_POSITIONS, data + 2);
+                c.bus.write32(entry + gmesh::ROW_UVS, data + 0x104);
+                c.bus.write32(entry + gmesh::ROW_COLORS, data + 0x20a);
+            }
+        }
+        for i in 0..0x30 {
+            c.bus.write32(GRID_POSITIONS_AT + 4 * i, r.f32(200.0));
+            c.bus.write32(GRID_UVS_AT + 4 * i, r.f32(4.0));
+        }
+        for i in 0..0x40 {
+            let v = if plain_colors {
+                ((r.next_u32() % 1500) as f32 / 1000.0).to_bits()
+            } else {
+                r.edge_f32()
+            };
+            c.bus.write32(GRID_COLORS_AT + 4 * i, v);
+        }
+    }
+
+    /// `TAB_INDEX` values: back table 1, back table 0, negative.
+    pub(crate) const GRID_TAB_INDEXES: [u32; 3] = [0, 1, 0x8000_0000];
+
+    /// `cPS2GridMesh_v04` fixture: columns `seed % 4`, strip rows
+    /// `seed / 4 % 5 - 1`, `TAB_INDEX` `seed / 20 % 3`; seeds 120.. a 1 x 1
+    /// grid whose `PackUV` call `seed % 2` unwinds.
+    pub(crate) fn grid_v04_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x38_5410, 0);
+        c.pc = 0x0038_5410;
+        if seed >= 120 {
+            grid_packer_setup(c, &mut r, 1, 1, 0, true);
+            grid_unwind_at(c, seed % 2);
+        } else {
+            let tab = GRID_TAB_INDEXES[(seed / 20 % 3) as usize];
+            grid_packer_setup(c, &mut r, seed % 4, (seed / 4 % 5) as i32 - 1, tab, true);
+        }
+        c.g[A0][0] = sx(GRID_MESH_AT);
+        c.g[A1][0] = sx(GRID_UVS_AT);
+    }
+
+    /// `cPS2GridMesh_v04` against the generated body (real `PackUV`). Paths:
+    /// no rows (32), an empty row (0 columns: 50), 1 x 1 (102), 2 x 2 (262),
+    /// 3 x 3 (516); the first / second `PackUV` unwinds (53, 68).
+    #[test]
+    fn c_ps2_grid_mesh_v04_matches() {
+        grid_install_unwind_fakes();
+        check_paths_lohi(
+            ee::s12::f_00385410__generated,
+            c_ps2_grid_mesh_v04,
+            124,
+            &[32, 50, 102, 262, 516, 53, 68],
+            &grid_v04_setup,
+        );
+    }
+
+    driven!(gen_grid_v04, ee::s12::f_00385410__generated);
+
+    driven!(hand_grid_v04, c_ps2_grid_mesh_v04);
+
+    /// Events at both loop heads of `cPS2GridMesh_v04` (3 x 3 grid; the
+    /// first due event lands `seed / 3 % 8 * 60` cycles in).
+    #[test]
+    fn c_ps2_grid_mesh_v04_events() {
+        check_events(gen_grid_v04, hand_grid_v04, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x38_5411, 0);
+            grid_packer_setup(c, &mut r, 3, 3, (seed / 24 % 2) as u32, true);
+            c.g[A0][0] = sx(GRID_MESH_AT);
+            c.g[A1][0] = sx(GRID_UVS_AT);
+            let mode = schedule(c, &mut r, seed, 0x0038_5410);
+            if mode != Events::Off {
+                c.next_event = c.cycles + 20 + (seed / 3 % 8) as u64 * 60;
+            }
+            mode
+        });
+    }
+
+    /// `cPS2GridMesh_v05` fixture: columns `seed % 4`, strip rows
+    /// `seed / 4 % 5 - 1`, `TAB_INDEX` `seed / 20 % 3`, colours plain or
+    /// edge cases `seed / 60 % 2`; seeds 240.. a 1 x 1 grid whose pack call
+    /// `seed % 4` unwinds.
+    pub(crate) fn grid_v05_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x38_5530, 0);
+        c.pc = 0x0038_5530;
+        if seed >= 240 {
+            grid_packer_setup(c, &mut r, 1, 1, 0, true);
+            grid_unwind_at(c, seed % 4);
+        } else {
+            let tab = GRID_TAB_INDEXES[(seed / 20 % 3) as usize];
+            let plain = seed / 60 % 2 == 0;
+            grid_packer_setup(c, &mut r, seed % 4, (seed / 4 % 5) as i32 - 1, tab, plain);
+        }
+        c.g[A0][0] = sx(GRID_MESH_AT);
+        c.g[A1][0] = sx(GRID_POSITIONS_AT);
+        c.g[A2][0] = sx(GRID_COLORS_AT);
+    }
+
+    /// `cPS2GridMesh_v05` against the generated body (real `PackColor`,
+    /// `PackPosition`). Paths (plain colours): no rows (33), an empty row
+    /// (54), 1 x 1 (275), 2 x 2 (928), 3 x 3 (1997); one of the four pack
+    /// calls unwinds (78, 141, 167, 230).
+    #[test]
+    fn c_ps2_grid_mesh_v05_matches() {
+        grid_install_unwind_fakes();
+        check_paths_lohi(
+            ee::s12::f_00385530__generated,
+            c_ps2_grid_mesh_v05,
+            248,
+            &[33, 54, 275, 928, 1997, 78, 141, 167, 230],
+            &grid_v05_setup,
+        );
+    }
+
+    driven!(gen_grid_v05, ee::s12::f_00385530__generated);
+
+    driven!(hand_grid_v05, c_ps2_grid_mesh_v05);
+
+    /// Events at both loop heads of `cPS2GridMesh_v05` (3 x 3 grid; the
+    /// first due event lands `seed / 3 % 8 * 250` cycles in).
+    #[test]
+    fn c_ps2_grid_mesh_v05_events() {
+        check_events(gen_grid_v05, hand_grid_v05, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x38_5531, 0);
+            grid_packer_setup(c, &mut r, 3, 3, (seed / 24 % 2) as u32, seed / 48 % 2 == 0);
+            c.g[A0][0] = sx(GRID_MESH_AT);
+            c.g[A1][0] = sx(GRID_POSITIONS_AT);
+            c.g[A2][0] = sx(GRID_COLORS_AT);
+            let mode = schedule(c, &mut r, seed, 0x0038_5530);
+            if mode != Events::Off {
+                c.next_event = c.cycles + 30 + (seed / 3 % 8) as u64 * 250;
+            }
+            mode
+        });
+    }
+
+    /// `TAB_INDEX` values for `v06`: back table 1, back table 0, reset.
+    pub(crate) const GRID_V06_TAB_INDEXES: [u32; 3] = [0, 1, u32::MAX];
+
+    /// `cPS2GridMesh_v06` fixture: columns `seed % 4`, strip rows
+    /// `seed / 4 % 5 - 1`, `TAB_INDEX` `seed / 20 % 3` (reset fills both
+    /// tables), colours plain or edge cases `seed / 60 % 2`; seeds 240.. a
+    /// reset 1 x 1 grid whose pack call `seed % 12` (both passes) unwinds.
+    pub(crate) fn grid_v06_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x38_56b8, 0);
+        c.pc = 0x0038_56b8;
+        if seed >= 240 {
+            grid_packer_setup(c, &mut r, 1, 1, u32::MAX, true);
+            grid_unwind_at(c, seed % 12);
+        } else {
+            let tab = GRID_V06_TAB_INDEXES[(seed / 20 % 3) as usize];
+            let plain = seed / 60 % 2 == 0;
+            grid_packer_setup(c, &mut r, seed % 4, (seed / 4 % 5) as i32 - 1, tab, plain);
+        }
+        c.g[A0][0] = sx(GRID_MESH_AT);
+        c.g[A1][0] = sx(GRID_POSITIONS_AT);
+        c.g[A2][0] = sx(GRID_COLORS_AT);
+        c.g[A3][0] = sx(GRID_UVS_AT);
+    }
+
+    /// `cPS2GridMesh_v06` against the generated body (real `PackUV`,
+    /// `PackColor`, `PackPosition`). Paths (plain colours): no rows (40),
+    /// reset with no rows (45), an empty row (62), reset with empty rows
+    /// (0 x 2: 121), 1 x 1 (338), reset 1 x 1 (640), reset 3 x 3 (4870);
+    /// reset 1 x 1 with one of the twelve pack calls unwinding (back pass:
+    /// 111, 126, 189, 215, 230, 293; front pass: 413, 428, 491, 517, 532,
+    /// 595).
+    #[test]
+    fn c_ps2_grid_mesh_v06_matches() {
+        grid_install_unwind_fakes();
+        check_paths_lohi(
+            ee::s12::f_003856b8__generated,
+            c_ps2_grid_mesh_v06,
+            264,
+            &[
+                40, 45, 62, 121, 338, 640, 4870, 111, 126, 189, 215, 230, 293, 413, 428, 491, 517,
+                532, 595,
+            ],
+            &grid_v06_setup,
+        );
+    }
+
+    driven!(gen_grid_v06, ee::s12::f_003856b8__generated);
+
+    driven!(hand_grid_v06, c_ps2_grid_mesh_v06);
+
+    /// Events at the four loop heads of `cPS2GridMesh_v06` (reset 3 x 3
+    /// grid, both passes; the first due event lands `seed / 3 % 16 * 300`
+    /// cycles in).
+    #[test]
+    fn c_ps2_grid_mesh_v06_events() {
+        check_events(gen_grid_v06, hand_grid_v06, 144, &|c, seed| {
+            let mut r = machine(c, seed, 0x38_56b9, 0);
+            grid_packer_setup(c, &mut r, 3, 3, u32::MAX, seed / 48 % 2 == 0);
+            c.g[A0][0] = sx(GRID_MESH_AT);
+            c.g[A1][0] = sx(GRID_POSITIONS_AT);
+            c.g[A2][0] = sx(GRID_COLORS_AT);
+            c.g[A3][0] = sx(GRID_UVS_AT);
+            let mode = schedule(c, &mut r, seed, 0x0038_56b8);
+            if mode != Events::Off {
+                c.next_event = c.cycles + 40 + (seed / 3 % 16) as u64 * 300;
+            }
+            mode
+        });
+    }
+
+    /// Strip rows and vertices per row the `BuildStrips` fixtures use.
+    pub(crate) const GRID_STRIP_ROWS: [i32; 8] = [-1, 0, 1, 2, 3, 5, 8, 9];
+
+    pub(crate) const GRID_ROW_VERTS: [i32; 9] = [1, 2, 3, 4, 6, 8, 12, 20, -3];
+
+    /// `cPS2GridMesh_BuildStrips` fixture: strip rows `seed % 8`, vertices
+    /// per row `seed / 8 % 9` (-3 gives negative vertex counts; the object
+    /// pre-filled).
+    pub(crate) fn grid_build_strips_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = machine(c, seed, 0x38_5eb0, 0);
+        c.pc = 0x0038_5eb0;
+        fill(c, &mut r, GRID_MESH_AT, 0x74);
+        c.g[A0][0] = sx(GRID_MESH_AT);
+        c.g[A1][0] = sx(GRID_STRIP_ROWS[(seed % 8) as usize] as u32);
+        c.g[A2][0] = sx(GRID_ROW_VERTS[(seed / 8 % 9) as usize] as u32);
+        r
+    }
+
+    /// `cPS2GridMesh_BuildStrips` against the generated body. Paths: no
+    /// rows (80); one row of 1 / 4 / 8 vertices (uv, colour and position
+    /// sizes rounded up or whole: 144, 142, 138); 5 x 20, a full first
+    /// batch (448); 9 x 8 (656); 9 x 20, three batches (762); 8 x 1, a batch
+    /// of 8 rows (row data whole: 509); 9 x -3, negative sizes (568).
+    #[test]
+    fn c_ps2_grid_mesh_build_strips_matches() {
+        check_paths_lohi(
+            ee::s12::f_00385eb0__generated,
+            c_ps2_grid_mesh_build_strips,
+            216,
+            &[80, 144, 142, 138, 448, 656, 762, 509, 568],
+            &|c, seed| {
+                grid_build_strips_setup(c, seed);
+            },
+        );
+    }
+
+    driven!(gen_grid_build_strips, ee::s12::f_00385eb0__generated);
+
+    driven!(hand_grid_build_strips, c_ps2_grid_mesh_build_strips);
+
+    /// Events at both loop heads of `cPS2GridMesh_BuildStrips` (9 or 5 rows
+    /// of 3..20 vertices; the first due event lands `seed / 3 % 8 * 80`
+    /// cycles in, so in the row loop or the size pass).
+    #[test]
+    fn c_ps2_grid_mesh_build_strips_events() {
+        check_events(
+            gen_grid_build_strips,
+            hand_grid_build_strips,
+            192,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x38_5eb1, 0);
+                fill(c, &mut r, GRID_MESH_AT, 0x74);
+                c.g[A0][0] = sx(GRID_MESH_AT);
+                c.g[A1][0] = if seed / 96 % 2 == 0 { 9 } else { 5 };
+                c.g[A2][0] = [3u64, 8, 12, 20][(seed / 24 % 4) as usize];
+                let mode = schedule(c, &mut r, seed, 0x0038_5eb0);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + 20 + (seed / 3 % 8) as u64 * 80;
+                }
+                mode
+            },
+        );
+    }
+
+    /// Batch rows and vertices the `BuildDmaPacket` fixtures use (batch `i`
+    /// takes entry `(digit + i)` / `(digit + 2 i)`).
+    pub(crate) const GRID_DMA_ROWS: [i32; 6] = [0, 1, 3, 8, -2, -8];
+
+    pub(crate) const GRID_DMA_VERTS: [i32; 7] = [0, 1, 2, 4, 8, 12, -3];
+
+    /// The batch table and arguments for `BuildDmaPacket`: `strips` batches,
+    /// rows / vertices from the two digits, `qwc` packet quadwords; packet,
+    /// row table and object pre-filled.
+    pub(crate) fn grid_dma_setup(
+        c: &mut Cpu,
+        r: &mut Rng,
+        strips: u32,
+        rows_digit: u32,
+        verts_digit: u32,
+        qwc: u32,
+    ) {
+        let this = GRID_MESH_AT;
+        fill(c, r, this, 0x74);
+        fill(c, r, GRID_BUFFER_AT, 0x400);
+        fill(c, r, GRID_ROW_TAB_AT, 0x100);
+        c.bus.write32(this + gmesh::STRIP_COUNT, strips);
+        c.bus.write32(this + gmesh::PACKET_QWC, qwc);
+        for i in 0..strips {
+            let strip = this + gmesh::STRIPS + i * gmesh::STRIP_STRIDE;
+            let rows = GRID_DMA_ROWS[((rows_digit + i) % 6) as usize];
+            let verts = GRID_DMA_VERTS[((verts_digit + 2 * i) % 7) as usize];
+            c.bus.write32(strip + gmesh::STRIP_ROWS, rows as u32);
+            c.bus.write32(strip + gmesh::STRIP_VERTS, verts as u32);
+        }
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = sx(r.next_u32());
+        c.g[A2][0] = sx(1 + r.next_u32() % 40);
+        c.g[A3][0] = sx(GRID_ROW_TAB_AT);
+        c.g[T0][0] = sx(GRID_BUFFER_AT);
+    }
+
+    /// `cPS2GridMesh_BuildDmaPacket` fixture: batches `seed % 4`, the rows
+    /// digit `seed / 4 % 6`, the vertices digit `seed / 24 % 7`, and 5 packet
+    /// quadwords or 9..40 (`seed / 168 % 2`); seeds 336.. unwind in `EA_MemSet`.
+    pub(crate) fn grid_build_dma_packet_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x38_6128, 0);
+        c.pc = 0x0038_6128;
+        let qwc = if seed / 168 % 2 == 0 {
+            5
+        } else {
+            9 + r.next_u32() % 32
+        };
+        grid_dma_setup(c, &mut r, seed % 4, seed / 4 % 6, seed / 24 % 7, qwc);
+        if seed >= 336 {
+            grid_unwind_at(c, 0);
+        }
+    }
+
+    /// `cPS2GridMesh_BuildDmaPacket` against the generated body (real
+    /// `EA_MemSet`). Paths (5 quadwords): no batch (115); one batch with no
+    /// rows and no vertices (all sizes whole: 306), no rows and 1 vertex
+    /// (sizes rounded up: 312), 1 row (344), 8 rows (row data whole: 496);
+    /// -2 rows (308); two batches (the second microprogram: 525); three
+    /// batches (972); `EA_MemSet` unwinds (37).
+    #[test]
+    fn c_ps2_grid_mesh_build_dma_packet_matches() {
+        grid_install_unwind_fakes();
+        check_paths_lohi(
+            ee::s12::f_00386128__generated,
+            c_ps2_grid_mesh_build_dma_packet,
+            344,
+            &[115, 306, 312, 344, 496, 308, 525, 972, 37],
+            &grid_build_dma_packet_setup,
+        );
+    }
+
+    driven!(gen_grid_build_dma_packet, ee::s12::f_00386128__generated);
+
+    driven!(hand_grid_build_dma_packet, c_ps2_grid_mesh_build_dma_packet);
+
+    /// Events at the three loop heads of `cPS2GridMesh_BuildDmaPacket` (three
+    /// batches, 5 quadwords so `EA_MemSet` takes no back edge; the first due
+    /// event lands `100 + seed / 84 % 4 * 150` cycles in).
+    #[test]
+    fn c_ps2_grid_mesh_build_dma_packet_events() {
+        check_events(
+            gen_grid_build_dma_packet,
+            hand_grid_build_dma_packet,
+            336,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x38_6129, 0);
+                grid_dma_setup(c, &mut r, 3, seed / 3 % 4, seed / 12 % 7, 5);
+                let mode = schedule(c, &mut r, seed, 0x0038_6128);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + 100 + (seed / 84 % 4) as u64 * 150;
+                }
+                mode
+            },
+        );
+    }
+
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::CYCLE_BUDGET;
+
+    use crate::difftest::fakes::LOG_COUNT;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fakes::LOG_START;
+    use crate::game::dirtysock::buddyapi::tests::require_arm_values;
+
+    // -----------------------------------------------------------------------
+    // Gated fakes for the callees these tests do not run for real.
+
+    /// Gate of the fakes below (both machines of a diff get it from the
+    /// fixture); +4/+8: the mode switch's vsync trigger and its delay.
+    pub(crate) const DISPLAY_FAKE_CTRL: u32 = DATA + 0xf_f000;
+
+    pub(crate) const DISPLAY_FAKE_MAGIC: u32 = 0x4453_504c;
+
+    pub(crate) const DISPLAY_VSYNC_TRIGGER: u32 = DISPLAY_FAKE_CTRL + 4;
+
+    pub(crate) const DISPLAY_VSYNC_DELAY: u32 = DISPLAY_FAKE_CTRL + 8;
+
+    /// Where the allocator fake puts the defer and texture managers.
+    pub(crate) const DISPLAY_DEFER_ARENA: u32 = DATA + 0x20_0000;
+
+    pub(crate) const DISPLAY_TEX_ARENA: u32 = DATA + 0x28_0000;
+
+    /// A fake for `$addr` in its override slot: logs the call and returns a
+    /// pointer (or unwinds) with the gate set, runs the previous body without.
+    macro_rules! display_fake {
+        ($fake:ident, $prev:ident, $addr:expr, $generated:path) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+            pub(crate) fn $fake(c: &mut Cpu) {
+                if c.bus.read32(DISPLAY_FAKE_CTRL) != DISPLAY_FAKE_MAGIC {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                display_own_call(c);
+                let ra = r32(c, RA);
+                fakes::fake(c, $addr, ra);
+            }
+        };
+    }
+
+    display_fake!(
+        display_fake_upload_microcode_a,
+        DISPLAY_PREV_UPLOAD_MICROCODE_A,
+        0x0039_12a8,
+        ee::s12::f_003912a8__generated
+    );
+
+    display_fake!(
+        display_fake_upload_microcode_b,
+        DISPLAY_PREV_UPLOAD_MICROCODE_B,
+        0x0039_1360,
+        ee::s12::f_00391360__generated
+    );
+
+    display_fake!(
+        display_fake_operator_new_named,
+        DISPLAY_PREV_OPERATOR_NEW_NAMED,
+        0x0031_7e30,
+        ee::s10::f_00317e30__generated
+    );
+
+    display_fake!(
+        display_fake_defer_man_init,
+        DISPLAY_PREV_DEFER_MAN_INIT,
+        0x0036_29b8,
+        ee::s12::f_003629b8__generated
+    );
+
+    display_fake!(
+        display_fake_tex_man_ctor,
+        DISPLAY_PREV_TEX_MAN_CTOR,
+        0x0036_6fe8,
+        ee::s12::f_00366fe8__generated
+    );
+
+    display_fake!(
+        display_fake_intc_table_init,
+        DISPLAY_PREV_INTC_TABLE_INIT,
+        0x0036_1eb8,
+        ee::s12::f_00361eb8__generated
+    );
+
+    display_fake!(
+        display_fake_set_brightness_rgb,
+        DISPLAY_PREV_SET_BRIGHTNESS_RGB,
+        0x0037_c570,
+        ee::s12::f_0037c570__generated
+    );
+
+    display_fake!(
+        display_fake_set_brightness_alpha,
+        DISPLAY_PREV_SET_BRIGHTNESS_ALPHA,
+        0x0037_c720,
+        ee::s12::f_0037c720__generated
+    );
+
+    display_fake!(
+        display_fake_sprintf,
+        DISPLAY_PREV_SPRINTF,
+        0x0041_7828,
+        ee::s15::f_00417828__generated
+    );
+
+    display_fake!(
+        display_fake_builtin_delete,
+        DISPLAY_PREV_BUILTIN_DELETE,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    display_fake!(
+        display_fake_tex_man_shutdown,
+        DISPLAY_PREV_TEX_MAN_SHUTDOWN,
+        0x0036_7360,
+        ee::s12::f_00367360__generated
+    );
+
+    display_fake!(
+        display_fake_remove_vif_vu_handlers,
+        DISPLAY_PREV_REMOVE_VIF_VU_HANDLERS,
+        0x0036_1e80,
+        ee::s12::f_00361e80__generated
+    );
+
+    display_fake!(
+        display_fake_tex_man_reset_vram,
+        DISPLAY_PREV_TEX_MAN_RESET_VRAM,
+        0x0036_7078,
+        ee::s12::f_00367078__generated
+    );
+
+    display_fake!(
+        display_fake_tex_man_alloc_frame_buffer,
+        DISPLAY_PREV_TEX_MAN_ALLOC_FRAME_BUFFER,
+        0x0036_73d8,
+        ee::s12::f_003673d8__generated
+    );
+
+    display_fake!(
+        display_fake_vram_heap_init,
+        DISPLAY_PREV_VRAM_HEAP_INIT,
+        0x0036_5e40,
+        ee::s12::f_00365e40__generated
+    );
+
+    display_fake!(
+        display_fake_ea_timer_set_video_mode,
+        DISPLAY_PREV_EA_TIMER_SET_VIDEO_MODE,
+        0x003e_6690,
+        ee::s14::f_003e6690__generated
+    );
+
+    display_fake!(
+        display_fake_set_display_regs,
+        DISPLAY_PREV_SET_DISPLAY_REGS,
+        0x0038_2af0,
+        ee::s12::f_00382af0__generated
+    );
+
+    pub(crate) static DISPLAY_PREV_ALLOC_NAMED: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemAllocNamed`: the defer manager and the texture manager get
+    /// fixed arenas (the real defer constructor runs on its block).
+    pub(crate) fn display_fake_alloc_named(c: &mut Cpu) {
+        if c.bus.read32(DISPLAY_FAKE_CTRL) != DISPLAY_FAKE_MAGIC {
+            return fakes::fall_back(c, &DISPLAY_PREV_ALLOC_NAMED, ee::s10::f_00317d70__generated);
+        }
+        let size = c.g[A0][0];
+        display_own_call(c);
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0031_7d70, ra);
+        if c.pc == ra {
+            let arena = if size == RENDERER_DEFER_MAN_SIZE {
+                DISPLAY_DEFER_ARENA
+            } else {
+                DISPLAY_TEX_ARENA
+            };
+            c.g[V0][0] = arena as u64;
+        }
+    }
+
+    display_fake!(
+        display_fake_extendsfdf2,
+        DISPLAY_PREV_EXTENDSFDF2,
+        0x0041_3af8,
+        ee::s15::f_00413af8__generated
+    );
+
+    /// Nonzero: the next memset of another size is faked too (once).
+    pub(crate) const DISPLAY_MEMSET_ONCE: u32 = DISPLAY_FAKE_CTRL + 0x18;
+
+    pub(crate) static DISPLAY_PREV_MEMSET: AtomicUsize = AtomicUsize::new(0);
+
+    /// `memset`: the start-up's 0x18- and 0x30-byte parameter clears are
+    /// fakes (so they can unwind), and once on request the next other one
+    /// (the defer constructor's first); everything else runs real.
+    pub(crate) fn display_fake_memset(c: &mut Cpu) {
+        let size = c.g[A2][0];
+        let gated = c.bus.read32(DISPLAY_FAKE_CTRL) == DISPLAY_FAKE_MAGIC;
+        let params = size == 0x18 || size == 0x30;
+        let once = gated && !params && c.bus.read32(DISPLAY_MEMSET_ONCE) != 0;
+        if !gated || c.pc != 0x0041_6210 || !(params || once) {
+            return fakes::fall_back(c, &DISPLAY_PREV_MEMSET, ee::s15::f_00416210__generated);
+        }
+        if once {
+            c.bus.write32(DISPLAY_MEMSET_ONCE, 0);
+        }
+        display_own_call(c);
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0041_6210, ra);
+    }
+
+    /// Nonzero: `Gs_IsValidFramePsm` is a fake (any format "valid", or an
+    /// unwind) instead of the real check.
+    pub(crate) const DISPLAY_ANY_FRAME_PSM: u32 = DISPLAY_FAKE_CTRL + 0x40;
+
+    pub(crate) static DISPLAY_PREV_GS_IS_VALID_FRAME_PSM: AtomicUsize = AtomicUsize::new(0);
+
+    /// `Gs_IsValidFramePsm`: with `DISPLAY_ANY_FRAME_PSM` set, a fake (its
+    /// pointer result reads as "valid"), so the formats the real check
+    /// turns down reach the mode switch's format arms.
+    pub(crate) fn display_fake_gs_is_valid_frame_psm(c: &mut Cpu) {
+        if c.bus.read32(DISPLAY_FAKE_CTRL) != DISPLAY_FAKE_MAGIC
+            || c.bus.read32(DISPLAY_ANY_FRAME_PSM) == 0
+        {
+            return fakes::fall_back(
+                c,
+                &DISPLAY_PREV_GS_IS_VALID_FRAME_PSM,
+                ee::s12::f_0037bd38__generated,
+            );
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0037_bd38, ra);
+    }
+
+    pub(crate) fn display_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0037BD38),
+            display_fake_gs_is_valid_frame_psm,
+            &DISPLAY_PREV_GS_IS_VALID_FRAME_PSM,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00413AF8),
+            display_fake_extendsfdf2,
+            &DISPLAY_PREV_EXTENDSFDF2,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00416210),
+            display_fake_memset,
+            &DISPLAY_PREV_MEMSET,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_003912A8),
+            display_fake_upload_microcode_a,
+            &DISPLAY_PREV_UPLOAD_MICROCODE_A,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00391360),
+            display_fake_upload_microcode_b,
+            &DISPLAY_PREV_UPLOAD_MICROCODE_B,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            display_fake_operator_new_named,
+            &DISPLAY_PREV_OPERATOR_NEW_NAMED,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            display_fake_alloc_named,
+            &DISPLAY_PREV_ALLOC_NAMED,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_003629B8),
+            display_fake_defer_man_init,
+            &DISPLAY_PREV_DEFER_MAN_INIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00366FE8),
+            display_fake_tex_man_ctor,
+            &DISPLAY_PREV_TEX_MAN_CTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00361EB8),
+            display_fake_intc_table_init,
+            &DISPLAY_PREV_INTC_TABLE_INIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0037C570),
+            display_fake_set_brightness_rgb,
+            &DISPLAY_PREV_SET_BRIGHTNESS_RGB,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0037C720),
+            display_fake_set_brightness_alpha,
+            &DISPLAY_PREV_SET_BRIGHTNESS_ALPHA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            display_fake_sprintf,
+            &DISPLAY_PREV_SPRINTF,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            display_fake_builtin_delete,
+            &DISPLAY_PREV_BUILTIN_DELETE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00367360),
+            display_fake_tex_man_shutdown,
+            &DISPLAY_PREV_TEX_MAN_SHUTDOWN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00361E80),
+            display_fake_remove_vif_vu_handlers,
+            &DISPLAY_PREV_REMOVE_VIF_VU_HANDLERS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00367078),
+            display_fake_tex_man_reset_vram,
+            &DISPLAY_PREV_TEX_MAN_RESET_VRAM,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_003673D8),
+            display_fake_tex_man_alloc_frame_buffer,
+            &DISPLAY_PREV_TEX_MAN_ALLOC_FRAME_BUFFER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00365E40),
+            display_fake_vram_heap_init,
+            &DISPLAY_PREV_VRAM_HEAP_INIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6690),
+            display_fake_ea_timer_set_video_mode,
+            &DISPLAY_PREV_EA_TIMER_SET_VIDEO_MODE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00382AF0),
+            display_fake_set_display_regs,
+            &DISPLAY_PREV_SET_DISPLAY_REGS,
+        );
+    }
+
+    /// A machine with the fakes, their gate, `gp`, the game's image and no
+    /// events (`display_no_event`; tests that want events install their
+    /// own hook).
+    pub(crate) fn display_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        display_install_fakes();
+        let r = fakes::machine(c, seed, salt, calls);
+        elf_image(c);
+        c.bus.write32(DISPLAY_FAKE_CTRL, DISPLAY_FAKE_MAGIC);
+        c.hooks.event = display_no_event;
+        r
+    }
+
+    /// An event hook that delivers nothing and pushes the next check to the
+    /// budget: the real hardware these fixtures touch can make an event due
+    /// early, and a delivered one would unwind a real resumable callee
+    /// (memset) mid-call and end the run before the late calls.
+    pub(crate) fn display_no_event(c: &mut Cpu) -> bool {
+        display_budget_check(c);
+        c.next_event = CYCLE_BUDGET;
+        false
+    }
+
+    // -----------------------------------------------------------------------
+    // Renderer_Init
+
+    pub(crate) const RENDERER_INIT_SELF: u32 = DATA + 0x40;
+
+    pub(crate) const RENDERER_INIT_VT: u32 = DATA + 0x8000;
+
+    pub(crate) const RENDERER_INIT_BLOCK_COPY: u32 = DATA + 0x9000;
+
+    /// The width the getter returns (the height 0x20 on).
+    pub(crate) const RENDERER_INIT_SIZES: u32 = RENDERER_INIT_SELF + 0x7024;
+
+    /// A real 2-cycle getter (`return obj->word14;`) answering the display's
+    /// width and height queries from words past the manager.
+    pub(crate) const RENDERER_INIT_GETTER: u32 = 0x0036_0880;
+
+    /// The vtable slots that go to fakes (`FAKE + 0x10 * i`); with
+    /// `getters` off the width/height slots 0x50/0x58 are fakes too (7, 8).
+    pub(crate) const RENDERER_INIT_FAKE_SLOTS: [u32; 7] =
+        [0x3a8, 0x78, 0x140, 0x40, 0xc0, 0x128, 0x3a0];
+
+    /// The hardware-wait plan of `renderer_init_busy_event`: which waits read
+    /// busy (bit 0 channel 1, bit 1 channel 2, bit 2 VIF1; bit 31 once
+    /// armed), for how many passes, and the passes left per wait.
+    pub(crate) const RENDERER_INIT_BUSY_PLAN: u32 = DISPLAY_FAKE_CTRL + 0x10;
+
+    pub(crate) const RENDERER_INIT_BUSY_PASSES: u32 = DISPLAY_FAKE_CTRL + 0x14;
+
+    pub(crate) const RENDERER_INIT_BUSY_LEFT: u32 = DISPLAY_FAKE_CTRL + 0x20;
+
+    pub(crate) const RENDERER_INIT_BUSY_ARMED: u32 = 0x8000_0000;
+
+    /// The manager, its vtable and the block destination at a varying
+    /// alignment (`seed / 8 % 8`). With `getters` the width/height queries
+    /// are a real getter returning a value with the top bit clear or set
+    /// (`width_top`, `height_top`); without, fakes (so their calls can
+    /// unwind). No fake unwinds until the caller sets `LOG_UNWIND_AT`.
+    pub(crate) fn renderer_init_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        getters: bool,
+        width_top: bool,
+        height_top: bool,
+    ) -> Rng {
+        let mut r = display_machine(c, seed, 0x5249_4e49, 0);
+        fill(c, &mut r, RENDERER_INIT_SELF, 0x6d40 / 4);
+        c.bus
+            .write32(RENDERER_INIT_SELF + man::DISPLAY, RENDERER_INIT_VT);
+        fill(c, &mut r, RENDERER_INIT_BLOCK_COPY, 8);
+        c.bus.write32(
+            RENDERER_INIT_SELF + ps2gm::CUR_STATE,
+            RENDERER_INIT_BLOCK_COPY + seed / 8 % 8,
+        );
+        for (i, slot) in RENDERER_INIT_FAKE_SLOTS.into_iter().enumerate() {
+            let i = i as u32;
+            c.bus
+                .write16(RENDERER_INIT_VT + slot, (0x24 + 0x18 * i) as u16);
+            c.bus.write32(RENDERER_INIT_VT + slot + 4, FAKE + 0x10 * i);
+        }
+        for (k, slot) in [(0u32, 0x50u32), (1, 0x58)] {
+            let delta = 0x7010 + 0x20 * k;
+            c.bus.write16(RENDERER_INIT_VT + slot, delta as u16);
+            let method = if getters {
+                RENDERER_INIT_GETTER
+            } else {
+                FAKE + 0x10 * (7 + k)
+            };
+            c.bus.write32(RENDERER_INIT_VT + slot + 4, method);
+            let top = if k == 0 { width_top } else { height_top };
+            let size = if top {
+                0x8000_0000 | r.next_u32()
+            } else {
+                0x100 + (r.next_u32() & 0x3ff)
+            };
+            c.bus.write32(RENDERER_INIT_SIZES + 0x20 * k, size);
+        }
+        c.bus.write32(DISPLAY_OWN_TARGET, u32::MAX);
+        // Start-up clears two scratchpad doublewords and reads the 0x14-byte
+        // block: neither is zero beforehand (a VIF NOP each, random words
+        // from 0x10 below the block on).
+        c.bus.write64(renderer_hw::SCRATCHPAD, 1);
+        c.bus.write64(renderer_hw::SCRATCHPAD + 8, 1);
+        fill(c, &mut r, RENDERER_INIT_BLOCK - 0x10, 0x24 / 4);
+        c.g[A0][0] = RENDERER_INIT_SELF as u64;
+        c.pc = RENDERER_INIT;
+        r
+    }
+
+    /// Fakes reached straight from `Renderer_Init` (return address inside
+    /// it) are counted here; the one numbered `DISPLAY_OWN_TARGET` unwinds.
+    pub(crate) const DISPLAY_OWN_COUNT: u32 = DISPLAY_FAKE_CTRL + 0x30;
+
+    pub(crate) const DISPLAY_OWN_TARGET: u32 = DISPLAY_FAKE_CTRL + 0x34;
+
+    pub(crate) const RENDERER_INIT_END: u32 = 0x0037_6268;
+
+    /// Count a fake call made straight from `Renderer_Init` and make it the
+    /// one that unwinds when it is the targeted one (by pointing the fake
+    /// log's unwind index at it).
+    pub(crate) fn display_own_call(c: &mut Cpu) {
+        let target = c.bus.read32(DISPLAY_OWN_TARGET);
+        let ra = r32(c, RA);
+        if target == u32::MAX || !(RENDERER_INIT..RENDERER_INIT_END).contains(&ra) {
+            return;
+        }
+        let n = c.bus.read32(DISPLAY_OWN_COUNT);
+        c.bus.write32(DISPLAY_OWN_COUNT, n + 1);
+        if n == target {
+            let next = c.bus.read32(fakes::LOG_COUNT);
+            c.bus.write32(LOG_UNWIND_AT, next);
+        }
+    }
+
+    /// The miss and syscall hooks of the unwind test: counted like the
+    /// slot fakes (vtable calls, and the syscalls of leaf kernel wrappers,
+    /// whose `ra` is still the return into `Renderer_Init`).
+    pub(crate) fn renderer_init_counted_miss(c: &mut Cpu, target: u32) {
+        display_own_call(c);
+        fakes::fake_call(c, target);
+    }
+
+    pub(crate) fn renderer_init_counted_syscall(c: &mut Cpu, at: u32) {
+        display_own_call(c);
+        fakes::fake_syscall(c, at);
+    }
+
+    /// Renderer start-up against the generated body, unwinding (even seeds)
+    /// at its own fake call `seed / 2 % 50`: every call `Renderer_Init`
+    /// makes to a fake, counted apart from the fakes its real callees reach
+    /// (30 of them; later indices run to the end), or (odd seeds) at fake
+    /// call `seed / 2 % 80` counted over the whole run (51: the kernel
+    /// wrappers' inner syscalls, the mode table's and the defer
+    /// constructor's fakes). The width/height queries, the first defer
+    /// memset and the two parameter memsets are fakes here so their calls
+    /// unwind too. Hardware, DMA reset, the kernel wrappers (fake
+    /// syscalls), the defer constructor, the mode table and the dither
+    /// matrix run real.
+    #[test]
+    fn renderer_init_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            renderer_init_fixture(c, seed, false, false, false);
+            c.bus.write32(DISPLAY_MEMSET_ONCE, 1);
+            c.hooks.miss = renderer_init_counted_miss;
+            c.hooks.syscall = renderer_init_counted_syscall;
+            if seed % 2 == 0 {
+                c.bus.write32(DISPLAY_OWN_TARGET, seed / 2 % 50);
+            } else {
+                c.bus.write32(LOG_UNWIND_AT, seed / 2 % 80);
+            }
+        };
+        fakes::covered(ee::s12::f_00375a40__generated, renderer_init, 210, &setup);
+        // (kind, calls counted, ran to the end): each own call (kind 0) and
+        // each counted call (kind 1) unwinding in turn, and both kinds'
+        // complete runs.
+        let mut want: Vec<(u32, u32, bool)> = (1..=30).map(|n| (0, n, false)).collect();
+        want.extend((1..=51).map(|n| (1, n, false)));
+        want.extend([(0, 30, true), (1, 51, true)]);
+        require_arm_values(
+            ee::s12::f_00375a40__generated,
+            210,
+            &setup,
+            &|c, seed| {
+                let count = if seed % 2 == 0 {
+                    c.bus.read32(DISPLAY_OWN_COUNT)
+                } else {
+                    c.bus.read32(fakes::LOG_COUNT)
+                };
+                (seed % 2, count, c.pc == crate::difftest::RA)
+            },
+            &want,
+        );
+    }
+
+    /// The test machine's event hook with its runaway check.
+    pub(crate) fn display_budget_check(c: &Cpu) {
+        if c.cycles >= CYCLE_BUDGET {
+            panic!(
+                "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+                c.cycles, c.pc
+            );
+        }
+    }
+
+    /// An event hook that delivers no event but drives the hardware waits:
+    /// at the settle loop it makes the planned waits read busy (channel 1/2
+    /// `CHCR.STR` set; VIF1 stopped with `FBRST.STP`, so the flush quadword
+    /// stays queued) and asks for a check right after the loop; at each
+    /// planned wait's back edge it counts a pass and, after the planned
+    /// passes, clears that wait (STR off; VIF1 `FBRST.STC`).
+    pub(crate) fn renderer_init_busy_event(c: &mut Cpu) -> bool {
+        display_budget_check(c);
+        let head = c.pc & !1;
+        let plan = c.bus.read32(RENDERER_INIT_BUSY_PLAN);
+        if plan & RENDERER_INIT_BUSY_ARMED == 0 {
+            if head != RENDERER_INIT_SETTLE {
+                c.next_event = c.cycles + 1000;
+                return false;
+            }
+            let passes = c.bus.read32(RENDERER_INIT_BUSY_PASSES);
+            {
+                let hw = &mut ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw;
+                if plan & 1 != 0 {
+                    hw.ch[1].chcr |= 0x100;
+                }
+                if plan & 2 != 0 {
+                    hw.ch[2].chcr |= 0x100;
+                }
+            }
+            if plan & 4 != 0 {
+                c.bus.write32(renderer_hw::VIF1_FBRST, 4);
+            }
+            for i in 0..3 {
+                let left = if plan >> i & 1 != 0 { passes } else { 0 };
+                c.bus.write32(RENDERER_INIT_BUSY_LEFT + 4 * i, left);
+            }
+            c.bus
+                .write32(RENDERER_INIT_BUSY_PLAN, plan | RENDERER_INIT_BUSY_ARMED);
+            // Past the settle loop's remaining back edges (v1 + 1 left).
+            let remaining = (c.g[V1][0] as i64 + 1).max(0) as u64;
+            c.next_event = if plan == 0 {
+                CYCLE_BUDGET
+            } else {
+                c.cycles + 7 * remaining + 1
+            };
+            return false;
+        }
+        let wait = match head {
+            RENDERER_INIT_WAIT_D1 => 0,
+            RENDERER_INIT_WAIT_D2 => 1,
+            RENDERER_INIT_WAIT_VIF1 => 2,
+            _ => {
+                c.next_event = CYCLE_BUDGET;
+                return false;
+            }
+        };
+        let at = RENDERER_INIT_BUSY_LEFT + 4 * wait;
+        let left = c.bus.read32(at);
+        if left > 1 {
+            c.bus.write32(at, left - 1);
+        } else if left == 1 {
+            c.bus.write32(at, 0);
+            match wait {
+                0 => ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw.ch[1].chcr &= !0x100,
+                1 => ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw.ch[2].chcr &= !0x100,
+                _ => c.bus.write32(renderer_hw::VIF1_FBRST, 8),
+            }
+        }
+        let pending = (0..3).any(|i| c.bus.read32(RENDERER_INIT_BUSY_LEFT + 4 * i) != 0);
+        c.next_event = if pending { c.cycles } else { CYCLE_BUDGET };
+        false
+    }
+
+    /// Start-up with the hardware waits made busy for one or two passes
+    /// (`seed / 32 % 2`) by plan `seed / 4 % 8` (channel 1 before the
+    /// flush, channel 2, VIF1), and the real width/height queries with the
+    /// top bit clear or set (`seed % 2`, `seed / 2 % 2`: both unsigned
+    /// conversion arms; `seed / 64 % 2` makes the width 0, the edge of the
+    /// sign test). The flush transfer's own wait (0x375c98) and the GS
+    /// FIFO wait cannot be made busy: the transfer completes inside the
+    /// CHCR write and the emulated CSR always reports the FIFO empty.
+    #[test]
+    fn renderer_init_hardware_waits_matches() {
+        check(
+            ee::s12::f_00375a40__generated,
+            renderer_init,
+            128,
+            &|c, seed| {
+                renderer_init_fixture(c, seed, true, seed % 2 == 1, seed / 2 % 2 == 1);
+                if seed / 64 % 2 == 1 {
+                    c.bus.write32(RENDERER_INIT_SIZES, 0);
+                }
+                c.hooks.event = renderer_init_busy_event;
+                c.bus.write32(RENDERER_INIT_BUSY_PLAN, seed / 4 % 8);
+                c.bus.write32(RENDERER_INIT_BUSY_PASSES, 1 + seed / 32 % 2);
+                c.next_event = c.cycles + 1500;
+            },
+        );
+    }
+
+    /// The events test's hook: deliver one real event, then none until the
+    /// end (later polls would fall inside real callees after a pending
+    /// unwind request, and the generated body has no resume entries).
+    pub(crate) fn display_one_event(c: &mut Cpu) -> bool {
+        display_budget_check(c);
+        let unwind = (ssx3_ps2::platform::HOOKS.event)(c);
+        c.next_event = CYCLE_BUDGET - 1;
+        unwind
+    }
+
+    /// The miss hook of the events test: the fake vtable call at the
+    /// trigger address (`DISPLAY_VSYNC_TRIGGER`) makes an event due at once.
+    pub(crate) fn renderer_init_miss(c: &mut Cpu, target: u32) {
+        let trigger = c.bus.read32(DISPLAY_VSYNC_TRIGGER);
+        fakes::fake_call(c, target);
+        if trigger != 0 && target == trigger {
+            c.bus.write32(DISPLAY_VSYNC_TRIGGER, 0);
+            c.next_event = c.cycles;
+        }
+    }
+
+    driven!(gen_renderer_init, ee::s12::f_00375a40__generated);
+
+    driven!(hand_renderer_init, renderer_init);
+
+    /// Start-up with one live event (delivered, or an unwinding vblank, by
+    /// `seed % 3`) in the settle loop (0x375be8), the cleared-block loop
+    /// (0x3761c8) or the per-layer loop (0x3761f8) by `seed / 3 % 3`.
+    #[test]
+    fn renderer_init_events() {
+        check_events(gen_renderer_init, hand_renderer_init, 120, &|c, seed| {
+            let mut r = renderer_init_fixture(c, seed / 3, true, seed / 9 % 2 == 1, false);
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            c.hooks.miss = renderer_init_miss;
+            c.hooks.event = display_one_event;
+            let mode = schedule(c, &mut r, seed, RENDERER_INIT);
+            if mode == Events::Off {
+                return mode;
+            }
+            match seed / 3 % 3 {
+                0 => c.next_event = c.cycles + 3000 + (seed / 9 % 50) as u64 * 1000,
+                target => {
+                    c.next_event = CYCLE_BUDGET;
+                    let slot = if target == 1 { 5 } else { 6 };
+                    c.bus.write32(DISPLAY_VSYNC_TRIGGER, FAKE + 0x10 * slot);
+                }
+            }
+            mode
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // PS2GraphicsMan_Shutdown
+
+    pub(crate) const SHUTDOWN_SELF: u32 = DATA + 0x70;
+
+    /// Shutdown (a single path) against the generated body: each of its 12
+    /// fake calls unwinding in turn (`seed % 13`; 12: none). The kernel wrappers and the interrupt
+    /// table shutdown run real (fake syscalls); the frees, the texture
+    /// manager shutdown and the VIF/VU handler removal are fakes.
+    #[test]
+    fn ps2_graphics_man_shutdown_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = display_machine(c, seed, 0x5348_5554, 16);
+            use renderer_fields::*;
+            for off in [
+                VBLANK_HANDLER,
+                DMAC_HANDLER,
+                VBLANK_SEMA,
+                kick::QUEUE_MUTEX,
+                KICK_THREAD,
+            ] {
+                c.bus.write32(SHUTDOWN_SELF + off, 1 + r.next_u32() % 0x40);
+            }
+            c.bus.write32(
+                SHUTDOWN_SELF + man::DEFER,
+                DATA + 0x4004 + (r.next_u32() & 0xff0),
+            );
+            c.bus.write32(
+                SHUTDOWN_SELF + GM_TEXTURES,
+                DATA + 0x6008 + (r.next_u32() & 0xff0),
+            );
+            c.g[A0][0] = SHUTDOWN_SELF as u64;
+            c.pc = PS2_GRAPHICS_MAN_SHUTDOWN;
+            c.bus.write32(LOG_UNWIND_AT, seed % 13);
+        };
+        fakes::covered(
+            ee::s12::f_00376268__generated,
+            ps2_graphics_man_shutdown,
+            104,
+            &setup,
+        );
+        // (fake calls made, ran to the end).
+        let mut want: Vec<(u32, bool)> = (1..=12).map(|n| (n, false)).collect();
+        want.push((12, true));
+        require_arm_values(
+            ee::s12::f_00376268__generated,
+            104,
+            &setup,
+            &|c, _| (c.bus.read32(fakes::LOG_COUNT), c.pc == crate::difftest::RA),
+            &want,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // PS2GraphicsMan_FindDisplayMode
+
+    pub(crate) const FIND_SELF: u32 = DATA + 0x50;
+
+    pub(crate) const FIND_TABLE: u32 = DATA + 0x4010;
+
+    /// The bpp requests: 16, 24, 32, below 25 and above 24 (25).
+    pub(crate) const FIND_BPPS: [u64; 5] = [16, 24, 32, 8, 25];
+
+    /// A search: bpp `seed % 5`, draw bpp `seed / 5 % 5`, depth bpp 24 or 32
+    /// (`seed / 25 % 2`), the formats rotated by `seed / 200 % 3`, and the
+    /// table `layout`: 0 empty, 1 one entry of the right size, 2 three
+    /// entries failing on width, height and scan type in turn, 3 seven mixed
+    /// entries (sizes failing on index % 4 = 1, 2, 3).
+    pub(crate) fn find_display_mode_call(c: &mut Cpu, seed: u32, layout: u32) -> Rng {
+        use display_mode_entry::*;
+        let mut r = Rng(0x4644_4d31 ^ (seed as u64) << 12 ^ (layout as u64) << 40);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        let count = [0u32, 1, 3, 7][layout as usize];
+        let rot = seed / 200 % 3;
+        let width = 0x180 + (r.next_u32() & 0x1ff);
+        let height = 0xe0 + (r.next_u32() & 0x1ff);
+        let progressive = r.next_u32() & 1;
+        fill(c, &mut r, FIND_TABLE, 7 * MODE_STRIDE / 4);
+        fill(c, &mut r, FIND_SELF + renderer_fields::MODE_COUNT - 4, 4);
+        c.bus
+            .write32(FIND_SELF + renderer_fields::MODE_COUNT, count);
+        c.bus
+            .write32(FIND_SELF + renderer_fields::MODE_TABLE, FIND_TABLE);
+        for i in 0..7u32 {
+            let e = FIND_TABLE + i * MODE_STRIDE;
+            let miss = |k: u32| (layout == 2 && i == k) || (layout == 3 && i % 4 == k + 1);
+            c.bus
+                .write32(e + WIDTH, if miss(0) { width ^ 0x40 } else { width });
+            c.bus
+                .write32(e + HEIGHT, if miss(1) { height ^ 0x20 } else { height });
+            c.bus.write32(
+                e + PROGRESSIVE,
+                if miss(2) {
+                    progressive ^ 1
+                } else {
+                    progressive
+                },
+            );
+            c.bus.write32(e + DISP_PSM, (i + rot) % 4);
+            c.bus.write32(e + DRAW_PSM, (i / 2 + rot) % 4);
+            // Entry 4 (sizes match) has PSMZ32: the depth-format miss.
+            let zpsm = if i % 2 == 0 && i != 4 { 0x31 } else { 0x30 };
+            c.bus.write32(e + ZPSM, zpsm);
+        }
+        c.g[A0][0] = FIND_SELF as u64;
+        c.g[A1][0] = width as u64;
+        c.g[A2][0] = height as u64;
+        c.g[A3][0] = FIND_BPPS[(seed % 5) as usize];
+        c.g[T0][0] = FIND_BPPS[(seed / 5 % 5) as usize];
+        c.g[T1][0] = [24, 32][(seed / 25 % 2) as usize];
+        c.g[T2][0] = progressive as u64;
+        c.pc = FIND_DISPLAY_MODE;
+        r
+    }
+
+    /// The search against the generated body. Paths: empty table (17);
+    /// three size/scan misses (51); one entry found with bpp 24/24 (58),
+    /// 32/32 (62), 16/24 through the 16-to-24 fall-through (65) and 16/16
+    /// (69); not found on the depth format (59) and on the draw format (64).
+    /// The seven-entry layout mixes every format arm.
+    #[test]
+    fn ps2_graphics_man_find_display_mode_matches() {
+        check_paths(
+            ee::s12::f_003762f8__generated,
+            ps2_graphics_man_find_display_mode,
+            600,
+            &[17, 51, 58, 59, 62, 64, 65, 69],
+            &|c, seed| {
+                find_display_mode_call(c, seed, seed / 50 % 4);
+            },
+        );
+    }
+
+    driven!(gen_find_display_mode, ee::s12::f_003762f8__generated);
+
+    driven!(hand_find_display_mode, ps2_graphics_man_find_display_mode);
+
+    /// The search with live events at the scan loop's back edge (0x376340),
+    /// over seven entries.
+    #[test]
+    fn ps2_graphics_man_find_display_mode_events() {
+        check_events(
+            gen_find_display_mode,
+            hand_find_display_mode,
+            300,
+            &|c, seed| {
+                let mut r = find_display_mode_call(c, seed / 3, 3);
+                schedule(c, &mut r, seed, FIND_DISPLAY_MODE)
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // PS2GraphicsMan_SelectDisplayMode
+
+    pub(crate) const SELECT_SELF: u32 = DATA + 0x30;
+
+    pub(crate) const SELECT_TABLE: u32 = DATA + 0x8010;
+
+    /// Select against the generated body: the mode already current (15) or
+    /// not (`seed % 2`; 87, with the real `Renderer_SetDisplayMode` turning
+    /// the entry's invalid draw format down), the interlace flag clear or
+    /// set (`seed / 2 % 2`), five indices (`seed / 4 % 5`); with
+    /// `seed / 20 % 2` the entries are valid and the mode switch unwinds in
+    /// its first fake call (the VRAM reset), so the select returns early.
+    #[test]
+    fn ps2_graphics_man_select_display_mode_matches() {
+        use display_mode_entry::*;
+        check_paths_lohi(
+            ee::s12::f_003764c0__generated,
+            ps2_graphics_man_select_display_mode,
+            120,
+            &[15, 87],
+            &|c, seed| {
+                let mut r = display_machine(c, seed, 0x5345_4c31, 0);
+                let index = seed / 4 % 5;
+                let unwind = seed / 20 % 2 == 1;
+                if unwind {
+                    c.bus.write32(LOG_UNWIND_AT, 0);
+                }
+                fill(c, &mut r, SELECT_TABLE, 5 * MODE_STRIDE / 4);
+                for i in 0..5 {
+                    let e = SELECT_TABLE + i * MODE_STRIDE;
+                    if unwind {
+                        c.bus.write32(e + DRAW_PSM, 1);
+                        c.bus.write32(e + ZPSM, 0x30);
+                    } else {
+                        c.bus.write32(e + DRAW_PSM, 0x40 + (r.next_u32() & 0xff));
+                    }
+                    let interlace = if seed / 2 % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    };
+                    c.bus.write32(e + INTERLACE, interlace);
+                }
+                fill(c, &mut r, SELECT_SELF + renderer_fields::MODE_COUNT, 3);
+                c.bus
+                    .write32(SELECT_SELF + renderer_fields::MODE_TABLE, SELECT_TABLE);
+                let current = if seed % 2 == 0 {
+                    index
+                } else {
+                    index + 1 + r.next_u32() % 7
+                };
+                c.bus
+                    .write32(SELECT_SELF + renderer_fields::CUR_MODE, current);
+                c.g[A0][0] = SELECT_SELF as u64;
+                c.g[A1][0] = index as u64;
+                c.pc = SELECT_DISPLAY_MODE;
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // PS2GraphicsMan_BuildDisplayModeTable
+
+    pub(crate) const BUILD_SELF: u32 = DATA + 0x60;
+
+    /// The game's table rewritten with varied entries: draw formats
+    /// PSMCT16/PSMCT24/PSMCT32/PSMZ24 rotated by `seed % 3` (all three bpp
+    /// arms in every table), display and depth formats and sizes rotated
+    /// by other digits.
+    pub(crate) fn build_display_mode_table_call(c: &mut Cpu, seed: u32) -> Rng {
+        use display_mode_entry::*;
+        let mut r = display_machine(c, seed, 0x4244_4d54, 8);
+        for i in 0..8u32 {
+            let e = DISPLAY_MODES + i * MODE_STRIDE;
+            fill(c, &mut r, e, MODE_STRIDE / 4);
+            c.bus
+                .write32(e + WIDTH, 0x100 + 0x40 * ((i + seed / 3) % 8));
+            c.bus
+                .write32(e + HEIGHT, 0xe0 + 0x20 * ((3 * i + seed / 24) % 8));
+            c.bus
+                .write32(e + DISP_PSM, [0, 1, 2, 0x13][((i + seed / 3) % 4) as usize]);
+            c.bus
+                .write32(e + DRAW_PSM, [2, 1, 0, 0x31][((i + seed % 3) % 4) as usize]);
+            c.bus.write32(
+                e + ZPSM,
+                [0x30, 0x31, 0x32, 0x3a, 0x02, 0x40][((i + seed / 24) % 6) as usize],
+            );
+        }
+        fill(c, &mut r, BUILD_SELF + renderer_fields::MODE_COUNT, 3);
+        c.g[A0][0] = BUILD_SELF as u64;
+        c.pc = BUILD_DISPLAY_MODE_TABLE;
+        r
+    }
+
+    /// The table build against the generated body: each entry's bpp arm,
+    /// the real page count, the float conversion and the name format (fakes:
+    /// their arguments are logged), unwinding at fake call `seed / 3 % 17`
+    /// (each of the 16 in turn; 16: none). The page count is a leaf without
+    /// an override slot, so its call cannot unwind.
+    #[test]
+    fn ps2_graphics_man_build_display_mode_table_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            build_display_mode_table_call(c, seed);
+            c.bus.write32(LOG_UNWIND_AT, seed / 3 % 17);
+        };
+        fakes::covered(
+            ee::s12::f_0037bb10__generated,
+            ps2_graphics_man_build_display_mode_table,
+            102,
+            &setup,
+        );
+        // (fake calls made, ran to the end): each of the 16 unwinding in
+        // turn, and the complete run.
+        let mut want: Vec<(u32, bool)> = (1..=16).map(|n| (n, false)).collect();
+        want.push((16, true));
+        require_arm_values(
+            ee::s12::f_0037bb10__generated,
+            102,
+            &setup,
+            &|c, _| (c.bus.read32(fakes::LOG_COUNT), c.pc == crate::difftest::RA),
+            &want,
+        );
+        // The bpp arms: the first entry's draw format and the bpp passed to
+        // its name's `sprintf` (fake call 1).
+        require_arm_values(
+            ee::s12::f_0037bb10__generated,
+            102,
+            &setup,
+            &|c, _| {
+                if c.bus.read32(fakes::LOG_COUNT) < 2 {
+                    return (u32::MAX, 0);
+                }
+                let entry = display_mode_entry::DISPLAY_MODES;
+                let draw_psm = c.bus.read32(entry + display_mode_entry::DRAW_PSM);
+                (draw_psm, ps2gm_logged(c, 1, T0).2)
+            },
+            &[(2, 16), (1, 24), (0, 32)],
+        );
+    }
+
+    driven!(gen_build_display_mode_table, ee::s12::f_0037bb10__generated);
+
+    driven!(
+        hand_build_display_mode_table,
+        ps2_graphics_man_build_display_mode_table
+    );
+
+    /// The table build with live events at the loop's back edge (0x37bb80).
+    #[test]
+    fn ps2_graphics_man_build_display_mode_table_events() {
+        check_events(
+            gen_build_display_mode_table,
+            hand_build_display_mode_table,
+            150,
+            &|c, seed| {
+                let mut r = build_display_mode_table_call(c, seed / 3);
+                c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                c.hooks.event = display_one_event;
+                schedule(c, &mut r, seed, BUILD_DISPLAY_MODE_TABLE)
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Renderer_SetDisplayMode
+
+    pub(crate) const SET_DISPLAY_MODE_SELF: u32 = DATA + 0x10;
+
+    pub(crate) const SET_DISPLAY_MODE_TEX: u32 = DATA + 0x8000;
+
+    /// Display widths: the five with a magnification, one below and one
+    /// above 0x180 (by one).
+    pub(crate) const SET_DISPLAY_MODE_WIDTHS: [u32; 7] =
+        [0x100, 0x140, 0x180, 0x200, 0x280, 0xc0, 0x181];
+
+    /// Display formats: 32-bit, 16-bit, past the table (its first), no
+    /// class, 24-bit.
+    pub(crate) const SET_DISPLAY_MODE_DISP_PSMS: [u32; 5] = [0, 2, 0x3b, 5, 1];
+
+    /// Draw formats Gs_IsValidFramePsm accepts: 24-bit, PSMCT16S, PSMCT16
+    /// (with PSMZ16).
+    pub(crate) const SET_DISPLAY_MODE_DRAW_PSMS: [u32; 3] = [1, 0xa, 2];
+
+    /// A mode switch: display width `seed % 7`, display format `seed / 7 % 5`,
+    /// draw format `seed / 35 % 3`, depth format PSMZ32 or PSMZ16S
+    /// (`seed / 105 % 2`; PSMZ16 with PSMCT16), progressive
+    /// `seed / 210 % 2`.
+    pub(crate) fn set_display_mode_call(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = display_machine(c, seed, 0x5344_4d4f, 12);
+        fill(c, &mut r, SET_DISPLAY_MODE_SELF + 0x5900, 0x80);
+        c.bus
+            .write32(SET_DISPLAY_MODE_SELF + GM_TEXTURES, SET_DISPLAY_MODE_TEX);
+        let draw_psm = SET_DISPLAY_MODE_DRAW_PSMS[(seed / 35 % 3) as usize];
+        let zpsm = if draw_psm == 2 {
+            0x32
+        } else {
+            [0x30, 0x3a][(seed / 105 % 2) as usize]
+        };
+        c.g[A0][0] = SET_DISPLAY_MODE_SELF as u64;
+        c.g[A1][0] = SET_DISPLAY_MODE_WIDTHS[(seed % 7) as usize] as u64;
+        c.g[A2][0] = (0x1c0 + (r.next_u32() & 0x3f)) as u64;
+        c.g[A3][0] = (0x200 + (r.next_u32() & 0xff)) as u64;
+        c.g[T0][0] = (0x1c0 + (r.next_u32() & 0x7f)) as u64;
+        c.g[T1][0] = SET_DISPLAY_MODE_DISP_PSMS[(seed / 7 % 5) as usize] as u64;
+        c.g[T2][0] = draw_psm as u64;
+        c.g[T3][0] = zpsm;
+        // Stack arguments: reset mode, interlace, field mode (halfwords
+        // under junk), progressive.
+        let args = r32(c, SP);
+        for off in [0u32, 8, 0x10] {
+            let v = (r.next_u32() & 0xffff_0000) | (r.next_u32() & 1);
+            c.bus.write32(args + off, v);
+        }
+        c.bus
+            .write32(args + 0x18, (seed / 210 % 2) * (1 + (r.next_u32() & 0xff)));
+        c.pc = SET_DISPLAY_MODE;
+        r
+    }
+
+    /// The syscall hook of the vsync tests: the first syscall (FlushCache's)
+    /// schedules an event `DISPLAY_VSYNC_DELAY` cycles on, inside the vsync
+    /// wait.
+    pub(crate) fn set_display_mode_syscall(c: &mut Cpu, at: u32) {
+        fakes::fake_syscall(c, at);
+        if c.bus.read32(DISPLAY_VSYNC_TRIGGER) != 0 {
+            c.bus.write32(DISPLAY_VSYNC_TRIGGER, 0);
+            c.next_event = c.cycles + c.bus.read32(DISPLAY_VSYNC_DELAY) as u64;
+        }
+    }
+
+    /// A switch that reaches the vsync wait: no fake unwinds; the first
+    /// event is a vblank that sets `CSR.VSINT` and unwinds, and the run is
+    /// resumed at the wait's head (0x37c0f8) as the trampoline does.
+    pub(crate) fn set_display_mode_vsync_call(c: &mut Cpu, seed: u32, delay: u32) -> Events {
+        let mut r = set_display_mode_call(c, seed);
+        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+        c.hooks.syscall = set_display_mode_syscall;
+        c.hooks.event = display_one_event;
+        let mode = schedule(c, &mut r, 1, SET_DISPLAY_MODE);
+        c.next_event = CYCLE_BUDGET;
+        c.bus.write32(DISPLAY_VSYNC_TRIGGER, 1);
+        c.bus.write32(DISPLAY_VSYNC_DELAY, delay);
+        mode
+    }
+
+    driven!(gen_set_display_mode, ee::s12::f_0037bd98__generated);
+
+    driven!(hand_set_display_mode, renderer_set_display_mode);
+
+    /// The mode switch against the generated body, every seed through the
+    /// vsync wait and its resume: all seven magnification arms, the display
+    /// format's 32/16-bit and no-class arms (in and past the table), the
+    /// draw format's 32/16-bit arms, the depth format's PSMZ32/PSMZ16/
+    /// PSMZ16S arms, the three temporary-heap placements (24/24, 24/other,
+    /// other) and progressive on/off.
+    #[test]
+    fn renderer_set_display_mode_matches() {
+        check_lohi(
+            gen_set_display_mode,
+            hand_set_display_mode,
+            420,
+            &|c, seed| {
+                set_display_mode_vsync_call(c, seed, 1);
+            },
+        );
+        use renderer_fields::*;
+        // The fields only some arms write start as `UNSET`.
+        const UNSET: u32 = 0xdead_0001;
+        let setup = |c: &mut Cpu, seed: u32| {
+            set_display_mode_vsync_call(c, seed, 1);
+            for f in [MAGH, DISP_16BIT, DISP_PAGES, DRAW_PAGES, Z_PAGES] {
+                c.bus.write32(SET_DISPLAY_MODE_SELF + f, UNSET);
+            }
+        };
+        let field = |c: &mut Cpu, f: u32| c.bus.read32(SET_DISPLAY_MODE_SELF + f);
+        // Rows per page a buffer's page count was computed with (0: unset).
+        let rows = |c: &mut Cpu, pages: u32, height: u32| {
+            let (p, h) = (field(c, pages), field(c, height) as u64);
+            let wide = field(c, WIDTH_PAGES) as u64;
+            [32, 64]
+                .into_iter()
+                .find(|&n| p as u64 == (wide * gs_pages_up(h, n)) as u32 as u64)
+                .unwrap_or(0)
+        };
+        let arms = |want: &[(u32, u32)], arm: &dyn Fn(&mut Cpu) -> (u32, u32)| {
+            require_arm_values(gen_set_display_mode, 420, &setup, &|c, _| arm(c), want);
+        };
+        // Magnification: the five widths with one, unset below / above 0x180.
+        arms(
+            &[
+                (3, 0),
+                (4, 0),
+                (6, 0),
+                (7, 0),
+                (9, 0),
+                (UNSET, 1),
+                (UNSET, 2),
+            ],
+            &|c| match field(c, MAGH) {
+                UNSET => (UNSET, 1 + (field(c, DISP_WIDTH) > 0x180) as u32),
+                m => (m, 0),
+            },
+        );
+        // Display format: 32-bit, 16-bit, no class (in the table), past it.
+        arms(
+            &[(0, 32), (1, 64), (UNSET, 0), (UNSET, 1)],
+            &|c| match field(c, DISP_PAGES) {
+                UNSET => (UNSET, (field(c, DISP_PSM) >= 0x3b) as u32),
+                _ => (field(c, DISP_16BIT), rows(c, DISP_PAGES, DISP_HEIGHT)),
+            },
+        );
+        // Draw format: 32 or 64 rows; depth format: PSMZ32 (32 rows),
+        // PSMZ16 and PSMZ16S (64).
+        arms(&[(1, 32), (2, 64), (0xa, 64)], &|c| {
+            (field(c, DRAW_PSM), rows(c, DRAW_PAGES, HEIGHT))
+        });
+        arms(&[(0x30, 32), (0x32, 64), (0x3a, 64)], &|c| {
+            (field(c, man::MODE), rows(c, Z_PAGES, HEIGHT))
+        });
+        // The temporary heap: after the draw buffer (both 24-bit), after the
+        // display buffer (24-bit display), after the depth buffer; read
+        // from the start passed to `TexMan_InitTempHeap` (call trace).
+        let traced = |c: &mut Cpu, seed: u32| {
+            setup(c, seed);
+            ssx3_ee_rt::prof::trace::start();
+        };
+        require_arm_values(
+            gen_set_display_mode,
+            420,
+            &traced,
+            &|c, _| {
+                let start = ssx3_ee_rt::prof::trace::take()
+                    .iter()
+                    .find(|k| k[0] == callee::TEX_MAN_INIT_TEMP_HEAP.addr as u64)
+                    .map(|k| k[2]);
+                [DRAW_FB, DISP_FB, Z_BUF]
+                    .into_iter()
+                    .position(|f| start == Some(sx(field(c, f) << 11)))
+                    .unwrap_or(9)
+            },
+            &[0, 1, 2],
+        );
+        // Progressive off and on.
+        arms(&[(0, 0), (1, 0)], &|c| {
+            ((field(c, PROGRESSIVE) != 0) as u32, 0)
+        });
+    }
+
+    /// The event hook of the unwind test: no event is delivered, but at the
+    /// vsync wait's back edge the GS gets its vsync (`CSR.VSINT`), so the
+    /// wait ends without unwinding and the calls after it run.
+    pub(crate) fn set_display_mode_vblank_event(c: &mut Cpu) -> bool {
+        display_budget_check(c);
+        if c.pc & !1 == SET_DISPLAY_MODE_VSYNC_WAIT {
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .hw
+                .gs
+                .vblank(0);
+        }
+        false
+    }
+
+    /// The mode switch's early exits: an invalid draw format (`seed % 7 ==
+    /// 0`) or a fake unwinding at call `seed / 7 % 16`: the VRAM reset, the
+    /// three buffer allocations, the heap set-up, the cache flush syscall,
+    /// then (past the vsync wait, which a test hook ends) the GS reset's
+    /// syscalls, the timer's video mode and the display registers; indices
+    /// past the last call run to the end.
+    #[test]
+    fn renderer_set_display_mode_unwinds() {
+        fakes::covered(
+            ee::s12::f_0037bd98__generated,
+            renderer_set_display_mode,
+            112,
+            &|c, seed| {
+                set_display_mode_call(c, seed * 5 % 420);
+                c.hooks.event = set_display_mode_vblank_event;
+                c.next_event = 0;
+                if seed % 7 == 0 {
+                    c.g[T2][0] = 0x41;
+                } else {
+                    c.bus.write32(LOG_UNWIND_AT, seed / 7 % 16);
+                }
+            },
+        );
+    }
+
+    /// The mode switch with the format check faked "valid", so the formats
+    /// the real check turns down are recorded: draw format past the table
+    /// (0x3b, its first), without a page class (5) or PSMCT24 (`seed % 3`); depth
+    /// format below the depth formats (0x10), another one (0x35) or PSMZ32
+    /// (`seed / 3 % 3`); with `seed / 9 % 2` the check itself unwinds. The
+    /// vsync wait is ended by the test hook (no event delivered).
+    #[test]
+    fn renderer_set_display_mode_formats_matches() {
+        fakes::covered(
+            ee::s12::f_0037bd98__generated,
+            renderer_set_display_mode,
+            72,
+            &|c, seed| {
+                set_display_mode_call(c, seed * 11 % 420);
+                c.hooks.event = set_display_mode_vblank_event;
+                c.next_event = 0;
+                c.bus.write32(DISPLAY_ANY_FRAME_PSM, 1);
+                c.g[T2][0] = [0x3b, 5, 1][(seed % 3) as usize];
+                c.g[T3][0] = [0x10, 0x35, 0x30][(seed / 3 % 3) as usize];
+                let unwind_at = if seed / 9 % 2 == 1 { 0 } else { u32::MAX };
+                c.bus.write32(LOG_UNWIND_AT, unwind_at);
+            },
+        );
+    }
+
+    /// The mode switch with the vblank landing after one to four iterations
+    /// of the vsync wait (the resume head 0x37c0f8 every seed).
+    #[test]
+    fn renderer_set_display_mode_events() {
+        check_events(
+            gen_set_display_mode,
+            hand_set_display_mode,
+            140,
+            &|c, seed| set_display_mode_vsync_call(c, seed * 3 % 420, 1 + 7 * (seed % 4)),
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // PS2GraphicsMan_SetDitherMatrix
+
+    pub(crate) const DITHER_SELF: u32 = DATA + 0x20;
+
+    pub(crate) const DITHER_MATRIX: u32 = DATA + 0x8004;
+
+    /// The dither packing (one path, 246 cycles) against the generated
+    /// body: random matrix words (only the low 3 bits are taken, the sign
+    /// bit cleared) over a random previous `DIMX`.
+    #[test]
+    fn ps2_graphics_man_set_dither_matrix_matches() {
+        check_paths(
+            ee::s12::f_0037c198__generated,
+            ps2_graphics_man_set_dither_matrix,
+            200,
+            &[246],
+            &|c, seed| {
+                let mut r = Rng(0x4449_5448 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                fill(c, &mut r, DITHER_SELF + renderer_fields::DITHER, 2);
+                fill(c, &mut r, DITHER_MATRIX, 16);
+                c.g[A0][0] = DITHER_SELF as u64;
+                c.g[A1][0] = DITHER_MATRIX as u64;
+                c.pc = SET_DITHER_MATRIX;
+            },
+        );
+    }
+
+    /// Where the gated fakes of these tests look for their magic word.
+    pub(crate) const PS2GM_FAKE_CTRL: u32 = DATA + 0xf_ff00;
+
+    /// The test stack top (`sp` on entry) and the sentinel return address.
+    pub(crate) const PS2GM_STACK: u32 = crate::difftest::SP;
+
+    pub(crate) const PS2GM_RET: u32 = crate::difftest::RA;
+
+    /// Turn an `Unwind` schedule into `Deliver` (no VBlank due): the loops
+    /// here are structured and call dispatcher callees (`strcmp`), which
+    /// would unwind mid-call on a pending request.
+    pub(crate) fn ps2gm_deliver_only(c: &mut Cpu, mode: Events) -> Events {
+        if mode == Events::Unwind {
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 1 << 40;
+            Events::Deliver
+        } else {
+            mode
+        }
+    }
+
+    /// A NUL-terminated string at `at`.
+    pub(crate) fn ps2gm_put_str(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, &b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// Fake call `n`'s log record: (target, cycles, register `reg` lane 0).
+    pub(crate) fn ps2gm_logged(c: &mut Cpu, n: u32, reg: usize) -> (u32, u64, u64) {
+        let p = LOG_START + 0x220 * n;
+        (
+            c.bus.read32(p),
+            c.bus.read64(p + 8),
+            c.bus.read64(p + 0x10 + 16 * reg as u32),
+        )
+    }
+
+    // ------------------------------------------------- GetTextureByName
+
+    pub(crate) const GTN_MAN: u32 = DATA + 0x1_0000;
+
+    pub(crate) const GTN_NAME: u32 = DATA + 0x2_0013;
+
+    pub(crate) const GTN_BANK_LIST: u32 = DATA + 0x2_1004;
+
+    pub(crate) const GTN_BANKS: u32 = DATA + 0x3_0000;
+
+    pub(crate) const GTN_VT: u32 = DATA + 0x5_0000;
+
+    /// The cache count and bank count the fixture started with.
+    pub(crate) const GTN_BEFORE: u32 = DATA + 0x2_2000;
+
+    /// GetTextureByName's callee unwinds (`seed / 36 % 4`): 0 none, 1 the
+    /// first `strcmp`, 2 the `strcpy`, 3 the first `strcmp` after it (inside
+    /// `SHPS_FindEntryByName`); +4: the copy was made; +8: an event falls due
+    /// when the copy returns (event tests).
+    pub(crate) const GTN_UNWIND: u32 = DATA + 0x2_2010;
+
+    pub(crate) const GTN_MAGIC: u32 = 0x0036_96c8;
+
+    /// The control word of the `strcmp`/`strcpy` wrappers (also used by v109).
+    pub(crate) const GTN_CTRL: u32 = PS2GM_FAKE_CTRL + 8;
+
+    pub(crate) static GTN_PREV_STRCMP: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static GTN_PREV_STRCPY: AtomicUsize = AtomicUsize::new(0);
+
+    /// `strcmp` for the GetTextureByName fixtures: the real one, then an
+    /// unwind when [`GTN_UNWIND`] asks for one here.
+    pub(crate) fn gtn_fake_strcmp(c: &mut Cpu) {
+        let ra = r32(c, RA);
+        fakes::fall_back(c, &GTN_PREV_STRCMP, ee::s15::f_004165a8__generated);
+        if c.bus.read32(GTN_CTRL) != GTN_MAGIC || c.pc != ra {
+            return;
+        }
+        let mode = c.bus.read32(GTN_UNWIND);
+        let copied = c.bus.read32(GTN_UNWIND + 4) != 0;
+        if mode == 1 || (mode == 3 && copied) {
+            c.bus.write32(GTN_UNWIND, 0);
+            c.pc = 0xdead_0100;
+            return;
+        }
+        ps2gm_due_after(c, PS2GM_DUE_STRCMP);
+    }
+
+    /// Event fixtures: an event falls due `after` cycles once call `index`
+    /// of a kind (strcmp, AllocBlendedMatrixHistory, MatchBlendedMatrix)
+    /// returns. Words at `PS2GM_DUE + 0x10 * kind`: calls seen, index, after
+    /// (0: off).
+    pub(crate) const PS2GM_DUE: u32 = DATA + 0x3_4000;
+
+    pub(crate) const PS2GM_DUE_STRCMP: u32 = 0;
+
+    pub(crate) const PS2GM_DUE_ALLOC: u32 = 1;
+
+    pub(crate) const PS2GM_DUE_MATCH: u32 = 2;
+
+    pub(crate) fn ps2gm_due_after(c: &mut Cpu, kind: u32) {
+        let at = PS2GM_DUE + 0x10 * kind;
+        let n = c.bus.read32(at);
+        c.bus.write32(at, n + 1);
+        let after = c.bus.read32(at + 8);
+        if after != 0 && n == c.bus.read32(at + 4) {
+            c.next_event = c.cycles + after as u64;
+        }
+    }
+
+    pub(crate) fn ps2gm_due_set(c: &mut Cpu, kind: u32, index: u32, after: u32) {
+        let at = PS2GM_DUE + 0x10 * kind;
+        c.bus.write32(at + 4, index);
+        c.bus.write32(at + 8, after);
+    }
+
+    /// `strcpy` for the GetTextureByName fixtures: the real one, then an
+    /// unwind or an event due now, as [`GTN_UNWIND`] asks.
+    pub(crate) fn gtn_fake_strcpy(c: &mut Cpu) {
+        let ra = r32(c, RA);
+        fakes::fall_back(c, &GTN_PREV_STRCPY, ee::s15::f_004166f4__generated);
+        if c.bus.read32(GTN_CTRL) != GTN_MAGIC || c.pc != ra {
+            return;
+        }
+        c.bus.write32(GTN_UNWIND + 4, 1);
+        if c.bus.read32(GTN_UNWIND) == 2 {
+            c.bus.write32(GTN_UNWIND, 0);
+            c.pc = 0xdead_0200;
+            return;
+        }
+        if c.bus.read32(GTN_UNWIND + 8) != 0 {
+            c.next_event = c.cycles;
+        }
+    }
+
+    pub(crate) fn gtn_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004165A8),
+            gtn_fake_strcmp,
+            &GTN_PREV_STRCMP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004166F4),
+            gtn_fake_strcpy,
+            &GTN_PREV_STRCPY,
+        );
+    }
+
+    /// Names by `seed % 4`: empty, shorter than four, exactly four, longer.
+    pub(crate) const GTN_NAMES: [&[u8]; 4] = [b"", b"sky", b"tree", b"rocks01"];
+
+    /// GetTextureByName: the key (`seed % 4`), the cache (`seed / 4 % 3`:
+    /// empty, other names, the key at a random entry) and the shape banks
+    /// (`seed / 12 % 3`: none, other names, the key in a random bank and
+    /// entry, as a shape's long name). Loading goes to a fake.
+    pub(crate) fn get_texture_by_name_setup(c: &mut Cpu, seed: u32) -> Rng {
+        gtn_hook();
+        let mut r = machine(c, seed, 0x3696_c8, 3);
+        c.bus.write32(GTN_CTRL, GTN_MAGIC);
+        c.bus.write32(GTN_UNWIND, seed / 36 % 4);
+        c.bus.write32(GTN_UNWIND + 4, 0);
+        c.bus.write32(GTN_UNWIND + 8, 0);
+        let name = GTN_NAMES[(seed % 4) as usize];
+        let key = &name[..name.len().min(4)];
+        fill(c, &mut r, GTN_NAME & !3, 4);
+        ps2gm_put_str(c, GTN_NAME, name);
+        c.g[A0][0] = sx(GTN_MAN);
+        c.g[A1][0] = sx(GTN_NAME);
+        c.pc = 0x0036_96c8;
+        // The cache, its unused entries filled with junk.
+        fill(c, &mut r, GTN_MAN + ps2gm::TEX_CACHE, 12 * 12 / 4);
+        let cache = seed / 4 % 3;
+        let count = if cache == 0 { 0 } else { 1 + r.next_u32() % 8 };
+        for i in 0..count {
+            let entry = GTN_MAN + ps2gm::TEX_CACHE + 12 * i;
+            ps2gm_put_str(c, entry + 4, &[b't', b'x', b'0' + i as u8]);
+        }
+        if cache == 2 {
+            let hit = r.next_u32() % count;
+            ps2gm_put_str(c, GTN_MAN + ps2gm::TEX_CACHE + 12 * hit + 4, key);
+        }
+        c.bus.write32(GTN_MAN + ps2gm::TEX_CACHE_COUNT, count);
+        // The shape banks: entries whose shapes carry a long name (`'p'`).
+        let banks = seed / 12 % 3;
+        let nbanks = if banks == 0 { 0 } else { 1 + r.next_u32() % 3 };
+        let hit = (r.next_u32() % nbanks.max(1), r.next_u32() % 4);
+        c.bus.write32(GTN_MAN + ps2gm::SHAPE_BANK_COUNT, nbanks);
+        c.bus.write32(GTN_MAN + ps2gm::SHAPE_BANKS, GTN_BANK_LIST);
+        for k in 0..nbanks {
+            let bank = GTN_BANKS + 0x1000 * k;
+            c.bus.write32(GTN_BANK_LIST + 4 * k, bank);
+            let entries = 4;
+            c.bus.write32(bank + 8, entries);
+            for i in 0..entries {
+                let off = 0x400 + 0x20 * i;
+                c.bus.write32(bank + 0x10 + 8 * i, r.next_u32());
+                c.bus.write32(bank + 0x14 + 8 * i, off);
+                c.bus.write32(bank + off, 0x70);
+                if banks == 2 && (k, i) == hit && hit.0 < nbanks {
+                    ps2gm_put_str(c, bank + off + 4, key);
+                } else {
+                    ps2gm_put_str(
+                        c,
+                        bank + off + 4,
+                        &[b's', b'h', b'0' + k as u8, b'0' + i as u8],
+                    );
+                }
+            }
+        }
+        // The renderer vtable: slot +0x170 is a fake.
+        let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+        c.bus.write16(GTN_VT + 0x170, delta as u16);
+        c.bus.write32(GTN_VT + 0x174, FAKE);
+        c.bus.write32(GTN_MAN + man::DISPLAY, GTN_VT);
+        c.bus.write32(GTN_BEFORE, count);
+        c.bus.write32(GTN_BEFORE + 4, nbanks);
+        r
+    }
+
+    // ---------------------------------------------- SnapshotTextureTable
+
+    pub(crate) const MEM_COPY_MAGIC: u32 = 0x003e_6574;
+
+    pub(crate) static PS2GM_PREV_MEM_COPY: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemCopy` for the SnapshotTextureTable and v49 fixtures: a logged
+    /// fake (unwinding at the call index the fixture sets).
+    pub(crate) fn ps2gm_fake_mem_copy(c: &mut Cpu) {
+        if c.bus.read32(PS2GM_FAKE_CTRL) != MEM_COPY_MAGIC {
+            return fakes::fall_back(c, &PS2GM_PREV_MEM_COPY, ee::s14::f_003e6574__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x003e_6574, ra)
+    }
+
+    pub(crate) fn ps2gm_mem_copy_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6574),
+            ps2gm_fake_mem_copy,
+            &PS2GM_PREV_MEM_COPY,
+        );
+    }
+
+    /// SnapshotTextureTable: both tables random, the manager at four
+    /// alignments (`seed % 4`: EA_MemCopy's aligned and byte paths); `seed /
+    /// 4 % 2`: the copy is a fake that unwinds when `seed / 8 % 2`.
+    #[test]
+    fn ps2_graphics_man_snapshot_texture_table_matches() {
+        ps2gm_mem_copy_hook();
+        check(
+            ee::s12::f_0037c808__generated,
+            ps2_graphics_man_snapshot_texture_table,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37c8_08, 0);
+                if seed / 4 % 2 == 1 {
+                    c.bus.write32(PS2GM_FAKE_CTRL, MEM_COPY_MAGIC);
+                    let at = if seed / 8 % 2 == 1 { 0 } else { u32::MAX };
+                    c.bus.write32(fakes::LOG_UNWIND_AT, at);
+                }
+                let man = DATA + 0x1_0000 + 4 * (seed % 4);
+                fill(
+                    c,
+                    &mut r,
+                    man + ps2gm::TEX_SLOTS,
+                    2 * ps2gm::TEX_SLOTS_BYTES / 4 + 4,
+                );
+                c.g[A0][0] = sx(man);
+                c.pc = 0x0037_c808;
+            },
+        );
+    }
+
+    // -------------------------------------------------------------- v48
+
+    pub(crate) const V48_MAN: u32 = DATA + 0x1_0050;
+
+    pub(crate) const V48_SHAPE: u32 = DATA + 0x2_0030;
+
+    pub(crate) const V48_VT: u32 = DATA + 0x5_0070;
+
+    pub(crate) const V48_UNPACKED: u32 = DATA + 0x6_0090;
+
+    pub(crate) const V48_MAGIC: u32 = 0x0037_d0b0;
+
+    /// The cycle counter at entry (for the path probe).
+    pub(crate) const V48_START: u32 = DATA + 0x2_2000;
+
+    /// Format bytes by `seed % 7`.
+    pub(crate) const V48_FORMATS: [u8; 7] = [0, 1, 2, 3, 4, 5, 7];
+
+    pub(crate) static V48_PREV_NEW: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static V48_PREV_UNPACK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static V48_PREV_FREE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn v48_gated(c: &mut Cpu) -> bool {
+        c.bus.read32(PS2GM_FAKE_CTRL) == V48_MAGIC
+    }
+
+    /// `operator_new_named` for the v48 fixture: a logged fake.
+    pub(crate) fn v48_fake_new(c: &mut Cpu) {
+        if !v48_gated(c) {
+            return fakes::fall_back(c, &V48_PREV_NEW, ee::s10::f_00317e30__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0031_7e30, ra)
+    }
+
+    /// `EAC_Unpack` for the v48 fixture: a logged fake.
+    pub(crate) fn v48_fake_unpack(c: &mut Cpu) {
+        if !v48_gated(c) {
+            return fakes::fall_back(c, &V48_PREV_UNPACK, ee::s13::f_003b47f8__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x003b_47f8, ra)
+    }
+
+    /// `MEM_Free` for the v48 fixture: a logged fake.
+    pub(crate) fn v48_fake_free(c: &mut Cpu) {
+        if !v48_gated(c) {
+            return fakes::fall_back(c, &V48_PREV_FREE, ee::s06::f_002523a8__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0025_23a8, ra)
+    }
+
+    pub(crate) fn v48_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            v48_fake_new,
+            &V48_PREV_NEW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B47F8),
+            v48_fake_unpack,
+            &V48_PREV_UNPACK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_002523A8),
+            v48_fake_free,
+            &V48_PREV_FREE,
+        );
+    }
+
+    /// v48: the format (`seed % 7`), the header flag 0x2000 (`/7 % 2`), a CLUT
+    /// record or none (`/14 % 2`), the CLUT's own-offset flag (`/28 % 2`), the
+    /// data marker (`/56 % 3`: plain, 0x10 without 0xfb, EAC-packed) and the
+    /// header's pixel-offset flag 0x1000 (`/168 % 2`).
+    pub(crate) fn v48_setup(c: &mut Cpu, seed: u32) {
+        v48_hook();
+        let mut r = machine(c, seed, 0x37d0_b0, 4);
+        c.bus.write32(PS2GM_FAKE_CTRL, V48_MAGIC);
+        let format = V48_FORMATS[(seed % 7) as usize];
+        let flag_2000 = seed / 7 % 2 == 1;
+        let has_clut = seed / 14 % 2 == 1;
+        let clut_offset = seed / 28 % 2 == 1;
+        let marker = seed / 56 % 3;
+        let pixel_offset = seed / 168 % 2 == 1;
+        fill(c, &mut r, V48_SHAPE, 0x100);
+        let clut_at = 0x80 + 4 * (r.next_u32() % 8);
+        let header = (if has_clut { clut_at << 8 } else { 0 }) | format as u32;
+        c.bus.write32(V48_SHAPE, header);
+        let mut word_c = r.next_u32() & !0x3000;
+        if flag_2000 {
+            word_c |= 0x2000;
+        }
+        if pixel_offset {
+            word_c |= 0x1000;
+        }
+        c.bus.write32(V48_SHAPE + 0xc, word_c);
+        c.bus
+            .write32(V48_SHAPE + 0x10, 0x20 + 4 * (r.next_u32() % 8));
+        match marker {
+            0 => c
+                .bus
+                .write8(V48_SHAPE + 0x10, 0x20 + (r.next_u32() % 0x80) as u8),
+            1 => {
+                c.bus.write8(V48_SHAPE + 0x10, 0x10);
+                c.bus.write8(V48_SHAPE + 0x11, (r.next_u32() % 0xfb) as u8);
+            }
+            _ => {
+                c.bus.write8(V48_SHAPE + 0x10, 0x10);
+                c.bus.write8(V48_SHAPE + 0x11, 0xfb);
+                // The packed size's top two bytes (big-endian), not zero.
+                c.bus.write8(V48_SHAPE + 0x12, 0x01);
+                c.bus.write8(V48_SHAPE + 0x13, 0x23);
+            }
+        }
+        let clut = V48_SHAPE + clut_at;
+        let mut clut_c = r.next_u32() & !0x1000;
+        if clut_offset {
+            clut_c |= 0x1000;
+        }
+        c.bus.write32(clut + 0xc, clut_c);
+        c.bus.write32(clut + 0x10, 0x40 + 4 * (r.next_u32() % 8));
+        // The unpack buffer: the fake allocator returns it (call 0).
+        fill(c, &mut r, V48_UNPACKED, 0x40);
+        c.bus.write32(LOG_RESULTS, V48_UNPACKED);
+        let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+        c.bus.write16(V48_VT + 0x188, delta as u16);
+        c.bus.write32(V48_VT + 0x18c, FAKE);
+        c.bus.write32(V48_MAN + man::DISPLAY, V48_VT);
+        c.g[A0][0] = sx(V48_MAN);
+        c.g[A2][0] = sx(V48_SHAPE);
+        c.pc = 0x0037_d0b0;
+        c.bus.write32(V48_START, c.cycles as u32);
+    }
+
+    /// v48's shapes (`seed % 336`, [`v48_setup`]'s digits) with the fake
+    /// call `seed / 336 % 5` unwinding: a packed shape's four calls
+    /// (allocator, unpacker, upload, free) in turn, a plain shape's one
+    /// upload, or none.
+    pub(crate) fn v48_unwind_setup(c: &mut Cpu, seed: u32) {
+        v48_setup(c, seed % 336);
+        c.bus.write32(LOG_UNWIND_AT, seed / 336 % 5);
+    }
+
+    pub(crate) const V48_SEEDS: u32 = 336 * 5;
+
+    /// v48 against the generated body: every format, CLUT and pixel layout,
+    /// packed shapes (fake allocator, unpacker and free), each call
+    /// unwinding in turn.
+    #[test]
+    fn ps2_graphics_man_v48_matches() {
+        check(
+            ee::s12::f_0037d0b0__generated,
+            ps2_graphics_man_v48,
+            V48_SEEDS,
+            &v48_unwind_setup,
+        );
+        // (fake calls made, ran to the end): a plain shape's upload
+        // unwinding or returning, a packed shape's four calls unwinding in
+        // turn, and its complete run.
+        require_arm_values(
+            ee::s12::f_0037d0b0__generated,
+            V48_SEEDS,
+            &v48_unwind_setup,
+            &|c, _| (c.bus.read32(LOG_COUNT), c.pc == PS2GM_RET),
+            &[
+                (1, false),
+                (1, true),
+                (2, false),
+                (3, false),
+                (4, false),
+                (4, true),
+            ],
+        );
+        // Plain shapes: the cycles charged up to the upload call identify
+        // the path (format head + data tail); packed ones are told by the
+        // calls and the pixels passed (unpacked data or its own offset).
+        require_arm_values(
+            ee::s12::f_0037d0b0__generated,
+            V48_SEEDS,
+            &v48_unwind_setup,
+            &|c, seed| {
+                let format = V48_FORMATS[(seed % 7) as usize];
+                let calls = c.bus.read32(LOG_COUNT);
+                if calls == 0 || c.pc != PS2GM_RET {
+                    return (format, 0, 0, false);
+                }
+                let start = c.bus.read32(V48_START) as u64;
+                let (target, cycles, _) = ps2gm_logged(c, 0, A0);
+                if target == FAKE {
+                    let (_, _, psm) = ps2gm_logged(c, 0, T2);
+                    return (format, cycles - start, psm, false);
+                }
+                let (_, _, psm) = ps2gm_logged(c, 2, T2);
+                let (_, _, pixels) = ps2gm_logged(c, 2, A2);
+                (format, 1001, psm, pixels == sx(V48_UNPACKED + 0x10))
+            },
+            &[
+                // Format heads (28 fmt 0, 29 fmt 3, 30 fmt 5, 31 fmt 4/7,
+                // 37/38 fmt 2, 41/42 fmt 1) with the plain tail 27.
+                (0, 28 + 27, 0, false),
+                (3, 29 + 27, 2, false),
+                (5, 30 + 27, 0, false),
+                (4, 31 + 27, 0, false),
+                (7, 31 + 27, 0, false),
+                (2, 37 + 27, 9, false),
+                (2, 38 + 27, 0xa, false),
+                (1, 41 + 27, 0xb, false),
+                (1, 42 + 27, 0xc, false),
+                // Tails after format 0: own pixel offset (29), the 0x10
+                // marker without 0xfb (30, 32).
+                (0, 28 + 29, 0, false),
+                (0, 28 + 30, 0, false),
+                (0, 28 + 32, 0, false),
+                // Packed shapes reaching the upload.
+                (0, 1001, 0, true),
+                (0, 1001, 0, false),
+                (2, 1001, 9, true),
+                (1, 1001, 0xc, false),
+                (3, 1001, 2, true),
+            ],
+        );
+    }
+
+    // -------------------------------------------------------------- v49
+
+    /// v49: the texture manager's slot table, a texture record that is not
+    /// resident (`TexMan_EvictTexture`'s short path), and the stack
+    /// arguments. `seed % 2`: no pixel copies, or both copies (a fake
+    /// `EA_MemCopy`, the first call unwinding when `seed / 2 % 2`).
+    #[test]
+    fn ps2_graphics_man_v49_matches() {
+        ps2gm_mem_copy_hook();
+        check(
+            ee::s12::f_0037d318__generated,
+            ps2_graphics_man_v49,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37d3_18, 0);
+                let copies = seed % 2 == 1;
+                let man = DATA + 0x1_0030;
+                let texman = DATA + 0x2_0050;
+                let record = DATA + 0x3_0010 + 0x40 * (seed % 4);
+                fill(c, &mut r, texman, 0x40);
+                fill(c, &mut r, texman + 0x1f50, 8);
+                let index = r.next_u32() % 16;
+                c.bus.write32(texman + 8 + 4 * index, record);
+                fill(c, &mut r, record, 0x10);
+                c.bus.write32(record + 0x28, u32::MAX);
+                c.bus.write32(man + GM_TEXTURES, texman);
+                c.g[A0][0] = sx(man);
+                c.g[A1][0] = index as u64;
+                // The pixel source (a2), the CLUT source and the copy flag (the
+                // caller's stack arguments).
+                c.g[A2][0] = if copies { sx(DATA + 0x4_0010) } else { 0 };
+                c.bus.write32(
+                    PS2GM_STACK,
+                    if copies {
+                        DATA + 0x4_1010
+                    } else {
+                        r.next_u32()
+                    },
+                );
+                c.bus.write32(PS2GM_STACK + 8, copies as u32);
+                if copies {
+                    c.bus.write32(PS2GM_FAKE_CTRL, MEM_COPY_MAGIC);
+                    let at = if seed / 2 % 2 == 1 { 0 } else { u32::MAX };
+                    c.bus.write32(fakes::LOG_UNWIND_AT, at);
+                }
+                c.pc = 0x0037_d318;
+            },
+        );
+    }
+
+    // ------------------------------------------------------ LockTexture
+
+    pub(crate) const LOCK_MAGIC: u32 = 0x0037_d738;
+
+    pub(crate) static LOCK_PREV_TEX_LOCK: AtomicUsize = AtomicUsize::new(0);
+
+    /// `TexMan_LockTexture` for the LockTexture fixture: a logged fake.
+    pub(crate) fn lock_texture_fake_tex_lock(c: &mut Cpu) {
+        if c.bus.read32(PS2GM_FAKE_CTRL) != LOCK_MAGIC {
+            return fakes::fall_back(c, &LOCK_PREV_TEX_LOCK, ee::s12::f_00367cd0__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0036_7cd0, ra)
+    }
+
+    /// LockTexture: the texture manager pointer and the arguments reach the
+    /// (fake) `TexMan_LockTexture`, which sometimes unwinds.
+    #[test]
+    fn ps2_graphics_man_lock_texture_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00367CD0),
+            lock_texture_fake_tex_lock,
+            &LOCK_PREV_TEX_LOCK,
+        );
+        fakes::covered(
+            ee::s12::f_0037d738__generated,
+            ps2_graphics_man_lock_texture,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37d7_38, 1);
+                c.bus.write32(PS2GM_FAKE_CTRL, LOCK_MAGIC);
+                let man = DATA + 0x1_0070;
+                c.bus
+                    .write32(man + GM_TEXTURES, DATA + 0x2_0000 + (r.next_u32() & 0xfff0));
+                c.g[A0][0] = sx(man);
+                c.pc = 0x0037_d738;
+            },
+        );
+    }
+
+    // -------------------------------------------------------------- v87
+
+    pub(crate) const V87_MAN: u32 = DATA + 0x1_0000;
+
+    pub(crate) const V87_CENTER: u32 = DATA + 0x2_0000;
+
+    pub(crate) const V87_RGBA: u32 = DATA + 0x2_1004;
+
+    pub(crate) const V87_MATRIX: u32 = DATA + 0x3_0000;
+
+    pub(crate) const V87_STATE: u32 = DATA + 0x3_2008;
+
+    pub(crate) const V87_VT: u32 = DATA + 0x5_0000;
+
+    pub(crate) const V87_RING: u32 = 0x004f_fbc0;
+
+    pub(crate) const V87_RING_BUILT: u32 = crate::difftest::GAME_GP + 0x28b0;
+
+    /// View-space depths by `seed % 7`: beyond the cut-off, at it, step 4,
+    /// at 2000 (step 2), step 2, at 750 (step 1), step 1.
+    pub(crate) const V87_DEPTHS: [f32; 7] = [3500.0, 3000.0, 2500.0, 2000.0, 1000.0, 750.0, 100.0];
+
+    /// The renderer slots v87 calls (all fakes), in call order.
+    pub(crate) const V87_SLOTS: [u32; 5] = [0x118, 0xf8, 0x128, 0x248, 0x100];
+
+    /// v87: the depth (`seed % 7`), the segments (`seed / 7 % 4`: 0, -2,
+    /// 1-5, 17-20) and the ring flag (`seed / 28 % 2`: build it, or already
+    /// built with random points). The view matrix (fake call 0) maps the
+    /// centre's z through unchanged; the other columns are random.
+    pub(crate) fn v87_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = machine(c, seed, 0x38_2170, 6);
+        crate::difftest::elf_image(c);
+        let depth = V87_DEPTHS[(seed % 7) as usize];
+        let segs: i64 = match seed / 7 % 4 {
+            0 => 0,
+            1 => -2,
+            2 => 1 + (r.next_u32() % 5) as i64,
+            _ => 17 + (r.next_u32() % 4) as i64,
+        };
+        let built = seed / 28 % 2 == 1;
+        for row in 0..4u32 {
+            for col in 0..4u32 {
+                let v = match (row, col) {
+                    (2, 2) => 1.0f32.to_bits(),
+                    (_, 2) => 0,
+                    _ => r.f32(2.0),
+                };
+                c.bus.write32(V87_MATRIX + 0x10 * row + 4 * col, v);
+            }
+        }
+        c.bus.write32(LOG_RESULTS, V87_MATRIX);
+        c.bus.write32(V87_CENTER, r.f32(50.0));
+        c.bus.write32(V87_CENTER + 4, r.f32(50.0));
+        c.bus.write32(V87_CENTER + 8, depth.to_bits());
+        c.bus.write32(V87_CENTER + 0xc, r.f32(2.0));
+        for i in 0..4 {
+            c.bus.write32(V87_RGBA + 4 * i, r.f32(2.0));
+        }
+        fill(c, &mut r, V87_STATE, 8);
+        c.bus.write32(V87_MAN + ps2gm::CUR_STATE, V87_STATE);
+        for (i, slot) in V87_SLOTS.into_iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(V87_VT + slot, delta as u16);
+            c.bus.write32(V87_VT + slot + 4, FAKE + 0x10 * i as u32);
+        }
+        c.bus.write32(V87_MAN + man::DISPLAY, V87_VT);
+        c.bus.write32(V87_RING_BUILT, built as u32);
+        if built {
+            for i in 0..0x40 {
+                c.bus.write32(V87_RING + 4 * i, r.f32(1.0));
+            }
+        }
+        c.g[A0][0] = sx(V87_MAN);
+        c.g[A1][0] = sx(V87_CENTER);
+        c.g[A2][0] = sx(V87_RGBA);
+        c.g[A3][0] = segs as u64;
+        c.f[12] = r.f32(100.0);
+        if !built {
+            // Building the ring clears each point's z and w: not zero before.
+            fill(c, &mut r, V87_RING - 0x10, 0x110 / 4);
+        }
+        c.pc = 0x0038_2170;
+        r
+    }
+
+    /// v87 against the generated body: every depth band and its edges,
+    /// given and derived steps, the ring built or not (fake unwinds too).
+    #[test]
+    fn ps2_graphics_man_v87_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            v87_setup(c, seed);
+        };
+        check_lohi(
+            ee::s12::f_00382170__generated,
+            ps2_graphics_man_v87,
+            168,
+            &setup,
+        );
+        // (fake calls, vertices drawn, ring built now, step from depth).
+        require_arm_values(
+            ee::s12::f_00382170__generated,
+            168,
+            &setup,
+            &|c, seed| {
+                if c.pc != PS2GM_RET {
+                    return (0, 0, false, false);
+                }
+                let calls = c.bus.read32(LOG_COUNT);
+                let count = if calls >= 4 {
+                    ps2gm_logged(c, 3, A1).2
+                } else {
+                    0
+                };
+                let built_now = c.bus.read32(V87_RING + 4) == 0x3f80_0000;
+                (calls, count, built_now, seed / 7 % 4 < 2)
+            },
+            &[
+                (1, 0, false, true),
+                (1, 0, false, false),
+                (5, 5, true, true),
+                (5, 9, false, true),
+                (5, 17, true, true),
+                (5, 17, false, true),
+                (5, 2, true, false),
+                (5, 2, false, false),
+            ],
+        );
+    }
+
+    /// Set when the v87 event test aims at the ring loop.
+    pub(crate) const V87_RING_EVENT: u32 = DATA + 0x2_2000;
+
+    /// The `miss` hook of v87's ring-loop event fixture: the logged fake;
+    /// after slot +0x128 (the last call before the vertex loops) an event
+    /// falls due 150 cycles on: past the constructor loop (16 checks, 7 to
+    /// 112 cycles on; exit at 119, +9) and at the ring loop's first back
+    /// edge (+37: 165), which it reaches first.
+    pub(crate) fn v87_ring_event_miss(c: &mut Cpu, target: u32) {
+        let ra = r32(c, RA);
+        fakes::fake_call(c, target);
+        if target == FAKE + 0x20 && c.pc == ra && c.bus.read32(V87_RING_EVENT) != 0 {
+            c.next_event = c.cycles + 150;
+        }
+    }
+
+    driven!(gen_v87, ee::s12::f_00382170__generated);
+
+    driven!(hand_v87, ps2_graphics_man_v87);
+
+    /// v87 with events at the vertex constructor loop's and (`seed / 3 / 56
+    /// % 2`) the ring loop's back edges (structured: delivered, never
+    /// unwinding there).
+    #[test]
+    fn ps2_graphics_man_v87_events_match() {
+        check_events(gen_v87, hand_v87, 300, &|c, seed| {
+            let mut r = v87_setup(c, seed / 3);
+            let ring = seed / 3 / 56 % 2 == 1;
+            c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+            let (a2, a3, radius) = (c.g[A2][0], c.g[A3][0], c.f[12]);
+            let mode = schedule(c, &mut r, seed, 0x0038_2170);
+            c.g[A2][0] = a2;
+            c.g[A3][0] = a3;
+            c.f[12] = radius;
+            c.g[GP][0] = crate::difftest::GAME_GP as u64;
+            if ring && mode != Events::Off {
+                c.hooks.miss = v87_ring_event_miss;
+                c.bus.write32(V87_RING_EVENT, 1);
+            }
+            mode
+        });
+    }
+
+    // -------------------------------------------------- DMA kick thread
+
+    pub(crate) const KICK_GM: u32 = DATA + 0x1_0000;
+
+    pub(crate) const KICK_MAGIC: u32 = 0x0038_2760;
+
+    pub(crate) const KICK_SEMA_ID: u32 = 0x31;
+
+    pub(crate) const KICK_MUTEX_ID: u32 = 0x32;
+
+    /// Fixture state: kick waits seen, the scripted iterations (0x20 bytes
+    /// each), and per iteration the kick state found and the fake log count.
+    pub(crate) const KICK_ITER: u32 = DATA + 0x2_0000;
+
+    pub(crate) const KICK_SCRIPT: u32 = DATA + 0x2_0100;
+
+    pub(crate) const KICK_TRACE: u32 = DATA + 0x2_0400;
+
+    pub(crate) const KICK_ITERATIONS: u32 = 3;
+
+    /// DMA chains: zeroed tags (`refe`, no data).
+    pub(crate) const KICK_CHAINS: u32 = DATA + 0x7_0000;
+
+    pub(crate) const KICK_CALLBACK: u32 = FAKE + 0x100;
+
+    /// Which hardware wait the fixture makes spin (see [`kick_make_busy`]),
+    /// and per iteration the busy states the next event found.
+    pub(crate) const KICK_BUSY: u32 = DATA + 0x2_0500;
+
+    pub(crate) const KICK_BUSY_SEEN: u32 = DATA + 0x2_0600;
+
+    /// Per iteration: a busy state was already kept for extra passes.
+    pub(crate) const KICK_BUSY_DEFERRED: u32 = DATA + 0x2_0700;
+
+    /// Passes a busy wait makes with no event due (iterations 1 and 2).
+    pub(crate) const KICK_SPIN_PASSES: u64 = 3;
+
+    /// What the "interrupt" changes while the thread waits, by option:
+    /// (fields mask, state, queued, in flight, bufState[0], bufState[1]).
+    /// 0 frame done, other buffer queued (show, then kick); 1 frame done,
+    /// same buffer (show only); 2 idle, queued (kick); 3 idle, not queued;
+    /// 4 first half done (phase 2); 5 busy.
+    pub(crate) const KICK_OPTIONS: [(u32, u32, u32, u32, u32, u32); 6] = [
+        (0x1f, 5, 1, 0, 3, 2),
+        (0x1f, 5, 1, 1, 3, 2),
+        (0x1b, 0, 0, 0, 2, 1),
+        (0x1b, 0, 1, 0, 2, 3),
+        (0x01, 2, 0, 0, 0, 0),
+        (0x01, 1, 0, 0, 0, 0),
+    ];
+
+    pub(crate) static KICK_PREV_WAIT_SEMA: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static KICK_PREV_SIGNAL_SEMA: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static KICK_PREV_FLUSH_CACHE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static KICK_PREV_SET_DISPLAY_REGS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn kick_gated(c: &mut Cpu) -> bool {
+        c.bus.read32(PS2GM_FAKE_CTRL) == KICK_MAGIC
+    }
+
+    /// `WaitSema` for the kick-thread fixture: a logged fake. Each wait on
+    /// the kick semaphore starts an iteration: it records the state the last
+    /// one left, applies the next scripted change, and after the scripted
+    /// iterations stops the thread (returns to the test's sentinel).
+    pub(crate) fn kick_fake_wait_sema(c: &mut Cpu) {
+        if !kick_gated(c) {
+            return fakes::fall_back(c, &KICK_PREV_WAIT_SEMA, ee::s15::f_00423de0__generated);
+        }
+        let ra = r32(c, RA);
+        let sema = r32(c, A0);
+        fakes::fake(c, 0x0042_3de0, ra);
+        if c.pc != ra || sema != KICK_SEMA_ID {
+            return;
+        }
+        let n = c.bus.read32(KICK_ITER);
+        c.bus.write32(KICK_ITER, n + 1);
+        let state = c.bus.read32(KICK_GM + VBLANK_SWAP_STATE);
+        c.bus.write32(KICK_TRACE + 8 * n, state);
+        let logged = c.bus.read32(LOG_COUNT);
+        c.bus.write32(KICK_TRACE + 8 * n + 4, logged);
+        if n >= KICK_ITERATIONS {
+            c.pc = PS2GM_RET;
+            return;
+        }
+        let step = KICK_SCRIPT + 0x20 * n;
+        let mask = c.bus.read32(step);
+        for (bit, field, at) in [
+            (1, VBLANK_SWAP_STATE, 4),
+            (2, kick::QUEUED, 8),
+            (4, kick::IN_FLIGHT, 0xc),
+            (8, kick::BUF_STATE, 0x10),
+            (16, kick::BUF_STATE + 4, 0x14),
+        ] {
+            if mask & bit != 0 {
+                let v = c.bus.read32(step + at);
+                c.bus.write32(KICK_GM + field, v);
+            }
+        }
+        let busy = c.bus.read32(KICK_BUSY);
+        if (1..=4).contains(&busy) {
+            kick_make_busy(c, busy);
+        }
+    }
+
+    /// Make one hardware wait of this iteration spin until the next event
+    /// (due within 30 cycles; [`kick_busy_done_event`] ends the busy state):
+    /// 1 VIF1 CHCR.STR, 2 GIF CHCR.STR, 4 fromSPR CHCR.STR (set directly:
+    /// the DMA model finishes a started transfer inside the CHCR store);
+    /// 3 and 5 VIF1_STAT busy: a `DIRECT` code short of its data stays in the
+    /// VIF1 FIFO (VPS/FQC), also across the MSKPATH3 quadword sent later.
+    /// The GS CSR waits cannot spin: the model's CSR.FIFO always reads empty.
+    pub(crate) fn kick_make_busy(c: &mut Cpu, kind: u32) {
+        use ssx3_ps2::hw::ch;
+        let channel = match kind {
+            1 => Some(ch::VIF1),
+            2 => Some(ch::GIF),
+            4 => Some(ch::FROM_SPR),
+            _ => None,
+        };
+        match channel {
+            Some(n) => {
+                ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw.ch[n].chcr |=
+                    DMA_CHCR_STR as u32;
+            }
+            None => {
+                let direct = 0x5000_0002u128 | 0x11u128 << 32 | 0x22u128 << 64 | 0x33u128 << 96;
+                c.bus.write128(VIF1_FIFO, direct);
+            }
+        }
+        c.next_event = c.next_event.min(c.cycles + 30);
+    }
+
+    /// The kick fixture's event hook: ends every busy state (CHCR.STR of
+    /// VIF1, GIF and fromSPR; the VIF1 FIFO by a VIF1 reset), records which
+    /// were busy for the current iteration, then delivers the event as usual.
+    /// Keeps the test machines' runaway budget.
+    pub(crate) fn kick_busy_done_event(c: &mut Cpu) -> bool {
+        use ssx3_ps2::hw::ch;
+        assert!(
+            c.cycles < crate::difftest::CYCLE_BUDGET,
+            "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+            c.cycles,
+            c.pc
+        );
+        // From the second iteration on, the first event that finds a busy
+        // state leaves it busy for three more passes with no event due (the
+        // wait's not-due side), then the next one ends it.
+        let iteration = c.bus.read32(KICK_ITER).saturating_sub(1).min(7);
+        let busy = {
+            let hw = &mut ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw;
+            [ch::VIF1, ch::GIF, ch::FROM_SPR]
+                .into_iter()
+                .any(|n| hw.ch[n].chcr & DMA_CHCR_STR as u32 != 0)
+                || hw.vif1.pending_words() > 0
+        };
+        let deferred = KICK_BUSY_DEFERRED + 4 * iteration;
+        if busy && iteration >= 1 && c.bus.read32(deferred) == 0 {
+            c.bus.write32(deferred, 1);
+            let unwind = (ssx3_ps2::platform::HOOKS.event)(c);
+            c.next_event = c.next_event.min(c.cycles + KICK_SPIN_PASSES * 7 + 1);
+            return unwind;
+        }
+        let mut seen = 0;
+        {
+            let hw = &mut ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw;
+            for (bit, n) in [(1, ch::VIF1), (2, ch::GIF), (8, ch::FROM_SPR)] {
+                if hw.ch[n].chcr & DMA_CHCR_STR as u32 != 0 {
+                    seen |= bit;
+                    hw.ch[n].chcr &= !(DMA_CHCR_STR as u32);
+                }
+            }
+            if hw.vif1.pending_words() > 0 {
+                seen |= 4;
+                hw.vif1.write_reg(0x10, 1);
+            }
+        }
+        if seen != 0 {
+            let at = KICK_BUSY_SEEN + 4 * iteration;
+            let was = c.bus.read32(at);
+            c.bus.write32(at, was | seen);
+        }
+        (ssx3_ps2::platform::HOOKS.event)(c)
+    }
+
+    /// `SignalSema` for the kick-thread fixture: a logged fake.
+    pub(crate) fn kick_fake_signal_sema(c: &mut Cpu) {
+        if !kick_gated(c) {
+            return fakes::fall_back(c, &KICK_PREV_SIGNAL_SEMA, ee::s15::f_00423dc0__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0042_3dc0, ra)
+    }
+
+    /// `FlushCache` for the kick-thread fixture: a logged fake.
+    pub(crate) fn kick_fake_flush_cache(c: &mut Cpu) {
+        if !kick_gated(c) {
+            return fakes::fall_back(c, &KICK_PREV_FLUSH_CACHE, ee::s15::f_00424020__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0042_4020, ra);
+        if c.pc == ra && c.bus.read32(KICK_BUSY) == 5 {
+            kick_make_busy(c, 5);
+        }
+    }
+
+    /// `Renderer_SetDisplayRegs` for the kick-thread fixture: a logged fake.
+    pub(crate) fn kick_fake_set_display_regs(c: &mut Cpu) {
+        if !kick_gated(c) {
+            return fakes::fall_back(
+                c,
+                &KICK_PREV_SET_DISPLAY_REGS,
+                ee::s12::f_00382af0__generated,
+            );
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0038_2af0, ra)
+    }
+
+    pub(crate) fn kick_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00423DE0),
+            kick_fake_wait_sema,
+            &KICK_PREV_WAIT_SEMA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00423DC0),
+            kick_fake_signal_sema,
+            &KICK_PREV_SIGNAL_SEMA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00424020),
+            kick_fake_flush_cache,
+            &KICK_PREV_FLUSH_CACHE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00382AF0),
+            kick_fake_set_display_regs,
+            &KICK_PREV_SET_DISPLAY_REGS,
+        );
+    }
+
+    /// The kick thread: three scripted iterations (`seed % 6`, then `seed /
+    /// 72 % 6` twice, see [`KICK_OPTIONS`]), the phase-2 callback (`seed / 6
+    /// % 2`: a fake, or none) and the hardware wait made to spin (`seed / 12
+    /// % 6`: none, VIF1 CHCR, GIF CHCR, VIF1_STAT before the kick or phase 2,
+    /// fromSPR CHCR, VIF1_STAT after the kick's MSKPATH3). The DMA chains are
+    /// empty. `thread`: start the guest thread the busy waits' events need
+    /// (`schedule` does it in the event tests).
+    pub(crate) fn kick_setup(c: &mut Cpu, seed: u32, entry: u32, thread: bool) -> Rng {
+        kick_hook();
+        let mut r = machine(c, seed, 0x38_2760, 14);
+        if thread {
+            let saved = (c.g[A0], c.g[A1], c.g[RA]);
+            ssx3_ps2::kernel::start_main_thread(c, entry, 0, 0);
+            (c.g[A0], c.g[A1], c.g[RA]) = saved;
+        }
+        c.hooks.event = kick_busy_done_event;
+        c.bus.write32(PS2GM_FAKE_CTRL, KICK_MAGIC);
+        let options = [seed % 6, seed / 72 % 6, seed / 72 % 6];
+        for (n, option) in options.into_iter().enumerate() {
+            let (mask, state, queued, in_flight, buf0, buf1) = KICK_OPTIONS[option as usize];
+            let step = KICK_SCRIPT + 0x20 * n as u32;
+            for (i, v) in [mask, state, queued, in_flight, buf0, buf1]
+                .into_iter()
+                .enumerate()
+            {
+                c.bus.write32(step + 4 * i as u32, v);
+            }
+        }
+        c.bus.write32(KICK_BUSY, seed / 12 % 6);
+        let gm = KICK_GM;
+        fill(c, &mut r, gm + VBLANK_SWAP_STATE, 0x40 / 4);
+        c.bus.write32(gm + VBLANK_SWAP_STATE, 1);
+        c.bus.write32(gm + kick::BUF_STATE, r.next_u32() % 4);
+        c.bus.write32(gm + kick::BUF_STATE + 4, r.next_u32() % 4);
+        c.bus.write32(gm + kick::IN_FLIGHT, r.next_u32() % 2);
+        c.bus.write32(gm + kick::QUEUED, r.next_u32() % 2);
+        for (k, field) in [
+            kick::IN_FLIGHT_VIF2,
+            kick::IN_FLIGHT_GIF2,
+            kick::QUEUED_VIF1,
+            kick::QUEUED_VIF2,
+            kick::QUEUED_GIF1,
+            kick::QUEUED_GIF2,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            c.bus.write32(gm + field, KICK_CHAINS + 0x10 * k as u32);
+        }
+        c.bus.write32(gm + VBLANK_SEMA, KICK_SEMA_ID);
+        c.bus.write32(gm + kick::QUEUE_MUTEX, KICK_MUTEX_ID);
+        let callback = if seed / 6 % 2 == 1 { KICK_CALLBACK } else { 0 };
+        c.bus.write32(gm + kick::PHASE2_CALLBACK, callback);
+        c.bus.write32(gm + kick::PHASE2_ARG, r.next_u32());
+        c.g[A0][0] = sx(gm);
+        c.pc = entry;
+        r
+    }
+
+    /// Per seed: the first iteration's option, the state it left, and
+    /// whether it showed a frame, kicked (FlushCache) or ran the callback.
+    pub(crate) fn kick_first_iteration(c: &mut Cpu, seed: u32) -> (u32, u32, bool, bool, bool) {
+        let option = seed % 6;
+        if c.bus.read32(KICK_ITER) < 2 {
+            return (option, 99, false, false, false);
+        }
+        let after = c.bus.read32(KICK_TRACE + 8);
+        let from = c.bus.read32(KICK_TRACE + 4);
+        let to = c.bus.read32(KICK_TRACE + 0xc);
+        let (mut display, mut flush, mut phase2) = (false, false, false);
+        for i in from..to {
+            let target = ps2gm_logged(c, i, A0).0;
+            display |= target == 0x0038_2af0;
+            flush |= target == 0x0042_4020;
+            phase2 |= target == KICK_CALLBACK;
+        }
+        (option, after, display, flush, phase2)
+    }
+
+    pub(crate) const KICK_ARMS: [(u32, u32, bool, bool, bool); 7] = [
+        (0, 1, true, true, false),
+        (1, 0, true, false, false),
+        (2, 1, false, true, false),
+        (3, 0, false, false, false),
+        (4, 3, false, false, true),
+        (4, 3, false, false, false),
+        (5, 1, false, false, false),
+    ];
+
+    /// The kick thread against the generated body: show, kick, phase 2 with
+    /// and without a callback, idle iterations, and unwinds at every call.
+    #[test]
+    fn renderer_dma_kick_thread_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            kick_setup(c, seed, 0x0038_2760, true);
+        };
+        check(
+            ee::s12::f_00382760__generated,
+            renderer_dma_kick_thread,
+            432,
+            &setup,
+        );
+        require_arm_values(
+            ee::s12::f_00382760__generated,
+            432,
+            &setup,
+            &kick_first_iteration,
+            &KICK_ARMS,
+        );
+        // The hardware waits that spun in the first iteration: (option, wait
+        // made busy, busy states the event ended).
+        require_arm_values(
+            ee::s12::f_00382760__generated,
+            432,
+            &setup,
+            &|c, seed| (seed % 6, seed / 12 % 6, c.bus.read32(KICK_BUSY_SEEN)),
+            &[
+                (2, 0, 0),
+                (0, 1, 1),
+                (2, 1, 1),
+                (2, 2, 2),
+                (2, 3, 4),
+                (2, 4, 8),
+                (2, 5, 4),
+                (4, 3, 4),
+            ],
+        );
+    }
+
+    driven!(gen_kick_thread, ee::s12::f_00382760__generated);
+
+    driven!(hand_kick_thread, renderer_dma_kick_thread);
+
+    /// The kick thread with events at its loop's back edge (0x3827d8) and at
+    /// the hardware waits the fixture makes spin (0x382868, 0x382890,
+    /// 0x3828b8, 0x382958, 0x3829a8, 0x382a70; structured: delivered, never
+    /// unwinding there). The GS CSR waits never spin (see
+    /// [`kick_make_busy`]).
+    #[test]
+    fn renderer_dma_kick_thread_events_match() {
+        check_events(gen_kick_thread, hand_kick_thread, 300, &|c, seed| {
+            let mut r = kick_setup(c, seed / 3, 0x0038_2760, false);
+            c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+            schedule(c, &mut r, seed, 0x0038_2760)
+        });
+    }
+
+    /// The kick thread's entry: the thread runs (generated) on the same
+    /// fixture and stops in its fourth kick wait.
+    #[test]
+    fn renderer_dma_kick_thread_entry_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            kick_setup(c, seed, 0x0038_2740, true);
+        };
+        check(
+            ee::s12::f_00382740__generated,
+            renderer_dma_kick_thread_entry,
+            216,
+            &setup,
+        );
+        require_arm_values(
+            ee::s12::f_00382740__generated,
+            216,
+            &setup,
+            &kick_first_iteration,
+            &KICK_ARMS[..4],
+        );
+    }
+
+    // ------------------------------------------------- SetPhase2Callback
+
+    /// SetPhase2Callback: both words stored over random ones.
+    #[test]
+    fn ps2_graphics_man_set_phase2_callback_matches() {
+        crate::difftest::check_paths(
+            ee::s12::f_003866e0__generated,
+            ps2_graphics_man_set_phase2_callback,
+            32,
+            &[3],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x38_66e0, 0);
+                let gm = DATA + 0x1_0000 + 4 * (seed % 4);
+                fill(c, &mut r, gm + kick::PHASE2_CALLBACK, 4);
+                c.g[A0][0] = sx(gm);
+                c.g[A1][0] = sx(FAKE + 0x10 * (seed % 8));
+                c.g[A2][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+                c.pc = 0x0038_66e0;
+            },
+        );
+    }
+
+    // ------------------------------------------------------------- v109
+
+    pub(crate) const V109_GM: u32 = DATA + 0x1_0000;
+
+    pub(crate) const V109_MODEL: u32 = DATA + 0x1_8000;
+
+    pub(crate) const V109_BASE: u32 = DATA + 0x2_0000;
+
+    pub(crate) const V109_REMAP: u32 = DATA + 0x3_0000;
+
+    pub(crate) const V109_HISTORY: u32 = DATA + 0x3_1000;
+
+    pub(crate) const V109_HISTORY_COUNT: u32 = DATA + 0x3_2000;
+
+    pub(crate) const V109_MATCH_N: u32 = DATA + 0x3_3000;
+
+    pub(crate) const V109_MATCH_SCRIPT: u32 = DATA + 0x3_3010;
+
+    pub(crate) const V109_MAGIC: u32 = 0x0038_66f0;
+
+    /// Table offsets from the base.
+    pub(crate) const V109_LISTS: u32 = 0x100;
+
+    pub(crate) const V109_GROUPS: u32 = 0x300;
+
+    pub(crate) const V109_TEXTURES: u32 = 0x600;
+
+    pub(crate) const V109_RECORDS: u32 = 0xa00;
+
+    /// Per entry of each table: inner counts (the first one empty).
+    pub(crate) const V109_INNER: [u32; 3] = [0, 2, 1];
+
+    /// Textures' sublist counts: texture 0 has two (no items, then two), so
+    /// the event fixture's cycles to its loops are fixed.
+    pub(crate) const V109_TEXTURE_INNER: [u32; 3] = [2, 0, 1];
+
+    /// Set when the fixture's `strncmp` unwinds (on its first call).
+    pub(crate) const V109_UNWIND: u32 = DATA + 0x3_3008;
+
+    pub(crate) static V109_PREV_STRNCMP: AtomicUsize = AtomicUsize::new(0);
+
+    /// `strncmp` for the v109 fixture: the real one, then an unwind when
+    /// [`V109_UNWIND`] asks for one.
+    pub(crate) fn v109_fake_strncmp(c: &mut Cpu) {
+        let ra = r32(c, RA);
+        fakes::fall_back(c, &V109_PREV_STRNCMP, ee::s15::f_00416b18__generated);
+        if !v109_gated(c) || c.pc != ra || c.bus.read32(V109_UNWIND) == 0 {
+            return;
+        }
+        c.bus.write32(V109_UNWIND, 0);
+        c.pc = 0xdead_0300;
+    }
+
+    /// Texture names by kind: `"alph"`, `"ea"`, `'e'` alone, other.
+    pub(crate) const V109_NAMES: [&[u8]; 4] = [b"alpha01", b"eagle", b"edge", b"rock"];
+
+    /// Environment names by kind: none, other, `'e'`, `"en"`, `"env"` with a
+    /// non-digit (`'x'`, `':'` or `'/'` by texture), `"env"` and a digit
+    /// (written by the setup).
+    pub(crate) const V109_ENVS: [[u8; 4]; 5] = [*b"\0xyz", *b"dirt", *b"echo", *b"enda", *b"envx"];
+
+    pub(crate) static V109_PREV_ALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static V109_PREV_MATCH: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn v109_gated(c: &mut Cpu) -> bool {
+        c.bus.read32(PS2GM_FAKE_CTRL) == V109_MAGIC
+    }
+
+    /// `PS2GraphicsMan_AllocBlendedMatrixHistory` for the v109 fixture: a
+    /// logged fake.
+    pub(crate) fn v109_fake_alloc(c: &mut Cpu) {
+        if !v109_gated(c) {
+            return fakes::fall_back(c, &V109_PREV_ALLOC, ee::s12::f_003698e0__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0036_98e0, ra);
+        if c.pc == ra {
+            ps2gm_due_after(c, PS2GM_DUE_ALLOC);
+        }
+    }
+
+    /// `PS2GraphicsMan_MatchBlendedMatrix` for the v109 fixture: a logged
+    /// fake whose result (equal or not) comes from the fixture's script.
+    pub(crate) fn v109_fake_match(c: &mut Cpu) {
+        if !v109_gated(c) {
+            return fakes::fall_back(c, &V109_PREV_MATCH, ee::s12::f_00369a78__generated);
+        }
+        let ra = r32(c, RA);
+        fakes::fake(c, 0x0036_9a78, ra);
+        if c.pc != ra {
+            return;
+        }
+        let n = c.bus.read32(V109_MATCH_N);
+        c.bus.write32(V109_MATCH_N, n + 1);
+        c.g[V0][0] = c.bus.read32(V109_MATCH_SCRIPT + 4 * (n % 16)) as u64;
+        ps2gm_due_after(c, PS2GM_DUE_MATCH);
+    }
+
+    pub(crate) fn v109_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_003698E0),
+            v109_fake_alloc,
+            &V109_PREV_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00369A78),
+            v109_fake_match,
+            &V109_PREV_MATCH,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00416B18),
+            v109_fake_strncmp,
+            &V109_PREV_STRNCMP,
+        );
+        gtn_hook();
+    }
+
+    /// v109: an empty model (`seed % 2 == 0`: every count 0 or negative) or
+    /// three of everything (the first entry of each with no inner items);
+    /// texture 0's name kind (`seed / 2 % 4`) and environment kind (`seed /
+    /// 8 % 6`, the others rotate); the history (`seed / 48 % 3`: empty, two
+    /// entries the second of which matches, one entry never matching). The
+    /// texture handles come from the real GetTextureByName (a cache of
+    /// `"rock"`, `"edge"`; no shape banks).
+    pub(crate) fn v109_setup(c: &mut Cpu, seed: u32) -> Rng {
+        v109_hook();
+        let mut r = machine(c, seed, 0x38_66f0, 10);
+        c.bus.write32(PS2GM_FAKE_CTRL, V109_MAGIC);
+        // Callee unwinds (`seed / 144 % 3`): none, `strncmp`, `strcmp` (in
+        // GetTextureByName).
+        let unwind = seed / 144 % 3;
+        c.bus.write32(V109_UNWIND, (unwind == 1) as u32);
+        c.bus.write32(GTN_CTRL, GTN_MAGIC);
+        c.bus.write32(GTN_UNWIND, if unwind == 2 { 1 } else { 0 });
+        c.bus.write32(GTN_UNWIND + 4, 0);
+        c.bus.write32(GTN_UNWIND + 8, 0);
+        ps2gm_put_str(c, 0x004a_4398, b"alph");
+        let populated = seed % 2 == 1;
+        let (name0, env0, mode) = (seed / 2 % 4, seed / 8 % 6, seed / 48 % 3);
+        let base = V109_BASE;
+        fill(c, &mut r, V109_MODEL, 0x50 / 4);
+        for (off, table) in [
+            (model_fixup::RECORDS_50, V109_RECORDS),
+            (model_fixup::TEXTURES, V109_TEXTURES),
+            (model_fixup::MATRIX_LISTS_OFF, V109_LISTS),
+            (model_fixup::BLEND_GROUPS_OFF, V109_GROUPS),
+        ] {
+            c.bus.write32(V109_MODEL + off, table);
+        }
+        for off in [
+            model_fixup::BLEND_GROUP_COUNT,
+            model_fixup::MATRIX_LIST_COUNT,
+            model_fixup::TEXTURE_COUNT,
+            model_fixup::RECORD_50_COUNT,
+        ] {
+            let count = if populated {
+                3
+            } else if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                0xffff
+            };
+            c.bus.write16(V109_MODEL + off, count);
+        }
+        fill(c, &mut r, base, 0x1400 / 4);
+        for i in 0..3u32 {
+            let inner = V109_INNER[i as usize];
+            // Matrix lists: group indices.
+            let list = base + V109_LISTS + 8 * i;
+            c.bus.write32(list, inner);
+            c.bus.write32(list + 4, 0x200 + 0x10 * i);
+            for k in 0..inner {
+                c.bus
+                    .write32(base + 0x200 + 0x10 * i + 4 * k, r.next_u32() % 3);
+            }
+            // Blend groups: weights whose byte 3 indexes the remap table.
+            let group = base + V109_GROUPS + 12 * i;
+            c.bus.write32(group, inner);
+            c.bus.write32(group + 4, 0x400 + 0x10 * i);
+            for k in 0..inner {
+                c.bus.write8(
+                    base + 0x400 + 0x10 * i + 4 * k + 3,
+                    (r.next_u32() % 8) as u8,
+                );
+            }
+            // Textures: sublists of items.
+            let texture = base + V109_TEXTURES + 0x14 * i;
+            // Texture 0's alpha flag starts clear (the arms read it); the
+            // others keep a random one, so an alpha name finds it set too.
+            let flags = r.next_u32();
+            let flags = if i == 0 { flags & !0x8000 } else { flags };
+            c.bus.write32(texture, flags);
+            c.bus.write32(texture + 4, 0x80 + i);
+            c.bus.write32(texture + 0xc, V109_TEXTURE_INNER[i as usize]);
+            c.bus.write32(texture + 0x10, 0x700 + 0x20 * i);
+            for k in 0..V109_TEXTURE_INNER[i as usize] {
+                let sub = base + 0x700 + 0x20 * i + 8 * k;
+                let items = if i == 0 { [0, 2][k as usize] } else { 1 };
+                c.bus.write32(sub, 0x800 + 0x40 * i + 0x20 * k);
+                c.bus.write32(sub + 4, items);
+                for m in 0..items {
+                    let item = base + 0x800 + 0x40 * i + 0x20 * k + 8 * m;
+                    c.bus.write32(item, r.next_u32() & 0xfff0);
+                    c.bus.write32(item + 4, r.next_u32() % 0x100);
+                }
+            }
+            let name = base + 0x20 * (0x80 + i);
+            ps2gm_put_str(c, name, V109_NAMES[((name0 + i) % 4) as usize]);
+            let env = (env0 + i) % 6;
+            let env_bytes = match env {
+                5 => [b'e', b'n', b'v', b'0' + (3 + i) as u8],
+                // Non-digits by texture: 'x', and the two next to the digits.
+                4 => [b'e', b'n', b'v', [b'x', b':', b'/'][i as usize]],
+                _ => V109_ENVS[env as usize],
+            };
+            for (k, &b) in env_bytes.iter().enumerate() {
+                c.bus.write8(name + 0x10 + k as u32, b);
+            }
+            let scale = 0.5 + (r.next_u32() % 4) as f32 * 0.5;
+            c.bus.write32(name + 0x14, scale.to_bits());
+            // The 0x50-byte records (the first one's value negative).
+            let record = base + V109_RECORDS + 0x50 * i;
+            c.bus.write16(record + 0x10, (r.next_u32() % 8) as u16);
+            let value = if i == 0 {
+                0xffff
+            } else {
+                (r.next_u32() % 0x4000) as u16
+            };
+            c.bus.write16(record + 0x12, value);
+        }
+        fill(c, &mut r, V109_REMAP, 8);
+        fill(c, &mut r, V109_HISTORY, 0x30);
+        c.bus.write32(V109_HISTORY_COUNT, [0, 2, 1][mode as usize]);
+        c.bus.write32(V109_MATCH_N, 0);
+        for n in 0..16 {
+            c.bus
+                .write32(V109_MATCH_SCRIPT + 4 * n, (mode == 1 && n % 2 == 1) as u32);
+        }
+        // The texture name cache.
+        fill(c, &mut r, V109_GM + ps2gm::TEX_CACHE, 12 * 8 / 4);
+        ps2gm_put_str(c, V109_GM + ps2gm::TEX_CACHE + 4, b"rock");
+        ps2gm_put_str(c, V109_GM + ps2gm::TEX_CACHE + 12 + 4, b"edge");
+        c.bus.write32(V109_GM + ps2gm::TEX_CACHE_COUNT, 2);
+        c.bus.write32(V109_GM + ps2gm::SHAPE_BANK_COUNT, 0);
+        c.g[A0][0] = sx(V109_GM);
+        c.g[A1][0] = sx(V109_MODEL);
+        c.g[A2][0] = sx(base);
+        c.g[A3][0] = sx(V109_REMAP);
+        c.g[T0][0] = sx(V109_HISTORY_COUNT);
+        c.g[T1][0] = sx(V109_HISTORY);
+        c.g[T2][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+        c.pc = 0x0038_66f0;
+        r
+    }
+
+    /// Run the generated v109 over the seeds once and require every arm:
+    /// texture 0's alpha flag by name kind (9: an empty model), its
+    /// environment index and scaling, the history count left, and the callee
+    /// unwinds.
+    pub(crate) fn v109_require_arms(setup: &dyn Fn(&mut Cpu, u32), seeds: u32) {
+        use std::collections::BTreeSet;
+        let texture0 = V109_BASE + V109_TEXTURES;
+        let mut alpha = BTreeSet::new();
+        let mut env = BTreeSet::new();
+        let mut history = BTreeSet::new();
+        let mut unwound = BTreeSet::new();
+        for seed in 0..seeds {
+            let mut machine_box = crate::difftest::fresh();
+            let c: &mut Cpu = &mut machine_box;
+            setup(c, seed);
+            crate::difftest::run_generated(c, ee::s12::f_003866f0__generated);
+            if c.pc != PS2GM_RET {
+                unwound.insert((seed / 144 % 3, c.pc));
+                continue;
+            }
+            let flag = c.bus.read32(texture0) & 0x8000 != 0;
+            if seed % 2 == 0 {
+                alpha.insert((9, flag));
+                continue;
+            }
+            alpha.insert((seed / 2 % 4, flag));
+            let index = c.bus.read16(texture0 + 8);
+            let scaled = c.bus.read16(texture0 + 0xa) != 0;
+            env.insert((seed / 8 % 6, index, scaled));
+            history.insert((seed / 48 % 3, c.bus.read32(V109_HISTORY_COUNT)));
+        }
+        for w in [(0, true), (1, true), (2, false), (3, false), (9, false)] {
+            assert!(
+                alpha.contains(&w),
+                "alpha arm {w:?} never taken (seen {alpha:?})"
+            );
+        }
+        for w in [
+            (0, 0, false),
+            (1, 0, true),
+            (2, 0, true),
+            (3, 0, true),
+            (4, 0, true),
+            (5, 3, true),
+        ] {
+            assert!(
+                env.contains(&w),
+                "environment arm {w:?} never taken (seen {env:?})"
+            );
+        }
+        for w in [(0, 3), (1, 2), (2, 4)] {
+            assert!(
+                history.contains(&w),
+                "history arm {w:?} never taken (seen {history:?})"
+            );
+        }
+        for w in [(1, 0xdead_0300), (2, 0xdead_0100)] {
+            assert!(
+                unwound.contains(&w),
+                "unwind {w:x?} never taken (seen {unwound:x?})"
+            );
+        }
+    }
+
+    /// v109 against the generated body: empty and full models, every name
+    /// and environment kind, every history outcome, unwinds in `strncmp`,
+    /// in GetTextureByName and (fakes) in the history calls.
+    #[test]
+    fn ps2_graphics_man_v109_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            v109_setup(c, seed);
+        };
+        check_lohi(
+            ee::s12::f_003866f0__generated,
+            ps2_graphics_man_v109,
+            432,
+            &setup,
+        );
+        v109_require_arms(&setup, 432);
+    }
+
+    driven!(gen_v109, ee::s12::f_003866f0__generated);
+
+    driven!(hand_v109, ps2_graphics_man_v109);
+
+    /// Where v109's event fixtures make the event due (full model, all
+    /// counts 3; the first entry of each table has no inner items), by
+    /// `seed / 3 % 9`, with the head reached first after it:
+    /// - 0: entry +20 → matrix lists 0x386778 (back edges at 44, 54);
+    /// - 1: entry +90 → sublists 0x3867f0 (100, after the lists end at 64);
+    /// - 2: entry +120 → items 0x386828 (137);
+    /// - 3: `strcmp` 0 returns +5 → textures 0x3867b8 (texture 0 is `"rock"`,
+    ///   a hit on the first cache entry: GetTextureByName +2 +9 = 11);
+    /// - 4: `strcmp` 2 returns +20 → records 0x3869b8 (texture 2: 11 to return,
+    ///   the loop ends; +3 +1 +3, record 0 negative, +5 = 23);
+    /// - 5: Alloc 0 returns +20 → groups 0x386a08 (empty history: +3 +19
+    ///   append, +5 = 27);
+    /// - 6: Alloc 0 returns +45 → weights 0x386a38 (27, then group 1: +10 +2
+    ///   +15 = 54);
+    /// - 7: Match 0 returns +2 → history 0x386a90 (no match: +4);
+    /// - 8: Match 2 returns +60 → slot items 0x386b58 (empty history; Match 2
+    ///   is group 2's second: +4 history check, +3 +19 append, +5, +3 +1, list
+    ///   0 empty +6 +5 = 46 at 0x386b38, list 1 +6 +2 +13 = 67).
+    pub(crate) const V109_EVENT_DUE: [u64; 3] = [20, 90, 120];
+
+    /// Aim the event at head `head` (see [`V109_EVENT_DUE`]); a full model.
+    pub(crate) fn v109_event_target(c: &mut Cpu, head: u32) {
+        match head {
+            0..=2 => c.next_event = c.cycles + V109_EVENT_DUE[head as usize],
+            3 | 4 => {
+                for i in 0..3 {
+                    ps2gm_put_str(c, V109_BASE + 0x20 * (0x80 + i), b"rock");
+                }
+                ps2gm_due_set(
+                    c,
+                    PS2GM_DUE_STRCMP,
+                    if head == 3 { 0 } else { 2 },
+                    if head == 3 { 5 } else { 20 },
+                );
+            }
+            7 => ps2gm_due_set(c, PS2GM_DUE_MATCH, 0, 2),
+            _ => {
+                // An empty history that never matches.
+                c.bus.write32(V109_HISTORY_COUNT, 0);
+                for n in 0..16 {
+                    c.bus.write32(V109_MATCH_SCRIPT + 4 * n, 0);
+                }
+                match head {
+                    5 => ps2gm_due_set(c, PS2GM_DUE_ALLOC, 0, 20),
+                    6 => ps2gm_due_set(c, PS2GM_DUE_ALLOC, 0, 45),
+                    _ => ps2gm_due_set(c, PS2GM_DUE_MATCH, 2, 60),
+                }
+            }
+        }
+    }
+
+    /// v109 with events at its loops' back edges (all structured; delivered
+    /// only, as GetTextureByName's `strcmp` and `strncmp` are dispatchers).
+    /// `seed / 3 % 9` aims the event at one head (see [`V109_EVENT_DUE`]).
+    #[test]
+    fn ps2_graphics_man_v109_events_match() {
+        check_events(gen_v109, hand_v109, 540, &|c, seed| {
+            let s = seed / 27 * 2 + 1;
+            let mut r = v109_setup(c, s);
+            c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+            c.bus.write32(V109_UNWIND, 0);
+            c.bus.write32(GTN_UNWIND, 0);
+            let saved = (c.g[A2], c.g[A3], c.g[T0], c.g[T1], c.g[T2]);
+            let mode = schedule(c, &mut r, seed, 0x0038_66f0);
+            (c.g[A2], c.g[A3], c.g[T0], c.g[T1], c.g[T2]) = saved;
+            if mode != Events::Off {
+                v109_event_target(c, seed / 3 % 9);
+            }
+            ps2gm_deliver_only(c, mode)
+        });
     }
 }

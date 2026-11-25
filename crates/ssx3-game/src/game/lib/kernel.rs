@@ -41,6 +41,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_3de0, wait_sema, "WaitSema"),
     (0x0042_3df0, poll_sema, "PollSema"),
     (0x0042_4020, flush_cache, "FlushCache"),
+    (0x0042_40e0, gs_put_imr, "GsPutIMR"),
     (0x0042_41c0, exec_osd, "_ExecOSD"),
     (0x0042_4210, init_tlb, "_InitTLB"),
     (0x0042_45f0, sync_dcache, "_SyncDCache"),
@@ -427,6 +428,12 @@ pub fn i_wakeup_thread(c: &mut Cpu) {
 /// `int _iSuspendThread(int thid)` (0x423d20): syscall -56.
 pub fn i_suspend_thread(c: &mut Cpu) {
     syscall_wrapper(c, (-56i32) as u32, 0x0042_3d24, 0x0042_3d28);
+}
+
+/// `u64 GsPutIMR(u64 imr)` (0x4240e0): syscall 0x71 (set the GS interrupt
+/// mask).
+pub fn gs_put_imr(c: &mut Cpu) {
+    syscall_wrapper(c, 0x71, 0x0042_40e4, 0x0042_40e8);
 }
 
 /// `void _ExecOSD(int argc, char **argv)` (0x4241c0): syscall 0x7b.
@@ -1961,6 +1968,32 @@ pub(crate) mod tests {
     #[test]
     fn i_suspend_thread_matches() {
         syscall_test(ssx3_ee::s15::f_00423d20, i_suspend_thread, 13);
+    }
+
+    /// `GsPutIMR`: the kernel wrappers' test (fake syscalls that may
+    /// unwind).
+    #[test]
+    fn gs_put_imr_matches() {
+        syscall_test(ee::s15::f_004240e0__generated, gs_put_imr, 0x71);
+    }
+
+    /// `GsPutIMR` with an event due right after the syscall (a fake that
+    /// returns): `next_event` 0..7 cycles past entry (`seed / 3 % 8`), the
+    /// wrapper charges 4 and the fake syscall at least 3, so the closing
+    /// event check delivers on every event seed (`seed % 3` the mode).
+    #[test]
+    fn gs_put_imr_events() {
+        crate::difftest::events::driven!(gen_put_imr, ee::s15::f_004240e0__generated);
+        crate::difftest::events::driven!(hand_put_imr, gs_put_imr);
+        check_events(gen_put_imr, hand_put_imr, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x0042_40e0, 0);
+            c.g[A0][0] = r.next_u32() as u64;
+            let events = schedule(c, &mut r, seed, 0x0042_40e0);
+            if events != Events::Off {
+                c.next_event = c.cycles + (seed / 3 % 8) as u64;
+            }
+            events
+        });
     }
 
     #[test]
