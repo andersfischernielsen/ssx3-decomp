@@ -178,6 +178,10 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
 /// accept the wait's return address as a resume point.
 pub const NATIVE_THREAD_ENTRIES: &[u32] = &[
     0x0031_ac08, // PS2ExecMan_VSyncThread
+    0x0042_4aa0, // libkernl_IntrHelperThread (parks once)
+    0x003e_3be0, // EAFile_CdReadThread (parks once)
+    0x0040_09a8, // libcdvd_CallbackThread (parks once)
+    0x0038_2740, // Renderer_DmaKickThreadEntry (parks once)
 ];
 
 pub fn install() -> usize {

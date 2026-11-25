@@ -444,6 +444,12 @@ fn run_native(c: &mut Cpu, id: i32, from: i32) {
             c.pc = pc;
         }
     }
+    if m!(c).kernel.trace_threads {
+        eprintln!(
+            "[thread] native slice {id} at {:#010x} cyc {}",
+            c.pc, c.cycles
+        );
+    }
     m!(c).sched.native_slices += 1;
     run_native_loop(c, id);
     m!(c).sched.native_slices -= 1;

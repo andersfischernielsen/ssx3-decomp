@@ -195,7 +195,7 @@ address, and it cannot stay nested on top of the thread it waits for.
 | 8 SND | SND mutex held by the thread it preempted (7 in the replay) | needs resumable frames from the thread entry down to `SND_MutexLock`, or a deferral that reproduces the 39-cycle bounce, or an accepted timing change |
 | 1 main | `EAFile_DelayTicks` (alarm + semaphore: wait inline with the event loop, nothing else runs) and the frame wait in `PS2ExecMan_WaitFrame` | main becomes the base context the driver runs; its waits become "pump events until signalled" |
 | 5 worker | loading jobs wait on IOP RPC replies and CD reads (sema 8, 17, ...) | job-by-job conversion |
-| 2, 3, 4, 7 | no: they run once to a wait and never resume | native with no resume arm (`EAFile_CdReadThread`, `libcdvd_CallbackThread`, `Renderer_DmaKickThread` are ported; the libkernl helper is not) |
+| 2, 3, 4, 7 | no: they run once to a wait and never resume | native, gate identical (done; see `../investigation/native-thread-attempts.md`) |
 
 Frame boundaries: the host regains control at each VBlank (`run_frame` returns). In
 coroutine mode a thread that sees the boundary hands the baton to the driver
@@ -217,6 +217,8 @@ what the roadmap's end state ("the game as one loop the port drives") implies,
 because it removes the guest scheduler's exact cycle interleaving, which only
 the emulation of the PS2 kernel had; it should be an owner decision.
 
+Every attempt, with how to retry, is in `../investigation/native-thread-attempts.md`.
+
 ## Verification
 
 - The gate after every thread.
@@ -234,6 +236,7 @@ the emulation of the PS2 kernel had; it should be an owner decision.
 | Trace tool + inventory | ✅ (`thread-inventory.md`, `tools/thread_inventory.py`) |
 | Port the thread paths | 🟡 wave 237 (`oc688`-`oc699`) |
 | Native-thread mechanism in the kernel (nested run, unwind at the wait) | ✅ gate identical with the VSync thread native (`SSX3_NATIVE_THREADS=0` turns it off) |
+| Park-once threads 2, 3, 4, 7 native | ✅ gate identical |
 | Convert workers | ⬜ |
 | Convert ISR-driven threads | 🟡 VSync (6) done and exact. SND (8): schedule exact, but the outer `service_events` that wakes it ends at a different point than in coroutine mode (one idle tick 31 cycles later): see "Open: where the outer event service ends" |
 | Convert main + the rest, delete `threads.rs` | ⬜ |
