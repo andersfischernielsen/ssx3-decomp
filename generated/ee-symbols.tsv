@@ -400,7 +400,7 @@ s00	00122cd0	00122cec	o	Rider_IsOnGround_Wrapper
 s00	00122cf0	00122d74	o	Rider_UpdateDangerState
 s00	00122d78	00122e50	o	Rider_EstimateFinishTime
 s00	00122e50	00122ee4	o	Rider_EstimateFinalScore
-s00	00122ee8	00123124	e	Rider_DispatchQueryTable
+s00	00122ee8	00123124	oe	Rider_DispatchQueryTable
 s00	00123128	00123164	o	Rider_GetCharacter
 s00	00123168	001231a4	o	Rider_GetPlayerCharacterInfo
 s00	001231a8	0012320c	o	Rider_IsOnGround
@@ -411,7 +411,7 @@ s00	00123640	00123b48	o	Rider_AttachToScript
 s00	00123b48	00123da8	o	Rider_DetachFromScript
 s00	00123da8	00123e30	o	Rider_UpdateFromScript
 s00	00123e30	00123f38	o	Rider_OnScriptSoundEvent
-s00	00123f38	001241bc	e	Rider_GetEventSwitchStartPos
+s00	00123f38	001241bc	oe	Rider_GetEventSwitchStartPos
 s00	001241c0	001242b0	o	Quat_FromEuler
 s00	001242b0	00124788	o	Rider_ProbeGround
 s00	00124788	00125038	o	Rider_ApplyScriptTrack
@@ -546,7 +546,7 @@ s00	0012fc60	0012fc80	o	RiderBoardPressSub_Enter
 s00	0012fc80	0012fe98	-	RiderBoardPressSub_HandleInput
 s00	0012fe98	0012fec4	o	RiderBoardPressSub_Exit
 s00	0012fec8	0012fff4	o	RiderBoardPressSub_FlipStance
-s00	0012fff8	00130224	e	RiderBoardPressSub_HandleAirborne
+s00	0012fff8	00130224	oe	RiderBoardPressSub_HandleAirborne
 s00	00130228	001303e0	-	RiderBoardPressSub_UpdateStart
 s00	001303e0	001304cc	-	RiderBoardPressSub_UpdatePress
 s00	001304d0	001304dc	o	RiderBoardPressSub_UpdatePhase2
@@ -627,7 +627,7 @@ s01	00138b10	00138b44	o	RiderWipeoutState_LoadState
 s01	00138b48	00138b9c	o	RiderHandplantState_Enter
 s01	00138ba0	00139174	o	RiderHandplantState_Setup
 s01	00139178	001391a8	o	RiderHandplantState_Exit
-s01	001391a8	00139524	-	RiderHandplantState_Update
+s01	001391a8	00139524	o	RiderHandplantState_Update
 s01	00139528	00139548	o	RiderHandplantState_PostUpdate
 s01	00139548	00139970	o	RiderHandplantState_UpdateVelocity
 s01	00139970	001399a4	o	RiderHandplantState_SaveState
@@ -758,7 +758,7 @@ s01	00145340	00145360	o	BENewRaceInt_GetEventName
 s01	00145378	00145398	o	BENewRaceInt_GetGameModeName
 s01	00145398	001453b8	o	BENewRaceInt_GetEventTypeName
 s01	001453b8	001453d0	o	BENewRaceInt_GetEventTypeNameByIndex
-s01	001453d0	001454f4	-	BENewRaceInt_GetTargetScore
+s01	001453d0	001454f4	o	BENewRaceInt_GetTargetScore
 s01	001454f8	001455d0	o	BENewRaceInt_GetEventTarget
 s01	001455d0	001455fc	o	BENewRaceInt_GetSpecialEventField4
 s01	00145600	0014562c	o	BENewRaceInt_GetSpecialEventField6
@@ -848,7 +848,7 @@ s01	00147f10	00147f74	o	BENewPlayerInt_GetDifficultyCounter
 s01	00147f78	00147fd4	o	BECharInt_GetInstance
 s01	00147fd8	00148098	o	BECharInt_Commit
 s01	00148098	00148158	o	BECharInt_Reset
-s01	00148158	001482d0	e	BECharInt_GetSavedAttrib
+s01	00148158	001482d0	oe	BECharInt_GetSavedAttrib
 s01	00148328	001483a0	o	BECharInt_GetCharData
 s01	001483a0	0014840c	o	BECharInt_SetAttrib0
 s01	00148410	00148470	o	BECharInt_GetAttrib0
@@ -943,7 +943,7 @@ s01	0014c7a0	0014d064	o	Bolts_BuildGameBolts
 s01	0014d068	0014d23c	o	Bolts_PrepareForGame
 s01	0014d240	0014d364	o	Bolts_FreeDB
 s01	0014d448	0014d4c8	o	Bolts_FindBoltIndex
-s01	0014d4c8	0014d554	-	Bolts_CountChildren
+s01	0014d4c8	0014d554	o	Bolts_CountChildren
 s01	0014d558	0014d604	o	Bolts_FindFirstChild
 s01	0014d608	0014d7e8	o	Bolts_CollectChildren
 s01	0014d7e8	0014d904	-	Bolts_CollectByGroup
@@ -1163,7 +1163,7 @@ s01	00155328	0015537c	o	BEScoreInt_PlaceToMedal
 s01	00155380	00155388	-	BEScoreInt_SaveState
 s01	00155388	00155390	-	BEScoreInt_LoadState
 s01	00155390	0015541c	o	BEScoreInt_UpdateRecordLevel
-s01	00155420	001557dc	e	BEScoreInt_UpdateRecords
+s01	00155420	001557dc	oe	BEScoreInt_UpdateRecords
 s01	001557e0	00155848	o	BEScoreInt_CanSubmitScore
 s01	00155848	001558f4	o	BEScoreInt_GetEventPodiumCount
 s01	001558f8	001559a4	o	BEScoreInt_GetEventBestPlace
@@ -1179,7 +1179,7 @@ s01	001560a0	001561b0	o	BEAggressionInt_SaveState
 s01	001561b0	001562b8	o	BEAggressionInt_LoadState
 s01	001562b8	00156334	o	BELibrary_SwitchPhase
 s01	00156338	00156390	o	BEPostRace_GetInstance
-s01	00156390	001564ac	e	BEPostRace_GetInterface
+s01	00156390	001564ac	oe	BEPostRace_GetInterface
 s01	001564b0	0015650c	o	BEPostRace_Exit
 s01	00156510	00156570	o	BEPostRace_Enter
 s01	00156570	001565c8	o	BEPreRace_GetInstance
@@ -1206,9 +1206,9 @@ s01	00156bf0	00156c10	o	BERewardInt_GetTradingCardTable
 s01	00156c10	00156c30	o	BERewardInt_GetConceptArtTable
 s01	00156c30	00156c50	o	BERewardInt_GetToyTable
 s01	00156c50	00156c70	o	BERewardInt_GetVideoTable
-s01	00156c70	00156ee0	-	BERewardInt_PickRandomBolt
+s01	00156c70	00156ee0	o	BERewardInt_PickRandomBolt
 s01	00156ee0	00157080	o	BERewardInt_PickRandomBoltFlag800
-s01	00157080	00157210	e	BERewardInt_PickRandomLockedReward
+s01	00157080	00157210	oe	BERewardInt_PickRandomLockedReward
 s01	00157210	001572ac	oe	BERewardInt_GetRewardTypeCount
 s01	001572b0	001572d0	o	BERewardInt_GetPosterCount
 s01	001572d0	001572f0	o	BERewardInt_GetTradingCardCount
@@ -1241,7 +1241,7 @@ s01	00157de0	00157e20	o	BERewardInt_IsConceptArtUnlocked
 s01	00157e20	00157e60	o	BERewardInt_IsToyUnlocked
 s01	00157e60	00157ea0	o	BERewardInt_IsVideoUnlocked
 s01	00157ee0	00157f20	o	BERewardInt_IsRiderItemUnlocked
-s01	00157f20	00157fd0	e	BERewardInt_UnlockReward
+s01	00157f20	00157fd0	oe	BERewardInt_UnlockReward
 s01	00157fd0	001580f4	o	BERewardInt_UnlockPoster
 s01	001580f8	0015821c	o	BERewardInt_UnlockTradingCard
 s01	00158220	00158344	o	BERewardInt_UnlockConceptArt
@@ -1300,7 +1300,7 @@ s01	0015a818	0015ad54	oe	RewardsFile_Parse
 s01	0015ad58	0015ae00	o	RewardsFile_Load
 s01	0015ae00	0015aebc	o	RewardsFile_Unload
 s01	0015aec0	0015af40	o	RewardsFile_PollLoad
-s01	0015af40	0015afe8	e	BERewardInt_GetRewardTypeText
+s01	0015af40	0015afe8	oe	BERewardInt_GetRewardTypeText
 s01	0015afe8	0015b024	-	DebugPrintf_Stub_afe8
 s01	0015b028	0015bafc	o	BE_StaticInitDestroy
 s01	0015bb00	0015bb08	-	BEInterface_Commit
@@ -1421,7 +1421,7 @@ s01	00160478	001604a0	o	ManualChaseCameraAlgorithm_dtor
 s01	001604a0	001604ac	-	ManualChaseCameraAlgorithm_GetEyeDrop
 s01	001604b0	001604b8	-	ManualChaseCameraAlgorithm_GetTuning
 s01	001604b8	001606d4	-	ManualChaseCameraAlgorithm_Update
-s01	001606d8	00160760	e	ManualChaseCameraAlgorithm_ResetForRider
+s01	001606d8	00160760	oe	ManualChaseCameraAlgorithm_ResetForRider
 s01	00160760	001607a0	o	MatrixChaseCameraAlgorithm_ctor
 s01	001607a0	001607c8	o	MatrixChaseCameraAlgorithm_dtor
 s01	001607c8	001607d4	-	MatrixChaseCameraAlgorithm_GetEyeDrop
@@ -1613,7 +1613,7 @@ s02	0016c918	0016c964	o	CameraTriggerMan_Reset
 s02	0016c968	0016c9b0	o	CameraTriggerMan_ResetActive
 s02	0016c9b0	0016ca08	o	CameraTriggerMan_Unload
 s02	0016ca10	0016ca18	o	CameraTriggerMan_EmptyHook
-s02	0016ca18	0016cbdc	-	CameraTriggerMan_RemoveTriggerRegions
+s02	0016ca18	0016cbdc	o	CameraTriggerMan_RemoveTriggerRegions
 s02	0016cbe0	0016cdc8	o	CameraTriggerMan_RemoveAllTriggers
 s02	0016cdc8	0016ce30	o	CameraTriggerMan_Load
 s02	0016ce30	0016cea8	o	CameraTriggerMan_Reload
@@ -1630,7 +1630,7 @@ s02	0016d210	0016d238	o	CameraTriggerStack_ctor
 s02	0016d238	0016d25c	o	CameraTriggerMan_PushTriggerStack
 s02	0016d260	0016d31c	o	CameraTriggerMan_PopTriggerStack
 s02	0016d320	0016e1d4	o	CameraTriggerMan_UpdateForRider
-s02	0016e1d8	0016e55c	-	CameraTrigger_ApplyAction
+s02	0016e1d8	0016e55c	o	CameraTrigger_ApplyAction
 s02	0016e560	0016f068	o	CameraEllipseBoundObj_ClampPoint
 s02	0016f068	0016fbb4	o	CameraBoxBoundObj_ClampPoint
 s02	0016fbb8	0017023c	o	CameraLineBoundObj_ClampPoint
@@ -1749,7 +1749,7 @@ s02	00179fa8	00179fc8	o	CameraConsts_GlobalCtor_9fa8
 s02	00179fc8	0017a024	o	DebugMenu_IsTrackSelectable
 s02	0017a028	0017a0b8	o	DebugMenu_NextEnabledItem
 s02	0017a0b8	0017a154	o	DebugMenu_PrevEnabledItem
-s02	0017a158	0017a220	e	DebugMenu_DispatchItemOp
+s02	0017a158	0017a220	oe	DebugMenu_DispatchItemOp
 s02	0017a220	0017a2c8	o	DebugMenu_FindNextItem
 s02	0017a2c8	0017a374	o	DebugMenu_FindPrevItem
 s02	0017a378	0017a638	-	DebugMenu_ParseWorldListFile
@@ -4266,7 +4266,7 @@ s05	0022cea8	0022d084	-	SectionMan_RequestEvent
 s05	0022d088	0022d274	o	SectionMan_LoadEvent
 s05	0022d278	0022d390	o	SectionMan_IsEventLoaded
 s05	0022d390	0022d3d4	o	SectionMan_IsEventReady
-s05	0022d3d8	0022d478	e	SectionMan_RequestLoad
+s05	0022d3d8	0022d478	oe	SectionMan_RequestLoad
 s05	0022d478	0022d594	oe	SectionMan_RequestActivate
 s05	0022d598	0022d63c	oe	SectionMan_RequestUnload
 s05	0022d640	0022d664	o	SectionMan_StartEventSwitch
@@ -4323,7 +4323,7 @@ s06	00231280	002312d8	o	GameModule_CancelOverlayState
 s06	002312d8	00231320	o	GameModule_IsOverlayStateDone
 s06	00231320	00231348	o	GameModule_AdvanceState
 s06	00231348	002314cc	o	GameModule_SaveState
-s06	002314d0	0023183c	-	GameModule_LoadState
+s06	002314d0	0023183c	o	GameModule_LoadState
 s06	00231840	00231ab8	o	GameModule_CheckPauseRequest
 s06	00231ab8	00231b50	-	GameModule_CanRestartFromPause
 s06	00231b50	00231c6c	o	GameModule_DrawFullscreenQuad
@@ -4510,7 +4510,7 @@ s06	0023ac88	0023adfc	o	GMHandler8_Reset
 s06	0023ae00	0023b034	o	GMHandler8_OnRiderFinished
 s06	0023b038	0023b06c	o	GMHandler8_SaveState
 s06	0023b070	0023b0a4	o	GMHandler8_LoadState
-s06	0023b0a8	0023b170	-	GMHandler8_PickOpponents
+s06	0023b0a8	0023b170	o	GMHandler8_PickOpponents
 s06	0023b170	0023b268	o	GMHandler2_Reset
 s06	0023b268	0023b468	o	GMHandler4_Reset
 s06	0023b468	0023b5f4	o	GMHandler4_OnRiderFinished
@@ -5574,7 +5574,7 @@ s07	0026fe50	00270070	oe	Replay_ProcessCommand
 s07	00270070	002700d8	o	Player_AllocReplayCache
 s07	002700d8	00270130	o	Player_FreeReplayCache
 s07	00270130	0027019c	o	Replay_AllocSnapshot
-s07	002701a0	00270234	-	Replay_RecycleOldestSnapshot
+s07	002701a0	00270234	o	Replay_RecycleOldestSnapshot
 s07	00270238	00270280	o	Replay_FreeSnapshot
 s07	00270280	002702f4	oe	Replay_IsPaused
 s07	002702f8	00270378	o	Replay_SeekToSnapshot
@@ -5904,7 +5904,7 @@ s07	0027b948	0027bb04	o	ScriptEngine_GetRiderPose
 s07	0027bb08	0027bd78	o	ScriptEngine_GetLocatorPose
 s07	0027bd78	0027bd90	o	ScriptEngine_PopFreeNode
 s07	0027bd90	0027bdb4	o	ScriptEngine_PushFreeNode
-s07	0027bdb8	0027bf50	e	ScriptEngine_EvalChoiceParams
+s07	0027bdb8	0027bf50	oe	ScriptEngine_EvalChoiceParams
 s07	0027bf50	0027bf90	o	ScriptEngine_IsBankSlotLoaded
 s07	0027bf90	0027bfd0	o	ScriptEngine_ExitScriptMode
 s07	0027bfd0	0027c01c	o	ScriptDummyObj_ctor
@@ -5993,7 +5993,7 @@ s07	002812e0	0028136c	o	ScriptViewObj_SetTransition
 s07	00281370	00281400	o	ScriptViewObj_Activate
 s07	00281400	002814f4	o	ScriptViewObj_Deactivate
 s07	002814f8	002816a0	o	ScriptViewObj_Apply
-s07	002816a0	00281a00	e	ScriptViewObj_Tick
+s07	002816a0	00281a00	oe	ScriptViewObj_Tick
 s07	00281a00	00281a4c	o	ScriptViewObj_AcceptCommand
 s07	00281a50	00281ac4	o	ScriptViewObj_Reset
 s07	00281ac8	00281c3c	o	ScriptViewObj_BindCamSlot
@@ -8825,7 +8825,7 @@ s10	00326478	003264ac	o	InputPreproc_NextChar
 s10	003264b0	003265c0	o	InputPreproc_SkipBlockComment
 s10	003265c0	00326678	o	InputPreproc_SkipLineComment
 s10	00326678	003266e8	o	InputPreproc_SkipLine
-s10	003266e8	00326a20	-	InputPreproc_Directive
+s10	003266e8	00326a20	o	InputPreproc_Directive
 s10	00326a20	00326a28	o	InputPreproc_EmptyStub
 s10	00326a28	00326a64	o	PadQueue_Init
 s10	00326a68	00326adc	o	PadQueue_Shutdown
@@ -9035,7 +9035,7 @@ s11	00342e78	00342e94	o	Debounce_v36
 s11	00342e98	00342fa8	o	Debounce_KillRestorable
 s11	00342fa8	00343010	o	Debounce_Save
 s11	00343010	003430d0	o	Conveyor_ctor
-s11	003430d0	0034312c	e	Conveyor_ctor_2
+s11	003430d0	0034312c	oe	Conveyor_ctor_2
 s11	00343130	003434e8	e	Conveyor_v42
 s11	003434e8	00343588	o	Conveyor_Update
 s11	00343588	00343718	-	Conveyor_Render

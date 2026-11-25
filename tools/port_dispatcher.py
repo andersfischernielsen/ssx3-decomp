@@ -6,7 +6,10 @@ addr, shard, name, fn = sys.argv[1:5]
 a = int(addr, 16)
 t = open(f'generated/ee/{shard}/src/lib.rs').read()
 sym = f'f_{a:08x}'
-i = t.index(f'pub fn {sym}__generated(c: &mut Cpu)')
+key = f'pub fn {sym}__generated(c: &mut Cpu)'
+if key not in t:
+    key = f'pub fn {sym}(c: &mut Cpu)'
+i = t.index(key)
 m = re.search(r'\n(?=/// |pub fn |pub use |#\[)', t[i + 10:])
 body = t[i:i + 10 + m.start()].rstrip()
 lines = body.split('\n')

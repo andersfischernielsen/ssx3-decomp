@@ -8842,6 +8842,34 @@
 0x0035df70    RollerModifier_ctor_2
 0x0035edc8    RollerModifier_CollideWorld
 0x00366e30    VramHeap_FreeTextureBlocks
+# Phase 2 wave: oc667, oc668, oc669, oc670
+0x00122ee8    Rider_DispatchQueryTable
+0x00123f38    Rider_GetEventSwitchStartPos
+0x0012fff8    RiderBoardPressSub_HandleAirborne
+0x001391a8    RiderHandplantState_Update
+0x001453d0    BENewRaceInt_GetTargetScore
+0x00148158    BECharInt_GetSavedAttrib
+0x0014d4c8    Bolts_CountChildren
+0x00155420    BEScoreInt_UpdateRecords
+0x00156390    BEPostRace_GetInterface
+0x00156c70    BERewardInt_PickRandomBolt
+0x00157080    BERewardInt_PickRandomLockedReward
+0x00157f20    BERewardInt_UnlockReward
+0x0015af40    BERewardInt_GetRewardTypeText
+0x001606d8    ManualChaseCameraAlgorithm_ResetForRider
+0x0016ca18    CameraTriggerMan_RemoveTriggerRegions
+0x0016e1d8    CameraTrigger_ApplyAction
+0x0017a158    DebugMenu_DispatchItemOp
+0x0022d3d8    SectionMan_RequestLoad
+0x002314d0    GameModule_LoadState
+0x0023b0a8    GMHandler8_PickOpponents
+0x002701a0    Replay_RecycleOldestSnapshot
+0x0027bdb8    ScriptEngine_EvalChoiceParams
+0x002816a0    ScriptViewObj_Tick
+0x00282a80    ScriptEngine_FindCommandHandler
+0x003266e8    InputPreproc_Directive
+0x003430d0    Conveyor_ctor_2
+# Phase 2 wave: oc667, oc668, oc669, oc670
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
