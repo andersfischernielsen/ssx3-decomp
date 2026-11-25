@@ -101,7 +101,6 @@ pub struct Thread {
     pub on_stack: bool,
     /// The coroutine (baton token) whose stack holds a native thread's frames
     /// while it is running or preempted.
-    pub host_token: i32,
     /// Resumes after a block: the syscall stub's tail (a due-event check) still
     /// has to run before the body continues.
     pub resume_tail: bool,
@@ -109,6 +108,8 @@ pub struct Thread {
 
 #[derive(Clone, Default)]
 pub struct Sema {
+    /// The thread that holds this lock (a semaphore created with count 1), while it does.
+    pub owner: Option<i32>,
     pub count: i32,
     pub max: i32,
     pub init: i32,
@@ -159,9 +160,15 @@ pub struct Kernel {
     pub last_switch: u64,
     /// Host-thread mode (see `threads.rs`): guest thread id → baton token of
     /// its host thread. Token 0 is the main (frame-driving) host thread.
-    pub host_threads: bool,
-    pub tokens: BTreeMap<i32, i32>,
-    pub next_token: i32,
+    /// Native threads whose frames are on the host stack below the running one
+    /// (preempted, or waiting in place), outermost first.
+    pub nest: Vec<i32>,
+    /// Threads whose in-place wait is idling the machine right now (innermost last).
+    pub idle_owners: Vec<i32>,
+    /// Locks (semaphores created with count 1) each thread holds: a native thread that
+    /// holds one is not preempted (the thread that preempted it could block on it
+    /// with the holder buried below it on the host stack).
+    pub held: BTreeMap<i32, u32>,
 }
 
 impl Default for Kernel {
@@ -198,9 +205,9 @@ impl Kernel {
             syscall_counts: BTreeMap::new(),
             thread_cycles: BTreeMap::new(),
             last_switch: 0,
-            host_threads: false,
-            tokens: BTreeMap::new(),
-            next_token: 1,
+            nest: Vec::new(),
+            idle_owners: Vec::new(),
+            held: BTreeMap::new(),
         }
     }
 
@@ -227,10 +234,23 @@ impl Kernel {
         self.reschedule = true;
     }
 
-    fn best_ready(&self) -> Option<i32> {
+    /// The thread to run: the best ready one among those whose frames are not
+    /// buried on the host stack. A native thread left on the stack (preempted or
+    /// waiting in place) can only continue when everything above it has unwound:
+    /// `cur_unwinds` says the running thread is about to, so the innermost one
+    /// may; the thread whose in-place wait is idling the machine may always.
+    fn best_eligible(&self, cur: i32, cur_unwinds: bool) -> Option<i32> {
         let mut best: Option<&Thread> = None;
         for t in self.threads.values() {
             if t.status != Status::Ready && t.status != Status::Run {
+                continue;
+            }
+            if t.native
+                && t.on_stack
+                && t.id != cur
+                && self.idle_owners.last() != Some(&t.id)
+                && !(cur_unwinds && self.nest.last() == Some(&t.id))
+            {
                 continue;
             }
             if best.is_none_or(|b| {
@@ -255,21 +275,32 @@ impl Kernel {
     }
 }
 
-/// Entry addresses of threads that run natively (see `docs/plans/guest-thread-removal.md`):
-/// hand-written thread bodies that unwind at their wait and re-enter at the wait's
-/// return address. Registered by the game crate at install.
-static NATIVE_ENTRIES: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
+/// Threads that run natively (see `docs/plans/single-loop.md`): their entry
+/// address and the wait sites (the syscall's return address) at which the thread
+/// may unwind and later re-enter, because every frame between the entry and the
+/// site is generated code or a dispatcher-shaped port. A wait anywhere else is
+/// done in place: the thread stays on the host stack and the scheduler runs
+/// other threads above it (or advances time) until the wait is over.
+static NATIVE_ENTRIES: std::sync::Mutex<Vec<(u32, Vec<u32>)>> = std::sync::Mutex::new(Vec::new());
 
-/// Mark threads created with this entry address as native.
-pub fn register_native_entry(entry: u32) {
+/// Mark threads created with this entry address as native; `sites` are the
+/// return addresses of the waits at which they may unwind.
+pub fn register_native_entry(entry: u32, sites: &[u32]) {
     let mut v = NATIVE_ENTRIES.lock().unwrap();
-    if !v.contains(&entry) {
-        v.push(entry);
-    }
+    v.retain(|(e, _)| *e != entry);
+    v.push((entry, sites.to_vec()));
 }
 
-fn is_native_entry(entry: u32) -> bool {
-    NATIVE_ENTRIES.lock().unwrap().contains(&entry)
+/// May native thread `id` unwind at a wait whose return address is `ra`?
+fn unwinds_at(c: &Cpu, id: i32, ra: u32) -> bool {
+    let Some(t) = mr!(c).kernel.threads.get(&id) else {
+        return false;
+    };
+    NATIVE_ENTRIES
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(e, sites)| *e == t.entry && sites.contains(&ra))
 }
 
 fn native_thread(c: &Cpu, id: i32) -> bool {
@@ -316,8 +347,9 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
     let spent = c.cycles - m!(c).kernel.last_switch;
     *m!(c).kernel.thread_cycles.entry(cur).or_default() += spent;
     m!(c).kernel.last_switch = c.cycles;
-    let cur_native = m!(c).kernel.host_threads && native_thread(c, cur);
+    let cur_native = native_thread(c, cur);
     let ctx = save_context(c);
+    let cur_ra = ctx.g[31][0] as u32;
     let mut preempted = false;
     if let Some(t) = m!(c).kernel.threads.get_mut(&cur) {
         if t.status != Status::Dormant {
@@ -350,89 +382,112 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
             }
         }
     }
-    if m!(c).kernel.host_threads {
-        if cur_native {
-            if preempted {
-                // Stays on the host stack, below whatever runs next.
-                m!(c).kernel.threads.get_mut(&cur).unwrap().on_stack = true;
-            } else {
-                // Blocked or exited: unwind out of the thread's body to its runner
-                // (`run_native`), which continues with the thread chosen above.
-                if let Some(t) = m!(c).kernel.threads.get_mut(&cur) {
-                    t.on_stack = false;
-                    if t.status != Status::Dormant {
-                        // The thread blocked in a syscall stub called by its body:
-                        // it resumes at the body's return address, as if the stub
-                        // had returned (the stub's tail costs no cycles).
-                        t.ctx.pc = t.ctx.g[31][0] as u32;
-                        t.resume_tail = true;
-                    }
-                }
-                c.pc |= UNWIND;
-                return;
-            }
-        }
-        let from = crate::threads::my_token();
-        // Native threads run nested on this host stack, one after the other, until
-        // the scheduler picks a thread that is not native.
-        let mut next = next;
-        loop {
-            let Some(id) = next else { break };
-            if !native_thread(c, id) {
-                break;
-            }
-            if m!(c).kernel.threads[&id].on_stack {
-                if id == cur {
-                    // The preempted thread that called us: return into its frames.
-                    m!(c).kernel.threads.get_mut(&id).unwrap().on_stack = false;
-                    return;
-                }
-                // A preempted native thread whose frames sit on another coroutine's
-                // stack (it was preempted by a thread running on a stack of its
-                // own): hand the baton back to that stack; it returns into the
-                // thread's frames.
-                let t = m!(c).kernel.threads.get_mut(&id).unwrap();
+    if cur_native {
+        let exited = m!(c)
+            .kernel
+            .threads
+            .get(&cur)
+            .is_none_or(|t| t.status == Status::Dormant);
+        let site = !preempted && !exited && unwinds_at(c, cur, cur_ra);
+        if !preempted && (exited || site) {
+            // Blocked at a wait it can re-enter, or exited: unwind out of the
+            // thread's body to its runner (`run_native`), which continues
+            // with the thread chosen above.
+            if let Some(t) = m!(c).kernel.threads.get_mut(&cur) {
                 t.on_stack = false;
-                let to = t.host_token;
-                crate::threads::handoff(from, to);
+                if t.status != Status::Dormant {
+                    // The thread blocked in a syscall stub called by its body:
+                    // it resumes at the body's return address, as if the stub
+                    // had returned (the stub's tail costs no cycles).
+                    t.ctx.pc = t.ctx.g[31][0] as u32;
+                    t.resume_tail = true;
+                }
+            }
+            c.pc |= UNWIND;
+            return;
+        }
+        // Preempted, or waiting in place: the frames stay on the host stack,
+        // below whatever runs next.
+        m!(c).kernel.threads.get_mut(&cur).unwrap().on_stack = true;
+        m!(c).kernel.nest.push(cur);
+    }
+    // Threads run nested on this host stack, one after the other, until the
+    // scheduler picks the one whose frames we are in.
+    let mut next = next;
+    let mut spins = 0u32;
+    loop {
+        let Some(id) = next else {
+            if !cur_native {
+                // The frame driver (or an idle loop) is the caller: it idles itself.
                 return;
             }
-            run_native(c, id, from);
-            c.pc &= !UNWIND;
+            spins += 1;
+            if spins > 1_000_000 {
+                m!(c).kernel.halted = Some(format!(
+                    "deadlock: thread {cur} waits in place and nothing can wake it"
+                ));
+                return;
+            }
+            // Nothing runs: this thread waits in place, so the machine idles
+            // here, on its frames, until an event makes a thread ready.
+            idle_in_place(c, cur);
             let now = m!(c).kernel.current;
-            next = if now == 0 { None } else { Some(now) };
+            if now == cur {
+                leave_stack(c, cur);
+                return;
+            }
+            next = (now != 0).then_some(now);
             if m!(c).kernel.halted.is_some() {
                 return;
             }
-        }
-        // The calling coroutine's own frames: nothing to hand off.
-        let to = match next {
-            Some(id) => token_or_spawn(c, id),
-            None => 0,
+            continue;
         };
-        if to == from && next == Some(cur) {
+        if m!(c).kernel.threads[&id].on_stack {
+            if id == cur || m!(c).kernel.idle_owners.last() == Some(&id) {
+                // The thread whose frames we are in (it called us, or its idle
+                // loop did): return into them.
+                leave_stack(c, id);
+                return;
+            }
+            // Only the thread whose frames are on top can continue (the scheduler
+            // does not pick buried ones).
+            m!(c).kernel.halted = Some(format!("thread {id} resumed below thread {cur}'s frames"));
             return;
         }
-        if m!(c).kernel.trace_threads {
-            eprintln!(
-                "[thread] sw-handoff from {from} to {to} cur {cur} cyc {}",
-                c.cycles
-            );
+        run_native(c, id);
+        c.pc &= !UNWIND;
+        let now = m!(c).kernel.current;
+        next = if now == 0 { None } else { Some(now) };
+        if m!(c).kernel.halted.is_some() {
+            return;
         }
-        crate::threads::handoff(from, to);
-        if m!(c).kernel.trace_threads {
-            eprintln!("[thread] sw-back from {from} cur {cur} cyc {}", c.cycles);
-        }
-        return;
     }
-    c.pc |= UNWIND;
+}
+
+fn leave_stack(c: &mut Cpu, id: i32) {
+    if let Some(t) = m!(c).kernel.threads.get_mut(&id) {
+        t.on_stack = false;
+    }
+    m!(c).kernel.nest.retain(|&n| n != id);
+}
+
+/// Advance emulated time to the next event and deliver it, on behalf of thread
+/// `owner` waiting in place (the frame driver does the same when it is idle).
+fn idle_in_place(c: &mut Cpu, owner: i32) {
+    m!(c).kernel.idle_owners.push(owner);
+    c.pc = IDLE;
+    if c.cycles < c.next_event {
+        c.cycles = c.next_event;
+    }
+    crate::machine::service_events(c);
+    m!(c).kernel.idle_owners.pop();
+    c.pc &= !UNWIND;
 }
 
 /// Run native thread `id` (context loaded, status Run) on this host stack until it
 /// blocks, exits or is replaced by a thread that is not nested above it.
-fn run_native(c: &mut Cpu, id: i32, from: i32) {
+fn run_native(c: &mut Cpu, id: i32) {
     if let Some(t) = m!(c).kernel.threads.get_mut(&id) {
-        t.host_token = from;
         t.on_stack = false;
     }
     if m!(c).kernel.threads.get(&id).is_some_and(|t| t.resume_tail) {
@@ -475,28 +530,25 @@ fn run_native_loop(c: &mut Cpu, id: i32) {
     }
 }
 
-/// Baton token of guest thread `id`'s host thread (0 = main host thread).
-pub fn token_of(c: &Cpu, id: i32) -> i32 {
-    if let Some(t) = mr!(c).kernel.threads.get(&id) {
-        if t.native {
-            return t.host_token;
-        }
+/// The frame driver runs the current thread when it is native: on the driver's
+/// own stack, until it blocks or is replaced. False when it is not native.
+pub fn run_current_native(c: &mut Cpu) -> bool {
+    let cur = m!(c).kernel.current;
+    if !native_thread(c, cur) {
+        return false;
     }
-    mr!(c).kernel.tokens.get(&id).copied().unwrap_or(0)
+    run_native(c, cur);
+    c.pc &= !UNWIND;
+    true
 }
 
-fn token_or_spawn(c: &mut Cpu, id: i32) -> i32 {
-    if native_thread(c, id) {
-        return token_of(c, id);
-    }
-    if let Some(t) = m!(c).kernel.tokens.get(&id) {
-        return *t;
-    }
-    let t = m!(c).kernel.next_token;
-    m!(c).kernel.next_token += 1;
-    m!(c).kernel.tokens.insert(id, t);
-    crate::threads::spawn(c, t);
-    t
+/// The running native thread is blocked at a wait it can unwind at, or has exited.
+fn cur_unwinds(c: &Cpu, cur: i32) -> bool {
+    let Some(t) = mr!(c).kernel.threads.get(&cur) else {
+        return false;
+    };
+    t.status != Status::Run
+        && (t.status == Status::Dormant || unwinds_at(c, cur, c.g[31][0] as u32))
 }
 
 pub fn reschedule(c: &mut Cpu) {
@@ -505,7 +557,18 @@ pub fn reschedule(c: &mut Cpu) {
         return;
     }
     let cur = m!(c).kernel.current;
-    let best = m!(c).kernel.best_ready();
+    if m!(c).kernel.held.get(&cur).is_some_and(|&n| n > 0)
+        && m!(c)
+            .kernel
+            .threads
+            .get(&cur)
+            .is_some_and(|t| t.native && t.status == Status::Run)
+    {
+        // A native thread inside a lock is not preempted.
+        return;
+    }
+    let unwinds = cur_unwinds(c, cur);
+    let best = m!(c).kernel.best_eligible(cur, unwinds);
     if best == Some(cur)
         && m!(c)
             .kernel
@@ -715,9 +778,8 @@ pub fn start_main_thread(c: &mut Cpu, entry: u32, argc: u32, argv: u32) {
         wait_id: 0,
         order: 0,
         ctx: Context::default(),
-        native: false,
+        native: true,
         on_stack: false,
-        host_token: 0,
         resume_tail: false,
     };
     m!(c).kernel.threads.insert(1, t);
@@ -733,20 +795,37 @@ pub fn start_main_thread(c: &mut Cpu, entry: u32, argc: u32, argv: u32) {
 }
 
 fn signal_sema(c: &mut Cpu, id: i32, interrupt: bool) {
+    let cur = m!(c).kernel.current;
     let Some(s) = m!(c).kernel.semas.get_mut(&id) else {
         ret(c, -1);
         return;
     };
     let waiter = s.waiters.pop_front();
+    let lock = s.init == 1;
+    let prev_owner = s.owner.take();
     if waiter.is_none() {
         s.count += 1;
+    } else if lock {
+        s.owner = waiter;
+    }
+    if lock {
+        let k = &mut m!(c).kernel;
+        if let Some(o) = prev_owner {
+            if let Some(n) = k.held.get_mut(&o) {
+                *n = n.saturating_sub(1);
+            }
+        }
+        if let Some(w) = waiter {
+            *k.held.entry(w).or_default() += 1;
+        }
     }
     ret(c, id as i64);
     if let Some(w) = waiter {
         m!(c).kernel.release(w, id as i64);
-        if !interrupt {
-            reschedule(c);
-        }
+    }
+    // A lock released by the running thread ends its protection from preemption.
+    if !interrupt && (waiter.is_some() || (lock && prev_owner == Some(cur))) {
+        reschedule(c);
     }
 }
 
@@ -759,6 +838,10 @@ fn wait_sema(c: &mut Cpu, id: i32) {
     };
     if s.count > 0 {
         s.count -= 1;
+        if s.init == 1 {
+            s.owner = Some(cur);
+            *m!(c).kernel.held.entry(cur).or_default() += 1;
+        }
         ret(c, id as i64);
         return;
     }
@@ -768,10 +851,11 @@ fn wait_sema(c: &mut Cpu, id: i32) {
         return;
     }
     s.waiters.push_back(cur);
+    let (owner, max, init) = (s.owner, s.max, s.init);
     ret(c, id as i64);
     if m!(c).kernel.trace_syscalls {
         eprintln!(
-            "[block] thread {cur} sema {id} ra {:08x} cyc {}",
+            "[block] thread {cur} sema {id} ra {:08x} cyc {} (max {max} init {init} owner {owner:?})",
             c.g[31][0] as u32, c.cycles
         );
     }
@@ -806,7 +890,6 @@ fn create_thread(c: &mut Cpu) -> i32 {
         ctx: Context::default(),
         native: false,
         on_stack: false,
-        host_token: 0,
         resume_tail: false,
     };
     if m!(c).kernel.trace_threads {
@@ -816,7 +899,7 @@ fn create_thread(c: &mut Cpu) -> i32 {
         );
     }
     let mut t = t;
-    t.native = m!(c).kernel.host_threads && is_native_entry(t.entry);
+    t.native = true;
     m!(c).kernel.threads.insert(id, t);
     id
 }
@@ -1051,7 +1134,6 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             t.wakeups = 0;
             t.wait = WaitType::None;
             // A (re)started thread gets a fresh host thread in host-thread mode.
-            m!(c).kernel.tokens.remove(&id);
             ret(c, id as i64);
             m!(c).kernel.make_ready(id);
             reschedule(c);
@@ -1309,6 +1391,7 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x40 => {
             let p = arg(c, 0);
             let s = Sema {
+                owner: None,
                 count: c.bus.read32(p + 8) as i32,
                 max: c.bus.read32(p + 4) as i32,
                 init: c.bus.read32(p + 8) as i32,
@@ -1355,9 +1438,14 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x44 => wait_sema(c, arg(c, 0) as i32),
         0x45 | 0x46 => {
             let id = arg(c, 0) as i32;
+            let cur = m!(c).kernel.current;
             match m!(c).kernel.semas.get_mut(&id) {
                 Some(s) if s.count > 0 => {
                     s.count -= 1;
+                    if s.init == 1 && n == 0x45 {
+                        s.owner = Some(cur);
+                        *m!(c).kernel.held.entry(cur).or_default() += 1;
+                    }
                     ret(c, id as i64)
                 }
                 _ => ret(c, -1),

@@ -771,7 +771,7 @@ pub fn ps2_exec_man_vsync_thread(c: &mut Cpu) {
                 c.pc = 0x0031_ac28;
             }
             0x0031_ac28 => {
-                c.cycles += 5;
+                c.cycles += 2;
                 c.g[A0][0] = Addr(p(c, S0, 0x4034)).lw(c);
                 if call_ptr(c, table::WAIT_SEMA, 0x0031_ac30).is_err() {
                     return;
@@ -781,6 +781,7 @@ pub fn ps2_exec_man_vsync_thread(c: &mut Cpu) {
             // After the wait returns: also the resume address of a native thread
             // (see `ssx3_ps2::kernel::register_native_entry`).
             0x0031_ac30 => {
+                c.cycles += 3;
                 c.g[V1][0] = Addr(p(c, S0, 0x20)).lw(c);
                 if c.g[V1][0] == 0 {
                     if back_edge_unwinds(c, 0x0031_ac20) {
@@ -898,10 +899,15 @@ pub fn ps2_exec_man_worker_thread(c: &mut Cpu) {
                     pc = 0x0031_ac9c;
                 }
                 0x0031_ac9c => {
-                    c.cycles += 5;
+                    c.cycles += 2;
                     c.g[RA][0] = sx(0x0031_aca4);
                     c.g[A0][0] = lw_r(c, S0, 0x4044);
                     call_ptr(c, 0x0042_3de0, 0x0031_aca4)?;
+                    pc = 0x0031_aca4;
+                }
+                // After the job wait: also the resume address of a native thread.
+                0x0031_aca4 => {
+                    c.cycles += 3;
                     c.g[V1][0] = lw_r(c, S1, 0x20);
                     if c.g[V1][0] == 0 {
                         if back_edge_unwinds(c, 0x0031_ac80) {
@@ -1200,52 +1206,95 @@ pub(crate) const POLL_SEMA: u32 = 0x0042_3df0;
 /// waiting, call its pre-wait hook (virtual slot 0x58), block on the frame
 /// semaphore, clear the flag, drain the semaphore (`PollSema` until it no
 /// longer returns the id), then call the post-wait hook (slot 0x60).
+///
+/// Dispatcher-shaped: the main thread unwinds at the frame wait (return address
+/// 0x31aa8c) and re-enters here (see `ssx3_ps2::kernel::register_native_entry`);
+/// the other call return addresses are accepted too.
 pub fn ps2_exec_man_wait_frame(c: &mut Cpu) {
+    const WAIT_RA: u32 = 0x0031_aa8c;
     const DRAIN_LOOP: u32 = 0x0031_aa90;
-    guest(c, |c| {
-        c.cycles += 14;
-        let frame = Frame::open(c, 0x20);
-        c.g[V0][0] = 1;
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        let this = r32(c, S0);
-        Addr(this.wrapping_add(EXEC_WAITING)).sw(c, 1);
-        virtual_call(c, EXEC_PRE_WAIT_SLOT, 0x0031_aa84)?;
-        let this = r32(c, S0);
-        c.g[A0][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
-        call_ptr(c, WAIT_SEMA, 0x0031_aa8c)?;
-        let this = r32(c, S0);
-        Addr(this.wrapping_add(EXEC_WAITING)).sw(c, 0);
-        loop {
-            c.cycles += 5;
-            let this = r32(c, S0);
-            c.g[A0][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
-            call_ptr(c, POLL_SEMA, 0x0031_aa98)?;
-            let this = r32(c, S0);
-            c.g[V1][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
-            if c.g[V0][0] != c.g[V1][0] {
-                break;
+    const POST_WAIT: u32 = 0x0031_aaa0;
+    loop {
+        match c.pc {
+            0x0031_aa58 => {
+                c.cycles += 14;
+                let frame = Frame::open(c, 0x20);
+                c.g[V0][0] = 1;
+                frame.save(c, S0, 0x10);
+                frame.save_ra(c, 0);
+                c.g[S0][0] = c.g[A0][0];
+                let this = r32(c, S0);
+                Addr(this.wrapping_add(EXEC_WAITING)).sw(c, 1);
+                if virtual_call(c, EXEC_PRE_WAIT_SLOT, 0x0031_aa84).is_err() {
+                    return;
+                }
+                c.pc = 0x0031_aa84;
             }
-            if event_due(c) {
-                deliver_event_here(c, DRAIN_LOOP);
+            // After the pre-wait hook.
+            0x0031_aa84 => {
+                let this = r32(c, S0);
+                c.g[A0][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
+                if call_ptr(c, WAIT_SEMA, WAIT_RA).is_err() {
+                    return;
+                }
+                c.pc = WAIT_RA;
+            }
+            // After the frame wait (also the main thread's resume address).
+            WAIT_RA => {
+                let this = r32(c, S0);
+                Addr(this.wrapping_add(EXEC_WAITING)).sw(c, 0);
+                c.pc = DRAIN_LOOP;
+            }
+            DRAIN_LOOP => {
+                c.cycles += 5;
+                let this = r32(c, S0);
+                c.g[A0][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
+                if call_ptr(c, POLL_SEMA, 0x0031_aa98).is_err() {
+                    return;
+                }
+                c.pc = 0x0031_aa98;
+            }
+            // After a `PollSema`: stop draining once it no longer returns the id.
+            0x0031_aa98 => {
+                let this = r32(c, S0);
+                c.g[V1][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
+                if c.g[V0][0] != c.g[V1][0] {
+                    c.pc = POST_WAIT;
+                } else {
+                    if event_due(c) {
+                        deliver_event_here(c, DRAIN_LOOP);
+                    }
+                    c.pc = DRAIN_LOOP;
+                }
+            }
+            POST_WAIT => {
+                c.cycles += 9;
+                // (`v0` holds the vtable here, `v1` the method.)
+                let this = r32(c, S0);
+                c.g[V0][0] = Addr(this.wrapping_add(EXEC_VT)).lw(c);
+                let vt = r32(c, V0);
+                c.g[A0][0] = Addr(vt.wrapping_add(EXEC_POST_WAIT_SLOT)).lh(c);
+                c.g[V1][0] = Addr(vt.wrapping_add(EXEC_POST_WAIT_SLOT + 4)).lw(c);
+                let method = r32(c, V1);
+                c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+                if call_ptr(c, method, 0x0031_aab8).is_err() {
+                    return;
+                }
+                c.pc = 0x0031_aab8;
+            }
+            0x0031_aab8 => {
+                let frame = Frame { size: 0x20 };
+                frame.restore(c, S0, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return;
+            }
+            pc => {
+                c.jump_out(pc, 0x0031_aa58, 0x0031_aac8);
+                return;
             }
         }
-        c.cycles += 9;
-        // (`v0` holds the vtable here, `v1` the method.)
-        let this = r32(c, S0);
-        c.g[V0][0] = Addr(this.wrapping_add(EXEC_VT)).lw(c);
-        let vt = r32(c, V0);
-        c.g[A0][0] = Addr(vt.wrapping_add(EXEC_POST_WAIT_SLOT)).lh(c);
-        c.g[V1][0] = Addr(vt.wrapping_add(EXEC_POST_WAIT_SLOT + 4)).lw(c);
-        let method = r32(c, V1);
-        c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
-        call_ptr(c, method, 0x0031_aab8)?;
-        frame.restore(c, S0, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    }
 }
 
 /// The pre-wait virtual call: `v1` holds the vtable, `v0` the method.

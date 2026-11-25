@@ -240,3 +240,5 @@ Every attempt, with how to retry, is in `../investigation/native-thread-attempts
 | Convert workers | ⬜ |
 | Convert ISR-driven threads | 🟡 VSync (6) done and exact. SND (8): schedule exact, but the outer `service_events` that wakes it ends at a different point than in coroutine mode (one idle tick 31 cycles later): see "Open: where the outer event service ends" |
 | Convert main + the rest, delete `threads.rs` | ⬜ |
+
+Superseded by `single-loop.md`: every thread is native, with waits in place where unwinding is not possible; `threads.rs`, `corosensei` and the `StackSwitcher` are deleted.

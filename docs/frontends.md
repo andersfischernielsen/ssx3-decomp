@@ -227,27 +227,13 @@ mixer adds that same buffer to the pacer's lead when comparing the
 target with the queued count, so it aims to keep the ring itself at the
 pacer's lead. The browser leaves catch-up off and pulls once per frame.
 
-### Guest-thread stacks (wasm32)
+### Guest threads
 
-The game is written as EE kernel threads; each runs on a stack of its own and
-a thread switch parks one stack and resumes another (`ssx3_ps2::threads`).
-Natively these are coroutines (`corosensei`). WebAssembly has no stack
-switching Rust can use, so a `wasm32` front end supplies it
-(`ssx3_engine::ssx3_ps2::threads`):
-
-| Item | What it is |
-| --- | --- |
-| `trait StackSwitcher` | `spawn(id)`: guest thread token `id` was created (allocate its shadow stack). `switch(me, to)`: start `to` (token 0 is the frame driver) or resume it, and park the calling stack until the baton returns to `me`. |
-| `set_switcher(Rc<dyn StackSwitcher>)` | Install it before the first frame. |
-| `thread_main(id)` | The body of guest thread `id`: run it on the fresh stack when `switch` first hands it the baton. |
-
-The frame (`Engine::step`) then runs on a stack too, token 0, and returns
-whenever the guest threads have switched back to it. The browser front end
-uses WebAssembly JSPI (JavaScript Promise Integration): every stack is a
-`WebAssembly.promising` call, `switch` a `WebAssembly.Suspending` import that
-parks it on a promise, and the linear-memory shadow stack pointer
-(`__stack_pointer`) is swapped at every switch, as Rust has one for all wasm
-stacks. Stacks of finished guest threads stay parked.
+Guest threads need nothing from the front end: the kernel runs them nested on the
+stack that calls `Engine::step` (`docs/plans/single-loop.md`). `step` returns at each
+VBlank; a boundary that passes while a thread waits in place (boot waits) is made
+up with immediate frames. (Earlier versions had a `StackSwitcher` the browser
+implemented with JSPI; it is gone.)
 
 ### VU offload
 

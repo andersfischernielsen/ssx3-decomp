@@ -9,8 +9,7 @@ license.workspace = true
 default = ["ee-threads"]
 # Dynamic call graph of the EE code (SSX3_CALLPROF=<out>:<from>:<to>).
 callprof = ["ssx3-ee-rt/callprof"]
-# The generated EE code (guest threads on host stacks: coroutines natively,
-# front-end supplied stacks on wasm32, `ssx3_ps2::threads`).
+# The generated EE code (guest threads run nested on the frame driver's stack).
 ee-threads = ["dep:ssx3-ee-threads", "ssx3-game/ee-threads"]
 # The emulated GS (verification renderers SSX3_RENDER=emu/shadow, GS
 # captures and VRAM dumps); the game itself renders natively.

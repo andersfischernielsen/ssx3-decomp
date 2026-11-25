@@ -479,7 +479,7 @@ fn main() {
         );
     }
     lib.push_str("        _ => return None,\n    })\n}\n");
-    let _ = writeln!(lib, "\n/// True when generated for host-thread mode (`ssx3_ps2::threads`).\npub const HOST_THREADS: bool = true;");
+    let _ = writeln!(lib, "\n/// True when generated for structured (host-stack) calls.\npub const HOST_THREADS: bool = true;");
     write_if_changed(game.join("src/lib.rs"), lib).unwrap();
 
     println!("functions    : {}", funcs.len());

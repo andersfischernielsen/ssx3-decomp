@@ -8649,7 +8649,7 @@ s10	0031a6d8	0031a91c	o	PS2ExecMan_Init
 s10	0031a920	0031a9d4	-	PS2ExecMan_v03
 s10	0031a9d8	0031aa14	o	PS2ExecMan_v11
 s10	0031aa18	0031aa54	o	PS2ExecMan_v12
-s10	0031aa58	0031aac8	o	PS2ExecMan_WaitFrame
+s10	0031aa58	0031aac8	oe	PS2ExecMan_WaitFrame
 s10	0031aac8	0031aaf0	o	PS2ExecMan_v05
 s10	0031aaf0	0031ab0c	-	PS2ExecMan_WaitSema
 s10	0031ab10	0031ab30	o	PS2ExecMan_v14
@@ -8664,7 +8664,7 @@ s10	0031ad00	0031ad14	o	PS2ExecMan_v10
 s10	0031ad18	0031ad20	o	ssx_ClearTrayOpened
 s10	0031ad20	0031adb0	o	ssx_CdTrayCallback
 s10	0031adb0	0031af7c	-	ssx_SystemInit
-s10	0031af80	0031b008	-	ssx_main
+s10	0031af80	0031b008	e	ssx_main
 s10	0031b008	0031b088	-	ssx_LoadExecPS2
 s10	0031b088	0031b098	o	Math_Det2x2
 s10	0031b098	0031b178	o	Math_Det3x3
@@ -11265,7 +11265,7 @@ s13	003c1578	003c15d8	o	SND_SifCmdHandler
 s13	003c15d8	003c1634	-	SND_StrCat
 s13	003c1638	003c197c	o	SND_InitIopCmdBuffer
 s13	003c1980	003c19a4	o	SND_VBlankHandler
-s13	003c19a8	003c1b80	o	SND_EeThread
+s13	003c19a8	003c1b80	oe	SND_EeThread
 s13	003c1b80	003c2264	o	SND_IopInit
 s13	003c2268	003c2434	-	SND_IopShutdown
 s13	003c2438	003c2440	o	SND_TickStub

@@ -52,8 +52,38 @@ equivalence is defined anew (step 1) before anything changes.
 | step | status |
 | --- | --- |
 | Worktree on `main` | ✅ |
-| 1 Acceptance | ✅ `tools/accept.py record/compare` (per-frame page hashes with `SSX3_STATE_LOG`, screenshots, final RAM); recorded twice on this tree: identical |
-| 2-7 | ⬜ |
+| 1 Acceptance | ✅ `tools/accept.py record/compare`, `SSX3_STATE_LOG` |
+| 2 `frame()` step | ✅ `Engine::step` runs the main thread on the driver's stack; it unwinds at `PS2ExecMan_WaitFrame` and re-enters there; boundaries inside in-place waits are made up (`Sched::host_frames`) |
+| 3 SND | 🟡 the SND thread is native (unwinds at its mixer wait); a lock holder is not preempted, so the SND mutex never blocks mid-body. Still guest code; turning it into a plain step call is open |
+| 4 Worker and loading | 🟡 the worker is native (unwinds at its job wait); jobs are still guest functions |
+| 5 Main's waits | ✅ `DelayTicks` etc. wait in place (the machine idles on main's frames) |
+| 6 Delete | 🟡 `threads.rs`, `threads_switcher.rs`, `corosensei` and the `StackSwitcher` deleted; the kernel scheduler stays (it is the guest syscall layer) |
+| 7 Threads for real | ⬜ |
+
+Result: the byte-identical gate still passes (the final RAM of the race replay is
+identical to the old baseline) with every thread native.
+
+## How the native kernel works
+
+- Every guest thread (main included) runs on the frame driver's host stack, nested:
+  `run_native` runs a thread until it blocks, exits, or is replaced.
+- A thread that blocks at a registered **resume site** (`NATIVE_THREAD_ENTRIES`: the
+  entry and the syscall return addresses where it may unwind) unwinds; its frames are
+  rebuilt by re-entering at the return address. That needs every function between the
+  entry and the wait to be a dispatcher-shaped port or generated code with a resume
+  label (`generated/entries.txt`: return points of the calls on the main thread's
+  chain, and the four loop-top waits).
+- A block anywhere else is a **wait in place**: the thread stays on the stack
+  (`Kernel::nest`) and the machine idles on its frames (`idle_in_place`) until an event
+  wakes it; other threads run nested above it.
+- A thread can only continue when everything above it has unwound
+  (`Kernel::best_eligible`); a native thread that holds a lock (a semaphore created with
+  count 1) is not preempted, so a thread that preempts cannot block on a lock whose
+  holder is buried below it.
+- `run_frame` returns at a VBlank; boundaries that pass inside an in-place wait are
+  made up with immediate frames so the host's frame count stays the guest's.
+- Adding the resume labels moved 3 cycles of block cost to after the wait call in the
+  generated VSync and worker thread bodies; their ports follow it.
 
 ## Step 1: acceptance (done)
 

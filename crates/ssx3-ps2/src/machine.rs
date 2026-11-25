@@ -95,6 +95,10 @@ pub struct Sched {
     pub field: u32,
     /// Set at VBlank start; the host consumes it to present a frame.
     pub frame_ready: bool,
+    /// VBlanks the host has been given a frame for. Boundaries that pass while a
+    /// thread waits in place (boot waits, ...) cannot return to the host; it
+    /// catches up with immediate frames afterwards (`run_frame`).
+    pub host_frames: u64,
     /// Translated-code misses: pc → count.
     pub misses: std::collections::BTreeMap<u32, u64>,
     pub gs_crt: (u32, u32, u32),
@@ -195,11 +199,6 @@ pub fn fatal(c: &mut Cpu, pc: u32, msg: &str) {
         m!(c).kernel.halted = Some(format!("{msg} at {pc:#010x}"));
     }
     c.pc = IDLE | UNWIND;
-    if m!(c).kernel.host_threads && m!(c).kernel.current != 0 {
-        // Park this guest host thread forever; the frame driver sees `halted`.
-        let me = crate::threads::my_token();
-        crate::threads::handoff(me, 0);
-    }
 }
 
 /// Called from a generated function whose dispatcher got a `pc` that is not
@@ -271,24 +270,18 @@ fn idle(c: &mut Cpu) {
 /// Advance hardware time and deliver interrupts. Returns true when the current
 /// thread must unwind (thread switch, or the host wants a frame).
 pub fn service_events(c: &mut Cpu) -> bool {
-    let on_driver = crate::threads::my_token() == 0;
-    if on_driver {
-        m!(c).sched.service_depth += 1;
-    }
+    m!(c).sched.service_depth += 1;
     let r = service_events_inner(c);
-    if on_driver {
-        m!(c).sched.service_depth -= 1;
-    }
+    m!(c).sched.service_depth -= 1;
     r
 }
 
 fn service_events_inner(c: &mut Cpu) -> bool {
     if m!(c).kernel.trace_threads {
         eprintln!(
-            "[thread] svc-enter cyc {} cur {} token {}",
+            "[thread] svc-enter cyc {} cur {}",
             c.cycles,
-            m!(c).kernel.current,
-            crate::threads::my_token()
+            m!(c).kernel.current
         );
     }
     follow_host_clock(c);
@@ -357,27 +350,15 @@ fn service_events_inner(c: &mut Cpu) -> bool {
         );
     }
     let want_frame = m!(c).sched.frame_ready && !m!(c).kernel.in_handler;
-    if m!(c).kernel.host_threads {
-        // Return the baton to the frame driver; resume here next frame.
-        if want_frame && m!(c).kernel.current != 0 {
-            let me = crate::threads::my_token();
-            if m!(c).kernel.trace_threads {
-                eprintln!("[thread] frame-boundary me {me} cyc {}", c.cycles);
-            }
-            if me != 0 {
-                crate::threads::handoff(me, 0);
-            } else if m!(c).sched.native_slices > 0 {
-                // A native slice on the driver's stack cannot hand the baton to the
-                // host: the driver loop returns when the slice has finished.
-                m!(c).sched.boundary_in_native = true;
-            }
+    if want_frame && m!(c).kernel.current != 0 && m!(c).sched.native_slices > 0 {
+        if m!(c).kernel.trace_threads {
+            eprintln!("[thread] frame-boundary cyc {}", c.cycles);
         }
-        return false;
+        // A thread's slice cannot hand control to the host mid-way: the driver
+        // loop returns when the slice has unwound.
+        m!(c).sched.boundary_in_native = true;
     }
-    if want_frame {
-        c.pc |= UNWIND;
-    }
-    c.pc & UNWIND != 0
+    false
 }
 
 /// SetGsCrt(interlace, mode, field/frame).
@@ -393,25 +374,28 @@ pub fn set_gs_crt(c: &mut Cpu, interlace: u32, mode: u32, ffmd: u32) {
 /// Run until the next VBlank (one video field) or until the machine halts.
 /// Returns false once halted.
 pub fn run_frame(c: &mut Cpu) -> bool {
+    if m!(c).sched.frames > m!(c).sched.host_frames && m!(c).kernel.halted.is_none() {
+        // The guest already ran through this VBlank inside an in-place wait.
+        m!(c).sched.host_frames += 1;
+        return true;
+    }
     // In host clock mode, VBlanks that are already late are run without
     // presenting them (the host skips frames; the game catches up itself).
     for _ in 0..8 {
         m!(c).sched.frame_ready = false;
-        if m!(c).kernel.host_threads {
-            run_frame_threads(c);
-        } else {
-            trampoline(c, None);
-        }
+        run_frame_threads(c);
         if m!(c).kernel.halted.is_some() || !host_clock_behind(c) {
             break;
         }
     }
+    m!(c).sched.host_frames += 1;
     // Finish background rasterization so `vram` / `display()` are current.
     m!(c).hw.gs.sync();
     m!(c).kernel.halted.is_none()
 }
 
-/// Host-thread mode frame driver (runs on the main host thread, token 0).
+/// The frame driver: runs the current guest thread on this stack, idles to the
+/// next event when none is runnable, and returns at each VBlank.
 fn run_frame_threads(c: &mut Cpu) {
     loop {
         if m!(c).kernel.halted.is_some() || m!(c).sched.frame_ready {
@@ -434,19 +418,7 @@ fn run_frame_threads(c: &mut Cpu) {
             }
             service_events(c);
         } else {
-            let cur = m!(c).kernel.current;
-            let tok = kernel::token_of(c, cur);
-            let tok = if tok == 0 {
-                // First run of this guest thread: its context is live in `c`.
-                let t = m!(c).kernel.next_token;
-                m!(c).kernel.next_token += 1;
-                m!(c).kernel.tokens.insert(cur, t);
-                crate::threads::spawn(c, t);
-                t
-            } else {
-                tok
-            };
-            crate::threads::handoff(0, tok);
+            kernel::run_current_native(c);
         }
     }
 }
@@ -489,15 +461,7 @@ pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
         c.pc = pc;
         return;
     }
-    if m!(c).kernel.host_threads {
-        // No depth cap in host-thread mode: there is no trampoline to defer to.
-        c.pc = pc;
-        call_indirect(c, pc);
-        return;
-    }
-    if !c.enter(pc) {
-        return;
-    }
+    // No depth cap: there is no trampoline to defer to.
+    c.pc = pc;
     call_indirect(c, pc);
-    c.leave();
 }

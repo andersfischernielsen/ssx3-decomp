@@ -168,31 +168,21 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v
 }
 
-/// Thread entries that run natively on the kernel scheduler (see
-/// `docs/plans/guest-thread-removal.md`): bodies that unwind at their wait and
-/// accept the wait's return address as a resume point.
-pub const NATIVE_THREAD_ENTRIES: &[u32] = &[
-    0x0031_ac08, // PS2ExecMan_VSyncThread
-    0x0042_4aa0, // libkernl_IntrHelperThread (parks once)
-    0x003e_3be0, // EAFile_CdReadThread (parks once)
-    0x0040_09a8, // libcdvd_CallbackThread (parks once)
-    0x0038_2740, // Renderer_DmaKickThreadEntry (parks once)
+/// The guest threads' entries and the waits (syscall return addresses) at which
+/// each may unwind and be re-entered later (`docs/plans/single-loop.md`). Every
+/// function between the entry and the wait is generated code (with a resume label
+/// from `generated/entries.txt`) or a dispatcher-shaped port. A wait anywhere else
+/// is done in place on the host stack.
+pub const NATIVE_THREAD_ENTRIES: &[(u32, &[u32])] = &[
+    (0x0010_0008, &[0x0031_aa8c]), // main thread (crt0 entry): PS2ExecMan_WaitFrame's wait
+    (0x0031_ac08, &[0x0031_ac30]), // PS2ExecMan_VSyncThread
+    (0x0031_ac60, &[0x0031_aca4]), // PS2ExecMan_WorkerThread: the job wait
+    (0x003c_19a8, &[0x003c_19f0]), // SND_EeThread: the mixer wait
+    (0x0042_4aa0, &[0x0042_4ae8]), // libkernl_IntrHelperThread (parks once)
+    (0x003e_3be0, &[0x003e_3c20]), // EAFile_CdReadThread (parks once)
+    (0x0040_09a8, &[0x0040_0a00]), // libcdvd_CallbackThread (parks once)
+    (0x0038_2740, &[0x0038_27e0]), // Renderer_DmaKickThreadEntry (parks once)
 ];
-
-/// The native thread entries to register: none when the replacements are
-/// disabled or filtered (`SSX3_NO_OVERRIDES`, `SSX3_OVERRIDES`,
-/// `SSX3_SKIP_OVERRIDES`), because their bodies need the hand-written ports
-/// (resume arms, unwinding calls); the generated bodies do not implement that.
-pub fn native_thread_entries() -> &'static [u32] {
-    let filtered = ["SSX3_NO_OVERRIDES", "SSX3_OVERRIDES", "SSX3_SKIP_OVERRIDES"]
-        .iter()
-        .any(|v| ssx3_core::config::var_os(v).is_some());
-    if filtered {
-        &[]
-    } else {
-        NATIVE_THREAD_ENTRIES
-    }
-}
 
 /// Install the replacements (call once at boot, before guest code runs).
 /// `SSX3_NO_OVERRIDES=1` keeps the generated bodies everywhere (A/B checks);

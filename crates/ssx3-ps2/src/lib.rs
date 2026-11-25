@@ -38,12 +38,6 @@ pub mod particle_verify;
 pub mod render_verify;
 pub mod sif;
 pub mod snd_native;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod threads;
-/// Guest threads on stacks the front end provides (the browser: JSPI).
-#[cfg(target_arch = "wasm32")]
-#[path = "threads_switcher.rs"]
-pub mod threads;
 pub mod vif;
 /// The Vector Units live in their own crate (build times); see `ssx3-vu`.
 pub use ssx3_vu::vu;

@@ -71,7 +71,7 @@ Done when the game runs without the PS2 hardware models (they stay available for
 
 ## Optional: browser (WebAssembly) 🟡
 
-The browser front end (its own repository, [`../frontends.md`](../frontends.md)): the game in a Web Worker with its guest threads on WebAssembly JSPI stacks (`ssx3_ps2::threads::StackSwitcher`), the disc image read with `FileReaderSync`, `ssx3-gfx` drawing with WebGPU. 
+The browser front end (its own repository, [`../frontends.md`](../frontends.md)): the game in a Web Worker (guest threads run nested on one stack: no JSPI needed), the disc image read with `FileReaderSync`, `ssx3-gfx` drawing with WebGPU. 
 
 Lowest-priority target: avoid new blocking GPU readbacks.
 
@@ -86,7 +86,7 @@ The decompilation ends with the game as one loop that the port drives, without t
 The EE has one core, but the game is written as kernel threads (8 in a race: 
 - `CreateThread`, semaphores, `SleepThread`/`iWakeupThread`, alarms), one running at a time. 
 - Recompiled, a guest call is a host call, so a thread that blocks deep in a call chain holds host stack frames. 
-- Keeping that working costs a host stack per guest thread (coroutines in `ssx3-ps2/src/threads.rs`: JSPI stacks in the browser, `threads_switcher.rs`). This is not due to the game, it is there because its threads are.
+- That used to cost a host stack per guest thread (coroutines, JSPI stacks in the browser). Done: threads now run nested on one stack, and `threads.rs`, `corosensei` and the `StackSwitcher` are deleted (`docs/plans/single-loop.md`).
 
 The solution is to remove the threads from the game itself: once everything on each thread's paths is hand-written, what a thread does becomes a call from the frame loop (a VBlank wait becomes the end of a frame, a semaphore a direct call or a flag, a streaming thread a step per frame), still deterministic and RAM-identical at each step under the gate.
 

@@ -113,10 +113,10 @@ Tricky is the first one. No game data is shipped. See [`docs/plugins.md`](docs/p
 | `ssx3-iop`, `ssx3-gs` | Reference paths only: the IOP runtime for the recompiled IRX modules, and the Graphics Synthesizer model (verification builds, `emu-gs`). |
 | `ssx3-core`, `ssx3-runtime` | Machine-model and execution-state scaffolding (memory map, ISO reading). |
 
-The game's threads run as coroutines (one stack each, `corosensei`) on the host thread that
-drives frames, so a thread switch is a stack switch and a guest call is a plain Rust call.
-In the browser the same stacks are WebAssembly JSPI stacks, supplied by the front end
-(`docs/frontends.md`, "Guest-thread stacks"). More in [`docs/architecture.md`](docs/architecture.md).
+The game's threads run on the one host stack that drives frames: the kernel runs a thread
+nested on it, unwinds it at the waits it can re-enter, and waits in place elsewhere
+(`docs/plans/single-loop.md`). There are no coroutines and no front-end stack switching,
+so the browser needs no JSPI for guest threads. More in [`docs/architecture.md`](docs/architecture.md).
 
 Front ends for other platforms live in their own repositories and use this one as a git
 submodule (the generated code is made locally by `tools/setup.py`): the engine API and
