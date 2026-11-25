@@ -104,6 +104,9 @@ pub struct Thread {
     /// Resumes after a block: the syscall stub's tail (a due-event check) still
     /// has to run before the body continues.
     pub resume_tail: bool,
+    /// A step thread: not scheduled by priority; the frame driver runs it
+    /// (`run_steps`) once it has been woken.
+    pub step: bool,
 }
 
 #[derive(Clone, Default)]
@@ -169,6 +172,8 @@ pub struct Kernel {
     /// driver's stack. Off in unit tests, where a thread switch just unwinds the
     /// function under test (`c.pc |= UNWIND`).
     pub host_threads: bool,
+    /// The step thread the frame driver is running right now.
+    pub step_open: Option<i32>,
     /// Locks (semaphores created with count 1) each thread holds: a native thread that
     /// holds one is not preempted (the thread that preempted it could block on it
     /// with the holder buried below it on the host stack).
@@ -212,6 +217,7 @@ impl Kernel {
             nest: Vec::new(),
             idle_owners: Vec::new(),
             host_threads: false,
+            step_open: None,
             held: BTreeMap::new(),
         }
     }
@@ -250,6 +256,9 @@ impl Kernel {
             if t.status != Status::Ready && t.status != Status::Run {
                 continue;
             }
+            if t.step && self.step_open != Some(t.id) {
+                continue;
+            }
             if t.native
                 && t.on_stack
                 && t.id != cur
@@ -286,6 +295,61 @@ impl Kernel {
 /// site is generated code or a dispatcher-shaped port. A wait anywhere else is
 /// done in place: the thread stays on the host stack and the scheduler runs
 /// other threads above it (or advances time) until the wait is over.
+static STEP_ENTRIES: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
+
+/// Threads created at `entry` become step threads: they are not scheduled by
+/// priority, the frame driver runs them (`run_steps`) when they have been woken.
+pub fn register_step_entry(entry: u32) {
+    STEP_ENTRIES.lock().unwrap().push(entry);
+}
+
+fn step_entry(entry: u32) -> bool {
+    STEP_ENTRIES.lock().unwrap().contains(&entry)
+}
+
+/// Run the woken step threads, from the frame driver's top level: nothing nested
+/// on the host stack and no thread inside a lock (the round would block on it).
+/// A step thread runs until it waits again.
+pub fn run_steps(c: &mut Cpu) {
+    if !m!(c).kernel.host_threads {
+        return;
+    }
+    loop {
+        let k = &m!(c).kernel;
+        if k.halted.is_some() || !k.nest.is_empty() || k.held.values().any(|&n| n > 0) {
+            return;
+        }
+        let Some(id) = k
+            .threads
+            .values()
+            .filter(|t| t.step && t.status == Status::Ready)
+            .map(|t| t.id)
+            .min()
+        else {
+            return;
+        };
+        let cur = m!(c).kernel.current;
+        let ctx = save_context(c);
+        if let Some(t) = m!(c).kernel.threads.get_mut(&cur) {
+            if t.status != Status::Dormant {
+                t.ctx = ctx;
+                if t.status == Status::Run {
+                    t.status = Status::Ready;
+                }
+            }
+        }
+        let t = m!(c).kernel.threads.get_mut(&id).unwrap();
+        t.status = Status::Run;
+        let ctx = t.ctx;
+        m!(c).kernel.current = id;
+        m!(c).kernel.step_open = Some(id);
+        load_context(c, &ctx);
+        run_native(c, id);
+        c.pc &= !UNWIND;
+        m!(c).kernel.step_open = None;
+    }
+}
+
 static NATIVE_ENTRIES: std::sync::Mutex<Vec<(u32, Vec<u32>)>> = std::sync::Mutex::new(Vec::new());
 
 /// Mark threads created with this entry address as native; `sites` are the
@@ -791,6 +855,7 @@ pub fn start_main_thread(c: &mut Cpu, entry: u32, argc: u32, argv: u32) {
         native: true,
         on_stack: false,
         resume_tail: false,
+        step: false,
     };
     m!(c).kernel.threads.insert(1, t);
     m!(c).kernel.current = 1;
@@ -902,6 +967,7 @@ fn create_thread(c: &mut Cpu) -> i32 {
         native: false,
         on_stack: false,
         resume_tail: false,
+        step: step_entry(rd(c, 4)),
     };
     if m!(c).kernel.trace_threads {
         eprintln!(

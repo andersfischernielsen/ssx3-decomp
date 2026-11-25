@@ -411,6 +411,7 @@ pub fn run_frame(c: &mut Cpu) -> bool {
 /// next event when none is runnable, and returns at each VBlank.
 fn run_frame_threads(c: &mut Cpu) {
     loop {
+        kernel::run_steps(c);
         if m!(c).kernel.halted.is_some() || m!(c).sched.frame_ready {
             if m!(c).kernel.trace_threads {
                 eprintln!("[thread] frame returns to host cyc {}", c.cycles);

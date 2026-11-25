@@ -116,6 +116,11 @@ pub(crate) fn boot(
     for &(entry, sites) in ssx3_game::NATIVE_THREAD_ENTRIES {
         ssx3_ps2::kernel::register_native_entry(entry, sites);
     }
+    if ssx3_core::config::var("SSX3_SND_THREAD").is_none() {
+        for &entry in ssx3_game::STEP_THREAD_ENTRIES {
+            ssx3_ps2::kernel::register_step_entry(entry);
+        }
+    }
     // The GPU rasterizer is the default for the game (falls back to the CPU
     // when no adapter is usable); SSX3_GS=cpu forces the software path.
     // (The browser: no GS rasterizer at all, see `install_renderer`.)
