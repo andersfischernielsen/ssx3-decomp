@@ -232,6 +232,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         input_preproc_directive,
         "InputPreproc_Directive",
     ),
+    (
+        0x0032_7800,
+        pad_device_get_num_actuators,
+        "PadDevice_GetNumActuators",
+    ),
+    (
+        0x0032_7808,
+        pad_device_set_actuator,
+        "PadDevice_SetActuator",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9942,6 +9952,21 @@ pub fn input_preproc_directive(c: &mut Cpu) {
     });
 }
 
+/// `int PadDevice_GetNumActuators(...)` (0x00327800): no actuators.
+pub fn pad_device_get_num_actuators(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+}
+
+/// `int PadDevice_SetActuator(...)` (0x00327808): ignored.
+pub fn pad_device_set_actuator(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12415,6 +12440,41 @@ pub(crate) mod tests {
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x003266e8;
             },
+        );
+    }
+    use crate::difftest::check_paths;
+
+    /// `PadDevice_GetNumActuators`: always 0.
+    #[test]
+    fn pad_device_get_num_actuators_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_324_002, 0);
+            c.pc = 0x0032_7800;
+        };
+        check_paths(
+            ee::s10::f_00327800__generated,
+            pad_device_get_num_actuators,
+            SEEDS,
+            &[2],
+            &setup,
+        );
+    }
+
+    /// `PadDevice_SetActuator`: ignored.
+    #[test]
+    fn pad_device_set_actuator_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_324_003, 0);
+            c.pc = 0x0032_7808;
+            c.g[A0][0] = (seed.wrapping_mul(0x9e37_79b9) | 1) as u64;
+            c.g[A1][0] = (seed.wrapping_mul(0x5bd1_e995) | 1) as u64;
+        };
+        check_paths(
+            ee::s10::f_00327808__generated,
+            pad_device_set_actuator,
+            SEEDS,
+            &[2],
+            &setup,
         );
     }
 }

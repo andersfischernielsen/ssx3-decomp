@@ -47,6 +47,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_79b8, sce_fs_unlock, "sceFs_Unlock"),
     (0x0042_7c98, sce_fs_needs_rebind, "sceFs_NeedsRebind"),
     (0x0042_7d60, sce_open, "sceOpen"),
+    (
+        0x0042_7a60,
+        sce_fs_call_func_cmd_handler,
+        "sceFs_CallFuncCmdHandler",
+    ),
+    (0x0042_7a90, sce_fs_init, "sceFsInit"),
+    (0x0042_7d28, sce_fs_reset, "sceFsReset"),
+    (0x0042_8fc0, sce_remove, "sceRemove"),
+    (0x0042_9190, sce_rmdir, "sceRmdir"),
+    (0x0042_9540, sce_del_drv, "sceDelDrv"),
+    (0x0042_9eb8, sce_chdir, "sceChdir"),
+    (0x0042_a2e0, sce_umount, "sceUmount"),
     (0x0042_ab18, sce_sif_init_iop_heap, "sceSifInitIopHeap"),
     (0x0042_aba0, sce_sif_alloc_iop_heap, "sceSifAllocIopHeap"),
     (0x0042_4950, disable_dmac_wrapper, "DisableDmac"),
@@ -160,6 +172,14 @@ pub(crate) mod oc698_callee {
         addr: 0x00426358,
         f: ee::s15::f_00426358,
     };
+
+    pub(crate) use crate::game::misc::callee::MEMSET;
+
+    /// `sceFs_PathCmd` (`0x00428e18`; runs for real in the path-command tests).
+    pub(crate) const PATH_CMD: Callee = Callee {
+        addr: 0x0042_8e18,
+        f: ee::s15::f_00428e18,
+    };
 }
 
 /// `void sceSifCmd_SetSregHandler(cmd, mgr)` (0x425cc0): the SIF "set SREG"
@@ -209,8 +229,8 @@ pub fn sce_sif_set_cmd_buffer(c: &mut Cpu) {
 }
 
 /// `void sceSifAddCmdHandler(int cid, void (*handler)(void), int arg)` (0x426020):
-/// store `{handler, arg}` in the user (cid >= 0, table at `[0x52bce4]`) or system
-/// (cid < 0, table at `[0x52bcec]`) command-handler table, indexed by `cid * 8`.
+/// store `{handler, arg}` in the user (cid >= 0, table at `[0x52bcec]`) or system
+/// (cid < 0, table at `[0x52bce4]`) command-handler table, indexed by `cid * 8`.
 pub fn sce_sif_add_cmd_handler(c: &mut Cpu) {
     'b_42603c: {
         'b_426034: {
@@ -1604,6 +1624,119 @@ pub fn sce_open(c: &mut Cpu) {
     });
 }
 
+/// `int sceFs_CallFuncCmdHandler(...)` (0x00427a60): run the handler stored
+/// at `[a1]` (or return 0 when the slot is empty), with interrupts enabled.
+pub fn sce_fs_call_func_cmd_handler(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        // A set slot is an indirect call; an empty slot skips it (the
+        // delay-slot `RA` save runs on both paths).
+        if c.g[V0][0] != 0u64 {
+            c.cycles += 2;
+            let t = c.g[V0][0] as u32;
+            c.g[RA][0] = sx(0x00427a78);
+            c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+            c.pc = t;
+            call_ptr(c, t, 0x00427a78)?;
+        }
+        c.cycles += 5;
+        c.ei();
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `int sceFsReset(void)` (0x00427d28): clear the fs client word and the
+/// word at `0x52ee28` (copied from the RPC reply by `sceFsInit`), then
+/// return 0.
+pub fn sce_fs_reset(c: &mut Cpu) {
+    use oc698_callee::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[V0][0] = 0x450000;
+        c.g[A0][0] = 0x530000;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x520c), 0u64);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x11d8));
+        c.g[A1][0] = 0u64;
+        c.g[RA][0] = sx(0x00427d4c);
+        c.g[A2][0] = 0x4;
+        MEMSET.call(c, 0x00427d4c)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[V0][0] = 0u64;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `int sceUmount(const char *fs)` (0x0042a2e0): path command 0x15
+/// (`umount`) on `a0`.
+pub fn sce_umount(c: &mut Cpu) {
+    guest(c, |c| {
+        fs_path_cmd(c, 0x15, 0x0042a2f0)?;
+        return Ok(());
+    });
+}
+
+/// One path-command wrapper: frame the call, run path command `cmd` on
+/// `a0`, restore and return. Shared by the remove/rmdir/deldrv/chdir/umount
+/// wrappers (each names its own command).
+pub(crate) fn fs_path_cmd(c: &mut Cpu, cmd: u32, ret: u32) -> crate::call::Flow {
+    use oc698_callee::*;
+    c.cycles += 7;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+    c.g[RA][0] = sx(ret);
+    c.g[A1][0] = cmd as u64;
+    PATH_CMD.call(c, ret)?;
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+    c.pc = t;
+    Ok(())
+}
+
+/// `int sceRemove(const char *path)` (0x00428fc0): path command 6.
+pub fn sce_remove(c: &mut Cpu) {
+    guest(c, |c| {
+        fs_path_cmd(c, 0x6, 0x00428fd0)?;
+        return Ok(());
+    });
+}
+
+/// `int sceRmdir(const char *path)` (0x00429190): path command 8.
+pub fn sce_rmdir(c: &mut Cpu) {
+    guest(c, |c| {
+        fs_path_cmd(c, 0x8, 0x004291a0)?;
+        return Ok(());
+    });
+}
+
+/// `int sceDelDrv(const char *name)` (0x00429540): path command 0x10.
+pub fn sce_del_drv(c: &mut Cpu) {
+    guest(c, |c| {
+        fs_path_cmd(c, 0x10, 0x00429550)?;
+        return Ok(());
+    });
+}
+
+/// `int sceChdir(const char *path)` (0x00429eb8): path command 0x12.
+pub fn sce_chdir(c: &mut Cpu) {
+    guest(c, |c| {
+        fs_path_cmd(c, 0x12, 0x00429ec8)?;
+        return Ok(());
+    });
+}
+
 /// `int sceSifInitIopHeap(void)`: bind the IOP heap RPC (spinning until the IOP answers) and clear the heap error word at 0x455224. Returns 0, or -1 when the bind fails.
 pub fn sce_sif_init_iop_heap(c: &mut Cpu) {
     guest(c, |c| {
@@ -2272,8 +2405,11 @@ pub(crate) mod tests {
     use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
 
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::require_paths;
 
     use crate::difftest::check;
     use crate::difftest::check_paths;
@@ -3198,6 +3334,498 @@ pub(crate) mod tests {
             i_wakeup_thread_signal,
             200,
             &setup,
+        );
+    }
+    /// `sceFs_CallFuncCmdHandler`: empty slot (returns 0) and set slots
+    /// (the indirect call runs the test fake).
+    #[test]
+    fn sce_fs_call_func_cmd_handler_matches() {
+        covered(
+            ee::s15::f_00427a60__generated,
+            sce_fs_call_func_cmd_handler,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_322_006, 2);
+                c.pc = 0x0042_7a60;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                if seed % 2 == 0 {
+                    c.bus.write32(DATA + 0x100, 0);
+                } else {
+                    c.bus.write32(DATA + 0x100, FAKE);
+                    c.bus.write32(DATA + 0x104, DATA + 0x200);
+                }
+                for i in 0..16 {
+                    c.bus.write32(DATA + 0x200 + 4 * i, 0x0101_0100 + seed);
+                }
+            },
+        );
+    }
+
+    /// `sceFsReset`: wipe the word at `0x52ee28` (the `memset` clears 4
+    /// bytes there), pre-filled so the clear is observable.
+    #[test]
+    fn sce_fs_reset_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_322_007, 0);
+            c.pc = 0x0042_7d28;
+            c.bus
+                .write32(0x0045_520c, seed.wrapping_mul(0x9e37_79b9) | 1);
+            c.bus
+                .write32(0x0052_ee28, seed.wrapping_mul(0x5bd1_e995) | 1);
+        };
+        check_paths(
+            ee::s15::f_00427d28__generated,
+            sce_fs_reset,
+            SEEDS,
+            &[53],
+            &setup,
+        );
+    }
+
+    /// `sceUmount`: the path command runs for real on the fixture string.
+    #[test]
+    fn sce_umount_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_322_008, 0);
+            c.pc = 0x0042_a2e0;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            let name = b"host0:/\0";
+            for (i, b) in name.iter().enumerate() {
+                c.bus.write8(DATA + 0x100 + i as u32, *b);
+            }
+        };
+        check_paths(
+            ee::s15::f_0042a2e0__generated,
+            sce_umount,
+            SEEDS,
+            &[21176],
+            &setup,
+        );
+    }
+
+    /// A path string in the fixture area.
+    pub(crate) fn path_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        machine(c, seed, salt, 0);
+        c.g[A0][0] = (DATA + 0x100) as u64;
+        let name = b"host0:/x\0";
+        for (i, b) in name.iter().enumerate() {
+            c.bus.write8(DATA + 0x100 + i as u32, *b);
+        }
+    }
+
+    /// Path-command wrappers: each names its own command word.
+    #[test]
+    fn sce_remove_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            path_setup(c, seed, 1_323_001);
+            c.pc = 0x0042_8fc0;
+        };
+        check_paths(
+            ee::s15::f_00428fc0__generated,
+            sce_remove,
+            SEEDS,
+            &[21169],
+            &setup,
+        );
+    }
+
+    #[test]
+    fn sce_rmdir_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            path_setup(c, seed, 1_323_002);
+            c.pc = 0x0042_9190;
+        };
+        check_paths(
+            ee::s15::f_00429190__generated,
+            sce_rmdir,
+            SEEDS,
+            &[21176],
+            &setup,
+        );
+    }
+
+    #[test]
+    fn sce_del_drv_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            path_setup(c, seed, 1_323_003);
+            c.pc = 0x0042_9540;
+        };
+        check_paths(
+            ee::s15::f_00429540__generated,
+            sce_del_drv,
+            SEEDS,
+            &[21176],
+            &setup,
+        );
+    }
+
+    #[test]
+    fn sce_chdir_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            path_setup(c, seed, 1_323_004);
+            c.pc = 0x0042_9eb8;
+        };
+        check_paths(
+            ee::s15::f_00429eb8__generated,
+            sce_chdir,
+            SEEDS,
+            &[21169],
+            &setup,
+        );
+    }
+
+    /// `sceFsInit`: bring-up on a drained RPC pool (the bind and the call
+    /// fail fast), the fd table zeroed.
+    #[test]
+    fn sce_fs_init_matches_r2() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            crate::game::lib::sif::tests::mrpc_setup(c, seed, 0x0042_7a90);
+            c.pc = 0x0042_7a90;
+            c.bus.write32(0x0045_5180, 0);
+        };
+        check_paths(
+            ee::s15::f_00427a90__generated,
+            sce_fs_init,
+            SEEDS,
+            &[1207],
+            &setup,
+        );
+    }
+
+    /// Gate for the `sceFsInit` fakes (per-machine; other tests' machines
+    /// read 0 here, so their runs fall back to the slot bodies).
+    pub(crate) const FSINIT_GATE: u32 = DATA + 0x6240;
+    /// First `sceSifBindRpc` answer: negative exits at once, zero and
+    /// positive take the fd-table path (`-1`, `0`, `5` by digit).
+    pub(crate) const FSINIT_BIND: u32 = DATA + 0x6244;
+    /// `sceSifCallRpc` answer: negative takes the `0xc10` arm, zero
+    /// decodes the reply (`-1`, `0` by digit).
+    pub(crate) const FSINIT_CALL: u32 = DATA + 0x6248;
+    /// Reply word the `0xc1c` copy decodes (`0`, `2`, `3` by digit).
+    pub(crate) const FSINIT_REPLY: u32 = DATA + 0x624c;
+    /// `sceSifBindRpc` calls so far: the retry loop needs a second answer.
+    pub(crate) const FSINIT_BIND_N: u32 = DATA + 0x6250;
+    pub(crate) const FSINIT_MAGIC: u32 = 0x4653_494e;
+
+    /// `sceSifInitRpc` under the fixture: the bring-up never runs (the
+    /// result is ignored past the entry block, which the plain test covers).
+    fn fake_fsinit_init_rpc(c: &mut Cpu) {
+        if c.bus.read32(FSINIT_GATE) != FSINIT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_fsinit_init_rpc),
+                ee::s15::f_00426408__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 10;
+        crate::abi::ret(c);
+    }
+
+    /// `DIntr` under the fixture: report the entry EIE bit (which steers
+    /// `0x427b3c` vs `0x427b08`) and clear it, like the real disable.
+    fn fake_fsinit_dintr(c: &mut Cpu) {
+        if c.bus.read32(FSINIT_GATE) != FSINIT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_fsinit_dintr),
+                ee::s15::f_0042c078__generated,
+            );
+        }
+        c.g[V0][0] = ((c.cop0[12] >> 16) & 1) as u64;
+        c.cop0[12] &= !(1 << 16);
+        c.cycles += 5;
+        crate::abi::ret(c);
+    }
+
+    /// `EIntr` under the fixture: report EIE and set it, like the real enable.
+    fn fake_fsinit_eintr(c: &mut Cpu) {
+        if c.bus.read32(FSINIT_GATE) != FSINIT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_fsinit_eintr),
+                ee::s15::f_0042c0c0__generated,
+            );
+        }
+        c.g[V0][0] = ((c.cop0[12] >> 16) & 1) as u64;
+        c.cop0[12] |= 1 << 16;
+        c.cycles += 6;
+        crate::abi::ret(c);
+    }
+
+    /// `sceSifBindRpc` under the fixture: the first answer is steered; a
+    /// retry (the delay loop ran) deposits the fd-table word and succeeds,
+    /// so the loop always terminates after at most one retry.
+    fn fake_fsinit_bind_rpc(c: &mut Cpu) {
+        if c.bus.read32(FSINIT_GATE) != FSINIT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_fsinit_bind_rpc),
+                ee::s15::f_00426b48__generated,
+            );
+        }
+        let n = c.bus.read32(FSINIT_BIND_N);
+        c.bus.write32(FSINIT_BIND_N, n + 1);
+        if n == 0 {
+            let word = c.bus.read32(FSINIT_WORD);
+            c.bus.write32(0x0052_ee24, word);
+            c.g[V0][0] = sx(c.bus.read32(FSINIT_BIND));
+        } else {
+            c.bus.write32(0x0052_ee24, 1);
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 12;
+        crate::abi::ret(c);
+    }
+
+    /// The fd-table word the `0x427b5c` check reads (zero retries the bind
+    /// once through the delay loop).
+    pub(crate) const FSINIT_WORD: u32 = DATA + 0x6254;
+
+    /// `sceFs_FdSemaInit` under the fixture: nothing to initialise
+    /// headless (the real one never runs).
+    fn fake_fsinit_fd_sema_init(c: &mut Cpu) {
+        if c.bus.read32(FSINIT_GATE) != FSINIT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_fsinit_fd_sema_init),
+                ee::s15::f_00427438__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 8;
+        crate::abi::ret(c);
+    }
+
+    /// `WaitSema` under the fixture: the sema is already signalled (the
+    /// IOP answered at once), so the wait returns its id without blocking.
+    fn fake_fsinit_wait_sema(c: &mut Cpu) {
+        if c.bus.read32(FSINIT_GATE) != FSINIT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_fsinit_wait_sema),
+                ee::s15::f_00423de0__generated,
+            );
+        }
+        c.g[V0][0] = c.g[A0][0];
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `SignalSema` under the fixture: signalled at once.
+    fn fake_fsinit_signal_sema(c: &mut Cpu) {
+        if c.bus.read32(FSINIT_GATE) != FSINIT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_fsinit_signal_sema),
+                ee::s15::f_00423dc0__generated,
+            );
+        }
+        c.g[V0][0] = 1;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `sceSifCallRpc` under the fixture: the steered answer, with the
+    /// steered reply deposited where the `0x427c1c` copy reads it (the
+    /// second copy sources `(S0 + 4) | 0x20000000`, an SPR word).
+    fn fake_fsinit_call_rpc(c: &mut Cpu) {
+        if c.bus.read32(FSINIT_GATE) != FSINIT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_fsinit_call_rpc),
+                ee::s15::f_00426d18__generated,
+            );
+        }
+        let src = (c.g[S0][0] as u32).wrapping_add(4) | 0x2000_0000;
+        let reply = c.bus.read32(FSINIT_REPLY);
+        c.bus.write32(src & !3, reply);
+        c.g[V0][0] = sx(c.bus.read32(FSINIT_CALL));
+        c.cycles += 12;
+        crate::abi::ret(c);
+    }
+
+    /// Hook all eight `sceFsInit` fakes into their override slots.
+    pub(crate) fn fsinit_hook_fakes() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00426408),
+            fake_fsinit_init_rpc,
+            fakes::prev_cell(fake_fsinit_init_rpc),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_0042C078),
+            fake_fsinit_dintr,
+            fakes::prev_cell(fake_fsinit_dintr),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_0042C0C0),
+            fake_fsinit_eintr,
+            fakes::prev_cell(fake_fsinit_eintr),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00426B48),
+            fake_fsinit_bind_rpc,
+            fakes::prev_cell(fake_fsinit_bind_rpc),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00427438),
+            fake_fsinit_fd_sema_init,
+            fakes::prev_cell(fake_fsinit_fd_sema_init),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00423DE0),
+            fake_fsinit_wait_sema,
+            fakes::prev_cell(fake_fsinit_wait_sema),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00423DC0),
+            fake_fsinit_signal_sema,
+            fakes::prev_cell(fake_fsinit_signal_sema),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00426D18),
+            fake_fsinit_call_rpc,
+            fakes::prev_cell(fake_fsinit_call_rpc),
+        );
+    }
+
+    /// `sceFsInit` on steered callees: every state and the shared exit.
+    /// Independent digits: `seed % 2` is the entry EIE bit (`0x427b3c` vs
+    /// `0x427b08`); `seed / 2 % 3` the first bind answer (-1 exits at once,
+    /// 0/5 continue); `seed / 6 % 2` the fd-table word (zero retries the
+    /// bind once through the delay loop); `seed / 12 % 2` the call answer
+    /// (negative takes `0x427c10`, zero decodes the reply); `seed / 24 % 3`
+    /// the reply word (0, 2, 3).
+    pub(crate) fn fsinit_full_setup(c: &mut Cpu, seed: u32) {
+        crate::game::lib::sif::tests::mrpc_setup(c, seed, 0x0042_7a90);
+        c.pc = 0x0042_7a90;
+        c.bus.write32(0x0045_5180, 0);
+        fsinit_hook_fakes();
+        c.bus.write32(FSINIT_GATE, FSINIT_MAGIC);
+        c.cop0[12] = (c.cop0[12] & !(1 << 16)) | ((seed % 2) << 16);
+        c.bus
+            .write32(FSINIT_BIND, [-1i32 as u32, 0, 5][seed as usize / 2 % 3]);
+        c.bus
+            .write32(FSINIT_WORD, if seed as usize / 6 % 2 == 0 { 0 } else { 1 });
+        c.bus.write32(FSINIT_BIND_N, 0);
+        c.bus
+            .write32(FSINIT_CALL, [-1i32 as u32, 0][seed as usize / 12 % 2]);
+        c.bus
+            .write32(FSINIT_REPLY, [0, 2, 3][seed as usize / 24 % 3]);
+        // First copy's source word (`(S0 | 0x20000000)` reads bus RAM
+        // `0x0052e340`): a distinctive nonzero word, so a wrong source
+        // address (e.g. `&` for `|`) changes the word copied to `0x52ee28`.
+        c.bus.write32(0x0052_E340, 0xC0F1_01C1);
+        // Fd-table clear targets (`[0x52ec00 + 0x10*i + 4]`, fresh RAM reads
+        // zero): distinctive nonzero words, so deleting the clear store
+        // changes the words the tests compare.
+        for i in 0..32u32 {
+            c.bus.write32(0x0052_EC00 + 0x10 * i + 4, 0xC1EA_0000 + i);
+        }
+    }
+
+    /// `sceFsInit` through every state: bind failures and retries, the
+    /// fd-table clear, call failures and reply decodes, all joining at the
+    /// shared `0x427c74` exit.
+    #[test]
+    fn sce_fs_init_full_matches() {
+        check(
+            ee::s15::f_00427a90__generated,
+            sce_fs_init,
+            SEEDS,
+            &|c, seed| {
+                fsinit_full_setup(c, seed);
+            },
+        );
+        require_paths(
+            ee::s15::f_00427a90__generated,
+            SEEDS,
+            // Bind-fail exit (91/100), bind-ok direct (call-fail 381/390,
+            // reply 400/409), and each retrying once through the delay loop
+            // (+~7.34M); each pair is the EIE clear/set entry.
+            &[
+                91, 100, 381, 390, 400, 409, 7340445, 7340454, 7340464, 7340473,
+            ],
+            &|c, seed| {
+                fsinit_full_setup(c, seed);
+            },
+        );
+    }
+
+    /// `sceFsInit` entered at a resume head: every non-entry `pc` runs the
+    /// generated body (the guard), so both sides run the same partial pass;
+    /// flipping the guard would restart the hand arms from the entry.
+    /// Loop heads get a small counter so the partial pass terminates.
+    #[test]
+    fn sce_fs_init_resume_matches() {
+        check(
+            ee::s15::f_00427a90__generated,
+            sce_fs_init,
+            SEEDS,
+            &|c, seed| {
+                fsinit_full_setup(c, seed);
+                use ssx3_ee_rt::cpu::reg as R;
+                // A resume frame: the entry's saves with a plausible
+                // return, then the head under test.
+                c.g[R::S1][0] = c.g[R::S0][0];
+                c.g[R::S0][0] = 0x0052_ee00;
+                c.g[R::SP][0] = sx((c.g[R::SP][0] as u32).wrapping_sub(0x80));
+                c.sd((c.g[R::SP][0] as u32).wrapping_add(0x20), c.g[R::S0][0]);
+                c.sd((c.g[R::SP][0] as u32).wrapping_add(0x30), c.g[R::S1][0]);
+                c.sd((c.g[R::SP][0] as u32).wrapping_add(0x70), c.g[R::RA][0]);
+                // The entry block sets `S3` (the `S0` source); resume
+                // entries skip it, so seed it directly.
+                c.g[R::S3][0] = 0x0053_0000;
+                match seed as usize % 3 {
+                    // Delay loop: already done, exit at once.
+                    0 => {
+                        c.pc = 0x0042_7b20;
+                        c.g[R::V0][0] = 0;
+                        c.g[R::V1][0] = 0xffff_ffff_ffff_ffff;
+                    }
+                    // Delay back edge: the counter; the arm sets the limit.
+                    1 => {
+                        c.pc = 0x0042_7b18;
+                        c.g[R::V0][0] = 5;
+                    }
+                    // Fd-table clear: mid-range pointers, 32 words to go.
+                    _ => {
+                        c.pc = 0x0042_7b98;
+                        c.g[R::V1][0] = 0x0052_ec00;
+                        c.g[R::A0][0] = 0x0052_ee00;
+                        c.g[R::S2][0] = 0x0053_0000;
+                        c.g[R::S4][0] = 0x0045_0000;
+                        c.g[R::S3][0] = 0x0053_0000;
+                        c.g[R::S1][0] = 0x0053_0000;
+                        c.g[R::S0][0] = 0x0053_0000;
+                    }
+                }
+            },
+        );
+    }
+
+    driven!(sce_fs_init_driven, sce_fs_init);
+    driven!(sce_fs_init_generated_driven, ee::s15::f_00427a90__generated);
+
+    /// `sceFsInit` with events due: the back edges unwind and re-enter
+    /// identically on both sides (the fakes make every re-entry converge:
+    /// a retried bind answers at once afterwards).
+    #[test]
+    fn sce_fs_init_events() {
+        check_events(
+            sce_fs_init_generated_driven,
+            sce_fs_init_driven,
+            SEEDS,
+            &|c, seed| {
+                fsinit_full_setup(c, seed);
+                c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+                let mut r = Rng(seed as u64 ^ 0x0042_7a90);
+                let mode = schedule(c, &mut r, seed, 0x0042_7a90);
+                // `schedule` starts a thread (clobbering cop0): re-apply the
+                // EIE digit steering `0x427b3c` vs `0x427b08`.
+                c.cop0[12] = (c.cop0[12] & !(1 << 16)) | ((seed % 2) << 16);
+                mode
+            },
         );
     }
 
