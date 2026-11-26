@@ -186,12 +186,55 @@ def svg(stats):
 """
 
 
+def quality():
+    """Port quality of the hand-written replacements (docs/plans/roadmap.md,
+    "Port quality"): the functions registered in an `OVERRIDES` table of
+    `ssx3-game`, split by their control flow.
+
+    - goto-style: a labelled loop (`'l_ADDR: loop`), labelled blocks
+      (`'b_ADDR: {`) or a `match pc` state machine, transcribed from the
+      generated body (L1);
+    - structured: plain `if`/`loop`/`while` over the register file (L2).
+
+    Typed signatures and idiomatic code (L3, L4) are not counted yet."""
+    import re
+
+    goto = structured = 0
+    root = os.path.join(ROOT, "crates/ssx3-game/src")
+    for d, _dirs, files in os.walk(root):
+        for f in files:
+            if not f.endswith(".rs"):
+                continue
+            text = open(os.path.join(d, f)).read()
+            cut = text.find("#[cfg(test)]\nmod tests")
+            text = text if cut < 0 else text[:cut]
+            i = text.find("pub const OVERRIDES")
+            if i < 0:
+                continue
+            block = text[i : text.index("];", i)]
+            names = {fn.split("::")[-1] for _a, fn in re.findall(
+                r'\(\s*(0x[0-9a-fA-F_]+)\s*,\s*([\w:]+)\s*,\s*"[^"]+"\s*,?\s*\)', block)}
+            parts = re.split(r"\n(?=(?:pub(?:\(crate\))? )?fn )", text)
+            for part in parts[1:]:
+                m = re.match(r"(?:pub(?:\(crate\))? )?fn (\w+)", part)
+                if not m or m.group(1) not in names:
+                    continue
+                if re.search(r"'[lb]_[0-9a-f]+: (?:loop|\{)|let mut pc: u32 = 0x", part):
+                    goto += 1
+                else:
+                    structured += 1
+    return goto, structured
+
+
 def main():
     stats = counts()
     with open(os.path.join(ROOT, "docs/images/progress.svg"), "w") as f:
         f.write(svg(stats))
     for g, (d, n, ds, s) in stats.items():
         print(f"{g:28} {d:6,}/{n:6,} functions ({100 * d / n:4.1f}%)  {100 * ds / s:4.1f}% of bytes")
+    goto, structured = quality()
+    print(f"{'Port quality (hand-written)':28} goto-style {goto:,}, structured {structured:,} "
+          f"({100 * structured / max(goto + structured, 1):.1f}% structured)")
 
 
 if __name__ == "__main__":

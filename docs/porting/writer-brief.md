@@ -88,7 +88,11 @@ after each wave.
 - One `#[test]` per function, comparing against the generated body, with a
   fixture that reaches every branch. Every `OVERRIDES` entry must have its
   test: add the entry only together with the finished test.
-- Test target: `f_XXXXXXXX__generated` if the function already has an
+- Test target: `f_XXXXXXXX__generated`. The orchestrator registers a slot for
+  every function of the wave before you start (`integrate_wave.py slots`), so the
+  name exists; only if it does not compile as `__generated` use `f_XXXXXXXX`.
+  (Older text below about `f_XXXXXXXX` applies to that case.)
+  Original wording: `f_XXXXXXXX__generated` if the function already has an
   override slot, else `f_XXXXXXXX`. `f_XXXXXXXX` dispatches on `c.pc`: set
   `c.pc` to the function's entry address in the fixture, or the generated side
   jumps to `__entries` and does nothing. (`integrate_wave.py repoint` switches
@@ -337,3 +341,24 @@ Lessons from the front-end, graphics and sound waves (248-250):
   fields of structs used by other units' tests become `pub(crate)`.
   `cargo fix --lib` strips imports that only the tests use: run it with `--tests`
   or restore them behind `#[cfg(test)]`.
+
+Lessons from the verification-speed pass:
+
+- Fixtures whose real callees allocate (constructors, popups, string tables,
+  the BELibrary) use `fakes::machine_rt(c, seed, salt, calls)` instead of
+  `fakes::machine`: it adds the size-class allocator, the dlmalloc arena and the
+  BELibrary dummy. Without it the test spins in `EAFile_AllocRequest` (pc
+  `0x3de768`, `0x31ef40`, `0x31e968`) and the orchestrator has to bounce it back.
+  Tests run with a 5-million-cycle budget during verification.
+- Check your module with `python3 tools/lint_port.py ocM` (no build, one second)
+  before you report: it flags hex literals with more than 8 digits
+  (`0x001b_babcc`), addresses that the generated body never uses, return
+  addresses that are missing and cycle totals that differ.
+- Return-address and string-offset literals are the commonest transcription
+  bugs of all: copy them from the generated text by script, never by eye, and
+  keep them full (`0x001b_abcc`, never `0x434c` plus a base that a helper may
+  add twice).
+- Failure logs: in `"x vs y"` lines x is the generated body and y your port.
+- Dispatcher lists carry a draft from `port_dispatcher.py`
+  (`target/gate/waveN/draft/0xADDR.rs`): start from it and spend your time on the
+  fixture (a path-count test), not on the transcription.

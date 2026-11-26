@@ -140,6 +140,56 @@ pub fn machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
     r
 }
 
+/// [`machine`] plus the runtime a callee that allocates needs: the engine's
+/// size-class pool allocator with its dlmalloc arena ([`test_allocator`]) and
+/// the BELibrary dummy at `gp - 0x1f04`. Use it for fixtures whose real
+/// callees (constructors, popups, string tables) call `EA_MemAllocNamed`:
+/// without it they spin in `EAFile_AllocRequest` (pc 0x3de768 / 0x31ef40).
+/// The registers the allocator setup used are scrambled again.
+pub fn machine_rt(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+    let mut r = machine(c, seed, salt, calls);
+    test_allocator(c);
+    c.bus
+        .write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
+    scramble(c, &mut r);
+    c.g[GP][0] = GAME_GP as u64;
+    r
+}
+
+/// The engine's size-class pool allocator (enabled through `gp + 0xdd8`)
+/// plus the dlmalloc arena the sub-constructors' allocations fall back to
+/// (the heap at 0x4ff250, backed by `DATA+0x40000..+0x80000`). Leaves the
+/// argument registers and `pc` as the arena setup call left them.
+pub fn test_allocator(c: &mut Cpu) {
+    c.bus.write32(GAME_GP + 0xdd8, 1);
+    const POOLS: [(u32, u32, u32); 7] = [
+        (0x2a70, 0x800, 8),
+        (0x2a60, 0x2000, 0x10),
+        (0x2a6c, 0x32000, 0x20),
+        (0x2a7c, 0x25800, 0x40),
+        (0x2a84, 0x25800, 0x80),
+        (0x2a78, 0x20000, 0x100),
+        (0x2a68, 0x20000, 0x200),
+    ];
+    let mut nodes = DATA + 0x24_000;
+    for (i, (slot, head, block)) in POOLS.into_iter().enumerate() {
+        let pool = DATA + 0x20_000 + 0x100 * i as u32;
+        for n in 0..16u32 {
+            let node = nodes + block * n;
+            c.bus.write32(node, if n == 15 { 0 } else { node + block });
+        }
+        c.bus.write32(pool + head, nodes);
+        c.bus.write32(GAME_GP + slot, pool);
+        nodes += block * 16;
+    }
+    c.g[A0][0] = 0x004f_f250;
+    c.g[A1][0] = (DATA + 0x4_0000) as u64;
+    c.g[A2][0] = 0x4_0000;
+    c.g[RA][0] = super::RA as u64;
+    c.pc = 0x0031_ff60;
+    ssx3_ee::s10::DLHeap_InitArena(c);
+}
+
 /// A random pointer into the test data area (16-byte aligned).
 pub fn ptr(r: &mut Rng) -> u32 {
     DATA + (r.next_u32() & 0xf_fff0)
@@ -219,4 +269,28 @@ pub fn prev_cell(fake: fn(&mut Cpu)) -> &'static std::sync::atomic::AtomicUsize 
         .get_or_insert_with(HashMap::new)
         .entry(key)
         .or_insert_with(|| Box::leak(Box::new(AtomicUsize::new(0))))
+}
+
+#[cfg(test)]
+mod machine_rt_tests {
+    use super::*;
+
+    /// `machine_rt` leaves the runtime a real allocating callee needs.
+    #[test]
+    fn machine_rt_sets_up_the_runtime() {
+        let mut c = super::super::fresh();
+        machine_rt(&mut c, 3, 0x77, 0);
+        assert_eq!(c.g[GP][0], GAME_GP as u64);
+        assert_eq!(c.bus.read32(GAME_GP + 0xdd8), 1, "pool allocator enabled");
+        assert_eq!(
+            c.bus.read32(GAME_GP.wrapping_sub(0x1f04)),
+            DATA + 0x30_0000,
+            "BELibrary dummy"
+        );
+        assert_ne!(
+            c.bus.read32(GAME_GP + 0x2a70),
+            0,
+            "size-class pool installed"
+        );
+    }
 }

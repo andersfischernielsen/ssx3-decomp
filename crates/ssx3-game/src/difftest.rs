@@ -51,7 +51,7 @@ pub fn fresh() -> Box<Cpu> {
     // Cycle budget: generated loops call the event hook when `cycles >=
     // next_event`, so a function (or a real callee) that runs away on test
     // data fails fast instead of hanging the test run.
-    c.next_event = CYCLE_BUDGET;
+    c.next_event = cycle_budget();
     c.hooks.event = budget_event;
     c
 }
@@ -60,10 +60,23 @@ pub fn fresh() -> Box<Cpu> {
 /// runaway (a replacement takes tens to thousands; a game frame ~5 million).
 pub const CYCLE_BUDGET: u64 = 50_000_000;
 
+/// The budget in force: `SSX3_CYCLE_BUDGET` (cycles) when set, else
+/// [`CYCLE_BUDGET`]. The wave verification runs new modules with a small
+/// budget (5 million) so a runaway fixture fails in a second or two.
+pub fn cycle_budget() -> u64 {
+    static BUDGET: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        std::env::var("SSX3_CYCLE_BUDGET")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(CYCLE_BUDGET)
+    })
+}
+
 /// The event hook of test machines: fail past the budget, otherwise the
 /// machine's real event hook (event-delivery tests set `next_event` lower).
 fn budget_event(c: &mut Cpu) -> bool {
-    if c.cycles >= CYCLE_BUDGET {
+    if c.cycles >= cycle_budget() {
         panic!(
             "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
             c.cycles, c.pc
