@@ -86,36 +86,6 @@ pub mod native_files;
 pub mod oc643;
 #[cfg(feature = "oc658")]
 pub mod oc658;
-#[cfg(feature = "oc710")]
-pub mod oc710;
-#[cfg(feature = "oc800")]
-pub mod oc800;
-#[cfg(feature = "oc801")]
-pub mod oc801;
-#[cfg(feature = "oc802")]
-pub mod oc802;
-#[cfg(feature = "oc803")]
-pub mod oc803;
-#[cfg(feature = "oc804")]
-pub mod oc804;
-#[cfg(feature = "oc805")]
-pub mod oc805;
-#[cfg(feature = "oc806")]
-pub mod oc806;
-#[cfg(feature = "oc807")]
-pub mod oc807;
-#[cfg(feature = "oc808")]
-pub mod oc808;
-#[cfg(feature = "oc809")]
-pub mod oc809;
-#[cfg(feature = "oc810")]
-pub mod oc810;
-#[cfg(feature = "oc811")]
-pub mod oc811;
-#[cfg(feature = "oc812")]
-pub mod oc812;
-#[cfg(feature = "oc813")]
-pub mod oc813;
 pub mod plugin_host;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
@@ -142,36 +112,6 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
-    #[cfg(feature = "oc800")]
-    v.extend_from_slice(oc800::OVERRIDES);
-    #[cfg(feature = "oc801")]
-    v.extend_from_slice(oc801::OVERRIDES);
-    #[cfg(feature = "oc802")]
-    v.extend_from_slice(oc802::OVERRIDES);
-    #[cfg(feature = "oc803")]
-    v.extend_from_slice(oc803::OVERRIDES);
-    #[cfg(feature = "oc804")]
-    v.extend_from_slice(oc804::OVERRIDES);
-    #[cfg(feature = "oc805")]
-    v.extend_from_slice(oc805::OVERRIDES);
-    #[cfg(feature = "oc806")]
-    v.extend_from_slice(oc806::OVERRIDES);
-    #[cfg(feature = "oc807")]
-    v.extend_from_slice(oc807::OVERRIDES);
-    #[cfg(feature = "oc808")]
-    v.extend_from_slice(oc808::OVERRIDES);
-    #[cfg(feature = "oc809")]
-    v.extend_from_slice(oc809::OVERRIDES);
-    #[cfg(feature = "oc810")]
-    v.extend_from_slice(oc810::OVERRIDES);
-    #[cfg(feature = "oc811")]
-    v.extend_from_slice(oc811::OVERRIDES);
-    #[cfg(feature = "oc812")]
-    v.extend_from_slice(oc812::OVERRIDES);
-    #[cfg(feature = "oc813")]
-    v.extend_from_slice(oc813::OVERRIDES);
-    #[cfg(feature = "oc710")]
-    v.extend_from_slice(oc710::OVERRIDES);
     #[cfg(feature = "oc658")]
     v.extend_from_slice(oc658::OVERRIDES);
     #[cfg(feature = "oc643")]

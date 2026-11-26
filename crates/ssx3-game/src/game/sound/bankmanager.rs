@@ -318,6 +318,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_play_loading_screen_loop,
         "SSXAudioSystem_PlayLoadingScreenLoop",
     ),
+    (
+        0x0028_d488,
+        ssx_audio_system_select_random_song_hand,
+        "SSXAudioSystem_SelectRandomSong",
+    ),
+    (
+        0x0028_f478,
+        ssx_audio_system_on_song_changed_resumable,
+        "SSXAudioSystem_OnSongChanged",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6106,6 +6116,218 @@ pub fn ssx_audio_system_load_loading_screen_bank(c: &mut Cpu) {
     })
 }
 
+/// `SSXAudioSystem_SelectRandomSong(self)` (0x0028d488): pick a random song
+/// index in `[0, tracks)`, store it and make the music player switch to it.
+///
+/// Same body as the unwired ports in `bankmanager.rs`; this one is installed.
+pub fn ssx_audio_system_select_random_song_hand(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S2, 0x20);
+        c.g[S0][0] = 0x7fff;
+        frame.save(c, S1, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        let this = c.g[S2][0];
+        let player = c.lw((this as u32).wrapping_add(0x118));
+        c.g[S1][0] = c.lw((this as u32).wrapping_add(0x504));
+        c.g[S3][0] = c.lw((this as u32).wrapping_add(0x62a4));
+        c.g[V1][0] = player;
+        c.g[V0][0] = c.lw((player as u32).wrapping_add(0));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
+        call_ptr(c, 0x002a_df60, 0x0028_d4c0)?;
+        c.g[V0][0] = c.g[V0][0] & 0x7fff;
+
+        // Random fraction of the (scaled) track count.
+        c.cycles += 14;
+        c.mult(0, V0, V0, S1);
+        c.g[V1][0] = c.lw((this as u32).wrapping_add(0x118));
+        c.divu(0, V0, S0);
+        c.g[V0][0] = c.lo[0];
+        c.sw((this as u32).wrapping_add(0x508), c.g[V0][0]);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
+        call_ptr(c, 0x002a_df60, 0x0028_d4ec)?;
+        c.g[V1][0] = 0xa;
+        c.g[V0][0] = c.g[V0][0] & 0x7fff;
+        c.mult(0, V0, V0, V1);
+        c.g[A0][0] = 0x7fff;
+
+        // Skip up to ten songs to find a playable one.
+        c.cycles += 5;
+        c.divu(0, V0, S0);
+        c.g[V1][0] = c.lo[0];
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        let empty = c.g[V0][0] == 0;
+        c.g[S0][0] = c.g[V0][0];
+        if !empty {
+            c.cycles += 2;
+            c.g[A0][0] = this;
+            loop {
+                c.cycles += 8;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+                Callee {
+                    addr: 0x0028_d8a0,
+                    f: ee::s07::SSXAudioSystem_GetTrackMusicGroup,
+                }
+                .call(c, 0x0028_d528)?;
+                c.g[A2][0] = c.g[V0][0];
+                c.g[A0][0] = sx((this as u32).wrapping_add(0x118));
+                c.g[A1][0] = 1;
+                call_ptr(c, 0x002b_42b8, 0x0028_d538)?;
+                let more = c.g[S0][0] != 0;
+                c.g[A0][0] = this;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0028_d520);
+                }
+            }
+        }
+
+        // Restart the music player on the new selection.
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((this as u32).wrapping_add(0x508));
+        let same = c.g[S3][0] == c.g[V0][0];
+        c.g[S0][0] = sx((this as u32).wrapping_add(0x118));
+        if !same {
+            c.cycles += 1;
+        } else {
+            c.cycles += 9;
+            c.g[A0][0] = this;
+            Callee {
+                addr: 0x0028_d8a0,
+                f: ee::s07::SSXAudioSystem_GetTrackMusicGroup,
+            }
+            .call(c, 0x0028_d554)?;
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 1;
+            call_ptr(c, 0x002b_42b8, 0x0028_d564)?;
+            c.g[V0][0] = c.lw((this as u32).wrapping_add(0x508));
+            if c.g[S3][0] == c.g[V0][0] {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0;
+                call_ptr(c, 0x002b_42b8, 0x0028_d580)?;
+                c.cycles += 1;
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SSXAudioSystem_OnSongChanged` (0x0028f478): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn ssx_audio_system_on_song_changed_resumable(c: &mut Cpu) {
+    if c.pc != 0x0028f478 {
+        return ee::s07::f_0028f478__generated(c);
+    }
+    guest(c, |c| {
+        'b_28f514: {
+            'b_28f510: {
+                c.cycles += 15;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[S0][0] = c.g[A0][0];
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[RA][0] = sx(0x0028f490);
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x118));
+                call_ptr(c, 0x002b35a0, 0x0028f490)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0x1;
+                c.g[RA][0] = sx(0x0028f4a0);
+                c.g[A2][0] = 0u64;
+                Callee {
+                    addr: 0x00287930,
+                    f: ee::s07::SSXAudioSystem_GetChannelGain,
+                }
+                .call(c, 0x0028f4a0)?;
+                c.mtc1(0, 1);
+                c.c_lt_s(1, 0);
+                let t = !c.fcc();
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                if t {
+                    break 'b_28f510;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                    let t = c.g[V0][0] == 0u64;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    if t {
+                        break 'b_28f514;
+                    } else {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x48));
+                        let t = c.g[A0][0] == 0u64;
+                        c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+                        if t {
+                            break 'b_28f510;
+                        } else {
+                            c.cycles += 2;
+                            if c.g[S0][0] == 0u64 {
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                                break 'b_28f514;
+                            } else {
+                                c.cycles += 9;
+                                c.g[A0][0] = 0x4a0000;
+                                c.g[RA][0] = sx(0x0028f4e0);
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3660));
+                                call_ptr(c, 0x00317670, 0x0028f4e0)?;
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[RA][0] = sx(0x0028f4ec);
+                                c.g[A1][0] = c.g[V0][0];
+                                call_ptr(c, 0x0039f9d8, 0x0028f4ec)?;
+                                c.g[A3][0] = c.g[V0][0];
+                                let t = c.g[A3][0] == 0u64;
+                                c.g[A1][0] = 0x5;
+                                if t {
+                                    break 'b_28f510;
+                                } else {
+                                    c.cycles += 6;
+                                    c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x8));
+                                    c.g[A2][0] = 0u64;
+                                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xc0));
+                                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
+                                    let t = c.g[V0][0] as u32;
+                                    c.g[RA][0] = sx(0x0028f510);
+                                    c.g[A0][0] =
+                                        sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                    call_ptr(c, t, 0x0028f510)?;
+                                    break 'b_28f510;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            break 'b_28f514;
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6117,6 +6339,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::fepopupmisc::tests::oc782_install_fakes;
     pub(crate) use crate::game::sound::bankmonitor::tests::oc790_install_fakes;
     pub(crate) use crate::game::sound::bankmonitor::tests::oc796_install_fakes;
+    pub(crate) use crate::game::sound::soundsys::tests::oc807_install_fakes;
 
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
@@ -9155,4 +9378,98 @@ pub(crate) mod tests {
 
     /// `gp + 0x534` (the loading-screen bank name pointer) with the test gp.
     pub(crate) const GAME_GP_BANK_NAME: u32 = crate::difftest::GAME_GP + 0x534;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc807_fixture;
+    pub(crate) use crate::game::sound::soundsys::tests::oc807_queue;
+    pub(crate) use crate::game::sound::soundsys::tests::oc807_script;
+
+    pub(crate) use crate::game::sound::soundsys::tests::OC807_SELF;
+    pub(crate) use crate::game::sound::soundsys::tests::OC807_VT;
+    pub(crate) use crate::game::sound::ssxaudio::tests::oc806_machine;
+
+    pub(crate) const FX_AUDIO_RAND: u32 = 11;
+
+    /// Random song: the first pick equals the previous one (second pick,
+    /// then stop) or differs, 1..=7 songs, 1..=10 skips.
+    #[test]
+    fn ssx_audio_system_select_random_song_matches() {
+        fakes::covered(
+            ee::s07::f_0028d488__generated,
+            ssx_audio_system_select_random_song_hand,
+            240,
+            &|c, seed| {
+                let rand_policy = if seed % 3 == 1 { 0 } else { 9 };
+                oc806_machine(
+                    c,
+                    seed,
+                    0x806_0004,
+                    8,
+                    0x0028_d488,
+                    &[(FX_AUDIO_RAND, rand_policy)],
+                );
+                let this = DATA + 0x1000;
+                c.bus.write32(this + 0x118, DATA + 0x2000);
+                c.bus.write32(DATA + 0x2000, DATA + 0x3000);
+                c.bus.write32(DATA + 0x3000 + 0x1d8, 0x1234_5678);
+                c.bus.write32(this + 0x504, 1 + seed % 7);
+                c.bus
+                    .write32(this + 0x62a4, if seed % 3 == 2 { 1 } else { 0 });
+                c.bus.write32(this + 0x508, 0xdead_beef);
+            },
+        );
+    }
+
+    pub(crate) const OC807_WORLD: u32 = DATA + 0x27_0000;
+
+    pub(crate) const OC807_UI: u32 = DATA + 0x27_1000;
+
+    pub(crate) const OC807_OBJ: u32 = DATA + 0x27_2000;
+
+    pub(crate) const OC807_STATE: u32 = DATA + 0x27_3000;
+
+    /// Make the fake for `addr` return `bits` in `f0`.
+    pub(crate) fn oc807_script_f0(c: &mut Cpu, addr: u32, bits: u32) {
+        c.bus.write32(oc807_queue(addr) + 8, bits);
+    }
+
+    /// `SSXAudioSystem_OnSongChanged(self)`: starts the song player on
+    /// `self + 0x118`, and when channel 1's gain is positive and the UI state
+    /// stack has a current state, asks the state found by the hash `0x4a3660`
+    /// to handle message 5 through its vtable (`+0xc0` delta, `+0xc4` method).
+    /// The gain (`f0`), the world and stack pointers, the state's presence and
+    /// the vtable delta all vary with the seed.
+    #[test]
+    fn ssx_audio_system_on_song_changed_matches() {
+        oc807_install_fakes();
+        covered(
+            ee::s07::f_0028f478__generated,
+            ssx_audio_system_on_song_changed_resumable,
+            240,
+            &|c, seed| {
+                let _ = oc807_fixture(c, seed, 0x0028_f478, 5);
+                let gain = if seed % 4 == 0 {
+                    0xbf80_0000
+                } else {
+                    0x3f80_0000
+                };
+                oc807_script_f0(c, 0x0028_7930, gain);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), OC807_WORLD);
+                c.bus
+                    .write32(OC807_WORLD + 0x84, if seed % 7 == 0 { 0 } else { OC807_UI });
+                let top = match (seed / 7) % 4 {
+                    0 => 0,
+                    1 => 0xffff_ffe8, // self + 0x18 == 0
+                    _ => OC807_OBJ,
+                };
+                c.bus.write32(OC807_UI + 0x48, top);
+                let found = if (seed / 3) % 3 == 0 { 0 } else { OC807_STATE };
+                oc807_script(c, 0x0039_f9d8, &[found]);
+                c.bus.write32(OC807_STATE + 8, OC807_VT);
+                c.bus.write16(OC807_VT + 0xc0, 0x10 * (seed % 3) as u16);
+                c.bus.write32(OC807_VT + 0xc4, fakes::FAKE + 0x10);
+                c.g[A0][0] = sx(OC807_SELF);
+                c.pc = 0x0028_f478;
+            },
+        );
+    }
 }

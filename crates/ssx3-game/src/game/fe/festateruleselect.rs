@@ -67,6 +67,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cfe_state_rule_select_update_row_visibility,
         "cFEStateRuleSelect_UpdateRowVisibility",
     ),
+    (
+        0x0019_13b8,
+        rule_select_fill_rule_list,
+        "cFEStateRuleSelect_FillRuleList",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1093,6 +1098,709 @@ pub(crate) const RULE_SCREEN: u32 = 0x40;
 
 pub(crate) const RULE_ROW_DATA_OFF: u32 = 0x18;
 
+/// `void cFEStateRuleSelect_FillRuleList(self, signed char first)`
+/// (0x001913b8): fills the ten rule rows (listbox `0..9` and label `0t..9t`,
+/// then `a`) from the game-rule mapping: label text, list entries by rule kind
+/// (jump table at 0x45faf0: off/on, no/yes, percent, seconds, ... ), the
+/// current value; then the arrow widgets and the menu frame (normal or
+/// greyed out) and the row visibility.
+pub fn rule_select_fill_rule_list(c: &mut Cpu) {
+    if c.pc != 0x001913b8 {
+        return ee::s02::f_001913b8__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 34;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xf0));
+        c.g[V0][0] = 0x4a0000;
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 24);
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.g[V1][0] = 0x4a0000;
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S3][0] = c.g[A0][0];
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.g[S5][0] = 0u64;
+        c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S7][0] = sx(((c.g[A1][0] as u32) as i32 >> 24) as u32);
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.g[S6][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.g[FP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[RA][0]);
+        c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x16a8));
+        c.g[A2][0] = c.lb(c.g[T1][0] as u32);
+        c.g[A3][0] = c.lb((c.g[T1][0] as u32).wrapping_add(0x1));
+        c.g[T0][0] = c.lb((c.g[T1][0] as u32).wrapping_add(0x2));
+        c.sb(c.g[SP][0] as u32, c.g[A2][0]);
+        c.sb((c.g[SP][0] as u32).wrapping_add(0x1), c.g[A3][0]);
+        c.sb((c.g[SP][0] as u32).wrapping_add(0x2), c.g[T0][0]);
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x16b0));
+        c.g[V0][0] = c.lb(c.g[A3][0] as u32);
+        c.g[A1][0] = c.lb((c.g[A3][0] as u32).wrapping_add(0x1));
+        c.g[A2][0] = c.lb((c.g[A3][0] as u32).wrapping_add(0x2));
+        c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+        c.sb((c.g[SP][0] as u32).wrapping_add(0x11), c.g[A1][0]);
+        c.sb((c.g[SP][0] as u32).wrapping_add(0x12), c.g[A2][0]);
+        'l_191440: loop {
+            'b_1917f0: {
+                'b_1917ac: {
+                    'b_1917a8: {
+                        c.cycles += 13;
+                        c.g[RA][0] = sx(0x00191448);
+                        c.g[A0][0] = c.g[SP][0];
+                        call_ptr(c, 0x00317670, 0x00191448)?;
+                        c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
+                        c.g[RA][0] = sx(0x00191454);
+                        c.g[A1][0] = c.g[V0][0];
+                        call_ptr(c, 0x0039d860, 0x00191454)?;
+                        c.g[A0][0] = c.g[S6][0];
+                        c.g[RA][0] = sx(0x00191460);
+                        c.g[S0][0] = c.g[V0][0];
+                        call_ptr(c, 0x00317670, 0x00191460)?;
+                        c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
+                        c.g[RA][0] = sx(0x0019146c);
+                        c.g[A1][0] = c.g[V0][0];
+                        call_ptr(c, 0x0039d860, 0x0019146c)?;
+                        let t = c.g[S0][0] == 0u64;
+                        c.g[S2][0] = c.g[V0][0];
+                        if t {
+                            break 'b_1917a8;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[S2][0] == 0u64;
+                            c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                            if t {
+                                break 'b_1917a8;
+                            } else {
+                                c.cycles += 6;
+                                c.g[V1][0] = c.lb((c.g[S3][0] as u32).wrapping_add(0x50));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+                                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+                                c.g[V1][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                                let t = c.g[V1][0] == 0u64;
+                                c.g[A1][0] = 0x440000;
+                                if t {
+                                    break 'b_1917f0;
+                                } else {
+                                    'b_19175c: {
+                                        c.cycles += 20;
+                                        c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x48));
+                                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1018));
+                                        c.g[V1][0] = 0x440000;
+                                        c.g[A0][0] =
+                                            sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1008));
+                                        c.g[S4][0] = c.lb(c.g[A0][0] as u32);
+                                        c.g[V0][0] = sx((c.g[S4][0] as u32) << 2);
+                                        c.g[V1][0] =
+                                            sx((c.g[S4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                        c.g[V0][0] =
+                                            sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                        c.g[S1][0] = c.lb(c.g[V1][0] as u32);
+                                        c.g[RA][0] = sx(0x001914c4);
+                                        c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                                        call_ptr(c, 0x00317670, 0x001914c4)?;
+                                        c.g[A1][0] = c.g[V0][0];
+                                        c.g[RA][0] = sx(0x001914d0);
+                                        c.g[A0][0] = c.g[S2][0];
+                                        call_ptr(c, 0x003a1000, 0x001914d0)?;
+                                        c.g[RA][0] = sx(0x001914d8);
+                                        c.g[A0][0] = c.g[S0][0];
+                                        call_ptr(c, 0x0039a670, 0x001914d8)?;
+                                        c.g[V0][0] = (c.g[S1][0] < 0x7u64) as u64;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[S4][0]);
+                                        if t {
+                                            break 'b_19175c;
+                                        } else {
+                                            'b_191708: {
+                                                'b_191688: {
+                                                    'b_1915e0: {
+                                                        'b_19156c: {
+                                                            'b_19154c: {
+                                                                'b_191528: {
+                                                                    c.cycles += 7;
+                                                                    c.g[V0][0] = 0x460000;
+                                                                    c.g[V1][0] = sx((c.g[S1][0]
+                                                                        as u32)
+                                                                        << 2);
+                                                                    c.g[V0][0] = sx((c.g[V0][0]
+                                                                        as u32)
+                                                                        .wrapping_sub(0x510));
+                                                                    c.g[V1][0] = sx((c.g[V1][0]
+                                                                        as u32)
+                                                                        .wrapping_add(
+                                                                            c.g[V0][0] as u32,
+                                                                        ));
+                                                                    c.g[A0][0] =
+                                                                        c.lw(c.g[V1][0] as u32);
+                                                                    let t = c.g[A0][0] as u32;
+                                                                    match t {
+                                                                        0x00191500 => {
+                                                                            c.cycles += 10;
+                                                                            c.g[A0][0] = 0x460000;
+                                                                            c.g[RA][0] =
+                                                                                sx(0x0019150c);
+                                                                            c.g[A0][0] =
+                                                                                sx((c.g[A0][0]
+                                                                                    as u32)
+                                                                                    .wrapping_sub(
+                                                                                        0x20c0,
+                                                                                    ));
+                                                                            call_ptr(
+                                                                                c, 0x00317670,
+                                                                                0x0019150c,
+                                                                            )?;
+                                                                            c.g[A1][0] = c.g[V0][0];
+                                                                            c.g[A2][0] = 0u64;
+                                                                            c.g[RA][0] =
+                                                                                sx(0x0019151c);
+                                                                            c.g[A0][0] = c.g[S0][0];
+                                                                            call_ptr(
+                                                                                c, 0x0039a568,
+                                                                                0x0019151c,
+                                                                            )?;
+                                                                            c.g[A0][0] = 0x460000;
+                                                                            let t = true;
+                                                                            c.g[A0][0] =
+                                                                                sx((c.g[A0][0]
+                                                                                    as u32)
+                                                                                    .wrapping_sub(
+                                                                                        0x1fd8,
+                                                                                    ));
+                                                                            if t {
+                                                                                break 'b_19154c;
+                                                                            } else {
+                                                                                break 'b_191528;
+                                                                            }
+                                                                        }
+                                                                        0x00191528 => {
+                                                                            break 'b_191528;
+                                                                        }
+                                                                        0x0019156c => {
+                                                                            break 'b_19156c;
+                                                                        }
+                                                                        0x001915e0 => {
+                                                                            break 'b_1915e0;
+                                                                        }
+                                                                        0x00191688 => {
+                                                                            break 'b_191688;
+                                                                        }
+                                                                        0x00191708 => {
+                                                                            break 'b_191708;
+                                                                        }
+                                                                        0x0019175c => {
+                                                                            break 'b_19175c;
+                                                                        }
+                                                                        _ => {
+                                                                            c.jump_out(
+                                                                                t, 0x001913b8,
+                                                                                0x00191938,
+                                                                            );
+                                                                            return Ok(());
+                                                                        }
+                                                                    }
+                                                                }
+                                                                c.cycles += 9;
+                                                                c.g[A0][0] = 0x460000;
+                                                                c.g[RA][0] = sx(0x00191534);
+                                                                c.g[A0][0] = sx((c.g[A0][0]
+                                                                    as u32)
+                                                                    .wrapping_sub(0x580));
+                                                                call_ptr(
+                                                                    c, 0x00317670, 0x00191534,
+                                                                )?;
+                                                                c.g[A1][0] = c.g[V0][0];
+                                                                c.g[A2][0] = 0u64;
+                                                                c.g[RA][0] = sx(0x00191544);
+                                                                c.g[A0][0] = c.g[S0][0];
+                                                                call_ptr(
+                                                                    c, 0x0039a568, 0x00191544,
+                                                                )?;
+                                                                c.g[A0][0] = 0x460000;
+                                                                c.g[A0][0] = sx((c.g[A0][0]
+                                                                    as u32)
+                                                                    .wrapping_sub(0x2338));
+                                                                break 'b_19154c;
+                                                            }
+                                                            c.cycles += 8;
+                                                            c.g[RA][0] = sx(0x00191554);
+                                                            call_ptr(c, 0x00317670, 0x00191554)?;
+                                                            c.g[A1][0] = c.g[V0][0];
+                                                            c.g[A0][0] = c.g[S0][0];
+                                                            c.g[RA][0] = sx(0x00191564);
+                                                            c.g[A2][0] = 0x1;
+                                                            call_ptr(c, 0x0039a568, 0x00191564)?;
+                                                            let t = true;
+
+                                                            if t {
+                                                                break 'b_19175c;
+                                                            } else {
+                                                                break 'b_19156c;
+                                                            }
+                                                        }
+                                                        c.cycles += 29;
+                                                        c.g[A0][0] = 0x460000;
+                                                        c.g[RA][0] = sx(0x00191578);
+                                                        c.g[A0][0] = sx((c.g[A0][0] as u32)
+                                                            .wrapping_sub(0x20c0));
+                                                        call_ptr(c, 0x00317670, 0x00191578)?;
+                                                        c.g[A1][0] = c.g[V0][0];
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[RA][0] = sx(0x00191588);
+                                                        c.g[A2][0] = 0u64;
+                                                        call_ptr(c, 0x0039a568, 0x00191588)?;
+                                                        c.g[A1][0] = 0x4a0000;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A1][0] = sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16b8));
+                                                        c.g[RA][0] = sx(0x0019159c);
+                                                        c.g[A2][0] = 0x5a;
+                                                        call_ptr(c, 0x0039a3f8, 0x0019159c)?;
+                                                        c.g[A1][0] = 0x4a0000;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A1][0] = sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16c0));
+                                                        c.g[RA][0] = sx(0x001915b0);
+                                                        c.g[A2][0] = 0x50;
+                                                        call_ptr(c, 0x0039a3f8, 0x001915b0)?;
+                                                        c.g[A1][0] = 0x4a0000;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A1][0] = sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16c8));
+                                                        c.g[RA][0] = sx(0x001915c4);
+                                                        c.g[A2][0] = 0x46;
+                                                        call_ptr(c, 0x0039a3f8, 0x001915c4)?;
+                                                        c.g[A1][0] = 0x4a0000;
+                                                        c.g[A0][0] = c.g[S0][0];
+                                                        c.g[A1][0] = sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16d0));
+                                                        c.g[RA][0] = sx(0x001915d8);
+                                                        c.g[A2][0] = 0x3c;
+                                                        call_ptr(c, 0x0039a3f8, 0x001915d8)?;
+                                                        let t = true;
+
+                                                        if t {
+                                                            break 'b_19175c;
+                                                        } else {
+                                                            break 'b_1915e0;
+                                                        }
+                                                    }
+                                                    c.cycles += 42;
+                                                    c.g[A1][0] = 0x4a0000;
+                                                    c.g[A0][0] = c.g[S0][0];
+                                                    c.g[A1][0] =
+                                                        sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16d8));
+                                                    c.g[RA][0] = sx(0x001915f4);
+                                                    c.g[A2][0] = 0xa;
+                                                    call_ptr(c, 0x0039a3f8, 0x001915f4)?;
+                                                    c.g[A1][0] = 0x4a0000;
+                                                    c.g[A0][0] = c.g[S0][0];
+                                                    c.g[A1][0] =
+                                                        sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16e0));
+                                                    c.g[RA][0] = sx(0x00191608);
+                                                    c.g[A2][0] = 0x5;
+                                                    call_ptr(c, 0x0039a3f8, 0x00191608)?;
+                                                    c.g[A1][0] = 0x4a0000;
+                                                    c.g[A2][0] = 0x3;
+                                                    c.g[A1][0] =
+                                                        sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16e8));
+                                                    c.g[RA][0] = sx(0x0019161c);
+                                                    c.g[A0][0] = c.g[S0][0];
+                                                    call_ptr(c, 0x0039a3f8, 0x0019161c)?;
+                                                    c.g[A0][0] = 0x460000;
+                                                    c.g[RA][0] = sx(0x00191628);
+                                                    c.g[A0][0] =
+                                                        sx((c.g[A0][0] as u32)
+                                                            .wrapping_sub(0x20c0));
+                                                    call_ptr(c, 0x00317670, 0x00191628)?;
+                                                    c.g[A1][0] = c.g[V0][0];
+                                                    c.g[A0][0] = c.g[S0][0];
+                                                    c.g[RA][0] = sx(0x00191638);
+                                                    c.g[A2][0] = 0u64;
+                                                    call_ptr(c, 0x0039a568, 0x00191638)?;
+                                                    c.g[A1][0] = 0x4a0000;
+                                                    c.g[A2][0] = 0xffffffffffff0000;
+                                                    c.g[A1][0] =
+                                                        sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16f0));
+                                                    c.g[A0][0] = c.g[S0][0];
+                                                    c.g[RA][0] = sx(0x00191650);
+                                                    c.g[A2][0] = c.g[A2][0] | 0xfffd;
+                                                    call_ptr(c, 0x0039a3f8, 0x00191650)?;
+                                                    c.g[A1][0] = 0x4a0000;
+                                                    c.g[A2][0] = 0xffffffffffff0000;
+                                                    c.g[A1][0] =
+                                                        sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x16f8));
+                                                    c.g[A0][0] = c.g[S0][0];
+                                                    c.g[RA][0] = sx(0x00191668);
+                                                    c.g[A2][0] = c.g[A2][0] | 0xfffb;
+                                                    call_ptr(c, 0x0039a3f8, 0x00191668)?;
+                                                    c.g[A1][0] = 0x4a0000;
+                                                    c.g[A2][0] = 0xffffffffffff0000;
+                                                    c.g[A1][0] =
+                                                        sx((c.g[A1][0] as u32)
+                                                            .wrapping_add(0x1700));
+                                                    c.g[A0][0] = c.g[S0][0];
+                                                    c.g[RA][0] = sx(0x00191680);
+                                                    c.g[A2][0] = c.g[A2][0] | 0xfff6;
+                                                    call_ptr(c, 0x0039a3f8, 0x00191680)?;
+                                                    let t = true;
+
+                                                    if t {
+                                                        break 'b_19175c;
+                                                    } else {
+                                                        break 'b_191688;
+                                                    }
+                                                }
+                                                c.cycles += 32;
+                                                c.g[A1][0] = 0x4a0000;
+                                                c.g[A0][0] = c.g[S0][0];
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_add(0x13a0));
+                                                c.g[RA][0] = sx(0x0019169c);
+                                                c.g[A2][0] = 0u64;
+                                                call_ptr(c, 0x0039a3f8, 0x0019169c)?;
+                                                c.g[A1][0] = 0x4a0000;
+                                                c.g[A0][0] = c.g[S0][0];
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_add(0x14f8));
+                                                c.g[RA][0] = sx(0x001916b0);
+                                                c.g[A2][0] = 0u64;
+                                                call_ptr(c, 0x0039a3f8, 0x001916b0)?;
+                                                c.g[A1][0] = 0x4a0000;
+                                                c.g[A0][0] = c.g[S0][0];
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_add(0x1500));
+                                                c.g[RA][0] = sx(0x001916c4);
+                                                c.g[A2][0] = 0u64;
+                                                call_ptr(c, 0x0039a3f8, 0x001916c4)?;
+                                                c.g[A1][0] = 0x4a0000;
+                                                c.g[A0][0] = c.g[S0][0];
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_add(0x1508));
+                                                c.g[RA][0] = sx(0x001916d8);
+                                                c.g[A2][0] = 0u64;
+                                                call_ptr(c, 0x0039a3f8, 0x001916d8)?;
+                                                c.g[A1][0] = 0x4a0000;
+                                                c.g[A0][0] = c.g[S0][0];
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_add(0x1510));
+                                                c.g[RA][0] = sx(0x001916ec);
+                                                c.g[A2][0] = 0u64;
+                                                call_ptr(c, 0x0039a3f8, 0x001916ec)?;
+                                                c.g[A1][0] = 0x4a0000;
+                                                c.g[A0][0] = c.g[S0][0];
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_add(0x1518));
+                                                c.g[RA][0] = sx(0x00191700);
+                                                c.g[A2][0] = 0u64;
+                                                call_ptr(c, 0x0039a3f8, 0x00191700)?;
+                                                let t = true;
+
+                                                if t {
+                                                    break 'b_19175c;
+                                                } else {
+                                                    break 'b_191708;
+                                                }
+                                            }
+                                            c.cycles += 21;
+                                            c.g[A0][0] = 0x460000;
+                                            c.g[RA][0] = sx(0x00191714);
+                                            c.g[A0][0] =
+                                                sx((c.g[A0][0] as u32).wrapping_sub(0x570));
+                                            call_ptr(c, 0x00317670, 0x00191714)?;
+                                            c.g[A1][0] = c.g[V0][0];
+                                            c.g[A2][0] = 0u64;
+                                            c.g[RA][0] = sx(0x00191724);
+                                            c.g[A0][0] = c.g[S0][0];
+                                            call_ptr(c, 0x0039a568, 0x00191724)?;
+                                            c.g[A0][0] = 0x460000;
+                                            c.g[RA][0] = sx(0x00191730);
+                                            c.g[A0][0] =
+                                                sx((c.g[A0][0] as u32).wrapping_sub(0x558));
+                                            call_ptr(c, 0x00317670, 0x00191730)?;
+                                            c.g[A1][0] = c.g[V0][0];
+                                            c.g[A2][0] = 0u64;
+                                            c.g[RA][0] = sx(0x00191740);
+                                            c.g[A0][0] = c.g[S0][0];
+                                            call_ptr(c, 0x0039a568, 0x00191740)?;
+                                            c.g[A0][0] = 0x460000;
+                                            c.g[RA][0] = sx(0x0019174c);
+                                            c.g[A0][0] =
+                                                sx((c.g[A0][0] as u32).wrapping_sub(0x540));
+                                            call_ptr(c, 0x00317670, 0x0019174c)?;
+                                            c.g[A1][0] = c.g[V0][0];
+                                            c.g[A0][0] = c.g[S0][0];
+                                            c.g[RA][0] = sx(0x0019175c);
+                                            c.g[A2][0] = 0u64;
+                                            call_ptr(c, 0x0039a568, 0x0019175c)?;
+                                            break 'b_19175c;
+                                        }
+                                    }
+                                    'b_191790: {
+                                        c.cycles += 2;
+                                        let t = c.g[S4][0] == 0u64;
+                                        c.g[A1][0] = c.g[S4][0];
+                                        if t {
+                                            break 'b_191790;
+                                        } else {
+                                            c.cycles += 11;
+                                            c.g[RA][0] = sx(0x0019176c);
+                                            c.g[A0][0] = c.g[S3][0];
+                                            Callee {
+                                                addr: 0x00192240,
+                                                f: ee::s02::cFEStateRuleSelect_GetRuleValue,
+                                            }
+                                            .call(c, 0x0019176c)?;
+                                            c.g[A1][0] = c.g[V0][0];
+                                            c.g[A0][0] = c.g[S0][0];
+                                            c.g[RA][0] = sx(0x0019177c);
+                                            c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                                            call_ptr(c, 0x0039a768, 0x0019177c)?;
+                                            c.g[A1][0] =
+                                                c.lbu((c.g[SP][0] as u32).wrapping_add(0x20));
+                                            c.g[RA][0] = sx(0x00191788);
+                                            c.g[A0][0] = c.g[S0][0];
+                                            call_ptr(c, 0x0039a7a8, 0x00191788)?;
+                                            let t = true;
+                                            c.g[V0][0] = ((c.g[S5][0] as i64) < 9i64) as u64;
+                                            if t {
+                                                break 'b_1917ac;
+                                            } else {
+                                                break 'b_191790;
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 6;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                    c.g[A1][0] = 0u64;
+                                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+                                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+                                    let t = c.g[V1][0] as u32;
+                                    c.g[RA][0] = sx(0x001917a8);
+                                    c.g[A0][0] =
+                                        sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                    call_ptr(c, t, 0x001917a8)?;
+                                    break 'b_1917a8;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = ((c.g[S5][0] as i64) < 9i64) as u64;
+                    break 'b_1917ac;
+                }
+                'b_1917d8: {
+                    'b_1917cc: {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = c.lbu(c.g[SP][0] as u32);
+                        if t {
+                            break 'b_1917cc;
+                        } else {
+                            c.cycles += 6;
+                            c.g[V1][0] = c.lbu((c.g[SP][0] as u32).wrapping_add(0x10));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                            c.sb(c.g[SP][0] as u32, c.g[V0][0]);
+                            let t = true;
+                            c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+                            if t {
+                                break 'b_1917d8;
+                            } else {
+                                break 'b_1917cc;
+                            }
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(0x58));
+                    c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V0][0]);
+                    break 'b_1917d8;
+                }
+                c.cycles += 6;
+                c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+                c.g[S5][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+                c.g[V1][0] = ((c.g[S5][0] as i64) < 11i64) as u64;
+                let t = c.g[V1][0] != 0u64;
+
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00191440);
+                    }
+                    continue 'l_191440;
+                } else {
+                    break 'b_1917f0;
+                }
+            }
+            'b_191814: {
+                c.cycles += 9;
+                c.g[A0][0] = 0x4a0000;
+                c.g[S0][0] = 0xff;
+                c.g[RA][0] = sx(0x00191800);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1398));
+                call_ptr(c, 0x00317670, 0x00191800)?;
+                c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
+                c.g[RA][0] = sx(0x0019180c);
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x0039d860, 0x0019180c)?;
+                if c.g[V0][0] != 0u64 {
+                    c.g[S0][0] = c.lbu((c.g[V0][0] as u32).wrapping_add(0x95));
+                    break 'b_191814;
+                } else {
+                    break 'b_191814;
+                }
+            }
+            'b_1918d0: {
+                'b_1918bc: {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x48));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[V0][0] = 0x460000;
+                    if t {
+                        break 'b_1918bc;
+                    } else {
+                        'b_19187c: {
+                            c.cycles += 15;
+                            c.g[A0][0] = 0x460000;
+                            c.g[RA][0] = sx(0x00191834);
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1d90));
+                            call_ptr(c, 0x00317670, 0x00191834)?;
+                            c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
+                            c.g[RA][0] = sx(0x00191840);
+                            c.g[A1][0] = c.g[V0][0];
+                            call_ptr(c, 0x0039d860, 0x00191840)?;
+                            c.g[A0][0] = 0x460000;
+                            c.g[S0][0] = c.g[V0][0];
+                            c.g[RA][0] = sx(0x00191850);
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1d80));
+                            call_ptr(c, 0x00317670, 0x00191850)?;
+                            c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
+                            c.g[RA][0] = sx(0x0019185c);
+                            c.g[A1][0] = c.g[V0][0];
+                            call_ptr(c, 0x0039d860, 0x0019185c)?;
+                            let t = c.g[S0][0] == 0u64;
+                            c.g[S1][0] = c.g[V0][0];
+                            if t {
+                                break 'b_19187c;
+                            } else {
+                                c.cycles += 6;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                c.g[A1][0] = 0u64;
+                                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+                                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+                                let t = c.g[V1][0] as u32;
+                                c.g[RA][0] = sx(0x0019187c);
+                                c.g[A0][0] =
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                call_ptr(c, t, 0x0019187c)?;
+                                break 'b_19187c;
+                            }
+                        }
+                        'b_191898: {
+                            c.cycles += 2;
+                            let t = c.g[S1][0] == 0u64;
+                            c.g[A1][0] = 0u64;
+                            if t {
+                                break 'b_191898;
+                            } else {
+                                c.cycles += 5;
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+                                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+                                let t = c.g[V1][0] as u32;
+                                c.g[RA][0] = sx(0x00191898);
+                                c.g[A0][0] =
+                                    sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                call_ptr(c, t, 0x00191898)?;
+                                break 'b_191898;
+                            }
+                        }
+                        c.cycles += 9;
+                        c.g[V0][0] = 0x4a0000;
+                        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1708));
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1708));
+                        c.g[A1][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x6));
+                        c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x4));
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[A0][0]);
+                        c.sh((c.g[SP][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+                        let t = true;
+                        c.sb((c.g[SP][0] as u32).wrapping_add(0x36), c.g[A1][0]);
+                        if t {
+                            break 'b_1918d0;
+                        } else {
+                            break 'b_1918bc;
+                        }
+                    }
+                }
+                c.cycles += 5;
+                c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x528));
+                c.g[A0][0] = c.ld((c.g[V0][0] as u32).wrapping_sub(0x528));
+                c.g[A1][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x8));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[A0][0]);
+                c.sh((c.g[SP][0] as u32).wrapping_add(0x38), c.g[A1][0]);
+                break 'b_1918d0;
+            }
+            'b_191900: {
+                c.cycles += 9;
+                c.g[RA][0] = sx(0x001918d8);
+                c.g[A0][0] = c.g[FP][0];
+                call_ptr(c, 0x00317670, 0x001918d8)?;
+                c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
+                c.g[RA][0] = sx(0x001918e4);
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x0039c778, 0x001918e4)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V0][0] = 0xffff;
+                let t = c.g[A1][0] == c.g[V0][0];
+                c.g[A1][0] = c.g[A1][0] & 0xffff;
+                if t {
+                    break 'b_191900;
+                } else {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
+                    c.g[RA][0] = sx(0x00191900);
+                    c.g[A2][0] = 0x1;
+                    call_ptr(c, 0x0039c870, 0x00191900)?;
+                    break 'b_191900;
+                }
+            }
+            c.cycles += 14;
+            c.g[RA][0] = sx(0x00191908);
+            c.g[A0][0] = c.g[S3][0];
+            Callee {
+                addr: 0x00192488,
+                f: ee::s02::cFEStateRuleSelect_UpdateRowVisibility,
+            }
+            .call(c, 0x00191908)?;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xe0));
+            c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xd0));
+            c.lq(18, (c.g[SP][0] as u32).wrapping_add(0xc0));
+            c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xb0));
+            c.lq(20, (c.g[SP][0] as u32).wrapping_add(0xa0));
+            c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x90));
+            c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf0));
+            c.pc = t;
+            return Ok(());
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1481,6 +2189,75 @@ pub(crate) mod tests {
                         (r.next_u32() % 5).wrapping_sub(2) as u8,
                     );
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc800_machine;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc800_mask;
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::OC800_SELF;
+
+    pub(crate) use crate::game::fe::festatecharselect::tests::OC800_ENG;
+
+    use crate::game::main::loadscreens::tests::oc736_force;
+
+    pub(crate) const OC800_MAP: u32 = DATA + 0x2e_1000;
+
+    /// `cFEStateRuleSelect_FillRuleList`: `first` of 0 to 3 rows into a list
+    /// of 0 to 13 rules of every kind (0 to 8), widgets present or missing
+    /// (the `FindObject` fake answers by a per-seed bit mask), the frame
+    /// lookup failing (0xffff) or not.
+    #[test]
+    fn rule_select_fill_rule_list_matches() {
+        check(
+            ee::s02::f_001913b8__generated,
+            rule_select_fill_rule_list,
+            300,
+            &|c, seed| {
+                let mut r = oc800_machine(c, seed, 0x0019_13b8, 200);
+                // The kind jump table (kinds 0 to 6).
+                for (i, t) in [
+                    0x0019_175cu32,
+                    0x0019_1500,
+                    0x0019_1528,
+                    0x0019_156c,
+                    0x0019_15e0,
+                    0x0019_1688,
+                    0x0019_1708,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    c.bus.write32(0x0045_faf0 + 4 * i as u32, t);
+                }
+                // D_00441008 (kind per rule) and D_00441018 (label id per rule).
+                for i in 0..0x10u32 {
+                    c.bus.write8(0x0044_1008 + i, (r.next_u32() % 9) as u8);
+                    c.bus.write32(0x0044_1018 + 4 * i, r.next_u32());
+                }
+                c.bus.write32(OC800_SELF + 0x40, OC800_ENG);
+                c.bus.write32(OC800_SELF + 0x48, OC800_MAP);
+                c.bus.write8(OC800_SELF + 0x50, ((seed / 3) % 14) as u8);
+                for i in 0..0x20u32 {
+                    let rule = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        r.next_u32() % 12
+                    };
+                    c.bus.write8(OC800_MAP + i, rule as u8);
+                }
+                let mask = match seed % 3 {
+                    0 => 0xffff_ffff,
+                    _ => r.next_u32() | r.next_u32() | 0x8000_0000,
+                };
+                oc800_mask(c, 0x0039_d860, mask);
+                if seed % 2 == 0 {
+                    oc736_force(c, 0x0039_c778, 0xffff);
+                }
+                c.g[A0][0] = sx(OC800_SELF);
+                c.g[A1][0] = sx((seed / 42) % 4);
+                c.pc = 0x0019_13b8;
             },
         );
     }

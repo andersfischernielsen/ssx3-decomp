@@ -111,6 +111,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ov_screen_overlay_menu_init,
         "OVScreenOverlayMenu_Init",
     ),
+    (0x0020_ab50, game_ui_open_screen, "GameUI_OpenScreen"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2418,10 +2419,1483 @@ pub fn ov_screen_overlay_menu_init(c: &mut Cpu) {
     })
 }
 
+/// `GameUI_OpenScreen` (0x0020ab50): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn game_ui_open_screen(c: &mut Cpu) {
+    if c.pc != 0x0020ab50 {
+        return ee::s05::f_0020ab50__generated(c);
+    }
+    guest(c, |c| {
+        'b_20abdc: {
+            c.cycles += 13;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[T0][0] = 0u64;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[V1][0] = 0x1;
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+            let t = c.g[S1][0] != c.g[V1][0];
+            c.g[S2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x48));
+            if t {
+                break 'b_20abdc;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x114;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020ab9c);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020ab9c)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020abac);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020abac)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3098));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), 0u64);
+                break 'b_20abdc;
+            }
+        }
+        'b_20ac44: {
+            c.cycles += 3;
+            c.g[V0][0] = 0x2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x3;
+            if t {
+                break 'b_20ac44;
+            } else {
+                c.cycles += 23;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x114;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020ac00);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020ac00)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020ac10);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020ac10)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2fc0));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), 0u64);
+                c.g[V0][0] = 0x3;
+                break 'b_20ac44;
+            }
+        }
+        'b_20aca8: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x4;
+            if t {
+                break 'b_20aca8;
+            } else {
+                c.cycles += 23;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x114;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020ac64);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020ac64)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020ac74);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020ac74)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2ee8));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), 0u64);
+                c.g[V0][0] = 0x4;
+                break 'b_20aca8;
+            }
+        }
+        'b_20ad0c: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x5;
+            if t {
+                break 'b_20ad0c;
+            } else {
+                c.cycles += 23;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x114;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020acc8);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020acc8)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020acd8);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020acd8)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2e10));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), 0u64);
+                c.g[V0][0] = 0x5;
+                break 'b_20ad0c;
+            }
+        }
+        'b_20ad70: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x6;
+            if t {
+                break 'b_20ad70;
+            } else {
+                c.cycles += 23;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x114;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020ad2c);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020ad2c)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020ad3c);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020ad3c)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2d38));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), 0u64);
+                c.g[V0][0] = 0x6;
+                break 'b_20ad70;
+            }
+        }
+        'b_20add4: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x7;
+            if t {
+                break 'b_20add4;
+            } else {
+                c.cycles += 23;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x114;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020ad90);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020ad90)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020ada0);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020ada0)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2c60));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), 0u64);
+                c.g[V0][0] = 0x7;
+                break 'b_20add4;
+            }
+        }
+        'b_20ae34: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x8;
+            if t {
+                break 'b_20ae34;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020adf4);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020adf4)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020ae04);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020ae04)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2b88));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x8;
+                break 'b_20ae34;
+            }
+        }
+        'b_20ae94: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if t {
+                break 'b_20ae94;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020ae54);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020ae54)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020ae64);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020ae64)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2850));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x9;
+                break 'b_20ae94;
+            }
+        }
+        'b_20aef4: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0xa;
+            if t {
+                break 'b_20aef4;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020aeb4);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020aeb4)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020aec4);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020aec4)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2778));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0xa;
+                break 'b_20aef4;
+            }
+        }
+        'b_20af54: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0xb;
+            if t {
+                break 'b_20af54;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020af14);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020af14)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020af24);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020af24)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4088));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0xb;
+                break 'b_20af54;
+            }
+        }
+        'b_20afb4: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0xc;
+            if t {
+                break 'b_20afb4;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020af74);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020af74)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020af84);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020af84)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3fb0));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0xc;
+                break 'b_20afb4;
+            }
+        }
+        'b_20b02c: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0xd;
+            if t {
+                break 'b_20b02c;
+            } else {
+                c.cycles += 28;
+                c.g[A1][0] = 0x470000;
+                c.g[A2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[RA][0] = sx(0x0020afd4);
+                c.g[A0][0] = 0xa4;
+                call_ptr(c, 0x00317d70, 0x0020afd4)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020afe4);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020afe4)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A1][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3e00));
+                c.g[V1][0] = 0x1;
+                c.g[A0][0] = 0x470000;
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A1][0]);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1cc0));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xa0), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.g[RA][0] = sx(0x0020b020);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                call_ptr(c, 0x00317670, 0x0020b020)?;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.g[V0][0] = 0xd;
+                break 'b_20b02c;
+            }
+        }
+        'b_20b0a4: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0xe;
+            if t {
+                break 'b_20b0a4;
+            } else {
+                c.cycles += 28;
+                c.g[A1][0] = 0x470000;
+                c.g[A2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[RA][0] = sx(0x0020b04c);
+                c.g[A0][0] = 0xa4;
+                call_ptr(c, 0x00317d70, 0x0020b04c)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b05c);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b05c)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A1][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3d28));
+                c.g[V1][0] = 0x1;
+                c.g[A0][0] = 0x470000;
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A1][0]);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1cc0));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xa0), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.g[RA][0] = sx(0x0020b098);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                call_ptr(c, 0x00317670, 0x0020b098)?;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.g[V0][0] = 0xe;
+                break 'b_20b0a4;
+            }
+        }
+        'b_20b104: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0xf;
+            if t {
+                break 'b_20b104;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b0c4);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b0c4)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b0d4);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b0d4)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4b80));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0xf;
+                break 'b_20b104;
+            }
+        }
+        'b_20b164: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x10;
+            if t {
+                break 'b_20b164;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa4;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b124);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b124)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b134);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b134)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x34d0));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x10;
+                break 'b_20b164;
+            }
+        }
+        'b_20b1c4: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x11;
+            if t {
+                break 'b_20b1c4;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b184);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b184)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b194);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b194)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2108));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x11;
+                break 'b_20b1c4;
+            }
+        }
+        'b_20b224: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x12;
+            if t {
+                break 'b_20b224;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xb8;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b1e4);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b1e4)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b1f4);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b1f4)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4aa8));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x12;
+                break 'b_20b224;
+            }
+        }
+        'b_20b25c: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x13;
+            if t {
+                break 'b_20b25c;
+            } else {
+                c.cycles += 12;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x274;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b244);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b244)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b254);
+                c.g[A2][0] = 0x12;
+                Callee {
+                    addr: 0x001fdbf0,
+                    f: ee::s05::OVScreenSaveReplay_ctor,
+                }
+                .call(c, 0x0020b254)?;
+                c.g[T0][0] = c.g[V0][0];
+                c.g[V0][0] = 0x13;
+                break 'b_20b25c;
+            }
+        }
+        'b_20b294: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x14;
+            if t {
+                break 'b_20b294;
+            } else {
+                c.cycles += 12;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x274;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b27c);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b27c)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b28c);
+                c.g[A2][0] = 0x13;
+                Callee {
+                    addr: 0x001fe968,
+                    f: ee::s05::OVScreenSaveRecords_ctor,
+                }
+                .call(c, 0x0020b28c)?;
+                c.g[T0][0] = c.g[V0][0];
+                c.g[V0][0] = 0x14;
+                break 'b_20b294;
+            }
+        }
+        'b_20b2f4: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x15;
+            if t {
+                break 'b_20b2f4;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b2b4);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b2b4)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b2c4);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b2c4)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x25c8));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x15;
+                break 'b_20b2f4;
+            }
+        }
+        'b_20b354: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x16;
+            if t {
+                break 'b_20b354;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b314);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b314)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b324);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b324)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x26a0));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x16;
+                break 'b_20b354;
+            }
+        }
+        'b_20b3b4: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x17;
+            if t {
+                break 'b_20b3b4;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b374);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b374)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b384);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b384)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3ed8));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x17;
+                break 'b_20b3b4;
+            }
+        }
+        'b_20b418: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x18;
+            if t {
+                break 'b_20b418;
+            } else {
+                c.cycles += 23;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b3d4);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b3d4)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b3e4);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b3e4)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x49d0));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), 0u64);
+                c.g[V0][0] = 0x18;
+                break 'b_20b418;
+            }
+        }
+        'b_20b480: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x19;
+            if t {
+                break 'b_20b480;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b438);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b438)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b448);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b448)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x48f8));
+                c.g[V1][0] = 0x1;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x19;
+                break 'b_20b480;
+            }
+        }
+        'b_20b4e8: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x1a;
+            if t {
+                break 'b_20b4e8;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b4a0);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b4a0)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b4b0);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b4b0)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4820));
+                c.g[V1][0] = 0x2;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x1a;
+                break 'b_20b4e8;
+            }
+        }
+        'b_20b550: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x1b;
+            if t {
+                break 'b_20b550;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b508);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b508)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b518);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b518)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4748));
+                c.g[V1][0] = 0x3;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x1b;
+                break 'b_20b550;
+            }
+        }
+        'b_20b5b8: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x1c;
+            if t {
+                break 'b_20b5b8;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b570);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b570)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b580);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b580)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4670));
+                c.g[V1][0] = 0x4;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x1c;
+                break 'b_20b5b8;
+            }
+        }
+        'b_20b620: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x1d;
+            if t {
+                break 'b_20b620;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b5d8);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b5d8)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b5e8);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b5e8)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4598));
+                c.g[V1][0] = 0x5;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x1d;
+                break 'b_20b620;
+            }
+        }
+        'b_20b688: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x1e;
+            if t {
+                break 'b_20b688;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[RA][0] = sx(0x0020b640);
+                c.g[A0][0] = 0xa0;
+                call_ptr(c, 0x00317d70, 0x0020b640)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b650);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b650)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A1][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3688));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[A0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.g[RA][0] = sx(0x0020b680);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                call_ptr(c, 0x001f7548, 0x0020b680)?;
+                c.g[T0][0] = c.g[S0][0];
+                c.g[V0][0] = 0x1e;
+                break 'b_20b688;
+            }
+        }
+        'b_20b6f0: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x1f;
+            if t {
+                break 'b_20b6f0;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[RA][0] = sx(0x0020b6a8);
+                c.g[A0][0] = 0xa4;
+                call_ptr(c, 0x00317d70, 0x0020b6a8)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b6b8);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b6b8)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A1][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x35b0));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[A0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.g[RA][0] = sx(0x0020b6e8);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                call_ptr(c, 0x001f7738, 0x0020b6e8)?;
+                c.g[T0][0] = c.g[S0][0];
+                c.g[V0][0] = 0x1f;
+                break 'b_20b6f0;
+            }
+        }
+        'b_20b750: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x20;
+            if t {
+                break 'b_20b750;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b710);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b710)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b720);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b720)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3760));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x20;
+                break 'b_20b750;
+            }
+        }
+        'b_20b7cc: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[S3][0] = sx((c.g[S2][0] as u32).wrapping_add(0x18));
+            if t {
+                break 'b_20b7cc;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x1d4;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b770);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b770)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b780);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b780)?;
+                c.g[V0][0] = 0x4a0000;
+                c.g[V1][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x2088));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3320));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.g[A1][0] = 0xffffffffffffffff;
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.g[V0][0] = 0x7;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                'l_20b7b0: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[V0][0] != c.g[A1][0];
+                    c.g[T0][0] = c.g[S0][0];
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0020b7b0);
+                        }
+                        continue 'l_20b7b0;
+                    } else {
+                        break 'b_20b7cc;
+                    }
+                }
+            }
+        }
+        'b_20b838: {
+            c.cycles += 3;
+            c.g[V0][0] = 0x21;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x22;
+            if t {
+                break 'b_20b838;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[RA][0] = sx(0x0020b7f0);
+                c.g[A0][0] = 0x390;
+                call_ptr(c, 0x00317d70, 0x0020b7f0)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b800);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b800)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A1][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x33f8));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x9c));
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.g[RA][0] = sx(0x0020b830);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                Callee {
+                    addr: 0x002006b8,
+                    f: ee::s05::EventSelect_ctor,
+                }
+                .call(c, 0x0020b830)?;
+                c.g[T0][0] = c.g[S0][0];
+                c.g[V0][0] = 0x22;
+                break 'b_20b838;
+            }
+        }
+        'b_20b870: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x23;
+            if t {
+                break 'b_20b870;
+            } else {
+                c.cycles += 12;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x180;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b858);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b858)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b868);
+                c.g[A2][0] = 0x22;
+                call_ptr(c, 0x001e3c00, 0x0020b868)?;
+                c.g[T0][0] = c.g[V0][0];
+                c.g[V0][0] = 0x23;
+                break 'b_20b870;
+            }
+        }
+        'b_20b8d0: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x24;
+            if t {
+                break 'b_20b8d0;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x9c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b890);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b890)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b8a0);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b8a0)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3c50));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x24;
+                break 'b_20b8d0;
+            }
+        }
+        'b_20b90c: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x25;
+            if t {
+                break 'b_20b90c;
+            } else {
+                c.cycles += 13;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x27c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b8f0);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b8f0)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A2][0] = 0x24;
+                c.g[RA][0] = sx(0x0020b904);
+                c.g[A3][0] = 0x2a;
+                Callee {
+                    addr: 0x00211088,
+                    f: ee::s05::OVScreenProfileSavePDA_ctor,
+                }
+                .call(c, 0x0020b904)?;
+                c.g[T0][0] = c.g[V0][0];
+                c.g[V0][0] = 0x25;
+                break 'b_20b90c;
+            }
+        }
+        'b_20b944: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x26;
+            if t {
+                break 'b_20b944;
+            } else {
+                c.cycles += 12;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0x234;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b92c);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b92c)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b93c);
+                c.g[A2][0] = 0x25;
+                Callee {
+                    addr: 0x00212138,
+                    f: ee::s05::OVScreenAutosave_ctor,
+                }
+                .call(c, 0x0020b93c)?;
+                c.g[T0][0] = c.g[V0][0];
+                c.g[V0][0] = 0x26;
+                break 'b_20b944;
+            }
+        }
+        'b_20b9ac: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x27;
+            if t {
+                break 'b_20b9ac;
+            } else {
+                c.cycles += 24;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b964);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b964)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b974);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b974)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x44c0));
+                c.g[V1][0] = 0x6;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = 0x27;
+                break 'b_20b9ac;
+            }
+        }
+        'b_20ba18: {
+            c.cycles += 2;
+            let t = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x28;
+            if t {
+                break 'b_20ba18;
+            } else {
+                c.cycles += 25;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xa4;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020b9cc);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020b9cc)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020b9dc);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020b9dc)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2ab0));
+                c.g[V1][0] = 0x1;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xa0), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), 0u64);
+                c.g[V0][0] = 0x28;
+                break 'b_20ba18;
+            }
+        }
+        'b_20ba78: {
+            c.cycles += 2;
+            if c.g[S1][0] != c.g[V0][0] {
+                c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x1c));
+                break 'b_20ba78;
+            } else {
+                c.cycles += 22;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = 0xe4;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a30));
+                c.g[A2][0] = 0u64;
+                c.g[RA][0] = sx(0x0020ba38);
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x00317d70, 0x0020ba38)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x0020ba48);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e2a0, 0x0020ba48)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[V0][0] = 0x470000;
+                c.g[A0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2088));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3248));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x98), c.g[S1][0]);
+                c.g[T0][0] = c.g[S0][0];
+                c.sh((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
+                c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x1c));
+                break 'b_20ba78;
+            }
+        }
+        c.cycles += 16;
+        c.g[V1][0] = 0xffffffffffffc0ff;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[T0][0];
+        c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+        c.g[A2][0] = 0u64;
+        c.g[V0][0] = c.g[V0][0] | 0x100;
+        c.g[A3][0] = 0u64;
+        c.g[RA][0] = sx(0x0020ba9c);
+        c.sw((c.g[T0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+        call_ptr(c, 0x0039f320, 0x0020ba9c)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::main::game::tests::oc804_install_fakes;
     pub(crate) use crate::game::sound::bankmonitor::tests::oc774_install_fakes;
     pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::oc784_install_fakes;
 
@@ -3153,6 +4627,39 @@ pub(crate) mod tests {
                 } else {
                     oc784_force(c, 0x0039_d860, OC784_FILE);
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::bx::bxstringctor::tests::oc804_fixture;
+
+    pub(crate) use crate::game::bx::bxstringctor::tests::OC804_WORLD;
+
+    pub(crate) const OC804_X: u32 = DATA + 0x26_0000;
+
+    /// `GameUI_OpenScreen(id)`: builds the front-end screen object of `id`
+    /// (an allocation, the base constructor, the vtable and the id stored, a
+    /// few ids call their own constructor) and opens it. Id 0x23's
+    /// constructor (`OVScreenProfileSavePDA_ctor`, no override slot) stays
+    /// out: the real one would run on fixture data.
+    #[test]
+    fn game_ui_open_screen_matches() {
+        oc804_install_fakes();
+        fakes::covered(
+            ee::s05::f_0020ab50__generated,
+            game_ui_open_screen,
+            172,
+            &|c, seed| {
+                let mut r = oc804_fixture(c, seed, 0x0020_ab50, 4);
+                let id = match seed % 0x2b {
+                    0x23 => 0x50,
+                    k => k,
+                };
+                fill(c, &mut r, OC804_X, 0x40);
+                c.bus.write32(OC804_WORLD + 0x84, OC804_X);
+                c.bus.write32(OC804_X + 0x48, r.next_u32());
+                c.g[A0][0] = id as u64;
+                c.pc = 0x0020_ab50;
             },
         );
     }
