@@ -1222,8 +1222,6 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::fe::festateruleselect::tests::oc847_arm;
 
-    use std::sync::atomic::AtomicUsize;
-
     // Fixture objects, all in DATA+0x200000 and up: clear of the fake log
     // (DATA+0x100000) and of the pointers the fakes return (DATA..DATA+0x40000).
     pub(crate) const OC846_BASE: u32 = DATA + 0x20_0000;
