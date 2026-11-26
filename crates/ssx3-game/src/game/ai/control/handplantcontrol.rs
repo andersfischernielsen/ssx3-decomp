@@ -76,6 +76,11 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (
+        0x0013_9c88,
+        rider_air_state_post_update,
+        "RiderAirState_PostUpdate",
+    ),
+    (
         0x0013_99a8,
         rider_handplant_state_load_state,
         "RiderHandplantState_LoadState",
@@ -2290,8 +2295,12 @@ pub(crate) fn v_add(c: &mut Cpu, a: u32, b: u32, out: u32) {
 
 /// `void RiderAirState_PostUpdate(AirState* motion)` (0x139c88): board
 /// contact, animation choice, bounds/wall update and camera notification.
-/// Not installed: its tests pass, but the race replay diverges (an untested
-/// branch); bisected with `SSX3_SKIP_OVERRIDES`.
+///
+/// The fast-board landing-animation pick (`0x13a3e4`) takes one `Rand & 3` draw
+/// and skips the `0x13a3ec` draw; the port once ran both (found by the race
+/// replay with `SSX3_SHADOW` and the `shadow-trace` call/cycle comparison: the
+/// fixtures never reach this branch, it needs the animation-layer stages before
+/// it to leave `s2` set).
 pub fn rider_air_state_post_update(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 18;
@@ -2836,7 +2845,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                         break 'state;
                                     }
                                     // 0x13a3f0: a random 0x15f/0x160/0x161.
-                                    {
+                                    'rand_end: {
                                         // 0x13a3e4
                                         'rand_odd: {
                                             c.cycles += 15;
@@ -2852,6 +2861,9 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                             c.g[S1][0] = 0x160;
                                             call_ptr(c, target::RAND_NEXT_GAME, 0x0013_a3dc)?;
                                             c.g[V0][0] = c.g[V0][0] & 0x3;
+                                            // Fast: the generated body skips the
+                                            // 0x13a3ec draw (`b_13a3f0`).
+                                            break 'rand_end;
                                         }
                                         // 0x13a3ec
                                         c.cycles += 3;

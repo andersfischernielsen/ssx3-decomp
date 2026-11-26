@@ -100,6 +100,11 @@ def entries(text):
     ]
 
 
+def strip_comments(text):
+    """Drop `//` comments (addresses in comments are not literals of the port)."""
+    return re.sub(r"//[^\n]*", "", text)
+
+
 def closure(fns, root):
     seen, todo = set(), [root]
     while todo:
@@ -110,7 +115,7 @@ def closure(fns, root):
         for w in set(re.findall(r"\b\w+\b", fns[n])):
             if w in fns and w not in seen:
                 todo.append(w)
-    return "\n".join(fns[n] for n in sorted(seen))
+    return strip_comments("\n".join(fns[n] for n in sorted(seen)))
 
 
 def lint_file(path, size):
