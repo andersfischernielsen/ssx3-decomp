@@ -362,3 +362,29 @@ Lessons from the verification-speed pass:
 - Dispatcher lists carry a draft from `port_dispatcher.py`
   (`target/gate/waveN/draft/0xADDR.rs`): start from it and spend your time on the
   fixture (a path-count test), not on the transcription.
+
+Lessons from the cleanup wave (254):
+
+- Jump tables and `isButton` name strings live in the game image, which is
+  empty in a bare test machine: every table read returns 0 and every event
+  falls into the same `jump_out` arm (3 distinct call sequences instead of 12).
+  Load it with `crate::difftest::elf_image(c)` right after `machine`/`machine_rt`
+  (and before your own writes), or write the table words you need. Never lower a
+  path-count threshold to make a test pass: raise the coverage.
+- A jump-table entry equal to the function's own entry address loops forever
+  (the draft's self-case retries through `event_due`): leave it out of the table.
+- A test fake that you add to a shared override slot must use ITS OWN gate word
+  and forced-result mailbox in the machine's RAM (a unique `DATA+0x...` address
+  and magic, no `static` mutable state) and fall back with `fakes::fall_back`
+  when the gate is off. Two tests sharing one gate word, or a fake that answers
+  with the gate off, break each other once the modules sit in one unit file
+  (found after the reorg: `OnAuthPopupEvent` broke `OnChildEvent` through
+  `FA_CTRL`).
+- A TextOK-style case that "never matched" is usually a port bug, not a
+  fixture problem: the generated body compared `s0 != v0` BEFORE the delay-slot
+  `lq(16)` restored `s0`, the port restored first. Delay slots execute before the
+  next block: check compare operands against the restore they sit beside. Never
+  weaken a fixture so a case stops failing.
+- A resumable dispatcher without an `__entries` twin (e.g. 0x1a9cc0) is not
+  detected by `stage_wave.py`; if a list entry has no draft, run
+  `tools/port_dispatcher.py ADDR SHARD Name fn` yourself.
