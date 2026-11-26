@@ -11,6 +11,7 @@ use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::call::Target;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
@@ -121,6 +122,35 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_b208, libmrpc_get_packet, "libmrpc_GetPacket"),
     (0x0040_b2b0, libmrpc_free_packet, "libmrpc_FreePacket"),
     (0x0040_b2d0, libmrpc_request_end, "libmrpc_RequestEnd"),
+    (0x0042_4070, sce_sif_stop_dma, "sceSifStopDma"),
+    (0x0042_4150, isce_sif_dma_stat, "isceSifDmaStat"),
+    (0x0042_4170, isce_sif_set_dma, "isceSifSetDma"),
+    (0x0042_4180, sce_sif_set_dchain, "sceSifSetDChain"),
+    (0x0042_41a0, sce_sif_set_reg, "sceSifSetReg"),
+    (0x0042_41b0, sce_sif_get_reg, "sceSifGetReg"),
+    (
+        0x0042_5ce0,
+        sce_sif_cmd_change_addr_handler,
+        "sceSifCmd_ChangeAddrHandler",
+    ),
+    (0x0042_5fb8, sce_sif_exit_cmd, "sceSifExitCmd"),
+    (
+        0x0042_6050,
+        sce_sif_remove_cmd_handler,
+        "sceSifRemoveCmdHandler",
+    ),
+    (0x0042_61f0, isce_sif_send_cmd, "isceSifSendCmd"),
+    (0x0042_6408, sce_sif_init_rpc, "sceSifInitRpc"),
+    (0x0042_65a8, sce_sif_exit_rpc, "sceSifExitRpc"),
+    (0x0042_6698, sce_sif_rpc_get_fpacket, "sceSifRpc_GetFPacket"),
+    (
+        0x0042_66c8,
+        sce_sif_rpc_get_fpacket2,
+        "sceSifRpc_GetFPacket2",
+    ),
+    (0x0042_73f8, sce_sif_rpc_loop, "sceSifRpcLoop"),
+    (0x0042_6078, _sce_sif_send_cmd, "_sceSifSendCmd"),
+    (0x0042_41d0, deci2_call, "Deci2Call"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -160,6 +190,12 @@ pub(crate) mod callee {
     pub(crate) const SET_DMA: Callee = Callee {
         addr: 0x0042_4160,
         f: ee::s15::sceSifSetDma,
+    };
+
+    /// `isceSifSetDma` (`0x00424170`).
+    pub(crate) const ISET_DMA: Callee = Callee {
+        addr: 0x0042_4170,
+        f: ee::s15::f_00424170,
     };
 
     /// Set the DMA chain. (`0x0042_4190`).
@@ -312,6 +348,54 @@ pub(crate) mod callee {
         addr: 0x0042_61b0,
         f: ee::s15::sceSifSendCmd,
     };
+
+    /// `sceSifInitCmd` (`0x0042_5d38`; shared with `buddyapi`).
+    pub(crate) use crate::game::dirtysock::buddyapi::callee::SCE_SIF_INIT_CMD as INIT_CMD;
+
+    /// `sceSifExitCmd` (`0x0042_5fb8`).
+    pub(crate) const EXIT_CMD: Callee = Callee {
+        addr: 0x0042_5fb8,
+        f: ee::s15::f_00425fb8,
+    };
+
+    /// Inner `_sceSifSendCmd` (`0x0042_6078`; `SEND_CMD` is its wrapper).
+    pub(crate) const SEND_CMD_INNER: Callee = Callee {
+        addr: 0x0042_6078,
+        f: ee::s15::f_00426078,
+    };
+
+    /// `DisableDmac` (`0x0042_4950`).
+    pub(crate) const DISABLE_DMAC: Callee = Callee {
+        addr: 0x0042_4950,
+        f: ee::s15::f_00424950,
+    };
+
+    /// `RemoveDmacHandler` (`0x0042_3ad0`).
+    pub(crate) const REMOVE_DMAC_HANDLER: Callee = Callee {
+        addr: 0x0042_3ad0,
+        f: ee::s15::f_00423ad0,
+    };
+
+    /// `sceSifRpc_GetFPacket` (`0x0042_6698`).
+    pub(crate) const GET_FPACKET: Callee = Callee {
+        addr: 0x0042_6698,
+        f: ee::s15::f_00426698,
+    };
+
+    /// `sceSifExecRequest` (`0x0042_7230`).
+    pub(crate) const EXEC_REQUEST: Callee = Callee {
+        addr: 0x0042_7230,
+        f: ee::s15::f_00427230,
+    };
+
+    /// `sceSifGetNextRequest` (`0x0042_71d8`).
+    pub(crate) const GET_NEXT_REQUEST: Callee = Callee {
+        addr: 0x0042_71d8,
+        f: ee::s15::f_004271d8,
+    };
+
+    /// `SleepThread` (`0x0042_3cc0`; shared with `buddyapi`).
+    pub(crate) use crate::game::dirtysock::buddyapi::callee::SLEEP_THREAD;
 
     pub(super) use crate::game::lib::cdvd::callee::DINTR;
 }
@@ -3734,6 +3818,579 @@ pub fn libmrpc_request_end(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod sif_cmd_table {
+
+    /// Table pointer used for system commands (`cid < 0`, `0x0052_bce4`).
+    pub(crate) const SYS_TABLE: u32 = 0x0052_bce4;
+
+    /// Table pointer used for user commands (`cid >= 0`, `0x0052_bcec`).
+    pub(crate) const USER_TABLE: u32 = 0x0052_bcec;
+}
+
+/// `int sceSifInitRpc(void)` (0x00426408): bring up SIF RPC. The first call
+/// disables interrupts, runs `sceSifInitCmd`, registers the four command
+/// handlers and re-enables interrupts; then it waits for the IOP side
+/// (spins on SREG 0 until the peer answers) and records the SIF register.
+/// Later calls return at once through the client-word early exit.
+pub fn sce_sif_init_rpc(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+        c.g[RA][0] = sx(0x00426420);
+        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+        DINTR.call(c, 0x00426420)?;
+        c.g[V1][0] = 0x450000;
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5180));
+        c.g[S1][0] = 0x1;
+        // The client word is set after the first bring-up: later calls
+        // take the early exit (the `S1 = 1` runs on both paths).
+        if c.g[V0][0] == 0u64 {
+            c.cycles += 60;
+            c.g[RA][0] = sx(0x00426450);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x5180), c.g[S1][0]);
+            EINTR.call(c, 0x00426450)?;
+            c.g[RA][0] = sx(0x00426458);
+            INIT_CMD.call(c, 0x00426458)?;
+            c.g[RA][0] = sx(0x00426460);
+            DINTR.call(c, 0x00426460)?;
+            c.g[V1][0] = 0x530000;
+            c.g[T0][0] = 0x530000;
+            c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x4180));
+            c.g[A2][0] = 0x530000;
+            c.g[A3][0] = 0x530000;
+            c.g[S0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x2980));
+            c.g[V1][0] = 0x20;
+            c.g[V0][0] = 0x20000000;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x3980));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x3180));
+            c.g[A2][0] = c.g[A2][0] | c.g[V0][0];
+            c.g[A3][0] = c.g[A3][0] | c.g[V0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+            c.g[V0][0] = c.g[S2][0] | c.g[V0][0];
+            c.sw((c.g[T0][0] as u32).wrapping_sub(0x2980), c.g[S1][0]);
+            c.g[A1][0] = 0x420000;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[A2][0]);
+            c.g[A0][0] = 0xffffffff80000000;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6708));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[A3][0]);
+            c.g[A0][0] = c.g[A0][0] | 0x8;
+            c.g[A2][0] = c.g[S0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V1][0]);
+            c.g[RA][0] = sx(0x004264d4);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0u64);
+            ADD_CMD_HANDLER.call(c, 0x004264d4)?;
+            c.g[A1][0] = 0x420000;
+            c.g[A0][0] = 0xffffffff80000000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6a98));
+            c.g[A0][0] = c.g[A0][0] | 0x9;
+            c.g[RA][0] = sx(0x004264ec);
+            c.g[A2][0] = c.g[S0][0];
+            ADD_CMD_HANDLER.call(c, 0x004264ec)?;
+            c.g[A1][0] = 0x420000;
+            c.g[A0][0] = 0xffffffff80000000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6c88));
+            c.g[A0][0] = c.g[A0][0] | 0xa;
+            c.g[RA][0] = sx(0x00426504);
+            c.g[A2][0] = c.g[S0][0];
+            ADD_CMD_HANDLER.call(c, 0x00426504)?;
+            c.g[A1][0] = 0x420000;
+            c.g[A0][0] = 0xffffffff80000000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6820));
+            c.g[A2][0] = c.g[S0][0];
+            c.g[RA][0] = sx(0x0042651c);
+            c.g[A0][0] = c.g[A0][0] | 0xc;
+            ADD_CMD_HANDLER.call(c, 0x0042651c)?;
+            c.g[RA][0] = sx(0x00426524);
+            EINTR.call(c, 0x00426524)?;
+            c.g[A0][0] = 0xffffffff80000000;
+            c.g[RA][0] = sx(0x00426530);
+            c.g[A0][0] = c.g[A0][0] | 0x2;
+            GET_REG.call(c, 0x00426530)?;
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+            // A live SIF register means the peer answered: restore and
+            // return (the delay-slot `RA` restore runs on both paths).
+            if c.g[V0][0] != 0u64 {
+                c.cycles += 5;
+                c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                c.pc = t;
+                return Ok(());
+            }
+            // Otherwise send the init packet and wait for the peer.
+            c.cycles += 10;
+            c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x40));
+            c.g[A0][0] = 0xffffffff80000000;
+            c.sw((c.g[A1][0] as u32).wrapping_add(0xc), c.g[S1][0]);
+            c.g[A0][0] = c.g[A0][0] | 0x2;
+            c.g[A2][0] = 0x10;
+            c.g[A3][0] = 0u64;
+            c.g[T0][0] = 0u64;
+            c.g[RA][0] = sx(0x0042655c);
+            c.g[T1][0] = 0u64;
+            SEND_CMD.call(c, 0x0042655c)?;
+            loop {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x00426568);
+                c.g[A0][0] = 0u64;
+                GET_SREG.call(c, 0x00426568)?;
+                let waiting = c.g[V0][0] == 0u64;
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                if waiting {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00426560);
+                    }
+                    continue;
+                }
+                break;
+            }
+            c.cycles += 8;
+            c.g[A0][0] = 0xffffffff80000000;
+            c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = 0x1;
+            c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[A0][0] = c.g[A0][0] | 0x2;
+            c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+            // Tail call: SetReg returns straight to our caller.
+            c.pc = 0x004241a0;
+            (ee::s15::sceSifSetReg)(c);
+            return Ok(());
+        }
+        c.cycles += 6;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        // Tail call: EIntr returns straight to our caller.
+        c.pc = 0x0042c0c0;
+        (ee::s15::EIntr)(c);
+        return Ok(());
+    });
+}
+
+/// `int sceSifStopDma(unsigned int id)` (0x424070): syscall 0x6b.
+pub fn sce_sif_stop_dma(c: &mut Cpu) {
+    syscall_wrapper(c, 0x6b, 0x0042_4074, 0x0042_4078);
+}
+
+/// `int isceSifDmaStat(unsigned int id)` (0x424150): syscall -0x76 (0xffffff8a).
+pub fn isce_sif_dma_stat(c: &mut Cpu) {
+    syscall_wrapper(c, 0xffffff8a, 0x0042_4154, 0x0042_4158);
+}
+
+/// `int isceSifSetDma(SifDmaTransfer* t, int len)` (0x424170): syscall -0x77 (0xffffff89).
+pub fn isce_sif_set_dma(c: &mut Cpu) {
+    syscall_wrapper(c, 0xffffff89, 0x0042_4174, 0x0042_4178);
+}
+
+/// `int sceSifSetDChain(void)` (0x424180): syscall 0x78.
+pub fn sce_sif_set_dchain(c: &mut Cpu) {
+    syscall_wrapper(c, 0x78, 0x0042_4184, 0x0042_4188);
+}
+
+/// `int sceSifSetReg(int reg, unsigned int val)` (0x4241a0): syscall 0x79.
+pub fn sce_sif_set_reg(c: &mut Cpu) {
+    syscall_wrapper(c, 0x79, 0x0042_41a4, 0x0042_41a8);
+}
+
+/// `unsigned int sceSifGetReg(int reg)` (0x4241b0): syscall 0x7a.
+pub fn sce_sif_get_reg(c: &mut Cpu) {
+    syscall_wrapper(c, 0x7a, 0x0042_41b4, 0x0042_41b8);
+}
+
+/// `int Deci2Call(...)` (0x4241d0): syscall 0x7c.
+pub fn deci2_call(c: &mut Cpu) {
+    syscall_wrapper(c, 0x7c, 0x0042_41d4, 0x0042_41d8);
+}
+
+/// `isceSifSendCmd` (0x4261f0): repack the SIF send registers around
+/// `_sceSifSendCmd` (moves `a1` into the command slot, `a2`/`a3` down one).
+pub fn isce_sif_send_cmd(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[V0][0] = c.g[A2][0];
+        c.g[V1][0] = c.g[A3][0];
+        c.g[T3][0] = c.g[T0][0];
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[T2][0] = c.g[T1][0];
+        c.g[A2][0] = c.g[A1][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A3][0] = c.g[V0][0];
+        c.g[T0][0] = c.g[V1][0];
+        c.g[T1][0] = c.g[T3][0];
+        c.g[RA][0] = sx(0x00426220);
+        c.g[A1][0] = 0x1;
+        SEND_CMD_INNER.call(c, 0x00426220)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `_sceSifSendCmd` (0x00426078): build the SIF send packet at the caller's
+/// buffer and kick the DMA off. Sizes in `0x10..=0x70` go inline (below
+/// `0x10` and above `0x70` take the early exit with 0); the length word
+/// decides between the packet fill, the empty store and the early exit; the
+/// `S3` flag (argument `a1`) bit 0 picks the DMA start, bit 2 the write-back.
+pub fn _sce_sif_send_cmd(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 16;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
+        c.g[S1][0] = c.g[A3][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
+        c.g[S4][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x10));
+        c.g[S3][0] = c.g[A1][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A0][0] = c.g[T0][0];
+        c.g[V0][0] = (c.g[V0][0] < 0x61u64) as u64;
+        c.g[A1][0] = c.g[T2][0];
+        // Small sizes go inline; anything bigger leaves through the early
+        // exit with 0 (the delay-slot `A1 = T2` runs on both paths).
+        if c.g[V0][0] == 0u64 {
+            c.cycles += 2;
+            c.g[V0][0] = 0u64;
+            // Join `break 'b_42618c`: the shared restore below (one `RA`
+            // load, matching the generated join).
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+            c.cycles += 1;
+        } else {
+            if (c.g[A1][0] as i64) <= 0 {
+                // Empty packet: clear the header words.
+                c.cycles += 2 + 3;
+                c.g[S2][0] = 0u64;
+                c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                // Generated `+1` block.
+                c.cycles += 1;
+                c.g[A1][0] = sx((c.g[S2][0] as u32) << 4);
+            } else {
+                // Fill the packet header.
+                c.cycles += 2 + 12;
+                c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
+                c.g[V1][0] = sx((c.g[A1][0] as u32) << 8);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[T1][0]);
+                c.g[S2][0] = 0x1;
+                c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+                c.sw(c.g[SP][0] as u32, c.g[A0][0]);
+                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = c.g[S3][0] & 0x4;
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T1][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A1][0]);
+                // (the `A1 = S2 << 4` below runs unless the write-back arm
+                // takes it first; the delay-slot store runs on both).
+                c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
+                if c.g[V1][0] != 0u64 {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00426100);
+                    WRITEBACK.call(c, 0x00426100)?;
+                    // The write-back arm rejoins past the `+1` block.
+                    c.g[A1][0] = sx((c.g[S2][0] as u32) << 4);
+                } else {
+                    // Generated `+1` block.
+                    c.cycles += 1;
+                    c.g[A1][0] = sx((c.g[S2][0] as u32) << 4);
+                }
+            }
+            // Commit the packet to the send area and kick the transfer.
+            c.cycles += 23;
+            c.g[V0][0] = 0x530000;
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_sub(0x4320));
+            c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.sw(c.g[V1][0] as u32, c.g[S0][0]);
+            c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x8));
+            c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.sw(c.g[V1][0] as u32, c.g[S1][0]);
+            c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[S4][0]);
+            c.sb(c.g[S0][0] as u32, c.g[S1][0]);
+            c.g[V0][0] = 0x44;
+            c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[RA][0] = sx(0x00426168);
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+            WRITEBACK.call(c, 0x00426168)?;
+            c.g[V0][0] = c.g[S3][0] & 0x1;
+            c.g[A1][0] = c.g[S2][0];
+            if c.g[V0][0] == 0u64 {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x0042618c);
+                c.g[A0][0] = c.g[SP][0];
+                SET_DMA.call(c, 0x0042618c)?;
+                // Join `break 'b_42618c`: the shared restore below (one
+                // `RA` load, matching the generated join).
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                c.cycles += 1;
+            } else {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x0042617c);
+                c.g[A0][0] = c.g[SP][0];
+                ISET_DMA.call(c, 0x0042617c)?;
+                // Joins the epilogue directly (`break 'b_426190`).
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+            }
+        }
+        c.cycles += 7;
+        c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `int sceSifExitRpc(void)` (0x4265a8): run `sceSifExitCmd`, then clear the
+/// SIF RPC client word.
+pub fn sce_sif_exit_rpc(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x004265b8);
+        EXIT_CMD.call(c, 0x004265b8)?;
+        c.g[V0][0] = 0x450000;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x5180), 0u64);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `int sceSifRemoveCmdHandler(int cid)` (0x00426050): clear the handler
+/// slot for `cid` in the user (`cid >= 0`) or system table.
+pub fn sce_sif_remove_cmd_handler(c: &mut Cpu) {
+    use sif_cmd_table::*;
+    c.cycles += 2;
+    c.g[V1][0] = sx((c.g[A0][0] as u32) << 3);
+    if (c.g[A0][0] as i64) >= 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0x530000;
+        c.g[A0][0] = c.lw(USER_TABLE);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = 0x530000;
+        c.g[A0][0] = c.lw(SYS_TABLE);
+    }
+    c.cycles += 3;
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    let t = c.g[RA][0] as u32;
+    c.sw(c.g[V1][0] as u32, 0u64);
+    c.pc = t;
+}
+
+/// `void sceSifCmd_ChangeAddrHandler(...)` (0x00425ce0): copy the address
+/// word at `a0 + 0x10` to `a1 + 8`.
+pub fn sce_sif_cmd_change_addr_handler(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+    let t = c.g[RA][0] as u32;
+    c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+    c.pc = t;
+}
+
+/// `int sceSifExitCmd(void)` (0x00425fb8): stop DMA channel 5, drop its
+/// handler, and clear the SIF command state word.
+pub fn sce_sif_exit_cmd(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x00425fc8);
+        c.g[A0][0] = 0x5;
+        DISABLE_DMAC.call(c, 0x00425fc8)?;
+        c.g[V1][0] = 0x530000;
+        c.g[A0][0] = 0x5;
+        c.g[RA][0] = sx(0x00425fd8);
+        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x432c));
+        REMOVE_DMAC_HANDLER.call(c, 0x00425fd8)?;
+        c.g[V1][0] = 0x450000;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x517c), 0u64);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void *sceSifRpc_GetFPacket(...)` (0x00426698): packet slot for the next
+/// free packet: the remainder of the pool words + 1, scaled to a slot.
+pub fn sce_sif_rpc_get_fpacket(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x24));
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
+    c.div(0, 5, 3);
+    // (both arms of the generated zero test fall through identically).
+    c.cycles += 7;
+    c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+    c.g[V0][0] = c.hi[0];
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x24), c.g[V1][0]);
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.pc = t;
+}
+
+/// `void *sceSifRpc_GetFPacket2(...)` (0x004266c8): the packet at slot
+/// `a1`, or the next free packet when `a1` is negative or past the count.
+pub fn sce_sif_rpc_get_fpacket2(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        let negative = (c.g[A1][0] as i64) < 0;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        let direct = if negative {
+            true
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V0][0] != 0u64 {
+                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1c));
+                false
+            } else {
+                true
+            }
+        };
+        if direct {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x004266ec);
+            GET_FPACKET.call(c, 0x004266ec)?;
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = sx((c.g[A1][0] as u32) << 6);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `sceSifRpcLoop` (0x004273f8): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated twin.
+pub fn sce_sif_rpc_loop(c: &mut Cpu) {
+    if c.pc != 0x004273f8 {
+        return ee::s15::f_004273f8__generated(c);
+    }
+    guest(c, |c| {
+        use callee::*;
+
+        let mut pc: u32 = 0x004273f8;
+        loop {
+            match pc {
+                0x004273f8 => {
+                    c.cycles += 5;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                    let t = true;
+                    c.g[S0][0] = c.g[A0][0];
+                    if t {
+                        pc = 0x00427418;
+                        continue;
+                    }
+                    pc = 0x0042740c;
+                    continue;
+                }
+                0x0042740c => {
+                    c.cycles += 1;
+                    pc = 0x00427410;
+                    continue;
+                }
+                0x00427410 => {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x00427418);
+                    EXEC_REQUEST.call(c, 0x00427418)?;
+                    pc = 0x00427418;
+                    continue;
+                }
+                0x00427418 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00427420);
+                    c.g[A0][0] = c.g[S0][0];
+                    GET_NEXT_REQUEST.call(c, 0x00427420)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = c.g[V0][0];
+                    if t {
+                        if back_edge_unwinds(c, 0x00427410) {
+                            return Ok(());
+                        }
+                        pc = 0x00427410;
+                        continue;
+                    }
+                    pc = 0x00427428;
+                    continue;
+                }
+                0x00427428 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00427430);
+                    SLEEP_THREAD.call(c, 0x00427430)?;
+                    let t = true;
+
+                    if t {
+                        if back_edge_unwinds(c, 0x00427418) {
+                            return Ok(());
+                        }
+                        pc = 0x00427418;
+                        continue;
+                    }
+                    c.pc = 0x00427438;
+                    ee::s15::sceFs_FdSemaInit(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x004273f8, 0x00427438);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5382,4 +6039,650 @@ pub(crate) mod tests {
 
     // sceSifMInitRpc (0x40b130): no events test; the SREG 1 wait at
     // 0x40b1d0 cannot loop and still end in the harness (see the table).
+    use super::sif_cmd_table::SYS_TABLE;
+    use super::sif_cmd_table::USER_TABLE;
+    use crate::difftest::check_lohi;
+    use crate::difftest::check_paths;
+
+    /// Client word (`0x0045_5180`, RAM: the early exit is testable) and the
+    /// SREG polled words (`0x0052_be00`, RAM but zeroed by `sceSifInitCmd`
+    /// during bring-up, so the poll loop always spins in-harness).
+    pub(crate) const SIF_CLIENT_WORD: u32 = 0x0045_5180;
+
+    /// Common bring-up fixture: game-like machine, client word steered by
+    /// `seed % 2` (nonzero: the early exit; zero: the full bring-up, which
+    /// leaves with the peer live since the register read comes back
+    /// nonzero). The send path needs the register fake (see
+    /// `init_rpc_send_setup`).
+    pub(crate) fn init_rpc_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let r = machine(c, seed, 0x0042_6408, 4);
+        c.pc = 0x0042_6408;
+        c.bus
+            .write32(SIF_CLIENT_WORD, if seed % 2 == 0 { 0x77 } else { 0 });
+        r
+    }
+
+    /// `sceSifInitRpc`: the early exit and the live-peer bring-up.
+    #[test]
+    fn sce_sif_init_rpc_matches() {
+        covered(
+            ee::s15::f_00426408__generated,
+            sce_sif_init_rpc,
+            SEEDS,
+            &|c, seed| {
+                init_rpc_setup(c, seed);
+            },
+        );
+    }
+
+    driven!(sce_sif_init_rpc_send_driven, sce_sif_init_rpc);
+    driven!(
+        sce_sif_init_rpc_send_generated_driven,
+        ee::s15::f_00426408__generated
+    );
+
+    /// `sceSifInitRpc` send path with events due: deliveries in the
+    /// bring-up and the SREG poll unwind and re-enter identically on both
+    /// sides, and the loop still exits when the peer answers.
+    #[test]
+    fn sce_sif_init_rpc_send_events() {
+        check_events(
+            sce_sif_init_rpc_send_generated_driven,
+            sce_sif_init_rpc_send_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = init_rpc_send_setup(c, seed);
+                c.bus
+                    .write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+                schedule(c, &mut r, seed, 0x0042_6408)
+            },
+        );
+    }
+
+    /// Gate + countdown for the send-path fakes (per-machine words; other
+    /// tests' machines read 0 here, so their runs fall back to the slot body).
+    pub(crate) const SEND_GATE: u32 = DATA + 0x6230;
+    pub(crate) const SEND_SREG_N: u32 = DATA + 0x6234;
+
+    /// `sceSifGetReg` with the gate set and `ra` at the bring-up read
+    /// (`0x0042_6530`): the peer has not answered yet, so the init packet
+    /// is sent. Anywhere else (or with the gate clear): the slot body.
+    fn fake_get_reg_send(c: &mut Cpu) {
+        if c.bus.read32(SEND_GATE) != GATE_MAGIC || c.g[RA][0] as u32 != 0x0042_6530 {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_get_reg_send),
+                ee::s15::f_004241b0__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `sceSifGetSreg` with the gate set: 0 while polls remain, then
+    /// nonzero (the peer answers). The count lives in the machine's RAM,
+    /// so both sides poll the same number of times.
+    fn fake_get_sreg_answer(c: &mut Cpu) {
+        if c.bus.read32(SEND_GATE) != GATE_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_get_sreg_answer),
+                ee::s15::f_00425cf0__generated,
+            );
+        }
+        let n = c.bus.read32(SEND_SREG_N);
+        if n > 0 {
+            c.bus.write32(SEND_SREG_N, n - 1);
+            c.g[V0][0] = 0;
+        } else {
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 6;
+        crate::abi::ret(c);
+    }
+
+    /// Send-path bring-up: like [`init_rpc_setup`] but the client word is
+    /// always clear and the register/sreg fakes steer into the send, poll
+    /// the SREG loop `1 + seed % 3` times, then let the peer answer.
+    pub(crate) fn init_rpc_send_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let r = init_rpc_setup(c, seed);
+        c.bus.write32(SIF_CLIENT_WORD, 0);
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_004241B0),
+            fake_get_reg_send,
+            crate::difftest::fakes::prev_cell(fake_get_reg_send),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00425CF0),
+            fake_get_sreg_answer,
+            crate::difftest::fakes::prev_cell(fake_get_sreg_answer),
+        );
+        c.bus.write32(SEND_GATE, GATE_MAGIC);
+        c.bus.write32(SEND_SREG_N, 1 + seed % 3);
+        r
+    }
+
+    /// `sceSifInitRpc` through the send path: the init packet goes out,
+    /// the SREG loop spins until the peer answers, and the `SetReg` tail
+    /// call returns to the caller.
+    #[test]
+    fn sce_sif_init_rpc_send_matches() {
+        check(
+            ee::s15::f_00426408__generated,
+            sce_sif_init_rpc,
+            SEEDS,
+            &|c, seed| {
+                init_rpc_send_setup(c, seed);
+            },
+        );
+        require_paths(
+            ee::s15::f_00426408__generated,
+            SEEDS,
+            // Three SREG poll counts (1-3 zero polls) crossed with the
+            // syscall fake's per-seed charge in the real bring-up callees.
+            &[624, 642, 665, 706, 1063, 1074, 1090],
+            &|c, seed| {
+                init_rpc_send_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn sce_sif_stop_dma_matches() {
+        syscall_test(ee::s15::f_00424070__generated, sce_sif_stop_dma, 1_321_001);
+    }
+
+    #[test]
+    fn isce_sif_dma_stat_matches() {
+        syscall_test(ee::s15::f_00424150__generated, isce_sif_dma_stat, 1_321_002);
+    }
+
+    #[test]
+    fn isce_sif_set_dma_matches() {
+        syscall_test(ee::s15::f_00424170__generated, isce_sif_set_dma, 1_321_003);
+    }
+
+    #[test]
+    fn sce_sif_set_dchain_matches() {
+        syscall_test(
+            ee::s15::f_00424180__generated,
+            sce_sif_set_dchain,
+            1_321_004,
+        );
+    }
+
+    #[test]
+    fn sce_sif_set_reg_matches() {
+        syscall_test(ee::s15::f_004241a0__generated, sce_sif_set_reg, 1_321_005);
+    }
+
+    #[test]
+    fn sce_sif_get_reg_matches() {
+        syscall_test(ee::s15::f_004241b0__generated, sce_sif_get_reg, 1_321_006);
+    }
+
+    #[test]
+    fn deci2_call_matches() {
+        syscall_test(ee::s15::f_004241d0__generated, deci2_call, 1_321_007);
+    }
+
+    /// `isceSifSendCmd`: repack the registers, run `_sceSifSendCmd`, restore.
+    /// The wrapper moves `a1` into the command slot and `a2`/`a3` down one,
+    /// and copies `t1` into the length slot (`t2`); the callee's length is
+    /// the steered `t1`, while `t2` is scratch overwritten before the call.
+    /// `A0` and `A3` name different buffers (nonzero low bytes), so an
+    /// `A0`/`A3` mix-up in the repack shows. Arms: size below/equal/above
+    /// the 0x71 limit; length positive, zero (empty arm) and a huge length
+    /// (packet arm). The wrapper forces `a1 = 1`, so the write-back arm
+    /// stays unreachable here (covered by the direct test).
+    #[test]
+    fn isce_sif_send_cmd_matches() {
+        covered(
+            ee::s15::f_004261f0__generated,
+            isce_sif_send_cmd,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_321_009, 2);
+                c.pc = 0x0042_61f0;
+                c.g[A0][0] = (DATA + 0x310) as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                // Size digit: 0x10 and 0x70 take the packet body, 0x71 and
+                // 0x1000 take the early exit.
+                c.g[A2][0] = [0x10, 0x70, 0x71, 0x1000][seed as usize % 4] as u64;
+                c.g[A3][0] = (DATA + 0x320) as u64;
+                c.g[T0][0] = (seed.wrapping_mul(0x9e37_79b9) | 0x0101_0100) as u64;
+                // Length digit (what the callee sees): 12 and 8 build a
+                // packet, 0 takes the empty arm, 0x00000000fffffffc is a
+                // huge positive length (packet arm, not -1: only a properly
+                // sign-extended -1 would be negative).
+                c.g[T1][0] = [12, 8, 0, 0xffff_fffcu64][seed as usize / 4 % 4];
+                // Scratch length slot: overwritten before the call, so a
+                // missed copy would show as a different length.
+                c.g[T2][0] = (seed.wrapping_mul(0x5bd1_e995) | 0x0202_0200) as u64;
+                for i in 0..32 {
+                    c.bus.write32(DATA + 0x100 + 4 * i, 0x0101_0100 + seed);
+                }
+            },
+        );
+    }
+
+    /// `_sceSifSendCmd`: size classes around the 0x71 inline limit; length
+    /// classes (empty via 0 and a sign-extended -4, plain, write-back
+    /// length); the
+    /// `S3` flag (argument `a1`) bit 0 picks the DMA start, bit 2 the
+    /// write-back. Every steering value from an independent digit: `A0`
+    /// and `T0` name different buffers, and the flag (`A1`) can equal the
+    /// length (`T2`) (both may be zero). (A zero-extended
+    /// `0x00000000fffffffc` would be a huge positive length and explode
+    /// the write-back range; only a properly sign-extended -4 takes the
+    /// empty arm.)
+    #[test]
+    fn _sce_sif_send_cmd_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_320_001, 4);
+            c.pc = 0x0042_6078;
+            // Size digit: packet body (0x10, 0x70), early exit (0x71,
+            // 0x1000). Length digit on `T2`: empty (0 and sign-extended
+            // -1), plain (8), write-back length (12). Flag digit on `A1`:
+            // bit 0 (DMA start) crossed with bit 2 (write-back).
+            c.g[A3][0] = [0x10, 0x70, 0x71, 0x1000][seed as usize % 4] as u64;
+            c.g[T2][0] = [0, 0xffff_ffff_fffffffcu64, 8, 12][seed as usize / 4 % 4];
+            c.g[A1][0] = [0, 1, 4, 5][seed as usize / 16 % 4] as u64;
+            // Packet pointer and data: real buffers, nonzero fill.
+            c.g[A2][0] = (DATA + 0x100) as u64;
+            c.g[A0][0] = (DATA + 0x300) as u64;
+            c.g[T0][0] = (DATA + 0x340) as u64;
+            c.g[T1][0] = (seed.wrapping_mul(0x9e37_79b9) | 0x0101_0100) as u64;
+            for i in 0..64 {
+                c.bus.write32(DATA + 0x100 + 4 * i, 0x0101_0100 + seed);
+            }
+        };
+        covered(
+            ee::s15::f_00426078__generated,
+            _sce_sif_send_cmd,
+            SEEDS,
+            &setup,
+        );
+        // Path totals (generated cycles): 26 early exit; 85 empty via the
+        // sign-extended -4; 88/93 empty with/without the DMA-start flag;
+        // 96/97 packet with/without it; 89 write-back length; 124/127 the
+        // write-back flag without/with DMA start; 99/106/107 the 0x70 size
+        // class (empty, DMA start, plain).
+        require_paths(
+            ee::s15::f_00426078__generated,
+            SEEDS,
+            &[26, 85, 88, 89, 93, 96, 97, 99, 106, 107, 124, 127],
+            &setup,
+        );
+    }
+
+    /// `_sceSifSendCmd`: the `S3` flag (argument `a1`) bit 0 picks the DMA
+    /// start and bit 2 the write-back, on seeds where the packet path runs.
+    #[test]
+    fn _sce_sif_send_cmd_s1_flag_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_320_002, 4);
+            c.pc = 0x0042_6078;
+            c.g[A3][0] = 0x20;
+            // Flag digit: bit 0 (syscall vs inline DMA start) crossed with
+            // bit 2 (write-back off vs on); the length stays a plain 8.
+            c.g[A1][0] = [0, 1, 4, 5][seed as usize % 4] as u64;
+            c.g[T2][0] = 8;
+            c.g[A2][0] = (DATA + 0x100) as u64;
+            c.g[A0][0] = (DATA + 0x300) as u64;
+            c.g[T0][0] = (DATA + 0x340) as u64;
+            c.g[T1][0] = (seed.wrapping_mul(0x9e37_79b9) | 0x0101_0100) as u64;
+            for i in 0..64 {
+                c.bus.write32(DATA + 0x100 + 4 * i, 0x0101_0100 + seed);
+            }
+        };
+        covered(
+            ee::s15::f_00426078__generated,
+            _sce_sif_send_cmd,
+            SEEDS,
+            &setup,
+        );
+        // Path totals (generated cycles), one per flag setting on the
+        // packet path: 97/96 bit 0 (DMA start) off/on, 124/127 bit 2
+        // (write-back) on with bit 0 off/on.
+        require_paths(
+            ee::s15::f_00426078__generated,
+            SEEDS,
+            &[96, 97, 124, 127],
+            &setup,
+        );
+    }
+
+    /// `sceSifExitRpc`: run `sceSifExitCmd`, clear the RPC client word.
+    #[test]
+    fn sce_sif_exit_rpc_matches() {
+        covered(
+            ee::s15::f_004265a8__generated,
+            sce_sif_exit_rpc,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_321_010, 2);
+                c.pc = 0x0042_65a8;
+                c.bus
+                    .write32(SIF_CLIENT_WORD, seed.wrapping_mul(0x9e37_79b9) | 1);
+            },
+        );
+    }
+
+    /// `sceSifRemoveCmdHandler`: negative (system table) and non-negative
+    /// (user table) cids, crossing the table words.
+    #[test]
+    fn sce_sif_remove_cmd_handler_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_322_001, 0);
+            c.pc = 0x0042_6050;
+            // cid digit: negative, zero, small, large (index words differ).
+            c.g[A0][0] = [-4, 0, 3, 0x1_0000i64][seed as usize % 4] as u64;
+            c.bus.write32(SYS_TABLE, 0x0101_0100 + seed);
+            c.bus.write32(USER_TABLE, 0x0202_0200 + seed);
+            c.bus.write32(SYS_TABLE + 0x18, 0x0303_0300 + seed);
+            c.bus.write32(USER_TABLE + 0x18, 0x0404_0400 + seed);
+        };
+        check_paths(
+            ee::s15::f_00426050__generated,
+            sce_sif_remove_cmd_handler,
+            SEEDS,
+            &[7, 8],
+            &setup,
+        );
+    }
+
+    /// `sceSifCmd_ChangeAddrHandler`: copy `a0 + 0x10` to `a1 + 8`.
+    #[test]
+    fn sce_sif_cmd_change_addr_handler_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_322_002, 0);
+            c.pc = 0x0042_5ce0;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            c.g[A1][0] = (DATA + 0x200) as u64;
+            c.bus
+                .write32(DATA + 0x110, seed.wrapping_mul(0x9e37_79b9) | 1);
+            c.bus
+                .write32(DATA + 0x208, seed.wrapping_mul(0x5bd1_e995) | 1);
+        };
+        check_paths(
+            ee::s15::f_00425ce0__generated,
+            sce_sif_cmd_change_addr_handler,
+            SEEDS,
+            &[3],
+            &setup,
+        );
+    }
+
+    /// `sceSifExitCmd`: stop DMA channel 5, drop its handler, clear state.
+    /// Single path (the totals vary with the syscall fake's charge in
+    /// `RemoveDmacHandler` and the scrambled cop0 state in `DisableDmac`).
+    #[test]
+    fn sce_sif_exit_cmd_matches() {
+        covered(
+            ee::s15::f_00425fb8__generated,
+            sce_sif_exit_cmd,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_322_003, 4);
+                c.pc = 0x0042_5fb8;
+                c.bus
+                    .write32(0x0052_bcd4, seed.wrapping_mul(0x9e37_79b9) | 1);
+                c.bus
+                    .write32(0x0045_517c, seed.wrapping_mul(0x5bd1_e995) | 1);
+            },
+        );
+    }
+
+    /// `sceSifRpc_GetFPacket`: divisor/dividend classes, including 0, with
+    /// LO/HI compared (the `div` writes both).
+    #[test]
+    fn sce_sif_rpc_get_fpacket_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_322_004, 0);
+            c.pc = 0x0042_6698;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            // Divisor digit: 0, 1, 7. Dividend digit: 0, 0x40, -5.
+            c.bus.write32(DATA + 0x118, [0, 1, 7][seed as usize % 3]);
+            c.bus
+                .write32(DATA + 0x124, [0, 0x40, 0xffff_fffb][seed as usize / 3 % 3]);
+            c.bus
+                .write32(DATA + 0x114, seed.wrapping_mul(0x9e37_79b9) | 1);
+        };
+        check_lohi(
+            ee::s15::f_00426698__generated,
+            sce_sif_rpc_get_fpacket,
+            SEEDS,
+            &setup,
+        );
+        require_paths(ee::s15::f_00426698__generated, SEEDS, &[12], &setup);
+    }
+
+    /// `sceSifRpc_GetFPacket2`: negative, in-range, and at/past-the-count
+    /// indexes (index == count takes the free-packet arm); the struct
+    /// words vary independently.
+    #[test]
+    fn sce_sif_rpc_get_fpacket2_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_322_005, 0);
+            c.pc = 0x0042_66c8;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            // Index digit: negative (direct), 0 and 2 in range of the
+            // count word, 3 equal to it (direct), 9 past it (direct).
+            c.g[A1][0] = [-1, 0, 2, 3, 9i64][seed as usize % 5] as u64;
+            c.bus.write32(DATA + 0x120, 3);
+            c.bus
+                .write32(DATA + 0x11c, seed.wrapping_mul(0x9e37_79b9) | 1);
+            c.bus
+                .write32(DATA + 0x114, seed.wrapping_mul(0x5bd1_e995) | 1);
+            c.bus.write32(DATA + 0x118, (seed & 0x7f) + 1);
+            c.bus.write32(DATA + 0x124, seed | 1);
+        };
+        check_paths(
+            ee::s15::f_004266c8__generated,
+            sce_sif_rpc_get_fpacket2,
+            SEEDS,
+            &[12, 21, 25],
+            &setup,
+        );
+    }
+
+    /// RPC-loop fixture: the game-like machine plus the queue below.
+    /// Every seed unwinds at a fake call (`LOG_UNWIND_AT` set explicitly —
+    /// the loop itself never returns), so both sides are compared on the
+    /// same prefix.
+    pub(crate) fn rpcloop_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 1_325_001, 4);
+        rpcloop_queue(c, seed);
+        c.bus
+            .write32(crate::difftest::fakes::LOG_UNWIND_AT, seed % 2);
+    }
+
+    /// The rpc-loop queue fixture (no machine): the next-request word
+    /// (queue + 0xc) alternates: 0 takes the sleep path (unwound), a
+    /// scratch request address (DATA+0x200, which GetNextRequest returns)
+    /// takes the re-request arm once. ExecRequest reads the executed
+    /// function at its argument + 4; the first round passes the queue
+    /// itself, whose word at +4 names a real zero-returning leaf
+    /// (`0x1406c0`, so no packet work happens). The rest is pool scratch
+    /// the packet code reads.
+    pub(crate) fn rpcloop_queue(c: &mut Cpu, seed: u32) {
+        c.pc = 0x0042_73f8;
+        c.g[A0][0] = (DATA + 0x100) as u64;
+        c.bus
+            .write32(DATA + 0x10c, if seed % 2 == 0 { 0 } else { DATA + 0x200 });
+        c.bus.write32(DATA + 0x104, 0x0014_06c0);
+        c.bus.write32(DATA + 0x108, seed);
+        c.bus.write32(DATA + 0x124, seed);
+        c.bus.write32(DATA + 0x118, seed);
+        c.bus.write32(DATA + 0x114, seed | 1);
+        c.bus.write32(DATA + 0x120, 3);
+        c.bus.write32(DATA + 0x128, seed);
+        c.bus.write32(DATA + 0x130, 0);
+        c.bus.write32(DATA + 0x134, 0);
+        c.bus.write32(DATA + 0x11c, seed | 1);
+        c.bus.write32(DATA + 0x120 + 0x20, seed);
+        c.bus.write32(DATA + 0x200 + 0x3c, 0);
+        for i in 0..16 {
+            c.bus.write32(DATA + 0x200 + 4 * i, 0x0101_0100 + seed);
+        }
+    }
+
+    /// `sceSifRpcLoop`: one `ExecRequest` + `GetNextRequest` round (empty
+    /// queue sleeps, non-empty re-requests once), unwound at a fake call.
+    #[test]
+    fn sce_sif_rpc_loop_matches() {
+        covered(
+            ee::s15::f_004273f8__generated,
+            sce_sif_rpc_loop,
+            SEEDS,
+            &|c, seed| {
+                rpcloop_setup(c, seed);
+            },
+        );
+    }
+
+    /// Gate for the rpc-loop `EIntr` fake (per-machine; other tests'
+    /// machines read 0 here, so their runs fall back to the slot body).
+    pub(crate) const RPCLOOP_GATE: u32 = DATA + 0x6260;
+    /// `EIntr`-at-`0x427218` calls so far: the first skips the reschedule
+    /// (the re-request arm runs), later ones reschedule (the test unwinds).
+    pub(crate) const RPCLOOP_EINTR_N: u32 = DATA + 0x6264;
+    pub(crate) const RPCLOOP_MAGIC: u32 = 0x5250_4352;
+
+    /// `EIntr` at the end of `sceSifGetNextRequest` (`ra == 0x0042_7218`)
+    /// with the gate set: enable interrupts like the real one. The first
+    /// call skips the `ei()` reschedule, so the back edge after a nonzero
+    /// request runs the re-request arm instead of unwinding; later calls
+    /// reschedule, so the second back edge unwinds and the test ends (the
+    /// IOP never answers headless, and the loop itself never returns).
+    /// Anywhere else (or with the gate clear): the slot body.
+    fn fake_rpcloop_eintr(c: &mut Cpu) {
+        if c.bus.read32(RPCLOOP_GATE) != RPCLOOP_MAGIC || c.g[RA][0] as u32 != 0x0042_7218 {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_rpcloop_eintr),
+                ee::s15::f_0042c0c0__generated,
+            );
+        }
+        let n = c.bus.read32(RPCLOOP_EINTR_N);
+        c.bus.write32(RPCLOOP_EINTR_N, n + 1);
+        if n > 0 {
+            c.next_event = c.cycles;
+        }
+        c.g[V0][0] = ((c.cop0[12] >> 16) & 1) as u64;
+        c.cop0[12] |= 1 << 16;
+        c.cycles += 6;
+        crate::abi::ret(c);
+    }
+
+    /// Hook the rpc-loop `EIntr` fake into its override slot.
+    pub(crate) fn rpcloop_hook_fakes() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_0042C0C0),
+            fake_rpcloop_eintr,
+            crate::difftest::fakes::prev_cell(fake_rpcloop_eintr),
+        );
+    }
+
+    /// Re-request setup: the queue fixture with a request pending on every
+    /// seed, no fake-call unwind (the loop must unwind at the back edge),
+    /// and the `EIntr` fake keeping the first back edge quiet so a nonzero
+    /// request re-requests once, then unwinds.
+    pub(crate) fn rpcloop_rerequest_setup(c: &mut Cpu, seed: u32) {
+        rpcloop_setup(c, seed);
+        c.bus
+            .write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+        rpcloop_hook_fakes();
+        c.bus.write32(RPCLOOP_GATE, RPCLOOP_MAGIC);
+        c.bus.write32(RPCLOOP_EINTR_N, 0);
+        c.bus.write32(DATA + 0x10c, DATA + 0x200);
+    }
+
+    /// `sceSifRpcLoop` through the re-request arm: a nonzero request runs
+    /// `ExecRequest` again instead of unwinding at the back edge.
+    #[test]
+    fn sce_sif_rpc_loop_rerequest_matches() {
+        check(
+            ee::s15::f_004273f8__generated,
+            sce_sif_rpc_loop,
+            SEEDS,
+            &|c, seed| {
+                rpcloop_rerequest_setup(c, seed);
+            },
+        );
+        require_paths(
+            ee::s15::f_004273f8__generated,
+            SEEDS,
+            // One re-request then the second back edge unwinds; the spread
+            // is the syscall fake's per-seed charge in the real `ExecRequest`.
+            &[
+                1316217, 1316221, 1316222, 1316224, 1316226, 1316230, 1316231, 1316234, 1316239,
+                1316246, 1316248, 1316250, 1316252, 1316254, 1316258, 1316260, 1316262, 1316263,
+                1316264, 1316270, 1316272, 1316279, 1316287, 1316289, 1316293, 1316297,
+            ],
+            &|c, seed| {
+                rpcloop_rerequest_setup(c, seed);
+            },
+        );
+    }
+
+    /// `sceSifRpcLoop` with events due: the back edges unwind identically
+    /// on both sides. Not driven: the loop never returns to its caller, so
+    /// a trampoline re-entry would restart it forever; the plain comparison
+    /// still verifies the unwound states and schedules. `Deliver` seeds run
+    /// as `Unwind` (no VBlank is ever due headless on a `Deliver` schedule,
+    /// so the loop would neither unwind nor exit).
+    #[test]
+    fn sce_sif_rpc_loop_events() {
+        check_events(
+            ee::s15::f_004273f8__generated,
+            sce_sif_rpc_loop,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_325_002, 0);
+                rpcloop_queue(c, seed);
+                rpcloop_hook_fakes();
+                c.bus.write32(RPCLOOP_GATE, RPCLOOP_MAGIC);
+                c.bus.write32(RPCLOOP_EINTR_N, 0);
+                c.bus.write32(DATA + 0x10c, DATA + 0x200);
+                let mode = schedule(c, &mut r, seed, 0x0042_73f8);
+                if mode == crate::difftest::events::Events::Deliver {
+                    ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                        .sched
+                        .next_vblank = 0;
+                    crate::difftest::events::Events::Unwind
+                } else {
+                    mode
+                }
+            },
+        );
+    }
+
+    /// `sceSifRpcLoop` entered at a resume head: every non-entry `pc` runs
+    /// the generated body (the guard), so both sides run the same partial
+    /// pass; flipping the guard would restart the hand arms from the entry.
+    #[test]
+    fn sce_sif_rpc_loop_resume_matches() {
+        check(
+            ee::s15::f_004273f8__generated,
+            sce_sif_rpc_loop,
+            SEEDS,
+            &|c, seed| {
+                rpcloop_setup(c, seed);
+                // A resume frame: the entry's saves with a plausible
+                // return, then the head under test.
+                c.g[S0][0] = c.g[A0][0];
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] =
+                    sx((c.g[ssx3_ee_rt::cpu::reg::SP][0] as u32).wrapping_sub(0x20));
+                c.sd(c.g[ssx3_ee_rt::cpu::reg::SP][0] as u32, c.g[S0][0]);
+                c.sd(
+                    (c.g[ssx3_ee_rt::cpu::reg::SP][0] as u32).wrapping_add(0x10),
+                    c.g[RA][0],
+                );
+                c.pc = [0x0042_7410, 0x0042_7418][seed as usize % 2];
+            },
+        );
+    }
 }

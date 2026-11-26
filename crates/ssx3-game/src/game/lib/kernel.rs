@@ -106,6 +106,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rcmp_av_ms_timer_update,
         "RCMP_AV_MS_TIMER_Update",
     ),
+    (
+        0x0042_4220,
+        libkernl_reset_tty_init,
+        "libkernl_ResetTtyInit",
+    ),
+    (0x0042_4e00, libkernl_tty_ring_init, "libkernl_TtyRingInit"),
+    (0x0042_4e28, libkernl_tty_ring_push, "libkernl_TtyRingPush"),
+    (0x0042_4e68, libkernl_tty_ring_pop, "libkernl_TtyRingPop"),
+    (0x0042_5320, libkernl_sio_putc, "libkernl_SioPutc"),
+    (0x0042_5408, libkernl_sio_putc_crlf, "libkernl_SioPutcCRLF"),
+    (0x0042_5c28, libkernl_printf, "libkernl_printf"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -116,6 +127,12 @@ pub(crate) mod callee {
     use super::Callee;
 
     pub(super) use crate::game::lib::libc::callee::STRLEN;
+
+    /// `libkernl_vprintf` (`0x00425638`).
+    pub(crate) const VPRINTF: Callee = Callee {
+        addr: 0x0042_5638,
+        f: ee::s15::f_00425638,
+    };
 
     /// Direct-call target: f_00423a50 (0x0042_3a50).
     pub(crate) const SET_HANDLER: Callee = Callee {
@@ -638,6 +655,12 @@ pub fn poll_sema(c: &mut Cpu) {
 pub(crate) const DINTR: Callee = Callee {
     addr: 0x0042_c078,
     f: ee::s15::f_0042c078,
+};
+
+/// `libkernl_SioPutc` (`0x0042_5320`).
+pub(crate) const SIO_PUTC: Callee = Callee {
+    addr: 0x0042_5320,
+    f: ee::s15::libkernl_SioPutc,
 };
 
 /// `_InvalidDCache(start, end)` (0x424730): the cache-line loop.
@@ -1829,6 +1852,196 @@ pub fn rcmp_av_ms_timer_update(c: &mut Cpu) {
     })
 }
 
+/// TTY ring-buffer header words (see `TtyRingPush`/`TtyRingPop`).
+pub(crate) mod tty_ring {
+    /// Live-byte count: decremented by pop, incremented by push.
+    pub(crate) const COUNT_OFF: u32 = 0x4;
+    /// Head offset: advanced by pop, wrapped at the end.
+    pub(crate) const HEAD_OFF: u32 = 0x8;
+    /// Tail offset: advanced by push, wrapped at the end.
+    pub(crate) const TAIL_OFF: u32 = 0xc;
+    /// Header size in bytes: head and tail start at `ring + 0x10`.
+    pub(crate) const HDR_SIZE: u32 = 0x10;
+}
+
+/// SIO registers.
+pub(crate) mod sio {
+    /// Status (`0x1000_f130`): bit 15 set while the port is busy.
+    pub(crate) const STAT: u32 = 0x1000_f130;
+    /// Transmit holding (`0x1000_f180`).
+    pub(crate) const TX: u32 = 0x1000_f180;
+    /// Busy bit of the status word.
+    pub(crate) const BUSY: u64 = 0x8000;
+}
+
+/// `void libkernl_ResetTtyInit(void)` (0x424220): clear the TTY-init flag word.
+pub fn libkernl_reset_tty_init(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0x450000;
+    c.sw((c.g[V0][0] as u32).wrapping_add(0x5168), 0u64);
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+}
+
+/// `void libkernl_TtyRingInit(unsigned int capacity)` (0x00424e00): set up
+/// the fixed TTY ring header: store the capacity word and point head and
+/// tail past the header.
+pub fn libkernl_tty_ring_init(c: &mut Cpu) {
+    use tty_ring::*;
+    c.cycles += 9;
+    c.g[V0][0] = 0x530000;
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4840));
+    c.sw((c.g[V0][0] as u32).wrapping_sub(0x4840), c.g[A0][0]);
+    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(HDR_SIZE));
+    c.g[V0][0] = c.g[V1][0];
+    c.sw((c.g[V1][0] as u32).wrapping_add(HEAD_OFF), c.g[A0][0]);
+    c.sw((c.g[V1][0] as u32).wrapping_add(COUNT_OFF), 0u64);
+    let t = c.g[RA][0] as u32;
+    c.sw((c.g[V1][0] as u32).wrapping_add(TAIL_OFF), c.g[A0][0]);
+    c.pc = t;
+}
+
+/// `int libkernl_TtyRingPush(void *ring, ...)` (0x00424e28): append to the
+/// TTY ring; wraps the tail back to the buffer start when it runs past
+/// the end.
+pub fn libkernl_tty_ring_push(c: &mut Cpu) {
+    use tty_ring::*;
+    c.cycles += 11;
+    c.g[A1][0] = c.g[A0][0];
+    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(COUNT_OFF));
+    c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(TAIL_OFF));
+    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+    c.sw((c.g[A1][0] as u32).wrapping_add(COUNT_OFF), c.g[V0][0]);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(HDR_SIZE));
+    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    let wrapped = c.g[A0][0] == c.g[V1][0];
+    c.sw((c.g[A1][0] as u32).wrapping_add(TAIL_OFF), c.g[A0][0]);
+    if wrapped {
+        c.cycles += 2;
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(HDR_SIZE));
+        c.sw((c.g[A1][0] as u32).wrapping_add(TAIL_OFF), c.g[V0][0]);
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+}
+
+/// `int libkernl_TtyRingPop(void *ring)` (0x00424e68): take a byte off the
+/// TTY ring; wraps the head back to the buffer start when it runs past
+/// the end.
+pub fn libkernl_tty_ring_pop(c: &mut Cpu) {
+    use tty_ring::*;
+    c.cycles += 11;
+    c.g[A1][0] = c.g[A0][0];
+    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(COUNT_OFF));
+    c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(HEAD_OFF));
+    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+    c.sw((c.g[A1][0] as u32).wrapping_add(COUNT_OFF), c.g[V0][0]);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(HDR_SIZE));
+    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    let wrapped = c.g[A0][0] == c.g[V1][0];
+    c.sw((c.g[A1][0] as u32).wrapping_add(HEAD_OFF), c.g[A0][0]);
+    if wrapped {
+        c.cycles += 2;
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(HDR_SIZE));
+        c.sw((c.g[A1][0] as u32).wrapping_add(HEAD_OFF), c.g[V0][0]);
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+}
+
+/// `void libkernl_SioPutc(int ch)` (0x00425320): wait for the SIO port to
+/// go idle, then send the byte.
+pub fn libkernl_sio_putc(c: &mut Cpu) {
+    use sio::*;
+    guest(c, |c| {
+        c.cycles += 2;
+        // The port builds the register address in two steps; both words
+        // are named in `sio` above.
+        c.g[V1][0] = STAT as u64;
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            c.g[V0][0] = c.g[V0][0] & BUSY;
+            if c.g[V0][0] == 0u64 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x00425328);
+            }
+        }
+        c.cycles += 5;
+        c.g[V0][0] = c.g[A0][0];
+        c.g[V1][0] = TX as u64;
+        let t = c.g[RA][0] as u32;
+        c.sb(c.g[V1][0] as u32, c.g[A0][0]);
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void libkernl_SioPutcCRLF(int ch)` (0x00425408): send `\r` first when
+/// the byte is `\n`, then send the byte itself.
+pub fn libkernl_sio_putc_crlf(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[V0][0] = 0xa;
+        let newline = c.g[A0][0] == c.g[V0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        // A plain byte tail-calls the putc below (the delay-slot `RA`
+        // save runs on both paths).
+        if !newline {
+            c.cycles += 3;
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.pc = 0x00425320;
+            (ee::s15::libkernl_SioPutc)(c);
+            return Ok(());
+        }
+        c.cycles += 6;
+        c.g[A0][0] = 0xd;
+        SIO_PUTC.call(c, 0x00425420)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[A0][0] = 0xa;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = 0x00425320;
+        (ee::s15::libkernl_SioPutc)(c);
+        return Ok(());
+    });
+}
+
+/// `int libkernl_printf(const char *fmt, ...)` (0x00425c28): format into the
+/// caller's stack buffer through `libkernl_vprintf`.
+pub fn libkernl_printf(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A1][0]);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x58));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[T2][0]);
+        c.g[RA][0] = sx(0x00425c54);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x88), c.g[T3][0]);
+        VPRINTF.call(c, 0x00425c54)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2745,5 +2958,170 @@ pub(crate) mod tests {
     #[test]
     fn rfu116_set_syscall_3_matches() {
         syscall_test(ee::s15::f_0042c500__generated, rfu116_set_syscall_3, 121209);
+    }
+    use crate::difftest::check_paths;
+
+    /// `libkernl_ResetTtyInit`: the single store of 0 to the TTY-init flag.
+    #[test]
+    fn libkernl_reset_tty_init_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_321_008, 0);
+            c.pc = 0x0042_4220;
+            c.bus
+                .write32(0x0045_5168, seed.wrapping_mul(0x9e37_79b9) | 1);
+        };
+        check_paths(
+            ee::s15::f_00424220__generated,
+            libkernl_reset_tty_init,
+            SEEDS,
+            &[3],
+            &setup,
+        );
+    }
+
+    /// `libkernl_TtyRingInit`: the ring header points at the TTY buffer.
+    #[test]
+    fn libkernl_tty_ring_init_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_323_005, 0);
+            c.pc = 0x0042_4e00;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            c.bus
+                .write32(0x0052_b7c0, seed.wrapping_mul(0x9e37_79b9) | 1);
+        };
+        check_paths(
+            ee::s15::f_00424e00__generated,
+            libkernl_tty_ring_init,
+            SEEDS,
+            &[9],
+            &setup,
+        );
+    }
+
+    /// `libkernl_TtyRingPush`/`Pop`: plain advance, and the exact wrap
+    /// value (the wrap threshold is `ring + base + 0x10`, so only that
+    /// tail/head value wraps: the normal end-of-buffer case, since head
+    /// and tail are absolute pointers starting at `ring + 0x10`).
+    #[test]
+    fn libkernl_tty_ring_push_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_323_006, 0);
+            c.pc = 0x0042_4e28;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            c.bus.write32(DATA + 0x100, DATA + 0x200);
+            c.bus.write32(DATA + 0x104, seed);
+            // Tail digit: mid-buffer (advance) or exactly the wrap
+            // threshold minus one (wrap).
+            let wrap = (DATA + 0x100 + DATA + 0x200 + 0x10).wrapping_sub(1);
+            c.bus
+                .write32(DATA + 0x10c, [DATA + 0x205, wrap][seed as usize % 2]);
+            for i in 0..16 {
+                c.bus.write32(DATA + 0x200 + 4 * i, 0x0101_0100 + seed);
+            }
+        };
+        check_paths(
+            ee::s15::f_00424e28__generated,
+            libkernl_tty_ring_push,
+            SEEDS,
+            &[13, 15],
+            &setup,
+        );
+    }
+
+    #[test]
+    fn libkernl_tty_ring_pop_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_323_007, 0);
+            c.pc = 0x0042_4e68;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            c.bus.write32(DATA + 0x100, DATA + 0x200);
+            c.bus.write32(DATA + 0x104, seed);
+            // Head digit: mid-buffer (advance) or exactly the wrap
+            // threshold minus one (wrap).
+            let wrap = (DATA + 0x100 + DATA + 0x200 + 0x10).wrapping_sub(1);
+            c.bus
+                .write32(DATA + 0x108, [DATA + 0x205, wrap][seed as usize % 2]);
+            for i in 0..16 {
+                c.bus.write32(DATA + 0x200 + 4 * i, 0x0101_0100 + seed);
+            }
+        };
+        check_paths(
+            ee::s15::f_00424e68__generated,
+            libkernl_tty_ring_pop,
+            SEEDS,
+            &[13, 15],
+            &setup,
+        );
+    }
+
+    /// `libkernl_SioPutc`: the idle port sends at once. (The poll loop's
+    /// back edge is unreachable in the harness: SIO_STAT reads 0, so the
+    /// busy arm never runs.)
+    #[test]
+    fn libkernl_sio_putc_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_323_008, 0);
+            c.pc = 0x0042_5320;
+            c.g[A0][0] = (seed & 0x7f) as u64 | 0x20;
+        };
+        check_paths(
+            ee::s15::f_00425320__generated,
+            libkernl_sio_putc,
+            SEEDS,
+            &[14],
+            &setup,
+        );
+    }
+
+    /// `libkernl_SioPutcCRLF`: plain bytes and `\n` (sent as `\r\n`). The
+    /// putc underneath touches only MMIO, so no fake ever fires: plain
+    /// `check` compares exactly.
+    #[test]
+    fn libkernl_sio_putc_crlf_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_323_009, 0);
+            c.pc = 0x0042_5408;
+            // Byte digit: `\n` (two sends) and plain bytes (one send).
+            c.g[A0][0] = [0x0a, 0x41, 0x0d, 0x00][seed as usize % 4] as u64;
+        };
+        check(
+            ee::s15::f_00425408__generated,
+            libkernl_sio_putc_crlf,
+            SEEDS,
+            &setup,
+        );
+    }
+
+    /// `libkernl_printf`: a small integer format and a plain string, with
+    /// the varargs spilled to the stack frame like the caller would.
+    #[test]
+    fn libkernl_printf_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_324_001, 2);
+            c.pc = 0x0042_5c28;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            // Format digit: an integer conversion and a plain string.
+            let fmt: &[u8] = if seed % 2 == 0 {
+                b"v=%d\n\0"
+            } else {
+                b"hi\n\0"
+            };
+            for (i, b) in fmt.iter().enumerate() {
+                c.bus.write8(DATA + 0x100 + i as u32, *b);
+            }
+            c.g[A1][0] = (seed.wrapping_mul(0x9e37_79b9) & 0xffff) as u64;
+            c.g[A2][0] = (seed.wrapping_mul(0x5bd1_e995) | 0x0101_0100) as u64;
+            c.g[A3][0] = (seed.wrapping_mul(0x1b87_3b09) | 0x0101_0100) as u64;
+            c.g[T0][0] = 0x0101_0100;
+            c.g[T1][0] = 0x0101_0101;
+            c.g[T2][0] = 0x0101_0102;
+            c.g[T3][0] = 0x0101_0103;
+        };
+        covered(
+            ee::s15::f_00425c28__generated,
+            libkernl_printf,
+            SEEDS,
+            &setup,
+        );
     }
 }
