@@ -67,6 +67,17 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0011_dd98, rider_place_at_start, "Rider_PlaceAtStart"),
+    (
+        0x0010_6f78,
+        rider_handle_wall_rail_contact,
+        "Rider_HandleWallRailContact",
+    ),
+    (
+        0x0010_6848,
+        rider_try_start_railslide,
+        "Rider_TryStartRailslide",
+    ),
     (
         0x0010_4e70,
         rider_find_wall_contact,
@@ -26186,7 +26197,7 @@ pub(crate) mod tests {
     #[test]
     fn rider_handle_wall_rail_contact_matches() {
         check(
-            ee::s00::f_00106f78,
+            ee::s00::f_00106f78__generated,
             rider_handle_wall_rail_contact,
             SEEDS,
             &|c, seed| {
@@ -26207,7 +26218,7 @@ pub(crate) mod tests {
     #[test]
     fn rider_try_start_railslide_matches() {
         check(
-            ee::s00::f_00106848,
+            ee::s00::f_00106848__generated,
             rider_try_start_railslide,
             SEEDS,
             &|c, seed| {
@@ -32576,6 +32587,129 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x00123f38;
+            },
+        );
+    }
+
+    /// Gate word of this test's callee fakes (in the machine's own RAM).
+    const PS_CTRL: u32 = DATA + 0x38_0000;
+
+    const PS_MAGIC: u32 = 0x0815_b1d0;
+
+    /// Every callee of the function under test; all are faked (the real
+    /// chains reach the disc loader and the state constructors, which run
+    /// away on test data).
+    const PS_ADDRS: [u32; 3] = [0x0026_b5e0, 0x0011_5b08, 0x0011_d660];
+
+    fn ps_idx(addr: u32) -> u32 {
+        PS_ADDRS
+            .iter()
+            .position(|&a| a == addr)
+            .expect("fake address") as u32
+    }
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns a
+    /// small number (the allocator, constructors and library lookups keep
+    /// the fake's pointer), or 0 for the calls the fixture's per-callee mask
+    /// picks (bit n = nth call of that callee: a failed allocation, a
+    /// missing object).
+    fn ps_fake_call(c: &mut Cpu, addr: u32) {
+        let i = ps_idx(addr);
+        let (mask, count) = (PS_CTRL + 0x100 + 4 * i, PS_CTRL + 0x300 + 4 * i);
+        let n = c.bus.read32(count);
+        c.bus.write32(count, n.wrapping_add(1));
+        let zm = c.bus.read32(mask);
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, addr);
+        if c.pc != ra {
+            return;
+        }
+        let zero = n < 32 && zm >> n & 1 != 0;
+        if zero {
+            c.g[V0][0] = 0;
+        } else if !matches!(addr, 0x0026_b5e0) {
+            c.g[V0][0] >>= 4;
+            c.g[V0][0] &= 3;
+        }
+    }
+
+    macro_rules! ps_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(PS_CTRL) != PS_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    ps_fake_call(c, $addr);
+                }
+            )*
+            fn ps_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    ps_fakes!(
+        (
+            ps_fk_0026b5e0,
+            PS_PREV_0026B5E0,
+            ee::s07::OVERRIDE_0026B5E0,
+            ee::s07::f_0026b5e0__generated,
+            0x0026_b5e0
+        ),
+        (
+            ps_fk_00115b08,
+            PS_PREV_00115B08,
+            ee::s00::OVERRIDE_00115B08,
+            ee::s00::f_00115b08__generated,
+            0x0011_5b08
+        ),
+        (
+            ps_fk_0011d660,
+            PS_PREV_0011D660,
+            ee::s00::OVERRIDE_0011D660,
+            ee::s00::f_0011d660__generated,
+            0x0011_d660
+        ),
+    );
+
+    /// Arm the fakes and give each callee a random call mask (none, all, or
+    /// random bits, by seed and callee).
+    fn ps_arm(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        ps_install_fakes();
+        c.bus.write32(PS_CTRL, PS_MAGIC);
+        for i in 0..PS_ADDRS.len() as u32 {
+            let z = match (seed / 5 + i) % 5 {
+                0 | 1 => 0,
+                2 => u32::MAX,
+                _ => r.next_u32(),
+            };
+            c.bus.write32(PS_CTRL + 0x100 + 4 * i, z);
+        }
+    }
+
+    /// `Rider_PlaceAtStart`: the start marker (its floats, a null marker for
+    /// some masks), the start-pose angle and placement calls, and unwinds.
+    #[test]
+    fn rider_place_at_start_matches() {
+        fakes::covered(
+            ee::s00::f_0011dd98__generated,
+            rider_place_at_start,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11dd98, 3);
+                ps_arm(c, &mut r, seed);
+                let (this, marker) = (DATA + 0x30_0000, DATA + 0x30_2000);
+                fill(c, &mut r, this, 0x220);
+                for i in 0..0x10 {
+                    c.bus.write32(marker + 4 * i, r.edge_f32());
+                }
+                // The marker lookup (the first call) returns the marker.
+                c.bus.write32(LOG_RESULTS, marker);
+                c.g[A0][0] = sx(this);
+                c.pc = 0x0011_dd98;
             },
         );
     }

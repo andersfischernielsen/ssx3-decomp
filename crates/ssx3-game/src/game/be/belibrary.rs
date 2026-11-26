@@ -48,6 +48,7 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0014_dc80, be_library_get_instance, "cBE_getBE"),
     (
         0x0014_a130,
         be_find_rider_by_profile,
@@ -383,6 +384,25 @@ pub fn be_bolt_int_get_bolt_states(c: &mut Cpu) {
     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x290));
     Addr(abi::arg(c, 3)).sw(c, c.g[A1][0]);
     abi::ret(c);
+}
+
+/// `BELibrary_GetInstance` (0x14dc80, `cBE_getBE`): the lazily built BE library
+/// singleton at `gp-0x1f04`. Once built (the hot path) it saves `s0`/`s1`/`ra`
+/// in its 0x30 frame, reloads the slot and returns it; the one-time
+/// construction (null slot: allocation, constructor, sub-singletons) runs the
+/// generated body from its start (nothing has been charged or written yet).
+pub fn be_library_get_instance(c: &mut Cpu) {
+    let slot = (c.g[GP][0] as u32).wrapping_sub(0x1f04);
+    if c.lw(slot) == 0 {
+        return ee::s01::f_0014dc80__generated(c);
+    }
+    c.cycles += 12;
+    let frame = (c.g[SP][0] as u32).wrapping_sub(0x30);
+    c.sq(16, frame.wrapping_add(0x20));
+    c.sq(17, frame.wrapping_add(0x10));
+    c.sd(frame, c.g[RA][0]);
+    c.g[V0][0] = c.lw(slot);
+    c.pc = c.g[RA][0] as u32;
 }
 
 // ---------------------------------------------------------------------------
@@ -9677,6 +9697,23 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x0014d4c8;
+            },
+        );
+    }
+
+    /// `BELibrary_GetInstance` with the singleton built (the hot path): any
+    /// instance pointer, random stack and return address. (The one-time
+    /// construction runs the generated body itself.)
+    #[test]
+    fn be_library_get_instance_matches() {
+        check(
+            ee::s01::f_0014dc80__generated,
+            be_library_get_instance,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x14dc80, 0);
+                c.bus.write32(GAME_GP - 0x1f04, r.next_u32() | 1);
+                c.pc = 0x0014_dc80;
             },
         );
     }

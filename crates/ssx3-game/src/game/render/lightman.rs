@@ -149,6 +149,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         render2d_draw_filled_rect,
         "Render2D_DrawFilledRect",
     ),
+    (0x0039_15e8, font_ctor, "Font_ctor"),
 ];
 
 // ---------------------------------------------------------------------------

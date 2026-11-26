@@ -10193,3 +10193,9 @@
 0x003d2a68    PATH_StopTracks
 0x003e4040    EAFile_CdInit
 0x00427a90    sceFsInit
+
+# Registered ports (cleanup)
+0x0017d298    LobbyMenu_ctor
+
+# Registered ports (cleanup 2)
+0x00398138    UIEngine_LoadTextures

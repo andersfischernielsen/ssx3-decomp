@@ -54,6 +54,7 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0017_d298, lobby_menu_ctor, "LobbyMenu_ctor"),
     (
         0x0017_d008,
         debug_menu_set_game_mode,
@@ -9127,16 +9128,21 @@ pub(crate) mod tests {
 
     #[test]
     fn lobby_menu_ctor_matches() {
-        check_all(ee::s02::f_0017d298, lobby_menu_ctor, 40, &|c, seed| {
-            let _r = alloc_base(c, seed, 0x17d2);
-            c.g[A0][0] = DATA as u64;
-            let obj = DATA + 0x10_1000;
-            c.bus.write32(W_5 + 0x80, obj);
-            c.bus.write32(obj + 0x18, seed);
-            c.bus.write32(obj + 0x20, seed * 3 + 1);
-            c.bus.write32(W_5 + 0xb0, seed ^ 0x55);
-            c.bus.write32(gp_at(0xda0), DATA + 0x10_2000);
-        });
+        check_all(
+            ee::s02::f_0017d298__generated,
+            lobby_menu_ctor,
+            40,
+            &|c, seed| {
+                let _r = alloc_base(c, seed, 0x17d2);
+                c.g[A0][0] = DATA as u64;
+                let obj = DATA + 0x10_1000;
+                c.bus.write32(W_5 + 0x80, obj);
+                c.bus.write32(obj + 0x18, seed);
+                c.bus.write32(obj + 0x20, seed * 3 + 1);
+                c.bus.write32(W_5 + 0xb0, seed ^ 0x55);
+                c.bus.write32(gp_at(0xda0), DATA + 0x10_2000);
+            },
+        );
     }
 
     #[test]

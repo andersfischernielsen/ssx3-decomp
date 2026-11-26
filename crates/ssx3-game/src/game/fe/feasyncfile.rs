@@ -2976,19 +2976,9 @@ pub(crate) mod callee {
         f: ee::s07::f_00285be0,
     };
 
-    pub const SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN: Callee = Callee {
-        addr: 0x0028_7930,
-        f: ee::s07::f_00287930,
-    };
-
     pub const SND_BANK_MAN_UNLOAD_BANK: Callee = Callee {
         addr: 0x0028_bce8,
         f: ee::s07::f_0028bce8,
-    };
-
-    pub const MUSIC_PLAYER_PLAY_SONG: Callee = Callee {
-        addr: 0x002b_35a0,
-        f: ee::s08::f_002b35a0,
     };
 
     pub const SPEECH_INSTANCE_CTOR: Callee = Callee {
@@ -3751,10 +3741,6 @@ pub(crate) mod addr {
     pub const OPERATOR_NEW_NAMED: u32 = 0x0031_7e30;
 
     pub const MEM_FREE: u32 = 0x0031_7e98;
-
-    pub const MEMCPY: u32 = 0x0041_605c;
-
-    pub const FILE_LOAD: u32 = 0x003e_18c8;
 
     pub const UI_TEXT_SET_ASCII: u32 = 0x003a_0c50;
 

@@ -11,7 +11,6 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
-#[cfg(test)]
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -167,6 +166,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0020_2768,
         event_select_handle_input,
         "EventSelect_HandleInput",
+    ),
+    (
+        0x0020_0de8,
+        event_select_setup_peak_texts,
+        "EventSelect_SetupPeakTexts",
+    ),
+    (
+        0x0020_5098,
+        event_select_refresh_peak_goals,
+        "EventSelect_RefreshPeakGoals",
+    ),
+    (
+        0x0020_7430,
+        event_select_refresh_event_list,
+        "EventSelect_RefreshEventList",
     ),
 ];
 
@@ -6242,8 +6256,6 @@ pub(crate) const EVENT_SELECT_MODE_GP: u32 = 0xb5c;
 /// (a `match pc` / labelled-block body: every register, cycle and call kept).
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
-#[cfg(test)] // not installed: its test runs away in the unslotted file-load chain
-#[allow(dead_code)]
 pub fn event_select_setup_peak_texts(c: &mut Cpu) {
     if c.pc != 0x00200de8 {
         return ee::s05::f_00200de8__generated(c);
@@ -7641,8 +7653,6 @@ pub fn event_select_setup_peak_texts(c: &mut Cpu) {
 /// (a `match pc` / labelled-block body: every register, cycle and call kept).
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
-#[cfg(test)] // not installed: its test runs away in the unslotted file-load chain
-#[allow(dead_code)]
 pub fn event_select_refresh_peak_goals(c: &mut Cpu) {
     if c.pc != 0x00205098 {
         return ee::s05::f_00205098__generated(c);
@@ -12217,8 +12227,6 @@ pub fn event_select_show_event_paths(c: &mut Cpu) {
 /// (a `match pc` / labelled-block body: every register, cycle and call kept).
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
-#[cfg(test)] // not installed: its test runs away in the unslotted file-load chain
-#[allow(dead_code)]
 pub fn event_select_refresh_event_list(c: &mut Cpu) {
     if c.pc != 0x00207430 {
         return ee::s05::f_00207430__generated(c);
@@ -16363,5 +16371,545 @@ pub(crate) mod tests {
                 c.pc = 0x0020_2768;
             },
         );
+    }
+
+    /// Gate word of the peak-goal / event-list screen fakes (in the machine's
+    /// own RAM).
+    const EV_CTRL: u32 = DATA + 0x38_0000;
+
+    const EV_MAGIC: u32 = 0x0814_ee57;
+
+    /// The widget every `UIScreen_FindObject` fake returns (vtable `EV_VT`).
+    const EV_OBJ: u32 = DATA + 0x3a_0000;
+
+    const EV_VT: u32 = DATA + 0x3a_1000;
+
+    /// Every callee the three screen builders call: all of them are faked
+    /// (their real chains reach the disc loader and the string formatters,
+    /// which run away on test data).
+    const EV_ADDRS: [u32; 42] = [
+        0x0031_7670,
+        0x0039_d860,
+        0x0020_8438,
+        0x0041_7828,
+        0x003a_0e90,
+        0x0014_dc80,
+        0x0014_dd58,
+        0x0041_65a8,
+        0x003a_0c50,
+        0x002c_2540,
+        0x0014_4c60,
+        0x002c_26d0,
+        0x001f_d190,
+        0x0020_0b50,
+        0x0020_0d00,
+        0x0039_e8b8,
+        0x0039_e948,
+        0x003a_1000,
+        0x0015_8890,
+        0x0015_8870,
+        0x0015_7bf0,
+        0x002c_27c0,
+        0x002c_2508,
+        0x0015_8910,
+        0x0019_8af0,
+        0x0020_6690,
+        0x0020_4ff0,
+        0x0014_a080,
+        0x0015_43e0,
+        0x0015_4368,
+        0x0015_35c0,
+        0x0015_3390,
+        0x0015_88b0,
+        0x0015_09f8,
+        0x003a_0d00,
+        0x0015_42a0,
+        0x0015_50e8,
+        0x0014_5870,
+        0x0015_3520,
+        0x0015_3350,
+        0x0015_42e0,
+        0x0020_a1a8,
+    ];
+
+    fn ev_idx(addr: u32) -> u32 {
+        EV_ADDRS
+            .iter()
+            .position(|&a| a == addr)
+            .expect("fake address") as u32
+    }
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns a
+    /// small number (`UIScreen_FindObject`: the widget), forced to 0 or 1 for
+    /// the calls the fixture's masks pick (bit n = nth call of that callee).
+    /// The BELibrary instance, interface and rider results stay the fake's
+    /// pointers.
+    fn ev_fake_call(c: &mut Cpu, addr: u32) {
+        let i = ev_idx(addr);
+        let (zero, one, count) = (
+            EV_CTRL + 0x100 + 4 * i,
+            EV_CTRL + 0x200 + 4 * i,
+            EV_CTRL + 0x300 + 4 * i,
+        );
+        let n = c.bus.read32(count);
+        c.bus.write32(count, n.wrapping_add(1));
+        let (zm, om) = (c.bus.read32(zero), c.bus.read32(one));
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, addr);
+        if c.pc != ra {
+            return;
+        }
+        let bit = |m: u32| n < 32 && m >> n & 1 != 0;
+        if addr == 0x0039_d860 {
+            c.g[V0][0] = if bit(zm) { 0 } else { EV_OBJ as u64 };
+        } else if !matches!(addr, 0x0014_dc80 | 0x0014_dd58 | 0x0014_a080) {
+            c.g[V0][0] = if bit(zm) {
+                0
+            } else if bit(om) {
+                1
+            } else {
+                c.g[V0][0] >> 4 & 3
+            };
+        }
+    }
+
+    macro_rules! ev_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(EV_CTRL) != EV_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    ev_fake_call(c, $addr);
+                }
+            )*
+            fn ev_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    ev_fakes!(
+        (
+            ev_fk_00317670,
+            EV_PREV_00317670,
+            ee::s10::OVERRIDE_00317670,
+            ee::s10::f_00317670__generated,
+            0x0031_7670
+        ),
+        (
+            ev_fk_0039d860,
+            EV_PREV_0039D860,
+            ee::s13::OVERRIDE_0039D860,
+            ee::s13::f_0039d860__generated,
+            0x0039_d860
+        ),
+        (
+            ev_fk_00208438,
+            EV_PREV_00208438,
+            ee::s05::OVERRIDE_00208438,
+            ee::s05::f_00208438__generated,
+            0x0020_8438
+        ),
+        (
+            ev_fk_00417828,
+            EV_PREV_00417828,
+            ee::s15::OVERRIDE_00417828,
+            ee::s15::f_00417828__generated,
+            0x0041_7828
+        ),
+        (
+            ev_fk_003a0e90,
+            EV_PREV_003A0E90,
+            ee::s13::OVERRIDE_003A0E90,
+            ee::s13::f_003a0e90__generated,
+            0x003a_0e90
+        ),
+        (
+            ev_fk_0014dc80,
+            EV_PREV_0014DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80
+        ),
+        (
+            ev_fk_0014dd58,
+            EV_PREV_0014DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58
+        ),
+        (
+            ev_fk_004165a8,
+            EV_PREV_004165A8,
+            ee::s15::OVERRIDE_004165A8,
+            ee::s15::f_004165a8__generated,
+            0x0041_65a8
+        ),
+        (
+            ev_fk_003a0c50,
+            EV_PREV_003A0C50,
+            ee::s13::OVERRIDE_003A0C50,
+            ee::s13::f_003a0c50__generated,
+            0x003a_0c50
+        ),
+        (
+            ev_fk_002c2540,
+            EV_PREV_002C2540,
+            ee::s08::OVERRIDE_002C2540,
+            ee::s08::f_002c2540__generated,
+            0x002c_2540
+        ),
+        (
+            ev_fk_00144c60,
+            EV_PREV_00144C60,
+            ee::s01::OVERRIDE_00144C60,
+            ee::s01::f_00144c60__generated,
+            0x0014_4c60
+        ),
+        (
+            ev_fk_002c26d0,
+            EV_PREV_002C26D0,
+            ee::s08::OVERRIDE_002C26D0,
+            ee::s08::f_002c26d0__generated,
+            0x002c_26d0
+        ),
+        (
+            ev_fk_001fd190,
+            EV_PREV_001FD190,
+            ee::s04::OVERRIDE_001FD190,
+            ee::s04::f_001fd190__generated,
+            0x001f_d190
+        ),
+        (
+            ev_fk_00200b50,
+            EV_PREV_00200B50,
+            ee::s05::OVERRIDE_00200B50,
+            ee::s05::f_00200b50__generated,
+            0x0020_0b50
+        ),
+        (
+            ev_fk_00200d00,
+            EV_PREV_00200D00,
+            ee::s05::OVERRIDE_00200D00,
+            ee::s05::f_00200d00__generated,
+            0x0020_0d00
+        ),
+        (
+            ev_fk_0039e8b8,
+            EV_PREV_0039E8B8,
+            ee::s13::OVERRIDE_0039E8B8,
+            ee::s13::f_0039e8b8__generated,
+            0x0039_e8b8
+        ),
+        (
+            ev_fk_0039e948,
+            EV_PREV_0039E948,
+            ee::s13::OVERRIDE_0039E948,
+            ee::s13::f_0039e948__generated,
+            0x0039_e948
+        ),
+        (
+            ev_fk_003a1000,
+            EV_PREV_003A1000,
+            ee::s13::OVERRIDE_003A1000,
+            ee::s13::f_003a1000__generated,
+            0x003a_1000
+        ),
+        (
+            ev_fk_00158890,
+            EV_PREV_00158890,
+            ee::s01::OVERRIDE_00158890,
+            ee::s01::f_00158890__generated,
+            0x0015_8890
+        ),
+        (
+            ev_fk_00158870,
+            EV_PREV_00158870,
+            ee::s01::OVERRIDE_00158870,
+            ee::s01::f_00158870__generated,
+            0x0015_8870
+        ),
+        (
+            ev_fk_00157bf0,
+            EV_PREV_00157BF0,
+            ee::s01::OVERRIDE_00157BF0,
+            ee::s01::f_00157bf0__generated,
+            0x0015_7bf0
+        ),
+        (
+            ev_fk_002c27c0,
+            EV_PREV_002C27C0,
+            ee::s08::OVERRIDE_002C27C0,
+            ee::s08::f_002c27c0__generated,
+            0x002c_27c0
+        ),
+        (
+            ev_fk_002c2508,
+            EV_PREV_002C2508,
+            ee::s08::OVERRIDE_002C2508,
+            ee::s08::f_002c2508__generated,
+            0x002c_2508
+        ),
+        (
+            ev_fk_00158910,
+            EV_PREV_00158910,
+            ee::s01::OVERRIDE_00158910,
+            ee::s01::f_00158910__generated,
+            0x0015_8910
+        ),
+        (
+            ev_fk_00198af0,
+            EV_PREV_00198AF0,
+            ee::s03::OVERRIDE_00198AF0,
+            ee::s03::f_00198af0__generated,
+            0x0019_8af0
+        ),
+        (
+            ev_fk_00206690,
+            EV_PREV_00206690,
+            ee::s05::OVERRIDE_00206690,
+            ee::s05::f_00206690__generated,
+            0x0020_6690
+        ),
+        (
+            ev_fk_00204ff0,
+            EV_PREV_00204FF0,
+            ee::s05::OVERRIDE_00204FF0,
+            ee::s05::f_00204ff0__generated,
+            0x0020_4ff0
+        ),
+        (
+            ev_fk_0014a080,
+            EV_PREV_0014A080,
+            ee::s01::OVERRIDE_0014A080,
+            ee::s01::f_0014a080__generated,
+            0x0014_a080
+        ),
+        (
+            ev_fk_001543e0,
+            EV_PREV_001543E0,
+            ee::s01::OVERRIDE_001543E0,
+            ee::s01::f_001543e0__generated,
+            0x0015_43e0
+        ),
+        (
+            ev_fk_00154368,
+            EV_PREV_00154368,
+            ee::s01::OVERRIDE_00154368,
+            ee::s01::f_00154368__generated,
+            0x0015_4368
+        ),
+        (
+            ev_fk_001535c0,
+            EV_PREV_001535C0,
+            ee::s01::OVERRIDE_001535C0,
+            ee::s01::f_001535c0__generated,
+            0x0015_35c0
+        ),
+        (
+            ev_fk_00153390,
+            EV_PREV_00153390,
+            ee::s01::OVERRIDE_00153390,
+            ee::s01::f_00153390__generated,
+            0x0015_3390
+        ),
+        (
+            ev_fk_001588b0,
+            EV_PREV_001588B0,
+            ee::s01::OVERRIDE_001588B0,
+            ee::s01::f_001588b0__generated,
+            0x0015_88b0
+        ),
+        (
+            ev_fk_001509f8,
+            EV_PREV_001509F8,
+            ee::s01::OVERRIDE_001509F8,
+            ee::s01::f_001509f8__generated,
+            0x0015_09f8
+        ),
+        (
+            ev_fk_003a0d00,
+            EV_PREV_003A0D00,
+            ee::s13::OVERRIDE_003A0D00,
+            ee::s13::f_003a0d00__generated,
+            0x003a_0d00
+        ),
+        (
+            ev_fk_001542a0,
+            EV_PREV_001542A0,
+            ee::s01::OVERRIDE_001542A0,
+            ee::s01::f_001542a0__generated,
+            0x0015_42a0
+        ),
+        (
+            ev_fk_001550e8,
+            EV_PREV_001550E8,
+            ee::s01::OVERRIDE_001550E8,
+            ee::s01::f_001550e8__generated,
+            0x0015_50e8
+        ),
+        (
+            ev_fk_00145870,
+            EV_PREV_00145870,
+            ee::s01::OVERRIDE_00145870,
+            ee::s01::f_00145870__generated,
+            0x0014_5870
+        ),
+        (
+            ev_fk_00153520,
+            EV_PREV_00153520,
+            ee::s01::OVERRIDE_00153520,
+            ee::s01::f_00153520__generated,
+            0x0015_3520
+        ),
+        (
+            ev_fk_00153350,
+            EV_PREV_00153350,
+            ee::s01::OVERRIDE_00153350,
+            ee::s01::f_00153350__generated,
+            0x0015_3350
+        ),
+        (
+            ev_fk_001542e0,
+            EV_PREV_001542E0,
+            ee::s01::OVERRIDE_001542E0,
+            ee::s01::f_001542e0__generated,
+            0x0015_42e0
+        ),
+        (
+            ev_fk_0020a1a8,
+            EV_PREV_0020A1A8,
+            ee::s05::OVERRIDE_0020A1A8,
+            ee::s05::f_0020a1a8__generated,
+            0x0020_a1a8
+        ),
+    );
+
+    /// The shared fixture of the three builders: gated fakes armed, the
+    /// widget and its vtable, random call masks (all-zero / all-one for some
+    /// callees), the game mode words (`gp-0xb5c`..`gp-0xb4c`), the world with
+    /// a fake-method vtable at `+0x8c`, and a `this` with random fields.
+    /// Returns `this`.
+    fn ev_fixture(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> u32 {
+        let mut r = machine(c, seed, salt, calls);
+        elf_image(c);
+        ev_install_fakes();
+        c.bus.write32(EV_CTRL, EV_MAGIC);
+        c.bus.write32(EV_OBJ + 8, EV_VT);
+        c.bus.write16(EV_VT + 0x48, 0);
+        c.bus.write32(EV_VT + 0x4c, fakes::FAKE);
+        for i in 0..EV_ADDRS.len() as u32 {
+            let (z, o) = match (seed / 3 + i) % 6 {
+                0 => (0, 0),
+                1 => (u32::MAX, 0),
+                2 => (0, u32::MAX),
+                _ => (r.next_u32(), r.next_u32()),
+            };
+            c.bus.write32(EV_CTRL + 0x100 + 4 * i, z);
+            c.bus.write32(EV_CTRL + 0x200 + 4 * i, o & !z);
+        }
+        let g = |off: u32| GAME_GP - off;
+        c.bus.write32(g(0xb5c), seed % 6);
+        c.bus.write32(g(0xb58), r.next_u32() % 3);
+        c.bus.write32(g(0xb54), (seed / 6) % 4);
+        c.bus.write32(g(0xb50), r.next_u32() % 4);
+        c.bus.write32(g(0xb4c), r.next_u32() % 24);
+        let (world, x, y) = (DATA + 0x31_0000, DATA + 0x32_0000, DATA + 0x33_0000);
+        c.bus.write32(g(0x848), world);
+        c.bus.write32(world + 0x8c, x);
+        c.bus.write32(x + 4, y);
+        c.bus.write16(y + 0x20, (r.next_u32() & 0x70) as u16);
+        c.bus.write32(y + 0x24, fakes::FAKE);
+        // (Away from the fakes' pointer results, which lie in DATA..DATA+0x40000.)
+        let this = DATA + 0x30_0000;
+        fill(c, &mut r, this, 0xc0);
+        c.bus.write32(this + 0x2e8, DATA + 0x30_1000);
+        c.bus.write32(this + 0x2ec, DATA + 0x30_1100);
+        c.bus.write32(this + 0x2cc, seed % 2);
+        // The stack the builders fill: random, so unwritten words differ.
+        fill(c, &mut r, crate::difftest::SP - 0x400, 0x80);
+        this
+    }
+
+    /// `EventSelect_SetupPeakTexts`: every widget found or missing (per-call
+    /// masks), and unwinds of its calls.
+    #[test]
+    fn event_select_setup_peak_texts_matches() {
+        fakes::covered(
+            ee::s05::f_00200de8__generated,
+            event_select_setup_peak_texts,
+            300,
+            &|c, seed| {
+                let this = ev_fixture(c, seed, 0x200de8, 30);
+                c.pc = 0x0020_0de8;
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    /// Several distinct paths (cycle totals) are taken over the seeds.
+    #[test]
+    fn event_select_setup_peak_texts_paths() {
+        ev_paths(ee::s05::f_00200de8__generated, 0x200de8, 0x0020_0de8, 8);
+    }
+
+    /// `EventSelect_RefreshPeakGoals`: modes `gp-0xb5c`/`-0xb54`/`-0xb4c`,
+    /// widgets found or missing, small callee results, unwinds.
+    #[test]
+    fn event_select_refresh_peak_goals_matches() {
+        fakes::covered(
+            ee::s05::f_00205098__generated,
+            event_select_refresh_peak_goals,
+            300,
+            &|c, seed| {
+                let this = ev_fixture(c, seed, 0x205098, 60);
+                c.pc = 0x0020_5098;
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    #[test]
+    fn event_select_refresh_peak_goals_paths() {
+        ev_paths(ee::s05::f_00205098__generated, 0x205098, 0x0020_5098, 8);
+    }
+
+    /// `EventSelect_RefreshEventList`: as above for the event list panel.
+    #[test]
+    fn event_select_refresh_event_list_matches() {
+        fakes::covered(
+            ee::s05::f_00207430__generated,
+            event_select_refresh_event_list,
+            300,
+            &|c, seed| {
+                let this = ev_fixture(c, seed, 0x207430, 60);
+                c.pc = 0x0020_7430;
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    #[test]
+    fn event_select_refresh_event_list_paths() {
+        ev_paths(ee::s05::f_00207430__generated, 0x207430, 0x0020_7430, 8);
+    }
+
+    /// The set of cycle totals of the generated body over 200 fixtures has at
+    /// least `min` members (so the seeds really reach different paths).
+    fn ev_paths(generated: fn(&mut Cpu), salt: u64, entry: u32, min: usize) {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..200 {
+            let mut c = crate::difftest::fresh();
+            let this = ev_fixture(&mut c, seed, salt, 0);
+            c.pc = entry;
+            c.g[A0][0] = sx(this);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, generated);
+            seen.insert(c.cycles - before);
+        }
+        assert!(seen.len() >= min, "only {} paths: {seen:?}", seen.len());
     }
 }

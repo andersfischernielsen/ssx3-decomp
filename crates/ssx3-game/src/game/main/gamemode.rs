@@ -306,15 +306,6 @@ pub(crate) mod callee {
     };
 
     // s03
-    pub const FE_MODULE_UNLOAD_RIDER_PREVIEWS: Callee = Callee {
-        addr: 0x001a_04c8,
-        f: ee::s03::f_001a04c8,
-    };
-
-    pub const FE_MODULE_RIDER_PREVIEW_DTOR: Callee = Callee {
-        addr: 0x0019_e498,
-        f: ee::s03::f_0019e498,
-    };
 
     pub const FE_ASYNC_MANAGER_SET_FILE_STATUS: Callee = Callee {
         addr: 0x001a_39d8,

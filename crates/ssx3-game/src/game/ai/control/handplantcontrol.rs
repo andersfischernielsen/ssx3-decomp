@@ -2290,6 +2290,8 @@ pub(crate) fn v_add(c: &mut Cpu, a: u32, b: u32, out: u32) {
 
 /// `void RiderAirState_PostUpdate(AirState* motion)` (0x139c88): board
 /// contact, animation choice, bounds/wall update and camera notification.
+/// Not installed: its tests pass, but the race replay diverges (an untested
+/// branch); bisected with `SSX3_SKIP_OVERRIDES`.
 pub fn rider_air_state_post_update(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 18;

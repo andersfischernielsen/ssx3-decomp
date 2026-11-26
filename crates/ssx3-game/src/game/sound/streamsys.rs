@@ -35,6 +35,7 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x001a_1ec0, fe_module_load, "FEModule_Load"),
     (0x002a_9df0, streambuffer_dtor, "StreamBuffer_dtor"),
     (0x002a_9e78, stream_buffer_set_file, "StreamBuffer_SetFile"),
     (
@@ -2574,8 +2575,6 @@ pub fn ssx_audio_system_base_ctor(c: &mut Cpu) {
 /// front-end camera pose (0,0,-195)/(0,1,0), then the input, custom and
 /// sound objects of the UI (alloc via 0x317d70), the irradiance database
 /// and `cSSXAudio_FrontEndLoad`.
-#[cfg(test)] // not installed: its test runs away in unslotted callees
-#[allow(dead_code)]
 pub fn fe_module_load(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 154;
@@ -4963,5 +4962,301 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(sb);
             },
         );
+    }
+
+    /// Gate word of this test's callee fakes (in the machine's own RAM).
+    const FL_CTRL: u32 = DATA + 0x38_0000;
+
+    const FL_MAGIC: u32 = 0x0815_f1a0;
+
+    /// Every callee of the function under test; all are faked (the real
+    /// chains reach the disc loader and the state constructors, which run
+    /// away on test data).
+    const FL_ADDRS: [u32; 17] = [
+        0x0031_7530,
+        0x0031_7550,
+        0x0014_dc80,
+        0x0014_dd58,
+        0x0014_bd78,
+        0x0014_af10,
+        0x0039_7c40,
+        0x001a_2b00,
+        0x0019_ce68,
+        0x001a_0498,
+        0x0031_7d70,
+        0x001a_0720,
+        0x001a_2e20,
+        0x0038_acd0,
+        0x0028_b180,
+        0x0028_5fb0,
+        0x002c_6e98,
+    ];
+
+    fn fl_idx(addr: u32) -> u32 {
+        FL_ADDRS
+            .iter()
+            .position(|&a| a == addr)
+            .expect("fake address") as u32
+    }
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns a
+    /// small number (the allocator, constructors and library lookups keep
+    /// the fake's pointer), or 0 for the calls the fixture's per-callee mask
+    /// picks (bit n = nth call of that callee: a failed allocation, a
+    /// missing object).
+    fn fl_fake_call(c: &mut Cpu, addr: u32) {
+        let i = fl_idx(addr);
+        let (mask, count) = (FL_CTRL + 0x100 + 4 * i, FL_CTRL + 0x300 + 4 * i);
+        let n = c.bus.read32(count);
+        c.bus.write32(count, n.wrapping_add(1));
+        let zm = c.bus.read32(mask);
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, addr);
+        if c.pc != ra {
+            return;
+        }
+        let zero = n < 32 && zm >> n & 1 != 0;
+        if zero {
+            c.g[V0][0] = 0;
+        } else if !matches!(
+            addr,
+            0x0014_dc80 | 0x0014_dd58 | 0x0031_7d70 | 0x0028_b180 | 0x001a_0720 | 0x001a_2e20
+        ) {
+            c.g[V0][0] >>= 4;
+            c.g[V0][0] &= 3;
+        }
+    }
+
+    macro_rules! fl_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(FL_CTRL) != FL_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    fl_fake_call(c, $addr);
+                }
+            )*
+            fn fl_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    fl_fakes!(
+        (
+            fl_fk_00317530,
+            FL_PREV_00317530,
+            ee::s10::OVERRIDE_00317530,
+            ee::s10::f_00317530__generated,
+            0x0031_7530
+        ),
+        (
+            fl_fk_00317550,
+            FL_PREV_00317550,
+            ee::s10::OVERRIDE_00317550,
+            ee::s10::f_00317550__generated,
+            0x0031_7550
+        ),
+        (
+            fl_fk_0014dc80,
+            FL_PREV_0014DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80
+        ),
+        (
+            fl_fk_0014dd58,
+            FL_PREV_0014DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58
+        ),
+        (
+            fl_fk_0014bd78,
+            FL_PREV_0014BD78,
+            ee::s01::OVERRIDE_0014BD78,
+            ee::s01::f_0014bd78__generated,
+            0x0014_bd78
+        ),
+        (
+            fl_fk_0014af10,
+            FL_PREV_0014AF10,
+            ee::s01::OVERRIDE_0014AF10,
+            ee::s01::f_0014af10__generated,
+            0x0014_af10
+        ),
+        (
+            fl_fk_00397c40,
+            FL_PREV_00397C40,
+            ee::s13::OVERRIDE_00397C40,
+            ee::s13::f_00397c40__generated,
+            0x0039_7c40
+        ),
+        (
+            fl_fk_001a2b00,
+            FL_PREV_001A2B00,
+            ee::s03::OVERRIDE_001A2B00,
+            ee::s03::f_001a2b00__generated,
+            0x001a_2b00
+        ),
+        (
+            fl_fk_0019ce68,
+            FL_PREV_0019CE68,
+            ee::s03::OVERRIDE_0019CE68,
+            ee::s03::f_0019ce68__generated,
+            0x0019_ce68
+        ),
+        (
+            fl_fk_001a0498,
+            FL_PREV_001A0498,
+            ee::s03::OVERRIDE_001A0498,
+            ee::s03::f_001a0498__generated,
+            0x001a_0498
+        ),
+        (
+            fl_fk_00317d70,
+            FL_PREV_00317D70,
+            ee::s10::OVERRIDE_00317D70,
+            ee::s10::f_00317d70__generated,
+            0x0031_7d70
+        ),
+        (
+            fl_fk_001a0720,
+            FL_PREV_001A0720,
+            ee::s03::OVERRIDE_001A0720,
+            ee::s03::f_001a0720__generated,
+            0x001a_0720
+        ),
+        (
+            fl_fk_001a2e20,
+            FL_PREV_001A2E20,
+            ee::s03::OVERRIDE_001A2E20,
+            ee::s03::f_001a2e20__generated,
+            0x001a_2e20
+        ),
+        (
+            fl_fk_0038acd0,
+            FL_PREV_0038ACD0,
+            ee::s12::OVERRIDE_0038ACD0,
+            ee::s12::f_0038acd0__generated,
+            0x0038_acd0
+        ),
+        (
+            fl_fk_0028b180,
+            FL_PREV_0028B180,
+            ee::s07::OVERRIDE_0028B180,
+            ee::s07::f_0028b180__generated,
+            0x0028_b180
+        ),
+        (
+            fl_fk_00285fb0,
+            FL_PREV_00285FB0,
+            ee::s07::OVERRIDE_00285FB0,
+            ee::s07::f_00285fb0__generated,
+            0x0028_5fb0
+        ),
+        (
+            fl_fk_002c6e98,
+            FL_PREV_002C6E98,
+            ee::s08::OVERRIDE_002C6E98,
+            ee::s08::f_002c6e98__generated,
+            0x002c_6e98
+        ),
+    );
+
+    /// Arm the fakes and give each callee a random call mask (none, all, or
+    /// random bits, by seed and callee).
+    fn fl_arm(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        fl_install_fakes();
+        c.bus.write32(FL_CTRL, FL_MAGIC);
+        for i in 0..FL_ADDRS.len() as u32 {
+            let z = match (seed / 5 + i) % 5 {
+                0 | 1 => 0,
+                2 => u32::MAX,
+                _ => r.next_u32(),
+            };
+            c.bus.write32(FL_CTRL + 0x100 + 4 * i, z);
+        }
+    }
+
+    /// The fixture of `FEModule_Load`: the module object with a valid UI
+    /// object at `+0xc`, the progress object (`gp+0x2a74`), the engine
+    /// (`gp-0x854`) and the world (`gp-0x848`) with fake-method vtables, and
+    /// the locale object (`world+0x8c`) whose language byte and loaded-table
+    /// slots vary by seed (the real, unslotted `FELocale_LoadFETables` runs
+    /// on it; its allocation and string table load are faked).
+    fn fl_fixture(c: &mut Cpu, seed: u32, salt: u64, calls: u32) {
+        let mut r = machine(c, seed, salt, calls);
+        crate::difftest::elf_image(c);
+        fl_arm(c, &mut r, seed);
+        let g = |off: u32| GAME_GP - off;
+        let this = DATA + 0x30_0000;
+        fill(c, &mut r, this, 0x40);
+        let ui = DATA + 0x30_1000;
+        fill(c, &mut r, ui, 0x20);
+        c.bus.write32(this + 0xc, ui);
+        c.bus.write32(GAME_GP + 0x2a74, DATA + 0x30_2000);
+        let (engine, evt) = (DATA + 0x30_4000, DATA + 0x30_5000);
+        c.bus.write32(g(0x854), engine);
+        c.bus.write32(engine + 0x10d8, evt);
+        c.bus.write16(evt + 0x160, (r.next_u32() & 0x70) as u16);
+        c.bus.write32(evt + 0x164, FAKE);
+        let (world, locale, cam, cam_vt) = (
+            DATA + 0x31_0000,
+            DATA + 0x32_0000,
+            DATA + 0x31_1000,
+            DATA + 0x31_2000,
+        );
+        c.bus.write32(g(0x848), world);
+        c.bus.write32(world + 0x8c, locale);
+        c.bus.write32(world + 0x88, r.next_u32());
+        c.bus.write32(world + 0x7c, cam);
+        c.bus.write32(cam + 0xa0, cam_vt);
+        c.bus.write16(cam_vt + 0x18, 0);
+        c.bus.write32(cam_vt + 0x1c, FAKE);
+        for i in 0..8 {
+            c.bus.write32(
+                locale + 8 + 4 * i,
+                if (seed / 5 + i) % 3 == 0 {
+                    DATA + 0x32_1000
+                } else {
+                    0
+                },
+            );
+        }
+        c.bus
+            .write8(locale + 1, [0u8, 1, 2, 3, 4, 9][(seed % 6) as usize]);
+        c.g[A0][0] = sx(this);
+        c.pc = 0x001a_1ec0;
+    }
+
+    /// `FEModule_Load`: every callee faked except the locale loader; the
+    /// language byte (0..3 and others), loaded or missing locale tables,
+    /// failing allocations and unwinds of its calls.
+    #[test]
+    fn fe_module_load_matches() {
+        fakes::covered(
+            ee::s03::f_001a1ec0__generated,
+            fe_module_load,
+            240,
+            &|c, seed| fl_fixture(c, seed, 0x1a1ec0, 20),
+        );
+    }
+
+    /// Several distinct paths (cycle totals) are taken over the seeds.
+    #[test]
+    fn fe_module_load_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..240 {
+            let mut c = crate::difftest::fresh();
+            fl_fixture(&mut c, seed, 0x1a1ec0, 0);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, ee::s03::f_001a1ec0__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert!(seen.len() >= 5, "only {} paths: {seen:?}", seen.len());
     }
 }

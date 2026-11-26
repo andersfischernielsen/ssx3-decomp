@@ -29,6 +29,11 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (
+        0x001a_0830,
+        feui_custom_create_state,
+        "FEUICustom_CreateState",
+    ),
     (0x001a_27a0, boot_movies_update, "ssx_BootMoviesUpdate"),
     (0x001a_0720, feui_custom_ctor, "FEUICustom_ctor"),
     (0x001a_07c8, feuicustom_v03, "FEUICustom_v03"),
@@ -1403,13 +1408,11 @@ pub fn fe_module_ctor(c: &mut Cpu) {
     })
 }
 
-#[cfg(test)]
 /// `FEUICustom_CreateState` (0x1a0830): the jump-table switch over the front-end flow state
 /// number (`*(a1 + 0xc)`, 60 states) that allocates and constructs the state object.
-/// Kept as a faithful port of the generated body, not installed: its 60 arms reach about
-/// 50 real constructors (half of them unported, no override slot to fake), which cannot be
-/// bounded on test data.
-#[allow(dead_code)]
+/// The normal entry, converted from the generated body (a `match pc` body: every register,
+/// cycle and call kept); any other `pc` runs the generated body. Its test covers the arms
+/// whose constructors have override slots (about a dozen constructors have none).
 pub fn feui_custom_create_state(c: &mut Cpu) {
     if c.pc != 0x001a0830 {
         return ee::s03::f_001a0830__generated(c);
@@ -3582,8 +3585,7 @@ pub fn feui_custom_create_state(c: &mut Cpu) {
     });
 }
 
-// `FEModule_Load` (0x001a1ec0) is skipped: already ported (not installed) in
-// game/sound/streamsys.rs, whose test runs away in unslotted callees.
+// `FEModule_Load` (0x001a1ec0) is ported and installed from game/sound/streamsys.rs.
 
 /// `FEUISound_v02` (0x001a2e58), `cFESound_playSound(self, sel)`: plays the front-end menu
 /// sound `sel` (1..=6, a jump table) through the audio system. The normal entry, converted from the generated body
@@ -5983,5 +5985,496 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(OC861_STATE);
             },
         );
+    }
+
+    /// Gate word of this test's callee fakes (in the machine's own RAM).
+    const CS_CTRL: u32 = DATA + 0x38_0000;
+
+    const CS_MAGIC: u32 = 0x0815_c5a7;
+
+    /// Every callee of the function under test; all are faked (the real
+    /// chains reach the disc loader and the state constructors, which run
+    /// away on test data).
+    const CS_ADDRS: [u32; 40] = [
+        0x0014_4df0,
+        0x0014_51e8,
+        0x0014_5c38,
+        0x0014_6d98,
+        0x0014_dc80,
+        0x0014_dd58,
+        0x0018_1090,
+        0x0018_28c0,
+        0x0018_3238,
+        0x0018_3a98,
+        0x0018_5a18,
+        0x0018_6610,
+        0x0018_8ee8,
+        0x0018_a258,
+        0x0018_c0e8,
+        0x0018_c658,
+        0x0018_d240,
+        0x0018_d7f0,
+        0x0018_eca0,
+        0x0019_0858,
+        0x0019_1360,
+        0x0019_2d00,
+        0x0019_4738,
+        0x0019_4a60,
+        0x0019_5498,
+        0x0019_6b90,
+        0x0019_8db8,
+        0x001a_0708,
+        0x001a_3218,
+        0x001a_86e8,
+        0x001b_3f78,
+        0x001b_fbb8,
+        0x001d_1128,
+        0x001d_4bc8,
+        0x001f_3ff8,
+        0x001f_54b0,
+        0x0023_2720,
+        0x0023_2738,
+        0x0031_6ef8,
+        0x0031_7d70,
+    ];
+
+    fn cs_idx(addr: u32) -> u32 {
+        CS_ADDRS
+            .iter()
+            .position(|&a| a == addr)
+            .expect("fake address") as u32
+    }
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns a
+    /// small number (the allocator, constructors and library lookups keep
+    /// the fake's pointer), or 0 for the calls the fixture's per-callee mask
+    /// picks (bit n = nth call of that callee: a failed allocation, a
+    /// missing object).
+    fn cs_fake_call(c: &mut Cpu, addr: u32) {
+        let i = cs_idx(addr);
+        let (mask, count) = (CS_CTRL + 0x100 + 4 * i, CS_CTRL + 0x300 + 4 * i);
+        let n = c.bus.read32(count);
+        c.bus.write32(count, n.wrapping_add(1));
+        let zm = c.bus.read32(mask);
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, addr);
+        if c.pc != ra {
+            return;
+        }
+        let zero = n < 32 && zm >> n & 1 != 0;
+        if zero {
+            c.g[V0][0] = 0;
+        } else if !matches!(
+            addr,
+            0x0014_dc80
+                | 0x0014_dd58
+                | 0x0018_1090
+                | 0x0018_28c0
+                | 0x0018_3238
+                | 0x0018_3a98
+                | 0x0018_5a18
+                | 0x0018_6610
+                | 0x0018_8ee8
+                | 0x0018_a258
+                | 0x0018_c0e8
+                | 0x0018_c658
+                | 0x0018_d240
+                | 0x0018_d7f0
+                | 0x0018_eca0
+                | 0x0019_0858
+                | 0x0019_1360
+                | 0x0019_2d00
+                | 0x0019_4738
+                | 0x0019_4a60
+                | 0x0019_5498
+                | 0x0019_6b90
+                | 0x0019_8db8
+                | 0x001a_3218
+                | 0x001b_3f78
+                | 0x001b_fbb8
+                | 0x001d_1128
+                | 0x001d_4bc8
+                | 0x001f_3ff8
+                | 0x001f_54b0
+                | 0x0023_2720
+                | 0x0023_2738
+                | 0x0031_6ef8
+                | 0x0031_7d70
+        ) {
+            c.g[V0][0] >>= 4;
+            c.g[V0][0] &= 3;
+        }
+    }
+
+    macro_rules! cs_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(CS_CTRL) != CS_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    cs_fake_call(c, $addr);
+                }
+            )*
+            fn cs_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    cs_fakes!(
+        (
+            cs_fk_00144df0,
+            CS_PREV_00144DF0,
+            ee::s01::OVERRIDE_00144DF0,
+            ee::s01::f_00144df0__generated,
+            0x0014_4df0
+        ),
+        (
+            cs_fk_001451e8,
+            CS_PREV_001451E8,
+            ee::s01::OVERRIDE_001451E8,
+            ee::s01::f_001451e8__generated,
+            0x0014_51e8
+        ),
+        (
+            cs_fk_00145c38,
+            CS_PREV_00145C38,
+            ee::s01::OVERRIDE_00145C38,
+            ee::s01::f_00145c38__generated,
+            0x0014_5c38
+        ),
+        (
+            cs_fk_00146d98,
+            CS_PREV_00146D98,
+            ee::s01::OVERRIDE_00146D98,
+            ee::s01::f_00146d98__generated,
+            0x0014_6d98
+        ),
+        (
+            cs_fk_0014dc80,
+            CS_PREV_0014DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80
+        ),
+        (
+            cs_fk_0014dd58,
+            CS_PREV_0014DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58
+        ),
+        (
+            cs_fk_00181090,
+            CS_PREV_00181090,
+            ee::s02::OVERRIDE_00181090,
+            ee::s02::f_00181090__generated,
+            0x0018_1090
+        ),
+        (
+            cs_fk_001828c0,
+            CS_PREV_001828C0,
+            ee::s02::OVERRIDE_001828C0,
+            ee::s02::f_001828c0__generated,
+            0x0018_28c0
+        ),
+        (
+            cs_fk_00183238,
+            CS_PREV_00183238,
+            ee::s02::OVERRIDE_00183238,
+            ee::s02::f_00183238__generated,
+            0x0018_3238
+        ),
+        (
+            cs_fk_00183a98,
+            CS_PREV_00183A98,
+            ee::s02::OVERRIDE_00183A98,
+            ee::s02::f_00183a98__generated,
+            0x0018_3a98
+        ),
+        (
+            cs_fk_00185a18,
+            CS_PREV_00185A18,
+            ee::s02::OVERRIDE_00185A18,
+            ee::s02::f_00185a18__generated,
+            0x0018_5a18
+        ),
+        (
+            cs_fk_00186610,
+            CS_PREV_00186610,
+            ee::s02::OVERRIDE_00186610,
+            ee::s02::f_00186610__generated,
+            0x0018_6610
+        ),
+        (
+            cs_fk_00188ee8,
+            CS_PREV_00188EE8,
+            ee::s02::OVERRIDE_00188EE8,
+            ee::s02::f_00188ee8__generated,
+            0x0018_8ee8
+        ),
+        (
+            cs_fk_0018a258,
+            CS_PREV_0018A258,
+            ee::s02::OVERRIDE_0018A258,
+            ee::s02::f_0018a258__generated,
+            0x0018_a258
+        ),
+        (
+            cs_fk_0018c0e8,
+            CS_PREV_0018C0E8,
+            ee::s02::OVERRIDE_0018C0E8,
+            ee::s02::f_0018c0e8__generated,
+            0x0018_c0e8
+        ),
+        (
+            cs_fk_0018c658,
+            CS_PREV_0018C658,
+            ee::s02::OVERRIDE_0018C658,
+            ee::s02::f_0018c658__generated,
+            0x0018_c658
+        ),
+        (
+            cs_fk_0018d240,
+            CS_PREV_0018D240,
+            ee::s02::OVERRIDE_0018D240,
+            ee::s02::f_0018d240__generated,
+            0x0018_d240
+        ),
+        (
+            cs_fk_0018d7f0,
+            CS_PREV_0018D7F0,
+            ee::s02::OVERRIDE_0018D7F0,
+            ee::s02::f_0018d7f0__generated,
+            0x0018_d7f0
+        ),
+        (
+            cs_fk_0018eca0,
+            CS_PREV_0018ECA0,
+            ee::s02::OVERRIDE_0018ECA0,
+            ee::s02::f_0018eca0__generated,
+            0x0018_eca0
+        ),
+        (
+            cs_fk_00190858,
+            CS_PREV_00190858,
+            ee::s02::OVERRIDE_00190858,
+            ee::s02::f_00190858__generated,
+            0x0019_0858
+        ),
+        (
+            cs_fk_00191360,
+            CS_PREV_00191360,
+            ee::s02::OVERRIDE_00191360,
+            ee::s02::f_00191360__generated,
+            0x0019_1360
+        ),
+        (
+            cs_fk_00192d00,
+            CS_PREV_00192D00,
+            ee::s02::OVERRIDE_00192D00,
+            ee::s02::f_00192d00__generated,
+            0x0019_2d00
+        ),
+        (
+            cs_fk_00194738,
+            CS_PREV_00194738,
+            ee::s02::OVERRIDE_00194738,
+            ee::s02::f_00194738__generated,
+            0x0019_4738
+        ),
+        (
+            cs_fk_00194a60,
+            CS_PREV_00194A60,
+            ee::s02::OVERRIDE_00194A60,
+            ee::s02::f_00194a60__generated,
+            0x0019_4a60
+        ),
+        (
+            cs_fk_00195498,
+            CS_PREV_00195498,
+            ee::s02::OVERRIDE_00195498,
+            ee::s02::f_00195498__generated,
+            0x0019_5498
+        ),
+        (
+            cs_fk_00196b90,
+            CS_PREV_00196B90,
+            ee::s02::OVERRIDE_00196B90,
+            ee::s02::f_00196b90__generated,
+            0x0019_6b90
+        ),
+        (
+            cs_fk_00198db8,
+            CS_PREV_00198DB8,
+            ee::s03::OVERRIDE_00198DB8,
+            ee::s03::f_00198db8__generated,
+            0x0019_8db8
+        ),
+        (
+            cs_fk_001a0708,
+            CS_PREV_001A0708,
+            ee::s03::OVERRIDE_001A0708,
+            ee::s03::f_001a0708__generated,
+            0x001a_0708
+        ),
+        (
+            cs_fk_001a3218,
+            CS_PREV_001A3218,
+            ee::s03::OVERRIDE_001A3218,
+            ee::s03::f_001a3218__generated,
+            0x001a_3218
+        ),
+        (
+            cs_fk_001a86e8,
+            CS_PREV_001A86E8,
+            ee::s03::OVERRIDE_001A86E8,
+            ee::s03::f_001a86e8__generated,
+            0x001a_86e8
+        ),
+        (
+            cs_fk_001b3f78,
+            CS_PREV_001B3F78,
+            ee::s03::OVERRIDE_001B3F78,
+            ee::s03::f_001b3f78__generated,
+            0x001b_3f78
+        ),
+        (
+            cs_fk_001bfbb8,
+            CS_PREV_001BFBB8,
+            ee::s03::OVERRIDE_001BFBB8,
+            ee::s03::f_001bfbb8__generated,
+            0x001b_fbb8
+        ),
+        (
+            cs_fk_001d1128,
+            CS_PREV_001D1128,
+            ee::s04::OVERRIDE_001D1128,
+            ee::s04::f_001d1128__generated,
+            0x001d_1128
+        ),
+        (
+            cs_fk_001d4bc8,
+            CS_PREV_001D4BC8,
+            ee::s04::OVERRIDE_001D4BC8,
+            ee::s04::f_001d4bc8__generated,
+            0x001d_4bc8
+        ),
+        (
+            cs_fk_001f3ff8,
+            CS_PREV_001F3FF8,
+            ee::s04::OVERRIDE_001F3FF8,
+            ee::s04::f_001f3ff8__generated,
+            0x001f_3ff8
+        ),
+        (
+            cs_fk_001f54b0,
+            CS_PREV_001F54B0,
+            ee::s04::OVERRIDE_001F54B0,
+            ee::s04::f_001f54b0__generated,
+            0x001f_54b0
+        ),
+        (
+            cs_fk_00232720,
+            CS_PREV_00232720,
+            ee::s06::OVERRIDE_00232720,
+            ee::s06::f_00232720__generated,
+            0x0023_2720
+        ),
+        (
+            cs_fk_00232738,
+            CS_PREV_00232738,
+            ee::s06::OVERRIDE_00232738,
+            ee::s06::f_00232738__generated,
+            0x0023_2738
+        ),
+        (
+            cs_fk_00316ef8,
+            CS_PREV_00316EF8,
+            ee::s10::OVERRIDE_00316EF8,
+            ee::s10::f_00316ef8__generated,
+            0x0031_6ef8
+        ),
+        (
+            cs_fk_00317d70,
+            CS_PREV_00317D70,
+            ee::s10::OVERRIDE_00317D70,
+            ee::s10::f_00317d70__generated,
+            0x0031_7d70
+        ),
+    );
+
+    /// Arm the fakes and give each callee a random call mask (none, all, or
+    /// random bits, by seed and callee).
+    fn cs_arm(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        cs_install_fakes();
+        c.bus.write32(CS_CTRL, CS_MAGIC);
+        for i in 0..CS_ADDRS.len() as u32 {
+            let z = match (seed / 5 + i) % 5 {
+                0 | 1 => 0,
+                2 => u32::MAX,
+                _ => r.next_u32(),
+            };
+            c.bus.write32(CS_CTRL + 0x100 + 4 * i, z);
+        }
+    }
+
+    /// State numbers whose jump-table arms call only slotted callees (the
+    /// others reach constructors without an override slot, which cannot be
+    /// faked), the immediate-return arms, and out-of-range numbers.
+    const CS_STATES: [u32; 48] = [
+        3, 4, 5, 6, 7, 8, 10, 14, 15, 16, 17, 18, 19, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+        35, 36, 37, 38, 39, 40, 41, 42, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 60,
+        61,
+    ];
+
+    /// The fixture: the arm picked by `seed` (and the sub-state in `a2`), the
+    /// byte at 0x535c11 that some arms test, random flow objects.
+    fn cs_fixture(c: &mut Cpu, seed: u32, salt: u64, calls: u32) {
+        let mut r = machine(c, seed, salt, calls);
+        crate::difftest::elf_image(c);
+        cs_arm(c, &mut r, seed);
+        let n = CS_STATES.len() as u32;
+        let state = CS_STATES[(seed % n) as usize];
+        let sub = [0u32, 1, 2, 3, 5, 9, 12, 0x1c, 0x20, 0x24][((seed / n) % 10) as usize];
+        c.bus
+            .write8(0x0053_5c11, [0u8, 1, 2, 0xff][((seed / 7) % 4) as usize]);
+        let (this, flow) = (DATA + 0x30_0000, DATA + 0x30_1000);
+        fill(c, &mut r, this, 0x40);
+        fill(c, &mut r, flow, 0x40);
+        c.bus.write32(flow + 0xc, state);
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = sx(flow);
+        c.g[A2][0] = sub as u64;
+        c.pc = 0x001a_0830;
+    }
+
+    /// `FEUICustom_CreateState`: the flow state arms (allocation failing or
+    /// not, constructor results), and unwinds of its calls.
+    #[test]
+    fn feui_custom_create_state_matches() {
+        fakes::covered(
+            ee::s03::f_001a0830__generated,
+            feui_custom_create_state,
+            480,
+            &|c, seed| cs_fixture(c, seed, 0x1a0830, 6),
+        );
+    }
+
+    /// Several distinct paths (cycle totals) are taken over the seeds.
+    #[test]
+    fn feui_custom_create_state_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..480 {
+            let mut c = crate::difftest::fresh();
+            cs_fixture(&mut c, seed, 0x1a0830, 0);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, ee::s03::f_001a0830__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert!(seen.len() >= 12, "only {} paths: {seen:?}", seen.len());
     }
 }

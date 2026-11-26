@@ -1663,21 +1663,6 @@ pub(crate) mod callee {
         f: ee::s06::f_00237be8,
     };
 
-    pub const SND_BANK_IS_LOADED_WITH_NAME: Callee = Callee {
-        addr: 0x0028_b830,
-        f: ee::s07::f_0028b830,
-    };
-
-    pub const SND_LOAD_QUEUE_CANCEL_BANK: Callee = Callee {
-        addr: 0x0028_a728,
-        f: ee::s07::f_0028a728,
-    };
-
-    pub const SND_BANK_LOAD: Callee = Callee {
-        addr: 0x0028_b320,
-        f: ee::s07::f_0028b320,
-    };
-
     pub const BE_REWARD_INT_IS_PEAK_GOAL_COMPLETE: Callee = Callee {
         addr: 0x0015_7bf0,
         f: ee::s01::f_00157bf0,

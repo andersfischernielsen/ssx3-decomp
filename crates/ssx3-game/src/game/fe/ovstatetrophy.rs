@@ -26,9 +26,6 @@ pub(crate) use crate::game::fe::festaterewards::r;
 pub(crate) use crate::game::fe::ovstaterewardslist::ov_screen_widget_action;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
-pub(crate) use crate::game::object::flexrailnode::at_3 as at_2;
-pub(crate) use crate::game::object::flexrailnode::r32v;
-pub(crate) use crate::game::object::flexrailnode::spa;
 #[cfg(test)]
 pub(crate) use crate::game::render::bezierman::f;
 pub(crate) use crate::game::render::bezierman::gp as gp_m2;
@@ -3606,97 +3603,8 @@ pub fn ovscreen_read_private_message_create_keyboard_popup(c: &mut Cpu) {
     })
 }
 
-/// A `gp_3_2`-relative global address.
-#[inline(always)]
-pub(crate) fn gp_3_2(c: &Cpu, off: i32) -> u32 {
-    (c.g[GP][0] as u32).wrapping_add(off as u32)
-}
-
 // ---------------------------------------------------------------------------
 // HUD.
-
-/// `void HUDMeter_SetRect(HUDMeter* m, int unused, Rect* src)` (0x20ec18):
-/// store the 200-unit-wide meter rectangle scaled/offset from `src` into the
-/// meter's layout rects.
-pub fn hud_meter_set_rect(c: &mut Cpu) {
-    c.cycles += 3;
-    let meter = r32v(c, A0);
-    let src = r32v(c, A2);
-    c.g[V0][0] = Addr(gp_3_2(c, -0x988)).lw(c);
-    let absent = c.g[V0][0] == 0;
-    c.g[SP][0] = sx(r32v(c, SP).wrapping_sub(0x10));
-    if !absent {
-        c.cycles += 8;
-        c.g[V0][0] = Addr(gp_3_2(c, -0x98c)).lw(c);
-        c.lwc1(2, gp_3_2(c, -0x54f4));
-        c.lwc1(0, at_2(r32v(c, V0), 0x14));
-        c.cvt_s_w(0, 0);
-        c.lwc1(1, at_2(r32v(c, V0), 0x34));
-        c.mul_s(0, 0, 1);
-        c.mul_s(7, 0, 2);
-    }
-    // Both paths converge on f7 = 30.0.
-    c.cycles += 2;
-    c.g[AT][0] = 0x41f0_0000;
-    c.mtc1(1, 7);
-    c.cycles += 53;
-    // The source rect is `{x, y, w, h}` at_2 +0, +4, +8, +0xc.
-    c.lwc1(2, at_2(src, 0xc));
-    c.g[V0][0] = 0x4d_0000;
-    c.lwc1(3, at_2(src, 8));
-    c.lwc1(0, at_2(src, 4));
-    c.g[AT][0] = 0x3f00_0000;
-    c.mtc1(1, 5);
-    c.add_s(0, 0, 2);
-    c.lwc1(1, src);
-    c.mul_s(3, 3, 5);
-    c.lwc1(4, 0x004c_8ca0);
-    c.lwc1(6, gp_3_2(c, -0x54f0));
-    c.sub_s(0, 0, 7);
-    c.add_s(1, 1, 3);
-    c.swc1(0, spa(c, 4));
-    c.swc1(1, spa(c, 0));
-    // `{x1, y1}` as one doubleword at_2 +0.
-    c.ldl(2, spa(c, 7));
-    c.ldr(2, spa(c, 0));
-    c.sdl(2, at_2(meter, 7));
-    c.sdr(2, at_2(meter, 0));
-    c.lwc1(3, at_2(src, 4));
-    c.swc1(3, at_2(meter, 8));
-    c.lwc1(0, at_2(src, 0xc));
-    c.lwc1(1, at_2(src, 4));
-    c.add_s(1, 1, 0);
-    c.sub_s(1, 1, 7);
-    c.sub_s(1, 1, 4);
-    c.swc1(1, at_2(meter, 0xc));
-    c.sub_s(3, 1, 3);
-    c.lwc1(0, at_2(src, 8));
-    c.lwc1(2, at_2(src, 0));
-    c.sub_s(3, 3, 4);
-    c.mul_s(0, 0, 5);
-    c.mul_s(3, 3, 6);
-    c.add_s(2, 2, 0);
-    c.swc1(2, at_2(meter, 0x10));
-    c.lwc1(0, at_2(src, 4));
-    c.swc1(3, at_2(meter, 0x1c));
-    c.add_s(0, 0, 4);
-    c.swc1(1, at_2(meter, 0x18));
-    c.swc1(0, at_2(meter, 0x14));
-    // `{y2, x2}` at_2 +0x20 and `{h', w'}` at_2 +0x28, copied as doublewords.
-    c.ldl(2, at_2(src, 7));
-    c.ldr(2, at_2(src, 0));
-    c.ldl(3, at_2(src, 0xf));
-    c.ldr(3, at_2(src, 8));
-    c.sdl(2, at_2(meter, 0x27));
-    c.sdr(2, at_2(meter, 0x20));
-    c.sdl(3, at_2(meter, 0x2f));
-    c.sdr(3, at_2(meter, 0x28));
-    c.lwc1(0, at_2(meter, 0x2c));
-    c.mul_s(0, 0, 6);
-    c.swc1(0, at_2(meter, 0x30));
-    c.g[SP][0] = sx(r32v(c, SP).wrapping_add(0x10));
-    abi::ret(c);
-}
 
 /// `HUDMeter_SetRect(out, _, area)` (0x20ec18): derives the meter's draw
 /// rectangles (`out`, 0x34 bytes of floats) from the layout rectangle `area`

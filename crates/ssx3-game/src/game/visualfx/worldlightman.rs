@@ -54,6 +54,11 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (
+        0x002f_5298,
+        world_light_man_alloc_overlap_list,
+        "WorldLightMan_AllocOverlapList",
+    ),
+    (
         0x0011_1830,
         rider_base_get_main_state_name,
         "RiderBase_GetMainStateName",
@@ -1719,6 +1724,7 @@ pub fn world_light_man_alloc_overlap_list(c: &mut Cpu) {
         frame.save_ra(c, 0);
         c.g[S1][0] = 0xffff_ffff_ffff_0000 | 0xffff;
         c.g[S3][0] = c.g[A0][0];
+        c.g[S2][0] = 0;
         c.g[S4][0] = 0x0048_0000;
         let this = c.g[S3][0];
         c.g[S0][0] = this;
@@ -8036,6 +8042,110 @@ pub(crate) mod tests {
             oc817_attached_emitter_type_data_free_part1,
             20,
             &oc817_leaf_setup,
+        );
+    }
+
+    /// Gate word of this test's callee fakes (in the machine's own RAM).
+    const WL_CTRL: u32 = DATA + 0x38_0000;
+
+    const WL_MAGIC: u32 = 0x0815_a110;
+
+    /// Every callee of the function under test; all are faked (the real
+    /// chains reach the disc loader and the state constructors, which run
+    /// away on test data).
+    const WL_ADDRS: [u32; 1] = [0x0031_7d70];
+
+    fn wl_idx(addr: u32) -> u32 {
+        WL_ADDRS
+            .iter()
+            .position(|&a| a == addr)
+            .expect("fake address") as u32
+    }
+
+    /// The fake callee: logs the call like `crate::difftest::fakes::fake_call`, then returns a
+    /// small number (the allocator, constructors and library lookups keep
+    /// the fake's pointer), or 0 for the calls the fixture's per-callee mask
+    /// picks (bit n = nth call of that callee: a failed allocation, a
+    /// missing object).
+    fn wl_fake_call(c: &mut Cpu, addr: u32) {
+        let i = wl_idx(addr);
+        let (mask, count) = (WL_CTRL + 0x100 + 4 * i, WL_CTRL + 0x300 + 4 * i);
+        let n = c.bus.read32(count);
+        c.bus.write32(count, n.wrapping_add(1));
+        let zm = c.bus.read32(mask);
+        let ra = c.g[RA][0] as u32;
+        crate::difftest::fakes::fake_call(c, addr);
+        if c.pc != ra {
+            return;
+        }
+        let zero = n < 32 && zm >> n & 1 != 0;
+        if zero {
+            c.g[V0][0] = 0;
+        } else if !matches!(addr, 0x0031_7d70) {
+            c.g[V0][0] >>= 4;
+            c.g[V0][0] &= 3;
+        }
+    }
+
+    macro_rules! wl_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(WL_CTRL) != WL_MAGIC {
+                        return crate::difftest::fakes::fall_back(c, &$prev, $gen);
+                    }
+                    wl_fake_call(c, $addr);
+                }
+            )*
+            fn wl_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( crate::difftest::fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    wl_fakes!((
+        wl_fk_00317d70,
+        WL_PREV_00317D70,
+        ee::s10::OVERRIDE_00317D70,
+        ee::s10::f_00317d70__generated,
+        0x0031_7d70
+    ),);
+
+    /// Arm the fakes and give each callee a random call mask (none, all, or
+    /// random bits, by seed and callee).
+    fn wl_arm(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        wl_install_fakes();
+        c.bus.write32(WL_CTRL, WL_MAGIC);
+        for i in 0..WL_ADDRS.len() as u32 {
+            let z = match (seed / 5 + i) % 5 {
+                0 | 1 => 0,
+                2 => u32::MAX,
+                _ => r.next_u32(),
+            };
+            c.bus.write32(WL_CTRL + 0x100 + 4 * i, z);
+        }
+    }
+
+    /// `WorldLightMan_AllocOverlapList`: the eight list allocations (their
+    /// results are the fake's pointers), and unwinds of those calls.
+    #[test]
+    fn world_light_man_alloc_overlap_list_matches() {
+        crate::difftest::fakes::covered(
+            ee::s09::f_002f5298__generated,
+            world_light_man_alloc_overlap_list,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f5298, 8);
+                wl_arm(c, &mut r, seed);
+                // Real allocations only: no failed (null) ones.
+                c.bus.write32(WL_CTRL + 0x100, 0);
+                let this = DATA + 0x30_0000;
+                fill(c, &mut r, this, 0xcc4);
+                c.g[A0][0] = sx(this);
+                c.pc = 0x002f_5298;
+            },
         );
     }
 }

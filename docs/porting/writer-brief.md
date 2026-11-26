@@ -310,3 +310,30 @@ pseudo-C, how useful it was.
   runs away, shrink the fixture (empty lists, count 0) or drop the entry and test.
 - Long skipped functions go to a fresh writer on a stronger model with a list of
   at most six; short leaf and sibling families work on a small model with eight.
+
+Lessons from the front-end, graphics and sound waves (248-250):
+
+- Know the runaway signatures: a test that stops at the cycle budget with pc
+  `0x3de768`/`0x3de878` is the `EAFile_AllocRequest` spin (slot 0x3de670 must be
+  faked); `0x31ef40`/`0x31ea40` are list and allocator walks (empty lists, count 0);
+  `0x39d888` is the inner loop of `UIScreen_FindObject` (fake the finder, gated
+  fakes included). Bound the fixture first, then drop the entry and test.
+- The generated body leaves scratch registers and stores that a port easily
+  drops: the `v0`/`v1` of a compare, its result store, the 8-byte tail of a copy,
+  the unsigned `sltu` of a pointer compare (not `slt`), and the cycle of a branch
+  delay slot (`V0` off by one on the exit path). Read every branch of the
+  generated body against the port before the first test run.
+- A port that is written and tested but missing from its unit's `OVERRIDES` table
+  (and from `overrides.txt`) is dead code that looks done: register it with the
+  test pointing at `f_X__generated`, then gate. Never leave two ports of one
+  address in two units; the second is deleted, not kept.
+- Slot-only lines (`0x........    Name` in `overrides.txt`, no `OVERRIDES` entry yet)
+  make `f_X__generated` exist for a port that is still being written; every such
+  line is either registered or removed before the wave ends.
+- After the reorg into the source-tree units: macro-generated
+  `ocNNN_install*` helpers become `pub(crate)` and the consuming unit re-imports
+  them in its `mod tests`; test code that indexes registers uses
+  `c.g[ssx3_ee_rt::cpu::reg::SP]` (a local `SP` constant shadows the index);
+  fields of structs used by other units' tests become `pub(crate)`.
+  `cargo fix --lib` strips imports that only the tests use: run it with `--tests`
+  or restore them behind `#[cfg(test)]`.

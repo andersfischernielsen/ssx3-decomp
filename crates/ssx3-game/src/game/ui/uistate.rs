@@ -24,6 +24,7 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0039_e8b8, ui_state_hide_object, "UIState_HideObject"),
     (0x0039_e948, ui_state_show_object, "UIState_ShowObject"),
     (0x0039_e9d8, ui_state_mgr_dtor, "UIStateMgr_dtor"),
     (

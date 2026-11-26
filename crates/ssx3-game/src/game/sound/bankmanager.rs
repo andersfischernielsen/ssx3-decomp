@@ -26,22 +26,17 @@ pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::debugfe::gp;
 pub(crate) use crate::game::fe::debugfe::r32_2;
 pub(crate) use crate::game::fe::feasyncfile::at as at_3;
-pub(crate) use crate::game::fe::feasyncfile::at_5 as at_4;
-pub(crate) use crate::game::fe::feasyncfile::gp_16 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw_4;
-pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_5;
 pub(crate) use crate::game::fe::feasyncfile::p as p_3;
 pub(crate) use crate::game::fe::feasyncfile::p as p_5;
 pub(crate) use crate::game::fe::feasyncfile::p as p_6;
 pub(crate) use crate::game::fe::feasyncfile::p as p_8;
 pub(crate) use crate::game::fe::feasyncfile::p as p_9;
 pub(crate) use crate::game::fe::feasyncfile::r;
-pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_4;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p as p_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
-pub(crate) use crate::game::scripter::ssxscriptengine::p as p_4;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
 pub(crate) use crate::game::ui::uistate::oc224_at;
@@ -384,22 +379,15 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::feasyncfile::callee::MEM_ALLOC_NAMED_128;
 
-    pub(crate) use crate::game::fe::feasyncfile::callee::MUSIC_PLAYER_PLAY_SONG;
-
     pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_IS_LOADED_WITH_NAME as SND_BANK_IS_LOADED_WITH_NAME_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_CANCEL_BANK as SND_LOAD_QUEUE_CANCEL_BANK_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_PUSH;
 
-    pub(crate) use crate::game::fe::feasyncfile::callee::SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN;
-
     pub(crate) use crate::game::intersect::worldsphtree::callee::SSX_AUDIO_SYSTEM_RESTART_PEAK_MUSIC;
 
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_IS_LOADED_WITH_NAME;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_LOAD;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_UNLOAD_MEMORY_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_LOAD_QUEUE_CANCEL_BANK;
 
     pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INTERFACE;
@@ -462,43 +450,6 @@ pub fn snd_bank_link(c: &mut Cpu) {
         let p0c = other.off(0xc).lw(c);
         self_.off(0xc).sw(c, p0c);
         c.g[V0][0] = p0c;
-    }
-    c.cycles += 2;
-    abi::ret(c);
-}
-
-/// `void SndBank_Unlink(SndBank *self)` (0x28b730): remove `self` from the
-/// doubly-linked list, keeping neighbours connected, and clear its links.
-pub fn snd_bank_unlink(c: &mut Cpu) {
-    let self_ = Addr(abi::arg(c, 0));
-    c.cycles += 3;
-    let prev = self_.off(0x18).lw(c);
-    c.g[V1][0] = prev;
-    c.g[V0][0] = u64::MAX;
-    if prev != 0 {
-        c.cycles += 6;
-        let next = self_.off(0x1c).lw(c);
-        c.g[A1][0] = next;
-        self_.off(0xc).sw(c, u64::MAX);
-        self_.off(0x10).sw(c, 0);
-        self_.off(0x14).sw(c, 0);
-        self_.off(0x8).sw(c, 0);
-        if prev != next {
-            c.cycles += 4;
-            Addr(prev as u32).off(0x1c).sw(c, next);
-            c.g[V1][0] = self_.off(0x1c).lw(c);
-            c.g[V0][0] = self_.off(0x18).lw(c);
-            Addr(c.g[V1][0] as u32).off(0x18).sw(c, c.g[V0][0]);
-        } else {
-            c.cycles += 4;
-            Addr(prev as u32).off(0x18).sw(c, 0);
-            c.g[V0][0] = self_.off(0x18).lw(c);
-            Addr(c.g[V0][0] as u32).off(0x1c).sw(c, 0);
-            c.g[V1][0] = prev;
-        }
-        c.cycles += 2;
-        self_.off(0x18).sw(c, 0);
-        self_.off(0x1c).sw(c, 0);
     }
     c.cycles += 2;
     abi::ret(c);
@@ -1413,52 +1364,6 @@ pub fn ssx_audio_system_on_event_select_exit(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Sound banks.
 
-/// `void SndBankMan_LoadBank(SndBankMan* self, int id, void* a2, void* a3)`
-/// (0x28bc58): if the bank is not loaded yet, cancel its pending load and
-/// load it into the bank table entry.
-pub fn snd_bank_man_load_bank(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 19;
-        let frame = Frame::open(c, 0x60);
-        c.g[V0][0] = 0x60;
-        frame.save(c, S2, 0x30);
-        frame.save(c, S3, 0x20);
-        c.g[S2][0] = c.g[A1][0];
-        frame.save(c, S0, 0x50);
-        c.mult(0, S3, S2, V0);
-        frame.save(c, S1, 0x40);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save(c, S4, 0x10);
-        c.g[S1][0] = c.g[A2][0];
-        frame.save_ra(c, 0);
-        c.g[S4][0] = c.g[A3][0];
-        c.g[A1][0] = c.g[S1][0];
-        c.g[A0][0] = Addr(p_4(r32(c, S0), 0xacc)).lw(c);
-        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
-        callee::SND_BANK_IS_LOADED_WITH_NAME.call(c, 0x0028_bc9c)?;
-        if c.g[V0][0] == 0 {
-            c.cycles += 9;
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A1][0] = c.g[S2][0];
-            callee::SND_LOAD_QUEUE_CANCEL_BANK.call(c, 0x0028_bcb0)?;
-            c.g[A0][0] = Addr(p_4(r32(c, S0), 0xacc)).lw(c);
-            c.g[A1][0] = c.g[S1][0];
-            c.g[A2][0] = c.g[S4][0];
-            c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
-            callee::SND_BANK_LOAD.call(c, 0x0028_bcc4)?;
-        }
-        c.cycles += 7;
-        frame.restore(c, S0, 0x50);
-        frame.restore(c, S1, 0x40);
-        frame.restore(c, S2, 0x30);
-        frame.restore(c, S3, 0x20);
-        frame.restore(c, S4, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `void SSXAudioSystem_UpdateMusicTier(self, int tier)` (0x28d5a0): when the
 /// music system is not in state 0x17, play the track for the given tier if it
 /// differs from the one already playing.
@@ -1769,90 +1674,15 @@ pub fn ssx_audio_system_play_char_select_music(c: &mut Cpu) {
     })
 }
 
-/// `void SSXAudioSystem_OnSongChanged(self)` (0x28f478): play the new song,
-/// and if its gain is audible, push the song title to the active music state.
-pub fn ssx_audio_system_on_song_changed(c: &mut Cpu) {
-    guest(c, |c| {
-        let frame = Frame::open(c, 0x20);
-        'outer: {
-            'inner: {
-                c.cycles += 15;
-                frame.save(c, S0, 0x10);
-                c.g[S0][0] = c.g[A0][0];
-                frame.save_ra(c, 0);
-                c.g[RA][0] = sx(0x0028_f490);
-                c.g[A0][0] = sx(at_4(c.g[S0][0], 0x118));
-                callee::MUSIC_PLAYER_PLAY_SONG.call(c, 0x0028_f490)?;
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A1][0] = 1;
-                c.g[RA][0] = sx(0x0028_f4a0);
-                c.g[A2][0] = 0;
-                callee::SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN.call(c, 0x0028_f4a0)?;
-                c.mtc1(0, 1);
-                c.c_lt_s(1, 0);
-                let t = !c.fcc();
-                c.g[V0][0] = lw(c, gp_2(c, -0x848));
-                if t {
-                    break 'inner;
-                }
-                c.cycles += 3;
-                c.g[V0][0] = lw(c, at_4(c.g[V0][0], 0x84));
-                let t = c.g[V0][0] == 0;
-                frame.restore(c, S0, 0x10);
-                if t {
-                    break 'outer;
-                }
-                c.cycles += 3;
-                c.g[A0][0] = lw(c, at_4(c.g[V0][0], 0x48));
-                let t = c.g[A0][0] == 0;
-                c.g[S0][0] = sx(at_4(c.g[A0][0], 0x18));
-                if t {
-                    break 'inner;
-                }
-                c.cycles += 2;
-                if c.g[S0][0] == 0 {
-                    frame.restore(c, S0, 0x10);
-                    break 'outer;
-                }
-                c.cycles += 9;
-                c.g[A0][0] = sx(0x004a_3660);
-                c.g[RA][0] = sx(0x0028_f4e0);
-                call_ptr(c, 0x0031_7670, 0x0028_f4e0)?;
-                c.g[A0][0] = c.g[S0][0];
-                c.g[RA][0] = sx(0x0028_f4ec);
-                c.g[A1][0] = c.g[V0][0];
-                call_ptr(c, 0x0039_f9d8, 0x0028_f4ec)?;
-                c.g[A3][0] = c.g[V0][0];
-                let t = c.g[A3][0] == 0;
-                c.g[A1][0] = 5;
-                if !t {
-                    c.cycles += 6;
-                    c.g[V1][0] = lw(c, at_4(c.g[A3][0], 8));
-                    c.g[A2][0] = 0;
-                    c.g[A0][0] = lh(c, at_4(c.g[V1][0], 0xc0));
-                    c.g[V0][0] = lw(c, at_4(c.g[V1][0], 0xc4));
-                    let target = c.g[V0][0] as u32;
-                    c.g[RA][0] = sx(0x0028_f510);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                    call_ptr(c, target, 0x0028_f510)?;
-                }
-                break 'inner;
-            }
-            c.cycles += 1;
-            frame.restore(c, S0, 0x10);
-            break 'outer;
-        }
-        c.cycles += 3;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 // ---------------------------------------------------------------------------
 // `SSXAudioSystem_OnMusicSetEventState` (0x28f3c8): set the bank monitor's
 // event state and, when the song tag is no longer -1 and the code is one of
 // 10/11/18, optionally issue the monitor's `v3(8)` call and clear `+0x530`.
+//
+// Not installed and without a test (no `OVERRIDES` entry); kept under
+// `cfg(test)` as an unverified port.
+#[cfg(test)]
+#[allow(dead_code)]
 pub fn ssx_audio_system_on_music_set_event_state(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 17;
@@ -2144,116 +1974,6 @@ pub fn snd_bank_set_memory(c: &mut Cpu) {
         frame.restore(c, 17, 0x30);
         frame.restore(c, 18, 0x20);
         frame.restore(c, 19, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `SSXAudioSystem_SelectRandomSong(self)` (0x0028d488): pick a random song
-/// index in `[0, tracks)`, store it and make the music player switch to it.
-pub fn ssx_audio_system_select_random_song(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 17;
-        let frame = Frame::open(c, 0x50);
-        frame.save(c, S0, 0x40);
-        frame.save(c, S2, 0x20);
-        c.g[S0][0] = 0x7fff;
-        frame.save(c, S1, 0x30);
-        c.g[S2][0] = c.g[A0][0];
-        frame.save(c, S3, 0x10);
-        frame.save_ra(c, 0);
-        let this = c.g[S2][0];
-        let player = lw_5(c, this, 0x118);
-        c.g[S1][0] = lw_5(c, this, 0x504);
-        c.g[S3][0] = lw_5(c, this, 0x62a4);
-        c.g[V1][0] = player;
-        c.g[V0][0] = lw_5(c, player, 0);
-        c.g[A0][0] = lw_5(c, c.g[V0][0], 0x1d8);
-        call_ptr(c, 0x002a_df60, 0x0028_d4c0)?;
-        c.g[V0][0] = c.g[V0][0] & 0x7fff;
-
-        // Random fraction of the (scaled) track count.
-        c.cycles += 14;
-        c.mult(0, V0, V0, S1);
-        c.g[V1][0] = lw_5(c, this, 0x118);
-        c.divu(0, V0, S0);
-        c.g[V0][0] = c.lo[0];
-        sw_4(c, this, 0x508, c.g[V0][0]);
-        c.g[V0][0] = lw_5(c, c.g[V1][0], 0);
-        c.g[A0][0] = lw_5(c, c.g[V0][0], 0x1d8);
-        call_ptr(c, 0x002a_df60, 0x0028_d4ec)?;
-        c.g[V1][0] = 0xa;
-        c.g[V0][0] = c.g[V0][0] & 0x7fff;
-        c.mult(0, V0, V0, V1);
-        c.g[A0][0] = 0x7fff;
-
-        // Skip up to ten songs to find a playable one.
-        c.cycles += 5;
-        c.divu(0, V0, S0);
-        c.g[V1][0] = c.lo[0];
-        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
-        let empty = c.g[V0][0] == 0;
-        c.g[S0][0] = c.g[V0][0];
-        if !empty {
-            c.cycles += 2;
-            c.g[A0][0] = this;
-            loop {
-                c.cycles += 8;
-                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
-                Callee {
-                    addr: 0x0028_d8a0,
-                    f: ee::s07::SSXAudioSystem_GetTrackMusicGroup,
-                }
-                .call(c, 0x0028_d528)?;
-                c.g[A2][0] = c.g[V0][0];
-                c.g[A0][0] = sx((this as u32).wrapping_add(0x118));
-                c.g[A1][0] = 1;
-                call_ptr(c, 0x002b_42b8, 0x0028_d538)?;
-                let more = c.g[S0][0] != 0;
-                c.g[A0][0] = this;
-                if !more {
-                    break;
-                }
-                if event_due(c) {
-                    deliver_event_here(c, 0x0028_d520);
-                }
-            }
-        }
-
-        // Restart the music player on the new selection.
-        c.cycles += 3;
-        c.g[V0][0] = lw_5(c, this, 0x508);
-        let same = c.g[S3][0] == c.g[V0][0];
-        c.g[S0][0] = sx((this as u32).wrapping_add(0x118));
-        if !same {
-            c.cycles += 1;
-        } else {
-            c.cycles += 9;
-            c.g[A0][0] = this;
-            Callee {
-                addr: 0x0028_d8a0,
-                f: ee::s07::SSXAudioSystem_GetTrackMusicGroup,
-            }
-            .call(c, 0x0028_d554)?;
-            c.g[A2][0] = c.g[V0][0];
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A1][0] = 1;
-            call_ptr(c, 0x002b_42b8, 0x0028_d564)?;
-            c.g[V0][0] = lw_5(c, this, 0x508);
-            if c.g[S3][0] == c.g[V0][0] {
-                c.cycles += 4;
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A1][0] = 0;
-                c.g[A2][0] = 0;
-                call_ptr(c, 0x002b_42b8, 0x0028_d580)?;
-                c.cycles += 1;
-            }
-        }
-        frame.restore(c, S0, 0x40);
-        frame.restore(c, S1, 0x30);
-        frame.restore(c, S2, 0x20);
-        frame.restore(c, S3, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -5632,219 +5352,7 @@ pub fn snd_bank_man_ctor(c: &mut Cpu) {
     });
 }
 
-/// `void SSXAudioSystem::OnSongChanged(SSXAudioSystem* this)` (0x28f478).
-///
-/// Re-applies the current music: calls the music system's start routine
-/// (0x2b35a0, on `this + 0x118`), then, if the channel gain 1 of the audio
-/// system is positive and the game world (`gp - 0x848`) has a current
-/// frontend/UI state stack (`world + 0x84` -> `+ 0x48`), looks up the UI state
-/// with the id `0x4a3660` (`cUIStateStack::findState`) and calls virtual slot
-/// `+0xc0/+0xc4` of it with `(this, 5, 0)`. Nothing is returned.
-///
-/// Kept as a port only: no `OVERRIDES` entry and no test (its first callee,
-/// 0x2b35a0, runs the music player (`MusicPlayer_StartSong`,
-/// `SongInstance_Create` -> `SongInstance_ctor`, ...), real code with no
-/// override slot, which cannot be faked and does not stay bounded on test data).
-pub fn ssx_audio_system_on_song_changed_2(c: &mut Cpu) {
-    guest(c, |c| {
-        'b_28f514: {
-            'b_28f510: {
-                c.cycles += 15;
-                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
-                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                c.g[S0][0] = c.g[A0][0];
-                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
-                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x118));
-                call_ptr(c, 0x002b35a0, 0x0028f490)?;
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A1][0] = 0x1;
-                c.g[A2][0] = 0u64;
-                call_ptr(c, 0x00287930, 0x0028f4a0)?;
-                c.mtc1(0, 1);
-                c.c_lt_s(1, 0);
-                let t = !c.fcc();
-                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
-                if t {
-                    break 'b_28f510;
-                } else {
-                    c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
-                    let t = c.g[V0][0] == 0u64;
-                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    if t {
-                        break 'b_28f514;
-                    } else {
-                        c.cycles += 3;
-                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x48));
-                        let t = c.g[A0][0] == 0u64;
-                        c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
-                        if t {
-                            break 'b_28f510;
-                        } else {
-                            c.cycles += 2;
-                            if c.g[S0][0] == 0u64 {
-                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                                break 'b_28f514;
-                            } else {
-                                c.cycles += 9;
-                                c.g[A0][0] = 0x4a0000;
-                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3660));
-                                call_ptr(c, 0x00317670, 0x0028f4e0)?;
-                                c.g[A0][0] = c.g[S0][0];
-                                c.g[A1][0] = c.g[V0][0];
-                                call_ptr(c, 0x0039f9d8, 0x0028f4ec)?;
-                                c.g[A3][0] = c.g[V0][0];
-                                let t = c.g[A3][0] == 0u64;
-                                c.g[A1][0] = 0x5;
-                                if t {
-                                    break 'b_28f510;
-                                } else {
-                                    c.cycles += 6;
-                                    c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x8));
-                                    c.g[A2][0] = 0u64;
-                                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xc0));
-                                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
-                                    let t = c.g[V0][0] as u32;
-                                    c.g[A0][0] =
-                                        sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                                    call_ptr(c, t, 0x0028f510)?;
-                                    break 'b_28f510;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            c.cycles += 1;
-            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-            break 'b_28f514;
-        }
-        c.cycles += 3;
-        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
-        let t = c.g[RA][0] as u32;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
-        c.pc = t;
-        return Ok(());
-    })
-}
-
 // 0x002f5298 WorldLightMan_AllocOverlapList: already ported (game/visualfx/worldlightman.rs), skipped.
-
-/// `SSXAudioSystem_SelectRandomSong(sys)` (0x0028d488): pick a random
-/// front-end song. `+0x508` (current song) = `(rand & 0x7fff) * numSongs /
-/// 0x7fff` (`+0x504` is the song count); then step the music group
-/// `(rand & 0x7fff) * 10 / 0x7fff + 1` times with `SndBankMan` calls; when the
-/// new song equals the previous one (`+0x62a4`) step once more, and if it is
-/// still equal ask the bank manager to stop (`SndBank(.., 0, 0)`).
-///
-/// Not installed: its real callees (`SSXAudioSystem_GetTrackMusicGroup` and
-/// `0x2b42b8`) have no override slot to fake and run away on test data, so
-/// there is no bounded differential test.
-#[allow(dead_code)]
-pub fn ssx_audio_system_select_random_song_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 17;
-        let frame = Frame::open(c, 0x50);
-        frame.save(c, S0, 0x40);
-        frame.save(c, S2, 0x20);
-        c.g[S0][0] = 0x7fff;
-        frame.save(c, S1, 0x30);
-        c.g[S2][0] = c.g[A0][0];
-        frame.save(c, S3, 0x10);
-        frame.save_ra(c, 0);
-        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x118));
-        c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x504));
-        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
-        c.g[S3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x62a4));
-        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
-        call_ptr(c, 0x002a_df60, 0x0028_d4c0)?;
-        c.g[V0][0] &= 0x7fff;
-
-        c.cycles += 14;
-        c.mult(0, V0, V0, S1);
-        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x118));
-        c.divu(0, V0, S0);
-        c.g[V0][0] = c.lo[0];
-        c.sw((c.g[S2][0] as u32).wrapping_add(0x508), c.g[V0][0]);
-        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
-        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
-        call_ptr(c, 0x002a_df60, 0x0028_d4ec)?;
-        c.g[V1][0] = 0xa;
-        c.g[V0][0] &= 0x7fff;
-        c.mult(0, V0, V0, V1);
-        c.g[A0][0] = 0x7fff;
-
-        c.cycles += 5;
-        c.divu(0, V0, S0);
-        c.g[V1][0] = c.lo[0];
-        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
-        c.g[S0][0] = c.g[V0][0];
-        if c.g[V0][0] != 0 {
-            c.cycles += 2;
-            c.g[A0][0] = c.g[S2][0];
-            loop {
-                c.cycles += 8;
-                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
-                Callee {
-                    addr: 0x0028_d8a0,
-                    f: ee::s07::SSXAudioSystem_GetTrackMusicGroup,
-                }
-                .call(c, 0x0028_d528)?;
-                c.g[A2][0] = c.g[V0][0];
-                c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
-                c.g[A1][0] = 1;
-                call_ptr(c, 0x002b_42b8, 0x0028_d538)?;
-                let more = c.g[S0][0] != 0;
-                c.g[A0][0] = c.g[S2][0];
-                if !more {
-                    break;
-                }
-                if event_due(c) {
-                    deliver_event_here(c, 0x0028_d520);
-                }
-            }
-        }
-
-        c.cycles += 3;
-        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x508));
-        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
-        if c.g[S3][0] != c.g[V0][0] {
-            c.cycles += 1;
-            frame.restore(c, S0, 0x40);
-        } else {
-            c.cycles += 9;
-            c.g[A0][0] = c.g[S2][0];
-            Callee {
-                addr: 0x0028_d8a0,
-                f: ee::s07::SSXAudioSystem_GetTrackMusicGroup,
-            }
-            .call(c, 0x0028_d554)?;
-            c.g[A2][0] = c.g[V0][0];
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A1][0] = 1;
-            call_ptr(c, 0x002b_42b8, 0x0028_d564)?;
-            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x508));
-            if c.g[S3][0] != c.g[V0][0] {
-                frame.restore(c, S0, 0x40);
-            } else {
-                c.cycles += 4;
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A1][0] = 0;
-                c.g[A2][0] = 0;
-                call_ptr(c, 0x002b_42b8, 0x0028_d580)?;
-                c.cycles += 1;
-                frame.restore(c, S0, 0x40);
-            }
-        }
-        c.cycles += 6;
-        frame.restore(c, S1, 0x30);
-        frame.restore(c, S2, 0x20);
-        frame.restore(c, S3, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
 
 /// `void* SndBank_GetBuffer(SndBank* bank, int size)` (0x28b8d8).
 ///
@@ -6471,38 +5979,6 @@ pub(crate) mod tests {
             c.bus.write32(DATA + 0x300 + 0x18, r.next_u32());
             c.bus.write32(DATA + 0x300 + 0x1c, r.next_u32());
         });
-    }
-
-    #[test]
-    fn snd_bank_unlink_matches() {
-        check(
-            ssx3_ee::s07::f_0028b730,
-            snd_bank_unlink,
-            300,
-            &|c, seed| {
-                let mut r = Rng(0x1111_000b ^ seed as u64);
-                scramble(c, &mut r);
-                c.g[A0][0] = DATA as u64;
-                // 0: no previous; 1: prev == next; 2: prev != next.
-                let (prev, next, write_next) = match seed % 3 {
-                    0 => (0, DATA + 0x200, false),
-                    1 => (DATA + 0x100, DATA + 0x100, false),
-                    _ => (DATA + 0x100, DATA + 0x200, true),
-                };
-                c.bus.write32(DATA + 0x18, prev);
-                c.bus.write32(DATA + 0x1c, next);
-                for off in [0x8u32, 0xc, 0x10, 0x14] {
-                    c.bus.write32(DATA + off, r.next_u32());
-                }
-                if prev != 0 {
-                    c.bus.write32(prev + 0x18, r.next_u32());
-                    c.bus.write32(prev + 0x1c, r.next_u32());
-                }
-                if write_next {
-                    c.bus.write32(DATA + 0x200 + 0x18, r.next_u32());
-                }
-            },
-        );
     }
 
     #[test]

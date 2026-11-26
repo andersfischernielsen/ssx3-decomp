@@ -1769,7 +1769,7 @@ s02	0017d0a8	0017d1b8	-	DebugMenu_StartMultiplayer
 s02	0017d1b8	0017d200	oe	DebugMenu_DispatchItemAction
 s02	0017d200	0017d260	o	LobbyMenu_InitMessagePage
 s02	0017d260	0017d298	o	LobbyMenu_LobbyEventHook
-s02	0017d298	0017d3ac	-	LobbyMenu_ctor
+s02	0017d298	0017d3ac	o	LobbyMenu_ctor
 s02	0017d3b0	0017d688	oe	LobbyMenu_dtor
 s02	0017d688	0017d6f0	o	LobbyMenu_Update
 s02	0017d6f0	0017da30	-	LobbyMenu_OnLobbyEvent
@@ -10408,7 +10408,7 @@ s13	00397df8	00398014	o	UIEngine_Render
 s13	00398018	00398034	o	UIEngine_RenderStateMgr
 s13	00398038	00398078	o	UIEngine_Update
 s13	00398078	00398134	o	UIEngine_TextureSet_dtor
-s13	00398138	0039837c	-	UIEngine_LoadTextures
+s13	00398138	0039837c	o	UIEngine_LoadTextures
 s13	00398380	003983b8	o	UITextureSet_Find
 s13	003983f0	00398438	o	UIFontSet_FindFont
 s13	00398438	003984ac	o	UIFontSet_FreeFonts

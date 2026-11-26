@@ -602,32 +602,6 @@ pub fn ccrowd_anim2d_create(c: &mut Cpu) {
 
 /// `cCrowdRender2D* cCrowdRender2D_ctor(cCrowdRender2D* this)` (0x2db6d8):
 /// runs `cCrowdRender2D_LoadTextures(this)` and returns `this`.
-///
-/// Not installed: `LoadTextures` runs the texture loader, which has no
-/// bounded short path on test data, so there is no differential test.
-#[allow(dead_code)]
-pub fn c_crowd_render_2d_ctor(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 10;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        Callee {
-            addr: 0x002d_b748,
-            f: ee::s09::f_002db748,
-        }
-        .call(c, 0x002d_b6ec)?;
-        c.g[V0][0] = c.g[S0][0];
-        frame.restore_ra(c, 0);
-        frame.restore(c, S0, 0x10);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `cCrowdRender2D* cCrowdRender2D_ctor(cCrowdRender2D* this)` (0x2db6d8):
-/// runs `cCrowdRender2D_LoadTextures(this)` and returns `this`.
 pub fn crowd_render_2d_ctor(c: &mut Cpu) {
     if c.pc != 0x002d_b6d8 {
         return ee::s09::f_002db6d8__generated(c);

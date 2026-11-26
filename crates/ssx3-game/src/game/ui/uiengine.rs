@@ -108,6 +108,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ui_font_set_load_fonts_811,
         "UIFontSet_LoadFonts",
     ),
+    (
+        0x0039_8138,
+        ui_engine_load_textures,
+        "UIEngine_LoadTextures",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -924,70 +929,6 @@ pub fn c_ui_group_find_by_id(c: &mut Cpu) {
     })
 }
 
-/// `void cUIGroup_Render(self)` (0x398868): draw every visible node of the
-/// group's list at the group's offset.
-pub fn cui_group_render(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 14;
-        let frame = Frame::open(c, 0x40);
-        frame.save(c, S1, 0x10);
-        frame.save_fpr(c, 21, 0x38);
-        c.g[S1][0] = c.g[A0][0];
-        frame.save_fpr(c, 20, 0x30);
-        c.mov_s(21, 12);
-        frame.save(c, S0, 0x20);
-        c.mov_s(20, 13);
-        frame.save_ra(c, 0);
-        c.g[A0][0] = sx(p(r32(c, S1), 0x74));
-        call_ptr(c, 0x0039_7840, 0x00398894)?;
-        c.g[S0][0] = c.g[V0][0];
-        if c.g[S0][0] != 0 {
-            c.cycles += 2;
-            c.g[V0][0] = Addr(p(r32(c, S0), 0x14)).lw(c);
-            loop {
-                c.cycles += 4;
-                c.g[V0][0] = sx(((r32(c, V0) as i32) >> 6) as u32);
-                c.g[V0][0] = c.g[V0][0] & 1;
-                if c.g[V0][0] == 0 {
-                    c.g[S0][0] = Addr(p(r32(c, S0), 4)).lw(c);
-                } else {
-                    c.cycles += 10;
-                    c.g[V1][0] = Addr(p(r32(c, S0), 8)).lw(c);
-                    c.lwc1(12, p(r32(c, S1), 0x44));
-                    c.lwc1(13, p(r32(c, S1), 0x48));
-                    c.g[A0][0] = Addr(p(r32(c, V1), 0x88)).lh(c);
-                    c.add_s(12, 12, 21);
-                    c.add_s(13, 13, 20);
-                    c.g[V0][0] = Addr(p(r32(c, V1), 0x8c)).lw(c);
-                    let draw = r32(c, V0);
-                    c.g[A0][0] = sx(p(r32(c, S0), r32(c, A0)));
-                    call_ptr(c, draw, 0x003988dc)?;
-                    c.g[S0][0] = Addr(p(r32(c, S0), 4)).lw(c);
-                }
-                c.cycles += 4;
-                c.g[A0][0] = c.g[S0][0];
-                call_ptr(c, 0x0039_7718, 0x003988e8)?;
-                if c.g[V0][0] != 0 {
-                    c.cycles += 1;
-                    break;
-                }
-                c.g[V0][0] = Addr(p(r32(c, S0), 0x14)).lw(c);
-                if event_due(c) {
-                    deliver_event_here(c, 0x0039_88a8);
-                }
-            }
-        }
-        frame.restore(c, S0, 0x20);
-        c.cycles += 6;
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.restore_fpr(c, 21, 0x38);
-        frame.restore_fpr(c, 20, 0x30);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `void UIListBox_SetItemWideString(listbox, index, str)` (0x399d80): replace
 /// item `index`'s wide string with a copy of `str`.
 pub fn ui_list_box_set_item_wide_string(c: &mut Cpu) {
@@ -1051,135 +992,6 @@ pub fn ui_list_box_set_item_wide_string(c: &mut Cpu) {
         frame.restore(c, S0, 0x30);
         frame.restore(c, S1, 0x20);
         frame.restore(c, S2, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void UIListBox_ctor(self)` (0x399768): construct a list box: 32 empty
-/// rows, then the scroll-bar defaults.
-pub fn ui_list_box_ctor(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 16;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        let this = c.g[A0][0];
-        c.g[S0][0] = this;
-        call_ptr(c, 0x0039_fb30, 0x0039_977c)?;
-        c.g[V0][0] = Addr(p(this as u32, 0x74)).lbu(c);
-        c.g[V1][0] = 0x490000;
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4798));
-        c.g[A1][0] = 0xffff_ffff_ffff_ffff;
-        c.g[V0][0] = c.g[V0][0] | 0x4;
-        c.sw(p(this as u32, 8), c.g[V1][0]);
-        c.g[V0][0] = c.g[V0][0] & 0xc4;
-        c.g[A0][0] = sx((this as u32).wrapping_add(0x98));
-        c.sb(p(this as u32, 0x74), c.g[V0][0]);
-        c.g[V0][0] = 0x1f;
-        loop {
-            c.cycles += 8;
-            c.sw(c.g[A0][0] as u32, 0);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
-            c.sw(p(c.g[A0][0] as u32, 4), 0);
-            c.sw(p(c.g[A0][0] as u32, 8), 0);
-            c.sw(p(c.g[A0][0] as u32, 0xc), 0);
-            c.sb(p(c.g[A0][0] as u32, 0x10), 0);
-            let more = c.g[V0][0] != c.g[A1][0];
-            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14));
-            if !more {
-                break;
-            }
-            if event_due(c) {
-                deliver_event_here(c, 0x0039_97a8);
-            }
-        }
-        c.cycles += 21;
-        c.sb(p(this as u32, 0x318), 0);
-        c.g[A0][0] = sx((this as u32).wrapping_add(0x98));
-        c.sb(p(this as u32, 0x319), 0);
-        c.g[A1][0] = 0;
-        c.g[A2][0] = 0x280;
-        call_ptr(c, 0x0041_6210, 0x0039_97e0)?;
-        c.g[V1][0] = 0x4c0000;
-        c.g[V0][0] = c.g[S0][0];
-        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x66c8));
-        c.ldl(4, p(c.g[A3][0] as u32, 7));
-        c.ldr(4, c.g[A3][0] as u32);
-        c.ldl(5, p(c.g[A3][0] as u32, 0xf));
-        c.ldr(5, p(c.g[A3][0] as u32, 8));
-        c.sdl(4, p(c.g[S0][0] as u32, 0x8f));
-        c.sdr(4, p(c.g[S0][0] as u32, 0x88));
-        c.sdl(5, p(c.g[S0][0] as u32, 0x97));
-        c.sdr(5, p(c.g[S0][0] as u32, 0x90));
-        frame.restore(c, S0, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void UIFontSet_LoadFonts(self)` (0x398568): load each of the font set's
-/// fonts and store the resulting font objects.
-pub fn ui_font_set_load_fonts(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x70);
-        frame.save(c, S1, 0x50);
-        frame.save(c, S3, 0x30);
-        frame.save(c, S0, 0x60);
-        frame.save(c, S2, 0x40);
-        frame.save(c, S4, 0x20);
-        frame.save(c, S5, 0x10);
-        frame.save_ra(c, 0);
-        let this = c.g[A0][0];
-        c.g[S3][0] = this;
-        c.g[V0][0] = Addr(p(this as u32, 0x34)).lb(c);
-        let none = (c.g[V0][0] as i64) <= 0;
-        c.g[S1][0] = 0;
-        if !none {
-            c.cycles += 4;
-            c.g[S5][0] = 0x4a0000;
-            c.g[S4][0] = 0xc;
-            c.g[S2][0] = sx((this as u32).wrapping_add(4));
-            c.g[S0][0] = sx((c.g[S1][0] as u32) << 24);
-            loop {
-                c.cycles += 19;
-                c.g[A0][0] = 0x84;
-                c.g[S0][0] = sx(((c.g[S0][0] as u32) as i32 >> 24) as u32);
-                c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x4780));
-                c.g[A2][0] = 0;
-                c.g[A3][0] = 0;
-                call_ptr(c, 0x0031_7d70, 0x0039_85c0)?;
-                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
-                c.g[A1][0] = Addr(p(c.g[S2][0] as u32, 4)).lw(c);
-                c.g[A0][0] = c.g[V0][0];
-                c.g[A2][0] = 0;
-                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
-                call_ptr(c, 0x0039_15e8, 0x0039_85d8)?;
-                c.mult(0, 3, 16, 20);
-                c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S3][0] as u32));
-                c.sw(p(c.g[S0][0] as u32, 0xc), c.g[V0][0]);
-                c.g[V0][0] = Addr(p(c.g[S3][0] as u32, 0x34)).lb(c);
-                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                let more = c.g[V0][0] != 0;
-                c.g[S0][0] = sx((c.g[S1][0] as u32) << 24);
-                if !more {
-                    break;
-                }
-                if event_due(c) {
-                    deliver_event_here(c, 0x0039_85a8);
-                }
-            }
-        }
-        c.cycles += 9;
-        frame.restore(c, S0, 0x60);
-        frame.restore(c, S1, 0x50);
-        frame.restore(c, S2, 0x40);
-        frame.restore(c, S3, 0x30);
-        frame.restore(c, S4, 0x20);
-        frame.restore(c, S5, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -2887,7 +2699,7 @@ pub(crate) fn oc445_lbu(c: &mut Cpu, base: usize, off: u32) -> u64 {
 /// element records (`bank+0xc`, `count` at `bank+0x10`) from `data` (a
 /// count and 24-byte source records that name a texture index).
 ///
-/// No `OVERRIDES` entry: `FILE_loadpack` reaches `EAFile_CallWithPriority`,
+/// `FILE_loadpack` reaches `EAFile_CallWithPriority`,
 /// which a fixture cannot bound, so only the prologue up to the first call
 /// is differentially tested. Transcribed from the generated body.
 pub fn ui_engine_load_textures(c: &mut Cpu) {
@@ -3357,75 +3169,6 @@ pub fn uilistbox_ctor_w244(c: &mut Cpu) {
         c.sdl(5, at759(c.g[S0][0], 0x97));
         c.sdr(5, at759(c.g[S0][0], 0x90));
         frame.restore(c, S0, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `UIFontSet_LoadFonts(self)` (0x00398568): for each of the `count` (signed
-/// byte at `+0x34`) font entries (12 bytes from `+4`, the name at `+4` of the
-/// entry) create the font resource `0x84` (`0x4a4780`), load it by name
-/// (`0x3915e8`) and store the result at `entry + 0xc`.
-#[cfg(test)] // not installed: its test runs away in unslotted callees
-#[allow(dead_code)]
-pub fn ui_font_set_load_fonts_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x70);
-        frame.save(c, S1, 0x50);
-        frame.save(c, S3, 0x30);
-        frame.save(c, S0, 0x60);
-        c.g[S3][0] = c.g[A0][0];
-        frame.save(c, S2, 0x40);
-        frame.save(c, S4, 0x20);
-        frame.save(c, S5, 0x10);
-        frame.save_ra(c, 0);
-        c.g[V0][0] = c.lb((c.g[S3][0] as u32).wrapping_add(0x34));
-        let none = (c.g[V0][0] as i64) <= 0;
-        c.g[S1][0] = 0;
-        if !none {
-            c.cycles += 4;
-            c.g[S5][0] = 0x4a_0000;
-            c.g[S4][0] = 0xc;
-            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(4));
-            c.g[S0][0] = sx((c.g[S1][0] as u32) << 24);
-            loop {
-                c.cycles += 19;
-                c.g[A0][0] = 0x84;
-                c.g[S0][0] = sx(((c.g[S0][0] as u32) as i32 >> 24) as u32);
-                c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x4780));
-                c.g[A2][0] = 0;
-                c.g[A3][0] = 0;
-                call_ptr(c, 0x0031_7d70, 0x0039_85c0)?;
-                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
-                c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(4));
-                c.g[A0][0] = c.g[V0][0];
-                c.g[A2][0] = 0;
-                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
-                call_ptr(c, 0x0039_15e8, 0x0039_85d8)?;
-                c.mult(0, 3, 16, 20);
-                c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S3][0] as u32));
-                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
-                c.g[V0][0] = c.lb((c.g[S3][0] as u32).wrapping_add(0x34));
-                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                let more = c.g[V0][0] != 0;
-                c.g[S0][0] = sx((c.g[S1][0] as u32) << 24);
-                if !more {
-                    break;
-                }
-                if event_due(c) {
-                    deliver_event_here(c, 0x0039_85a8);
-                }
-            }
-        }
-        c.cycles += 9;
-        frame.restore(c, S0, 0x60);
-        frame.restore(c, S1, 0x50);
-        frame.restore(c, S2, 0x40);
-        frame.restore(c, S3, 0x30);
-        frame.restore(c, S4, 0x20);
-        frame.restore(c, S5, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -4579,7 +4322,7 @@ pub(crate) mod tests {
     #[test]
     fn ui_engine_load_textures_prologue_matches() {
         check(
-            ee::s13::f_00398138,
+            ee::s13::f_00398138__generated,
             ui_engine_load_textures,
             60,
             &|c, seed| {

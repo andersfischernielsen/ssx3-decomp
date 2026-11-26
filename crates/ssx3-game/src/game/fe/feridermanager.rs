@@ -27,8 +27,6 @@ pub(crate) use crate::game::fe::fepopup::sq;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw;
 pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::fe::ovstatepause::p;
-pub(crate) use crate::game::main::gamemode::low;
-pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::sound::bankmonitor::o760_addi;
 pub(crate) use crate::game::sound::bankmonitor::o760_ea;
 pub(crate) use crate::game::sound::bankmonitor::o760_lw;
@@ -247,11 +245,6 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UNLOAD;
     pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UPDATE;
-
-    pub(crate) use crate::game::main::gamemode::callee::BUILTIN_DELETE as BUILTIN_DELETE_2;
-
-    pub(crate) use crate::game::main::gamemode::callee::FE_MODULE_RIDER_PREVIEW_DTOR;
-    pub(crate) use crate::game::main::gamemode::callee::FE_MODULE_UNLOAD_RIDER_PREVIEWS;
 }
 
 /// `gp`-relative globals used here.
@@ -560,139 +553,8 @@ pub fn fe_module_render_rider_previews(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // FE module teardown, text scroll and group focus.
 
-/// `void FEModule_DestroyRiderPreviews(self, flags)` (0x1a0420): unload the
-/// previews, destroy the two rider-preview objects at `+0xce0`/`+0x19c0` and
-/// free the module when `flags & 1`.
-pub fn fe_module_destroy_rider_previews(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 10;
-        c.g[SP][0] = sx(low(c, SP).wrapping_sub(0x40));
-        c.sq(17, sp_2(c).wrapping_add(0x20));
-        c.g[S1][0] = c.g[A0][0];
-        c.sq(18, sp_2(c).wrapping_add(0x10));
-        c.sq(16, sp_2(c).wrapping_add(0x30));
-        c.sd(sp_2(c), c.g[RA][0]);
-        c.g[S2][0] = c.g[A1][0];
-        callee::FE_MODULE_UNLOAD_RIDER_PREVIEWS.call(c, 0x001a_0440)?;
-        let null = c.g[S1][0] == 0;
-        c.g[S0][0] = sx(low(c, S1).wrapping_add(0x19c0));
-        let mut extra = true;
-        let mut result = low(c, S2) & 1;
-        if !null {
-            c.cycles += 2;
-            let last = c.g[S1][0] == c.g[S0][0];
-            result = low(c, S2) & 1;
-            if !last {
-                c.cycles += 2;
-                c.g[S0][0] = sx(low(c, S0).wrapping_sub(0xce0));
-                loop {
-                    c.cycles += 5;
-                    c.g[A1][0] = 0;
-                    c.g[A0][0] = c.g[S0][0];
-                    callee::FE_MODULE_RIDER_PREVIEW_DTOR.call(c, 0x001a_0464)?;
-                    let more = c.g[S1][0] != c.g[S0][0];
-                    c.g[S0][0] = sx(low(c, S0).wrapping_sub(0xce0));
-                    if !more {
-                        break;
-                    }
-                    if event_due(c) {
-                        deliver_event_here(c, 0x001a_0458);
-                    }
-                }
-            } else {
-                extra = false;
-            }
-        }
-        if extra {
-            c.cycles += 1;
-        }
-        c.g[V0][0] = result as u64;
-        c.cycles += 2;
-        if c.g[V0][0] == 0 {
-            c.lq(16, sp_2(c).wrapping_add(0x30));
-        } else {
-            c.cycles += 3;
-            c.g[A0][0] = c.g[S1][0];
-            call_ptr(c, callee::BUILTIN_DELETE_2.addr, 0x001a_0480)?;
-            c.lq(16, sp_2(c).wrapping_add(0x30));
-        }
-        c.cycles += 5;
-        c.lq(17, sp_2(c).wrapping_add(0x20));
-        c.lq(18, sp_2(c).wrapping_add(0x10));
-        c.g[RA][0] = Addr(sp_2(c)).ld(c);
-        let t = low(c, RA);
-        c.g[SP][0] = sx(low(c, SP).wrapping_add(0x40));
-        c.pc = t;
-        Ok(())
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Front-end rider preview.
-
-/// `int FEModule_RiderPreviewFindTexture(RiderPreview* self, char* name)`
-/// (0x19f878): the id of the first preview entry whose name matches, else -1.
-pub fn fe_module_rider_preview_find_texture(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x60);
-        frame.save(c, S2, 0x30);
-        frame.save(c, S3, 0x20);
-        c.g[S2][0] = 0;
-        frame.save(c, S0, 0x50);
-        c.g[S3][0] = c.g[A0][0];
-        frame.save(c, S1, 0x40);
-        frame.save(c, S4, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S4][0] = c.g[A1][0];
-        c.g[V0][0] = Addr(p(r32(c, S3), 0x18)).lw(c);
-        let empty = (c.g[V0][0] as i64) <= 0;
-        let mut found = false;
-        if !empty {
-            c.cycles += 2;
-            c.g[S1][0] = sx(p(r32(c, S3), 0x1c));
-            c.g[S0][0] = sx(p(r32(c, S3), 0x20));
-            loop {
-                c.cycles += 5;
-                c.g[A0][0] = c.g[S4][0];
-                c.g[A1][0] = c.g[S0][0];
-                call_ptr(c, 0x0041_65a8, 0x0019_f8bc)?;
-                if c.g[V0][0] == 0 {
-                    c.cycles += 2;
-                    c.g[V0][0] = Addr(r32(c, S1)).lw(c);
-                    found = true;
-                    break;
-                }
-                c.g[V0][0] = Addr(p(r32(c, S3), 0x18)).lw(c);
-                c.cycles += 5;
-                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
-                c.g[S1][0] = sx(r32(c, S1).wrapping_add(0xc));
-                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                let more = c.g[V0][0] != 0;
-                c.g[S0][0] = sx(r32(c, S0).wrapping_add(0xc));
-                if !more {
-                    break;
-                }
-                if event_due(c) {
-                    deliver_event_here(c, 0x0019_f8b0);
-                }
-            }
-        }
-        if !found {
-            c.cycles += 1;
-            c.g[V0][0] = u64::MAX;
-        }
-        c.cycles += 8;
-        frame.restore(c, S0, 0x10);
-        frame.restore(c, S1, 0x50);
-        frame.restore(c, S2, 0x30);
-        frame.restore(c, S3, 0x20);
-        frame.restore(c, S4, 0x40);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
 
 /// `FEModule_RiderPreviewUnload(this)` (0x19eba0): release the preview's
 /// model and its three sub-objects, clear the handles and reset the state.

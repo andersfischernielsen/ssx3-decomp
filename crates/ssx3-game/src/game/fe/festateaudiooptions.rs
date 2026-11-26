@@ -25,6 +25,11 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (
+        0x0019_7db8,
+        cfe_request_line_update_scroll_arrows,
+        "cFEStateRequestLine_UpdateScrollArrows",
+    ),
+    (
         0x0019_7b88,
         fe_state_request_line_refresh_list,
         "cFEStateRequestLine_RefreshList",
