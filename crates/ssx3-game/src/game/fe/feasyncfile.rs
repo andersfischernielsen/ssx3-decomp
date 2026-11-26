@@ -2552,6 +2552,39 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_fe_state_stats_on_widget_created,
         "cFEStateStats_OnWidgetCreated",
     ),
+    (
+        0x001a_8828,
+        net_fe_state_transition_in,
+        "NetFEState_TransitionIn",
+    ),
+    (
+        0x001d_e860,
+        net_fe_state_handle_input,
+        "NetFEState_HandleInput",
+    ),
+    (0x001d_e868, net_fe_state_v25, "NetFEState_v25"),
+    (0x001d_e870, net_fe_state_v29, "NetFEState_v29"),
+    (0x001d_e8a8, net_fe_state_v30, "NetFEState_v30"),
+    (
+        0x001e_0c10,
+        net_config_auth_popup_transition_in,
+        "NetConfigAuthPopup_TransitionIn",
+    ),
+    (
+        0x001e_0c18,
+        net_config_auth_popup_transition_out,
+        "NetConfigAuthPopup_TransitionOut",
+    ),
+    (
+        0x001e_0c20,
+        net_config_auth_popup_v32,
+        "NetConfigAuthPopup_v32",
+    ),
+    (
+        0x001e_0c28,
+        net_config_auth_popup_v29,
+        "NetConfigAuthPopup_v29",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7044,6 +7077,7 @@ macro_rules! child_event_switch {
         }
     };
 }
+use crate::abi::arg;
 use crate::abi::ret;
 use crate::call::tail_wrapper;
 use crate::call::Target;
@@ -25281,6 +25315,34 @@ pub fn net_fe_state_init(c: &mut Cpu) {
     ret(c);
 }
 
+/// Status word the `NetFEState` table reads at +0x58.
+pub(crate) const NET_FE_STATE_HANDLE_INPUT_STATUS: u32 = 0x58;
+/// First word `NetFEState_v30` tests at +0x40.
+pub(crate) const NET_FE_STATE_V30_GATE: u32 = 0x40;
+/// Second word `NetFEState_v30` tests at +0x48.
+pub(crate) const NET_FE_STATE_V30_FLAG: u32 = 0x48;
+/// `NetFEState_TransitionIn` (0x001a8828): enter the network front-end state.
+/// Always reports 0.
+pub fn net_fe_state_transition_in(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+/// `NetFEState_HandleInput` (0x001de860): poll the network front-end state.
+/// Returns its status word.
+pub fn net_fe_state_handle_input(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = Addr(arg(c, 0)).off(NET_FE_STATE_HANDLE_INPUT_STATUS).lw(c);
+    ret(c);
+}
+/// `NetFEState_v25` (0x001de868): an unhandled `NetFEState` virtual slot.
+/// Does nothing.
+pub fn net_fe_state_v25(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 /// `NetFEState_GotoNextState(this)` (0x1a8a40): follow the chain at +0x20 to
 /// its last state, then run that state's `OnEnter` (through the vtable slot at
 /// +0xd4) and report whether it moved on (1) or not (0).
@@ -25585,6 +25647,60 @@ pub fn oc869_net_fe_state_on_net_timeout(c: &mut Cpu) {
 /// child handler, only the return.
 pub fn oc869_c_fe_state_online_character_select_empty_child_handler(c: &mut Cpu) {
     c.cycles += 2;
+    ret(c);
+}
+
+/// `NetFEState_v29` (0x001de870): a `NetFEState` virtual slot that always
+/// reports handled (1).
+pub fn net_fe_state_v29(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+
+/// `NetFEState_v30` (0x001de8a8): a `NetFEState` readiness check. Reports
+/// whether the gate word is set and the flag word is non-zero.
+pub fn net_fe_state_v30(c: &mut Cpu) {
+    c.cycles += 3;
+    let state = Addr(arg(c, 0));
+    let mut ready = 0;
+    if state.off(NET_FE_STATE_V30_GATE).lw(c) != 0 {
+        c.cycles += 2;
+        ready = (state.off(NET_FE_STATE_V30_FLAG).lw(c) != 0) as u64;
+    }
+    c.cycles += 2;
+    c.g[V1][0] = ready;
+    c.g[V0][0] = ready;
+    ret(c);
+}
+
+/// `NetConfigAuthPopup_TransitionIn` (0x001e0c10): enter the network-config
+/// authorisation popup. Always reports handled (1).
+pub fn net_config_auth_popup_transition_in(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+
+/// `NetConfigAuthPopup_TransitionOut` (0x001e0c18): leave the network-config
+/// authorisation popup. Always reports handled (1).
+pub fn net_config_auth_popup_transition_out(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+/// `NetConfigAuthPopup_v32` (0x001e0c20): an unhandled authorisation-popup
+/// virtual slot. Does nothing.
+pub fn net_config_auth_popup_v32(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `NetConfigAuthPopup_v29` (0x001e0c28): an authorisation-popup virtual slot
+/// that always reports 0.
+pub fn net_config_auth_popup_v29(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0;
     ret(c);
 }
 
@@ -79569,6 +79685,7 @@ pub(crate) mod tests {
         let w = if v == 0 { 1 } else { v + 2 };
         c.bus.write32(OC862_MAIL + (target & 0xf_fffc), w);
     }
+    pub(crate) use crate::game::dirtysock::gamecomm::tests::gcomm_fix_word;
 
     #[test]
     fn cfe_state_net_messenger_v32_matches() {
@@ -79588,6 +79705,20 @@ pub(crate) mod tests {
                 );
                 c.bus.write32(GAME_GP.wrapping_sub(0xc8), DATA + 0x200);
                 oc862_force(c, 0x0026_1460, if seed & 2 == 0 { 0 } else { 5 });
+            },
+        );
+    }
+
+    #[test]
+    fn net_fe_state_transition_in_matches() {
+        check(
+            ee::s03::f_001a8828__generated,
+            net_fe_state_transition_in,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0001 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001a_8828;
             },
         );
     }
@@ -82446,6 +82577,30 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn net_fe_state_handle_input_matches() {
+        check(
+            ee::s04::f_001de860__generated,
+            net_fe_state_handle_input,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0002 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001d_e860;
+                c.g[A0][0] = sx(DATA);
+                c.bus.write32(DATA, gcomm_fix_word(&mut r));
+                c.bus.write32(
+                    DATA + NET_FE_STATE_HANDLE_INPUT_STATUS,
+                    if seed % 2 == 0 {
+                        0
+                    } else {
+                        gcomm_fix_word(&mut r)
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
     fn c_fe_state_challenge_received_popup_accept_matches() {
         check(
             ssx3_ee::s03::f_001b0e10__generated,
@@ -82912,6 +83067,20 @@ pub(crate) mod tests {
                 c.bus.write16(DATA + 0x4000 + 0x20, 0x10);
                 c.bus.write32(GAME_GP + 0x2e0, DATA + 0x5000);
                 c.bus.write32(this + 0x6d8, seed & 1);
+            },
+        );
+    }
+
+    #[test]
+    fn net_fe_state_v25_matches() {
+        check(
+            ee::s04::f_001de868__generated,
+            net_fe_state_v25,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0003 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001d_e868;
             },
         );
     }
@@ -93340,6 +93509,53 @@ pub(crate) mod tests {
                 c.bus.write32(OC922_THIS + 0x6e8, r.next_u32() % 20);
                 c.bus.write32(OC922_THIS + 0x6ec, (seed / 3) % 2);
                 c.g[A0][0] = OC922_THIS as u64;
+                c.g[A1][0] = [0u64, 1, 5, 0, 0xffff_ffff_0000_0000][(seed % 5) as usize];
+            },
+        );
+    }
+
+    #[test]
+    fn net_fe_state_v29_matches() {
+        check(
+            ee::s04::f_001de870__generated,
+            net_fe_state_v29,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0004 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001d_e870;
+            },
+        );
+    }
+
+    #[test]
+    fn net_fe_state_v30_matches() {
+        check(
+            ee::s04::f_001de8a8__generated,
+            net_fe_state_v30,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0005 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001d_e8a8;
+                c.g[A0][0] = sx(DATA);
+                // Gate shut, gate open with flag clear, gate open with flag set.
+                c.bus.write32(
+                    DATA + NET_FE_STATE_V30_GATE,
+                    if seed % 3 == 0 {
+                        0
+                    } else {
+                        gcomm_fix_word(&mut r)
+                    },
+                );
+                c.bus.write32(
+                    DATA + NET_FE_STATE_V30_FLAG,
+                    if seed % 3 == 2 {
+                        gcomm_fix_word(&mut r)
+                    } else {
+                        0
+                    },
+                );
             },
         );
     }
@@ -93689,6 +93905,20 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn net_config_auth_popup_transition_in_matches() {
+        check(
+            ee::s04::f_001e0c10__generated,
+            net_config_auth_popup_transition_in,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0006 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001e_0c10;
+            },
+        );
+    }
+
     /// `cFEStateNetConfig_GetErrorText`: every error code of the search
     /// tree, its neighbours (to take every compare both ways) and random
     /// ones.
@@ -93729,6 +93959,20 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn net_config_auth_popup_transition_out_matches() {
+        check(
+            ee::s04::f_001e0c18__generated,
+            net_config_auth_popup_transition_out,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0007 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001e_0c18;
+            },
+        );
+    }
+
     /// Shared fixture of the two messenger popups: the BuddyMan session
     /// (or none), the helpers' booleans, the engine and its state stack.
     pub(crate) fn messenger(c: &mut Cpu, r: &mut Rng) {
@@ -93757,6 +94001,20 @@ pub(crate) mod tests {
                 c.g[A0][0] = SELF as u64;
                 c.g[A1][0] = NAME as u64;
                 force(c, F_262A38, &[pick(&mut r, 2)]);
+            },
+        );
+    }
+
+    #[test]
+    fn net_config_auth_popup_v32_matches() {
+        check(
+            ee::s04::f_001e0c20__generated,
+            net_config_auth_popup_v32,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0008 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001e_0c20;
             },
         );
     }
@@ -95518,6 +95776,20 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = fakes::machine_rt(c, seed, 0x927_0003, 6);
                 news_fixture(c, seed, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn net_config_auth_popup_v29_matches() {
+        check(
+            ee::s04::f_001e0c28__generated,
+            net_config_auth_popup_v29,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0009 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001e_0c28;
             },
         );
     }

@@ -174,6 +174,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         voip_rpc_get_shared_status,
         "VoipRpc_GetSharedStatus",
     ),
+    (0x003f_4410, dirty_rpc_intc_handler, "DirtyRpc_IntcHandler"),
+    (
+        0x003f_5a50,
+        proto_aries_rpc_reply_callback,
+        "ProtoAries_RpcReplyCallback",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9857,6 +9863,39 @@ pub fn voip_rpc_get_shared_status(c: &mut Cpu) {
     ret(c);
 }
 
+/// `void DirtyRpc_IntcHandler(int arg0, void *state)` (0x3f4410):
+/// ignore `arg0` (overwritten by the Count read): add the Count
+/// difference since the last interrupt to the 64-bit total and latch the
+/// current Count, returning 0.
+pub fn dirty_rpc_intc_handler(c: &mut Cpu) {
+    c.cycles += 13;
+    c.g[V0][0] = Addr(c.g[A1][0] as u32).off(0x4df8).lw(c);
+    c.mfc0(A0, 9);
+    c.g[V1][0] = Addr(c.g[A1][0] as u32).off(0x4e00).ld(c);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+    c.g[V0][0] = c.g[V0][0] << 32;
+    c.g[V0][0] = c.g[V0][0] >> 32;
+    c.g[V1][0] = c.g[V1][0].wrapping_add(c.g[V0][0]);
+    Addr(c.g[A1][0] as u32).off(0x4e00).sd(c, c.g[V1][0]);
+    Addr(c.g[A1][0] as u32).off(0x4df8).sw(c, c.g[A0][0]);
+    c.ei();
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `void ProtoAries_RpcReplyCallback(void)` (0x3f5a50): stash the Aries
+/// reply's `t3` context into the reply slot `*(sp)`, clearing both status
+/// words.
+pub fn proto_aries_rpc_reply_callback(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[V1][0] = Addr(sp(c)).lw(c);
+    c.g[V0][0] = 0u64;
+    Addr((c.g[V1][0] as u32).wrapping_add(0x10)).sw(c, c.g[T3][0]);
+    Addr((c.g[V1][0] as u32).wrapping_add(0xc)).sw(c, 0u64);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, 0u64);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17283,6 +17322,59 @@ pub(crate) mod tests {
                 };
                 c.bus.write32(GAME_GP + VOIP_RPC_SHARED_STATUS_GP, status);
                 fill(c, &mut r, status, 1);
+            },
+        );
+    }
+
+    /// The Aries reply callback stashes `t3` and clears both status words.
+    #[test]
+    fn proto_aries_rpc_reply_callback_matches() {
+        check(
+            ee::s14::f_003f5a50__generated,
+            proto_aries_rpc_reply_callback,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x3f5a_50, 0);
+                let slot = DATA + 0x2000 + (seed / 8 % 8) * 0x10;
+                c.bus.write32(crate::difftest::SP, slot);
+                c.g[T3][0] = (DATA + 0x1000 + (seed % 8) * 0x10) as u64;
+                // Pre-fill the cleared status words: the stores must turn
+                // nonzero into zero, not zero into zero.
+                c.bus.write32(slot + 8, 0xBEEF_0000 | seed);
+                c.bus.write32(slot + 0xc, 0xBEEF_0001 | seed);
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `DirtyRpc_IntcHandler` (0x3f4410).
+
+    pub(crate) const INTC_STATE: u32 = DATA + 0x1000;
+
+    /// The interrupt handler adds the count difference to the 64-bit
+    /// total and latches the new count.
+    #[test]
+    fn dirty_rpc_intc_handler_matches() {
+        check(
+            ee::s14::f_003f4410__generated,
+            dirty_rpc_intc_handler,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x3f44_10, 0);
+                c.g[A0][0] = [
+                    0,
+                    1,
+                    0x7fff_ffff,
+                    0x8000_0000u32.cast_signed(),
+                    0xffff_ffffu32.cast_signed(),
+                ][seed as usize % 5] as u64;
+                c.g[A1][0] = sx(INTC_STATE);
+                c.bus.write32(
+                    INTC_STATE + 0x4df8,
+                    [0, 100, 0xffff_ffffu32][seed as usize / 5 % 3],
+                );
+                c.bus.write32(INTC_STATE + 0x4e00, 0x1111_1111 + seed);
+                c.bus.write32(INTC_STATE + 0x4e04, 0x2222_2222 + seed);
             },
         );
     }

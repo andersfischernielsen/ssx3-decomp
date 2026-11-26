@@ -9877,7 +9877,6 @@
 0x00180240    FEUIInput_IsCamZoom
 0x0038b158    PS2BezierMan_v04
 0x002aa408    StreamBuffer_Stop
-# Phase 2 wave: oc1350, oc1351, oc1352, oc1353
 0x001a8828    NetFEState_TransitionIn
 0x001de860    NetFEState_HandleInput
 0x001de868    NetFEState_v25
@@ -9938,9 +9937,7 @@
 0x003fb6a0    SLoginXorCipher_Encrypt
 0x003fb730    SLoginXorCipher_Decrypt
 0x003fb7c0    SLoginXorCipher_Reset
-# Phase 2 wave: oc1350, oc1351, oc1352, oc1353
 0x002586b0    cGameComm_WaitForPeerReady
-# Phase 2 wave: oc1350, oc1351, oc1352, oc1353
 # Phase 2 wave: oc800, oc801, oc802, oc803, oc804, oc805, oc806, oc807, oc808, oc809, oc810, oc811, oc812, oc813
 # Phase 2 wave: oc814, oc815, oc816, oc817, oc818, oc819, oc820, oc821, oc822, oc823, oc824, oc825, oc826, oc827, oc829, oc830, oc831, oc832, oc833, oc834, oc835, oc836, oc837, oc838, oc839, oc840, oc841, oc842, oc843, oc844, oc845, oc846, oc847, oc848, oc849, oc850, oc851, oc853, oc854, oc855, oc856, oc857, oc858, oc859, oc860, oc861, oc862, oc863, oc865, oc866
 0x00191c48    cFEStateRuleSelect_OnActivate

@@ -343,6 +343,42 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RefPack_GetUnpackedSize",
     ),
     (0x003b_4d00, refpack_get_sizes, "RefPack_GetSizes"),
+    (
+        0x003e_74e8,
+        proto_ping_rpc_reply_callback,
+        "ProtoPing_RpcReplyCallback",
+    ),
+    (
+        0x003f_b5f8,
+        slogin_xor_cipher_shutdown,
+        "SLoginXorCipher_Shutdown",
+    ),
+    (0x003f_b620, slogin_xor_cipher_init, "SLoginXorCipher_Init"),
+    (
+        0x003f_b640,
+        slogin_xor_cipher_is_keyed,
+        "SLoginXorCipher_IsKeyed",
+    ),
+    (
+        0x003f_b650,
+        slogin_xor_cipher_set_key,
+        "SLoginXorCipher_SetKey",
+    ),
+    (
+        0x003f_b6a0,
+        slogin_xor_cipher_encrypt,
+        "SLoginXorCipher_Encrypt",
+    ),
+    (
+        0x003f_b730,
+        slogin_xor_cipher_decrypt,
+        "SLoginXorCipher_Decrypt",
+    ),
+    (
+        0x003f_b7c0,
+        slogin_xor_cipher_reset,
+        "SLoginXorCipher_Reset",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -18764,6 +18800,340 @@ pub(crate) fn fseek_positioned(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Small RPC reply callbacks and login steps.
+
+/// `void ProtoPing_RpcReplyCallback(void)` (0x3e74e8): stash the ping
+/// reply's `t3` context into the reply slot `*(sp)`, clearing its status
+/// word.
+pub fn proto_ping_rpc_reply_callback(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V1][0] = Addr(sp(c)).lw(c);
+    c.g[V0][0] = 0u64;
+    Addr(c.g[V1][0] as u32).sw(c, c.g[T3][0]);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x4)).sw(c, 0u64);
+    ret(c);
+}
+
+/// `gp` word holding the SLogin XOR cipher's key base pointer.
+pub(crate) const SLOGIN_XOR_CIPHER_KEY_BASE_GP: u32 = 0x1af4;
+
+/// `gp` word holding the cipher's key end pointer (last key byte).
+pub(crate) const SLOGIN_XOR_CIPHER_KEY_END_GP: u32 = 0x1af8;
+
+/// `gp` word holding the cipher's key cursor pointer.
+pub(crate) const SLOGIN_XOR_CIPHER_KEY_CURSOR_GP: u32 = 0x1afc;
+
+/// `gp` word holding the cipher mode (4 idle, 5 keyed, 7/8 after encrypt/decrypt).
+pub(crate) const SLOGIN_XOR_CIPHER_MODE_GP: u32 = 0x1b00;
+
+/// `int SLoginXorCipher_Shutdown(void)` (0x3fb5f8): shut the login cipher
+/// down once it is idle (mode 4): record mode 6 and return 0. Any other
+/// mode is left alone and reported with 3.
+pub fn slogin_xor_cipher_shutdown(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).lw(c);
+    c.g[V0][0] = 0x4;
+    let not_idle = c.g[V1][0] != c.g[V0][0];
+    c.g[V1][0] = 0x6;
+    if not_idle {
+        c.cycles += 2;
+        c.g[V0][0] = 0x3;
+        ret(c);
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0;
+    let shut = c.g[V1][0];
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).sw(c, shut);
+    ret(c);
+}
+
+/// `int SLoginXorCipher_Init(void)` (0x3fb620): clear the login cipher's
+/// key words and park it in the idle mode 4; return 0.
+pub fn slogin_xor_cipher_init(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[V0][0] = 0x4;
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_BASE_GP)).sw(c, 0);
+    let idle = c.g[V0][0];
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).sw(c, idle);
+    c.g[V0][0] = 0;
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_END_GP)).sw(c, 0);
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).sw(c, 0);
+    ret(c);
+}
+
+/// `int SLoginXorCipher_IsKeyed(void)` (0x3fb640): report whether the login
+/// cipher holds a key (mode word anything but the idle 4).
+pub fn slogin_xor_cipher_is_keyed(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).lw(c);
+    c.g[V0][0] ^= 0x4;
+    c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+    ret(c);
+}
+
+/// `int SLoginXorCipher_SetKey(unsigned char *key, unsigned len)`
+/// (0x3fb650): arm the login cipher with `len` key bytes at `key`. A null
+/// key or a zero length is refused with 2; the idle mode 4 is refused with
+/// 4. Otherwise the key base, end and cursor are recorded, the mode becomes
+/// 5 (keyed) and 0 is returned.
+pub fn slogin_xor_cipher_set_key(c: &mut Cpu) {
+    c.cycles += 2;
+    if c.g[A0][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0x2;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).lw(c);
+    if c.g[A1][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0x2;
+        ret(c);
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0x4;
+    let idle = c.g[V1][0] == c.g[V0][0];
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    if idle {
+        c.cycles += 2;
+        c.g[V0][0] = 0x4;
+        ret(c);
+        return;
+    }
+    c.cycles += 8;
+    c.g[V1][0] = 0x5;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+    let key = c.g[A0][0];
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).sw(c, key);
+    let end = c.g[V0][0];
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_END_GP)).sw(c, end);
+    c.g[V0][0] = 0;
+    let keyed = c.g[V1][0];
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).sw(c, keyed);
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_BASE_GP)).sw(c, key);
+    ret(c);
+}
+
+/// `int SLoginXorCipher_Encrypt(unsigned char *buf, unsigned len)`
+/// (0x3fb6a0): XOR `len` bytes at `buf` with the cipher key stream, advancing
+/// the key cursor (wrapping to the key base at the key end). A null buffer
+/// or zero length is refused with 2; modes other than the keyed 5 and the
+/// encrypt-done 7 return the mode unchanged. Otherwise the mode becomes 7
+/// (encrypt-done) and 0 is returned.
+pub fn slogin_xor_cipher_encrypt(c: &mut Cpu) {
+    c.cycles += 2;
+    if c.g[A0][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0x2;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).lw(c);
+    if c.g[A1][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0x2;
+        ret(c);
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0x5;
+    if c.g[V1][0] != c.g[V0][0] {
+        c.cycles += 2;
+        let not_resumed = c.g[V1][0] != 0x7;
+        c.g[V0][0] = c.g[V1][0];
+        if not_resumed {
+            c.cycles += 2;
+            ret(c);
+            return;
+        }
+    } else {
+        c.g[V0][0] = 0x7;
+    }
+    c.cycles += 2;
+    c.g[A3][0] = 0;
+    if c.g[A1][0] != 0 {
+        c.cycles += 1;
+        c.g[A2][0] = c.g[A0][0];
+        loop {
+            c.cycles += 9;
+            c.g[A0][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).lw(c);
+            c.g[V0][0] = c.lbu(c.g[A2][0] as u32);
+            c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
+            c.g[V0][0] ^= c.g[V1][0];
+            let mixed = c.g[V0][0];
+            c.sb(c.g[A2][0] as u32, mixed);
+            c.g[V1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).lw(c);
+            c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_END_GP)).lw(c);
+            if c.g[V1][0] == c.g[V0][0] {
+                c.cycles += 1;
+                c.g[V0][0] =
+                    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_BASE_GP)).lw(c);
+            } else {
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+            }
+            c.cycles += 5;
+            let cursor = c.g[V0][0];
+            Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).sw(c, cursor);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+            c.g[V0][0] = (c.g[A3][0] < c.g[A1][0]) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003f_b6d8);
+            }
+        }
+    }
+    c.cycles += 4;
+    c.g[V1][0] = 0x7;
+    c.g[V0][0] = 0;
+    let done = c.g[V1][0];
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).sw(c, done);
+    ret(c);
+}
+
+/// `int SLoginXorCipher_Decrypt(unsigned char *buf, unsigned len)`
+/// (0x3fb730): XOR `len` bytes at `buf` with the cipher key stream, advancing
+/// the key cursor (wrapping to the key base at the key end). A null buffer
+/// or zero length is refused with 2; modes other than the keyed 5 and the
+/// decrypt-done 8 return the mode unchanged. Otherwise the mode becomes 8
+/// (decrypt-done) and 0 is returned.
+pub fn slogin_xor_cipher_decrypt(c: &mut Cpu) {
+    c.cycles += 2;
+    if c.g[A0][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0x2;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).lw(c);
+    if c.g[A1][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0x2;
+        ret(c);
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0x5;
+    if c.g[V1][0] != c.g[V0][0] {
+        c.cycles += 2;
+        let not_resumed = c.g[V1][0] != 0x8;
+        c.g[V0][0] = c.g[V1][0];
+        if not_resumed {
+            c.cycles += 2;
+            ret(c);
+            return;
+        }
+    } else {
+        c.g[V0][0] = 0x8;
+    }
+    c.cycles += 2;
+    c.g[A3][0] = 0;
+    if c.g[A1][0] != 0 {
+        c.cycles += 1;
+        c.g[A2][0] = c.g[A0][0];
+        loop {
+            c.cycles += 9;
+            c.g[A0][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).lw(c);
+            c.g[V0][0] = c.lbu(c.g[A2][0] as u32);
+            c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
+            c.g[V0][0] ^= c.g[V1][0];
+            let mixed = c.g[V0][0];
+            c.sb(c.g[A2][0] as u32, mixed);
+            c.g[V1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).lw(c);
+            c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_END_GP)).lw(c);
+            if c.g[V1][0] == c.g[V0][0] {
+                c.cycles += 1;
+                c.g[V0][0] =
+                    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_BASE_GP)).lw(c);
+            } else {
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+            }
+            c.cycles += 5;
+            let cursor = c.g[V0][0];
+            Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).sw(c, cursor);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+            c.g[V0][0] = (c.g[A3][0] < c.g[A1][0]) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003f_b768);
+            }
+        }
+    }
+    c.cycles += 4;
+    c.g[V1][0] = 0x8;
+    c.g[V0][0] = 0;
+    let done = c.g[V1][0];
+    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).sw(c, done);
+    ret(c);
+}
+
+/// `int SLoginXorCipher_Reset(void)` (0x3fb7c0): rewind the login cipher's
+/// key cursor to the key base and force the mode back to 5 (keyed) whenever
+/// the cipher is keyed or has finished an encrypt/decrypt (modes 5/7/8).
+/// Any other mode is left alone; 0 is returned on every path.
+pub fn slogin_xor_cipher_reset(c: &mut Cpu) {
+    'reset: {
+        'mode: {
+            c.cycles += 4;
+            c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).lw(c);
+            c.g[V0][0] = 0x5;
+            if c.g[V1][0] == c.g[V0][0] {
+                c.g[V1][0] =
+                    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_BASE_GP)).lw(c);
+                break 'mode;
+            }
+            'done_mode: {
+                c.cycles += 3;
+                c.g[V0][0] = 0x7;
+                if c.g[V1][0] == c.g[V0][0] {
+                    c.g[V1][0] =
+                        Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_BASE_GP)).lw(c);
+                    break 'done_mode;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = 0x8;
+                let unknown = c.g[V1][0] != c.g[V0][0];
+                c.g[V1][0] =
+                    Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_BASE_GP)).lw(c);
+                if unknown {
+                    break 'reset;
+                } else {
+                    break 'done_mode;
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0x5;
+            break 'mode;
+        }
+        c.cycles += 2;
+        let mode = c.g[V0][0];
+        Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_MODE_GP)).sw(c, mode);
+        let cursor = c.g[V1][0];
+        Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_XOR_CIPHER_KEY_CURSOR_GP)).sw(c, cursor);
+        break 'reset;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -26463,6 +26833,354 @@ pub(crate) mod tests {
 
     /// Output buffer for the printf family.
     pub(crate) const OUT: u32 = DATA + 0x2000;
+
+    // ------------------------------------------------------------------
+    // `ProtoPing_RpcReplyCallback` (0x3e74e8). (`ProtoAries_RpcReplyCallback`
+    // lives in `dirtysock/buddyapi.rs`.)
+
+    /// The ping reply callback stashes `t3` in the reply slot and clears
+    /// its status word.
+    #[test]
+    fn proto_ping_rpc_reply_callback_matches() {
+        check(
+            ee::s14::f_003e74e8__generated,
+            proto_ping_rpc_reply_callback,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x3e74_e8, 0);
+                let slot = DATA + 0x2000 + (seed / 8 % 8) * 0x10;
+                c.bus.write32(crate::difftest::SP, slot);
+                c.g[T3][0] = (DATA + 0x1000 + (seed % 8) * 0x10) as u64;
+                // Pre-fill the cleared status word: the store must turn
+                // nonzero into zero, not zero into zero.
+                c.bus.write32(slot + 4, 0xBEEF_0000 | seed);
+            },
+        );
+    }
+
+    /// Key bytes the cipher fixtures use (8 bytes).
+    #[cfg(test)]
+    pub(crate) const SLOGIN_XOR_CIPHER_TEST_KEY: u32 = DATA + 0x3000;
+
+    /// Buffer bytes the cipher fixtures encrypt/decrypt in place (16 bytes).
+    #[cfg(test)]
+    pub(crate) const SLOGIN_XOR_CIPHER_TEST_BUF: u32 = DATA + 0x4000;
+
+    /// Write the cipher mode word with seed-varying nonzero neighbors.
+    pub(crate) fn slogin_xor_cipher_mode_fixture(c: &mut Cpu, r: &mut Rng, mode: u32) {
+        c.g[GP][0] = sx(GAME_GP);
+        c.bus
+            .write32(GAME_GP + SLOGIN_XOR_CIPHER_KEY_BASE_GP, r.next_u32());
+        c.bus
+            .write32(GAME_GP + SLOGIN_XOR_CIPHER_KEY_END_GP, r.next_u32());
+        c.bus
+            .write32(GAME_GP + SLOGIN_XOR_CIPHER_KEY_CURSOR_GP, r.next_u32());
+        c.bus.write32(GAME_GP + SLOGIN_XOR_CIPHER_MODE_GP, mode);
+    }
+
+    #[test]
+    fn slogin_xor_cipher_shutdown_matches() {
+        const MODES: [u32; 7] = [0x4, 0x4, 0, 5, 6, 3, 1];
+        check(
+            ee::s15::f_003fb5f8__generated,
+            slogin_xor_cipher_shutdown,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3fb5_f800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_b5f8;
+                slogin_xor_cipher_mode_fixture(c, &mut r, MODES[(seed as usize) % MODES.len()]);
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_xor_cipher_init_matches() {
+        check(
+            ee::s15::f_003fb620__generated,
+            slogin_xor_cipher_init,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3fb6_2000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x003f_b620;
+                c.bus
+                    .write32(GAME_GP + SLOGIN_XOR_CIPHER_KEY_BASE_GP, 0x5a00_0000 | seed);
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_END_GP,
+                    0xa500_0000 | (seed ^ 0x3f62_0f00),
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_CURSOR_GP,
+                    0x5a00_0000 | (seed >> 2),
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_MODE_GP,
+                    0xa500_0000 | (seed >> 5),
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_xor_cipher_is_keyed_matches() {
+        const MODES: [u32; 8] = [0x4, 0x4, 0, 5, 7, 8, 1, 0x8000_0004];
+        check(
+            ee::s15::f_003fb640__generated,
+            slogin_xor_cipher_is_keyed,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3fb6_4000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_b640;
+                slogin_xor_cipher_mode_fixture(c, &mut r, MODES[(seed as usize) % MODES.len()]);
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_xor_cipher_set_key_matches() {
+        const LENS: [u64; 4] = [0, 1, 6, 9];
+        const MODES: [u32; 4] = [0x4, 0x5, 0x6, 0x5];
+        check(
+            ee::s15::f_003fb650__generated,
+            slogin_xor_cipher_set_key,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3fb6_5000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x003f_b650;
+                for i in 0..8u32 {
+                    c.bus.write8(
+                        SLOGIN_XOR_CIPHER_TEST_KEY + i,
+                        (r.next_u32() >> (i % 24)) as u8,
+                    );
+                }
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_MODE_GP,
+                    MODES[((seed / 12) as usize) % MODES.len()],
+                );
+                c.g[A0][0] = if seed % 3 == 0 {
+                    0
+                } else {
+                    SLOGIN_XOR_CIPHER_TEST_KEY as u64
+                };
+                c.g[A1][0] = LENS[((seed / 3) as usize) % LENS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_xor_cipher_encrypt_matches() {
+        const MODES: [u32; 8] = [0x5, 0x5, 0x7, 0x4, 0, 0x6, 0x8, 0x3];
+        const LENS: [u64; 9] = [0, 1, 2, 5, 9, 16, 3, 7, 12];
+        const CURSORS: [u32; 3] = [0, 3, 7];
+        check(
+            ee::s15::f_003fb6a0__generated,
+            slogin_xor_cipher_encrypt,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3fb6_a000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x003f_b6a0;
+                for i in 0..8u32 {
+                    c.bus.write8(
+                        SLOGIN_XOR_CIPHER_TEST_KEY + i,
+                        (r.next_u32() >> (i % 24)) as u8,
+                    );
+                }
+                for i in 0..16u32 {
+                    c.bus.write8(
+                        SLOGIN_XOR_CIPHER_TEST_BUF + i,
+                        (r.next_u32() >> (i % 16)) as u8,
+                    );
+                }
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_BASE_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY,
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_END_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY + 7,
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_CURSOR_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY + CURSORS[(seed as usize / 72) % CURSORS.len()],
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_MODE_GP,
+                    MODES[(seed as usize / 3) % MODES.len()],
+                );
+                // Null choice and length ride separate digits: a null
+                // buffer always pairs with length 0, but every length also
+                // runs against a live buffer (and vice versa), so the
+                // non-null, length-0 arm runs too.
+                c.g[A0][0] = if seed % 9 == 0 {
+                    0
+                } else {
+                    SLOGIN_XOR_CIPHER_TEST_BUF as u64
+                };
+                c.g[A1][0] = LENS[(seed as usize / 9) % LENS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_xor_cipher_decrypt_matches() {
+        const MODES: [u32; 8] = [0x5, 0x5, 0x8, 0x4, 0, 0x6, 0x7, 0x3];
+        const LENS: [u64; 9] = [0, 1, 2, 5, 9, 16, 3, 7, 12];
+        const CURSORS: [u32; 3] = [0, 3, 7];
+        check(
+            ee::s15::f_003fb730__generated,
+            slogin_xor_cipher_decrypt,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3fb7_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x003f_b730;
+                for i in 0..8u32 {
+                    c.bus.write8(
+                        SLOGIN_XOR_CIPHER_TEST_KEY + i,
+                        (r.next_u32() >> (i % 24)) as u8,
+                    );
+                }
+                for i in 0..16u32 {
+                    c.bus.write8(
+                        SLOGIN_XOR_CIPHER_TEST_BUF + i,
+                        (r.next_u32() >> (i % 16)) as u8,
+                    );
+                }
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_BASE_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY,
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_END_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY + 7,
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_CURSOR_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY + CURSORS[(seed as usize / 72) % CURSORS.len()],
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_MODE_GP,
+                    MODES[(seed as usize / 3) % MODES.len()],
+                );
+                // Null choice and length ride separate digits (see the
+                // encrypt test): the non-null, length-0 arm runs too.
+                c.g[A0][0] = if seed % 9 == 0 {
+                    0
+                } else {
+                    SLOGIN_XOR_CIPHER_TEST_BUF as u64
+                };
+                c.g[A1][0] = LENS[(seed as usize / 9) % LENS.len()];
+            },
+        );
+    }
+
+    driven!(gen_cipher_encrypt, ee::s15::f_003fb6a0__generated);
+
+    driven!(hand_cipher_encrypt, slogin_xor_cipher_encrypt);
+
+    driven!(gen_cipher_decrypt, ee::s15::f_003fb730__generated);
+
+    driven!(hand_cipher_decrypt, slogin_xor_cipher_decrypt);
+
+    /// Keyed cipher, live buffer, full-length run, with a VBlank due
+    /// mid-loop so the back-edge event check fires and resumes at the
+    /// loop head on both sides.
+    pub(crate) fn cipher_events_setup(c: &mut Cpu, seed: u32, entry: u32) -> Events {
+        let mut r = Rng(0x3fb6_e000 ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[GP][0] = sx(GAME_GP);
+        c.pc = entry;
+        for i in 0..8u32 {
+            c.bus.write8(
+                SLOGIN_XOR_CIPHER_TEST_KEY + i,
+                (r.next_u32() >> (i % 24)) as u8,
+            );
+        }
+        for i in 0..16u32 {
+            c.bus.write8(
+                SLOGIN_XOR_CIPHER_TEST_BUF + i,
+                (r.next_u32() >> (i % 16)) as u8,
+            );
+        }
+        c.bus.write32(
+            GAME_GP + SLOGIN_XOR_CIPHER_KEY_BASE_GP,
+            SLOGIN_XOR_CIPHER_TEST_KEY,
+        );
+        c.bus.write32(
+            GAME_GP + SLOGIN_XOR_CIPHER_KEY_END_GP,
+            SLOGIN_XOR_CIPHER_TEST_KEY + 7,
+        );
+        c.bus.write32(
+            GAME_GP + SLOGIN_XOR_CIPHER_KEY_CURSOR_GP,
+            SLOGIN_XOR_CIPHER_TEST_KEY,
+        );
+        c.bus.write32(GAME_GP + SLOGIN_XOR_CIPHER_MODE_GP, 5);
+        c.g[A0][0] = SLOGIN_XOR_CIPHER_TEST_BUF as u64;
+        c.g[A1][0] = 16;
+        // Unwind programming whatever the seed says, then due mid-loop.
+        let _ = schedule(c, &mut r, seed, entry);
+        c.next_event = c.cycles + 30;
+        Events::Unwind
+    }
+
+    #[test]
+    fn slogin_xor_cipher_encrypt_events() {
+        // No resume-map assertion: the ports are structured loops, not
+        // `match pc` dispatchers, so `drive` restarts them from the top
+        // after an unwind. The back-edge check is what `check_events`
+        // verifies: it delivers an event on every seed and compares the
+        // deadlines each side leaves behind, so a missing check fails.
+        check_events(gen_cipher_encrypt, hand_cipher_encrypt, 32, &|c, seed| {
+            cipher_events_setup(c, seed, 0x003f_b6a0)
+        });
+    }
+
+    #[test]
+    fn slogin_xor_cipher_decrypt_events() {
+        check_events(gen_cipher_decrypt, hand_cipher_decrypt, 32, &|c, seed| {
+            cipher_events_setup(c, seed, 0x003f_b730)
+        });
+    }
+
+    #[test]
+    fn slogin_xor_cipher_reset_matches() {
+        const MODES: [u32; 8] = [0x5, 0x7, 0x8, 0x4, 0, 0x6, 0x5, 0x8];
+        check(
+            ee::s15::f_003fb7c0__generated,
+            slogin_xor_cipher_reset,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3fb7_c000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x003f_b7c0;
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_BASE_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY,
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_END_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY + 7,
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_KEY_CURSOR_GP,
+                    SLOGIN_XOR_CIPHER_TEST_KEY + (seed % 8),
+                );
+                c.bus.write32(
+                    GAME_GP + SLOGIN_XOR_CIPHER_MODE_GP,
+                    MODES[(seed as usize) % MODES.len()],
+                );
+            },
+        );
+    }
 }
 
 pub(crate) mod callee {

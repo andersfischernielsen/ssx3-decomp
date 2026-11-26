@@ -438,6 +438,78 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003f_d660, dnas_rel_relocate_all, "DnasRel_RelocateAll"),
     (0x003f_d6e0, dnas_rel_get_symbol, "DnasRel_GetSymbol"),
     (0x003f_d758, dnas_rel_find_symbol, "DnasRel_FindSymbol"),
+    (0x003f_77f0, slogin_step_nop, "SLogin_StepNop"),
+    (
+        0x003f_87f8,
+        slogin_mc_sync_result_cmd00,
+        "SLoginMc_SyncResult_Cmd00",
+    ),
+    (
+        0x003f_8800,
+        slogin_mc_sync_result_cmd01,
+        "SLoginMc_SyncResult_Cmd01",
+    ),
+    (
+        0x003f_8838,
+        slogin_mc_sync_result_cmd02,
+        "SLoginMc_SyncResult_Cmd02",
+    ),
+    (
+        0x003f_8880,
+        slogin_mc_sync_result_cmd07,
+        "SLoginMc_SyncResult_Cmd07",
+    ),
+    (
+        0x003f_8908,
+        slogin_mc_sync_result_cmd08,
+        "SLoginMc_SyncResult_Cmd08",
+    ),
+    (
+        0x003f_8968,
+        slogin_mc_sync_result_cmd09,
+        "SLoginMc_SyncResult_Cmd09",
+    ),
+    (
+        0x003f_89c8,
+        slogin_mc_sync_result_cmd1a,
+        "SLoginMc_SyncResult_Cmd1A",
+    ),
+    (
+        0x003f_8a08,
+        slogin_mc_sync_result_cmd05,
+        "SLoginMc_SyncResult_Cmd05",
+    ),
+    (
+        0x003f_8a58,
+        slogin_mc_sync_result_cmd06,
+        "SLoginMc_SyncResult_Cmd06",
+    ),
+    (
+        0x003f_8ac0,
+        slogin_mc_sync_result_cmd13,
+        "SLoginMc_SyncResult_Cmd13",
+    ),
+    (
+        0x003f_8b28,
+        slogin_mc_sync_result_cmd12,
+        "SLoginMc_SyncResult_Cmd12",
+    ),
+    (
+        0x003f_8b78,
+        slogin_mc_sync_result_cmd03,
+        "SLoginMc_SyncResult_Cmd03",
+    ),
+    (
+        0x003f_8bb0,
+        slogin_mc_sync_result_cmd04,
+        "SLoginMc_SyncResult_Cmd04",
+    ),
+    (
+        0x003f_8be8,
+        slogin_mc_sync_result_cmd17,
+        "SLoginMc_SyncResult_Cmd17",
+    ),
+    (0x003f_8c30, slogin_mc_idle_step, "SLoginMc_IdleStep"),
 ];
 
 pub(crate) mod callee {
@@ -11737,6 +11809,911 @@ pub(crate) fn store_poll_steps(c: &mut Cpu, frame: Frame) -> Result<StorePollExi
     Ok(StorePollExit::Epilogue)
 }
 
+/// `int SLogin_StepNop(void)` (0x3f77f0): a login step that does nothing
+/// and reports 0.
+pub fn slogin_step_nop(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// `SLoginMc_SyncResult_Cmd00/Cmd01` (0x3f87f8/0x3f8800) use the shared
+// card-state constants below (`SLOGIN_MC_SYNC_RESULT_STATE_GP`,
+// `SLOGIN_MC_SYNC_RESULT_PHASE`).
+
+/// `int SLoginMc_SyncResult_Cmd00(int result)` (0x3f87f8): report a memory
+/// card sync result for step 0: echo the result.
+pub fn slogin_mc_sync_result_cmd00(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd01(int result)` (0x3f8800): report a memory
+/// card sync result for step 1: 0x12 while the step is not running,
+/// otherwise echo the result (accepted: 0, 3, 0x11; 0x10 for anything
+/// else).
+pub fn slogin_mc_sync_result_cmd01(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+    c.g[V1][0] = 0x1;
+    c.g[V0][0] = Addr(c.g[A1][0] as u32)
+        .off(SLOGIN_MC_SYNC_RESULT_PHASE)
+        .lw(c);
+    if c.g[V0][0] != c.g[V1][0] {
+        c.g[V0][0] = 0x12;
+    } else {
+        'result: {
+            c.cycles += 2;
+            if c.g[A0][0] == 0u64 {
+                c.g[V0][0] = 0x3;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0x3;
+                if c.g[A0][0] == c.g[V0][0] {
+                    c.g[V1][0] = 0x11;
+                } else {
+                    c.cycles += 2;
+                    c.g[V1][0] = 0x11;
+                    if c.g[A0][0] != c.g[V1][0] {
+                        c.g[V0][0] = 0x10;
+                        break 'result;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[A0][0];
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `gp` word holding the SLogin card-state block pointer, shared by the
+/// `SLoginMc_SyncResult_CmdNN` translators below.
+pub(crate) const SLOGIN_MC_SYNC_RESULT_STATE_GP: u32 = 0x1ae8;
+
+/// Card-state word holding the in-progress command phase the translators gate on.
+pub(crate) const SLOGIN_MC_SYNC_RESULT_PHASE: u32 = 0x04;
+
+/// Result code while the card layer is in another command's phase.
+pub(crate) const SLOGIN_MC_SYNC_RESULT_WRONG_PHASE: u32 = 0x12;
+
+/// Result code for a sync result the translator does not recognize.
+pub(crate) const SLOGIN_MC_SYNC_RESULT_BAD_RESULT: u32 = 0x10;
+
+/// A pass-through result the translators echo back unchanged.
+pub(crate) const SLOGIN_MC_SYNC_RESULT_PASS: u32 = 0x11;
+
+/// `int SLoginMc_SyncResult_Cmd02(int result)` (0x3f8838): report the
+/// memory-card sync result for command 0x02. Returns 0x12 while the card
+/// layer is in another command's phase, 0x10 for an unrecognized result,
+/// and echoes the result otherwise (accepted: 0, 4, 3, 9, 0x11).
+pub fn slogin_mc_sync_result_cmd02(c: &mut Cpu) {
+    'sync: {
+        'result: {
+            c.cycles += 5;
+            c.g[A1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V1][0] = 0x2;
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let wrong_phase = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            }
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x4;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_four = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x3;
+            if is_four {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd07(int result)` (0x3f8880): report the
+/// memory-card sync result for command 0x07. The card phase must be one of
+/// 0x1b/0x1d/0x1c/0x07/0x0b/0x18, else 0x12. Accepted results echo back
+/// (0, 3, 4, 9, 0x0e, 0x0d, 0x11, 0x0a); anything else is 0x10.
+pub fn slogin_mc_sync_result_cmd07(c: &mut Cpu) {
+    'sync: {
+        'gate: {
+            c.cycles += 5;
+            c.g[V1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V0][0] = 0x1b;
+            c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let gate_1b = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x1d;
+            if gate_1b {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_1d = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x1c;
+            if gate_1d {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_1c = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x7;
+            if gate_1c {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_07 = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0xb;
+            if gate_07 {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_0b = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x18;
+            if gate_0b {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let wrong_phase = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            } else {
+                break 'gate;
+            }
+        }
+        'result: {
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x4;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_four = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_four {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0xe;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_0e = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0xd;
+            if is_0e {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_0d = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x11;
+            if is_0d {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_11 = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = 0xa;
+            if is_11 {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd08(int result)` (0x3f8908): report the
+/// memory-card sync result for command 0x08. The card phase must be one of
+/// 0x18/0x08/0x0c/0x10, else 0x12. Accepted results echo back
+/// (0, 3, 4, 9, 0x11); anything else is 0x10.
+pub fn slogin_mc_sync_result_cmd08(c: &mut Cpu) {
+    'sync: {
+        'gate: {
+            c.cycles += 5;
+            c.g[V1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V0][0] = 0x18;
+            c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let gate_18 = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x8;
+            if gate_18 {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_08 = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0xc;
+            if gate_08 {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_0c = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x10;
+            if gate_0c {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let wrong_phase = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            } else {
+                break 'gate;
+            }
+        }
+        'result: {
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x4;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_four = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_four {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd09(int result)` (0x3f8968): report the
+/// memory-card sync result for command 0x09. The card phase must be one of
+/// 0x19/0x09/0x0d/0x11, else 0x12. Accepted results echo back
+/// (0, 3, 4, 9, 0x11); anything else is 0x10.
+pub fn slogin_mc_sync_result_cmd09(c: &mut Cpu) {
+    'sync: {
+        'gate: {
+            c.cycles += 5;
+            c.g[V1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V0][0] = 0x19;
+            c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let gate_19 = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if gate_19 {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_09 = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0xd;
+            if gate_09 {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_0d = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x11;
+            if gate_0d {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let wrong_phase = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            } else {
+                break 'gate;
+            }
+        }
+        'result: {
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x4;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_four = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_four {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd1A(int result)` (0x3f89c8): report the
+/// memory-card sync result for command 0x1a. The card phase must be 0x1a,
+/// else 0x12. Accepted results echo back (0, 3, 9, 0x11); anything else
+/// is 0x10.
+pub fn slogin_mc_sync_result_cmd1a(c: &mut Cpu) {
+    'sync: {
+        'result: {
+            c.cycles += 5;
+            c.g[A1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V1][0] = 0x1a;
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let wrong_phase = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            }
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd05(int result)` (0x3f8a08): report the
+/// memory-card sync result for command 0x05. The card phase must be 0x05,
+/// else 0x12. Accepted results echo back (0, 3, 9, 0x0e, 8, 0x11);
+/// anything else is 0x10.
+pub fn slogin_mc_sync_result_cmd05(c: &mut Cpu) {
+    'sync: {
+        'result: {
+            c.cycles += 5;
+            c.g[A1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V1][0] = 0x5;
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let wrong_phase = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            }
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0xe;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_0e = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x8;
+            if is_0e {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_eight = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_eight {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd06(int result)` (0x3f8a58): report the
+/// memory-card sync result for command 0x06. The card phase must be one of
+/// 0x16/0x06/0x0e/0x0a, else 0x12. Accepted results echo back
+/// (0, 3, 4, 9, 0x0d, 0x11); anything else is 0x10.
+pub fn slogin_mc_sync_result_cmd06(c: &mut Cpu) {
+    'sync: {
+        'gate: {
+            c.cycles += 5;
+            c.g[V1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V0][0] = 0x16;
+            c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let gate_16 = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x6;
+            if gate_16 {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_06 = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0xe;
+            if gate_06 {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let gate_0e = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0xa;
+            if gate_0e {
+                break 'gate;
+            }
+            c.cycles += 2;
+            let wrong_phase = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            } else {
+                break 'gate;
+            }
+        }
+        'result: {
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x4;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_four = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_four {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0xd;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_0d = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_0d {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd13(int result)` (0x3f8ac0): report the
+/// memory-card sync result for command 0x13. The card phase must be
+/// 0x13-0x15, else 0x12. Accepted results echo back
+/// (0, 3, 4, 9, 0x0d, 6, 5, 0x11); anything else is 0x10.
+pub fn slogin_mc_sync_result_cmd13(c: &mut Cpu) {
+    'sync: {
+        'result: {
+            c.cycles += 6;
+            c.g[V1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x13));
+            c.g[V0][0] = (c.g[V0][0] < 0x3u64) as u64;
+            let wrong_phase = c.g[V0][0] == 0;
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            }
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x4;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_four = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_four {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0xd;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_0d = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x6;
+            if is_0d {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_six = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x5;
+            if is_six {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_five = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_five {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd12(int result)` (0x3f8b28): report the
+/// memory-card sync result for command 0x12. The card phase must be 0x12,
+/// else 0x12. Accepted results echo back (0, 3, 4, 9, 0x0d, 0x11);
+/// anything else is 0x10.
+pub fn slogin_mc_sync_result_cmd12(c: &mut Cpu) {
+    'sync: {
+        'result: {
+            c.cycles += 5;
+            c.g[A1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V1][0] = 0x12;
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let wrong_phase = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            }
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x4;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_four = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_four {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0xd;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_0d = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_0d {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd03(int result)` (0x3f8b78): translate the
+/// memory-card sync result for command 0x03. The card phase must be 0x03,
+/// else 0x12. Results 0 and 3 echo back, 0x11 echoes, anything else is 0x10.
+pub fn slogin_mc_sync_result_cmd03(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+    c.g[V0][0] = 0x3;
+    c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+    let wrong_phase = c.g[V1][0] != c.g[V0][0];
+    c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+    if wrong_phase {
+        c.cycles += 2;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    let is_zero = c.g[A0][0] == 0;
+    c.g[V0][0] = c.g[A0][0];
+    if is_zero {
+        c.cycles += 2;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    let is_phase = c.g[A0][0] == c.g[V1][0];
+    c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+    if is_phase {
+        c.cycles += 2;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    let is_other = c.g[A0][0] != c.g[V1][0];
+    c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+    if is_other {
+        c.cycles += 2;
+        ret(c);
+        return;
+    }
+    c.cycles += 1;
+    c.g[V0][0] = c.g[A0][0];
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd04(int result)` (0x3f8bb0): report the
+/// memory-card sync result for command 0x04. The card phase must be 0x04,
+/// else 0x12. Accepted results echo back (0, 3, 0x11); anything else
+/// is 0x10.
+pub fn slogin_mc_sync_result_cmd04(c: &mut Cpu) {
+    'sync: {
+        'result: {
+            c.cycles += 5;
+            c.g[A1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V1][0] = 0x4;
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let wrong_phase = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            }
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_SyncResult_Cmd17(int result)` (0x3f8be8): report the
+/// memory-card sync result for command 0x17. The card phase must be 0x17,
+/// else 0x12. Accepted results echo back (0, 3, 4, 9, 0x11); anything
+/// else is 0x10.
+pub fn slogin_mc_sync_result_cmd17(c: &mut Cpu) {
+    'sync: {
+        'result: {
+            c.cycles += 5;
+            c.g[A1][0] =
+                Addr((c.g[GP][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_STATE_GP)).lw(c);
+            c.g[V1][0] = 0x17;
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(SLOGIN_MC_SYNC_RESULT_PHASE)).lw(c);
+            let wrong_phase = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_WRONG_PHASE as u64;
+            if wrong_phase {
+                break 'sync;
+            }
+            c.cycles += 2;
+            let is_zero = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x3;
+            if is_zero {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_three = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x4;
+            if is_three {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_four = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = 0x9;
+            if is_four {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_nine = c.g[A0][0] == c.g[V0][0];
+            c.g[V1][0] = SLOGIN_MC_SYNC_RESULT_PASS as u64;
+            if is_nine {
+                break 'result;
+            }
+            c.cycles += 2;
+            let is_other = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = SLOGIN_MC_SYNC_RESULT_BAD_RESULT as u64;
+            if is_other {
+                break 'sync;
+            } else {
+                break 'result;
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+        break 'sync;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int SLoginMc_IdleStep(int result)` (0x3f8c30): accept any result while
+/// the card layer idles; echo it back to the caller.
+pub fn slogin_mc_idle_step(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -19694,5 +20671,328 @@ pub(crate) mod tests {
             DNAS_FIND_SYMBOL_HAND_RESUMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         dnas_rel_find_symbol(c);
+    }
+    // ------------------------------------------------------------------
+    // `SLogin_StepNop` (0x3f77f0), `SLoginMc_SyncResult_Cmd00` (0x3f87f8),
+    // `SLoginMc_SyncResult_Cmd01` (0x3f8800).
+
+    /// The no-op login step reports 0.
+    #[test]
+    fn slogin_step_nop_matches() {
+        check(
+            ee::s14::f_003f77f0__generated,
+            slogin_step_nop,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x3f77_f0, 0);
+            },
+        );
+    }
+
+    pub(crate) const SLOGIN_STATE: u32 = DATA + 0x1000;
+
+    /// Step 0 echoes the sync result.
+    #[test]
+    fn slogin_mc_sync_result_cmd00_matches() {
+        check(
+            ee::s14::f_003f87f8__generated,
+            slogin_mc_sync_result_cmd00,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x3f87_f8, 0);
+                c.g[A0][0] =
+                    [0, 1, 3, 0x10, 0x11, 0xffff_ffffu32.cast_signed()][seed as usize % 6] as u64;
+            },
+        );
+    }
+
+    /// Step 1 reports 0x12 while the step is not running, otherwise echoes
+    /// the result.
+    #[test]
+    fn slogin_mc_sync_result_cmd01_matches() {
+        check(
+            ee::s14::f_003f8800__generated,
+            slogin_mc_sync_result_cmd01,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x3f88_00, 0);
+                c.g[A0][0] =
+                    [0, 3, 0x10, 0x11, 7, 0xffff_ffffu32.cast_signed()][seed as usize % 6] as u64;
+                c.bus
+                    .write32(GAME_GP + SLOGIN_MC_SYNC_RESULT_STATE_GP, SLOGIN_STATE);
+                c.bus
+                    .write32(SLOGIN_STATE + SLOGIN_MC_SYNC_RESULT_PHASE, seed / 6 % 3);
+            },
+        );
+    }
+
+    /// Card-state block the sync-result fixtures point `gp + 0x1ae8` at.
+    /// Word +0/+8 hold seed-varying fillers; the phase at +4 drives the gate.
+    #[cfg(test)]
+    pub(crate) const SLOGIN_MC_SYNC_RESULT_TEST_STATE: u32 = DATA + 0x1000;
+
+    /// Point the card-state word at the scratch block and write `phase`,
+    /// with seed-varying nonzero fillers around it.
+    pub(crate) fn slogin_mc_sync_result_fixture(c: &mut Cpu, r: &mut Rng, phase: u32) {
+        c.g[GP][0] = sx(GAME_GP);
+        c.bus
+            .write32(SLOGIN_MC_SYNC_RESULT_TEST_STATE, r.next_u32());
+        c.bus.write32(
+            SLOGIN_MC_SYNC_RESULT_TEST_STATE + SLOGIN_MC_SYNC_RESULT_PHASE,
+            phase,
+        );
+        c.bus.write32(
+            SLOGIN_MC_SYNC_RESULT_TEST_STATE + SLOGIN_MC_SYNC_RESULT_PHASE + 4,
+            r.next_u32(),
+        );
+        c.bus.write32(
+            GAME_GP + SLOGIN_MC_SYNC_RESULT_STATE_GP,
+            SLOGIN_MC_SYNC_RESULT_TEST_STATE,
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd02_matches() {
+        const PHASES: [u32; 7] = [0x2, 0x2, 0, 1, 3, 0x11, 0xffff_fff2];
+        const RESULTS: [u64; 10] = [0, 4, 3, 9, 0x11, 0x10, 1, 2, 0x12, 0x7f];
+        check(
+            ee::s14::f_003f8838__generated,
+            slogin_mc_sync_result_cmd02,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f88_3800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8838;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                let result = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+                c.g[A0][0] = if seed / 70 % 2 == 1 {
+                    result | 0xffff_ffff_0000_0000
+                } else {
+                    result
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd07_matches() {
+        const PHASES: [u32; 8] = [0x1b, 0x1d, 0x1c, 0x7, 0xb, 0x18, 0, 0x5a];
+        const RESULTS: [u64; 11] = [0, 3, 4, 9, 0xe, 0xd, 0x11, 0xa, 1, 0x10, 0x7f];
+        check(
+            ee::s14::f_003f8880__generated,
+            slogin_mc_sync_result_cmd07,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f88_8000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8880;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                let result = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+                c.g[A0][0] = if seed / 88 % 2 == 1 {
+                    result | 0xffff_ffff_0000_0000
+                } else {
+                    result
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd08_matches() {
+        const PHASES: [u32; 6] = [0x18, 0x8, 0xc, 0x10, 0, 0x5a];
+        const RESULTS: [u64; 8] = [0, 3, 4, 9, 0x11, 0x10, 1, 0x12];
+        check(
+            ee::s14::f_003f8908__generated,
+            slogin_mc_sync_result_cmd08,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f89_0800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8908;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd09_matches() {
+        const PHASES: [u32; 6] = [0x19, 0x9, 0xd, 0x11, 0, 0x5a];
+        const RESULTS: [u64; 8] = [0, 3, 4, 9, 0x11, 0x10, 2, 0x12];
+        check(
+            ee::s14::f_003f8968__generated,
+            slogin_mc_sync_result_cmd09,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f89_6800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8968;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd1a_matches() {
+        const PHASES: [u32; 5] = [0x1a, 0x1a, 0, 0x19, 0x5a];
+        const RESULTS: [u64; 7] = [0, 3, 9, 0x11, 0x10, 1, 0x1a];
+        check(
+            ee::s14::f_003f89c8__generated,
+            slogin_mc_sync_result_cmd1a,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f89_c800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_89c8;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd05_matches() {
+        const PHASES: [u32; 5] = [0x5, 0x5, 0, 4, 0x5a];
+        const RESULTS: [u64; 9] = [0, 3, 9, 0xe, 8, 0x11, 0x10, 1, 5];
+        check(
+            ee::s14::f_003f8a08__generated,
+            slogin_mc_sync_result_cmd05,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f8a_0800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8a08;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd06_matches() {
+        const PHASES: [u32; 6] = [0x16, 0x6, 0xe, 0xa, 0, 0x5a];
+        const RESULTS: [u64; 9] = [0, 3, 4, 9, 0xd, 0x11, 0x10, 1, 6];
+        check(
+            ee::s14::f_003f8a58__generated,
+            slogin_mc_sync_result_cmd06,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f8a_5800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8a58;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd13_matches() {
+        const PHASES: [u32; 7] = [0x13, 0x14, 0x15, 0x16, 0x12, 0, 0x5a];
+        const RESULTS: [u64; 11] = [0, 3, 4, 9, 0xd, 6, 5, 0x11, 0x10, 1, 0x13];
+        check(
+            ee::s14::f_003f8ac0__generated,
+            slogin_mc_sync_result_cmd13,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f8a_c000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8ac0;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd12_matches() {
+        const PHASES: [u32; 5] = [0x12, 0x12, 0, 0x11, 0x5a];
+        const RESULTS: [u64; 8] = [0, 3, 4, 9, 0xd, 0x11, 0x10, 0x12];
+        check(
+            ee::s14::f_003f8b28__generated,
+            slogin_mc_sync_result_cmd12,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f8b_2800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8b28;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd03_matches() {
+        const PHASES: [u32; 5] = [0x3, 0x3, 0, 2, 0x5a];
+        const RESULTS: [u64; 7] = [0, 3, 0x11, 1, 0x10, 2, 0x12];
+        check(
+            ee::s14::f_003f8b78__generated,
+            slogin_mc_sync_result_cmd03,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f8b_7800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8b78;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd04_matches() {
+        const PHASES: [u32; 5] = [0x4, 0x4, 0, 3, 0x5a];
+        const RESULTS: [u64; 6] = [0, 3, 0x11, 1, 0x10, 4];
+        check(
+            ee::s14::f_003f8bb0__generated,
+            slogin_mc_sync_result_cmd04,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f8b_b000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8bb0;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_sync_result_cmd17_matches() {
+        const PHASES: [u32; 5] = [0x17, 0x17, 0, 0x16, 0x5a];
+        const RESULTS: [u64; 8] = [0, 3, 4, 9, 0x11, 0x10, 1, 0x17];
+        check(
+            ee::s14::f_003f8be8__generated,
+            slogin_mc_sync_result_cmd17,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f8b_e800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8be8;
+                slogin_mc_sync_result_fixture(c, &mut r, PHASES[(seed as usize) % PHASES.len()]);
+                c.g[A0][0] = RESULTS[((seed / PHASES.len() as u32) as usize) % RESULTS.len()];
+            },
+        );
+    }
+
+    #[test]
+    fn slogin_mc_idle_step_matches() {
+        check(
+            ee::s14::f_003f8c30__generated,
+            slogin_mc_idle_step,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3f8c_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003f_8c30;
+                c.g[A0][0] = if seed % 5 == 0 {
+                    0
+                } else {
+                    (r.next_u32() as u64) | ((r.next_u32() as u64) << 32)
+                };
+            },
+        );
     }
 }

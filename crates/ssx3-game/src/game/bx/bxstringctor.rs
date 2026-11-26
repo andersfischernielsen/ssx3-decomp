@@ -360,6 +360,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         path_data_reload_paths_2,
         "PathData_ReloadPaths",
     ),
+    (0x0026_9da0, net_event_fd_dtor, "NetEventFD_dtor"),
+    (0x0026_9e20, net_event_fe_dtor, "NetEventFE_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -646,6 +648,7 @@ pub(crate) mod callee {
         addr: 0x0016_6550,
         f: ee::s02::f_00166550,
     };
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_EVENT_DTOR;
 }
 
 /// `void PathData_ReadVec3(Vec3 *dst, const Vec3 *src)` (0x0026ba48): copy
@@ -3932,6 +3935,36 @@ pub fn path_data_reload_paths_2(c: &mut Cpu) {
     });
 }
 
+/// `void NetEventFD_dtor(NetEventFD *self)` (0x269da0): destroy a friend-list
+/// net event through the base `NetEvent` destructor.
+pub fn net_event_fd_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        // A0 (`self`) passes through untouched.
+        callee::NET_EVENT_DTOR.call(c, 0x0026_9db0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void NetEventFE_dtor(NetEventFE *self)` (0x269e20): destroy a
+/// friend-event net event through the base `NetEvent` destructor.
+pub fn net_event_fe_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        // A0 (`self`) passes through untouched.
+        callee::NET_EVENT_DTOR.call(c, 0x0026_9e30)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5834,6 +5867,8 @@ pub(crate) mod tests {
 
     use crate::difftest::fakes;
 
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::lobbyrig_arm;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::lobbyrig_mail;
     pub(crate) use crate::game::sound::ssxaudio::tests::oc805_machine;
     pub(crate) use crate::game::sound::ssxaudio::tests::oc805_paths;
 
@@ -5881,6 +5916,43 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(OC804_SELF);
                 c.g[A1][0] = sx(OC804_NAME);
                 c.pc = 0x0026_ada8;
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `NetEventFD_dtor` (0x269da0), `NetEventFE_dtor` (0x269e20).
+    // (`LobbyMan_GlobalCtors` lives in `dirtysock/tagsunk.rs`.)
+
+    pub(crate) const NET_EVENT_OBJ: u32 = DATA + 0x1000;
+
+    /// Both net event destructors run the base destructor and return.
+    #[test]
+    fn net_event_fd_dtor_matches() {
+        check(
+            ee::s07::f_00269da0__generated,
+            net_event_fd_dtor,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x269d_a0, 0);
+                lobbyrig_arm(c);
+                c.g[A0][0] = sx(NET_EVENT_OBJ + (seed % 4) * 0x40);
+                c.bus.write32(lobbyrig_mail(0x0026_7e18), 0);
+            },
+        );
+    }
+
+    #[test]
+    fn net_event_fe_dtor_matches() {
+        check(
+            ee::s07::f_00269e20__generated,
+            net_event_fe_dtor,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x269e_a0, 0);
+                lobbyrig_arm(c);
+                c.g[A0][0] = sx(NET_EVENT_OBJ + (seed % 4) * 0x40);
+                c.bus.write32(lobbyrig_mail(0x0026_7e18), 0);
             },
         );
     }
