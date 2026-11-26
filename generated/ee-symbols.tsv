@@ -1755,7 +1755,7 @@ s02	0017a2c8	0017a374	o	DebugMenu_FindPrevItem
 s02	0017a378	0017a638	-	DebugMenu_ParseWorldListFile
 s02	0017a638	0017a82c	o	DebugMenu_InitWorldList
 s02	0017a830	0017a978	o	DebugMenu_AddWorldIfMissing
-s02	0017a978	0017abc8	-	DebugMenu_CheckWorldFiles
+s02	0017a978	0017abc8	o	DebugMenu_CheckWorldFiles
 s02	0017abc8	0017abe0	o	DebugMenu_InitBackgroundList
 s02	0017abe0	0017ac94	o	DebugMenu_FreeBackgrounds
 s02	0017ac98	0017acc4	o	DebugMenu_SelectBackground
@@ -1870,7 +1870,7 @@ s02	00181400	0018141c	o	cFEStateCharSelect_Render
 s02	00181420	0018144c	o	cFEStateCharSelect_Update
 s02	00181450	0018161c	o	cFEStateCharSelect_HandleInput
 s02	00181620	001817e4	o	cFEStateCharSelect_OnWidgetCreated
-s02	001817e8	00181bd0	e	cFEStateCharSelect_OnWidgetAction
+s02	001817e8	00181bd0	oe	cFEStateCharSelect_OnWidgetAction
 s02	00181bd0	00181eec	o	cFEStateCharSelect_UpdateAttributeBars
 s02	00181ef0	00182220	o	cFEStateCharSelect_UpdateRiderPreview
 s02	00182220	00182420	-	cFEStateCheatCharSelect_ctor
@@ -2053,7 +2053,7 @@ s02	001910c0	00191228	-	cFEStateRiderBio_FillQNA
 s02	00191228	001912cc	o	cFEStateRiderBio_FillFullBio
 s02	001912d0	00191360	o	cFEStateRiderBio_OnWidgetAction
 s02	00191360	001913b8	o	cFEStateRuleSelect_ctor
-s02	001913b8	00191938	e	cFEStateRuleSelect_FillRuleList
+s02	001913b8	00191938	oe	cFEStateRuleSelect_FillRuleList
 s02	00191938	00191c44	oe	cFEStateRuleSelect_Init
 s02	00191c48	00191c64	-	cFEStateRuleSelect_OnActivate
 s02	00191c68	00191e08	o	cFEStateRuleSelect_OnWidgetAction
@@ -2105,7 +2105,7 @@ s02	00194aa8	00194bf0	o	cFEStateMainMenu_Init
 s02	00194bf0	00194d14	o	cFEStateMainMenu_OnRender
 s02	00194d18	00194dd0	o	cFEStateMainMenu_OnWidgetCreated
 s02	00194dd0	00194ea8	o	cFEStateMainMenu_Update
-s02	00194ea8	001952e4	e	cFEStateMainMenu_OnWidgetAction
+s02	00194ea8	001952e4	oe	cFEStateMainMenu_OnWidgetAction
 s02	001952e8	00195328	o	cFEStateMainMenu_OnWidgetNotify
 s02	00195328	00195494	-	cFEStateMainMenu_OnChildEvent
 s02	00195498	001954d4	o	cFEStateBonusMaterial_ctor
@@ -2237,9 +2237,9 @@ s03	0019d8b8	0019da10	o	BoltFile_LoadSlot
 s03	0019da10	0019dc20	o	BoltFile_Acquire
 s03	0019dc20	0019dd10	o	BoltFile_Release
 s03	0019dd10	0019de14	o	BoltFile_CompareModelSlots
-s03	0019de18	0019df1c	e	BoltFile_CompareTextureSlots
-s03	0019df20	0019e070	-	BoltFile_PrioritizeModels
-s03	0019e070	0019e1c0	-	BoltFile_PrioritizeTextures
+s03	0019de18	0019df1c	oe	BoltFile_CompareTextureSlots
+s03	0019df20	0019e070	o	BoltFile_PrioritizeModels
+s03	0019e070	0019e1c0	o	BoltFile_PrioritizeTextures
 s03	0019e238	0019e264	o	BoltFile_IsLoaded
 s03	0019e2b0	0019e2f0	o	BoltFile_GetData
 s03	0019e330	0019e380	o	BoltFile_DetachData
@@ -2287,14 +2287,14 @@ s03	001a06f0	001a0708	o	FEFlowState_GetMenuSelection
 s03	001a0708	001a0720	o	FEFlowState_SetMenuSelection
 s03	001a0720	001a07c4	o	FEUICustom_ctor
 s03	001a07c8	001a0830	o	FEUICustom_v03
-s03	001a0830	001a16bc	-	FEUICustom_CreateState
+s03	001a0830	001a16bc	o	FEUICustom_CreateState
 s03	001a16c0	001a1cb8	e	FEUICustom_v05
 s03	001a1cb8	001a1ccc	o	FEModule_SetPlayerPadMask
 s03	001a1cd0	001a1ce4	o	FEModule_GetPlayerPadMask
 s03	001a1ce8	001a1d50	o	FEModule_ctor
 s03	001a1d50	001a1dbc	o	FEModule_dtor
 s03	001a1dc0	001a1ebc	o	FEModule_Enter
-s03	001a1ec0	001a2128	-	FEModule_Load
+s03	001a1ec0	001a2128	o	FEModule_Load
 s03	001a2128	001a2190	o	FEModule_TryExit
 s03	001a2190	001a2204	o	FEModule_Unload
 s03	001a2208	001a279c	o	FEModule_Render
@@ -2303,7 +2303,7 @@ s03	001a2b00	001a2bbc	o	FEModule_LoadAnimData
 s03	001a2bc0	001a2c40	o	FEModule_UnloadAnimData
 s03	001a2c40	001a2e1c	o	FEModule_v08
 s03	001a2e20	001a2e58	o	FEUISound_ctor
-s03	001a2e58	001a2f34	e	FEUISound_v02
+s03	001a2e58	001a2f34	oe	FEUISound_v02
 s03	001a2f38	001a2f70	o	OVUISound_ctor
 s03	001a2f70	001a304c	oe	OVUISound_v02
 s03	001a3050	001a308c	-	FEScreenSelMulti_ctor
@@ -3708,7 +3708,7 @@ s04	001e91d0	001e91f4	o	HUD_GetElemColorRotated
 s04	001e91f8	001e921c	o	HUD_GetElemPos
 s04	001e9220	001e928c	o	HUD_GetElemSize
 s04	001e9290	001e92a4	o	HUD_GetElemScale
-s04	001e92a8	001e94e0	-	HUD_LayoutIconText
+s04	001e92a8	001e94e0	o	HUD_LayoutIconText
 s04	001e94e0	001e953c	o	HUD_SetIconText
 s04	001e9540	001e959c	o	HUD_SetIconTextW
 s04	001e95a0	001e9a30	o	HUD_DrawIconText
@@ -3846,7 +3846,7 @@ s04	001fcec0	001fd0d4	-	OVScreenMultiFreestylePre_TransitionIn
 s04	001fd0d8	001fd118	o	OVScreenMultiFreestylePre_OnActivate
 s04	001fd118	001fd14c	o	OVScreenMultiFreestylePre_OnDeactivate
 s04	001fd150	001fd190	o	OVScreenMultiFreestylePre_Update
-s04	001fd190	001fd268	e	FE_GetEventNameText
+s04	001fd190	001fd268	oe	FE_GetEventNameText
 s05	001fd268	001fd320	o	OVScreenRivalPre_Init
 s05	001fd320	001fdb74	e	OVScreenRivalPre_TransitionIn
 s05	001fdb78	001fdb88	o	OVScreenRivalPre_OnWidgetNotify
@@ -3892,7 +3892,7 @@ s05	00200ac0	00200af0	o	EventSelect_OnActivate
 s05	00200af0	00200b50	o	EventSelect_Shutdown
 s05	00200b50	00200cfc	o	EventSelect_IsEventCompleted
 s05	00200d00	00200de4	o	EventSelect_IsEventUnlocked
-s05	00200de8	0020171c	e	EventSelect_SetupPeakTexts
+s05	00200de8	0020171c	oe	EventSelect_SetupPeakTexts
 s05	00201720	0020174c	o	EventSelect_ResetFlags
 s05	00201750	00201864	oe	EventSelect_InitPeakLocks
 s05	00201868	002018a8	o	EventSelect_HideMapPic
@@ -3908,9 +3908,9 @@ s05	00203a58	00203cb8	oe	EventSelect_UpdateConfirmPopup
 s05	00203cb8	00203d40	o	EventSelect_SetMapTabMode
 s05	00203d40	00204fec	oe	EventSelect_RefreshPeakList
 s05	00204ff0	00205094	o	EventSelect_GetMedalText
-s05	00205098	0020668c	e	EventSelect_RefreshPeakGoals
-s05	00206690	00207430	-	EventSelect_ShowEventPaths
-s05	00207430	002083d4	-	EventSelect_RefreshEventList
+s05	00205098	0020668c	oe	EventSelect_RefreshPeakGoals
+s05	00206690	00207430	o	EventSelect_ShowEventPaths
+s05	00207430	002083d4	o	EventSelect_RefreshEventList
 s05	002083d8	00208438	o	EventSelect_SetHighlightColor
 s05	00208438	00208498	o	EventSelect_SetUnlockedColor
 s05	00208498	00208514	o	OVScreenMap_Init
@@ -3951,7 +3951,7 @@ s05	0020a6f0	0020a778	o	cOVStateOverlay_PlayObjectAnim
 s05	0020a778	0020a8ac	-	OVScreenPDATemplate_Init
 s05	0020a8b0	0020a8f4	o	GameUI_GetResultsScreenId
 s05	0020a8f8	0020ab4c	o	GameUI_OpenScreenForState
-s05	0020ab50	0020bab8	-	GameUI_OpenScreen
+s05	0020ab50	0020bab8	o	GameUI_OpenScreen
 s05	0020bab8	0020ca10	-	GameUI_PushPopupScreen
 s05	0020ca10	0020cb54	-	GameUI_OpenPauseMenu
 s05	0020cb58	0020cba0	o	GameUI_IsReplayMenuOpen
@@ -4271,7 +4271,7 @@ s05	0022d478	0022d594	oe	SectionMan_RequestActivate
 s05	0022d598	0022d63c	oe	SectionMan_RequestUnload
 s05	0022d640	0022d664	o	SectionMan_StartEventSwitch
 s05	0022d668	0022d6c4	oe	SectionMan_AdvanceEventSwitchSync
-s05	0022d6c8	0022d8d4	e	SectionMan_OnEventTrigger
+s05	0022d6c8	0022d8d4	oe	SectionMan_OnEventTrigger
 s05	0022d8d8	0022de58	o	SectionMan_Update
 s05	0022de58	0022de98	o	SectionMan_RequestSky
 s05	0022de98	0022df50	o	SectionMan_ApplySky
@@ -4778,7 +4778,7 @@ s06	002461e0	00246264	-	cFEStateProgressiveVerifyPS2_OnWidgetAction
 s06	00246268	00246278	o	cFEStateProgressiveVerifyPS2_OnWidgetNotify
 s06	00246278	002464e4	e	cGameLoadState_SetupMPWidget
 s06	002464e8	00246cf4	o	cGameLoadState_SetupQPWidget
-s06	00246cf8	002472c0	-	cGameLoadState_UpdatePlayerRanking
+s06	00246cf8	002472c0	o	cGameLoadState_UpdatePlayerRanking
 s06	002472c0	00247ab0	-	cFELoadState_ShowMPPlayerStats
 s06	00247ab0	00247e20	-	cFELoadState_SetupResultWidget
 s06	00247e20	00247e40	-	SSXApp_GlobalCtors
@@ -5441,10 +5441,10 @@ s07	0026ac48	0026ac84	o	Path_GetLength
 s07	0026ac88	0026ad00	o	Path_HasEventInRange
 s07	0026ad70	0026ad9c	o	PathData_SetBuffer
 s07	0026ada0	0026ada8	-	PathData_EmptyHook
-s07	0026ada8	0026ade8	-	PathData_LoadFile
+s07	0026ada8	0026ade8	o	PathData_LoadFile
 s07	0026ade8	0026adf0	o	PathData_GetField4C
 s07	0026adf0	0026ae70	o	PathData_Parse
-s07	0026ae70	0026af00	-	PathData_ReloadPaths
+s07	0026ae70	0026af00	o	PathData_ReloadPaths
 s07	0026af00	0026af70	o	PathData_Free
 s07	0026af70	0026af84	o	PathData_GetTrackPath
 s07	0026af88	0026af98	o	PathData_GetAIPath
@@ -6131,7 +6131,7 @@ s07	00284b80	00284ba0	o	ScriptEngine_GlobalCtors
 s07	00284ba0	00284bac	o	SSXAudioSystem_GetFadeMask
 s07	00284bb0	00284c24	o	SSXAudioSystem_Create
 s07	00284c28	00284c68	o	SSXAudioSystem_Destroy
-s07	00284c68	0028520c	-	SSXAudioSystem_ctor
+s07	00284c68	0028520c	o	SSXAudioSystem_ctor
 s07	00285210	002854a4	-	SSXAudioSystem_dtor
 s07	002854a8	002854f8	o	SSXAudioSystem_SetOutputMode
 s07	002854f8	00285930	o	SSXAudioSystem_PlayStream
@@ -6144,7 +6144,7 @@ s07	00285f80	00285fac	o	SSXAudioSystem_StopByCallback
 s07	00285fb0	002861cc	o	SSXAudioSystem_LoadFrontEndAudio
 s07	002861d0	00286200	-	SSXAudioSystem_SetMusicEvent1
 s07	00286200	002862a8	o	SSXAudioSystem_UnloadFrontEndAudio
-s07	002862a8	002867e8	-	SSXAudioSystem_LoadWorldAudio
+s07	002862a8	002867e8	o	SSXAudioSystem_LoadWorldAudio
 s07	002867e8	00286a80	o	SSXAudioSystem_EnterGame
 s07	00286a80	00286bfc	-	SSXAudioSystem_ExitGame
 s07	00286c00	00286ca4	o	SSXAudioSystem_UnloadWorldBanks
@@ -6165,7 +6165,7 @@ s07	002875d0	0028766c	o	SSXAudioSystem_SetSfxSubChannelsEnabled
 s07	00287670	002876a0	o	SSXAudioSystem_GetMusicVolumeLevel
 s07	002876a0	002876d0	o	SSXAudioSystem_GetSfxVolumeLevel
 s07	002876d0	00287700	o	SSXAudioSystem_GetSpeechVolumeLevel
-s07	00287700	00287920	e	SSXAudioSystem_SetChannelVolume
+s07	00287700	00287920	oe	SSXAudioSystem_SetChannelVolume
 s07	00287920	00287930	o	SSXAudioSystem_GetChannelVolume
 s07	00287930	00287964	o	SSXAudioSystem_GetChannelGain
 s07	00287968	0028799c	o	SSXAudioSystem_GetChannelGainPtr
@@ -6174,7 +6174,7 @@ s07	002879e0	00287a0c	-	SSXAudioSystem_DecChannelVolume
 s07	00287a10	00287c44	o	SSXAudioSystem_SetFadeGain
 s07	00287c48	00287efc	o	SSXAudioSystem_UpdateFade
 s07	00287f00	00287fc4	o	SSXAudioSystem_SetFadeMode
-s07	00287fc8	00288370	-	SSXAudioSystem_LoadVolumeConfig
+s07	00287fc8	00288370	o	SSXAudioSystem_LoadVolumeConfig
 s07	00288370	002883ac	o	SSXAudioSystem_GetPresetGain
 s07	002883b0	002887a4	o	SSXAudioSystem_SetMixPreset
 s07	002887a8	002887f8	o	SSXAudioSystem_SetGainTarget
@@ -6187,12 +6187,12 @@ s07	00288b40	00288c04	o	SSXAudioSystem_FindViewInRange
 s07	00288c08	00288ce8	o	SSXAudioSystem_IsAnyViewInRange
 s07	00288ce8	00288d18	o	SSXAudioSystem_GetListenerCount
 s07	00288d18	00288f5c	o	SSXAudioSystem_SetupChannelGains
-s07	00288f60	00289394	e	SSXAudioSystem_SetDebugMode
+s07	00288f60	00289394	oe	SSXAudioSystem_SetDebugMode
 s07	00289398	002893c8	-	SSXAudioSystem_PrevDebugMode
 s07	002893c8	002893fc	-	SSXAudioSystem_NextDebugMode
 s07	00289400	00289448	-	SSXAudioSystem_ScheduleTriggerTimer
 s07	00289448	00289470	-	SSXAudioSystem_TriggerTimerCallback
-s07	00289470	0028951c	-	SSXAudioSystem_ReadPlaylistNames
+s07	00289470	0028951c	o	SSXAudioSystem_ReadPlaylistNames
 s07	00289520	00289650	o	SSXAudioSystem_LoadPlaylist
 s07	00289650	00289680	o	SSXAudioSystem_CrowdStateCallback
 s07	00289680	00289688	-	SSXAudioSystem_EmptyCrowdHandler
@@ -6270,7 +6270,7 @@ s07	0028c8c8	0028cd48	o	SSXAudioSystem_UpdateMusicIntensity
 s07	0028cd48	0028cdf8	o	SSXAudioSystem_PlayPeakTransitionMusic
 s07	0028cdf8	0028cf94	e	SSXAudioSystem_PlayCharacterTune
 s07	0028cf98	0028d484	o	SSXAudioSystem_PlayMusic
-s07	0028d488	0028d59c	-	SSXAudioSystem_SelectRandomSong
+s07	0028d488	0028d59c	o	SSXAudioSystem_SelectRandomSong
 s07	0028d5a0	0028d630	o	SSXAudioSystem_UpdateMusicTier
 s07	0028d630	0028d73c	-	SSXAudioSystem_StartMusicTrigger
 s07	0028d740	0028d7d8	o	SSXAudioSystem_ConfirmMusicTrigger
@@ -6297,7 +6297,7 @@ s07	0028f200	0028f2c0	o	SSXAudioSystem_OnReplayBegin
 s07	0028f2c0	0028f324	o	SSXAudioSystem_OnReplayEnd
 s07	0028f328	0028f3c4	o	SSXAudioSystem_OnMusicPostEvent
 s07	0028f3c8	0028f474	o	SSXAudioSystem_OnMusicSetEventState
-s07	0028f478	0028f520	-	SSXAudioSystem_OnSongChanged
+s07	0028f478	0028f520	o	SSXAudioSystem_OnSongChanged
 s07	0028f520	0028f554	o	SSXAudioSystem_StopFEMusic
 s07	0028f558	0028f5b4	o	SSXAudioSystem_SetSelectedPeak
 s07	0028f5b8	0028f674	o	SSXAudioSystem_OnEventSelectEnter
@@ -6358,7 +6358,7 @@ s07	00294880	0029489c	o	SSXAudioSystem_SetRiderAirFlag
 s07	002948a0	002948cc	o	SSXAudioSystem_ClearRiderAirFlags
 s07	002948d0	00294f48	o	SSXAudioSystem_PlayLandingSound
 s08	00294f48	00294f78	o	SSXAudioSystem_TickListener
-s08	00294f78	00295024	e	SSXAudioSystem_PlayFESound
+s08	00294f78	00295024	oe	SSXAudioSystem_PlayFESound
 s08	00295028	00295204	o	SSXAudioSystem_IsTrackedSoundPlaying
 s08	00295208	00295628	o	SSXAudioSystem_UpdateTrackedSounds
 s08	00295628	00295950	o	SSXAudioSystem_TrackSound
@@ -6546,7 +6546,7 @@ s08	002a4d68	002a4e38	o	CrowdAudio_InitInstance
 s08	002a4e38	002a4e88	o	CrowdAudio_DestroyInstance
 s08	002a4e88	002a5cd4	o	CrowdAudio_UpdateInstance
 s08	002a5cd8	002a5d04	o	CrowdAudio_InstanceSetSourceParam
-s08	002a5d08	002a62ec	-	CrowdAudio_InstanceAddSource
+s08	002a5d08	002a62ec	o	CrowdAudio_InstanceAddSource
 s08	002a62f0	002a642c	o	CrowdAudio_InstanceRemoveSource
 s08	002a6430	002a649c	o	CrowdAudio_InstanceRemoveAllSources
 s08	002a64a0	002a6644	-	CrowdAudio_InstancePlayTrick
@@ -6560,7 +6560,7 @@ s08	002a6b50	002a6d14	-	CrowdAudio_dtor
 s08	002a6d18	002a6d78	o	CrowdAudio_Update
 s08	002a6d78	002a6f34	o	CrowdAudio_Load
 s08	002a6f38	002a703c	o	CrowdAudio_Unload
-s08	002a7040	002a72bc	-	CrowdAudio_ParseConfig
+s08	002a7040	002a72bc	o	CrowdAudio_ParseConfig
 s08	002a72c0	002a72d4	o	CrowdAudio_DecodeSourceHandle
 s08	002a72d8	002a733c	o	CrowdAudio_RemoveSource
 s08	002a7340	002a73a4	o	CrowdAudio_SetSourceParam
@@ -6584,7 +6584,7 @@ s08	002a7b08	002a7bf4	o	IniParser_NextSection
 s08	002a7bf8	002a7c68	o	IniParser_FindSection
 s08	002a7c68	002a7cf0	o	IniParser_FindSectionPrefix
 s08	002a7cf0	002a7da0	o	IniParser_ReadQuotedString
-s08	002a7da0	002a7e5c	-	IniParser_ReadToken
+s08	002a7da0	002a7e5c	o	IniParser_ReadToken
 s08	002a7e60	002a7ea4	o	IniParser_ReadFloat
 s08	002a7ea8	002a7eec	o	IniParser_ReadInt
 s08	002a7ef0	002a7f90	o	IniParser_Expect
@@ -6600,7 +6600,7 @@ s08	002a8b28	002a8c20	-	MIDIBanks_PlayTimerCallback
 s08	002a8c20	002a8c50	o	PS2SoundManager_ctor
 s08	002a8c50	002a8cac	o	PS2SoundManager_dtor
 s08	002a8cb0	002a8d90	o	PS2SoundManager_Init
-s08	002a8d90	002a8f4c	-	PS2SoundManager_SetOutputMode
+s08	002a8d90	002a8f4c	o	PS2SoundManager_SetOutputMode
 s08	002a8f50	002a8f9c	o	PS2SoundManager_Shutdown
 s08	002a8fa0	002a8fd4	o	PS2SoundManager_Create
 s08	002a8fd8	002a9128	-	PS2SoundManager_AllocSpuBlock
@@ -6778,7 +6778,7 @@ s08	002af8e0	002af8fc	o	SpeechBank_ctor
 s08	002af900	002af95c	o	SpeechBank_dtor
 s08	002af960	002afa54	o	SpeechBank_Load
 s08	002afa58	002afa68	o	SpeechBank_HasId
-s08	002afa68	002afb38	-	SpeechInstance_ctor
+s08	002afa68	002afb38	o	SpeechInstance_ctor
 s08	002afb38	002afc88	-	SpeechInstance_dtor
 s08	002afc88	002afd10	o	SpeechInstance_Update
 s08	002afd10	002afd40	o	SpeechInstance_CancelPending
@@ -6847,7 +6847,7 @@ s08	002b2718	002b2774	o	SongInstance_GetMsToNextBeat
 s08	002b2778	002b27bc	-	SongInstance_GetBeatIndex
 s08	002b27c0	002b2850	-	SongInstance_IsLoopBankBusy
 s08	002b2850	002b28c0	o	SongInstance_ApplyDelayParams
-s08	002b28c0	002b3394	-	MusicPlayer_ctor
+s08	002b28c0	002b3394	o	MusicPlayer_ctor
 s08	002b3398	002b359c	-	MusicPlayer_dtor
 s08	002b35a0	002b3834	o	MusicPlayer_PlaySong
 s08	002b3838	002b3a70	o	MusicPlayer_StartSong
@@ -7167,7 +7167,7 @@ s08	002bfeb0	002c0304	oe	tWPIGD_Weather_SaveState
 s08	002c0308	002c03a4	-	tWPIGD_Danger_SaveState
 s08	002c03a8	002c03e4	o	WorldPainterQuery_ResetList
 s08	002c03e8	002c0404	o	WorldPainterQuery_ResetAll
-s08	002c0408	002c06bc	e	WorldPainterQuery_ctor
+s08	002c0408	002c06bc	oe	WorldPainterQuery_ctor
 s08	002c06c0	002c0774	-	WorldPainterQuery_dtor
 s08	002c0778	002c0a10	o	WorldPainterQuery_UpdateAtPos
 s08	002c0a10	002c0a58	o	WorldPainterQuery_LookupCell
@@ -7729,12 +7729,12 @@ s09	002d9d68	002d9fb4	-	Avalanche_LoadState
 s09	002d9fb8	002da028	o	Avalanche_SetHistoryData
 s09	002da028	002da1bc	o	Avalanche_ApplyHistoryData
 s09	002da1c0	002da38c	-	Avalanche_GetProximityInfo
-s09	002da390	002da8e8	-	cBoardSparkFX_ctor
+s09	002da390	002da8e8	o	cBoardSparkFX_ctor
 s09	002da8e8	002daa74	-	cBoardSparkFX_dtor
 s09	002daa78	002dabc4	o	cBoardSparkFX_Reset
 s09	002dabc8	002db478	o	cBoardSparkFX_Update
 s09	002db478	002db6d4	o	cBoardSparkFX_Render
-s09	002db6d8	002db700	-	cCrowdRender2D_ctor
+s09	002db6d8	002db700	o	cCrowdRender2D_ctor
 s09	002db700	002db744	-	cCrowdRender2D_dtor
 s09	002db748	002db890	o	cCrowdRender2D_LoadTextures
 s09	002db890	002db97c	-	cCrowdRender2D_ReleaseTextures
@@ -7758,7 +7758,7 @@ s09	002ddd30	002de058	o	cBoardWakeFX_BuildTrail
 s09	002de058	002de368	o	cBoardWakeFX_AdvanceRing
 s09	002de368	002de394	o	cBoardWakeFX_ResetHead
 s09	002de398	002de4a8	o	cDynamicSprayFX_AddRandomVelocity
-s09	002de4a8	002df1c8	-	cDynamicSprayFX_ctor
+s09	002de4a8	002df1c8	o	cDynamicSprayFX_ctor
 s09	002df1c8	002df3b0	-	cDynamicSprayFX_dtor
 s09	002df3b0	002df448	o	cDynamicSprayFX_Reset
 s09	002df448	002df4d0	o	cDynamicSprayFX_SetupEmitters
@@ -8015,7 +8015,7 @@ s09	002f4db8	002f5144	o	LensFX_UpdateSunPosition
 s09	002f5148	002f517c	o	WorldLightMan_LightInstanceCB
 s09	002f5180	002f5230	-	WorldLightMan_ctor
 s09	002f5230	002f5298	-	WorldLightMan_dtor
-s09	002f5298	002f53ac	-	WorldLightMan_AllocOverlapList
+s09	002f5298	002f53ac	o	WorldLightMan_AllocOverlapList
 s09	002f53b0	002f53fc	o	WorldLightMan_FreeOverlapLists
 s09	002f5400	002f5994	o	WorldLightMan_GetInstanceLighting
 s09	002f5998	002f59cc	o	WorldLightMan_ResetRegions
@@ -8080,12 +8080,12 @@ s09	002f8310	002f8340	o	VisualEffectsMan_dtor
 s09	002f8340	002f8370	o	AIVisualEffectsMan_dtor
 s09	002f8370	002f8390	-	VisualEffectsMan_GlobalCtors
 s09	002f8390	002f83b0	-	VisualEffectsMan_GlobalDtors
-s09	002f83b0	002f8ff8	-	AttachedEmitterTypeData_InitPart1
+s09	002f83b0	002f8ff8	o	AttachedEmitterTypeData_InitPart1
 s09	002f8ff8	002f9000	-	AttachedEmitterTypeData_FreePart1
 s09	002f9000	002f903c	-	AttachedEmitterFX_DebugPrintf
 s09	002f9040	002f9818	-	AttachedEmitterTypeData_StaticInit1
 s09	002f9818	002f9838	-	AttachedEmitterTypeData_GlobalCtors1
-s09	002f9838	002fa5f4	-	AttachedEmitterTypeData_InitPart2
+s09	002f9838	002fa5f4	o	AttachedEmitterTypeData_InitPart2
 s10	002fa5f8	002fa600	-	AttachedEmitterTypeData_FreePart2
 s10	002fa600	002fa63c	-	AttachedEmitterFX_DebugPrintf_2
 s10	002fa640	002fae18	-	AttachedEmitterTypeData_StaticInit2
@@ -8357,7 +8357,7 @@ s10	0030ba80	0030bac4	o	WScriptMan_GetCollectedCount
 s10	0030bac8	0030bb0c	o	WScriptMan_AddCollectItems
 s10	0030bb10	0030bc7c	o	WScriptMan_SaveState
 s10	0030bc80	0030bd1c	o	WScriptMan_SaveProcessList
-s10	0030bd20	0030bee8	-	WScriptMan_LoadState
+s10	0030bd20	0030bee8	o	WScriptMan_LoadState
 s10	0030bee8	0030bfc0	o	WScriptMan_LoadProcessList
 s10	0030bfc0	0030c38c	o	WScriptMan_CheckRiderGate
 s10	0030c390	0030c3dc	o	WScriptMan_ResetCollectSet
@@ -10125,7 +10125,7 @@ s12	0038a6a8	0038abf8	o	Irradiance_AddDynamicLight
 s12	0038abf8	0038ac1c	o	Irradiance_GetEntry
 s12	0038ac20	0038ac50	o	Irradiance_GetEntryByName
 s12	0038ac50	0038accc	o	Irradiance_FindIndex
-s12	0038acd0	0038adac	-	Irradiance_Load
+s12	0038acd0	0038adac	o	Irradiance_Load
 s12	0038adb0	0038ae10	o	Irradiance_Free
 s12	0038ae10	0038ae28	o	LightMan_ctor
 s12	0038ae28	0038ae5c	o	LightMan_dtor
@@ -10399,7 +10399,7 @@ s13	00397948	003979bc	o	UIList_DeleteAll
 s13	003979c0	003979f4	o	UIList_Count
 s13	003979f8	00397a68	o	UIList_AcceptVisitor
 s13	00397a68	00397ad8	o	UIList_v03
-s13	00397ad8	00397b08	-	UI_AsciiToWide
+s13	00397ad8	00397b08	o	UI_AsciiToWide
 s13	00397b08	00397b70	o	UIEngine_ctor
 s13	00397b70	00397c3c	o	UIEngine_dtor
 s13	00397c40	00397cbc	o	UIEngine_LoadPackage
@@ -10414,7 +10414,7 @@ s13	003983f0	00398438	o	UIFontSet_FindFont
 s13	00398438	003984ac	o	UIFontSet_FreeFonts
 s13	003984b0	003984e8	o	UIFontSet_AddFont
 s13	003984e8	00398564	-	UIFontSet_ParseFontPack
-s13	00398568	00398618	-	UIFontSet_LoadFonts
+s13	00398568	00398618	o	UIFontSet_LoadFonts
 s13	00398618	00398634	o	cUIGroup_Load
 s13	00398638	003986b0	o	cUIGroup_SetFocus
 s13	003986b0	00398738	o	cUIGroup_FindById
@@ -10543,7 +10543,7 @@ s13	0039f698	0039f718	o	UIStateMgr_CloseAllPopups
 s13	0039f718	0039f7b8	o	UIStateMgr_CloseTopStateAndPopups
 s13	0039f7b8	0039f840	o	UIStateMgr_SetParentChainVisible
 s13	0039f840	0039f8c8	o	UIStateMgr_CloseAll
-s13	0039f8c8	0039f9d4	-	UIStateMgr_DestroyAll
+s13	0039f8c8	0039f9d4	o	UIStateMgr_DestroyAll
 s13	0039f9d8	0039fa84	o	UIStateMgr_FindState
 s13	0039fa88	0039fae8	o	UIStateMgr_GetActiveState
 s13	0039fae8	0039fb04	o	UIList_First_Wrapper
@@ -11551,7 +11551,7 @@ s14	003cfa98	003cfb34	-	SND_Sqrt1pSeries
 s14	003cfb38	003cfb68	-	SND_CalcPrimeDelay
 s14	003cfb68	003cfb94	-	SND_ISqrt
 s14	003cfb98	003cfc30	-	SND_NextPrimeDelay
-s14	003cfc30	003d0b18	-	PATH_ExecuteAction
+s14	003cfc30	003d0b18	o	PATH_ExecuteAction
 s14	003d0b18	003d0b74	o	PATH_QueueAppend
 s14	003d0b78	003d0c1c	-	PATH_SkipCondBlock
 s14	003d0c20	003d0c74	-	PATH_SkipRemainingActions
@@ -11571,7 +11571,7 @@ s14	003d16c8	003d16d0	-	PATH_NopStub
 s14	003d16d0	003d16dc	-	PATH_GetTimeValue
 s14	003d16e0	003d16e8	-	PATH_ReturnArg
 s14	003d16e8	003d16f0	-	PATH_NopStub2
-s14	003d16f0	003d1940	-	PATH_PostEvent
+s14	003d16f0	003d1940	o	PATH_PostEvent
 s14	003d1940	003d1a88	-	PATH_FlushEvents
 s14	003d1a88	003d1ba8	-	PATH_CountEvents
 s14	003d1ba8	003d1d24	o	PATH_RemoveEvent
@@ -11584,8 +11584,8 @@ s14	003d21c0	003d2218	-	PATH_SetEventMarkBit
 s14	003d2218	003d228c	-	PATH_ClearEventMarkBits
 s14	003d2290	003d234c	o	PATH_Init
 s14	003d2350	003d25ec	o	PATH_AddMap
-s14	003d25f0	003d2a68	-	PATH_AddTrack
-s14	003d2a68	003d2c1c	-	PATH_StopTracks
+s14	003d25f0	003d2a68	o	PATH_AddTrack
+s14	003d2a68	003d2c1c	o	PATH_StopTracks
 s14	003d2c20	003d2df4	-	PATH_GetMaxBranchRatio
 s14	003d2df8	003d2f9c	-	PATH_TrackPrepare
 s14	003d2fa0	003d2fbc	-	PATH_NopStub_Wrapper
@@ -11906,7 +11906,7 @@ s14	003e3b00	003e3bdc	-	EAFile_CdIssueRead
 s14	003e3be0	003e3d78	o	EAFile_CdReadThread
 s14	003e3d78	003e4000	-	EAFile_CdMountDisc
 s14	003e4000	003e403c	o	EAFile_CdRemount
-s14	003e4040	003e44b0	-	EAFile_CdInit
+s14	003e4040	003e44b0	o	EAFile_CdInit
 s14	003e44b0	003e4508	-	EAFile_CdShutdown
 s14	003e4508	003e4648	o	EAFile_CdLookup
 s14	003e4648	003e48d8	o	EAFile_CdRead
@@ -13181,7 +13181,7 @@ s15	00427938	00427984	o	sceFs_SemaInit
 s15	00427988	004279b4	o	sceFs_Lock
 s15	004279b8	004279c4	o	sceFs_Unlock
 s15	00427a60	00427a8c	-	sceFs_CallFuncCmdHandler
-s15	00427a90	00427c94	-	sceFsInit
+s15	00427a90	00427c94	o	sceFsInit
 s15	00427c98	00427d24	o	sceFs_NeedsRebind
 s15	00427d28	00427d5c	-	sceFsReset
 s15	00427d60	00427fe4	o	sceOpen

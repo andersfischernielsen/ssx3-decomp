@@ -9842,6 +9842,7 @@
 0x00180240    FEUIInput_IsCamZoom
 0x0038b158    PS2BezierMan_v04
 0x002aa408    StreamBuffer_Stop
+# Phase 2 wave: oc800, oc801, oc802, oc803, oc804, oc805, oc806, oc807, oc808, oc809, oc810, oc811, oc812, oc813
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
@@ -9910,3 +9911,58 @@
 0x00258870    cGameComm_SetTimeoutTimer
 # tick rate: rail alignment
 0x0013af28    RiderRailslideState_Update
+# Wave 247 backlog (dispatcher and skipped functions): slots so the ports can name __generated
+0x0017a978    DebugMenu_CheckWorldFiles
+0x001817e8    cFEStateCharSelect_OnWidgetAction
+0x001913b8    cFEStateRuleSelect_FillRuleList
+0x00194ea8    cFEStateMainMenu_OnWidgetAction
+0x0019de18    BoltFile_CompareTextureSlots
+0x0019df20    BoltFile_PrioritizeModels
+0x0019e070    BoltFile_PrioritizeTextures
+0x001a0830    FEUICustom_CreateState
+0x001a1ec0    FEModule_Load
+0x001a2e58    FEUISound_v02
+0x001e92a8    HUD_LayoutIconText
+0x001fd190    FE_GetEventNameText
+0x00200de8    EventSelect_SetupPeakTexts
+0x00205098    EventSelect_RefreshPeakGoals
+0x00206690    EventSelect_ShowEventPaths
+0x00207430    EventSelect_RefreshEventList
+0x0020ab50    GameUI_OpenScreen
+0x0022d6c8    SectionMan_OnEventTrigger
+0x00246cf8    cGameLoadState_UpdatePlayerRanking
+0x0026ada8    PathData_LoadFile
+0x0026ae70    PathData_ReloadPaths
+0x00284c68    SSXAudioSystem_ctor
+0x002862a8    SSXAudioSystem_LoadWorldAudio
+0x00287700    SSXAudioSystem_SetChannelVolume
+0x00287fc8    SSXAudioSystem_LoadVolumeConfig
+0x00288f60    SSXAudioSystem_SetDebugMode
+0x00289470    SSXAudioSystem_ReadPlaylistNames
+0x0028d488    SSXAudioSystem_SelectRandomSong
+0x0028f478    SSXAudioSystem_OnSongChanged
+0x00294f78    SSXAudioSystem_PlayFESound
+0x002a5d08    CrowdAudio_InstanceAddSource
+0x002a7040    CrowdAudio_ParseConfig
+0x002a7da0    IniParser_ReadToken
+0x002a8d90    PS2SoundManager_SetOutputMode
+0x002afa68    SpeechInstance_ctor
+0x002b28c0    MusicPlayer_ctor
+0x002c0408    WorldPainterQuery_ctor
+0x002da390    cBoardSparkFX_ctor
+0x002db6d8    cCrowdRender2D_ctor
+0x002de4a8    cDynamicSprayFX_ctor
+0x002f5298    WorldLightMan_AllocOverlapList
+0x002f83b0    AttachedEmitterTypeData_InitPart1
+0x002f9838    AttachedEmitterTypeData_InitPart2
+0x0030bd20    WScriptMan_LoadState
+0x0038acd0    Irradiance_Load
+0x00397ad8    UI_AsciiToWide
+0x00398568    UIFontSet_LoadFonts
+0x0039f8c8    UIStateMgr_DestroyAll
+0x003cfc30    PATH_ExecuteAction
+0x003d16f0    PATH_PostEvent
+0x003d25f0    PATH_AddTrack
+0x003d2a68    PATH_StopTracks
+0x003e4040    EAFile_CdInit
+0x00427a90    sceFsInit
