@@ -163,6 +163,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         event_select_show_event_paths,
         "EventSelect_ShowEventPaths",
     ),
+    (
+        0x0020_2768,
+        event_select_handle_input,
+        "EventSelect_HandleInput",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14325,6 +14330,14 @@ pub fn event_select_refresh_event_list(c: &mut Cpu) {
     });
 }
 
+/// `EventSelect_HandleInput` (0x202768): stub returning 0.
+pub fn event_select_handle_input(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16335,6 +16348,19 @@ pub(crate) mod tests {
                 c.g[A1][0] = (seed % 2) as u64;
                 c.bus.write32(OC803_CTRL, OC803_MAGIC);
                 c.pc = 0x00206690;
+            },
+        );
+    }
+
+    #[test]
+    fn event_select_handle_input_matches() {
+        check(
+            ee::s05::f_00202768__generated,
+            event_select_handle_input,
+            20,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2027_68, 0);
+                c.pc = 0x0020_2768;
             },
         );
     }

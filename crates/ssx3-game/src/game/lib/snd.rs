@@ -515,6 +515,23 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SPCH_ClearEventTables",
     ),
     (0x003d_b790, spch_seed_random, "SPCH_SeedRandom"),
+    (0x003d_6768, oc815_sp_ch_get_config, "SPCH_GetConfig"),
+    (
+        0x003d_6c58,
+        oc815_sp_ch_calc_bank_table_size,
+        "SPCH_CalcBankTableSize",
+    ),
+    (
+        0x003d_6d40,
+        oc815_sp_ch_reset_bank_table,
+        "SPCH_ResetBankTable",
+    ),
+    (0x003d_a3a8, spch_get_bank_id_bytes, "SPCH_GetBankIdBytes"),
+    (
+        0x003d_a3c0,
+        oc815_sp_ch_set_time_offset,
+        "SPCH_SetTimeOffset",
+    ),
 ];
 
 /// Fields of the driver state block.
@@ -32970,6 +32987,49 @@ pub fn spch_add_event_table(c: &mut Cpu) {
     })
 }
 
+/// `SPCH_GetBankIdBytes` (0x3da3a8): `*a1 = byte(a0+8)`, `*a2 = byte(a0+9)`.
+pub fn spch_get_bank_id_bytes(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V0][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+    c.g[V1][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x9));
+    let t = c.g[RA][0] as u32;
+    c.sw(c.g[A2][0] as u32, c.g[V1][0]);
+    c.pc = t;
+}
+
+/// Replacements in this module: (address, function, name).
+/// `SPCH_ResetBankTable`: Clears the bank table pointer and size globals (gp+0x1734, gp+0x1738).
+pub fn oc815_sp_ch_reset_bank_table(c: &mut Cpu) {
+    c.cycles += 3;
+    c.bus.write32((c.g[GP][0] as u32).wrapping_add(0x1734), 0);
+    c.bus.write32((c.g[GP][0] as u32).wrapping_add(0x1738), 0);
+    ret(c);
+}
+
+/// `SPCH_GetConfig`: Returns the constant config address 0x44ffa8 in v0.
+pub fn oc815_sp_ch_get_config(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = sx(0x44_ffa8);
+    ret(c);
+}
+
+/// `SPCH_SetTimeOffset`: Stores a0 in the time offset global (gp+0x174c).
+pub fn oc815_sp_ch_set_time_offset(c: &mut Cpu) {
+    c.cycles += 2;
+    let a0 = c.g[A0][0];
+    c.bus
+        .write32((c.g[GP][0] as u32).wrapping_add(0x174c), a0 as u32);
+    ret(c);
+}
+
+/// `SPCH_CalcBankTableSize`: Returns the byte size of a bank table of a0 entries (a0 * 4) in v0.
+pub fn oc815_sp_ch_calc_bank_table_size(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -45926,6 +45986,81 @@ pub(crate) mod tests {
                     1 => 0xffff_ffff_0000_0003,
                     _ => [0x11u64, 0x22][(r.next_u32() % 2) as usize] % 8,
                 };
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::bankmanager::tests::oc814_base;
+
+    #[test]
+    fn spch_get_bank_id_bytes_matches() {
+        check(
+            ee::s14::f_003da3a8__generated,
+            spch_get_bank_id_bytes,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3da3_a8, 0);
+                let a = oc814_base(c, &mut r);
+                c.g[A0][0] = a as u64;
+                c.g[A1][0] = (DATA_m2 + 0x9_0000 + (r.next_u32() & 0xff0)) as u64;
+                c.g[A2][0] = (DATA_m2 + 0xa_0000 + (r.next_u32() & 0xff0)) as u64;
+                c.pc = 0x003d_a3a8;
+            },
+        );
+    }
+
+    /// `SPCH_ResetBankTable` against the generated body.
+    #[test]
+    fn oc815_sp_ch_reset_bank_table_matches() {
+        crate::difftest::check(
+            ee::s14::f_003d6d40__generated,
+            oc815_sp_ch_reset_bank_table,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x003d6d40;
+            },
+        );
+    }
+
+    /// `SPCH_GetConfig` against the generated body.
+    #[test]
+    fn oc815_sp_ch_get_config_matches() {
+        crate::difftest::check(
+            ee::s14::f_003d6768__generated,
+            oc815_sp_ch_get_config,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x003d6768;
+            },
+        );
+    }
+
+    /// `SPCH_SetTimeOffset` against the generated body.
+    #[test]
+    fn oc815_sp_ch_set_time_offset_matches() {
+        crate::difftest::check(
+            ee::s14::f_003da3c0__generated,
+            oc815_sp_ch_set_time_offset,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x003da3c0;
+            },
+        );
+    }
+
+    /// `SPCH_CalcBankTableSize` against the generated body.
+    #[test]
+    fn oc815_sp_ch_calc_bank_table_size_matches() {
+        crate::difftest::check(
+            ee::s14::f_003d6c58__generated,
+            oc815_sp_ch_calc_bank_table_size,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x003d6c58;
             },
         );
     }

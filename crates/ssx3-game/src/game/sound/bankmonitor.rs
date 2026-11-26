@@ -636,6 +636,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003d_16f0, path_post_event, "PATH_PostEvent"),
     (0x003d_25f0, path_add_track, "PATH_AddTrack"),
     (0x003d_2a68, path_stop_tracks, "PATH_StopTracks"),
+    (
+        0x002b_4060,
+        oc817_music_player_empty_playlist_hook,
+        "MusicPlayer_EmptyPlaylistHook",
+    ),
+    (
+        0x002b_4ae8,
+        music_player_get_song_data_buffer,
+        "MusicPlayer_GetSongDataBuffer",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -20760,6 +20770,20 @@ pub fn path_stop_tracks(c: &mut Cpu) {
     });
 }
 
+/// `MusicPlayer_GetSongDataBuffer` (0x2b4ae8): returns the word at `player + 0x5434`.
+pub fn music_player_get_song_data_buffer(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x5434));
+    c.pc = t;
+}
+
+/// `MusicPlayer_EmptyPlaylistHook`: an empty function (`jr ra`).
+pub fn oc817_music_player_empty_playlist_hook(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -28474,5 +28498,36 @@ pub(crate) mod tests {
             &execute_action_setup,
         );
         assert!(oc812_paths(ee::s14::f_003cfc30__generated, 400, &execute_action_setup) >= 8);
+    }
+
+    pub(crate) use crate::game::sound::bankmanager::tests::oc814_base;
+    pub(crate) use crate::game::sound::bankmanager::tests::oc814_fill;
+    pub(crate) use crate::game::sound::bankmanager::tests::oc817_leaf_setup;
+
+    #[test]
+    fn music_player_get_song_data_buffer_matches() {
+        check(
+            ee::s08::f_002b4ae8__generated,
+            music_player_get_song_data_buffer,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b4a_e8, 0);
+                let a = oc814_base(c, &mut r);
+                oc814_fill(c, &mut r, a + 0x5430, 2);
+                c.g[A0][0] = a as u64;
+                c.pc = 0x002b_4ae8;
+            },
+        );
+    }
+
+    /// `MusicPlayer_EmptyPlaylistHook`: returns at once.
+    #[test]
+    fn music_player_empty_playlist_hook_matches() {
+        check(
+            ee::s08::f_002b4060__generated,
+            oc817_music_player_empty_playlist_hook,
+            20,
+            &oc817_leaf_setup,
+        );
     }
 }

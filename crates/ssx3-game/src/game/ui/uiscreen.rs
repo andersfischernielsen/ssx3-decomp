@@ -146,6 +146,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_e288, ui_sound_base_ctor, "UISound_BaseCtor"),
     (0x0039_e4a0, ui_state_shutdown, "UIState_Shutdown"),
     (0x0039_e508, ui_state_post_input, "UIState_PostInput"),
+    (
+        0x0039_ce90,
+        oc815_ui_screen_thread_nop_c,
+        "UIScreen_ThreadNopC",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2981,6 +2986,12 @@ pub fn ui_sound_base_ctor(c: &mut Cpu) {
     ret(c);
 }
 
+/// `UIScreen_ThreadNopC`: Empty thread command: returns at once.
+pub fn oc815_ui_screen_thread_nop_c(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4907,6 +4918,20 @@ pub(crate) mod tests {
                 let mut r = machine(c, seed, 0x797b, 0);
                 c.g[A0][0] = ptr(&mut r) as u64;
                 c.g[RA][0] = DT_RA as u64;
+            },
+        );
+    }
+
+    /// `UIScreen_ThreadNopC` against the generated body.
+    #[test]
+    fn oc815_ui_screen_thread_nop_c_matches() {
+        crate::difftest::check(
+            ee::s13::f_0039ce90__generated,
+            oc815_ui_screen_thread_nop_c,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x0039ce90;
             },
         );
     }

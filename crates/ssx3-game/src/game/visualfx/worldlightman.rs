@@ -261,6 +261,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         attached_emitter_type_data_init_part2,
         "AttachedEmitterTypeData_InitPart2",
     ),
+    (
+        0x002f_8ff8,
+        oc817_attached_emitter_type_data_free_part1,
+        "AttachedEmitterTypeData_FreePart1",
+    ),
+    (
+        0x002f_a5f8,
+        oc815_attached_emitter_type_data_free_part2,
+        "AttachedEmitterTypeData_FreePart2",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6193,6 +6203,18 @@ pub fn attached_emitter_type_data_init_part2(c: &mut Cpu) {
     c.pc = t;
 }
 
+/// `AttachedEmitterTypeData_FreePart2`: Empty free hook: returns at once.
+pub fn oc815_attached_emitter_type_data_free_part2(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `AttachedEmitterTypeData_FreePart1`: an empty function (`jr ra`).
+pub fn oc817_attached_emitter_type_data_free_part1(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7988,5 +8010,32 @@ pub(crate) mod tests {
         }
         assert!(seen.len() >= 8, "paths {seen:?}");
         assert!(returned >= 20, "returned {returned}");
+    }
+
+    pub(crate) use crate::game::sound::bankmanager::tests::oc817_leaf_setup;
+
+    /// `AttachedEmitterTypeData_FreePart2` against the generated body.
+    #[test]
+    fn oc815_attached_emitter_type_data_free_part2_matches() {
+        crate::difftest::check(
+            ee::s10::f_002fa5f8__generated,
+            oc815_attached_emitter_type_data_free_part2,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x002fa5f8;
+            },
+        );
+    }
+
+    /// `AttachedEmitterTypeData_FreePart1`: returns at once.
+    #[test]
+    fn attached_emitter_type_data_free_part1_matches() {
+        check(
+            ee::s09::f_002f8ff8__generated,
+            oc817_attached_emitter_type_data_free_part1,
+            20,
+            &oc817_leaf_setup,
+        );
     }
 }

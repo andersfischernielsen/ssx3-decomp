@@ -112,6 +112,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         main_menu_on_widget_action,
         "cFEStateMainMenu_OnWidgetAction",
     ),
+    (
+        0x0019_5328,
+        main_menu_on_child_event,
+        "cFEStateMainMenu_OnChildEvent",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1761,6 +1766,116 @@ pub fn main_menu_on_widget_action(c: &mut Cpu) {
     });
 }
 
+/// One "show widget" step of `cFEStateMainMenu_OnChildEvent`: look up the
+/// string at `hi + lo` (`0x317670`), find the child widget of the state's
+/// screen (`0x39d860`), and when found call its vtable slot at +0x4c with
+/// `a1 = 1` (show).
+pub(crate) fn oc851_show_widget(c: &mut Cpu, hi: u32, lo: u32, ras: [u32; 3]) -> Flow {
+    c.cycles += 9;
+    c.g[A0][0] = hi as u64;
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(lo));
+    call_ptr(c, 0x0031_7670, ras[0])?;
+    c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x40)).lw(c);
+    c.g[A1][0] = c.g[V0][0];
+    call_ptr(c, 0x0039_d860, ras[1])?;
+    c.g[A2][0] = c.g[V0][0];
+    let found = c.g[A2][0] != 0;
+    c.g[A1][0] = 1;
+    if found {
+        c.cycles += 5;
+        c.g[V0][0] = Addr(r32(c, A2).wrapping_add(8)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x48)).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x4c)).lw(c);
+        let t = r32(c, V1);
+        c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+        call_ptr(c, t, ras[2])?;
+    }
+    Ok(())
+}
+
+/// `void cFEStateMainMenu_onWidgetEvent(self, obj, int msg)` (0x195328):
+/// message 0x15 does nothing; message 0x16 asks the widget (vtable +0xb8)
+/// and, if it answers, copies the saved control (+0x50 into +0x14), sets
+/// `mGoToNextState` (+0x48) and tells the multi-mode widget (+0x4c) to play
+/// keyframe 2 and gets event 5; then it shows four widgets.
+pub fn main_menu_on_child_event(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save(c, 16, 0x10);
+        c.g[V0][0] = 0x15;
+        frame.save_ra(c, 0);
+        let is_15 = c.g[A2][0] == c.g[V0][0];
+        c.g[S0][0] = c.g[A0][0];
+        if is_15 {
+            c.cycles += 1;
+            frame.restore(c, 16, 0x10);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 0x16;
+            if c.g[A2][0] != c.g[V0][0] {
+                frame.restore(c, 16, 0x10);
+            } else {
+                c.cycles += 8;
+                c.g[V1][0] = Addr(r32(c, A3).wrapping_add(8)).lw(c);
+                c.g[A1][0] = 0;
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0xb8)).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0xbc)).lw(c);
+                let t = r32(c, V0);
+                c.g[A0][0] = sx(r32(c, A3).wrapping_add(r32(c, A0)));
+                call_ptr(c, t, 0x0019_5368)?;
+                let none = c.g[V0][0] == 0;
+                c.g[V0][0] = 1;
+                if !none {
+                    c.cycles += 13;
+                    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0x50)).lb(c);
+                    c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x4c)).lw(c);
+                    c.g[A1][0] = 2;
+                    let saved = c.g[V1][0];
+                    Addr(r32(c, S0).wrapping_add(0x14)).sb(c, saved);
+                    let one = c.g[V0][0];
+                    Addr(r32(c, S0).wrapping_add(0x48)).sw(c, one);
+                    call_ptr(c, 0x0039_ffa0, 0x0019_5388)?;
+                    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(8)).lw(c);
+                    c.g[A2][0] = 5;
+                    c.g[A1][0] = Addr(r32(c, S0).wrapping_add(0x4c)).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x98)).lh(c);
+                    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x9c)).lw(c);
+                    let t = r32(c, V0);
+                    c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+                    call_ptr(c, t, 0x0019_53a4)?;
+                }
+                oc851_show_widget(
+                    c,
+                    0x4a_0000,
+                    0x17e0,
+                    [0x0019_53b0, 0x0019_53bc, 0x0019_53dc],
+                )?;
+                oc851_show_widget(c, 0x46_0000, 0xa0, [0x0019_53e8, 0x0019_53f4, 0x0019_5414])?;
+                oc851_show_widget(
+                    c,
+                    0x4a_0000,
+                    0x1458,
+                    [0x0019_5420, 0x0019_542c, 0x0019_544c],
+                )?;
+                oc851_show_widget(
+                    c,
+                    0x4a_0000,
+                    0x1460,
+                    [0x0019_5458, 0x0019_5464, 0x0019_5484],
+                )?;
+                c.cycles += 1;
+                frame.restore(c, 16, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2905,6 +3020,45 @@ pub(crate) mod tests {
             80,
             &|c, seed| {
                 oc800_main_menu_setup(c, seed, 5, 49, 0, false);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festatebigradio::tests::oc851_machine;
+
+    pub(crate) use crate::game::fe::festatebigradio::tests::oc851_vtable;
+
+    pub(crate) use crate::game::fe::festatebigradio::tests::OC851_OBJ2;
+    pub(crate) use crate::game::fe::festatebigradio::tests::OC851_SELF;
+    pub(crate) use crate::game::fe::festatebigradio::tests::OC851_VT_SELF;
+    pub(crate) use crate::game::fe::festatebonusmaterial::tests::OC851_ZERO_LEAF;
+
+    pub(crate) const OC851_VT_OBJ2: u32 = DATA + 0x8_3800;
+
+    /// `cFEStateMainMenu_OnChildEvent`: messages 0x15 and 0x16 (with and
+    /// without a widget answer), anything else; the four show-widget steps.
+    #[test]
+    fn main_menu_on_child_event_matches() {
+        check(
+            ee::s02::f_00195328__generated,
+            main_menu_on_child_event,
+            200,
+            &|c, seed| {
+                let mut r = oc851_machine(c, seed, 0x195328, 4);
+                oc851_vtable(c, &mut r, OC851_VT_SELF, &[0x98]);
+                c.bus.write32(OC851_SELF + 8, OC851_VT_SELF);
+                c.bus.write32(OC851_SELF + 0x4c, DATA + 0x4_0000);
+                c.bus.write8(OC851_SELF + 0x50, r.next_u32() as u8);
+                // The widget object: slot 0xb8 is a fake, or a real leaf returning 0.
+                oc851_vtable(c, &mut r, OC851_VT_OBJ2, &[0xb8]);
+                if seed % 3 == 0 {
+                    c.bus.write32(OC851_VT_OBJ2 + 0xbc, OC851_ZERO_LEAF);
+                }
+                c.bus.write32(OC851_OBJ2 + 8, OC851_VT_OBJ2);
+                c.g[A0][0] = sx(OC851_SELF);
+                c.g[A1][0] = sx(OC851_OBJ2);
+                c.g[A2][0] = [0x15u64, 0x16, 0x16, 0x16, 0x17, 0][seed as usize % 6];
+                c.pc = 0x0019_5328;
             },
         );
     }

@@ -1067,6 +1067,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_sound_manager_set_output_mode,
         "PS2SoundManager_SetOutputMode",
     ),
+    (
+        0x0029_c418,
+        oc817_ssx_audio_system_on_countdown_enter,
+        "SSXAudioSystem_OnCountdownEnter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -31219,6 +31224,12 @@ pub fn ps2_sound_manager_set_output_mode(c: &mut Cpu) {
     });
 }
 
+/// `SSXAudioSystem_OnCountdownEnter`: an empty function (`jr ra`).
+pub fn oc817_ssx_audio_system_on_countdown_enter(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -42934,6 +42945,19 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(OC808_OBJ);
                 c.g[A1][0] = sx(mode as u32);
             },
+        );
+    }
+
+    pub(crate) use crate::game::sound::bankmanager::tests::oc817_leaf_setup;
+
+    /// `SSXAudioSystem_OnCountdownEnter`: returns at once.
+    #[test]
+    fn ssx_audio_system_on_countdown_enter_matches() {
+        check(
+            ee::s08::f_0029c418__generated,
+            oc817_ssx_audio_system_on_countdown_enter,
+            20,
+            &oc817_leaf_setup,
         );
     }
 }

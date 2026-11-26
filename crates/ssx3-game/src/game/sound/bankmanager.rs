@@ -328,6 +328,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_on_song_changed_resumable,
         "SSXAudioSystem_OnSongChanged",
     ),
+    (
+        0x0028_b928,
+        snd_bank_get_buffer_size,
+        "SndBank_GetBufferSize",
+    ),
+    (
+        0x0028_c8c0,
+        oc817_ssx_audio_system_set_countdown_value,
+        "SSXAudioSystem_SetCountdownValue",
+    ),
+    (
+        0x0028_df08,
+        ssx_audio_system_reset_music_state,
+        "SSXAudioSystem_ResetMusicState",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6328,6 +6343,31 @@ pub fn ssx_audio_system_on_song_changed_resumable(c: &mut Cpu) {
     });
 }
 
+/// `SndBank_GetBufferSize` (0x28b928): returns `bank->buffer_size` (+0x14).
+pub fn snd_bank_get_buffer_size(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+    c.pc = t;
+}
+
+/// `SSXAudioSystem_ResetMusicState` (0x28df08): `audio->current_song (+0x629c) = -1`.
+pub fn ssx_audio_system_reset_music_state(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+    let t = c.g[RA][0] as u32;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x629c), c.g[V0][0]);
+    c.pc = t;
+}
+
+/// `SSXAudioSystem_SetCountdownValue(self, value)`: `self->countdown = value`
+/// (word at +0x6250).
+pub fn oc817_ssx_audio_system_set_countdown_value(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x6250), c.g[A1][0]);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9469,6 +9509,74 @@ pub(crate) mod tests {
                 c.bus.write32(OC807_VT + 0xc4, fakes::FAKE + 0x10);
                 c.g[A0][0] = sx(OC807_SELF);
                 c.pc = 0x0028_f478;
+            },
+        );
+    }
+
+    /// Random bytes at `a` (words), so loads see varied data.
+    pub(crate) fn oc814_fill(c: &mut Cpu, r: &mut crate::difftest::Rng, a: u32, words: u32) {
+        for i in 0..words {
+            let v = r.next_u32();
+            c.bus.write32(a + 4 * i, v);
+        }
+    }
+
+    /// A pointer in the low half of the data area (offsets up to 0x6300 stay
+    /// clear of the fakes' call log at DATA+0x100000).
+    pub(crate) fn oc814_base(c: &mut Cpu, r: &mut crate::difftest::Rng) -> u32 {
+        let a = DATA + (r.next_u32() & 0x7_fff0);
+        oc814_fill(c, r, a, 8);
+        a
+    }
+
+    #[test]
+    fn snd_bank_get_buffer_size_matches() {
+        check(
+            ee::s07::f_0028b928__generated,
+            snd_bank_get_buffer_size,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x28b9_28, 0);
+                let a = oc814_base(c, &mut r);
+                oc814_fill(c, &mut r, a + 0x10, 2);
+                c.g[A0][0] = a as u64;
+                c.pc = 0x0028_b928;
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_reset_music_state_matches() {
+        check(
+            ee::s07::f_0028df08__generated,
+            ssx_audio_system_reset_music_state,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x28df_08, 0);
+                let a = oc814_base(c, &mut r);
+                oc814_fill(c, &mut r, a + 0x6298, 3);
+                c.g[A0][0] = a as u64;
+                c.pc = 0x0028_df08;
+            },
+        );
+    }
+
+    pub(crate) fn oc817_leaf_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x817, 0);
+        c.g[A0][0] = sx(fakes::ptr(&mut r));
+        c.g[RA][0] = sx(0x0020_0000 + 0x10 * seed);
+    }
+
+    /// `SSXAudioSystem_SetCountdownValue(self, value)` stores the value at +0x6250.
+    #[test]
+    fn ssx_audio_system_set_countdown_value_matches() {
+        check(
+            ee::s07::f_0028c8c0__generated,
+            oc817_ssx_audio_system_set_countdown_value,
+            50,
+            &|c, seed| {
+                oc817_leaf_setup(c, seed);
+                c.g[A1][0] = sx(0x1000 + seed * 0x77);
             },
         );
     }
