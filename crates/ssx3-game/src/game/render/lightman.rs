@@ -150,6 +150,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Render2D_DrawFilledRect",
     ),
     (0x0039_15e8, font_ctor, "Font_ctor"),
+    (0x0037_1f98, dma_send_gif_chain, "Dma_SendGifChain"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3219,6 +3220,142 @@ pub fn render2d_draw_filled_rect(c: &mut Cpu) {
     })
 }
 
+/// `void Dma_SendGifChain(void *chain, int flags)` (0x371f98): kick a GIF
+/// chain, waiting for VIF1 idle when `flags & 4` (and after, when
+/// `flags & 2`).
+pub fn dma_send_gif_chain(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_371fdc: {
+            c.cycles += 3;
+            c.g[V0][0] = c.g[A1][0] & 0x4;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A2][0] = c.g[A0][0];
+            if t {
+                break 'b_371fdc;
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = 0x10000000;
+                c.g[V0][0] = c.g[V0][0] | 0xa000;
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[V1][0] = c.g[V1][0] & 0x100;
+                let t = c.g[V1][0] == 0u64;
+                c.g[V1][0] = 0x10000000;
+                if t {
+                    break 'b_371fdc;
+                } else {
+                    c.cycles += 1;
+                    c.g[V1][0] = c.g[V1][0] | 0xa000;
+                    'l_371fc0: loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        c.g[V0][0] = c.g[V0][0] & 0x100;
+                        let t = c.g[V0][0] != 0u64;
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00371fc0);
+                            }
+                            continue 'l_371fc0;
+                        } else {
+                            break 'b_371fdc;
+                        }
+                    }
+                }
+            }
+        }
+        'b_37202c: {
+            'b_37201c: {
+                c.cycles += 9;
+                c.g[V0][0] = 0x10000000;
+                c.g[V1][0] = 0x6fff0000;
+                c.g[V0][0] = c.g[V0][0] | 0x3010;
+                c.g[A0][0] = 0x4;
+                c.g[V1][0] = c.g[V1][0] | 0xffff;
+                c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+                c.g[V1][0] = (c.g[V1][0] < c.g[A2][0]) as u64;
+                let t = c.g[V1][0] == 0u64;
+                c.g[V0][0] = c.g[A2][0] & 0x3ff0;
+                if t {
+                    break 'b_37201c;
+                } else {
+                    c.cycles += 7;
+                    c.g[V1][0] = 0x10000000;
+                    c.g[A0][0] = 0xffffffff80000000;
+                    c.g[V1][0] = c.g[V1][0] | 0xa030;
+                    c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                    c.g[V0][0] = c.g[A1][0] & 0x1;
+                    break 'b_37202c;
+                }
+            }
+            c.cycles += 4;
+            c.g[V0][0] = 0x10000000;
+            c.g[V0][0] = c.g[V0][0] | 0xa030;
+            c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+            c.g[V0][0] = c.g[A1][0] & 0x1;
+            break 'b_37202c;
+        }
+        'b_372040: {
+            'b_37203c: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = 0x10000000;
+                if t {
+                    break 'b_37203c;
+                } else {
+                    c.cycles += 2;
+                    c.g[V1][0] = 0x144;
+                    break 'b_372040;
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = 0x104;
+            break 'b_372040;
+        }
+        'b_37208c: {
+            c.cycles += 5;
+            c.g[V0][0] = c.g[V0][0] | 0xa000;
+            c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+            c.g[V0][0] = c.g[A1][0] & 0x2;
+            let t = c.g[V0][0] == 0u64;
+            c.g[V0][0] = 0x10000000;
+            if t {
+                break 'b_37208c;
+            } else {
+                c.cycles += 5;
+                c.g[V0][0] = c.g[V0][0] | 0xa000;
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[V1][0] = c.g[V1][0] & 0x100;
+                let t = c.g[V1][0] == 0u64;
+                c.g[V1][0] = 0x10000000;
+                if t {
+                    break 'b_37208c;
+                } else {
+                    c.cycles += 2;
+                    c.g[V1][0] = c.g[V1][0] | 0xa000;
+                    'l_372070: loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        c.g[V0][0] = c.g[V0][0] & 0x100;
+                        let t = c.g[V0][0] != 0u64;
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00372070);
+                            }
+                            continue 'l_372070;
+                        } else {
+                            break 'b_37208c;
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4760,6 +4897,26 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = render2d_filled_rect_setup(c, seed / 3, false);
                 schedule(c, &mut r, seed, 0x0038_ec40)
+            },
+        );
+    }
+    pub(crate) use crate::game::misc::tests::SEEDS as SEEDS_4;
+
+    /// `Dma_SendGifChain` over the flag bits (both polls skipped/taken)
+    /// and small/large chain addresses; VIF1 STAT bit 8 always reads
+    /// clear, so the polls exit at once (the busy spins wait on hardware,
+    /// unreachable in the harness).
+    #[test]
+    fn dma_send_gif_chain_matches() {
+        check(
+            ee::s12::f_00371f98__generated,
+            dma_send_gif_chain,
+            SEEDS_4,
+            &|c, seed| {
+                machine(c, seed, 1_368_003, 1);
+                c.pc = 0x0037_1f98;
+                c.g[A0][0] = [DATA + 0x5000, 0x7000_0000][seed as usize % 2] as u64;
+                c.g[A1][0] = [0, 1, 2, 3, 4, 5, 6, 7][seed as usize / 2 % 8] as u64;
             },
         );
     }

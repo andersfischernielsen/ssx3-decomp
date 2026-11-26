@@ -10260,6 +10260,84 @@
 # Phase 2 wave: oc933, oc934, oc936, oc937, oc957, oc959, oc962, oc966, oc967, oc968, oc969, oc970
 # Phase 2 wave: oc933, oc934, oc936, oc937, oc957, oc959, oc962, oc966, oc967, oc968, oc969, oc970
 # Phase 2 wave: oc928, oc929, oc930, oc931, oc932, oc933, oc934, oc935, oc936, oc937, oc938, oc939, oc940, oc941, oc942, oc943, oc944, oc945, oc946, oc947, oc948, oc949, oc950, oc951, oc952, oc953, oc954, oc955, oc956, oc957, oc958, oc959, oc960, oc961, oc962, oc963, oc964, oc965, oc966, oc967, oc968, oc969, oc970
+# Phase 2 wave: oc1360, oc1361, oc1362, oc1363, oc1364, oc1365, oc1366, oc1367, oc1368
+0x001001d0    ExitThread
+0x00423aa0    RemoveIntcHandler
+0x00423ad0    RemoveDmacHandler
+0x00423b30    ReleaseAlarm
+0x00423ba0    CreateThread
+0x00423bb0    DeleteThread
+0x00423be0    ExitDeleteThread
+0x00423c30    ChangeThreadPriority
+0x00423cc0    SleepThread
+0x00423cd0    WakeupThread
+0x00423d10    SuspendThread
+0x00423da0    CreateSema
+0x00423db0    DeleteSema
+0x00423e50    GetOsdConfigParam
+0x004240b0    GetOsdConfigParam2
+0x00424200    GetMemorySize
+0x004267c0    sceSifRpc_RetrySendAlarm
+0x00426820    sceSifRpc_RequestRData
+0x004268f0    sceSifGetOtherData
+0x00426a48    sceSifRpc_SearchSvdata
+0x00426a98    sceSifRpc_RequestBind
+0x00426c88    sceSifRpc_RequestCall
+0x004271d8    sceSifGetNextRequest
+0x00427230    sceSifExecRequest
+0x00426f48    sceSifSetRpcQueue
+0x004270b0    sceSifRemoveRpc
+0x00427148    sceSifRemoveRpcQueue
+0x00425d38    sceSifInitCmd
+0x00427498    sceFs_AllocFd
+0x00427520    sceFs_GetFd
+0x00427fe8    sceClose
+0x00428168    sceLseek
+0x004283a0    sceRead
+0x00428600    sceWrite
+0x004288c0    sceIoctl
+0x00428c38    sceIoctl2
+0x00428e18    sceFs_PathCmd
+0x00428fe0    sceMkdir
+0x00429420    sceAddDrv
+0x00429560    sceDopen
+0x00429628    sceDclose
+0x00429790    sceDread
+0x004298e8    sceGetstat
+0x00429a88    sceChstat
+0x00429cc8    sceRename
+0x00429ed8    sceSync
+0x0042a070    sceMount
+0x004291b0    sceFormat
+0x0042a300    sceLseek64
+0x0042a538    sceDevctl
+0x0042a770    sceSymlink
+0x0042a950    sceReadlink
+0x00424ea8    libkernl_TtyDeci2Handler
+0x00425040    libkernl_TtyWrite
+0x00425190    libkernl_TtyRead
+0x00425260    libkernl_TtyInit
+0x00425358    libkernl_KputcBuffered
+0x00425440    libkernl_DoubleToInt
+0x00425c60    scePrintf
+0x00424230    libkernl_WaitVBlankStart
+0x004242c0    libkernl_WaitVBlankOrFlag
+0x00424880    DisableIntc
+0x004248e8    EnableIntc
+0x00424b78    libkernl_InitThreadHelper
+0x0042cfc0    libkernl_TLBExceptionHandler
+0x0042d100    libkernl_ExceptionReturnHandler
+0x00362058    DmacTable_AddHandler
+0x003620c8    DmacTable_RemoveHandler
+0x00371f98    Dma_SendGifChain
+# Phase 2 wave: oc1360, oc1361, oc1362, oc1363, oc1364, oc1365, oc1366, oc1367, oc1368
+0x00427590    sceFs_RcvIntrHandler
+0x004254d0    libkernl_PrintDouble
+0x00425638    libkernl_vprintf
+0x00372198    DmaChain_PatchRefTags
+0x00372348    DmaChain_SplitAtRefTags
+0x003ff4a8    scePadInit
+0x00409940    sceMcInit
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
