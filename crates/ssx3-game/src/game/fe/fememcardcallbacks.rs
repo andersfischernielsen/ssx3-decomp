@@ -940,7 +940,7 @@ pub fn memcard_state_base_sync_menu_selection(c: &mut Cpu) {
                 c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                 c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
                 c.g[V0][0] = c.g[V0][0] & 0x1;
-                find_first = c.g[V0][0] == 0;
+                find_first = c.g[V0][0] != 0;
                 c.g[V0][0] = 0xff;
             }
             if find_first {
@@ -5111,10 +5111,13 @@ pub(crate) mod tests {
                 let mut r = base_3(c, seed, 0x1d92);
                 let screen = DATA + 0x1000;
                 let node = DATA + 0x2000;
-                c.g[A0][0] = sx(DATA);
                 c.bus
                     .write32(DATA + 0x40, if seed % 6 == 0 { 0 } else { screen });
+                // `hash_screen` runs `STR_HASH`, which clobbers a0: set the
+                // self pointer after it, or the lookup reads `*(0x4a1640)`
+                // and every seed takes the null path below.
                 hash_screen(c, screen, node, 0x004a_1600);
+                c.g[A0][0] = sx(DATA);
                 let item = DATA + 0x3000;
                 let variant = seed % 4;
                 c.bus
