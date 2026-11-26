@@ -28,6 +28,8 @@ pub(crate) use crate::game::fe::splashmanager::stk;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_at;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
+use crate::game::lib::gcc::frame_ld;
+use crate::game::lib::gcc::frame_sd;
 pub(crate) use crate::game::main::gameload::vcall;
 pub(crate) use crate::game::main::gameload::R2D_CTX_GP;
 pub(crate) use crate::game::main::gameload::R2D_STATE_TOP;
@@ -343,6 +345,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RefPack_GetUnpackedSize",
     ),
     (0x003b_4d00, refpack_get_sizes, "RefPack_GetSizes"),
+    (0x0040_d8d0, fmodf, "fmodf"),
+    (0x0040_f878, matherr, "matherr"),
+    (0x0040_f9f8, scalbnf, "scalbnf"),
+    (0x0041_3f80, add_fdes, "add_fdes"),
+    (0x0041_4230, extract_cie_info, "extract_cie_info"),
+    (0x0041_4338, execute_cfa_insn, "execute_cfa_insn"),
+    (0x0041_78a8, eofread, "eofread"),
+    (0x0041_ed60, floor, "floor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -18764,6 +18774,1424 @@ pub(crate) fn fseek_positioned(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// add_fdes
+
+/// `void add_fdes(void *head, uint32_t *min, uint32_t count, uint32_t *max)`
+/// (0x413f80): link the frame's FDE table into the sorted registry,
+/// tracking the lowest start and the highest end seen.
+pub fn add_fdes(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 6;
+        c.g[T0][0] = c.g[A0][0];
+        c.g[T3][0] = c.g[A1][0];
+        c.g[V0][0] = c.lw(c.g[T0][0] as u32);
+        c.g[T1][0] = c.lw(c.g[A2][0] as u32);
+        let empty = c.g[V0][0] == 0;
+        c.g[T2][0] = c.lw(c.g[A3][0] as u32);
+        if !empty {
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = c.lw(c.g[T0][0] as u32);
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8));
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = c.lw(c.g[T0][0] as u32);
+                    } else {
+                        c.cycles += 15;
+                        c.g[A0][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x4));
+                        c.g[V1][0] = c.lw(c.g[T3][0] as u32);
+                        c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.sw(c.g[V0][0] as u32, c.g[T0][0]);
+                        c.sw((c.g[T3][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8));
+                        c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0xc));
+                        c.g[A1][0] = (c.g[V1][0] < c.g[T1][0]) as u64;
+                        c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        if c.g[A1][0] != 0 {
+                            c.g[T1][0] = c.g[V1][0];
+                        }
+                        c.g[V0][0] = (c.g[T2][0] < c.g[A0][0]) as u64;
+                        if c.g[V0][0] != 0 {
+                            c.g[T2][0] = c.g[A0][0];
+                        }
+                        c.g[V0][0] = c.lw(c.g[T0][0] as u32);
+                    }
+                }
+                c.cycles += 4;
+                c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0041_3f98);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.sw(c.g[A2][0] as u32, c.g[T1][0]);
+        let t = c.g[RA][0] as u32;
+        c.sw(c.g[A3][0] as u32, c.g[T2][0]);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// extract_cie_info
+
+/// `int extract_cie_info(void *cie)` (0x414230): identify the CIE's
+/// augmentation (`"z"`-family or plain) and decode its code/data
+/// alignment and return-address column; 0 when the augmentation is
+/// unknown.
+pub fn extract_cie_info(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = c.g[A0][0];
+        frame_sd(c, frame, 0x20, c.g[S1][0]);
+        frame.save_ra(c, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        frame_sd(c, frame, 0x30, c.g[S2][0]);
+        c.g[A1][0] = 0x4a0000;
+        frame_sd(c, frame, 0x10, c.g[S0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6710));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xd));
+        c.g[A0][0] = c.g[V0][0];
+        c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+        callee::STRCMP.call(c, 0x0041_426c)?;
+        c.g[S0][0] = 0x4a0000;
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x6708));
+            callee::STRCMP.call(c, 0x0041_4280)?;
+            c.g[A0][0] = 0x7a;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+                c.g[V0][0] = 0;
+                if c.g[V1][0] != c.g[A0][0] {
+                    c.cycles += 6;
+                    frame.restore_ra(c, 0x40);
+                    c.g[S2][0] = frame_ld(c, frame, 0x30);
+                    c.g[S1][0] = frame_ld(c, frame, 0x20);
+                    c.g[S0][0] = frame_ld(c, frame, 0x10);
+                    let t = c.g[RA][0] as u32;
+                    frame.close(c);
+                    c.pc = t;
+                    return Ok(());
+                }
+            }
+        }
+        c.cycles += 9;
+        c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+        callee::STRLEN.call(c, 0x0041_42a0)?;
+        c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+        c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x6708));
+        c.g[S2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+        callee::STRCMP.call(c, 0x0041_42b4)?;
+        if c.g[V0][0] != 0 {
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x4), 0);
+        } else {
+            c.cycles += 4;
+            c.lwl(2, (c.g[S0][0] as u32).wrapping_add(0x3));
+            c.lwr(2, c.g[S0][0] as u32);
+            c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x5));
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+        }
+        c.cycles += 14;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+        callee::DECODE_ULEB128.call(c, 0x0041_42d8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+        callee::DECODE_SLEB128.call(c, 0x0041_42e4)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
+        c.g[A0][0] = 0x7a;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+        c.g[V0][0] = c.lb(c.g[A1][0] as u32);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+        if c.g[V0][0] == c.g[A0][0] {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            callee::DECODE_ULEB128.call(c, 0x0041_4310)?;
+            c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[S0][0];
+        c.cycles += 6;
+        frame.restore_ra(c, 0x40);
+        c.g[S2][0] = frame_ld(c, frame, 0x30);
+        c.g[S1][0] = frame_ld(c, frame, 0x20);
+        c.g[S0][0] = frame_ld(c, frame, 0x10);
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// execute_cfa_insn
+
+/// `void execute_cfa_insn(void *cie, void *fde, uint64_t pc)` (0x414338):
+/// run one DWARF CFA opcode from `s0` against the frame state at `s1`,
+/// returning the next opcode address in `v0`. A flat `pc` dispatch over the
+/// entry and every resume head (the generated `__entries` twin is flat the
+/// same way). Opcode bytes dispatch through the rodata table.
+pub fn execute_cfa_insn(c: &mut Cpu) {
+    call::guest(c, |c| {
+        let mut pc = c.pc;
+        // Normal entry runs the structured body: an event at the three
+        // copy/spill back edges is delivered and ignored, and the loop
+        // carries on. A direct resume at a loop head honours the unwind
+        // request instead (the `__entries` twin's contract).
+        let entered_at_entry = pc == 0x00414338;
+        if pc != 0x00414338
+            && pc != 0x00414368
+            && pc != 0x0041437c
+            && pc != 0x00414388
+            && pc != 0x00414394
+            && pc != 0x004143a0
+            && pc != 0x004143b0
+            && pc != 0x004143bc
+            && pc != 0x004143d4
+            && pc != 0x004143e8
+            && pc != 0x004143f8
+            && pc != 0x00414414
+            && pc != 0x00414420
+            && pc != 0x00414430
+            && pc != 0x0041443c
+            && pc != 0x0041444c
+            && pc != 0x0041448c
+            && pc != 0x004144ac
+            && pc != 0x004144f4
+            && pc != 0x00414524
+            && pc != 0x00414540
+            && pc != 0x0041455c
+            && pc != 0x00414570
+            && pc != 0x004145a4
+            && pc != 0x004145c4
+            && pc != 0x004145d4
+            && pc != 0x00414608
+            && pc != 0x0041462c
+            && pc != 0x00414648
+            && pc != 0x00414688
+            && pc != 0x00414690
+            && pc != 0x004146ac
+            && pc != 0x004146b4
+            && pc != 0x004146b8
+        {
+            c.jump_out(c.pc, 0x0041_4338, 0x0041_46d0);
+            return Ok(());
+        }
+        loop {
+            match pc {
+                // Entry: open the frame, fetch the opcode byte.
+                0x00414338 => {
+                    c.cycles += 12;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S2][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S1][0]);
+                    c.g[S2][0] = c.g[A2][0];
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S0][0]);
+                    c.g[S1][0] = c.g[A1][0];
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[RA][0]);
+                    c.g[S0][0] = c.g[A0][0];
+                    c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
+                    c.g[V0][0] = c.g[V1][0] & 0x40;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        pc = 0x0041437c;
+                        continue;
+                    }
+                    pc = 0x00414368;
+                    continue;
+                }
+                // DW_CFA_advance_loc (0x40-0x7f): scale the delta by the code factor.
+                0x00414368 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = c.g[V1][0] & 0x3f;
+                    c.g[V1][0] = c.lw(c.g[A3][0] as u32);
+                    let t = true;
+                    c.mult(0, 2, 2, 4);
+                    if t {
+                        pc = 0x00414414;
+                        continue;
+                    }
+                    pc = 0x0041437c;
+                    continue;
+                }
+                // Plain opcodes (bits 7 and 6 clear).
+                0x0041437c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[V1][0] & 0x80;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.g[V1][0] & 0x3f;
+                    if t {
+                        pc = 0x00414394;
+                        continue;
+                    }
+                    pc = 0x00414388;
+                    continue;
+                }
+                // Advance path.
+                0x00414388 => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.g[S0][0];
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    if t {
+                        pc = 0x0041444c;
+                        continue;
+                    }
+                    pc = 0x00414394;
+                    continue;
+                }
+                // Offset path (bit 7 set).
+                0x00414394 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[V1][0] & 0xc0;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.g[V1][0] & 0x3f;
+                    if t {
+                        pc = 0x004143b0;
+                        continue;
+                    }
+                    pc = 0x004143a0;
+                    continue;
+                }
+                // Remember the advance.
+                0x004143a0 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    let t = true;
+                    c.sb((c.g[V1][0] as u32).wrapping_add(0x29c), 0u64);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x004143b0;
+                    continue;
+                }
+                // Opcodes >= 0x2f go to the GNU/abort tail.
+                0x004143b0 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[V1][0] < 0x2fu64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x4a0000;
+                    if t {
+                        pc = 0x004146ac;
+                        continue;
+                    }
+                    pc = 0x004143bc;
+                    continue;
+                }
+                // Dispatch through the handler table (rodata at
+                // `0x4a0000 - 0x6700`: one handler address per opcode byte).
+                0x004143bc => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6700));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[A0][0] as u32;
+                    pc = t;
+                    continue;
+                }
+                // DW_CFA_set_loc (0x01): set the location from an address operand.
+                0x004143d4 => {
+                    c.cycles += 5;
+                    c.lwl(2, (c.g[S0][0] as u32).wrapping_add(0x3));
+                    c.lwr(2, c.g[S0][0] as u32);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    let t = true;
+                    c.sw(c.g[A3][0] as u32, c.g[V0][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x004143e8;
+                    continue;
+                }
+                // DW_CFA_advance_loc1 (0x02): 1-byte delta.
+                0x004143e8 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
+                    c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                    let t = true;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        pc = 0x00414430;
+                        continue;
+                    }
+                    pc = 0x004143f8;
+                    continue;
+                }
+                // DW_CFA_advance_loc2 (0x03): 2-byte delta.
+                0x004143f8 => {
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
+                    c.g[V0][0] = c.g[V0][0] << 8;
+                    c.g[V1][0] = c.lw(c.g[A3][0] as u32);
+                    c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2));
+                    c.g[V0][0] = c.g[V0][0] & 0xffff;
+                    pc = 0x00414414;
+                    continue;
+                }
+                // Advance join.
+                0x00414414 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    let t = true;
+                    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x00414420;
+                    continue;
+                }
+                // DW_CFA_advance_loc4 (0x04): 4-byte delta.
+                0x00414420 => {
+                    c.cycles += 4;
+                    c.lwl(3, (c.g[S0][0] as u32).wrapping_add(0x3));
+                    c.lwr(3, c.g[S0][0] as u32);
+                    c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    pc = 0x00414430;
+                    continue;
+                }
+                // Location join.
+                0x00414430 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    let t = true;
+                    c.sw(c.g[A3][0] as u32, c.g[V0][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x0041443c;
+                    continue;
+                }
+                // DW_CFA_offset_extended (0x05).
+                0x0041443c => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x00414448);
+                    c.g[A1][0] = c.g[SP][0] | 0x4;
+                    callee::DECODE_ULEB128.call(c, 0x00414448)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    pc = 0x0041444c;
+                    continue;
+                }
+                // Offset body.
+                0x0041444c => {
+                    c.cycles += 16;
+                    c.g[RA][0] = sx(0x00414454);
+                    c.g[A1][0] = c.g[SP][0];
+                    callee::DECODE_ULEB128.call(c, 0x00414454)?;
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                    c.g[A2][0] = 0x1;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.mult(0, 4, 4, 5);
+                    c.g[V1][0] = sx((c.g[V0][0] as u32) << 3);
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sb((c.g[V0][0] as u32).wrapping_add(0x29c), c.g[A2][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[A0][0]);
+                    c.g[V0][0] = c.g[A0][0];
+                    let t = true;
+                    c.sd((c.g[V1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x0041448c;
+                    continue;
+                }
+                // DW_CFA_restore_extended (0x06).
+                0x0041448c => {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x00414498);
+                    c.g[A1][0] = c.g[SP][0] | 0x4;
+                    callee::DECODE_ULEB128.call(c, 0x00414498)?;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    let t = true;
+                    c.sb((c.g[V1][0] as u32).wrapping_add(0x29c), 0u64);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x004144ac;
+                    continue;
+                }
+                // DW_CFA_register (0x09).
+                0x004144ac => {
+                    c.cycles += 18;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x004144b8);
+                    c.g[A1][0] = c.g[SP][0] | 0x4;
+                    callee::DECODE_ULEB128.call(c, 0x004144b8)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x004144c4);
+                    c.g[A1][0] = c.g[SP][0] | 0x8;
+                    callee::DECODE_ULEB128.call(c, 0x004144c4)?;
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.g[A1][0] = 0x2;
+                    c.g[V0][0] = sx((c.g[A0][0] as u32) << 3);
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.g[V1][0] << 32;
+                    c.sb((c.g[A0][0] as u32).wrapping_add(0x29c), c.g[A1][0]);
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.g[V1][0] >> 32;
+                    let t = true;
+                    c.sd((c.g[V0][0] as u32).wrapping_add(0x18), c.g[V1][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x004144f4;
+                    continue;
+                }
+                // DW_CFA_def_cfa (0x0c).
+                0x004144f4 => {
+                    c.cycles += 12;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x00414500);
+                    c.g[A1][0] = c.g[SP][0] | 0x4;
+                    callee::DECODE_ULEB128.call(c, 0x00414500)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x0041450c);
+                    c.g[A1][0] = c.g[SP][0];
+                    callee::DECODE_ULEB128.call(c, 0x0041450c)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[V1][0] = c.lhu((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+                    c.sh((c.g[S1][0] as u32).wrapping_add(0x298), c.g[V1][0]);
+                    let t = true;
+                    c.sd((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x00414524;
+                    continue;
+                }
+                // DW_CFA_def_cfa_register (0x0d).
+                0x00414524 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x00414530);
+                    c.g[A1][0] = c.g[SP][0] | 0x4;
+                    callee::DECODE_ULEB128.call(c, 0x00414530)?;
+                    c.g[V1][0] = c.lhu((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[S0][0] = c.g[V0][0];
+                    let t = true;
+                    c.sh((c.g[S1][0] as u32).wrapping_add(0x298), c.g[V1][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x00414540;
+                    continue;
+                }
+                // DW_CFA_def_cfa_offset (0x0e).
+                0x00414540 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x0041454c);
+                    c.g[A1][0] = c.g[SP][0];
+                    callee::DECODE_ULEB128.call(c, 0x0041454c)?;
+                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[S0][0] = c.g[V0][0];
+                    let t = true;
+                    c.sd((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x0041455c;
+                    continue;
+                }
+                // DW_CFA_remember_state (0x0a): snapshot the register rules.
+                0x0041455c => {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x00414564);
+                    c.g[A0][0] = 0x2f8;
+                    callee::MALLOC.call(c, 0x00414564)?;
+                    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2e0));
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[V1][0] = c.g[S1][0];
+                    pc = 0x00414570;
+                    continue;
+                }
+                // Remember copy loop.
+                0x00414570 => {
+                    c.cycles += 13;
+                    c.g[A2][0] = c.ld(c.g[V1][0] as u32);
+                    c.g[A3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.g[T0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.g[T1][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
+                    c.sd(c.g[A0][0] as u32, c.g[A2][0]);
+                    c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[A3][0]);
+                    c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[T0][0]);
+                    c.sd((c.g[A0][0] as u32).wrapping_add(0x18), c.g[T1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x20));
+                    let t = c.g[V1][0] != c.g[A1][0];
+                    if t {
+                        if entered_at_entry {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00414570);
+                            }
+                        } else if back_edge_unwinds(c, 0x00414570) {
+                            return Ok(());
+                        }
+                        pc = 0x00414570;
+                        continue;
+                    }
+                    pc = 0x004145a4;
+                    continue;
+                }
+                // Remember tail.
+                0x004145a4 => {
+                    c.cycles += 8;
+                    c.g[A1][0] = c.ld(c.g[V1][0] as u32);
+                    c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.g[A3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.sd(c.g[A0][0] as u32, c.g[A1][0]);
+                    c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+                    c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+                    let t = true;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x2f0), c.g[V0][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x004145c4;
+                    continue;
+                }
+                // DW_CFA_restore_state (0x0b): restore the snapshot.
+                0x004145c4 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2f0));
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2e0));
+                    c.g[A2][0] = c.g[A0][0];
+                    pc = 0x004145d4;
+                    continue;
+                }
+                // Restore copy loop.
+                0x004145d4 => {
+                    c.cycles += 13;
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
+                    c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+                    c.g[A3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+                    c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
+                    c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                    c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+                    c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T0][0]);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+                    let t = c.g[A2][0] != c.g[V0][0];
+                    if t {
+                        if entered_at_entry {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x004145d4);
+                            }
+                        } else if back_edge_unwinds(c, 0x004145d4) {
+                            return Ok(());
+                        }
+                        pc = 0x004145d4;
+                        continue;
+                    }
+                    pc = 0x00414608;
+                    continue;
+                }
+                // Restore tail.
+                0x00414608 => {
+                    c.cycles += 9;
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
+                    c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+                    c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
+                    c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    c.g[RA][0] = sx(0x00414624);
+                    c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+                    callee::FREE.call(c, 0x00414624)?;
+                    let t = true;
+                    c.g[V0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x004146b8;
+                        continue;
+                    }
+                    pc = 0x0041462c;
+                    continue;
+                }
+                // GNU window_save (0x2d): spill the register window.
+                0x0041462c => {
+                    c.cycles += 7;
+                    c.g[V0][0] = 0x10;
+                    c.g[A0][0] = 0x10;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[A3][0] = 0x10;
+                    c.g[T1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x29c));
+                    c.g[T0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x18));
+                    pc = 0x00414648;
+                    continue;
+                }
+                // Window spill loop.
+                0x00414648 => {
+                    c.cycles += 16;
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x10));
+                    c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    c.g[A1][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V1][0] = 0x1;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
+                    c.sb(c.g[A1][0] as u32, c.g[V1][0]);
+                    c.g[V0][0] = c.g[V0][0] << 32;
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.g[V0][0] >> 32;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+                    c.g[A3][0] = c.g[A2][0];
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
+                    c.g[V0][0] = (c.g[A3][0] < 0x20u64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = c.g[A3][0];
+                    if t {
+                        if entered_at_entry {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00414648);
+                            }
+                        } else if back_edge_unwinds(c, 0x00414648) {
+                            return Ok(());
+                        }
+                        pc = 0x00414648;
+                        continue;
+                    }
+                    pc = 0x00414688;
+                    continue;
+                }
+                // Window done.
+                0x00414688 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x004146b8;
+                        continue;
+                    }
+                    pc = 0x00414690;
+                    continue;
+                }
+                // GNU args_size (0x2e): record the argument size.
+                0x00414690 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x0041469c);
+                    c.g[A1][0] = c.g[SP][0];
+                    callee::DECODE_ULEB128.call(c, 0x0041469c)?;
+                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[S0][0] = c.g[V0][0];
+                    let t = true;
+                    c.sd((c.g[S1][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+                    if t {
+                        pc = 0x004146b4;
+                        continue;
+                    }
+                    pc = 0x004146ac;
+                    continue;
+                }
+                // Unknown opcode: abort.
+                0x004146ac => {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x004146b4);
+                    callee::ABORT.call(c, 0x004146b4)?;
+                    pc = 0x004146b4;
+                    continue;
+                }
+                // Join: the next opcode is at `s0`.
+                0x004146b4 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S0][0];
+                    pc = 0x004146b8;
+                    continue;
+                }
+                // Epilogue: close the frame, return `s0`.
+                0x004146b8 => {
+                    c.cycles += 6;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0041_4338, 0x0041_46d0);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// matherr
+
+/// `int matherr(struct exception *e)` (0x40f878): compare `e->arg1` against
+/// 0 (the SVID hook, which never handles anything) and return 0.
+pub fn matherr(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = c.g[A0][0];
+        callee::CMPDF2.call(c, 0x0040_f88c)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 0;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// fmodf
+
+/// `float fmodf(float x, float y)` (0x40d8d0): the remainder of `x / y`
+/// through `__ieee754_fmodf`, with the SVID domain handling (NaN operands
+/// pass through; a zero `y` reports `EDOM` through `matherr`).
+pub fn fmodf(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x80);
+        c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x68));
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.mov_s(21, 12);
+        c.mov_s(20, 13);
+        frame_sd(c, frame, 0x40, c.g[S1][0]);
+        frame_sd(c, frame, 0x30, c.g[S0][0]);
+        c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0x70));
+        frame.save_ra(c, 0x50);
+        c.g[S1][0] = 0x4a0000;
+        callee::IEEE754_FMODF.call(c, 0x0040_d8fc)?;
+        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x6978));
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        let libm_sticky = c.g[S0][0] == c.g[V0][0];
+        c.mov_s(22, 0);
+        if libm_sticky {
+            // Sticky libm state: return the saved `x`.
+            c.cycles += 1;
+            c.mov_s(0, 22);
+            c.cycles += 1;
+            frame.restore_ra(c, 0x50);
+        } else {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x0040_d914);
+            c.mov_s(12, 20);
+            callee::ISNANF.call(c, 0x0040_d914)?;
+            let x_nan = c.g[V0][0] != 0;
+            c.mov_s(0, 22);
+            if x_nan {
+                c.cycles += 1;
+                frame.restore_ra(c, 0x50);
+            } else {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x0040_d924);
+                c.mov_s(12, 21);
+                callee::ISNANF.call(c, 0x0040_d924)?;
+                let y_nan = c.g[V0][0] != 0;
+                c.mov_s(0, 22);
+                if y_nan {
+                    c.cycles += 1;
+                    frame.restore_ra(c, 0x50);
+                } else {
+                    c.cycles += 5;
+                    c.mtc1(0, 0);
+                    c.c_eq_s(20, 0);
+                    // Nonzero `y` needs no domain handling; a zero `y`
+                    // goes through `matherr`.
+                    let y_nonzero = !c.fcc();
+                    c.g[V0][0] = 0x4a0000;
+                    if y_nonzero {
+                        c.cycles += 1;
+                        c.mov_s(0, 22);
+                        c.cycles += 1;
+                        frame.restore_ra(c, 0x50);
+                    } else {
+                        fmodf_domain(c)?;
+                    }
+                }
+            }
+        }
+        c.cycles += 7;
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lwc1(22, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0x68));
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// fmodf_domain
+
+/// SVID domain tail of `fmodf` (0x40d8d0): `y` is zero here. Extend both
+/// operands to double, report `EDOM` through `matherr` unless libm runs
+/// `_POSIX_`, and truncate the saved result back to float. The frame is
+/// `fmodf`'s (restored by its epilogue); the return address for the
+/// `__truncdfsf2` call is reloaded before leaving.
+pub(crate) fn fmodf_domain(c: &mut Cpu) -> Flow {
+    c.cycles += 12;
+    c.g[V1][0] = 0x1;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6f68));
+    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
+    c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+    c.mov_s(12, 21);
+    c.g[RA][0] = sx(0x0040_d95c);
+    c.sw((c.g[SP][0] as u32).wrapping_add(0x20), 0u64);
+    callee::EXTENDSFDF2.call(c, 0x0040_d95c)?;
+    c.mov_s(12, 20);
+    c.g[RA][0] = sx(0x0040_d968);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+    callee::EXTENDSFDF2.call(c, 0x0040_d968)?;
+    let s0_nonzero = c.g[S0][0] != 0;
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+    if !s0_nonzero {
+        c.cycles += 4;
+        c.g[RA][0] = sx(0x0040_d978);
+        c.mov_s(12, 21);
+        callee::EXTENDSFDF2.call(c, 0x0040_d978)?;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = 0x4a0000;
+        c.g[V1][0] = c.ld((c.g[V0][0] as u32).wrapping_sub(0x6f60));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x18), c.g[V1][0]);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x6978));
+    c.g[V0][0] = 0x2;
+    // Report EDOM unless libm runs `_POSIX_` (2) or `matherr` handled it.
+    let mut store_errno = true;
+    if c.g[V1][0] != c.g[V0][0] {
+        c.cycles += 4;
+        c.g[RA][0] = sx(0x0040_d9a4);
+        c.g[A0][0] = c.g[SP][0];
+        callee::MATHERR.call(c, 0x0040_d9a4)?;
+        let matherr_handled = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+        if matherr_handled {
+            store_errno = false;
+        }
+    }
+    if store_errno {
+        c.cycles += 5;
+        c.g[RA][0] = sx(0x0040_d9b4);
+        callee::GETREENT.call(c, 0x0040_d9b4)?;
+        c.g[V1][0] = 0x21;
+        c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.cycles += 4;
+        c.g[RA][0] = sx(0x0040_d9d0);
+        callee::GETREENT.call(c, 0x0040_d9d0)?;
+        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+    }
+    c.cycles += 4;
+    c.g[RA][0] = sx(0x0040_d9e0);
+    c.g[A0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x18));
+    callee::TRUNCDFSF2.call(c, 0x0040_d9e0)?;
+    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+    Ok(())
+}
+
+/// Floor's `+11` result-combine tail (break 'b_41eefc): fold the rounded
+/// halves back into `a1`/`s3`.
+pub(crate) fn floor_combine(c: &mut Cpu) {
+    c.cycles += 11;
+    c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+    c.g[V1][0] >>= 32;
+    c.g[A0][0] = c.g[S0][0] << 32;
+    c.g[S3][0] &= c.g[V1][0];
+    c.g[V0][0] = c.g[S2][0] << 32;
+    c.g[S3][0] |= c.g[A0][0];
+    c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+    c.g[V1][0] <<= 32;
+    c.g[V0][0] >>= 32;
+    c.g[S3][0] &= c.g[V1][0];
+    c.g[A1][0] = c.g[S3][0] | c.g[V0][0];
+}
+
+/// Floor's 'b_41ef28 exit: the masked fraction is zero, return `a1`.
+pub(crate) fn floor_join_28(c: &mut Cpu) {
+    c.cycles += 1;
+    c.g[V0][0] = c.g[A1][0];
+}
+
+/// Floor's 'b_41ef2c exit: reload the saved high half.
+pub(crate) fn floor_join_2c(c: &mut Cpu, frame: Frame) {
+    c.cycles += 1;
+    frame.restore(c, S0, 0x50);
+}
+
+/// Floor's small-exponent mask (`0 <= s1 < 20` and `20 <= s1 < 52`
+/// share this shape with different constants): when the fraction bits
+/// are all clear the value is integral; otherwise nudge across the
+/// boundary and re-check.
+pub(crate) fn floor_mask_small(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 6;
+    c.g[V0][0] |= 0xffff;
+    c.g[S4][0] = sx(((c.g[V0][0] as u32) as i32 >> ((c.g[S1][0] as u32) & 31)) as u32);
+    c.g[V1][0] = c.g[S0][0] & c.g[S4][0];
+    c.g[V1][0] |= c.g[S2][0];
+    c.g[A0][0] = c.g[A1][0];
+    if c.g[V1][0] == 0 {
+        floor_join_28(c);
+        floor_join_2c(c, frame);
+        return Ok(());
+    }
+    c.cycles += 8;
+    c.g[V0][0] = 0x4a0000;
+    c.g[A1][0] = c.ld((c.g[V0][0] as u32).wrapping_sub(0x5808));
+    callee::ADDDF3.call(c, 0x0041_ee24)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    callee::CMPDF2.call(c, 0x0041_ee30)?;
+    if (c.g[V0][0] as i64) <= 0 {
+        floor_combine(c);
+        floor_join_28(c);
+        floor_join_2c(c, frame);
+        return Ok(());
+    }
+    c.cycles += 2;
+    let s0_nonneg = (c.g[S0][0] as i64) >= 0;
+    c.g[V0][0] = !(0u64 | c.g[S4][0]);
+    if !s0_nonneg {
+        c.cycles += 4;
+        c.g[V0][0] = 0x100000;
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> ((c.g[S1][0] as u32) & 31)) as u32);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = !(0u64 | c.g[S4][0]);
+    }
+    c.cycles += 3;
+    c.g[S2][0] = 0;
+    c.g[S0][0] &= c.g[V0][0];
+    floor_combine(c);
+    floor_join_28(c);
+    floor_join_2c(c, frame);
+    Ok(())
+}
+
+/// Floor's large-exponent mask (`52 > s1 >= 20`): same shape as
+/// [`floor_mask_small`] with the wider mask.
+pub(crate) fn floor_mask_large(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 6;
+    c.g[V0][0] = 0xffff_ffff_ffff_0000;
+    c.g[V0][0] |= 0xffff;
+    c.g[S4][0] = sx((c.g[V0][0] as u32) >> ((c.g[A0][0] as u32) & 31));
+    c.g[V1][0] = c.g[S2][0] & c.g[S4][0];
+    c.g[A0][0] = c.g[A1][0];
+    if c.g[V1][0] == 0 {
+        floor_join_28(c);
+        floor_join_2c(c, frame);
+        return Ok(());
+    }
+    c.cycles += 8;
+    c.g[V0][0] = 0x4a0000;
+    c.g[RA][0] = sx(0x0041_eea8);
+    c.g[A1][0] = c.ld((c.g[V0][0] as u32).wrapping_sub(0x5808));
+    callee::ADDDF3.call(c, 0x0041_eea8)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    callee::CMPDF2.call(c, 0x0041_eeb4)?;
+    if (c.g[V0][0] as i64) <= 0 {
+        floor_combine(c);
+        floor_join_28(c);
+        floor_join_2c(c, frame);
+        return Ok(());
+    }
+    c.cycles += 2;
+    let s0_nonneg = (c.g[S0][0] as i64) >= 0;
+    c.g[V0][0] = !(0u64 | c.g[S4][0]);
+    if !s0_nonneg {
+        c.cycles += 3;
+        c.g[V0][0] = 0x14;
+        let s1_not_20 = c.g[S1][0] != c.g[V0][0];
+        c.g[V0][0] = 0x34;
+        if s1_not_20 {
+            c.cycles += 7;
+            c.g[V1][0] = 1;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << ((c.g[V0][0] as u32) & 31));
+            c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[V0][0] = (c.g[V1][0] < c.g[S2][0]) as u64;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[S2][0] = c.g[V1][0];
+        } else {
+            c.cycles += 2;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+        }
+        c.cycles += 1;
+        c.g[V0][0] = !(0u64 | c.g[S4][0]);
+    }
+    c.cycles += 1;
+    c.g[S2][0] &= c.g[V0][0];
+    floor_combine(c);
+    floor_join_28(c);
+    floor_join_2c(c, frame);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// floor
+
+/// `double floor(double x)` (0x41ed60): round toward negative infinity by
+/// masking the fraction bits the unbiased exponent leaves, nudging across
+/// the integer boundary with `__adddf3` when the masked fraction is
+/// nonzero.
+pub fn floor(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x60);
+        c.g[A1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        c.g[V0][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[V0][0] << 32;
+        c.g[S2][0] = ((c.g[S2][0] as i64) >> 32) as u64;
+        c.g[S0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+        c.g[V1][0] = sx(((c.g[S0][0] as u32) as i32 >> 20) as u32);
+        c.g[V1][0] &= 0x7ff;
+        c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x3ff));
+        c.g[V0][0] = ((c.g[S1][0] as i64) < 20) as u64;
+        let large = c.g[V0][0] == 0;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        if large {
+            // Large exponent: integral unless the exponent is huge.
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 52) as u64;
+            c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x413));
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[V0][0] = 0x400;
+                let keep = c.g[S1][0] != c.g[V0][0];
+                c.g[V0][0] = c.g[A1][0];
+                if keep {
+                    floor_join_2c(c, frame);
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0041_ee7c);
+                    c.g[A0][0] = c.g[A1][0];
+                    callee::ADDDF3.call(c, 0x0041_ee7c)?;
+                    frame.restore(c, S0, 0x50);
+                }
+            } else {
+                floor_mask_large(c, frame)?;
+            }
+        } else {
+            c.cycles += 2;
+            let s1_nonneg = (c.g[S1][0] as i64) >= 0;
+            c.g[V0][0] = 0xf0000;
+            if s1_nonneg {
+                floor_mask_small(c, frame)?;
+            } else {
+                c.cycles += 8;
+                c.g[V0][0] = 0x4a0000;
+                c.g[A1][0] = c.ld((c.g[V0][0] as u32).wrapping_sub(0x5808));
+                callee::ADDDF3.call(c, 0x0041_edb8)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0;
+                callee::CMPDF2.call(c, 0x0041_edc4)?;
+                if (c.g[V0][0] as i64) <= 0 {
+                    floor_combine(c);
+                    floor_join_28(c);
+                    floor_join_2c(c, frame);
+                } else if (c.g[S0][0] as i64) < 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x7fff0000;
+                    c.cycles += 5;
+                    c.g[V0][0] |= 0xffff;
+                    c.g[V0][0] = c.g[S0][0] & c.g[V0][0];
+                    c.g[V0][0] |= c.g[S2][0];
+                    if c.g[V0][0] == 0 {
+                        floor_combine(c);
+                        floor_join_28(c);
+                        floor_join_2c(c, frame);
+                    } else {
+                        c.cycles += 3;
+                        c.g[S0][0] = 0xffff_ffff_bff0_0000;
+                        c.g[S2][0] = 0;
+                        floor_combine(c);
+                        floor_join_28(c);
+                        floor_join_2c(c, frame);
+                    }
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x7fff0000;
+                    c.cycles += 3;
+                    c.g[S2][0] = 0;
+                    c.g[S0][0] = 0;
+                    floor_combine(c);
+                    floor_join_28(c);
+                    floor_join_2c(c, frame);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// scalbnf
+
+// ---------------------------------------------------------------------------
+// scalbnf
+
+/// `float scalbnf(float x, int n)` (0x40f9f8): `x * 2^n` by direct
+/// exponent surgery (subnormal inputs normalized first; overflow and
+/// underflow saturate through the wide-mul paths).
+pub fn scalbnf(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        c.mfc1(5, 12);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A1][0];
+        c.g[A3][0] = 0x7f80_0000;
+        c.g[V0][0] = c.g[A2][0] & c.g[A3][0];
+        c.g[V1][0] = sx(((c.g[V0][0] as u32) as i32 >> 23) as u32);
+        let exp_nonzero = c.g[V1][0] != 0;
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+        if !exp_nonzero {
+            // Zero/subnormal exponent: scale a zero straight; otherwise
+            // extract the fraction and normalize it.
+            c.cycles += 5;
+            c.g[V0][0] = 0x7fff_0000;
+            c.g[V0][0] |= 0xffff;
+            c.g[V0][0] = c.g[A2][0] & c.g[V0][0];
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.mtc1(5, 0);
+                c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+            } else {
+                c.cycles += 13;
+                c.g[AT][0] = 0x4c00_0000;
+                c.mtc1(1, 0);
+                c.mtc1(5, 1);
+                c.mul_s(1, 1, 0);
+                c.mfc1(5, 1);
+                c.g[A2][0] = c.g[A1][0];
+                c.g[V1][0] = c.g[A1][0] & c.g[A3][0];
+                c.g[V0][0] = 0xffff_ffff_ffff_0000;
+                c.g[V0][0] |= 0x3cb0;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let underflow = c.g[V0][0] != 0;
+                c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 23) as u32);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x19));
+                if underflow {
+                    // Very negative shift: multiply out directly.
+                    c.cycles += 5;
+                    c.g[AT][0] = 0x0da2_0000;
+                    c.g[AT][0] |= 0x4260;
+                    c.mtc1(1, 0);
+                    c.mul_s(0, 1, 0);
+                    scalbnf_join(c)?;
+                } else {
+                    // Shifted exponent needs the range check.
+                    scalbnf_shifted(c)?;
+                }
+            }
+        } else {
+            // Normal exponent: shift it, testing inf/nan first.
+            scalbnf_shifted(c)?;
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// Scale's join (break 'b_40fb48): reload the return address and the
+/// saved input for the epilogue.
+pub(crate) fn scalbnf_join(c: &mut Cpu) -> Flow {
+    c.cycles += 2;
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+    c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+    Ok(())
+}
+
+/// Scale's shifted-exponent dispatch (break 'b_40fa88): an inf/nan input
+/// adds the shift directly; anything else goes through the range check.
+pub(crate) fn scalbnf_shifted(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    c.g[V0][0] = 0xff;
+    let finite = c.g[V1][0] != c.g[V0][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    if finite {
+        scalbnf_range(c)?;
+    } else {
+        c.cycles += 3;
+        c.mtc1(5, 2);
+        c.add_s(0, 2, 2);
+        scalbnf_join(c)?;
+    }
+    Ok(())
+}
+
+/// Scale's exponent range check: a shifted exponent of `0xff` saturates
+/// through the add path; below `-24` it multiplies out; a huge shift
+/// saturates through `copysignf`; otherwise the wide multiply.
+pub(crate) fn scalbnf_range(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[V1][0] as i64) < 255) as u64;
+    if c.g[V0][0] == 0 {
+        // Shifted exponent stays huge: saturate through `copysignf`.
+        scalbnf_at_block(c);
+        scalbnf_copysignf_path(c)?;
+        return Ok(());
+    } else {
+        // Small shift: check for a direct build first.
+        c.cycles += 2;
+        let v1_nonpos = (c.g[V1][0] as i64) <= 0;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        if v1_nonpos {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < -24) as u64;
+            let in_range = c.g[V0][0] == 0;
+            c.g[V0][0] = 0xc350;
+            if in_range {
+                // Near normal: widen and multiply.
+                c.cycles += 11;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x19));
+                c.g[V0][0] = 0xffff_ffff_807f_0000;
+                c.g[V0][0] |= 0xffff;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 23);
+                c.g[V0][0] = c.g[A2][0] & c.g[V0][0];
+                c.g[A1][0] = c.g[V0][0] | c.g[V1][0];
+                c.g[AT][0] = 0x3300_0000;
+                c.mtc1(1, 0);
+                c.mtc1(5, 1);
+                c.mul_s(0, 1, 0);
+                scalbnf_join(c)?;
+                return Ok(());
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                c.g[AT][0] = 0x0da2_0000;
+                c.g[AT][0] |= 0x4260;
+                c.mtc1(1, 20);
+                if c.g[V0][0] != 0 {
+                    // Overflow: force inf through `copysignf`.
+                    scalbnf_at_block(c);
+                }
+                scalbnf_copysignf_path(c)?;
+                return Ok(());
+            }
+        } else {
+            // Small positive shift: build the scaled value directly.
+            c.cycles += 8;
+            c.g[V0][0] = 0xffff_ffff_807f_0000;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 23);
+            c.g[V0][0] |= 0xffff;
+            c.g[V0][0] = c.g[A2][0] & c.g[V0][0];
+            c.g[A1][0] = c.g[V0][0] | c.g[V1][0];
+            c.mtc1(5, 0);
+            c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+            return Ok(());
+        }
+    }
+}
+
+/// Scale's `0x7149f2ca` saturate block (break 'b_40fafc): load the inf
+/// pattern for the `copysignf` multiply.
+pub(crate) fn scalbnf_at_block(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[AT][0] = 0x7149_0000;
+    c.g[AT][0] |= 0xf2ca;
+    c.mtc1(1, 20);
+}
+
+/// Scale's `copysignf` tail: `copysignf(f20, f13) * f1`.
+pub(crate) fn scalbnf_copysignf_path(c: &mut Cpu) -> Flow {
+    c.cycles += 5;
+    c.mtc1(5, 13);
+    c.g[RA][0] = sx(0x0040_fb14);
+    c.mov_s(12, 20);
+    callee::COPYSIGNF.call(c, 0x0040_fb14)?;
+    c.mul_s(0, 0, 20);
+    scalbnf_join(c)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// eofread
+
+/// `int eofread(void)` (0x4178a8): always 0 (no sticky EOF flag).
+pub fn eofread(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0;
+    c.pc = t;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -26463,6 +27891,770 @@ pub(crate) mod tests {
 
     /// Output buffer for the printf family.
     pub(crate) const OUT: u32 = DATA + 0x2000;
+    pub(crate) use crate::game::lib::libc::tests::glue_machine;
+    pub(crate) use crate::game::lib::libc::tests::SEEDS_4 as SEEDS_2;
+    use crate::game::misc::libm_wrap::LIB_VERSION;
+
+    /// Seeds for the unwinder fixtures.
+    pub(crate) const SEEDS: u32 = 64;
+
+    /// Scratch tables for the FDE walk: node words, min/max holders.
+    pub(crate) const TAB: u32 = DATA + 0x400;
+
+    pub(crate) const NODES: u32 = DATA + 0x600;
+
+    /// Fixture base: scrambled machine with gp set.
+    pub(crate) fn unwind_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = machine(c, seed, salt, 0);
+        c.g[GP][0] = crate::difftest::GAME_GP as u64;
+        c.g[A0][0] = (r.next_u32() % 0x1000) as u64;
+        c.g[A1][0] = (r.next_u32() % 0x1000) as u64;
+        c.g[A2][0] = (r.next_u32() % 0x1000) as u64;
+        c.g[A3][0] = (r.next_u32() % 0x1000) as u64;
+        r
+    }
+
+    driven!(add_fdes_gen_driven, ee::s15::f_00413f80__generated);
+
+    driven!(add_fdes_hand_driven, add_fdes);
+
+    #[test]
+    fn add_fdes_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let _ = unwind_machine(c, seed, 0x3f80);
+            // Table struct (base + count) and min/max holders.
+            c.bus.write32(TAB, DATA + 0x500);
+            c.bus.write32(TAB + 4, 0);
+            for i in 0..8u32 {
+                c.bus.write32(DATA + 0x500 + i * 4, 0);
+            }
+            c.bus.write32(DATA + 0x700, 0x500);
+            c.bus.write32(DATA + 0x704, 0x50);
+            // FDE chain of two mergeable nodes plus a terminator. Each
+            // node's length (12) puts the next node at current + 12 + 4,
+            // so a real second node is visited, with the event back edge
+            // on the way. The count words steer merge vs skip per seed;
+            // every fourth seed leaves the head empty (entry-empty arm).
+            let empty = seed % 4 == 3;
+            for (n, on) in [(0u32, seed % 2 == 0), (1u32, seed % 3 == 0)] {
+                let at = NODES + n * 16;
+                c.bus.write32(at, if empty && n == 0 { 0 } else { 12 });
+                c.bus.write32(at + 4, if on && !empty { 1 } else { 0 });
+                c.bus.write32(at + 8, if on { 0x100 * (n + 1) } else { 0 });
+                c.bus.write32(at + 0xc, 0x300 - 0x100 * n);
+            }
+            // Terminator: zero count ends the walk after the advance.
+            c.bus.write32(NODES + 32, 12);
+            c.bus.write32(NODES + 36, 0);
+            c.g[A0][0] = NODES as u64;
+            c.g[A1][0] = TAB as u64;
+            c.g[A2][0] = (DATA + 0x700) as u64;
+            c.g[A3][0] = (DATA + 0x704) as u64;
+        };
+        check_paths(
+            ee::s15::f_00413f80__generated,
+            add_fdes,
+            SEEDS,
+            &[9, 30, 48, 66],
+            &setup,
+        );
+        // Deliver-only event run: every non-empty seed delivers at its
+        // first back edge (structured loop, ignored unwind).
+        let setup_ev = |c: &mut Cpu, seed: u32| -> Events {
+            setup(c, seed);
+            let saved = (c.g[A0], c.g[A1], c.g[31]);
+            ssx3_ps2::kernel::start_main_thread(c, 0x0041_3f80, 0, 0);
+            (c.g[A0], c.g[A1], c.g[31]) = saved;
+            c.pc = 0x0041_3f80;
+            c.cycles = 1000;
+            c.next_event = c.cycles + 10;
+            Events::Deliver
+        };
+        check_events(add_fdes_gen_driven, add_fdes_hand_driven, SEEDS, &setup_ev);
+    }
+
+    driven!(cfa_gen_driven, ee::s15::f_00414338__generated);
+
+    driven!(cfa_hand_driven, execute_cfa_insn);
+
+    /// Drive `f` the way the trampoline does (as
+    /// [`crate::difftest::events::drive`]), returning the resume-head
+    /// pcs in order. Lets a test assert *where* re-entry happened, not
+    /// just that both sides agree (the harness only prints the pooled
+    /// counts).
+    pub(crate) fn drive_resumes(c: &mut Cpu, f: ssx3_ee_rt::funcs::GuestFn) -> Vec<u32> {
+        use crate::difftest::events::UNWIND;
+        use crate::difftest::RA;
+        let mut heads = Vec::new();
+        f(c);
+        for _ in 0..10_000 {
+            if c.pc == RA {
+                return heads;
+            }
+            assert!(
+                c.pc & UNWIND != 0,
+                "stopped at {:#x} without an unwind",
+                c.pc
+            );
+            c.pc &= !UNWIND;
+            if crate::events::event_due(c) && c.event() {
+                continue;
+            }
+            heads.push(c.pc);
+            f(c);
+        }
+        panic!(
+            "no return after 10000 re-entries (pc {:#x}, cycles {}, next {})",
+            c.pc, c.cycles, c.next_event
+        );
+    }
+
+    /// CFA fixtures: frame-state scratch, opcode stream, CIE factors, loc.
+    pub(crate) const CFA_STATE: u32 = DATA + 0x400;
+
+    pub(crate) const CFA_STREAM: u32 = DATA + 0x900;
+
+    pub(crate) const CFA_CIE: u32 = DATA + 0xa00;
+
+    pub(crate) const CFA_LOC: u32 = DATA + 0xb00;
+
+    #[test]
+    fn execute_cfa_insn_matches() {
+        // Handler dispatch reads the real game table from the ELF image
+        // (unlisted opcodes join out safely); no fixture table is built.
+        // One opcode per seed: every table arm, the GNU pair, the abort
+        // tail, advance/offset immediates, plus looping-op repeats.
+        const OPS: [u32; 28] = [
+            0x01, 0x0b, 0x03, 0x04, 0x05, 0x06, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x2d, 0x2e,
+            0x2f, 0x40, 0x41, 0x7f, 0x80, 0x81, 0xbf, 0x00, 0x0a, 0x02, 0x2d, 0x0a, 0x0b, 0x2d,
+        ];
+        fn setup_paths(c: &mut Cpu, seed: u32, for_events: bool) -> Rng {
+            let r = unwind_machine(c, seed, 0x4338);
+            crate::difftest::elf_image(c);
+            for i in 0..0x100u32 {
+                c.bus.write32(CFA_STATE + i * 4, 0xa5a5_a5a5);
+            }
+            // A NULL snapshot: restore_state copies zeros, then frees NULL.
+            c.bus.write32(CFA_STATE + 0x2f0, 0);
+            let mut op = OPS[(seed as usize) % OPS.len()];
+            if for_events && op == 0x2f {
+                // The abort tail returns without an unwind (real `abort`
+                // on both sides); drive() cannot re-enter past it, so the
+                // events run exercises the join arm instead. The abort arm
+                // itself is still pinned by check_paths above.
+                op = 0x00;
+            }
+            c.bus.write8(CFA_STREAM, op as u8);
+            let b = (1 + (seed % 5)) as u8;
+            for i in 1..16u32 {
+                c.bus.write8(CFA_STREAM + i, b);
+            }
+            c.bus.write32(CFA_CIE + 8, 1 + (seed % 3));
+            c.bus.write32(CFA_CIE + 0xc, 0xffff_fffc);
+            c.bus.write32(CFA_LOC, 0x1234_5678);
+            c.g[A0][0] = CFA_STREAM as u64;
+            c.g[A1][0] = CFA_STATE as u64;
+            c.g[A2][0] = CFA_CIE as u64;
+            c.g[A3][0] = CFA_LOC as u64;
+            c.pc = 0x0041_4338;
+            r
+        }
+        check_paths(
+            ee::s15::f_00414338__generated,
+            execute_cfa_insn,
+            SEEDS,
+            &[27, 34, 39, 41, 44, 50, 51, 64, 70, 72, 149, 298, 445, 828],
+            &|c, seed| {
+                setup_paths(c, seed, false);
+            },
+        );
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = setup_paths(c, seed, true);
+            schedule(c, &mut r, seed, 0x0041_4338)
+        };
+        check_events(cfa_gen_driven, cfa_hand_driven, SEEDS, &setup);
+    }
+
+    /// CFA remember loop driven run: resume directly at the copy head
+    /// with mid-copy state and a frame-ready event due at its back
+    /// edge, driven through the unwind and re-entered at the head
+    /// (counted 0x4570 resume). Normal entry instead ignores the
+    /// unwind (see the entry-event test above), so only the direct
+    /// head counts a resume.
+    #[test]
+    fn execute_cfa_insn_remember_driven_matches() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let _ = unwind_machine(c, seed, 0x4338);
+            crate::difftest::elf_image(c);
+            for i in 0..0x100u32 {
+                c.bus.write32(CFA_STATE + i * 4, 0xa5a5_a5a5);
+            }
+            let dst = DATA + 0xd00;
+            for i in 0..0xc0u32 {
+                c.bus.write32(dst + i * 4, 0x5a5a_5a5a);
+            }
+            c.bus.write8(CFA_STREAM, 0x0a);
+            c.g[S0][0] = CFA_STREAM as u64;
+            c.g[S1][0] = CFA_STATE as u64;
+            // Remember loop, two rows done: V1/A0 mid-buffer, A1 end.
+            c.g[V1][0] = (CFA_STATE + 0x40) as u64;
+            c.g[A0][0] = (dst + 0x40) as u64;
+            c.g[A1][0] = (CFA_STATE + 0x2e0) as u64;
+            c.g[V0][0] = (dst + 0x40) as u64;
+            let saved = (c.g[A0], c.g[A1], c.g[31]);
+            ssx3_ps2::kernel::start_main_thread(c, 0x0041_4570, 0, 0);
+            (c.g[A0], c.g[A1], c.g[31]) = saved;
+            c.g[V1][0] = (CFA_STATE + 0x40) as u64;
+            c.g[A0][0] = (dst + 0x40) as u64;
+            c.g[A1][0] = (CFA_STATE + 0x2e0) as u64;
+            c.g[V0][0] = (dst + 0x40) as u64;
+            c.g[S0][0] = CFA_STREAM as u64;
+            c.g[S1][0] = CFA_STATE as u64;
+            c.pc = 0x0041_4570;
+            c.cycles = 1000;
+            c.next_event = c.cycles + 10;
+            // No frame was opened on direct entry, so seed the slot the
+            // epilogue reloads RA from with the return sentinel (as a
+            // genuine suspended frame would hold it).
+            c.bus
+                .write32(crate::difftest::SP + 0x40, crate::difftest::RA);
+            Events::Unwind
+        };
+        check_events(cfa_gen_driven, cfa_hand_driven, 8, &setup);
+        // Pin the resume itself: every seed must re-enter at the copy
+        // head 0x4570 on both sides with identical per-seed sequences
+        // (the harness only prints the pooled counts, it never asserts
+        // them).
+        for seed in 0..8 {
+            let mut g = crate::difftest::fresh();
+            setup(&mut g, seed);
+            let mut h = crate::difftest::fresh();
+            setup(&mut h, seed);
+            let (gen_heads, hand_heads) = (
+                drive_resumes(&mut g, ee::s15::f_00414338__generated),
+                drive_resumes(&mut h, execute_cfa_insn),
+            );
+            assert_eq!(
+                gen_heads, hand_heads,
+                "seed {seed}: resume sequences differ"
+            );
+            assert!(
+                hand_heads.contains(&0x0041_4570),
+                "seed {seed}: no resume at the copy head 0x4570 ({hand_heads:x?})"
+            );
+        }
+    }
+
+    /// CFA resume heads: re-enter the copy loops mid-flight with a
+    /// crafted mid-copy state (direct entry; the counted unwinds land
+    /// in the driven tests above and in the main event test).
+    #[test]
+    fn execute_cfa_insn_resume_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let _ = unwind_machine(c, seed, 0x4338);
+            // State buffer with mid-copy contents.
+            for i in 0..0x100u32 {
+                c.bus.write32(CFA_STATE + i * 4, 0xa5a5_a5a5);
+            }
+            let dst = DATA + 0xd00;
+            for i in 0..0xc0u32 {
+                c.bus.write32(dst + i * 4, 0x5a5a_5a5a);
+            }
+            c.g[S1][0] = CFA_STATE as u64;
+            match seed % 3 {
+                // Remember loop, two rows done: V1/A0 mid-buffer, A1 end.
+                0 => {
+                    c.g[V1][0] = (CFA_STATE + 0x40) as u64;
+                    c.g[A0][0] = (dst + 0x40) as u64;
+                    c.g[A1][0] = (CFA_STATE + 0x2e0) as u64;
+                    c.g[V0][0] = (dst + 0x40) as u64;
+                    c.pc = 0x0041_4570;
+                }
+                // Restore loop over a NULL snapshot: reads zeros, frees
+                // NULL (a no-op), writes the state buffer.
+                1 => {
+                    c.g[A2][0] = 0;
+                    c.g[A1][0] = CFA_STATE as u64;
+                    c.g[V0][0] = 0x2e0;
+                    c.g[A0][0] = 0;
+                    c.pc = 0x0041_45d4;
+                }
+                // Window loop mid-spill: counter partway, end at 0x20.
+                _ => {
+                    c.g[A0][0] = 0x10 + (seed % 5) as u64;
+                    c.g[A3][0] = 0x10 + (seed % 5) as u64;
+                    c.g[T0][0] = (CFA_STATE + 0x18) as u64;
+                    c.g[T1][0] = (CFA_STATE + 0x29c) as u64;
+                    c.pc = 0x0041_4648;
+                }
+            }
+        };
+        check(
+            ee::s15::f_00414338__generated,
+            execute_cfa_insn,
+            SEEDS,
+            &setup,
+        );
+    }
+
+    /// Every CFA resume head, entered directly with valid buffer state.
+    /// Straight-line heads chain forward to the join/abort tails, so the
+    /// uniform setup terminates; the three copy loops reuse the
+    /// zero/full-trip states from the resume test above.
+    #[test]
+    fn execute_cfa_insn_heads_matches() {
+        // The guard list minus the entry (covered by the main test).
+        const HEADS: [u32; 33] = [
+            0x0041_4368,
+            0x0041_437c,
+            0x0041_4388,
+            0x0041_4394,
+            0x0041_43a0,
+            0x0041_43b0,
+            0x0041_43bc,
+            0x0041_43d4,
+            0x0041_43e8,
+            0x0041_43f8,
+            0x0041_4414,
+            0x0041_4420,
+            0x0041_4430,
+            0x0041_443c,
+            0x0041_444c,
+            0x0041_448c,
+            0x0041_44ac,
+            0x0041_44f4,
+            0x0041_4524,
+            0x0041_4540,
+            0x0041_455c,
+            0x0041_4570,
+            0x0041_45a4,
+            0x0041_45c4,
+            0x0041_45d4,
+            0x0041_4608,
+            0x0041_462c,
+            0x0041_4648,
+            0x0041_4688,
+            0x0041_4690,
+            0x0041_46ac,
+            0x0041_46b4,
+            0x0041_46b8,
+        ];
+        let setup = |c: &mut Cpu, seed: u32| {
+            let _ = unwind_machine(c, seed, 0x4338);
+            crate::difftest::elf_image(c);
+            for i in 0..0x100u32 {
+                c.bus.write32(CFA_STATE + i * 4, 0xa5a5_a5a5);
+            }
+            let dst = DATA + 0xd00;
+            for i in 0..0xc0u32 {
+                c.bus.write32(dst + i * 4, 0x5a5a_5a5a);
+            }
+            // Benign stream, CIE, LOC and a NULL snapshot, as in the
+            // main test.
+            c.bus.write8(CFA_STREAM, 0x01);
+            for i in 1..16u32 {
+                c.bus.write8(CFA_STREAM + i, 0x01);
+            }
+            c.bus.write32(CFA_CIE + 8, 1);
+            c.bus.write32(CFA_CIE + 0xc, 0xffff_fffc);
+            c.bus.write32(CFA_LOC, 0x1234_5678);
+            c.bus.write32(CFA_STATE + 0x2f0, 0);
+            // Uniform valid regs: every head's first reads land mapped.
+            c.g[S0][0] = CFA_STREAM as u64;
+            c.g[S1][0] = CFA_STATE as u64;
+            c.g[S2][0] = CFA_CIE as u64;
+            c.g[A3][0] = CFA_LOC as u64;
+            c.g[V1][0] = 1;
+            c.g[V0][0] = 0x4a0000;
+            c.g[A0][0] = dst as u64;
+            c.g[A1][0] = CFA_STATE as u64;
+            c.g[A2][0] = 0;
+            let head = HEADS[seed as usize % HEADS.len()];
+            match head {
+                // Remember loop, one row left: V1/A0 one row before
+                // the end A1, so it exits after one iteration.
+                0x0041_4570 => {
+                    c.g[V1][0] = (CFA_STATE + 0x2c0) as u64;
+                    c.g[A0][0] = (dst + 0x20) as u64;
+                    c.g[A1][0] = (CFA_STATE + 0x2e0) as u64;
+                    c.g[V0][0] = (dst + 0x20) as u64;
+                }
+                // Restore loop over a NULL snapshot (as above).
+                0x0041_45d4 => {
+                    c.g[A2][0] = 0;
+                    c.g[A1][0] = CFA_STATE as u64;
+                    c.g[V0][0] = 0x2e0;
+                    c.g[A0][0] = 0;
+                }
+                // Window loop mid-spill (as above).
+                0x0041_4648 => {
+                    c.g[A0][0] = 0x10 + (seed % 5) as u64;
+                    c.g[A3][0] = 0x10 + (seed % 5) as u64;
+                    c.g[T0][0] = (CFA_STATE + 0x18) as u64;
+                    c.g[T1][0] = (CFA_STATE + 0x29c) as u64;
+                }
+                // Remember tail reads one snapshot row from V1.
+                0x0041_45a4 => {
+                    c.g[V1][0] = dst as u64;
+                    c.g[A0][0] = dst as u64;
+                }
+                // Offset path with high bits set: V1 = 0xc1 takes the
+                // remember-advance arm (V0 = 1 flows into it), so the
+                // 0x3f mask is load-bearing here (V1 = 1 falls through
+                // to 0x43b0, where the masked value is dead).
+                0x0041_4394 => {
+                    c.g[V1][0] = 0xc1;
+                }
+                _ => {}
+            }
+            c.pc = head;
+        };
+        check(
+            ee::s15::f_00414338__generated,
+            execute_cfa_insn,
+            SEEDS,
+            &setup,
+        );
+    }
+
+    /// Normal-entry event behavior (M3): entered at `0x414338`, the
+    /// three copy/spill loops must ignore the unwind request and run to
+    /// completion, as the generated entry body does (the resume twin
+    /// returns at once instead). Each seed enters normally with a
+    /// frame-ready event due inside its loop; the assertions first pin
+    /// the generated side (an event really fired, and it still ran to
+    /// `RA`), so the comparison cannot pass vacuously.
+    #[test]
+    fn execute_cfa_insn_entry_event_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            // Window loop, restore loop, remember loop.
+            let op = [0x2du32, 0x0bu32, 0x0au32][seed as usize % 3];
+            // In-loop deadline past the entry (the remember path only
+            // calls check-free callees before its loop).
+            let k = [100u64, 100, 200][seed as usize % 3];
+            let _ = unwind_machine(c, seed, 0x4338);
+            crate::difftest::elf_image(c);
+            for i in 0..0x100u32 {
+                c.bus.write32(CFA_STATE + i * 4, 0xa5a5_a5a5);
+            }
+            // A NULL snapshot: the restore loop reads zeros, frees NULL
+            // (a no-op) and still spans the full trip.
+            c.bus.write32(CFA_STATE + 0x2f0, 0);
+            c.bus.write8(CFA_STREAM, op as u8);
+            for i in 1..16u32 {
+                c.bus.write8(CFA_STREAM + i, 0x01);
+            }
+            c.bus.write32(CFA_CIE + 8, 1);
+            c.bus.write32(CFA_CIE + 0xc, 0xffff_fffc);
+            c.bus.write32(CFA_LOC, 0x1234_5678);
+            c.g[A0][0] = CFA_STREAM as u64;
+            c.g[A1][0] = CFA_STATE as u64;
+            c.g[A2][0] = CFA_CIE as u64;
+            c.g[A3][0] = CFA_LOC as u64;
+            // Normal entry on a running guest thread with a frame-ready
+            // event due inside the loop (fresh `next_vblank` is 0, so the
+            // first check starts a VBlank and requests the unwind).
+            let saved = (c.g[A0], c.g[A1], c.g[31]);
+            ssx3_ps2::kernel::start_main_thread(c, 0x0041_4338, 0, 0);
+            (c.g[A0], c.g[A1], c.g[31]) = saved;
+            c.pc = 0x0041_4338;
+            c.cycles = 1000;
+            c.next_event = c.cycles + k;
+        };
+        // Non-vacuous: every seed delivers an event and still runs the
+        // entry body to its return address.
+        for seed in 0..3u32 {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            let first = c.next_event;
+            crate::difftest::run_generated(&mut c, ee::s15::f_00414338__generated);
+            assert!(c.next_event != first, "seed {seed}: no event delivered");
+            assert_eq!(
+                c.pc,
+                crate::difftest::RA,
+                "seed {seed}: entry did not run to completion (pc {:#x})",
+                c.pc
+            );
+        }
+        check(ee::s15::f_00414338__generated, execute_cfa_insn, 3, &setup);
+    }
+
+    /// CIE info record the extractor fills (augmentation at +0xd when the
+    /// length word is zero).
+    pub(crate) const CIE: u32 = DATA + 0x800;
+
+    pub(crate) const CIE_INFO: u32 = DATA + 0x900;
+
+    #[test]
+    fn extract_cie_info_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = unwind_machine(c, seed, 0x4230);
+            crate::difftest::elf_image(c);
+            // Augmentation strings: empty, `z`-family, `eh`, other.
+            let aug: &[u8] = match seed % 4 {
+                0 => b"\0",
+                1 => b"zR\0",
+                2 => b"eh\0",
+                _ => b"x\0",
+            };
+            c.bus.write32(CIE + 4, 0);
+            for (i, b) in aug.iter().enumerate() {
+                c.bus.write8(CIE + 0xd + i as u32, *b);
+            }
+            // Code/data alignment + return column scratch.
+            for i in 0..8u32 {
+                c.bus.write32(CIE_INFO + i * 4, r.next_u32());
+            }
+            c.g[A0][0] = CIE as u64;
+            c.g[A1][0] = CIE_INFO as u64;
+        };
+        check_paths(
+            ee::s15::f_00414230__generated,
+            extract_cie_info,
+            SEEDS,
+            &[60, 104, 165, 181],
+            &setup,
+        );
+    }
+
+    /// Fixture base: scrambled machine, non-zero low bytes on pointers.
+    pub(crate) fn libm_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = machine(c, seed, salt, 0);
+        c.g[A0][0] = (DATA + 0x400 + (r.next_u32() % 0xf0) * 16) as u64;
+        c.g[A1][0] = (r.next_u32() % 7) as u64;
+        c.g[A2][0] = (r.next_u32() % 9) as u64;
+        r
+    }
+
+    #[test]
+    fn matherr_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            libm_machine(c, seed, 0x40f8);
+            // Exception record: type, name, two double args.
+            c.bus.write32(DATA + 0x400, seed);
+            c.bus.write32(DATA + 0x404, 0x4a0000 - 0x9088 + seed % 8);
+            c.bus
+                .write64(DATA + 0x408, 0x3ff8000000000000 + seed as u64);
+            c.bus
+                .write64(DATA + 0x410, 0x4000000000000000 + seed as u64);
+            c.g[A0][0] = (DATA + 0x400) as u64;
+        };
+        check_paths(
+            ee::s15::f_0040f878__generated,
+            matherr,
+            SEEDS,
+            &[106],
+            &setup,
+        );
+    }
+
+    /// Gate word arming the `matherr`-handled probe below.
+    pub(crate) const FMODF_GATE: u32 = DATA + 0x5074;
+
+    pub(crate) const FMODF_MAGIC: u32 = 0x464d_4445;
+
+    /// Gated `matherr` probe (slot 0x40f878): with the gate armed,
+    /// report the domain as handled (return 1) while leaving the
+    /// exception `err` word 0. With the gate off, run the installed
+    /// body.
+    pub(crate) fn fake_matherr_handled(c: &mut Cpu) {
+        if c.bus.read32(FMODF_GATE) != FMODF_MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(fake_matherr_handled), ee::s15::matherr);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        crate::abi::ret(c);
+    }
+
+    /// Hook the probe once and arm the gate on this machine.
+    pub(crate) fn arm_matherr_handled(c: &mut Cpu) {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_0040F878),
+            fake_matherr_handled,
+            fakes::prev_cell(fake_matherr_handled),
+        );
+        c.bus.write32(FMODF_GATE, FMODF_MAGIC);
+    }
+
+    /// `matherr` handling (M2): with a gated `matherr` reporting the
+    /// domain handled while `err` stays 0, the SVID zero-`y` path must
+    /// skip the EDOM store exactly as the generated body does (it
+    /// captures the comparison before the delay-slot load).
+    #[test]
+    fn fmodf_matherr_handled_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let _ = libm_machine(c, seed, 0x40d8);
+            // Normal x, zero y: the SVID domain path. Version SVID (0)
+            // so `matherr` is asked.
+            c.f[12] = 0x3f80_0000;
+            c.f[13] = 0x0000_0000;
+            c.bus.write32(LIB_VERSION, 0);
+            // The exception `err` word the domain loads after `matherr`:
+            // the probe reports handled without setting it.
+            c.bus.write32(crate::difftest::SP - 0x80 + 0x20, 0);
+            arm_matherr_handled(c);
+        };
+        check(ee::s15::f_0040d8d0__generated, fmodf, 4, &setup);
+    }
+
+    #[test]
+    fn fmodf_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = libm_machine(c, seed, 0x40d8);
+            // (x, y) float classes: zeros, normals, inf, NaN, denormals.
+            let cls = seed % 8;
+            let bits = |r: &mut Rng| r.next_u32();
+            let pair = match cls {
+                0 => (0x00000000, 0x00000000),
+                1 => (0x3f800000, 0x40000000),
+                2 => (0xc0000000, 0x00000000), // y = 0: domain path
+                3 => (0x7f800000, 0x3f800000), // x = inf
+                4 => (0x7fc00000, 0x3f800000), // x = NaN
+                5 => (0x3f800000, 0x7fc00000), // y = NaN
+                6 => (0x00000001, 0x3f800000), // x denormal
+                _ => (bits(&mut r), bits(&mut r)),
+            };
+            c.f[12] = pair.0;
+            c.f[13] = pair.1;
+            // Libm version word steers the sticky/domain arms: SVID (0,
+            // twice), POSIX (2, skips `matherr`), IEEE (-1, sticky), and
+            // XOPEN (1, asks `matherr` like SVID).
+            c.bus
+                .write32(LIB_VERSION, [0, 0, 2, 0xffff_ffff, 1][seed as usize % 5]);
+        };
+        check(ee::s15::f_0040d8d0__generated, fmodf, SEEDS, &setup);
+    }
+
+    #[test]
+    fn floor_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = libm_machine(c, seed, 0x41ed);
+            // The |x| < 1 arm adds the libm constant at 0x49a7f8
+            // (1e300 in the game image; test RAM starts zeroed, which
+            // would deaden the negative arm).
+            c.bus.write64(0x49_A7F8, 0x7E37_E43C_8800_759C);
+            // Double classes steering every exponent band and sign: the
+            // mask_large band (20-51), its S1 == 20 edge, zero/low words
+            // for the mask and combine boundaries, and S0 != 0 smalls so
+            // the mask result is observable.
+            let bits = match seed % 23 {
+                0 => 0x0000000000000000,  // +0
+                1 => 0x3fb999999999999a,  // 0.1
+                2 => 0x4059c00000000000,  // 100.5
+                3 => 0xc059c00000000000,  // -100.5
+                4 => 0x4330000000000000,  // 2^52
+                5 => 0x7ff0000000000000,  // inf (S1 == 0x400)
+                6 => 0x7ff8000000000000,  // NaN (S1 == 0x400)
+                7 => 0xbff0000000000000,  // -1
+                8 => 0x0000000000000001,  // denormal
+                9 => 0x4130000000000000,  // 2^20 (S1 == 20 edge)
+                10 => 0x41d0000000000000, // 2^30 (mask_large)
+                11 => 0x4270000000000000, // 2^40 (mask_large deep)
+                12 => 0x41d0000000000001, // 2^30 + ulp (mask_large, S2 != 0)
+                13 => 0xc1d0000000000001, // -(2^30 + ulp) (mask_large, neg)
+                14 => 0xbfe0000000000000, // -0.5 (|x| < 1, S2 == 0)
+                15 => 0xbf50000000000000, // -2^-10 (neg frac, S2 == 0)
+                16 => 0xbfb999999999999a, // -0.1 (neg |x| < 1, S2 != 0)
+                17 => 0x3fe0000000000000, // +0.5 (S0 == 0 small)
+                18 => 0x400921fb54442d18, // pi (S0 != 0 small)
+                19 => 0xc00921fb54442d18, // -pi (S0 != 0 small, neg)
+                20 => 0x8000000000000000, // -0.0 (S0&mask == 0, S2 == 0)
+                21 => 0xc130000080000000, // -1048576.5 (negative fraction, S1 == 20)
+                _ => ((r.next_u32() as u64) << 32) | r.next_u32() as u64,
+            };
+            c.g[A0][0] = bits;
+        };
+        check_paths(
+            ee::s15::f_0041ed60__generated,
+            floor,
+            SEEDS,
+            &[31, 34, 35, 140, 143, 252, 293, 310],
+            &setup,
+        );
+    }
+
+    #[test]
+    fn scalbnf_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = libm_machine(c, seed, 0x40f9);
+            // Float classes and shifts: zero, normal, subnormal, inf,
+            // NaN, max normal, largest denormal (exp 0, A2 != 0: the
+            // normalize path with its underflow compare); n = 0, small,
+            // large positive/negative, plus the range boundaries with a
+            // 1.0 input (biased 127): n = -127 lands V1 on 0
+            // (near-normal multiply), n = -151 on -24; max normal +
+            // n = 1 lands V1 on 255 (saturate). The 32-bit patterns for
+            // -1/-100 read large positive as i64 (deliberate extension
+            // cases); genuine -1/-100 ride along. Digits cross all
+            // 8 x 13 pairs over 104 seeds.
+            let fbits = match seed % 8 {
+                0 => 0x00000000,
+                1 => 0x3f800000,
+                2 => 0x00800000, // subnormal-ish
+                3 => 0x7f800000, // inf
+                4 => 0x7fc00000, // NaN
+                5 => 0x7f000000, // max normal (biased 254)
+                6 => 0x007fffff, // largest denormal (exp 0, A2 != 0)
+                _ => r.next_u32(),
+            };
+            c.f[12] = fbits;
+            c.g[A0][0] = match (seed / 8) % 13 {
+                0 => 0,
+                1 => 1,
+                // 32-bit -1 pattern: large positive as i64 (deliberate
+                // extension case, not the -1 arm).
+                2 => 0xffff_ffff,
+                3 => 10,
+                4 => 200,
+                5 => 0xffff_ffff_ffff_ff81, // -127, V1 == 0 with 1.0
+                6 => 0xffff_ffff_fffe_7960, // -100000 (underflow)
+                // 32-bit -100 pattern: large positive as i64 (deliberate
+                // extension case, not the -100 arm).
+                7 => 0xffff_ff9c,
+                8 => 0xffff_ffff_ffff_ff69,  // -151, V1 == -24 with 1.0
+                9 => 128,                    // V1 == 255 with max normal
+                10 => 0xffff_ffff_ffff_3cb0, // -50000, A0 == underflow const
+                11 => 0xffff_ffff_ffff_ffff, // genuine -1
+                _ => 0xffff_ffff_ffff_ff9c,  // genuine -100
+            };
+        };
+        check_paths(
+            ee::s15::f_0040f9f8__generated,
+            scalbnf,
+            104,
+            &[19, 27, 35, 39, 47],
+            &setup,
+        );
+        // `SSX3_DIFF_STRICT=args` does not compare the scratch registers;
+        // pin AT explicitly (a missed underflow-compare writeback hides
+        // there while the float result stays equal).
+        for seed in 0..104 {
+            let mut a = crate::difftest::fresh();
+            setup(&mut a, seed);
+            crate::difftest::run_generated(&mut a, ee::s15::f_0040f9f8__generated);
+            let mut b = crate::difftest::fresh();
+            setup(&mut b, seed);
+            crate::difftest::run_generated(&mut b, scalbnf);
+            assert_eq!(
+                a.g[AT], b.g[AT],
+                "seed {seed}: AT differs {:x?} vs {:x?}",
+                a.g[AT], b.g[AT]
+            );
+        }
+    }
+
+    #[test]
+    fn eofread_matches() {
+        check_paths(
+            ee::s15::f_004178a8__generated,
+            eofread,
+            SEEDS_2,
+            &[2],
+            &|c, seed| {
+                glue_machine(c, seed, 0);
+            },
+        );
+    }
 }
 
 pub(crate) mod callee {
@@ -26852,6 +29044,65 @@ pub(crate) mod callee {
     pub(crate) const EA_MEM_FREE: Callee = Callee {
         addr: 0x0031_7e98,
         f: ee::s10::EA_MemFree,
+    };
+    pub(crate) use crate::game::lib::gcc::callee::DECODE_ULEB128;
+    pub(crate) use crate::game::lib::gcc::ABORT;
+    pub(crate) use crate::game::lib::gcc::FREE;
+    pub(crate) use crate::game::lib::gcc::MALLOC;
+    pub(crate) use crate::game::misc::libm_wrap::GETREENT;
+
+    /// `int strcmp(const char *, const char *)` (0x4165a8).
+    pub const STRCMP: Callee = Callee {
+        addr: 0x0041_65a8,
+        f: ee::s15::strcmp,
+    };
+
+    /// `size_t strlen(const char *)` (0x416810).
+    pub const STRLEN: Callee = Callee {
+        addr: 0x0041_6810,
+        f: ee::s15::strlen,
+    };
+
+    /// SLEB128 decoder (`__decode_sleb128`, 0x413b80).
+    pub const DECODE_SLEB128: Callee = Callee {
+        addr: 0x0041_3b80,
+        f: ee::s15::decode_sleb128,
+    };
+
+    /// Frame-table initializer (`frame_init`, 0x414008).
+    pub const FRAME_INIT: Callee = Callee {
+        addr: 0x0041_4008,
+        f: ee::s15::frame_init,
+    };
+
+    /// `double __adddf3(double, double)` (0x411f18).
+    pub const ADDDF3: Callee = Callee {
+        addr: 0x0041_1f18,
+        f: ee::s15::__adddf3,
+    };
+
+    /// `float __ieee754_fmodf(float, float)` (0x40e300).
+    pub const IEEE754_FMODF: Callee = Callee {
+        addr: 0x0040_e300,
+        f: ee::s15::__ieee754_fmodf,
+    };
+
+    /// `int isnanf(float)` (0x40f9d0).
+    pub const ISNANF: Callee = Callee {
+        addr: 0x0040_f9d0,
+        f: ee::s15::isnanf,
+    };
+
+    /// `float copysignf(float, float)` (0x40fb58): `|x|` with `y`'s sign.
+    pub const COPYSIGNF: Callee = Callee {
+        addr: 0x0040_fb58,
+        f: ee::s15::copysignf,
+    };
+
+    /// `int matherr(struct exception *)` (0x40f878): always 0.
+    pub const MATHERR: Callee = Callee {
+        addr: 0x0040_f878,
+        f: ee::s15::matherr,
     };
 }
 

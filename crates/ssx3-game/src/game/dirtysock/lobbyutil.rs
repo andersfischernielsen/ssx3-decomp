@@ -4,6 +4,7 @@ use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::abi::set_word;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -115,6 +116,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003f_4330, net_tick_wrapper2, "NetTick_Wrapper2"),
     (0x003f_43d0, net_conn_return_true, "NetConn_ReturnTrue"),
     (0x003f_4de8, net_tick, "NetTick"),
+    (0x003e_b090, ds_timetosecs, "ds_timetosecs"),
 ];
 
 pub(crate) mod callee {
@@ -250,6 +252,7 @@ pub(crate) mod callee {
         addr: 0x003e_e028,
         f: ee::s14::Lobby_ListGrow,
     };
+    pub(crate) use crate::game::dirtysock::tags::callee::DS_SECSTOTIME;
 }
 
 pub(crate) const DIRTY_RPC_STATE_HI: u64 = 0x0052_0000;
@@ -5766,6 +5769,118 @@ pub fn lobby_list_grow(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// ds_timetosecs
+
+/// `time_t ds_timetosecs(struct tm *t)` (0x3eb090): the seconds for a
+/// date/time record, found by bisecting `ds_secstotime` (about 32 rounds;
+/// the head checks events).
+pub fn ds_timetosecs(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S0, 0x70);
+        c.g[S2][0] = 0xffff_ffff_ffff_0000;
+        frame.save(c, S3, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        c.g[S3][0] = 0;
+        frame.save_ra(c, 0x30);
+        c.g[S2][0] |= 0xffff;
+        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S2][0] as u32));
+        // Every exit below leaves `v0` ready except the converged
+        // mismatch, which returns zero as-is.
+        let mut shift = true;
+        loop {
+            c.cycles += 10;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[S1][0] = sx(((c.g[V0][0] as u32) >> 1) as u32);
+            c.g[A1][0] = c.g[S1][0] << 32;
+            c.g[A1][0] >>= 32;
+            callee::DS_SECSTOTIME.call(c, 0x003e_b0d4)?;
+            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            if c.g[V1][0] == 0 {
+                c.cycles += 5;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                if c.g[V1][0] == 0 {
+                    c.cycles += 5;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    if c.g[V1][0] == 0 {
+                        c.cycles += 5;
+                        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                        if c.g[V1][0] == 0 {
+                            c.cycles += 5;
+                            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                            if c.g[V1][0] == 0 {
+                                c.cycles += 5;
+                                c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                                c.g[V1][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                                c.g[V0][0] = c.g[S1][0] << 32;
+                                if c.g[V1][0] == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Mismatch: halve the range toward the target.
+            c.cycles += 2;
+            if (c.g[V1][0] as i64) <= 0 {
+                c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+            } else {
+                c.cycles += 1;
+                c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[S2][0] < c.g[S3][0]) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                if event_due(c) {
+                    deliver_event_here(c, 0x003e_b0c0);
+                }
+                continue;
+            }
+            c.cycles += 2;
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = 0;
+                shift = false;
+                break;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S1][0] << 32;
+            break;
+        }
+        if shift {
+            c.cycles += 1;
+            c.g[V0][0] >>= 32;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore_ra(c, 0x30);
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9175,6 +9290,67 @@ pub(crate) mod tests {
                 }
                 mode
             },
+        );
+    }
+
+    driven!(ds_timetosecs_gen_driven, ee::s14::f_003eb090__generated);
+    driven!(ds_timetosecs_hand_driven, ds_timetosecs);
+
+    /// Seeds for the date round-trip (independent digits).
+    pub(crate) const SEEDS_2: u32 = 64;
+
+    #[test]
+    fn ds_timetosecs_matches() {
+        use crate::game::misc::tests::libm_machine;
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = libm_machine(c, seed, 0x3eb0);
+            c.g[GP][0] = crate::difftest::GAME_GP as u64;
+            crate::difftest::elf_image(c);
+            // Round-trip date: the seconds the search must find back.
+            // (Exact fixed point, so the bisection always converges.
+            // Out-of-range seconds do not terminate even in the
+            // original — the bisection overflows — so only fixed
+            // points are valid here, plus the invalid-interior killer
+            // below, whose bounds exhaust with no exact tuple.)
+            let secs = match seed % 9 {
+                0 => 0,
+                1 => 59,
+                2 => 3600,
+                3 => 86400,
+                4 => 30 * 86400,
+                5 => 365 * 86400,
+                6 => 366 * 86400,
+                7 => r.next_u32() % 2000000000,
+                _ => 86400,
+            };
+            c.g[A0][0] = (DATA + 0x400) as u64;
+            c.g[A1][0] = secs as u64;
+            c.pc = 0x003e_aeb8;
+            ee::s14::ds_secstotime(c);
+            if seed % 9 == 8 {
+                // Invalid interior date: Jan2 1970 with seconds forced
+                // to 60. No exact tuple exists, so the bounds exhaust
+                // and the search returns 0.
+                c.bus.write32(DATA + 0x400, 60);
+            }
+            c.g[A0][0] = (DATA + 0x400) as u64;
+            let mode = schedule(c, &mut r, seed, 0x003e_b090);
+            // Deliver-only: suppress VBlank unwinds. The loop calls the
+            // match-pc dispatcher `ds_secstotime`, which would unwind
+            // mid-call; re-entry restarts this function from the top, so
+            // a VBlank inside the callee restarts the whole search
+            // instead of resuming it (harness limitation). Events are
+            // still delivered at the loop head every ~20k cycles.
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 1 << 40;
+            mode
+        };
+        check_events(
+            ds_timetosecs_gen_driven,
+            ds_timetosecs_hand_driven,
+            SEEDS_2,
+            &setup,
         );
     }
 }

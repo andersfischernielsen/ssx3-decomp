@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -10,6 +11,8 @@ use crate::call::Frame;
 use crate::call::Unwound;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+use crate::game::lib::gcc::frame_ld;
+use crate::game::lib::gcc::frame_sd;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -106,6 +109,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rcmp_av_ms_timer_update,
         "RCMP_AV_MS_TIMER_Update",
     ),
+    (0x0041_1310, exit_3, "exit"),
     (
         0x0042_4220,
         libkernl_reset_tty_init,
@@ -343,6 +347,8 @@ pub(crate) mod callee {
         addr: 0x0042_cd98,
         f: ee::s15::libkernl_SetupTLB,
     };
+    pub(crate) use crate::game::lib::libc::callee::CLEANUP;
+    pub(crate) use crate::game::lib::libc::callee::DO_GLOBAL_DTORS;
 }
 
 // ---------------------------------------------------------------------------
@@ -1852,6 +1858,33 @@ pub fn rcmp_av_ms_timer_update(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// exit
+
+/// The reset vector `exit` jumps to after running the destructors.
+pub(crate) const EXIT_RESET: u32 = 0x0010_01c8;
+
+/// `void exit(int status)` (0x411310): run the global destructors and the
+/// stdio cleanup, then reset (a fatal-error path; never returns).
+pub fn exit_3(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame_sd(c, frame, 0, c.g[S0][0]);
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        callee::DO_GLOBAL_DTORS.call(c, 0x0041_1324)?;
+        callee::CLEANUP.call(c, 0x0041_132c)?;
+        c.g[A0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x10);
+        c.g[S0][0] = frame_ld(c, frame, 0);
+        frame.close(c);
+        c.pc = EXIT_RESET;
+        ssx3_ee_rt::funcs::call_indirect(c, EXIT_RESET);
+        Ok(())
+    })
+}
+
 /// TTY ring-buffer header words (see `TtyRingPush`/`TtyRingPop`).
 pub(crate) mod tty_ring {
     /// Live-byte count: decremented by pop, incremented by push.
@@ -3122,6 +3155,24 @@ pub(crate) mod tests {
             libkernl_printf,
             SEEDS,
             &setup,
+        );
+    }
+    pub(crate) use crate::game::lib::gcc::tests::exit_arm_fakes;
+    pub(crate) use crate::game::lib::libc::tests::glue_machine;
+    pub(crate) use crate::game::lib::libc::tests::SEEDS_4 as SEEDS_3;
+
+    #[test]
+    fn exit_matches_2() {
+        check(
+            ee::s15::f_00411310__generated,
+            exit_3,
+            SEEDS_3,
+            &|c, seed| {
+                glue_machine(c, seed, 0);
+                let mut r = Rng(0x1310 ^ seed as u64);
+                c.g[A0][0] = (r.next_u32() % 256) as u64;
+                exit_arm_fakes(c);
+            },
         );
     }
 }
