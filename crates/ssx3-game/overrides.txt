@@ -10105,6 +10105,31 @@
 0x001a7390    cFEStateNetMessenger_ShowBuddyPresence
 0x001a77a0    cFEStateReadMessagePopup_ctor
 0x001a7848    cFEStateReadMessagePopup_dtor
+# Phase 2 wave: oc1330, oc1331, oc1332, oc1333
+0x002c76c0    HUFF_DecodeStream
+0x002c8e48    HUFF_analysis
+0x00252a10    MEM_HeapAllocAligned
+0x00317ee0    EA_MemSyncLock
+0x00317d48    EA_MemAllocTagged
+0x00317d20    EA_MemAllocDefault
+0x00317f18    EA_MemReportStats_Wrapper
+0x003e3d78    EAFile_CdMountDisc
+0x003e3b00    EAFile_CdIssueRead
+0x003e44b0    EAFile_CdShutdown
+0x003e2030    EAFile_HostWriteFileChecked
+0x003e1f48    EAFile_HostWriteFile
+0x003dcde0    EAFile_Shutdown
+0x003191c0    cBXString_FormatV
+0x003b4818    EAC_GetUnpackedSize
+0x003e60e8    EA_FatalError
+0x003e6070    EA_DebugMessage
+0x003e6240    EA_IsValidPointer
+0x003e6188    EA_MemMove
+0x003e4a30    EA_AddShutdownHandler
+0x003e62d0    EA_Crc16
+0x003e49b8    EA_RunFatalHandlers
+0x003e4a10    EA_Abort
+0x003e62b0    EA_AssertNotBusy
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
