@@ -22938,33 +22938,7 @@ pub(crate) mod tests {
     /// plus the dlmalloc arena the sub-constructors' allocations fall back
     /// to (the heap at 0x4ff250, backed by `DATA+0x40000..+0x80000`).
     pub(crate) fn rbc_test_allocator(c: &mut Cpu) {
-        c.bus.write32(GAME_GP + 0xdd8, 1);
-        const POOLS: [(u32, u32, u32); 7] = [
-            (0x2a70, 0x800, 8),
-            (0x2a60, 0x2000, 0x10),
-            (0x2a6c, 0x32000, 0x20),
-            (0x2a7c, 0x25800, 0x40),
-            (0x2a84, 0x25800, 0x80),
-            (0x2a78, 0x20000, 0x100),
-            (0x2a68, 0x20000, 0x200),
-        ];
-        let mut nodes = DATA + 0x24_000;
-        for (i, (slot, head, block)) in POOLS.into_iter().enumerate() {
-            let pool = DATA + 0x20_000 + 0x100 * i as u32;
-            for n in 0..16u32 {
-                let node = nodes + block * n;
-                c.bus.write32(node, if n == 15 { 0 } else { node + block });
-            }
-            c.bus.write32(pool + head, nodes);
-            c.bus.write32(GAME_GP + slot, pool);
-            nodes += block * 16;
-        }
-        c.g[A0][0] = 0x004f_f250;
-        c.g[A1][0] = (DATA + 0x4_0000) as u64;
-        c.g[A2][0] = 0x4_0000;
-        c.g[RA][0] = crate::difftest::RA as u64;
-        c.pc = 0x0031_ff60;
-        ee::s10::DLHeap_InitArena(c);
+        crate::difftest::fakes::test_allocator(c);
     }
 
     /// `RiderBase_ctor` against the generated body: `in_chrg` 0 and 1, with
