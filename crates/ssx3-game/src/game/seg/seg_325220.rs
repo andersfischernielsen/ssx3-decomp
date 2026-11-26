@@ -64,6 +64,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_4950, disable_dmac_wrapper, "DisableDmac"),
     (0x0042_49b8, enable_dmac_wrapper, "EnableDmac"),
     (0x0042_4c50, i_wakeup_thread_signal, "iWakeupThread"),
+    (0x0042_7a90, sce_fs_init, "sceFsInit"),
 ];
 
 /// Direct-call targets of this module (address, generated function).
@@ -172,29 +173,12 @@ pub(crate) mod oc698_callee {
         f: ee::s15::f_00426358,
     };
 
-    pub(crate) use crate::game::lib::cdvd::callee::ADD_CMD_HANDLER;
-    pub(crate) use crate::game::lib::gcc::SIGNAL_SEMA;
-    pub(crate) use crate::game::lib::gcc::WAIT_SEMA;
-    pub(crate) use crate::game::lib::kernel::DINTR;
-    /// SIF RPC callees shared with the `sceFs*` family (same bodies as
-    /// `game::lib::sif::callee`, re-exported under the names the moved
-    /// ports use).
-    pub(crate) use crate::game::lib::sif::callee::BIND_RPC;
-    pub(crate) use crate::game::lib::sif::callee::CALL_RPC;
-    pub(crate) use crate::game::lib::sif::callee::EINTR;
-    pub(crate) use crate::game::lib::sif::callee::INIT_RPC;
     pub(crate) use crate::game::misc::callee::MEMSET;
 
     /// `sceFs_PathCmd` (`0x00428e18`; runs for real in the path-command tests).
     pub(crate) const PATH_CMD: Callee = Callee {
         addr: 0x0042_8e18,
         f: ee::s15::f_00428e18,
-    };
-
-    /// `sceFs_FdSemaInit` (`0x00427438`).
-    pub(crate) const FD_SEMA_INIT: Callee = Callee {
-        addr: 0x0042_7438,
-        f: ee::s15::f_00427438,
     };
 }
 
@@ -1753,290 +1737,6 @@ pub fn sce_chdir(c: &mut Cpu) {
     });
 }
 
-/// `sceFsInit` (0x00427a90): the normal entry, converted from the generated body
-/// (a `match pc` / labelled-block body: every register, cycle and call kept).
-/// Any other `pc` (a resume after an unwound callee or event) runs the
-/// generated twin.
-pub fn sce_fs_init(c: &mut Cpu) {
-    if c.pc != 0x00427a90 {
-        return ee::s15::f_00427a90__generated(c);
-    }
-    guest(c, |c| {
-        use oc698_callee::*;
-
-        let mut pc: u32 = 0x00427a90;
-        loop {
-            match pc {
-                0x00427a90 => {
-                    c.cycles += 30;
-                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
-                    c.g[A0][0] = 0u64;
-                    c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
-                    c.g[S0][0] = 0x530000;
-                    c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
-                    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
-                    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1180));
-                    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
-                    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
-                    c.g[RA][0] = sx(0x00427abc);
-                    c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
-                    INIT_RPC.call(c, 0x00427abc)?;
-                    c.sw((c.g[S0][0] as u32).wrapping_sub(0x1180), 0u64);
-                    c.g[RA][0] = sx(0x00427ac8);
-                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), 0u64);
-                    DINTR.call(c, 0x00427ac8)?;
-                    c.g[A1][0] = 0x420000;
-                    c.g[A2][0] = 0x530000;
-                    c.g[A0][0] = 0xffffffff80000000;
-                    c.g[S0][0] = c.g[V0][0];
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7590));
-                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x11c0));
-                    c.g[RA][0] = sx(0x00427ae8);
-                    c.g[A0][0] = c.g[A0][0] | 0x11;
-                    ADD_CMD_HANDLER.call(c, 0x00427ae8)?;
-                    c.g[A1][0] = 0x420000;
-                    c.g[A0][0] = 0xffffffff80000000;
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7a60));
-                    c.g[A2][0] = c.g[S1][0];
-                    c.g[RA][0] = sx(0x00427b00);
-                    c.g[A0][0] = c.g[A0][0] | 0x13;
-                    ADD_CMD_HANDLER.call(c, 0x00427b00)?;
-                    let t = c.g[S0][0] == 0u64;
-                    c.g[S3][0] = 0x530000;
-                    if t {
-                        pc = 0x00427b3c;
-                        continue;
-                    }
-                    pc = 0x00427b08;
-                    continue;
-                }
-                0x00427b08 => {
-                    c.cycles += 4;
-                    c.g[RA][0] = sx(0x00427b10);
-                    c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
-                    EINTR.call(c, 0x00427b10)?;
-                    let t = true;
-
-                    if t {
-                        pc = 0x00427b40;
-                        continue;
-                    }
-                    pc = 0x00427b18;
-                    continue;
-                }
-                0x00427b18 => {
-                    c.cycles += 2;
-                    c.g[V1][0] = 0xffffffffffffffff;
-                    pc = 0x00427b20;
-                    continue;
-                }
-                0x00427b20 => {
-                    c.cycles += 7;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
-                    let t = c.g[V0][0] != c.g[V1][0];
-
-                    if t {
-                        if back_edge_unwinds(c, 0x00427b20) {
-                            return Ok(());
-                        }
-                        pc = 0x00427b20;
-                        continue;
-                    }
-                    pc = 0x00427b3c;
-                    continue;
-                }
-                0x00427b3c => {
-                    c.cycles += 1;
-                    c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
-                    pc = 0x00427b40;
-                    continue;
-                }
-                0x00427b40 => {
-                    c.cycles += 7;
-                    c.g[A1][0] = 0xffffffff80000000;
-                    c.g[A0][0] = c.g[S0][0];
-                    c.g[A1][0] = c.g[A1][0] | 0x1;
-                    c.g[RA][0] = sx(0x00427b54);
-                    c.g[A2][0] = 0u64;
-                    BIND_RPC.call(c, 0x00427b54)?;
-                    let t = (c.g[V0][0] as i64) < 0;
-                    c.g[V0][0] = 0xffffffffffffffff;
-                    if t {
-                        pc = 0x00427c74;
-                        continue;
-                    }
-                    pc = 0x00427b5c;
-                    continue;
-                }
-                0x00427b5c => {
-                    c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
-                    let t = c.g[V0][0] == 0u64;
-                    c.g[V0][0] = 0x100000;
-                    if t {
-                        if back_edge_unwinds(c, 0x00427b18) {
-                            return Ok(());
-                        }
-                        pc = 0x00427b18;
-                        continue;
-                    }
-                    pc = 0x00427b68;
-                    continue;
-                }
-                0x00427b68 => {
-                    c.cycles += 10;
-                    c.g[RA][0] = sx(0x00427b70);
-                    c.g[S4][0] = 0x450000;
-                    FD_SEMA_INIT.call(c, 0x00427b70)?;
-                    c.g[RA][0] = sx(0x00427b78);
-                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
-                    WAIT_SEMA.call(c, 0x00427b78)?;
-                    c.g[V1][0] = 0x530000;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1400));
-                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x200));
-                    c.g[V0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
-                    let t = c.g[V0][0] == 0u64;
-                    c.g[S2][0] = 0x530000;
-                    if t {
-                        pc = 0x00427bbc;
-                        continue;
-                    }
-                    pc = 0x00427b90;
-                    continue;
-                }
-                0x00427b90 => {
-                    c.cycles += 2;
-                    c.g[S1][0] = 0x530000;
-                    c.g[S0][0] = 0x530000;
-                    pc = 0x00427b98;
-                    continue;
-                }
-                0x00427b98 => {
-                    c.cycles += 7;
-                    c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
-                    let t = c.g[V0][0] != 0u64;
-
-                    if t {
-                        if back_edge_unwinds(c, 0x00427b98) {
-                            return Ok(());
-                        }
-                        pc = 0x00427b98;
-                        continue;
-                    }
-                    pc = 0x00427bb4;
-                    continue;
-                }
-                0x00427bb4 => {
-                    c.cycles += 2;
-                    let t = true;
-                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
-                    if t {
-                        pc = 0x00427bc8;
-                        continue;
-                    }
-                    pc = 0x00427bbc;
-                    continue;
-                }
-                0x00427bbc => {
-                    c.cycles += 3;
-                    c.g[S1][0] = 0x530000;
-                    c.g[S0][0] = 0x530000;
-                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
-                    pc = 0x00427bc8;
-                    continue;
-                }
-                0x00427bc8 => {
-                    c.cycles += 18;
-                    c.g[RA][0] = sx(0x00427bd0);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1cc0));
-                    SIGNAL_SEMA.call(c, 0x00427bd0)?;
-                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1c80));
-                    c.g[A3][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x2940));
-                    c.sw((c.g[S2][0] as u32).wrapping_sub(0x2940), c.g[V1][0]);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x440));
-                    c.g[A1][0] = 0xff;
-                    c.sw((c.g[A3][0] as u32).wrapping_add(0x4), c.g[V1][0]);
-                    c.g[A2][0] = 0u64;
-                    c.sw(c.g[SP][0] as u32, 0u64);
-                    c.g[T0][0] = 0x8;
-                    c.g[T1][0] = c.g[S0][0];
-                    c.g[T2][0] = 0x8;
-                    c.g[RA][0] = sx(0x00427c08);
-                    c.g[T3][0] = 0u64;
-                    CALL_RPC.call(c, 0x00427c08)?;
-                    let t = (c.g[V0][0] as i64) >= 0;
-                    c.g[A0][0] = 0x20000000;
-                    if t {
-                        pc = 0x00427c1c;
-                        continue;
-                    }
-                    pc = 0x00427c10;
-                    continue;
-                }
-                0x00427c10 => {
-                    c.cycles += 3;
-                    c.g[V0][0] = 0xfffffffffffe0000;
-                    let t = true;
-                    c.g[V0][0] = c.g[V0][0] | 0xffff;
-                    if t {
-                        pc = 0x00427c74;
-                        continue;
-                    }
-                    pc = 0x00427c1c;
-                    continue;
-                }
-                0x00427c1c => {
-                    c.cycles += 22;
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
-                    c.g[V1][0] = c.g[S0][0] | c.g[A0][0];
-                    c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
-                    c.g[A1][0] = 0x530000;
-                    c.g[T0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x11d8));
-                    c.lwl(4, (c.g[V1][0] as u32).wrapping_add(0x3));
-                    c.lwr(4, c.g[V1][0] as u32);
-                    c.swl(4, (c.g[T0][0] as u32).wrapping_add(0x3));
-                    c.swr(4, c.g[T0][0] as u32);
-                    c.lwl(3, (c.g[V0][0] as u32).wrapping_add(0x3));
-                    c.lwr(3, c.g[V0][0] as u32);
-                    c.swl(3, (c.g[SP][0] as u32).wrapping_add(0x13));
-                    c.swr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[A2][0] = 0x450000;
-                    c.g[A1][0] = 0x450000;
-                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[A0][0] = 0x1;
-                    c.sw((c.g[A1][0] as u32).wrapping_add(0x520c), c.g[A0][0]);
-                    c.g[V0][0] = 0u64;
-                    c.g[V1][0] = c.g[V1][0] ^ 0x2;
-                    c.g[V1][0] = (c.g[V1][0] < 0x1u64) as u64;
-                    c.sw((c.g[A2][0] as u32).wrapping_add(0x5210), c.g[V1][0]);
-                    pc = 0x00427c74;
-                    continue;
-                }
-                0x00427c74 => {
-                    c.cycles += 8;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
-                    c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
-                    c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
-                    c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
-                    let t = c.g[RA][0] as u32;
-                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.pc = t;
-                    return Ok(());
-                }
-                _ => {
-                    c.jump_out(pc, 0x00427a90, 0x00427c94);
-                    return Ok(());
-                }
-            }
-        }
-    });
-}
-
 /// `int sceSifInitIopHeap(void)`: bind the IOP heap RPC (spinning until the IOP answers) and clear the heap error word at 0x455224. Returns 0, or -1 when the bind fails.
 pub fn sce_sif_init_iop_heap(c: &mut Cpu) {
     guest(c, |c| {
@@ -2374,6 +2074,328 @@ pub fn i_wakeup_thread_signal(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `SceFsInit` (0x00427a90): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn sce_fs_init(c: &mut Cpu) {
+    if c.pc != 0x00427a90 {
+        return ee::s15::f_00427a90__generated(c);
+    }
+    guest(c, |c| {
+        let mut pc: u32 = 0x00427a90;
+        loop {
+            match pc {
+                0x00427a90 => {
+                    c.cycles += 30;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+                    c.g[A0][0] = 0u64;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+                    c.g[S0][0] = 0x530000;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
+                    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1180));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
+                    c.g[RA][0] = sx(0x00427abc);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+                    Callee {
+                        addr: 0x00426408,
+                        f: ee::s15::sceSifInitRpc,
+                    }
+                    .call(c, 0x00427abc)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_sub(0x1180), 0u64);
+                    c.g[RA][0] = sx(0x00427ac8);
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), 0u64);
+                    Callee {
+                        addr: 0x0042c078,
+                        f: ee::s15::DIntr,
+                    }
+                    .call(c, 0x00427ac8)?;
+                    c.g[A1][0] = 0x420000;
+                    c.g[A2][0] = 0x530000;
+                    c.g[A0][0] = 0xffffffff80000000;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7590));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x11c0));
+                    c.g[RA][0] = sx(0x00427ae8);
+                    c.g[A0][0] = c.g[A0][0] | 0x11;
+                    Callee {
+                        addr: 0x00426020,
+                        f: ee::s15::sceSifAddCmdHandler,
+                    }
+                    .call(c, 0x00427ae8)?;
+                    c.g[A1][0] = 0x420000;
+                    c.g[A0][0] = 0xffffffff80000000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7a60));
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x00427b00);
+                    c.g[A0][0] = c.g[A0][0] | 0x13;
+                    Callee {
+                        addr: 0x00426020,
+                        f: ee::s15::sceSifAddCmdHandler,
+                    }
+                    .call(c, 0x00427b00)?;
+                    let t = c.g[S0][0] == 0u64;
+                    c.g[S3][0] = 0x530000;
+                    if t {
+                        pc = 0x00427b3c;
+                        continue;
+                    }
+                    pc = 0x00427b08;
+                    continue;
+                }
+                0x00427b08 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00427b10);
+                    c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
+                    Callee {
+                        addr: 0x0042c0c0,
+                        f: ee::s15::EIntr,
+                    }
+                    .call(c, 0x00427b10)?;
+                    let t = true;
+
+                    if t {
+                        pc = 0x00427b40;
+                        continue;
+                    }
+                    pc = 0x00427b18;
+                    continue;
+                }
+                0x00427b18 => {
+                    c.cycles += 2;
+                    c.g[V1][0] = 0xffffffffffffffff;
+                    pc = 0x00427b20;
+                    continue;
+                }
+                0x00427b20 => {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[V0][0] != c.g[V1][0];
+
+                    if t {
+                        if back_edge_unwinds(c, 0x00427b20) {
+                            return Ok(());
+                        }
+                        pc = 0x00427b20;
+                        continue;
+                    }
+                    pc = 0x00427b3c;
+                    continue;
+                }
+                0x00427b3c => {
+                    c.cycles += 1;
+                    c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
+                    pc = 0x00427b40;
+                    continue;
+                }
+                0x00427b40 => {
+                    c.cycles += 7;
+                    c.g[A1][0] = 0xffffffff80000000;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[A1][0] | 0x1;
+                    c.g[RA][0] = sx(0x00427b54);
+                    c.g[A2][0] = 0u64;
+                    Callee {
+                        addr: 0x00426b48,
+                        f: ee::s15::sceSifBindRpc,
+                    }
+                    .call(c, 0x00427b54)?;
+                    let t = (c.g[V0][0] as i64) < 0;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    if t {
+                        pc = 0x00427c74;
+                        continue;
+                    }
+                    pc = 0x00427b5c;
+                    continue;
+                }
+                0x00427b5c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x100000;
+                    if t {
+                        if back_edge_unwinds(c, 0x00427b18) {
+                            return Ok(());
+                        }
+                        pc = 0x00427b18;
+                        continue;
+                    }
+                    pc = 0x00427b68;
+                    continue;
+                }
+                0x00427b68 => {
+                    c.cycles += 10;
+                    c.g[RA][0] = sx(0x00427b70);
+                    c.g[S4][0] = 0x450000;
+                    Callee {
+                        addr: 0x00427438,
+                        f: ee::s15::sceFs_FdSemaInit,
+                    }
+                    .call(c, 0x00427b70)?;
+                    c.g[RA][0] = sx(0x00427b78);
+                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
+                    Callee {
+                        addr: 0x00423de0,
+                        f: ee::s15::WaitSema,
+                    }
+                    .call(c, 0x00427b78)?;
+                    c.g[V1][0] = 0x530000;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1400));
+                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x200));
+                    c.g[V0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S2][0] = 0x530000;
+                    if t {
+                        pc = 0x00427bbc;
+                        continue;
+                    }
+                    pc = 0x00427b90;
+                    continue;
+                }
+                0x00427b90 => {
+                    c.cycles += 2;
+                    c.g[S1][0] = 0x530000;
+                    c.g[S0][0] = 0x530000;
+                    pc = 0x00427b98;
+                    continue;
+                }
+                0x00427b98 => {
+                    c.cycles += 7;
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+
+                    if t {
+                        if back_edge_unwinds(c, 0x00427b98) {
+                            return Ok(());
+                        }
+                        pc = 0x00427b98;
+                        continue;
+                    }
+                    pc = 0x00427bb4;
+                    continue;
+                }
+                0x00427bb4 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
+                    if t {
+                        pc = 0x00427bc8;
+                        continue;
+                    }
+                    pc = 0x00427bbc;
+                    continue;
+                }
+                0x00427bbc => {
+                    c.cycles += 3;
+                    c.g[S1][0] = 0x530000;
+                    c.g[S0][0] = 0x530000;
+                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
+                    pc = 0x00427bc8;
+                    continue;
+                }
+                0x00427bc8 => {
+                    c.cycles += 18;
+                    c.g[RA][0] = sx(0x00427bd0);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1cc0));
+                    Callee {
+                        addr: 0x00423dc0,
+                        f: ee::s15::SignalSema,
+                    }
+                    .call(c, 0x00427bd0)?;
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1c80));
+                    c.g[A3][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x2940));
+                    c.sw((c.g[S2][0] as u32).wrapping_sub(0x2940), c.g[V1][0]);
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x440));
+                    c.g[A1][0] = 0xff;
+                    c.sw((c.g[A3][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                    c.g[A2][0] = 0u64;
+                    c.sw(c.g[SP][0] as u32, 0u64);
+                    c.g[T0][0] = 0x8;
+                    c.g[T1][0] = c.g[S0][0];
+                    c.g[T2][0] = 0x8;
+                    c.g[RA][0] = sx(0x00427c08);
+                    c.g[T3][0] = 0u64;
+                    Callee {
+                        addr: 0x00426d18,
+                        f: ee::s15::sceSifCallRpc,
+                    }
+                    .call(c, 0x00427c08)?;
+                    let t = (c.g[V0][0] as i64) >= 0;
+                    c.g[A0][0] = 0x20000000;
+                    if t {
+                        pc = 0x00427c1c;
+                        continue;
+                    }
+                    pc = 0x00427c10;
+                    continue;
+                }
+                0x00427c10 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xfffffffffffe0000;
+                    let t = true;
+                    c.g[V0][0] = c.g[V0][0] | 0xffff;
+                    if t {
+                        pc = 0x00427c74;
+                        continue;
+                    }
+                    pc = 0x00427c1c;
+                    continue;
+                }
+                0x00427c1c => {
+                    c.cycles += 22;
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.g[S0][0] | c.g[A0][0];
+                    c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                    c.g[A1][0] = 0x530000;
+                    c.g[T0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x11d8));
+                    c.lwl(4, (c.g[V1][0] as u32).wrapping_add(0x3));
+                    c.lwr(4, c.g[V1][0] as u32);
+                    c.swl(4, (c.g[T0][0] as u32).wrapping_add(0x3));
+                    c.swr(4, c.g[T0][0] as u32);
+                    c.lwl(3, (c.g[V0][0] as u32).wrapping_add(0x3));
+                    c.lwr(3, c.g[V0][0] as u32);
+                    c.swl(3, (c.g[SP][0] as u32).wrapping_add(0x13));
+                    c.swr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[A2][0] = 0x450000;
+                    c.g[A1][0] = 0x450000;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[A0][0] = 0x1;
+                    c.sw((c.g[A1][0] as u32).wrapping_add(0x520c), c.g[A0][0]);
+                    c.g[V0][0] = 0u64;
+                    c.g[V1][0] = c.g[V1][0] ^ 0x2;
+                    c.g[V1][0] = (c.g[V1][0] < 0x1u64) as u64;
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x5210), c.g[V1][0]);
+                    pc = 0x00427c74;
+                    continue;
+                }
+                0x00427c74 => {
+                    c.cycles += 8;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00427a90, 0x00427c94);
+                    return Ok(());
+                }
+            }
+        }
+    });
 }
 
 #[cfg(test)]
@@ -3455,7 +3477,7 @@ pub(crate) mod tests {
     /// `sceFsInit`: bring-up on a drained RPC pool (the bind and the call
     /// fail fast), the fd table zeroed.
     #[test]
-    fn sce_fs_init_matches() {
+    fn sce_fs_init_matches_r2() {
         let setup = |c: &mut Cpu, seed: u32| {
             crate::game::lib::sif::tests::mrpc_setup(c, seed, 0x0042_7a90);
             c.pc = 0x0042_7a90;
@@ -3804,6 +3826,100 @@ pub(crate) mod tests {
                 c.cop0[12] = (c.cop0[12] & !(1 << 16)) | ((seed % 2) << 16);
                 mode
             },
+        );
+    }
+
+    use crate::difftest::fresh;
+    use crate::difftest::run_generated;
+
+    pub(crate) use crate::game::lib::eafile::tests::oc813_cd_init_setup;
+
+    pub(crate) use crate::game::lib::eafile::tests::oc813_hook_all;
+
+    pub(crate) use crate::game::lib::eafile::tests::OC813_BIND_LEFT;
+    pub(crate) use crate::game::lib::eafile::tests::OC813_BIND_RES;
+    pub(crate) use crate::game::lib::eafile::tests::OC813_CALL_RES;
+
+    pub(crate) use crate::game::lib::eafile::tests::OC813_DINTR_VAL;
+
+    pub(crate) use crate::game::lib::eafile::tests::OC813_GATE;
+
+    pub(crate) use crate::game::lib::eafile::tests::OC813_MAGIC;
+
+    pub(crate) use crate::game::lib::eafile::tests::OC813_SEEDS;
+
+    /// The fixture reaches the early outs, the directory-list and root-scan
+    /// branches and the full init: many distinct cycle totals.
+    #[test]
+    fn ea_file_cd_init_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..OC813_SEEDS {
+            let mut c = fresh();
+            oc813_cd_init_setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s14::f_003e4040__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert!(
+            seen.len() >= 12,
+            "only {} distinct paths: {seen:?}",
+            seen.len()
+        );
+    }
+
+    /// `sceFsInit`: brings up SIF RPC, binds the fs RPC server (retrying
+    /// while the server word is 0), clears the fd table, creates the fd
+    /// semaphore and asks the IOP for its version (`sceSifCallRpc`).
+    pub(crate) fn oc813_fs_init_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 813_002, 12);
+        oc813_hook_all();
+        c.bus.write32(OC813_GATE, OC813_MAGIC);
+        c.pc = 0x0042_7a90;
+        // sceSifInitRpc already done (its flag), so the real callee is short.
+        c.bus.write32(0x0045_5180, 1);
+        c.bus.write32(OC813_DINTR_VAL, seed & 1);
+        let case = (seed >> 1) % 5;
+        c.bus
+            .write32(OC813_BIND_RES, if case == 2 { u32::MAX } else { 0 });
+        c.bus.write32(OC813_BIND_LEFT, (case == 4) as u32);
+        c.bus
+            .write32(OC813_CALL_RES, if case == 3 { u32::MAX } else { 0 });
+        // The IOP's reply (uncached alias of 0x52e340): version word at +4.
+        put_words(
+            c,
+            0x0052_e340,
+            &[
+                seed.wrapping_mul(0x9e37_79b9),
+                if case == 0 { 2 } else { 3 },
+            ],
+        );
+        c.bus.write32(0x0045_5218, 5 + seed % 3);
+    }
+
+    #[test]
+    fn sce_fs_init_matches() {
+        check(
+            ee::s15::f_00427a90__generated,
+            sce_fs_init,
+            40,
+            &|c, seed| oc813_fs_init_setup(c, seed),
+        );
+    }
+
+    #[test]
+    fn sce_fs_init_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..40 {
+            let mut c = fresh();
+            oc813_fs_init_setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s15::f_00427a90__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert!(
+            seen.len() >= 6,
+            "only {} distinct paths: {seen:?}",
+            seen.len()
         );
     }
 }

@@ -4,9 +4,12 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
+use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -23,6 +26,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         crowd_anim2d_step_frame,
         "cCrowdAnim2D_StepFrame",
     ),
+    (
+        0x002d_b748,
+        ccrowd_render2d_load_textures,
+        "cCrowdRender2D_LoadTextures",
+    ),
+    (0x002d_b980, ccrowd_anim2d_create, "cCrowdAnim2D_Create"),
+    (0x002d_b6d8, crowd_render_2d_ctor, "cCrowdRender2D_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -432,6 +442,215 @@ pub fn crowd_anim2d_step_frame(c: &mut Cpu) {
     ret(c);
 }
 
+/// `void cCrowdRender2D::LoadTextures(cCrowdRender2D* this)` (0x2db748).
+///
+/// Loads the crowd sprite sheet (`FILE_load` 0x3e18c8 of "crwd.ssh", stored at
+/// `this + 0`), then, for the one animation entry of the table at 0x445d3c
+/// (count in the first word, names 5 bytes apart, shape and handle arrays),
+/// finds each shape by name (`SHAPE_locate`, 0x3b39b8) and registers it with
+/// the graphics manager's virtual slot `+0x170` (handle stored in the table).
+/// Finally copies the first shape's `short`/`short`/`byte` fields (`+4`, `+6`,
+/// `+0`) into `this + 4`, `+8`, `+0xc` (sprite width, height, format).
+pub fn ccrowd_render2d_load_textures(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+        c.g[A1][0] = 0x5000000;
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S3][0] = c.g[A0][0];
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[A0][0] = 0x480000;
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x75c0));
+        call_ptr(c, 0x003e18c8, 0x002db788)?;
+        c.g[V1][0] = 0x440000;
+        c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+        c.g[S7][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5d3c));
+        c.g[V0][0] = 0u64;
+        c.g[S6][0] = c.g[S7][0];
+        c.g[FP][0] = sx((c.g[S6][0] as u32).wrapping_add(0x94));
+        c.g[V1][0] = 0xd8;
+        'l_2db7a8: loop {
+            'b_2db830: {
+                c.cycles += 6;
+                c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                c.mult(0, 4, 2, 3);
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                let t = (c.g[V1][0] as i64) <= 0;
+                c.g[S2][0] = 0u64;
+                if t {
+                    break 'b_2db830;
+                } else {
+                    c.cycles += 6;
+                    c.g[V0][0] = 0x440000;
+                    c.g[S4][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5d40));
+                    c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                    c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    'l_2db7d8: loop {
+                        c.cycles += 22;
+                        c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                        c.g[A1][0] = c.g[S1][0];
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        call_ptr(c, 0x003b39b8, 0x002db7e8)?;
+                        c.g[T2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+                        c.g[A1][0] = c.g[V0][0];
+                        c.sw((c.g[S0][0] as u32).wrapping_sub(0x40), c.g[V0][0]);
+                        c.g[A2][0] = c.g[S1][0];
+                        c.g[A3][0] = 0u64;
+                        c.g[T0][0] = 0u64;
+                        c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x10d8));
+                        c.g[T1][0] = 0xffffffffffffffff;
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x5));
+                        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x170));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x174));
+                        let t = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, t, 0x002db81c)?;
+                        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                        c.g[V0][0] = c.lw(c.g[S4][0] as u32);
+                        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002db7d8);
+                            }
+                            continue 'l_2db7d8;
+                        } else {
+                            break 'b_2db830;
+                        }
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.g[S5][0];
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[V1][0] = 0xd8;
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002db7a8);
+                }
+                continue 'l_2db7a8;
+            } else {
+                c.cycles += 21;
+                c.g[V0][0] = 0x440000;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5d38));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x58));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.g[V1][0] = c.lh((c.g[A0][0] as u32).wrapping_add(0x4));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[V0][0] = c.lh((c.g[A0][0] as u32).wrapping_add(0x6));
+                c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
+                c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sw((c.g[S3][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `cCrowdAnim2D* cCrowdAnim2D_Create(void* arg)` (0x2db980): allocates 0x20
+/// bytes with `operator_new_named(0x20, name 0x4875d8, flags 0x20000000, 0)`
+/// and runs `cCrowdAnim2D_ctor(mem, arg)`; returns the constructor's result.
+pub fn ccrowd_anim2d_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0x48_0000;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A3][0] = 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x75d8));
+        c.g[A0][0] = 0x20;
+        call_ptr(c, 0x0031_7d70, 0x002d_b9a8)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x002d_b9c8,
+            f: ee::s09::f_002db9c8,
+        }
+        .call(c, 0x002d_b9b4)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cCrowdRender2D* cCrowdRender2D_ctor(cCrowdRender2D* this)` (0x2db6d8):
+/// runs `cCrowdRender2D_LoadTextures(this)` and returns `this`.
+///
+/// Not installed: `LoadTextures` runs the texture loader, which has no
+/// bounded short path on test data, so there is no differential test.
+#[allow(dead_code)]
+pub fn c_crowd_render_2d_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x002d_b748,
+            f: ee::s09::f_002db748,
+        }
+        .call(c, 0x002d_b6ec)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cCrowdRender2D* cCrowdRender2D_ctor(cCrowdRender2D* this)` (0x2db6d8):
+/// runs `cCrowdRender2D_LoadTextures(this)` and returns `this`.
+pub fn crowd_render_2d_ctor(c: &mut Cpu) {
+    if c.pc != 0x002d_b6d8 {
+        return ee::s09::f_002db6d8__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x002d_b748,
+            f: ee::s09::f_002db748,
+        }
+        .call(c, 0x002d_b6ec)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -441,6 +660,7 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
+    pub(crate) use crate::game::fe::ovstates::tests::oc783_install_fakes;
 
     #[test]
     fn c_crowd_anim2d_ctor_matches() {
@@ -596,6 +816,87 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(frame);
                 c.g[A2][0] = sx(count);
                 c.g[A3][0] = sx(DATA);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::FAKE;
+    pub(crate) use crate::game::fe::debugfe::tests::oc793_machine;
+
+    pub(crate) use crate::game::fe::ovstates::tests::oc783_arm;
+
+    pub(crate) const OC783_CROWD: u32 = DATA + 0x1_0000;
+
+    /// The animation table of `cCrowdRender2D::LoadTextures` (count in word 0,
+    /// shape pointer array at `+0x54`).
+    pub(crate) const OC783_CROWD_TABLE: u32 = 0x0044_5d3c;
+
+    pub(crate) const OC783_RENDERER: u32 = DATA + 0x2_0000;
+
+    pub(crate) const OC783_RENDERER_VT: u32 = DATA + 0x2_1000;
+
+    pub(crate) const OC783_SHAPE: u32 = DATA + 0x3_0000;
+
+    /// `cCrowdRender2D_LoadTextures`: no, one and three table entries (the
+    /// shape lookups and the renderer's virtual `+0x170` calls are faked),
+    /// the first shape's size fields (the table's own pointer when empty) and
+    /// the unwinds of every call.
+    #[test]
+    fn ccrowd_render2d_load_textures_matches() {
+        oc783_install_fakes();
+        fakes::covered(
+            ee::s09::f_002db748__generated,
+            ccrowd_render2d_load_textures,
+            250,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x783b, 5);
+                oc783_arm(c);
+                c.g[A0][0] = sx(OC783_CROWD);
+                let n = [0u32, 1, 3, 2][(seed % 4) as usize];
+                c.bus.write32(OC783_CROWD_TABLE, n);
+                // The shape of entry 0 (read back from the table at the end).
+                c.bus.write32(OC783_CROWD_TABLE + 0x54, OC783_SHAPE);
+                c.bus.write16(OC783_SHAPE, r.next_u32() as u16);
+                c.bus.write16(OC783_SHAPE + 4, r.next_u32() as u16);
+                c.bus.write16(OC783_SHAPE + 6, r.next_u32() as u16);
+                // The graphics manager behind `gp + 0x2a90`.
+                c.bus.write32(GAME_GP + 0x2a90, OC783_RENDERER);
+                c.bus.write32(OC783_RENDERER + 0x10d8, OC783_RENDERER_VT);
+                c.bus
+                    .write16(OC783_RENDERER_VT + 0x170, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(OC783_RENDERER_VT + 0x174, FAKE);
+            },
+        );
+    }
+
+    /// `cCrowdAnim2D_Create`: the allocation and the constructor are fakes.
+    #[test]
+    fn ccrowd_anim2d_create_matches() {
+        covered(
+            ee::s09::f_002db980__generated,
+            ccrowd_anim2d_create,
+            80,
+            &|c, seed| {
+                let _ = oc793_machine(c, seed, 0x002d_b980, 2);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::worldpainter::worldpainterqueryctor::tests::oc809_machine;
+
+    /// `cCrowdRender2D_ctor` against the generated body: `LoadTextures` is a
+    /// gated fake (it unwinds in some seeds).
+    #[test]
+    fn crowd_render_2d_ctor_matches() {
+        fakes::covered(
+            ee::s09::f_002db6d8__generated,
+            crowd_render_2d_ctor,
+            60,
+            &|c, seed| {
+                oc809_machine(c, seed, 0x2db6d8, 1, 0x002d_b6d8);
+                c.g[A0][0] = (DATA + 0x1000 + 16 * seed) as u64;
             },
         );
     }

@@ -39,6 +39,7 @@ The orchestrator (you, in the main session) runs waves: pick about 80 functions,
 - After pulling the references (`../devvydont-ssx3`, and the fallback `../peak3-ssx3`), rebuild their indexes: `python3 tools/refindex.py` (seconds, both; `refsrc.py` warns when either is stale).
 - Ghidra is open on `SLUS_207.72` with the GhidraMCP plugin (port 8080; check with `mcp__ghidra__get_program_info`). Without it, dossiers of functions with no C++ have no pseudo-C; say so and go on.
 - Long builds: wrap heavy commands in `caffeinate -s` (the machine sleeps otherwise). One heavy process at a time (a build, a test run or a game run), never two in parallel.
+- Test runs always log to a temporary file (`cargo test ... > target/gate/<name>.log 2>&1`, never piped through `tail` or `grep` alone), so progress and stuck tests can be monitored. Use `-- --test-threads=N` or `--nocapture` as needed: libtest prints each test as it finishes, and a test running for over 60 s is reported. Read the log (`tail`, `grep -c ' ok$'`) instead of guessing.
 
 ### Orchestrator
 

@@ -67,6 +67,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "UIListBox_AddItemStrId",
     ),
     (0x0039_a928, ui_menu_set_focus, "UIMenu_SetFocus"),
+    (
+        0x0039_a3f8,
+        ui_list_box_add_item_ascii,
+        "UIListBox_AddItemAscii",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -950,6 +955,73 @@ pub(crate) fn add_item_text(c: &mut Cpu, list_box: u32) -> Flow {
     Ok(())
 }
 
+/// `int UIListBox_AddItemAscii(UIListBox* list, const char* text, int data)`
+/// (0x39a3f8, frame 0x50): converts the ASCII `text` to a freshly allocated
+/// wide string (`strlen`, `operator_new_named`, `UI_AsciiToWide`) and stores
+/// the entry `{wide text +0x9c, text +0xa0, data +0xa4}` (stride 0x14) at the
+/// list's count byte (+0x318), then bumps the count. Returns the new entry's
+/// index (the old count).
+pub fn ui_list_box_add_item_ascii(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 46;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S3][0] = c.g[A2][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x0039a424);
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x00416810, 0x0039a424)?;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.g[A1][0] = 0x490000;
+        c.g[A2][0] = 0x100;
+        c.g[A3][0] = 0u64;
+        c.g[A0][0] = sx((c.g[V0][0] as u32) << 1);
+        c.g[RA][0] = sx(0x0039a440);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3dd0));
+        call_ptr(c, 0x00317e30, 0x0039a440)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x0039a450);
+        c.g[A0][0] = c.g[S2][0];
+        Callee {
+            addr: 0x00397ad8,
+            f: ee::s13::f_00397ad8,
+        }
+        .call(c, 0x0039a450)?;
+        c.g[V1][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x318));
+        c.g[A0][0] = 0x14;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.mult(0, 2, 3, 4);
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0xa0), c.g[S1][0]);
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x318));
+        c.mult(0, 3, 2, 4);
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x9c), c.g[S2][0]);
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[V1][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x318));
+        c.mult(0, 2, 3, 4);
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0xa4), c.g[S3][0]);
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x318));
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.sb((c.g[S0][0] as u32).wrapping_add(0x318), c.g[V1][0]);
+        c.g[V0][0] = c.g[V0][0] & 0xff;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1292,6 +1364,38 @@ pub(crate) mod tests {
                 c.g[A2][0] = r.next_u32() as u64;
                 c.pc = 0x0039_a568;
                 c.bus.write32(CTRL, CTRL_MAGIC);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc769_install_fakes;
+    pub(crate) use crate::game::sound::soundsys::tests::oc769_machine;
+
+    pub(crate) use crate::game::sound::soundsys::tests::OC769_THIS;
+
+    /// `UIListBox_AddItemAscii` with texts of 0..5 characters (real `strlen`
+    /// and `UI_AsciiToWide`, faked allocator) appended at list positions
+    /// 0..5, and a fake unwinding in the allocation.
+    #[test]
+    fn ui_list_box_add_item_ascii_matches() {
+        oc769_install_fakes();
+        check_lohi(
+            ee::s13::f_0039a3f8__generated,
+            ui_list_box_add_item_ascii,
+            80,
+            &|c, seed| {
+                let mut r = oc769_machine(c, seed, 1);
+                c.bus.write8(OC769_THIS + 0x318, (seed % 6) as u8);
+                let text = OC769_THIS + 0x2000;
+                let len = seed % 6;
+                for i in 0..len {
+                    c.bus.write8(text + i, 0x20 + (r.next_u32() % 0x5f) as u8);
+                }
+                c.bus.write8(text + len, 0);
+                c.g[A0][0] = sx(OC769_THIS);
+                c.g[A1][0] = sx(text);
+                c.g[A2][0] = r.next_u32() as u64;
+                c.pc = 0x0039_a3f8;
             },
         );
     }

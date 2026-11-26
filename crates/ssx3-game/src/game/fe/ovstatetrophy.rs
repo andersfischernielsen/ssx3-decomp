@@ -135,6 +135,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ovscreen_read_private_message_create_keyboard_popup,
         "OVScreenReadPrivateMessage_CreateKeyboardPopup",
     ),
+    (0x0020_ec18, hud_meter_set_rect_2, "HUDMeter_SetRect"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3697,6 +3698,94 @@ pub fn hud_meter_set_rect(c: &mut Cpu) {
     abi::ret(c);
 }
 
+/// `HUDMeter_SetRect(out, _, area)` (0x20ec18): derives the meter's draw
+/// rectangles (`out`, 0x34 bytes of floats) from the layout rectangle `area`
+/// (x, y, w, h floats at `a2`).
+///
+/// An inset (`f7`) comes from the active meter's size (`gp-0x98c` object:
+/// the int at +0x14 as float times the float at +0x34, times the float at
+/// `gp-0x54f4`), or the constant 30.0 when there is no meter (`gp-0x988` is
+/// 0). The result is written to `out` together with a copy of `area`'s
+/// 16 bytes at `out+0x20` and a scaled `out+0x2c` at `out+0x30` (scale float
+/// at `gp-0x54f0`). The float maths runs on the guest FPU registers like the
+/// generated body.
+pub fn hud_meter_set_rect_2(c: &mut Cpu) {
+    let gp = c.g[GP][0] as u32;
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(gp.wrapping_sub(0x988));
+    let no_meter = c.g[V0][0] == 0;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x10));
+    if !no_meter {
+        c.cycles += 8;
+        c.g[V0][0] = c.lw(gp.wrapping_sub(0x98c));
+        c.lwc1(2, gp.wrapping_sub(0x54f4));
+        c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x14));
+        c.cvt_s_w(0, 0);
+        c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x34));
+        c.mul_s(0, 0, 1);
+        c.mul_s(7, 0, 2);
+    } else {
+        c.cycles += 2;
+        c.g[AT][0] = 0x41f0_0000;
+        c.mtc1(1, 7);
+    }
+    c.cycles += 53;
+    c.lwc1(2, (c.g[A2][0] as u32).wrapping_add(0xc));
+    c.g[V0][0] = 0x4d0000;
+    c.lwc1(3, (c.g[A2][0] as u32).wrapping_add(0x8));
+    c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
+    c.g[AT][0] = 0x3f000000;
+    c.mtc1(1, 5);
+    c.add_s(0, 0, 2);
+    c.lwc1(1, c.g[A2][0] as u32);
+    c.mul_s(3, 3, 5);
+    c.lwc1(4, (c.g[V0][0] as u32).wrapping_sub(0x7360));
+    c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x54f0));
+    c.sub_s(0, 0, 7);
+    c.add_s(1, 1, 3);
+    c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
+    c.swc1(1, c.g[SP][0] as u32);
+    c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
+    c.ldr(2, c.g[SP][0] as u32);
+    c.sdl(2, (c.g[A0][0] as u32).wrapping_add(0x7));
+    c.sdr(2, c.g[A0][0] as u32);
+    c.lwc1(3, (c.g[A2][0] as u32).wrapping_add(0x4));
+    c.swc1(3, (c.g[A0][0] as u32).wrapping_add(0x8));
+    c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0xc));
+    c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x4));
+    c.add_s(1, 1, 0);
+    c.sub_s(1, 1, 7);
+    c.sub_s(1, 1, 4);
+    c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0xc));
+    c.sub_s(3, 1, 3);
+    c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+    c.lwc1(2, c.g[A2][0] as u32);
+    c.sub_s(3, 3, 4);
+    c.mul_s(0, 0, 5);
+    c.mul_s(3, 3, 6);
+    c.add_s(2, 2, 0);
+    c.swc1(2, (c.g[A0][0] as u32).wrapping_add(0x10));
+    c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
+    c.swc1(3, (c.g[A0][0] as u32).wrapping_add(0x1c));
+    c.add_s(0, 0, 4);
+    c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0x18));
+    c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x14));
+    c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0x7));
+    c.ldr(2, c.g[A2][0] as u32);
+    c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0xf));
+    c.ldr(3, (c.g[A2][0] as u32).wrapping_add(0x8));
+    c.sdl(2, (c.g[A0][0] as u32).wrapping_add(0x27));
+    c.sdr(2, (c.g[A0][0] as u32).wrapping_add(0x20));
+    c.sdl(3, (c.g[A0][0] as u32).wrapping_add(0x2f));
+    c.sdr(3, (c.g[A0][0] as u32).wrapping_add(0x28));
+    c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x2c));
+    c.mul_s(0, 0, 6);
+    c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x30));
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x10));
+    c.pc = ra;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4375,6 +4464,54 @@ pub(crate) mod tests {
                 c.g[A3][0] = (seed * 3) as u64;
                 c.g[T0][0] = (seed % 5) as u64;
                 w_2_m2(c, DATA + 0x10, DATA + 0x900);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::oc770_machine;
+
+    /// A float word for `HUDMeter_SetRect`'s inputs: edge cases and ordinary values.
+    pub(crate) fn oc770_float(r: &mut Rng) -> u32 {
+        if r.next_u32() % 3 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(300.0)
+        }
+    }
+
+    /// `HUDMeter_SetRect`: with and without an active meter (`gp-0x988`).
+    #[test]
+    fn hud_meter_set_rect_matches() {
+        const OUT: u32 = DATA + 0x100;
+        const AREA: u32 = DATA + 0x200;
+        const METER: u32 = DATA + 0x300;
+        check(
+            ee::s05::f_0020ec18__generated,
+            hud_meter_set_rect_2,
+            300,
+            &|c, seed| {
+                let mut r = oc770_machine(c, seed, 0x7701, 0);
+                let gp = c.g[GP][0] as u32;
+                c.pc = 0x0020_ec18;
+                c.g[A0][0] = OUT as u64;
+                c.g[A2][0] = AREA as u64;
+                let meter = if seed % 3 == 0 { 0 } else { METER };
+                c.bus.write32(gp - 0x988, meter);
+                c.bus.write32(gp - 0x98c, METER);
+                c.bus.write32(METER + 0x14, r.next_u32() % 5000);
+                let w = oc770_float(&mut r);
+                c.bus.write32(METER + 0x34, w);
+                for off in [0x54f4u32, 0x54f0] {
+                    let w = oc770_float(&mut r);
+                    c.bus.write32(gp - off, w);
+                }
+                let w = oc770_float(&mut r);
+                c.bus.write32(0x004d_0000 - 0x7360, w);
+                for i in 0..4 {
+                    let w = oc770_float(&mut r);
+                    c.bus.write32(AREA + 4 * i, w);
+                }
+                c.bus.write32(OUT + 0x2c, r.next_u32());
             },
         );
     }

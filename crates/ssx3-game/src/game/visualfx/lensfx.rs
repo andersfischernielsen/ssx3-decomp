@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -34,6 +35,7 @@ pub(crate) use crate::game::render::particle::p;
 pub(crate) use crate::game::render::particle::setf;
 pub(crate) use crate::game::render::particle::shl32;
 pub(crate) use crate::game::render::particle::srl32;
+pub(crate) use crate::game::sound::bankmonitor::o760_sw;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2;
 use crate::game::visualfx::boardwakefx as bw;
@@ -241,6 +243,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002e_ccb8,
         cbolt_on_fx_interface_refresh_emitters,
         "cBoltOnFXInterface_RefreshEmitters",
+    ),
+    (0x002e_c3e0, lens_fx_create, "LensFX_Create"),
+    (0x002e_c418, lens_fx_ctor, "LensFX_ctor"),
+    (
+        0x002e_c9d0,
+        bolt_on_fx_interface_init_handle,
+        "cBoltOnFXInterface_InitHandle",
+    ),
+    (
+        0x002e_d048,
+        world_painter_create_view_queries,
+        "WorldPainter_CreateViewQueries",
     ),
 ];
 
@@ -3015,6 +3029,201 @@ pub fn cbolt_on_fx_interface_refresh_emitters(c: &mut Cpu) {
     })
 }
 
+/// `void cBoltOnFXInterface_InitHandle(int* handle)` (0x2ec9d0): marks a
+/// bolt-on FX handle as unused (`*handle = -1`) and returns the pointer.
+pub fn bolt_on_fx_interface_init_handle(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = c.g[A0][0];
+    c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+    o760_sw(c, V0, 0, V1);
+    ret(c);
+}
+
+/// `int WorldPainter_CreateViewQueries(void)` (0x2ed048).
+///
+/// For each of the 8 lens rows (0xf0 bytes at 0x4fa370 + 0xf0 * i) creates the
+/// nine world painter queries (camera, fog, light glow, screen tint, sky box,
+/// sun, surface, lighting, weather) with `WorldPainterQuery_Create(pm, region)`
+/// (0x2c0a58), where `pm` is the world's world painter manager, stores them in
+/// `q[0..9]`, clears `f24` and fills the two vectors at `+0x28` and `+0x38`
+/// with 1.0. Sets the render state manager's initialised flag (`gp + 0xa64`)
+/// and returns 1.
+#[allow(unused_labels, unused_assignments, unused_parens, unreachable_code)]
+pub fn world_painter_create_view_queries(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xb0));
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[V0][0] = 0x500000;
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S3][0] = 0u64;
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5c90));
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S5][0] = sx((c.g[GP][0] as u32).wrapping_add(0x24b0));
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S6][0] = sx((c.g[GP][0] as u32).wrapping_add(0x24a8));
+        c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S7][0] = sx((c.g[GP][0] as u32).wrapping_add(0x24a0));
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.g[FP][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2498));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 20);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+        c.g[S2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+        'l_2ed0b0: loop {
+            c.cycles += 56;
+            c.g[A1][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2470));
+            c.g[RA][0] = sx(0x002ed0bc);
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x002c0a58, 0x002ed0bc)?;
+            c.g[S1][0] = 0xf0;
+            c.g[A0][0] = c.g[S2][0];
+            c.mult(0, 17, 19, 17);
+            c.g[A1][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2478));
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+            c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            c.g[RA][0] = sx(0x002ed0dc);
+            c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x002ed0dc)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2480));
+            c.g[RA][0] = sx(0x002ed0ec);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x002ed0ec)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2488));
+            c.g[RA][0] = sx(0x002ed0fc);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x002ed0fc)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2490));
+            c.g[RA][0] = sx(0x002ed10c);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x002ed10c)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[FP][0];
+            c.g[RA][0] = sx(0x002ed11c);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x002ed11c)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S7][0];
+            c.g[RA][0] = sx(0x002ed12c);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x002ed12c)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S6][0];
+            c.g[RA][0] = sx(0x002ed13c);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x002ed13c)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[A0][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x002ed14c);
+            c.g[A1][0] = c.g[S5][0];
+            call_ptr(c, 0x002c0a58, 0x002ed14c)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+            c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(0x28));
+            c.g[V0][0] = 0x500000;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0u64);
+            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5c58));
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.swc1(20, (c.g[V1][0] as u32).wrapping_add(0xc));
+            c.swc1(20, c.g[V1][0] as u32);
+            c.g[V0][0] = ((c.g[S3][0] as i64) < 8i64) as u64;
+            c.swc1(20, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.swc1(20, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.swc1(20, (c.g[S1][0] as u32).wrapping_add(0xc));
+            c.swc1(20, c.g[S1][0] as u32);
+            c.swc1(20, (c.g[S1][0] as u32).wrapping_add(0x4));
+            let t = c.g[V0][0] != 0u64;
+            c.swc1(20, (c.g[S1][0] as u32).wrapping_add(0x8));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002ed0b0);
+                }
+                continue 'l_2ed0b0;
+            } else {
+                c.cycles += 15;
+                c.g[V0][0] = 0x1;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.sw((c.g[GP][0] as u32).wrapping_add(0xa64), c.g[V0][0]);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xb0));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+        Ok(())
+    })
+}
+
+/// `LensFX* LensFX_Create(void)` (0x2ec3e0): allocates 0x6820 bytes (named
+/// at 0x4a3b48) and runs the constructor.
+pub fn lens_fx_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx(0x004a_0000u32.wrapping_add(0x3b48));
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x6820;
+        call_ptr(c, 0x0031_7d70, 0x002e_c400)?;
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x002e_c418,
+            f: ee::s09::LensFX_ctor,
+        }
+        .call(c, 0x002e_c408)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LensFX* LensFX_ctor(LensFX* self)` (0x2ec418): runs the `LensFXBase`
+/// constructor, then installs the LensFX vtable (0x487f00) at `+0x649c`.
+/// Returns `self`.
+pub fn lens_fx_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x002e_2e18,
+            f: ee::s09::LensFXBase_ctor,
+        }
+        .call(c, 0x002e_c42c)?;
+        c.g[V1][0] = sx(0x0048_0000u32.wrapping_add(0x7f00));
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        let this = c.g[S0][0] as u32;
+        c.sw(this.wrapping_add(0x649c), c.g[V1][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4254,6 +4463,142 @@ pub(crate) mod tests {
                 }
                 c.bus.write32(OC750_CTRL + 0x20 + 4 * 9, r.next_u32() % 15);
                 c.bus.write32(OC750_CTRL + 0x20 + 4 * 10, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::render::bezierman::tests::oc795_hook;
+    pub(crate) use crate::game::render::bezierman::tests::OC795_CTRL;
+    pub(crate) use crate::game::render::bezierman::tests::OC795_MAGIC;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc780_arm;
+    pub(crate) use crate::game::sound::soundsys::tests::OC780_CTRL;
+    pub(crate) use crate::game::sound::soundsys::tests::OC780_MAGIC;
+    use std::sync::atomic::AtomicUsize;
+
+    /// `*handle = -1` and the pointer comes back in v0.
+    #[test]
+    fn bolt_on_fx_interface_init_handle_matches() {
+        check(
+            ee::s09::f_002ec9d0__generated,
+            bolt_on_fx_interface_init_handle,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x2e_c9d0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let handle = DATA + (r.next_u32() & 0xf_fff0);
+                c.g[A0][0] = sx(handle);
+                c.bus.write32(handle, r.next_u32());
+            },
+        );
+    }
+
+    /// Gated fakes for the callees that have an override slot: they log the
+    /// call like `fakes::fake_call` (and may unwind) when armed, and run the
+    /// body they replaced otherwise.
+    macro_rules! oc780_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC780_CTRL) != OC780_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc780_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc780_fakes!(
+        (
+            oc780_fk_2ade88,
+            OC780_PREV_2ADE88,
+            ee::s08::OVERRIDE_002ADE88,
+            ee::s08::f_002ade88__generated,
+            0x002a_de88
+        ),
+        (
+            oc780_fk_2e2860,
+            OC780_PREV_2E2860,
+            ee::s09::OVERRIDE_002E2860,
+            ee::s09::f_002e2860__generated,
+            0x002e_2860
+        ),
+        (
+            oc780_fk_2c0a58,
+            OC780_PREV_2C0A58,
+            ee::s08::OVERRIDE_002C0A58,
+            ee::s08::f_002c0a58__generated,
+            0x002c_0a58
+        ),
+        (
+            oc780_fk_416210,
+            OC780_PREV_416210,
+            ee::s15::OVERRIDE_00416210,
+            ee::s15::f_00416210__generated,
+            0x0041_6210
+        ),
+        (
+            oc780_fk_317e30,
+            OC780_PREV_317E30,
+            ee::s10::OVERRIDE_00317E30,
+            ee::s10::f_00317e30__generated,
+            0x0031_7e30
+        ),
+    );
+
+    /// `WorldPainter_CreateViewQueries`: nine `WorldPainterQuery_Create` calls
+    /// for each of the 8 lens rows (faked, may unwind), reached through
+    /// `SSXApp->Game->World->m_pWorldPainterMan` (`gp - 0x848` chain).
+    #[test]
+    fn world_painter_create_view_queries_matches() {
+        oc780_install_fakes();
+        fakes::covered(
+            ee::s09::f_002ed048__generated,
+            world_painter_create_view_queries,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x780c, 30);
+                oc780_arm(c);
+                let gp = c.g[GP][0] as u32;
+                c.bus.write32(gp - 0x848, DATA + 0x1000);
+                c.bus.write32(DATA + 0x1000 + 0x84, DATA + 0x1100);
+                c.bus.write32(DATA + 0x1100 + 0x10, DATA + 0x1200);
+                c.bus.write32(DATA + 0x1200 + 0x8, DATA + 0x1300);
+            },
+        );
+    }
+
+    /// `LensFX_Create`: as above, with the lens-flare constructor.
+    #[test]
+    fn lens_fx_create_matches() {
+        oc795_hook();
+        fakes::covered(
+            ee::s09::f_002ec3e0__generated,
+            lens_fx_create,
+            30,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x7950_0003, 1);
+                c.bus.write32(OC795_CTRL, OC795_MAGIC);
+            },
+        );
+    }
+
+    /// `LensFX_ctor` on a zeroed object (the base constructor runs for real).
+    #[test]
+    fn lens_fx_ctor_matches() {
+        check(
+            ee::s09::f_002ec418__generated,
+            lens_fx_ctor,
+            20,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x7950_0004, 0);
+                c.g[A0][0] = sx(DATA + 0x1000 + 0x10 * (seed % 8));
             },
         );
     }

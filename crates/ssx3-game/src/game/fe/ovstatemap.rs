@@ -35,6 +35,9 @@ pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::main::gamemode::gpo;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::sw_r;
+pub(crate) use crate::game::sound::bankmonitor::oc767_addiu;
+pub(crate) use crate::game::sound::bankmonitor::oc767_ea;
+pub(crate) use crate::game::sound::bankmonitor::oc767_lw;
 use crate::guest::Addr;
 use crate::tick;
 use ssx3_ee_rt::cpu::reg::*;
@@ -104,6 +107,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_ov_state_overlay_play_object_anim,
         "cOVStateOverlay_PlayObjectAnim",
     ),
+    (0x0020_a1a8, fe_format_min_sec, "FE_FormatMinSec"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1134,10 +1138,155 @@ pub fn ov_screen_session_update_indicators(c: &mut Cpu) {
     return;
 }
 
+/// Where `cBEOptionInterface_mOption` (the 0x288-byte option block) lives.
+pub(crate) const FE_FORMAT_MIN_SEC_OPTIONS: u32 = 0x0053_5610;
+
+/// `char* FE_FormatMinSec(int secs)` (0x20a1a8): formats `secs` as minutes
+/// and seconds into the shared clock buffer at 0x4c6848 and returns it.
+/// The format depends on the option block's mode (bits 22..24 of its first
+/// word, copied to the stack first): 0/2 use the format at 0x4719f0, 1/3 the
+/// one at 0x471a00, other modes leave the buffer alone.
+///
+/// The generated body also holds an unaligned copy loop for an option block
+/// that is not 8-byte aligned. The block address is the constant 0x535610,
+/// so that branch is dead and not reproduced.
+pub fn fe_format_min_sec(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x2e0);
+        frame.save(c, 16, 0x2d0);
+        frame.save(c, 17, 0x2c0);
+        frame.save(c, 18, 0x2b0);
+        frame.save(c, 19, 0x2a0);
+        frame.save_ra(c, 0x290);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0014_dc80, 0x0020_a1c8)?; // cBE_getBE
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 4;
+        call_ptr(c, 0x0014_dd58, 0x0020_a1d4)?; // cBE_getInterface
+        c.g[V1][0] = 0x3c;
+        c.g[V0][0] = 0x3c;
+        c.div(0, S0, V1); // minutes = secs / 60, seconds = secs % 60
+
+        // Copy the option block (0x280 bytes in 32-byte chunks, then 8 more
+        // bytes) to the bottom of the frame.
+        c.cycles += 7;
+        c.g[A0][0] = sx(FE_FORMAT_MIN_SEC_OPTIONS);
+        c.g[V0][0] = c.g[A0][0] & 7;
+        c.g[S0][0] = c.lo[0];
+        c.g[S1][0] = c.hi[0];
+        c.g[V1][0] = c.g[SP][0];
+        c.cycles += 2;
+        oc767_addiu(c, V0, A0, 0x280);
+        c.g[S3][0] = 0x4c0000;
+        loop {
+            c.cycles += 11;
+            c.g[A1][0] = Addr(oc767_ea(c, A0, 0)).ld(c);
+            c.g[A2][0] = Addr(oc767_ea(c, A0, 8)).ld(c);
+            c.g[A3][0] = Addr(oc767_ea(c, A0, 0x10)).ld(c);
+            c.g[T0][0] = Addr(oc767_ea(c, A0, 0x18)).ld(c);
+            let (d, v) = (oc767_ea(c, V1, 0), c.g[A1][0]);
+            c.sd(d, v);
+            let (d, v) = (oc767_ea(c, V1, 8), c.g[A2][0]);
+            c.sd(d, v);
+            let (d, v) = (oc767_ea(c, V1, 0x10), c.g[A3][0]);
+            c.sd(d, v);
+            let (d, v) = (oc767_ea(c, V1, 0x18), c.g[T0][0]);
+            c.sd(d, v);
+            oc767_addiu(c, A0, A0, 0x20);
+            let again = c.g[A0][0] != c.g[V0][0];
+            oc767_addiu(c, V1, V1, 0x20);
+            if !again {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0020_a268);
+            }
+        }
+        c.cycles += 10;
+        let a = oc767_ea(c, A0, 7);
+        c.ldl(2, a);
+        let a = oc767_ea(c, A0, 0);
+        c.ldr(2, a);
+        let a = oc767_ea(c, V1, 7);
+        c.sdl(2, a);
+        let a = oc767_ea(c, V1, 0);
+        c.sdr(2, a);
+        c.g[V0][0] = oc767_lw(c, SP, 0); // option flags
+        c.g[V1][0] = 1;
+        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 22);
+        c.g[A0][0] = c.g[V0][0] & 7;
+        let mode = c.g[A0][0];
+
+        // Mode 1 and 3 (format B), 0 and 2 (format A), others: no text.
+        let mut format = 0; // 0: none, 1: A, 2: B
+        if mode == c.g[V1][0] {
+            format = 2;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 2;
+            if mode == 0 {
+                format = 1;
+            } else {
+                c.cycles += 2;
+                let t = mode == c.g[V0][0];
+                c.g[V0][0] = 3;
+                if t {
+                    format = 1;
+                } else {
+                    c.cycles += 2;
+                    let t = mode == c.g[V0][0];
+                    oc767_addiu(c, V0, S3, 0x6848);
+                    if t {
+                        format = 2;
+                    } else {
+                        c.cycles += 2;
+                        frame.restore(c, 16, 0x2d0);
+                    }
+                }
+            }
+        }
+        if format != 0 {
+            let (cycles, fmt, r1, r2, r3) = if format == 1 {
+                (17, 0x19f0, 0x0020_a2f4, 0x0020_a304, 0x0020_a318)
+            } else {
+                (16, 0x1a00, 0x0020_a338, 0x0020_a348, 0x0020_a35c)
+            };
+            c.cycles += cycles;
+            c.mtc1(16, 12);
+            c.cvt_s_w(12, 12);
+            oc767_addiu(c, S2, S3, 0x6848);
+            c.g[S0][0] = 0x470000;
+            oc767_addiu(c, S0, S0, fmt);
+            call_ptr(c, 0x0041_3af8, r1)?; // fptodp(minutes)
+            c.mtc1(17, 12);
+            c.cvt_s_w(12, 12);
+            c.g[S1][0] = c.g[V0][0];
+            call_ptr(c, 0x0041_3af8, r2)?; // fptodp(seconds)
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = c.g[V0][0];
+            call_ptr(c, 0x0041_7828, r3)?; // sprintf(buffer, fmt, min, sec)
+            oc767_addiu(c, V0, S3, 0x6848);
+            c.cycles += 1;
+            frame.restore(c, 16, 0x2d0);
+        }
+        c.cycles += 6;
+        frame.restore(c, 17, 0x2c0);
+        frame.restore(c, 18, 0x2b0);
+        frame.restore(c, 19, 0x2a0);
+        frame.restore_ra(c, 0x290);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc767_install_fakes;
 
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
@@ -1545,6 +1694,42 @@ pub(crate) mod tests {
                     c.bus
                         .write32(MAP_IND + 0x20 + 4 * i, MAP_ICONS + 0x800 + 0x100 * i);
                 }
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fill;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC767_CTRL;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC767_MAGIC;
+
+    /// `FE_FormatMinSec`: the option block at 0x535610 holds mode `seed % 8`
+    /// in bits 22..24 of its first word (0/2: format A, 1/3: format B, 4-7:
+    /// no text); `secs` is negative, zero, below and above a minute; the
+    /// four callees (`cBE_getBE`, `getInterface`, `fptodp` twice, `sprintf`)
+    /// are fakes and some of them unwind.
+    #[test]
+    fn fe_format_min_sec_matches() {
+        oc767_install_fakes();
+        covered(
+            ee::s05::f_0020a1a8__generated,
+            fe_format_min_sec,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0020_a1a8, 5);
+                c.bus.write32(OC767_CTRL, OC767_MAGIC);
+                fill(c, &mut r, FE_FORMAT_MIN_SEC_OPTIONS, 0x288 / 4);
+                let first = (r.next_u32() & !(7 << 22)) | ((seed % 8) << 22);
+                c.bus.write32(FE_FORMAT_MIN_SEC_OPTIONS, first);
+                let secs = match r.next_u32() % 5 {
+                    0 => 0u32,
+                    1 => r.next_u32() % 60,
+                    2 => r.next_u32() % 6000,
+                    3 => 0u32.wrapping_sub(r.next_u32() % 500),
+                    _ => r.next_u32(),
+                };
+                c.g[A0][0] = sx(secs);
+                c.pc = 0x0020_a1a8;
             },
         );
     }

@@ -245,6 +245,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cworld_sound_get_shape_bounds,
         "cWorldSound_CalcAudioVolumeBox",
     ),
+    (
+        0x002b_4b08,
+        world_trigger_manager_create_instance,
+        "WorldTriggerManager_CreateInstance",
+    ),
+    (
+        0x002b_5a18,
+        world_trigger_manager_load_trigger_info,
+        "WorldTriggerManager_LoadTriggerInfo",
+    ),
+    (
+        0x002b_65b0,
+        world_trigger_manager_get_trigger_name,
+        "WorldTriggerManager_GetTriggerName",
+    ),
+    (
+        0x002b_68d0,
+        world_trigger_manager_reset,
+        "WorldTriggerManager_Reset",
+    ),
+    (
+        0x002b_6b50,
+        cworld_sound_relocate_emitters,
+        "cWorldSound_RelocateEmitters",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -5287,10 +5312,443 @@ pub fn cworld_sound_get_shape_bounds(c: &mut Cpu) {
     return;
 }
 
+/// Size of one emitter record in a world-sound blob.
+pub(crate) const RELOCATE_EMITTER_STRIDE: u32 = 0x18;
+
+/// `cWorldSound_RelocateEmitters(self, blob)` (0x2b6b50): turns a loaded
+/// world-sound blob's emitter records from blob-relative to absolute form and
+/// registers them (`cWorldSound_InsertEmitters(self)`).
+///
+/// Returns 0 for a null blob or one whose first byte is set (already
+/// relocated). Otherwise, for each of the `blob+0xc` records at `blob+0x10`
+/// (24 bytes each): `+0x10` (offset) becomes `blob + offset`; `+0xc` is a
+/// sound handle (low byte: bank, upper 24 bits: slot) that is resolved through
+/// the sound manager (`*gp[0x16c8]` -> `+8` bank table -> `+0x1c` slot table)
+/// to the sound object pointer, or 0 when the handle is -1 or unresolved; a
+/// resolved sound gets its back-pointer (`+0x8c`) set to the record.
+pub fn cworld_sound_relocate_emitters(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        c.g[T5][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let blob = c.g[A1][0] as u32;
+        let null_blob = blob == 0;
+        c.g[V0][0] = 0;
+        if !null_blob {
+            c.cycles += 3;
+            c.g[V0][0] = c.lb(blob);
+            let already_relocated = c.g[V0][0] != 0;
+            c.g[V0][0] = 0;
+            if !already_relocated {
+                c.cycles += 4;
+                c.g[A2][0] = sx(blob.wrapping_add(0x10));
+                c.g[A3][0] = c.lw(blob.wrapping_add(0xc));
+                let no_records = (c.g[A3][0] as i64) <= 0;
+                c.g[T0][0] = c.g[A2][0];
+                if !no_records {
+                    c.cycles += 4;
+                    c.g[T3][0] = 0xffff_ffff_ffff_0000;
+                    let gp = c.g[GP][0] as u32;
+                    c.g[T4][0] = c.lw(gp.wrapping_add(0x16c8));
+                    c.g[T3][0] |= 0xffff;
+                    c.g[T2][0] = c.g[A3][0];
+                    loop {
+                        c.cycles += 6;
+                        let rec = c.g[T0][0] as u32;
+                        c.g[V0][0] = c.lw(rec.wrapping_add(0x10));
+                        c.g[V1][0] = c.lw(rec.wrapping_add(0xc));
+                        c.g[V0][0] = sx(blob.wrapping_add(c.g[V0][0] as u32));
+                        c.g[T1][0] = c.g[V1][0];
+                        let no_sound = c.g[V1][0] == c.g[T3][0];
+                        c.sw(rec.wrapping_add(0x10), c.g[V0][0]);
+                        if !no_sound {
+                            c.cycles += 8;
+                            let mgr = c.g[T4][0] as u32;
+                            c.g[V0][0] = c.lw(mgr);
+                            c.g[V1][0] &= 0xff;
+                            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V1][0] as u32);
+                            let no_bank = c.g[V1][0] == 0;
+                            c.g[V0][0] = sx((c.g[T1][0] as u32) >> 8);
+                            let mut resolved = false;
+                            if !no_bank {
+                                c.cycles += 7;
+                                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                                resolved = c.g[V0][0] != 0;
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                            }
+                            if !resolved {
+                                c.cycles += 1;
+                                c.g[V0][0] = 0;
+                            }
+                            c.cycles += 2;
+                            c.sw(rec.wrapping_add(0xc), c.g[V0][0]);
+                        } else {
+                            c.cycles += 1;
+                            c.sw(rec.wrapping_add(0xc), 0);
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(rec.wrapping_add(0xc));
+                        if c.g[V0][0] != 0 {
+                            c.sw((c.g[V0][0] as u32).wrapping_add(0x8c), c.g[T0][0]);
+                        }
+                        c.cycles += 3;
+                        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(1));
+                        let more = c.g[T2][0] != 0;
+                        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(RELOCATE_EMITTER_STRIDE));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002b_6b90);
+                        }
+                    }
+                }
+                c.cycles += 2;
+                c.g[A0][0] = c.g[T5][0];
+                call_ptr(c, 0x002b_6c90, 0x002b_6c14)?;
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Offsets in the world trigger manager read by `GetTriggerName`.
+pub(crate) const WTM_TRIGGER_LIST: u32 = 0x33c;
+
+pub(crate) const WTM_TRIGGER_COUNT: u32 = 0x340;
+
+/// `int WorldTriggerManager_GetTriggerName(Manager* m, int idx, char* dst)`
+/// (0x2b65b0): the name of trigger `idx`. A type-3 trigger (8-byte entries
+/// `{type, data}`) copies the string at `data + 0x10` to `dst` and returns 1;
+/// a type-4 one asks `GetSpecialTriggerName` (0x2b6628, which returns 0);
+/// anything else, or an index past the count, gives 0.
+pub fn world_trigger_manager_get_trigger_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[T0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(WTM_TRIGGER_COUNT));
+        c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let in_range = c.g[V0][0] != 0;
+        c.g[V1][0] = sx((c.g[A1][0] as u32) << 3);
+        if !in_range {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 6;
+            c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(WTM_TRIGGER_LIST));
+            c.g[A0][0] = 0x3;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A3][0] = c.lw(c.g[V1][0] as u32);
+            let not3 = c.g[A3][0] != c.g[A0][0];
+            c.g[V0][0] = 0x4;
+            if !not3 {
+                c.cycles += 6;
+                c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = c.g[A2][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+                call_ptr(c, 0x0041_66f4, 0x002b_65f4)?; // strcpy(dst, data + 0x10)
+                c.g[V0][0] = 0x1;
+            } else {
+                c.cycles += 2;
+                let not4 = c.g[A3][0] != c.g[V0][0];
+                c.g[V0][0] = 0;
+                if !not4 {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[T0][0];
+                    Callee {
+                        addr: 0x002b_6628,
+                        f: ee::s08::f_002b6628,
+                    }
+                    .call(c, 0x002b_660c)?;
+                    frame.restore_ra(c, 0);
+                    c.cycles += 2;
+                    frame.close(c);
+                    return Ok(());
+                }
+            }
+        }
+        c.cycles += 1;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int WorldTriggerManager::LoadTriggerInfo(WorldTriggerManager* this)` (0x2b5a18).
+///
+/// Loads the trigger file when it exists: keeps the pack (`+0x338`), returns 0
+/// when its format flag is set, otherwise allocates `n + 2` 8-byte info
+/// entries (`+0x340` count, `+0x33c` array) and fills entries 2.. with each
+/// record's type and address, stepping over the record by its type (1: 0x18,
+/// 2: 0x38, 3: 0x30, 4: 0x10 bytes). Without the file everything is cleared.
+/// Returns 1.
+pub fn world_trigger_manager_load_trigger_info(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2b5b2c: {
+            'b_2b5b28: {
+                'b_2b5b1c: {
+                    c.cycles += 10;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x768));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[RA][0] = sx(0x002b5a38);
+                    call_ptr(c, 0x00317f38, 0x002b5a38)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x768));
+                    if t {
+                        break 'b_2b5b1c;
+                    } else {
+                        c.cycles += 7;
+                        c.g[RA][0] = sx(0x002b5a48);
+                        c.g[A1][0] = 0u64;
+                        call_ptr(c, 0x003e22f0, 0x002b5a48)?;
+                        c.g[S1][0] = c.g[V0][0];
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x338), c.g[S1][0]);
+                        c.g[V0][0] = c.lb(c.g[S1][0] as u32);
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = 0u64;
+                        if t {
+                            break 'b_2b5b2c;
+                        } else {
+                            c.cycles += 15;
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                            c.g[A1][0] = 0x480000;
+                            c.g[A2][0] = 0u64;
+                            c.g[A3][0] = 0u64;
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2));
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x35c0));
+                            c.g[A0][0] = sx((c.g[V0][0] as u32) << 3);
+                            c.g[RA][0] = sx(0x002b5a80);
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x340), c.g[V0][0]);
+                            call_ptr(c, 0x00317e30, 0x002b5a80)?;
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x340));
+                            c.g[A3][0] = 0x2;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x33c), c.g[V0][0]);
+                            c.g[V1][0] = ((c.g[A3][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                            let t = c.g[V1][0] == 0u64;
+                            c.g[A2][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+                            if t {
+                                break 'b_2b5b28;
+                            } else {
+                                c.cycles += 4;
+                                c.g[T2][0] = 0x1;
+                                c.g[T1][0] = 0x2;
+                                c.g[T0][0] = 0x3;
+                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x33c));
+                                'l_2b5aa8: loop {
+                                    'b_2b5b00: {
+                                        'b_2b5ad8: {
+                                            c.cycles += 10;
+                                            c.g[A0][0] = sx((c.g[A3][0] as u32) << 3);
+                                            c.g[A1][0] = c.lw(c.g[A2][0] as u32);
+                                            c.g[V1][0] =
+                                                sx((c.g[A0][0] as u32)
+                                                    .wrapping_add(c.g[V1][0] as u32));
+                                            c.sw(c.g[V1][0] as u32, c.g[A1][0]);
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x33c));
+                                            c.g[A0][0] =
+                                                sx((c.g[A0][0] as u32)
+                                                    .wrapping_add(c.g[V0][0] as u32));
+                                            c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+                                            c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+                                            let t = c.g[V1][0] != c.g[T2][0];
+
+                                            if t {
+                                                break 'b_2b5ad8;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = true;
+                                                c.g[A2][0] =
+                                                    sx((c.g[A2][0] as u32).wrapping_add(0x18));
+                                                if t {
+                                                    break 'b_2b5b00;
+                                                } else {
+                                                    break 'b_2b5ad8;
+                                                }
+                                            }
+                                        }
+                                        'b_2b5ae8: {
+                                            c.cycles += 2;
+                                            let t = c.g[V1][0] != c.g[T1][0];
+
+                                            if t {
+                                                break 'b_2b5ae8;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = true;
+                                                c.g[A2][0] =
+                                                    sx((c.g[A2][0] as u32).wrapping_add(0x38));
+                                                if t {
+                                                    break 'b_2b5b00;
+                                                } else {
+                                                    break 'b_2b5ae8;
+                                                }
+                                            }
+                                        }
+                                        'b_2b5af8: {
+                                            c.cycles += 2;
+                                            let t = c.g[V1][0] != c.g[T0][0];
+                                            c.g[V1][0] = c.g[V1][0] ^ 0x4;
+                                            if t {
+                                                break 'b_2b5af8;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = true;
+                                                c.g[A2][0] =
+                                                    sx((c.g[A2][0] as u32).wrapping_add(0x30));
+                                                if t {
+                                                    break 'b_2b5b00;
+                                                } else {
+                                                    break 'b_2b5af8;
+                                                }
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+                                        if c.g[V1][0] == 0 {
+                                            c.g[A2][0] = c.g[V0][0];
+                                        }
+                                        break 'b_2b5b00;
+                                    }
+                                    c.cycles += 5;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x340));
+                                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                                    c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                    if c.g[V0][0] != 0u64 {
+                                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x33c));
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x002b5aa8);
+                                        }
+                                        continue 'l_2b5aa8;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = true;
+                                        c.g[V0][0] = 0x1;
+                                        if t {
+                                            break 'b_2b5b2c;
+                                        } else {
+                                            break 'b_2b5b1c;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x33c), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x338), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x340), 0u64);
+                break 'b_2b5b28;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0x1;
+            break 'b_2b5b2c;
+        }
+        c.cycles += 5;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `WorldTriggerManager* WorldTriggerManager::CreateInstance()` (0x2b4b08).
+///
+/// The singleton (gp-0x... word at `gp+0x21e4`): when it does not exist yet,
+/// allocates 0x344 bytes with the named allocator and constructs it.
+pub fn world_trigger_manager_create_instance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = c.lw(gp.wrapping_add(WORLD_TRIGGER_MANAGER_INSTANCE));
+        let exists = c.g[V0][0] != 0;
+        frame.save_ra(c, 0);
+        if !exists {
+            c.cycles += 9;
+            c.g[A1][0] = 0x48_0000;
+            c.g[A0][0] = 0x344;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3588));
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7d70, 0x002b_4b30)?;
+            c.g[A0][0] = c.g[V0][0];
+            WORLD_TRIGGER_MANAGER_CTOR.call(c, 0x002b_4b38)?;
+            let gp = c.g[GP][0] as u32;
+            c.sw(gp.wrapping_add(WORLD_TRIGGER_MANAGER_INSTANCE), c.g[V0][0]);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// gp offset of the `WorldTriggerManager` singleton pointer.
+pub(crate) const WORLD_TRIGGER_MANAGER_INSTANCE: u32 = 0x21e4;
+
+pub(crate) const WORLD_TRIGGER_MANAGER_CTOR: Callee = Callee {
+    addr: 0x002b_58d0,
+    f: ee::s08::WorldTriggerManager_ctor,
+};
+
+/// `WorldTriggerManager::Reset(this)` (0x2b68d0): stops every playing trigger
+/// (`StopAll`), then clears the played list (`ResetPlayedList`).
+pub fn world_trigger_manager_reset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        Callee {
+            addr: 0x002b_5e68,
+            f: ee::s08::f_002b5e68,
+        }
+        .call(c, 0x002b_68e4)?;
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x002b_6900,
+            f: ee::s08::f_002b6900,
+        }
+        .call(c, 0x002b_68ec)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc796_install_fakes;
 
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
@@ -7350,6 +7808,622 @@ pub(crate) mod tests {
                 for off in (0..0x40u32).step_by(4) {
                     c.bus.write32(DATA + 0x200 + off, r.next_u32());
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::oc770_machine;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::oc784_arm;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::OC770_CTRL;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::OC770_MAGIC;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::OC784_CTRL;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::OC784_MAGIC;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::OC784_OBJ;
+    pub(crate) use crate::game::fe::ovtemplatedialog::tests::oc784_force;
+    pub(crate) use crate::game::fe::ovtemplatedialog::tests::oc784_force_zero;
+    pub(crate) use crate::game::fe::ovtemplatedialog::tests::oc784_mail;
+    pub(crate) use crate::game::fe::ovtemplatedialog::tests::OC784_FILE;
+    pub(crate) use crate::game::sound::asyncsys::tests::oc794_arm;
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc796_arm;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC784_NEW;
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC796_OBJ;
+
+    macro_rules! oc770_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC770_CTRL) != OC770_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc770_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc770_fakes!(
+        (
+            oc770_fake_2b6c90,
+            OC770_PREV_2B6C90,
+            ee::s08::OVERRIDE_002B6C90,
+            ee::s08::f_002b6c90__generated,
+            0x002b_6c90
+        ),
+        (
+            oc770_fake_227f80,
+            OC770_PREV_227F80,
+            ee::s05::OVERRIDE_00227F80,
+            ee::s05::f_00227f80__generated,
+            0x0022_7f80
+        ),
+        (
+            oc770_fake_23d5a8,
+            OC770_PREV_23D5A8,
+            ee::s06::OVERRIDE_0023D5A8,
+            ee::s06::f_0023d5a8__generated,
+            0x0023_d5a8
+        ),
+        (
+            oc770_fake_14dc80,
+            OC770_PREV_14DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80
+        ),
+        (
+            oc770_fake_14dd58,
+            OC770_PREV_14DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58
+        ),
+        (
+            oc770_fake_152948,
+            OC770_PREV_152948,
+            ee::s01::OVERRIDE_00152948,
+            ee::s01::f_00152948__generated,
+            0x0015_2948
+        ),
+        (
+            oc770_fake_23cc58,
+            OC770_PREV_23CC58,
+            ee::s06::OVERRIDE_0023CC58,
+            ee::s06::f_0023cc58__generated,
+            0x0023_cc58
+        ),
+        (
+            oc770_fake_23caa0,
+            OC770_PREV_23CAA0,
+            ee::s06::OVERRIDE_0023CAA0,
+            ee::s06::f_0023caa0__generated,
+            0x0023_caa0
+        ),
+        (
+            oc770_fake_23c8f0,
+            OC770_PREV_23C8F0,
+            ee::s06::OVERRIDE_0023C8F0,
+            ee::s06::f_0023c8f0__generated,
+            0x0023_c8f0
+        ),
+        (
+            oc770_fake_152ba8,
+            OC770_PREV_152BA8,
+            ee::s01::OVERRIDE_00152BA8,
+            ee::s01::f_00152ba8__generated,
+            0x0015_2ba8
+        ),
+        (
+            oc770_fake_241d40,
+            OC770_PREV_241D40,
+            ee::s06::OVERRIDE_00241D40,
+            ee::s06::f_00241d40__generated,
+            0x0024_1d40
+        ),
+        (
+            oc770_fake_2c2540,
+            OC770_PREV_2C2540,
+            ee::s08::OVERRIDE_002C2540,
+            ee::s08::f_002c2540__generated,
+            0x002c_2540
+        ),
+        (
+            oc770_fake_241aa0,
+            OC770_PREV_241AA0,
+            ee::s06::OVERRIDE_00241AA0,
+            ee::s06::f_00241aa0__generated,
+            0x0024_1aa0
+        ),
+        (
+            oc770_fake_2c26d0,
+            OC770_PREV_2C26D0,
+            ee::s08::OVERRIDE_002C26D0,
+            ee::s08::f_002c26d0__generated,
+            0x002c_26d0
+        ),
+        (
+            oc770_fake_354648,
+            OC770_PREV_354648,
+            ee::s11::OVERRIDE_00354648,
+            ee::s11::f_00354648__generated,
+            0x0035_4648
+        ),
+        (
+            oc770_fake_319cc8,
+            OC770_PREV_319CC8,
+            ee::s10::OVERRIDE_00319CC8,
+            ee::s10::f_00319cc8__generated,
+            0x0031_9cc8
+        ),
+        (
+            oc770_fake_317d70,
+            OC770_PREV_317D70,
+            ee::s10::OVERRIDE_00317D70,
+            ee::s10::f_00317d70__generated,
+            0x0031_7d70
+        ),
+        (
+            oc770_fake_2e4d88,
+            OC770_PREV_2E4D88,
+            ee::s09::OVERRIDE_002E4D88,
+            ee::s09::f_002e4d88__generated,
+            0x002e_4d88
+        ),
+        (
+            oc770_fake_416210,
+            OC770_PREV_416210,
+            ee::s15::OVERRIDE_00416210,
+            ee::s15::f_00416210__generated,
+            0x0041_6210
+        ),
+        (
+            oc770_fake_3e6448,
+            OC770_PREV_3E6448,
+            ee::s14::OVERRIDE_003E6448,
+            ee::s14::f_003e6448__generated,
+            0x003e_6448
+        ),
+    );
+
+    /// `cWorldSound_RelocateEmitters`: null / already relocated blobs, 0..4
+    /// records with unresolved, -1 and resolvable sound handles, and fake
+    /// `InsertEmitters` calls that unwind.
+    #[test]
+    fn cworld_sound_relocate_emitters_matches() {
+        const BLOB: u32 = DATA + 0x4000;
+        const REGISTRY: u32 = DATA + 0x1000;
+        const WORLD: u32 = DATA + 0x1100;
+        const BANKS: u32 = DATA + 0x1200;
+        const BANK: u32 = DATA + 0x1300;
+        const SLOTS: u32 = DATA + 0x2000;
+        const SOUNDS: u32 = DATA + 0x6000;
+        check(
+            ee::s08::f_002b6b50__generated,
+            cworld_sound_relocate_emitters,
+            400,
+            &|c, seed| {
+                let mut r = oc770_machine(c, seed, 0x7702, 1);
+                let gp = c.g[GP][0] as u32;
+                c.pc = 0x002b_6b50;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = if seed % 13 == 0 { 0 } else { BLOB as u64 };
+                c.bus.write8(BLOB, (seed % 7 == 1) as u8);
+                let count = (r.next_u32() % 6) as i32 - 1;
+                c.bus.write32(BLOB + 0xc, count as u32);
+                c.bus.write32(gp + 0x16c8, REGISTRY);
+                c.bus.write32(REGISTRY, WORLD);
+                c.bus.write32(WORLD + 8, BANKS);
+                for bank in 0..3u32 {
+                    let p = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        BANK + bank * 0x40
+                    };
+                    c.bus.write32(BANKS + bank * 4, p);
+                    c.bus
+                        .write32(BANK + bank * 0x40 + 0x1c, SLOTS + bank * 0x100);
+                    for slot in 0..4u32 {
+                        let w = if r.next_u32() % 3 == 0 {
+                            r.next_u32() & 0xff
+                        } else {
+                            (((SOUNDS + 0x40 * (bank * 4 + slot)) / 4) << 8) | 5
+                        };
+                        c.bus.write32(SLOTS + bank * 0x100 + slot * 4, w);
+                    }
+                }
+                for i in 0..4u32 {
+                    let rec = BLOB + 0x10 + RELOCATE_EMITTER_STRIDE * i;
+                    let handle = if r.next_u32() % 4 == 0 {
+                        0xffff_ffff
+                    } else {
+                        ((r.next_u32() % 5) << 8) | (r.next_u32() % 4)
+                    };
+                    c.bus.write32(rec + 0xc, handle);
+                    c.bus.write32(rec + 0x10, r.next_u32() & 0xfff);
+                }
+            },
+        );
+    }
+
+    /// `WorldTriggerManager_GetTriggerName`: index in range or not (also
+    /// negative), entry type 3 (the real `strcpy` of the name), 4 (the special
+    /// name leaf) or other.
+    #[test]
+    fn world_trigger_manager_get_trigger_name_matches() {
+        check(
+            ee::s08::f_002b65b0__generated,
+            world_trigger_manager_get_trigger_name,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2b65_b0 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.pc = 0x002b_65b0;
+                let (mgr, list, names, dst) =
+                    (DATA + 0x1000, DATA + 0x2100, DATA + 0x3000, DATA + 0x4000);
+                c.bus.write32(mgr + WTM_TRIGGER_COUNT, 3);
+                c.bus.write32(mgr + WTM_TRIGGER_LIST, list);
+                for i in 0..3u32 {
+                    let ty = match (seed / 3 + i) % 4 {
+                        0 | 1 => 3,
+                        2 => 4,
+                        _ => 7,
+                    };
+                    c.bus.write32(list + 8 * i, ty);
+                    c.bus.write32(list + 8 * i + 4, names + 0x40 * i);
+                    for k in 0..12u32 {
+                        c.bus
+                            .write8(names + 0x40 * i + 0x10 + k, 0x41 + ((i + k) % 20) as u8);
+                    }
+                    c.bus.write8(names + 0x40 * i + 0x10 + 4 + 2 * i, 0);
+                }
+                c.g[A0][0] = mgr as u64;
+                c.g[A1][0] = match seed % 6 {
+                    0..=2 => (seed % 3) as u64,
+                    3 => 3,
+                    4 => 0xffff_ffff_ffff_ffff,
+                    _ => 1,
+                };
+                c.g[A2][0] = dst as u64;
+            },
+        );
+    }
+
+    /// The "first n calls return 1" counter of the fake for `addr`.
+    pub(crate) fn oc784_count(addr: u32) -> u32 {
+        DATA + 0x30_4000 + (addr & 0xffc)
+    }
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns the
+    /// forced result of its mailbox (or 1 while its counter runs) unless it
+    /// unwound.
+    pub(crate) fn oc784_fake_call(c: &mut Cpu, addr: u32) {
+        let ra = c.g[RA][0] as u32;
+        let mail = c.bus.read32(oc784_mail(addr));
+        let count = c.bus.read32(oc784_count(addr));
+        if count > 0 {
+            c.bus.write32(oc784_count(addr), count - 1);
+        }
+        fakes::fake_call(c, addr);
+        if c.pc == ra {
+            if count > 0 {
+                c.g[V0][0] = 1;
+            } else if mail != 0 {
+                c.g[V0][0] = match mail {
+                    1 => 0,
+                    m => (m - 3) as u64,
+                };
+            }
+        }
+    }
+
+    macro_rules! oc784_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC784_CTRL) != OC784_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    oc784_fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc784_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc784_fakes!(
+        (
+            oc784_fk_14dc80,
+            OC784_PREV_0014DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80
+        ),
+        (
+            oc784_fk_14dd58,
+            OC784_PREV_0014DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58
+        ),
+        (
+            oc784_fk_227f80,
+            OC784_PREV_00227F80,
+            ee::s05::OVERRIDE_00227F80,
+            ee::s05::f_00227f80__generated,
+            0x0022_7f80
+        ),
+        (
+            oc784_fk_152948,
+            OC784_PREV_00152948,
+            ee::s01::OVERRIDE_00152948,
+            ee::s01::f_00152948__generated,
+            0x0015_2948
+        ),
+        (
+            oc784_fk_1d9948,
+            OC784_PREV_001D9948,
+            ee::s04::OVERRIDE_001D9948,
+            ee::s04::f_001d9948__generated,
+            0x001d_9948
+        ),
+        (
+            oc784_fk_23ca28,
+            OC784_PREV_0023CA28,
+            ee::s06::OVERRIDE_0023CA28,
+            ee::s06::f_0023ca28__generated,
+            0x0023_ca28
+        ),
+        (
+            oc784_fk_152688,
+            OC784_PREV_00152688,
+            ee::s01::OVERRIDE_00152688,
+            ee::s01::f_00152688__generated,
+            0x0015_2688
+        ),
+        (
+            oc784_fk_14e048,
+            OC784_PREV_0014E048,
+            ee::s01::OVERRIDE_0014E048,
+            ee::s01::f_0014e048__generated,
+            0x0014_e048
+        ),
+        (
+            oc784_fk_152ba8,
+            OC784_PREV_00152BA8,
+            ee::s01::OVERRIDE_00152BA8,
+            ee::s01::f_00152ba8__generated,
+            0x0015_2ba8
+        ),
+        (
+            oc784_fk_2ade88,
+            OC784_PREV_002ADE88,
+            ee::s08::OVERRIDE_002ADE88,
+            ee::s08::f_002ade88__generated,
+            0x002a_de88
+        ),
+        (
+            oc784_fk_317e30,
+            OC784_PREV_00317E30,
+            ee::s10::OVERRIDE_00317E30,
+            ee::s10::f_00317e30__generated,
+            0x0031_7e30
+        ),
+        (
+            oc784_fk_2ab9e0,
+            OC784_PREV_002AB9E0,
+            ee::s08::OVERRIDE_002AB9E0,
+            ee::s08::f_002ab9e0__generated,
+            0x002a_b9e0
+        ),
+        (
+            oc784_fk_2ad848,
+            OC784_PREV_002AD848,
+            ee::s08::OVERRIDE_002AD848,
+            ee::s08::f_002ad848__generated,
+            0x002a_d848
+        ),
+        (
+            oc784_fk_39fe00,
+            OC784_PREV_0039FE00,
+            ee::s13::OVERRIDE_0039FE00,
+            ee::s13::f_0039fe00__generated,
+            0x0039_fe00
+        ),
+        (
+            oc784_fk_2b3eb0,
+            OC784_PREV_002B3EB0,
+            ee::s08::OVERRIDE_002B3EB0,
+            ee::s08::f_002b3eb0__generated,
+            0x002b_3eb0
+        ),
+        (
+            oc784_fk_2a77f8,
+            OC784_PREV_002A77F8,
+            ee::s08::OVERRIDE_002A77F8,
+            ee::s08::f_002a77f8__generated,
+            0x002a_77f8
+        ),
+        (
+            oc784_fk_2a7c68,
+            OC784_PREV_002A7C68,
+            ee::s08::OVERRIDE_002A7C68,
+            ee::s08::f_002a7c68__generated,
+            0x002a_7c68
+        ),
+        (
+            oc784_fk_2a7a20,
+            OC784_PREV_002A7A20,
+            ee::s08::OVERRIDE_002A7A20,
+            ee::s08::f_002a7a20__generated,
+            0x002a_7a20
+        ),
+        (
+            oc784_fk_41aa88,
+            OC784_PREV_0041AA88,
+            ee::s15::OVERRIDE_0041AA88,
+            ee::s15::f_0041aa88__generated,
+            0x0041_aa88
+        ),
+        (
+            oc784_fk_2a7ff8,
+            OC784_PREV_002A7FF8,
+            ee::s08::OVERRIDE_002A7FF8,
+            ee::s08::f_002a7ff8__generated,
+            0x002a_7ff8
+        ),
+        (
+            oc784_fk_2b3ee8,
+            OC784_PREV_002B3EE8,
+            ee::s08::OVERRIDE_002B3EE8,
+            ee::s08::f_002b3ee8__generated,
+            0x002b_3ee8
+        ),
+        (
+            oc784_fk_2a7f90,
+            OC784_PREV_002A7F90,
+            ee::s08::OVERRIDE_002A7F90,
+            ee::s08::f_002a7f90__generated,
+            0x002a_7f90
+        ),
+        (
+            oc784_fk_4165a8,
+            OC784_PREV_004165A8,
+            ee::s15::OVERRIDE_004165A8,
+            ee::s15::f_004165a8__generated,
+            0x0041_65a8
+        ),
+        (
+            oc784_fk_2a7890,
+            OC784_PREV_002A7890,
+            ee::s08::OVERRIDE_002A7890,
+            ee::s08::f_002a7890__generated,
+            0x002a_7890
+        ),
+        (
+            oc784_fk_20a380,
+            OC784_PREV_0020A380,
+            ee::s05::OVERRIDE_0020A380,
+            ee::s05::f_0020a380__generated,
+            0x0020_a380
+        ),
+        (
+            oc784_fk_317670,
+            OC784_PREV_00317670,
+            ee::s10::OVERRIDE_00317670,
+            ee::s10::f_00317670__generated,
+            0x0031_7670
+        ),
+        (
+            oc784_fk_39d860,
+            OC784_PREV_0039D860,
+            ee::s13::OVERRIDE_0039D860,
+            ee::s13::f_0039d860__generated,
+            0x0039_d860
+        ),
+        (
+            oc784_fk_417828,
+            OC784_PREV_00417828,
+            ee::s15::OVERRIDE_00417828,
+            ee::s15::f_00417828__generated,
+            0x0041_7828
+        ),
+        (
+            oc784_fk_3a1000,
+            OC784_PREV_003A1000,
+            ee::s13::OVERRIDE_003A1000,
+            ee::s13::f_003a1000__generated,
+            0x003a_1000
+        ),
+        (
+            oc784_fk_317f38,
+            OC784_PREV_00317F38,
+            ee::s10::OVERRIDE_00317F38,
+            ee::s10::f_00317f38__generated,
+            0x0031_7f38
+        ),
+        (
+            oc784_fk_3e22f0,
+            OC784_PREV_003E22F0,
+            ee::s14::OVERRIDE_003E22F0,
+            ee::s14::f_003e22f0__generated,
+            0x003e_22f0
+        ),
+    );
+
+    /// `WorldTriggerManager_LoadTriggerInfo`: no trigger file, a file with the
+    /// format flag set, and files with 0..4 records of random types.
+    #[test]
+    fn world_trigger_manager_load_trigger_info_matches() {
+        oc784_install_fakes();
+        fakes::covered(
+            ee::s08::f_002b5a18__generated,
+            world_trigger_manager_load_trigger_info,
+            250,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x784f, 3);
+                oc784_arm(c);
+                c.g[A0][0] = sx(OC784_OBJ);
+                c.bus.write32(GAME_GP + 0x768, r.next_u32());
+                if seed % 5 == 0 {
+                    oc784_force_zero(c, 0x0031_7f38);
+                } else {
+                    oc784_force(c, 0x0031_7f38, 1);
+                }
+                oc784_force(c, 0x003e_22f0, OC784_FILE);
+                oc784_force(c, 0x0031_7e30, OC784_NEW);
+                for w in 0..0x80u32 {
+                    c.bus.write32(OC784_FILE + 4 * w, r.next_u32() % 5);
+                }
+                c.bus.write8(OC784_FILE, if seed % 7 == 1 { 1 } else { 0 });
+                c.bus
+                    .write32(OC784_FILE + 8, [0u32, 1, 2, 3, 4, 6][(seed % 6) as usize]);
+            },
+        );
+    }
+
+    /// `WorldTriggerManager_CreateInstance`: the singleton already there, or
+    /// created (allocator and constructor), with the unwinds of both calls.
+    #[test]
+    fn world_trigger_manager_create_instance_matches() {
+        fakes::covered(
+            ee::s08::f_002b4b08__generated,
+            world_trigger_manager_create_instance,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x794e, 2);
+                oc794_arm(c);
+                c.pc = 0x002b_4b08;
+                let gp = c.g[GP][0] as u32;
+                let old = if seed % 4 == 0 { r.next_u32() | 1 } else { 0 };
+                c.bus
+                    .write32(gp.wrapping_add(WORLD_TRIGGER_MANAGER_INSTANCE), old);
+            },
+        );
+    }
+
+    /// `WorldTriggerManager_Reset`: both calls and their unwinds.
+    #[test]
+    fn world_trigger_manager_reset_matches() {
+        oc796_install_fakes();
+        fakes::covered(
+            ee::s08::f_002b68d0__generated,
+            world_trigger_manager_reset,
+            90,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x796c, 2);
+                oc796_arm(c);
+                c.pc = 0x002b_68d0;
+                c.g[A0][0] = sx(OC796_OBJ);
             },
         );
     }

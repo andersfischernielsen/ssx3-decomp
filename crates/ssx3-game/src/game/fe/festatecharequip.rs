@@ -20,6 +20,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0019_57d0, femodule_base_dtor, "FEModule_BaseDtor"),
     (0x0019_5880, fe_locale_ctor, "FELocale_ctor"),
     (0x0019_58f0, fe_locale_v01, "FELocale_v01"),
+    (0x0019_56f8, fe_module_base_ctor, "FEModule_BaseCtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -213,11 +214,79 @@ pub fn femodule_base_dtor(c: &mut Cpu) {
     })
 }
 
+/// `FEModule* FEModule_BaseCtor(FEModule* self)` (0x1956f8): base constructor of
+/// a front-end module: `AppModule_ctor(self)`, vtable `self[0]` = 0x46d878,
+/// `CameraBase_ctor(self + 0x10)`, the second vtable (`+0xa0`) with
+/// `FEModule_InitRiderPreviews(self + 0xb0)`, `BoltFile_CacheCtor(self +
+/// 0x1a70)`, the UI engine (`self[3] = UIEngine_ctor(EA_MemAllocNamed(0x70,
+/// ..))`), `CameraBase_Init(self + 0x10, 0, gp float args)` and the FX loader
+/// (`self[0xb0000 + 0x5aa0] = FXLoader_ctor(EA_MemAllocNamed(1, ..), 1)`).
+/// Returns `self`.
+pub fn fe_module_base_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 53;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        call_ptr(c, 0x0023_1cd0, 0x0019_5710)?;
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x10));
+        c.g[V1][0] = 0x47_0000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2788));
+        c.sw(c.g[S1][0] as u32, c.g[V1][0]);
+        call_ptr(c, 0x0015_d698, 0x0019_5728)?;
+        c.g[V1][0] = 0x47_0000;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xb0));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2728));
+        c.sw((c.g[S1][0] as u32).wrapping_add(0xa0), c.g[V1][0]);
+        call_ptr(c, 0x001a_03c0, 0x0019_573c)?;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1a70));
+        call_ptr(c, 0x0019_cdf0, 0x0019_5744)?;
+        c.g[A1][0] = 0x46_0000;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1f0));
+        c.g[A0][0] = 0x70;
+        call_ptr(c, 0x0031_7d70, 0x0019_575c)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_7b08, 0x0019_5764)?;
+        c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x59b8));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[AT][0] = 0x40a0_0000;
+        c.mtc1(AT, 13);
+        c.g[A1][0] = 0;
+        c.lwc1(14, (c.g[GP][0] as u32).wrapping_sub(0x59b4));
+        c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        call_ptr(c, 0x0015_d700, 0x0019_5784)?;
+        c.g[S0][0] = 0xb_0000;
+        c.g[A1][0] = 0x46_0000;
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x200));
+        c.g[A0][0] = 1;
+        call_ptr(c, 0x0031_7d70, 0x0019_57a4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x002d_bd10, 0x0019_57b0)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x5aa0), c.g[V0][0]);
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc789_install_fakes;
 
     use crate::difftest::fill;
 
@@ -295,6 +364,31 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x3000 + 0x10d8, DATA + 0x4000);
                 c.bus.write32(DATA + 0xc, 0);
                 c.bus.write32(DATA + 0xb5aa0, 0);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    use crate::difftest::GAME_GP;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc789_arm;
+
+    /// `FEModule_BaseCtor`: the whole constructor chain (callees faked, the FX
+    /// loader `FXLoader_ctor` runs for real on the empty RAM), with unwinds.
+    #[test]
+    fn fe_module_base_ctor_matches() {
+        oc789_install_fakes();
+        fakes::covered(
+            ee::s02::f_001956f8__generated,
+            fe_module_base_ctor,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x789e, 9);
+                c.pc = 0x0019_56f8;
+                oc789_arm(c);
+                c.g[A0][0] = sx(DATA + 0x10_0000 + (r.next_u32() & 0xf) * 0x10);
+                c.bus.write32(GAME_GP.wrapping_sub(0x59b8), r.edge_f32());
+                c.bus.write32(GAME_GP.wrapping_sub(0x59b4), r.edge_f32());
             },
         );
     }

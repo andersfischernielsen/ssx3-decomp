@@ -497,6 +497,41 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003c_c928, snd_dec_set_free_func, "SND_DecSetFreeFunc"),
     (0x003c_d138, snd_eaxa_get_history, "SND_EaxaGetHistory"),
     (0x003d_69f0, spch_add_bank, "SPCH_AddBank"),
+    (0x003b_7eb0, sndstrm_fade_volume, "SNDSTRM_FadeVolume"),
+    (0x003b_80a0, sndstrm_set_lowpass, "SNDSTRM_SetLowpass"),
+    (
+        0x003d_6498,
+        spch_register_event_table,
+        "SPCH_RegisterEventTable",
+    ),
+    (0x003d_66c0, spch_add_event_table, "SPCH_AddEventTable"),
+    (0x003d_6778, spch_calc_buffer_size, "SPCH_CalcBufferSize"),
+    (0x003d_6840, spch_init_state, "SPCH_InitState"),
+    (0x003d_6c60, spch_set_bank_table, "SPCH_SetBankTable"),
+    (0x003d_71d8, spch_reset_queue, "SPCH_ResetQueue"),
+    (
+        0x003d_8278,
+        spch_clear_event_tables,
+        "SPCH_ClearEventTables",
+    ),
+    (0x003d_b790, spch_seed_random, "SPCH_SeedRandom"),
+    (0x003d_6768, oc815_sp_ch_get_config, "SPCH_GetConfig"),
+    (
+        0x003d_6c58,
+        oc815_sp_ch_calc_bank_table_size,
+        "SPCH_CalcBankTableSize",
+    ),
+    (
+        0x003d_6d40,
+        oc815_sp_ch_reset_bank_table,
+        "SPCH_ResetBankTable",
+    ),
+    (0x003d_a3a8, spch_get_bank_id_bytes, "SPCH_GetBankIdBytes"),
+    (
+        0x003d_a3c0,
+        oc815_sp_ch_set_time_offset,
+        "SPCH_SetTimeOffset",
+    ),
 ];
 
 /// Fields of the driver state block.
@@ -32177,6 +32212,824 @@ pub fn spch_add_bank(c: &mut Cpu) {
     c.pc = t;
 }
 
+/// `int SPCH_RegisterEventTable(unsigned short* bankData, int bankKey)` (0x3d6498).
+///
+/// Registers a speech bank in the 8-slot table at 0x44ffb8 (pairs of data
+/// pointer and key). Only banks whose header halfword is 0xc03 count. Returns
+/// 0 when the bank (same bank/sub id bytes at `+8`/`+9`, read by
+/// `SPCH_GetBankIdBytes`) is already registered, else stores `bankData` and
+/// `bankKey` in the first free slot and returns 1 (0 when the table is full).
+/// After a fresh registration attempt it marks the event table bytes of every
+/// slot with the same key as 0xff (the clear loop).
+#[allow(unused_labels, unused_assignments, unused_parens, unreachable_code)]
+pub fn spch_register_event_table(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_3d6600: {
+            'b_3d65fc: {
+                c.cycles += 11;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                c.g[V0][0] = 0xc03;
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[S2][0] = 0u64;
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sq(31, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[S0][0] = c.g[A0][0];
+                c.g[V1][0] = c.lhu(c.g[S0][0] as u32);
+                let t = c.g[V1][0] != c.g[V0][0];
+                c.g[S1][0] = c.g[A1][0];
+                if t {
+                    break 'b_3d65fc;
+                } else {
+                    c.cycles += 9;
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[RA][0] = sx(0x003d64d0);
+                    c.g[A2][0] = c.g[SP][0] | 0x4;
+                    Callee {
+                        addr: 0x003da3a8,
+                        f: ee::s14::SPCH_GetBankIdBytes,
+                    }
+                    .call(c, 0x003d64d0)?;
+                    c.g[T0][0] = 0x450000;
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[A2][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[A1][0] = 0u64;
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x48));
+                    'l_3d64e8: loop {
+                        'b_3d6510: {
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                            if c.g[V1][0] == 0u64 {
+                                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                break 'b_3d6510;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x9));
+                                if c.g[V0][0] != c.g[A3][0] {
+                                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                    break 'b_3d6510;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x8));
+                                    let t = c.g[V0][0] == c.g[A2][0];
+                                    c.g[V0][0] = c.g[S2][0];
+                                    if t {
+                                        break 'b_3d6600;
+                                    } else {
+                                        c.cycles += 1;
+                                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                        break 'b_3d6510;
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[A1][0] as i64) < 8i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x8));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003d64e8);
+                            }
+                            continue 'l_3d64e8;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A1][0] = 0u64;
+                            c.g[A3][0] = c.g[S1][0] << 32;
+                            'l_3d6528: loop {
+                                'b_3d6558: {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = ((c.g[A1][0] as i64) < 8i64) as u64;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[A2][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x48));
+                                    if t {
+                                        break 'b_3d6558;
+                                    } else {
+                                        c.cycles += 5;
+                                        c.g[A0][0] = sx((c.g[A1][0] as u32) << 3);
+                                        c.g[V1][0] =
+                                            sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                        let t = c.g[V0][0] != 0u64;
+                                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                        if t {
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x003d6528);
+                                            }
+                                            continue 'l_3d6528;
+                                        } else {
+                                            c.cycles += 4;
+                                            c.sw(c.g[V1][0] as u32, c.g[S0][0]);
+                                            c.g[V0][0] =
+                                                sx((c.g[A2][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
+                                            c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                                            c.g[S2][0] = 0x1;
+                                            break 'b_3d6558;
+                                        }
+                                    }
+                                }
+                                c.cycles += 10;
+                                c.g[V0][0] = 0x450000;
+                                c.g[T1][0] = 0xffffffffffff0000;
+                                c.g[T2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x48));
+                                c.g[T3][0] = c.g[A3][0] >> 32;
+                                c.g[T5][0] = sx((c.g[T2][0] as u32).wrapping_add(0x4));
+                                c.g[T4][0] = c.g[T2][0];
+                                c.g[V1][0] = 0u64;
+                                c.g[T1][0] = c.g[T1][0] | 0xfffc;
+                                c.g[A2][0] = sx((c.g[V1][0] as u32) << 3);
+                                'l_3d6580: loop {
+                                    'b_3d65f0: {
+                                        'b_3d65ec: {
+                                            c.cycles += 4;
+                                            c.g[V0][0] =
+                                                sx((c.g[A2][0] as u32)
+                                                    .wrapping_add(c.g[T2][0] as u32));
+                                            c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                                            let t = c.g[A1][0] == 0u64;
+                                            c.g[T0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                            if t {
+                                                break 'b_3d65ec;
+                                            } else {
+                                                c.cycles += 4;
+                                                c.g[V0][0] = sx((c.g[A2][0] as u32)
+                                                    .wrapping_add(c.g[T5][0] as u32));
+                                                c.g[V1][0] = c.lwu(c.g[V0][0] as u32);
+                                                let t = c.g[V1][0] != c.g[T3][0];
+                                                c.g[V1][0] = c.g[T0][0];
+                                                if t {
+                                                    break 'b_3d65f0;
+                                                } else {
+                                                    c.cycles += 9;
+                                                    c.g[V0][0] = c.lhu(
+                                                        (c.g[A1][0] as u32).wrapping_add(0x10),
+                                                    );
+                                                    c.g[A0][0] = 0u64;
+                                                    c.g[V1][0] = c.lbu(
+                                                        (c.g[A1][0] as u32).wrapping_add(0x12),
+                                                    );
+                                                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                                                    c.g[V0][0] =
+                                                        sx((c.g[V0][0] as u32).wrapping_add(0x3));
+                                                    c.g[V0][0] = c.g[V0][0] & c.g[T1][0];
+                                                    c.g[V0][0] =
+                                                        sx((c.g[V0][0] as u32).wrapping_add(0x18));
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.g[A3][0] = sx((c.g[A1][0] as u32)
+                                                        .wrapping_add(c.g[V0][0] as u32));
+                                                    if t {
+                                                        break 'b_3d65ec;
+                                                    } else {
+                                                        c.cycles += 3;
+                                                        c.g[A1][0] = sx((c.g[A2][0] as u32)
+                                                            .wrapping_add(c.g[T4][0] as u32));
+                                                        c.g[A2][0] = 0xff;
+                                                        c.g[V0][0] = sx((c.g[A3][0] as u32)
+                                                            .wrapping_add(c.g[A0][0] as u32));
+                                                        'l_3d65d0: loop {
+                                                            c.cycles += 7;
+                                                            c.sb(c.g[V0][0] as u32, c.g[A2][0]);
+                                                            c.g[A0][0] = sx((c.g[A0][0] as u32)
+                                                                .wrapping_add(0x1));
+                                                            c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                                                            c.g[V0][0] = c.lbu(
+                                                                (c.g[V1][0] as u32)
+                                                                    .wrapping_add(0x12),
+                                                            );
+                                                            c.g[V0][0] = ((c.g[A0][0] as i64)
+                                                                < (c.g[V0][0] as i64))
+                                                                as u64;
+                                                            let t = c.g[V0][0] != 0u64;
+                                                            c.g[V0][0] = sx((c.g[A3][0] as u32)
+                                                                .wrapping_add(c.g[A0][0] as u32));
+                                                            if t {
+                                                                if event_due(c) {
+                                                                    deliver_event_here(
+                                                                        c, 0x003d65d0,
+                                                                    );
+                                                                }
+                                                                continue 'l_3d65d0;
+                                                            } else {
+                                                                break 'b_3d65ec;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        c.cycles += 1;
+                                        c.g[V1][0] = c.g[T0][0];
+                                        break 'b_3d65f0;
+                                    }
+                                    c.cycles += 3;
+                                    c.g[V0][0] = ((c.g[V1][0] as i64) < 8i64) as u64;
+                                    if c.g[V0][0] != 0u64 {
+                                        c.g[A2][0] = sx((c.g[V1][0] as u32) << 3);
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x003d6580);
+                                        }
+                                        continue 'l_3d6580;
+                                    } else {
+                                        break 'b_3d65fc;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+            break 'b_3d6600;
+        }
+        c.cycles += 6;
+        c.lq(31, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
+/// `int SPCH_InitState(a0, a1, a2)` (0x3d6840): initialises the speech system state:
+/// globals, random seed, sentence/time-offset/event/bank/queue resets, the eight
+/// channel slots; returns 1.
+pub fn spch_init_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        c.g[V0][0] = 0x450000;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sw((c.g[V0][0] as u32).wrapping_sub(0x70), c.g[A0][0]);
+        c.g[T0][0] = 0x450000;
+        c.sq(31, c.g[SP][0] as u32);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x70));
+        c.sw((c.g[GP][0] as u32).wrapping_add(0x1748), c.g[A2][0]);
+        c.g[A3][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x58));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+        c.g[V1][0] = 0x3d0000;
+        c.sw((c.g[T0][0] as u32).wrapping_sub(0x58), 0u64);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x76f0));
+        c.sw((c.g[A3][0] as u32).wrapping_add(0x8), 0u64);
+        c.g[A0][0] = c.g[A1][0];
+        c.sw((c.g[GP][0] as u32).wrapping_add(0x173c), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
+        c.sw((c.g[A3][0] as u32).wrapping_add(0x4), 0u64);
+        c.g[RA][0] = sx(0x003d688c);
+        c.sw((c.g[GP][0] as u32).wrapping_add(0x1744), c.g[A1][0]);
+        Callee {
+            addr: 0x003db790,
+            f: ee::s14::SPCH_SeedRandom,
+        }
+        .call(c, 0x003d688c)?;
+        c.g[RA][0] = sx(0x003d6894);
+        Callee {
+            addr: 0x003d9a40,
+            f: ee::s14::SPCH_ResetSentence,
+        }
+        .call(c, 0x003d6894)?;
+        c.g[RA][0] = sx(0x003d689c);
+        c.g[A0][0] = 0u64;
+        Callee {
+            addr: 0x003da3c0,
+            f: ee::s14::SPCH_SetTimeOffset,
+        }
+        .call(c, 0x003d689c)?;
+        c.g[V0][0] = 0x450000;
+        c.g[V1][0] = 0x7;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6a0));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1c));
+        'l_3d68b0: loop {
+            c.cycles += 7;
+            c.sw(c.g[V0][0] as u32, 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+            let t = (c.g[V1][0] as i64) >= 0;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d68b0);
+                }
+                continue 'l_3d68b0;
+            } else {
+                c.cycles += 7;
+                c.g[RA][0] = sx(0x003d68d4);
+                Callee {
+                    addr: 0x003d8278,
+                    f: ee::s14::SPCH_ClearEventTables,
+                }
+                .call(c, 0x003d68d4)?;
+                c.g[V0][0] = 0x450000;
+                c.g[T0][0] = 0xffff;
+                c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x660));
+                c.g[A1][0] = 0u64;
+                c.g[A3][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+                'l_3d68e8: loop {
+                    c.cycles += 10;
+                    c.g[V0][0] = c.g[A1][0] << 32;
+                    c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                    c.g[A1][0] = c.g[A1][0].wrapping_add(0x1);
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[A0][0] = ((c.g[A1][0] as i64) < 8i64) as u64;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.sh(c.g[V1][0] as u32, c.g[T0][0]);
+                    let t = c.g[A0][0] != 0u64;
+                    c.sw(c.g[V0][0] as u32, 0u64);
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d68e8);
+                        }
+                        continue 'l_3d68e8;
+                    } else {
+                        c.cycles += 11;
+                        c.g[RA][0] = sx(0x003d6918);
+                        Callee {
+                            addr: 0x003d6d40,
+                            f: ee::s14::SPCH_ResetBankTable,
+                        }
+                        .call(c, 0x003d6918)?;
+                        c.g[RA][0] = sx(0x003d6920);
+                        Callee {
+                            addr: 0x003d71d8,
+                            f: ee::s14::SPCH_ResetQueue,
+                        }
+                        .call(c, 0x003d6920)?;
+                        c.g[V1][0] = 0x1780000;
+                        c.lq(31, c.g[SP][0] as u32);
+                        c.g[V1][0] = c.g[V1][0] | 0x9a34;
+                        c.g[V0][0] = 0x1;
+                        c.sw((c.g[GP][0] as u32).wrapping_add(0x1730), c.g[V1][0]);
+                        let t = c.g[RA][0] as u32;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// `void SPCH_ResetQueue(void)` (0x3d71d8): resets the speech queue state at 0x44fff8: for the
+/// 8 entries of three parallel word tables (`+0` cleared, `+0x20` and `+0x40` set to -1), the
+/// count at `+0x60`, then 16 slots of 0x60 bytes (pointers at `+0x64`/`+0x70`/`+0x74` cleared,
+/// `+0x68` half-word and `+0x6a` byte cleared, `+0x6b` = 0xff, 20 words from `+0x4c`), and
+/// finally the queue head words at `gp+0x1750`/`gp+0x1754`.
+pub fn spch_reset_queue(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = 0x450000;
+    c.g[A1][0] = 0xffffffffffffffff;
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
+    c.g[A0][0] = 0x7;
+    loop {
+        c.cycles += 7;
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x20), c.g[A1][0]);
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x40), c.g[A1][0]);
+        let more = (c.g[A0][0] as i64) >= 0;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d71e8);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 11;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
+    c.g[A0][0] = 0u64;
+    c.g[T0][0] = c.g[V0][0];
+    c.sw((c.g[V0][0] as u32).wrapping_add(0x60), 0u64);
+    c.g[T6][0] = sx((c.g[T0][0] as u32).wrapping_add(0x64));
+    c.g[T5][0] = sx((c.g[T0][0] as u32).wrapping_add(0x70));
+    c.g[T4][0] = sx((c.g[T0][0] as u32).wrapping_add(0x74));
+    c.g[T3][0] = 0x60;
+    c.g[T2][0] = 0xff;
+    c.g[T1][0] = 0x60;
+    c.mult(0, 3, 4, 9);
+    loop {
+        c.cycles += 14;
+        c.mult(0, 2, 4, 11);
+        c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+        c.g[A2][0] = 0x13;
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T4][0] as u32));
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T6][0] as u32));
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4c));
+        c.sb((c.g[V1][0] as u32).wrapping_add(0x6a), 0u64);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T5][0] as u32));
+        c.sh((c.g[V1][0] as u32).wrapping_add(0x68), 0u64);
+        c.sw(c.g[A0][0] as u32, 0u64);
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.sb((c.g[V1][0] as u32).wrapping_add(0x6b), c.g[T2][0]);
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[A1][0] as u32, 0u64);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+            let more = (c.g[A2][0] as i64) >= 0;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d7268);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.g[A3][0];
+        c.g[V0][0] = ((c.g[A0][0] as i64) < 16i64) as u64;
+        let more = c.g[V0][0] != 0u64;
+        c.mult(0, 3, 4, 9);
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d7230);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 3;
+    c.sw((c.g[GP][0] as u32).wrapping_add(0x1750), 0u64);
+    let t = c.g[RA][0] as u32;
+    c.sh((c.g[GP][0] as u32).wrapping_add(0x1754), 0u64);
+    c.pc = t;
+}
+
+/// `void SPCH_SeedRandom(int seed)` (0x3db790): fills the 32 u16 pairs at
+/// 0x450b88 with 0xffff, then derives the five random-generator state words
+/// at 0x450b70..0x450b84 from `seed` (fixed constant sums) and clears the
+/// word at `gp+0x1768`.
+pub fn spch_seed_random(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = 0x450000;
+    c.g[A2][0] = 0x450000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xb88));
+    c.g[A1][0] = 0xffff;
+    c.g[V1][0] = 0x1f;
+    loop {
+        c.cycles += 7;
+        c.sh(c.g[V0][0] as u32, c.g[A1][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+        c.sh((c.g[V0][0] as u32).wrapping_add(0x2), c.g[A1][0]);
+        let t = (c.g[V1][0] as i64) >= 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+        if t {
+            if event_due(c) {
+                deliver_event_here(c, 0x003db7a8);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 29;
+    c.g[V1][0] = sx((c.g[A0][0] as u32) << 16);
+    c.g[V0][0] = 0xfffffffff22d0000;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[V0][0] |= 0xe56;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V1][0] = 0xffffffff96040000;
+    c.sw((c.g[A2][0] as u32).wrapping_add(0xb70), c.g[V0][0]);
+    c.g[V1][0] |= 0x1893;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0xb70));
+    c.g[V1][0] = 0x3df30000;
+    c.sw((c.g[A2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+    c.g[V1][0] |= 0xb646;
+    c.g[A0][0] = 0x40dd0000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[A0][0] |= 0xe76d;
+    c.sw((c.g[A2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+    c.g[A1][0] = 0xffffffff97320000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.g[A1][0] |= 0x7ae1;
+    c.sw((c.g[A2][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+    c.g[V1][0] = 0xffffffffd1a90000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    c.g[V1][0] |= 0xfbe7;
+    c.sw((c.g[A2][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw((c.g[GP][0] as u32).wrapping_add(0x1768), 0u64);
+    let t = c.g[RA][0] as u32;
+    c.sw((c.g[A2][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+    c.pc = t;
+}
+
+/// `int SPCH_CalcBufferSize(int count, int unit, int mode)` (0x3d6778): with
+/// `n = count * unit` (a0 = a0 * a1) and `v1 = (n + 7 if n <= -1 else n) >> 3`
+/// (n rounded towards zero over 8): mode 1 returns `v1 / 10`, mode 2
+/// `(2 * v1) / 7`, every other mode `v1`.
+pub fn spch_calc_buffer_size(c: &mut Cpu) {
+    c.cycles += 8;
+    c.mult(0, 4, 4, 5);
+    c.g[V1][0] = 0xffffffffffffffff;
+    c.g[A1][0] = 0x1;
+    c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7));
+    if c.g[V1][0] != 0 {
+        c.g[V0][0] = c.g[A0][0];
+    }
+    let mode_is_one = c.g[A2][0] == c.g[A1][0];
+    c.g[V1][0] = sx(((c.g[V0][0] as u32) as i32 >> 3) as u32);
+    let mut done = false;
+    if !mode_is_one {
+        c.cycles += 2;
+        let t = c.g[A2][0] == 0;
+        c.g[V0][0] = 0x2;
+        let mut to_e8 = false;
+        if t {
+            to_e8 = true;
+        } else {
+            c.cycles += 2;
+            let t = c.g[A2][0] == c.g[V0][0];
+            c.g[V0][0] = c.g[V1][0];
+            if t {
+                c.cycles += 5;
+                c.g[V0][0] = sx((c.g[V1][0] as u32) << 1);
+                c.g[V1][0] = 0x7;
+                c.div(0, 2, 3);
+                c.cycles += 2;
+                c.g[V0][0] = c.lo[0];
+                c.g[V1][0] = c.g[V0][0];
+                to_e8 = true;
+            } else {
+                c.cycles += 2;
+                done = true;
+            }
+        }
+        if to_e8 {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[V1][0];
+            done = true;
+        }
+        if done {
+            c.cycles += 2;
+            let t = c.g[RA][0] as u32;
+            c.pc = t;
+            return;
+        }
+    }
+    c.cycles += 4;
+    c.g[V0][0] = 0xa;
+    c.div(0, 3, 2);
+    c.cycles += 3;
+    c.g[V1][0] = c.lo[0];
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.g[V1][0];
+    c.pc = t;
+}
+
+/// `int SNDSTRM_FadeVolume(int stream, int fadeTime, int targetVol)` (0x3b7eb0):
+/// looks the stream up; no stream returns -8; else stores the target volume
+/// byte at `stream+0xec`, starts a fade of the stream's voice (`+4`) over
+/// `fadeTime / 10` and returns 0.
+pub fn sndstrm_fade_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.g[A1][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x003b7ecc);
+        c.g[S1][0] = c.g[A2][0];
+        Callee {
+            addr: 0x003b6a38,
+            f: ee::s13::f_003b6a38,
+        }
+        .call(c, 0x003b7ecc)?;
+        c.g[V1][0] = c.g[V0][0];
+        let t = c.g[V1][0] == 0;
+        c.g[V0][0] = 0xa;
+        if t {
+            c.cycles += 1;
+            c.g[V0][0] = 0xfffffffffffffff8;
+        } else {
+            c.cycles += 4;
+            c.sb((c.g[V1][0] as u32).wrapping_add(0xec), c.g[S1][0]);
+            c.div(0, 16, 2);
+            c.cycles += 6;
+            c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = c.lo[0];
+            c.g[RA][0] = sx(0x003b7ef8);
+            c.g[A2][0] = c.g[S1][0];
+            Callee {
+                addr: 0x003b8530,
+                f: ee::s13::f_003b8530,
+            }
+            .call(c, 0x003b7ef8)?;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 5;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `void SPCH_SetBankTable(int count, int* table)` (0x3d6c60).
+///
+/// Remembers the speech bank table (`gp-relative` count at `+0x1738`, pointer
+/// at `+0x1734`) and clears its `count` entries when there are any.
+pub fn spch_set_bank_table(c: &mut Cpu) {
+    c.cycles += 3;
+    let gp = c.g[GP][0] as u32;
+    c.sw(gp.wrapping_add(SPCH_BANK_COUNT_2), c.g[A0][0]);
+    let no_table = c.g[A1][0] == 0;
+    c.sw(gp.wrapping_add(SPCH_BANK_TABLE_2), c.g[A1][0]);
+    'out: {
+        if no_table {
+            break 'out;
+        }
+        c.cycles += 2;
+        let empty = (c.g[A0][0] as i64) <= 0;
+        c.g[A1][0] = 0;
+        if empty {
+            break 'out;
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(gp.wrapping_add(SPCH_BANK_TABLE_2));
+        loop {
+            c.cycles += 8;
+            c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V1][0] as u32, 0);
+            c.g[V0][0] = c.lw(gp.wrapping_add(SPCH_BANK_COUNT_2));
+            c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V0][0] = c.lw(gp.wrapping_add(SPCH_BANK_TABLE_2));
+            if !more {
+                break 'out;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_6c78);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// gp offsets of the speech bank table count and pointer.
+pub(crate) const SPCH_BANK_COUNT_2: u32 = 0x1738;
+
+pub(crate) const SPCH_BANK_TABLE_2: u32 = 0x1734;
+
+/// `int SNDSTRM_SetLowpass(int stream, int value)` (0x3b80a0).
+///
+/// Stores `value` (halfword) in the stream object's `+0x100` and applies it
+/// to the stream's voice (`SND_SetLowpass(*(stream+4), value)`). Returns 0, or
+/// -8 when the stream does not exist.
+pub fn sndstrm_set_lowpass(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        SNDSTRM_SETLOWPASS_GET_STREAM.call(c, 0x003b_80b4)?;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = 0xffff_ffff_ffff_fff8;
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = Addr(r32(c, V0)).off(SNDSTRM_VOICE).lw(c);
+            c.g[A1][0] = c.g[S0][0];
+            let stream = r32(c, V0);
+            c.sh(stream.wrapping_add(SNDSTRM_LOWPASS), c.g[S0][0]);
+            SNDSTRM_SETLOWPASS_SND_SET_LOWPASS.call(c, 0x003b_80cc)?;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Stream object: the voice handle (+4) and the low-pass value (+0x100).
+pub(crate) const SNDSTRM_VOICE: u32 = 0x4;
+
+pub(crate) const SNDSTRM_LOWPASS: u32 = 0x100;
+
+pub(crate) const SNDSTRM_SETLOWPASS_GET_STREAM: Callee = Callee {
+    addr: 0x003b_6a38,
+    f: ee::s13::SNDSTRM_GetStream,
+};
+
+pub(crate) const SNDSTRM_SETLOWPASS_SND_SET_LOWPASS: Callee = Callee {
+    addr: 0x003b_8978,
+    f: ee::s13::SND_SetLowpass,
+};
+
+/// `void SPCH_ClearEventTables(void)` (0x3d8278): zeroes the eight 8-byte
+/// speech event-table slots at 0x44ffb8.
+pub fn spch_clear_event_tables(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V1][0] = 0x7;
+    c.g[V0][0] = sx(0x0045_0000u32.wrapping_sub(0x48));
+    loop {
+        c.cycles += 7;
+        let slot = c.g[V0][0] as u32;
+        c.sw(slot, 0u64);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+        c.sw(slot.wrapping_add(0x4), 0u64);
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.g[V0][0] = sx(slot.wrapping_add(0x8));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_8288);
+            }
+            continue;
+        }
+        c.cycles += 2;
+        ret(c);
+        return;
+    }
+}
+
+/// `int SPCH_AddEventTable(unsigned short* bankData, unsigned bankKey)`
+/// (0x3d66c0): `SPCH_RegisterEventTable(bankData, bankKey)` when `bankKey < 8`,
+/// else 0.
+pub fn spch_add_event_table(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = 0;
+        let in_range = c.g[A1][0] < 0x8;
+        c.g[V0][0] = in_range as u64;
+        frame.save(c, RA, 0);
+        if in_range {
+            c.cycles += 3;
+            Callee {
+                addr: 0x003d_6498,
+                f: ee::s14::SPCH_RegisterEventTable,
+            }
+            .call(c, 0x003d_66dc)?;
+            c.g[V1][0] = c.g[V0][0];
+        }
+        c.cycles += 4;
+        frame.restore(c, RA, 0);
+        c.g[V0][0] = c.g[V1][0];
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SPCH_GetBankIdBytes` (0x3da3a8): `*a1 = byte(a0+8)`, `*a2 = byte(a0+9)`.
+pub fn spch_get_bank_id_bytes(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V0][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+    c.g[V1][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x9));
+    let t = c.g[RA][0] as u32;
+    c.sw(c.g[A2][0] as u32, c.g[V1][0]);
+    c.pc = t;
+}
+
+/// Replacements in this module: (address, function, name).
+/// `SPCH_ResetBankTable`: Clears the bank table pointer and size globals (gp+0x1734, gp+0x1738).
+pub fn oc815_sp_ch_reset_bank_table(c: &mut Cpu) {
+    c.cycles += 3;
+    c.bus.write32((c.g[GP][0] as u32).wrapping_add(0x1734), 0);
+    c.bus.write32((c.g[GP][0] as u32).wrapping_add(0x1738), 0);
+    ret(c);
+}
+
+/// `SPCH_GetConfig`: Returns the constant config address 0x44ffa8 in v0.
+pub fn oc815_sp_ch_get_config(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = sx(0x44_ffa8);
+    ret(c);
+}
+
+/// `SPCH_SetTimeOffset`: Stores a0 in the time offset global (gp+0x174c).
+pub fn oc815_sp_ch_set_time_offset(c: &mut Cpu) {
+    c.cycles += 2;
+    let a0 = c.g[A0][0];
+    c.bus
+        .write32((c.g[GP][0] as u32).wrapping_add(0x174c), a0 as u32);
+    ret(c);
+}
+
+/// `SPCH_CalcBankTableSize`: Returns the byte size of a bank table of a0 entries (a0 * 4) in v0.
+pub fn oc815_sp_ch_calc_bank_table_size(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -32188,6 +33041,7 @@ pub(crate) mod tests {
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
+    pub(crate) use crate::game::fe::fereal::tests::oc787_install_fakes;
 
     use crate::difftest::fill;
 
@@ -44740,6 +45594,473 @@ pub(crate) mod tests {
                     c.bus
                         .write32(TABLE + 4 * i, if used { 0x0080_8000 + i } else { 0 });
                 }
+            },
+        );
+    }
+
+    use crate::difftest::DATA as DATA_m5;
+    use crate::difftest::DATA as DATA_m6;
+    use crate::difftest::DATA as DATA_m7;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::oc787_arm;
+
+    /// `SPCH_RegisterEventTable`: header 0xc03 or not, bank already in the
+    /// table, a free slot, a full table, and the clear loop over the slots
+    /// with the same key. The only callee (`SPCH_GetBankIdBytes`) is a real
+    /// leaf.
+    #[test]
+    fn spch_register_event_table_matches() {
+        check(
+            ee::s14::f_003d6498__generated,
+            spch_register_event_table,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x780d, 0);
+                let table = 0x0044_ffb8u32;
+                let bank = DATA_m2 + 0x1000;
+                c.bus
+                    .write16(bank, if seed % 7 == 0 { 0x1234 } else { 0xc03 });
+                c.bus.write8(bank + 8, (r.next_u32() % 2) as u8);
+                c.bus.write8(bank + 9, (r.next_u32() % 2) as u8);
+                let full = seed % 4 == 0;
+                for i in 0..8u32 {
+                    let slot = if full || r.next_u32() % 3 != 0 {
+                        DATA_m2 + 0x2000 + 0x400 * i
+                    } else {
+                        0
+                    };
+                    c.bus.write32(table + 8 * i, slot);
+                    c.bus
+                        .write32(table + 8 * i + 4, [0x11, 0x22][(r.next_u32() % 2) as usize]);
+                    if slot != 0 {
+                        c.bus.write8(slot + 8, (r.next_u32() % 2) as u8);
+                        c.bus.write8(slot + 9, (r.next_u32() % 2) as u8);
+                        c.bus.write16(slot + 0x10, (r.next_u32() % 6) as u16);
+                        c.bus.write8(slot + 0x12, (r.next_u32() % 5) as u8);
+                    }
+                }
+                c.g[A0][0] = sx(bank);
+                c.g[A1][0] = [0x11u64, 0x22][(r.next_u32() % 2) as usize];
+            },
+        );
+    }
+
+    /// `SPCH_InitState`: random state arguments; the reset functions are the
+    /// real ones (on zeroed tables), `SPCH_ResetSentence` is a fake that may
+    /// unwind.
+    #[test]
+    fn spch_init_state_matches() {
+        oc787_install_fakes();
+        fakes::covered(
+            ee::s14::f_003d6840__generated,
+            spch_init_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x787d, 1);
+                oc787_arm(c);
+                c.pc = 0x003d_6840;
+                c.g[A0][0] = sx(r.next_u32());
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// `SPCH_ResetQueue`: random contents in the queue area (so the clears show) and in
+    /// `a0`..`t3`; LO/HI are compared as the loops `mult` into them.
+    #[test]
+    fn spch_reset_queue_matches() {
+        check_lohi(
+            ee::s14::f_003d71d8__generated,
+            spch_reset_queue,
+            16,
+            &|c, seed| {
+                let mut r = Rng(0x790c ^ ((seed as u64) << 8));
+                scramble(c, &mut r);
+                c.pc = 0x003d_71d8;
+                c.g[GP][0] = sx(GAME_GP);
+                fill(c, &mut r, 0x0044_fff0, 0x1a0);
+                fill(c, &mut r, GAME_GP + 0x1750, 2);
+            },
+        );
+    }
+
+    /// The word that arms oc792's callee fakes in a machine's RAM.
+    pub(crate) const OC792_CTRL: u32 = DATA_m5 + 0x34_0000;
+
+    pub(crate) const OC792_MAGIC: u32 = 0x0792_f4ce;
+
+    pub(crate) const OC792_AUX: u32 = DATA_m5 + 0x2_0000;
+
+    /// The mailbox word of the fake for `addr` (0: the fake's own result).
+    pub(crate) fn oc792_mail(addr: u32) -> u32 {
+        DATA_m5 + 0x34_1000 + (addr & 0xffc)
+    }
+
+    /// Arm the gated fakes in this machine.
+    pub(crate) fn oc792_arm(c: &mut Cpu) {
+        c.bus.write32(OC792_CTRL, OC792_MAGIC);
+    }
+
+    /// Make the fake for `addr` return `v` in `v0` (stored +3).
+    pub(crate) fn oc792_force(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(oc792_mail(addr), v.wrapping_add(3));
+    }
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns the
+    /// forced result of its mailbox unless it unwound.
+    pub(crate) fn oc792_fake_call(c: &mut Cpu, addr: u32) {
+        let ra = c.g[RA][0] as u32;
+        let mail = c.bus.read32(oc792_mail(addr));
+        fakes::fake_call(c, addr);
+        if c.pc == ra && mail != 0 {
+            c.g[V0][0] = (mail - 3) as u64;
+        }
+    }
+
+    macro_rules! oc792_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC792_CTRL) != OC792_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    oc792_fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc792_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc792_fakes!(
+        (
+            oc792_fk_2a6430,
+            OC792_PREV_2A6430,
+            ee::s08::OVERRIDE_002A6430,
+            ee::s08::f_002a6430__generated,
+            0x002a_6430
+        ),
+        (
+            oc792_fk_2ae478,
+            OC792_PREV_2AE478,
+            ee::s08::OVERRIDE_002AE478,
+            ee::s08::f_002ae478__generated,
+            0x002a_e478
+        ),
+        (
+            oc792_fk_1a04c8,
+            OC792_PREV_1A04C8,
+            ee::s03::OVERRIDE_001A04C8,
+            ee::s03::f_001a04c8__generated,
+            0x001a_04c8
+        ),
+        (
+            oc792_fk_19e498,
+            OC792_PREV_19E498,
+            ee::s03::OVERRIDE_0019E498,
+            ee::s03::f_0019e498__generated,
+            0x0019_e498
+        ),
+        (
+            oc792_fk_317e50,
+            OC792_PREV_317E50,
+            ee::s10::OVERRIDE_00317E50,
+            ee::s10::f_00317e50__generated,
+            0x0031_7e50
+        ),
+        (
+            oc792_fk_3b6a38,
+            OC792_PREV_3B6A38,
+            ee::s13::OVERRIDE_003B6A38,
+            ee::s13::f_003b6a38__generated,
+            0x003b_6a38
+        ),
+        (
+            oc792_fk_3b8530,
+            OC792_PREV_3B8530,
+            ee::s13::OVERRIDE_003B8530,
+            ee::s13::f_003b8530__generated,
+            0x003b_8530
+        ),
+    );
+
+    /// `SPCH_SeedRandom`: any seed (positive, negative, zero), random junk in
+    /// the other registers; the table and the state words are compared.
+    #[test]
+    fn spch_seed_random_matches() {
+        check(
+            ee::s14::f_003db790__generated,
+            spch_seed_random,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x7a92_0001 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003d_b790;
+                c.g[GP][0] = sx(GAME_GP);
+                c.g[A0][0] = match seed % 4 {
+                    0 => 0,
+                    1 => sx(r.next_u32() & 0xffff),
+                    _ => sx(r.next_u32()),
+                };
+            },
+        );
+    }
+
+    /// `SPCH_CalcBufferSize`: all modes (0, 1, 2, other), positive, zero and
+    /// negative sizes.
+    #[test]
+    fn spch_calc_buffer_size_matches() {
+        check(
+            ee::s14::f_003d6778__generated,
+            spch_calc_buffer_size,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0x7a92_0003 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003d_6778;
+                c.g[A0][0] = sx(match seed % 4 {
+                    0 => r.next_u32() & 0xff,
+                    1 => (r.next_u32() & 0xff).wrapping_neg(),
+                    2 => r.next_u32() & 0xffff,
+                    _ => r.next_u32(),
+                });
+                c.g[A1][0] = sx(match seed % 3 {
+                    0 => r.next_u32() & 0xf,
+                    1 => r.next_u32() & 0xff,
+                    _ => r.next_u32(),
+                });
+                c.g[A2][0] =
+                    sx([0u32, 1, 2, 3, r.next_u32(), 0xffff_ffff][(seed / 4 % 6) as usize]);
+            },
+        );
+    }
+
+    /// `SNDSTRM_FadeVolume`: no stream (fake returns 0) and a stream record at
+    /// `OC792_AUX` with random fade time and volume.
+    #[test]
+    fn sndstrm_fade_volume_matches() {
+        oc792_install_fakes();
+        fakes::covered(
+            ee::s13::f_003b7eb0__generated,
+            sndstrm_fade_volume,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x792d, 2);
+                oc792_arm(c);
+                c.pc = 0x003b_7eb0;
+                c.g[A0][0] = sx(r.next_u32());
+                c.g[A1][0] = sx(match seed % 3 {
+                    0 => r.next_u32() & 0xfff,
+                    1 => r.next_u32(),
+                    _ => 0,
+                });
+                c.g[A2][0] = sx(r.next_u32());
+                oc792_force(c, 0x003b_6a38, if seed % 4 == 0 { 0 } else { OC792_AUX });
+                c.bus.write32(OC792_AUX + 4, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) const OC794_THIS: u32 = DATA_m6 + 0x1_0000;
+
+    /// `SPCH_SetBankTable`: no table, an empty or negative count, and tables
+    /// of 1..=9 entries over random old contents.
+    #[test]
+    fn spch_set_bank_table_matches() {
+        check(
+            ee::s14::f_003d6c60__generated,
+            spch_set_bank_table,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x794c, 0);
+                c.pc = 0x003d_6c60;
+                for i in 0..12u32 {
+                    c.bus.write32(OC794_THIS + 4 * i, r.next_u32() | 1);
+                }
+                c.g[A1][0] = if seed % 7 == 0 { 0 } else { sx(OC794_THIS) };
+                c.g[A0][0] = match seed % 5 {
+                    0 => 0,
+                    1 => sx(0u32.wrapping_sub(1 + seed % 4)),
+                    _ => (1 + seed % 9) as u64,
+                };
+            },
+        );
+    }
+
+    pub(crate) const OC794_STREAM_COUNT: u32 = 0x0050_a92e;
+
+    pub(crate) const OC794_STREAMS: u32 = 0x0050_a0a0;
+
+    /// `SNDSTRM_SetLowpass`: a missing stream (out of range or null slot) and
+    /// streams whose voice handle is negative or names no channel (the real
+    /// `SND_SetLowpass` then finds no channel).
+    #[test]
+    fn sndstrm_set_lowpass_matches() {
+        check(
+            ee::s13::f_003b80a0__generated,
+            sndstrm_set_lowpass,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x794d, 0);
+                c.pc = 0x003b_80a0;
+                c.bus.write8(OC794_STREAM_COUNT, 4);
+                for i in 0..4u32 {
+                    let stream = OC794_THIS + 0x1000 * i;
+                    c.bus
+                        .write32(OC794_STREAMS + 4 * i, if i == 3 { 0 } else { stream });
+                    let handle = if i == 1 {
+                        0x8000_0000 | r.next_u32()
+                    } else {
+                        r.next_u32() & 0x7fff_ffff
+                    };
+                    c.bus.write32(stream + SNDSTRM_VOICE, handle);
+                }
+                c.g[A0][0] = match seed % 6 {
+                    4 => 4 + (r.next_u32() % 5) as u64,
+                    5 => sx(0x8000_0000 | r.next_u32()),
+                    _ => (seed % 4) as u64 & 0xff,
+                };
+                c.g[A1][0] = r.next_u32() as u64 | (r.next_u32() as u64) << 32;
+            },
+        );
+    }
+
+    /// `SPCH_ClearEventTables`: the eight slots at 0x44ffb8, with events
+    /// off, delivered and unwinding at the loop back edge.
+    #[test]
+    fn spch_clear_event_tables_matches() {
+        check(
+            ee::s14::f_003d8278__generated,
+            spch_clear_event_tables,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x7950_0001 ^ seed as u64);
+                crate::difftest::scramble(c, &mut r);
+                for i in 0..0x44u32 {
+                    c.bus.write32(0x0044_ffa0 + 4 * i, r.next_u32() | 1);
+                }
+                c.g[RA][0] = crate::difftest::RA as u64;
+                schedule(c, &mut r, seed, 0x003d_8278);
+            },
+        );
+    }
+
+    /// `SPCH_AddEventTable`: key below and not below 8; the registration
+    /// itself (real callee) with and without the 0xc03 header.
+    #[test]
+    fn spch_add_event_table_matches() {
+        check(
+            ee::s14::f_003d66c0__generated,
+            spch_add_event_table,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x7950_0006, 0);
+                let table = 0x0044_ffb8u32;
+                let bank = DATA_m7 + 0x1000;
+                c.bus
+                    .write16(bank, if seed % 7 == 0 { 0x1234 } else { 0xc03 });
+                c.bus.write8(bank + 8, (r.next_u32() % 2) as u8);
+                c.bus.write8(bank + 9, (r.next_u32() % 2) as u8);
+                for i in 0..8u32 {
+                    let slot = if r.next_u32() % 3 != 0 {
+                        DATA_m7 + 0x2000 + 0x400 * i
+                    } else {
+                        0
+                    };
+                    c.bus.write32(table + 8 * i, slot);
+                    c.bus
+                        .write32(table + 8 * i + 4, [0x11, 0x22][(r.next_u32() % 2) as usize]);
+                    if slot != 0 {
+                        c.bus.write8(slot + 8, (r.next_u32() % 2) as u8);
+                        c.bus.write8(slot + 9, (r.next_u32() % 2) as u8);
+                        c.bus.write16(slot + 0x10, (r.next_u32() % 6) as u16);
+                        c.bus.write8(slot + 0x12, (r.next_u32() % 5) as u8);
+                    }
+                }
+                c.g[A0][0] = sx(bank);
+                c.g[A1][0] = match seed % 4 {
+                    0 => 8 + (r.next_u32() % 100) as u64,
+                    1 => 0xffff_ffff_0000_0003,
+                    _ => [0x11u64, 0x22][(r.next_u32() % 2) as usize] % 8,
+                };
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::bankmanager::tests::oc814_base;
+
+    #[test]
+    fn spch_get_bank_id_bytes_matches() {
+        check(
+            ee::s14::f_003da3a8__generated,
+            spch_get_bank_id_bytes,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3da3_a8, 0);
+                let a = oc814_base(c, &mut r);
+                c.g[A0][0] = a as u64;
+                c.g[A1][0] = (DATA_m2 + 0x9_0000 + (r.next_u32() & 0xff0)) as u64;
+                c.g[A2][0] = (DATA_m2 + 0xa_0000 + (r.next_u32() & 0xff0)) as u64;
+                c.pc = 0x003d_a3a8;
+            },
+        );
+    }
+
+    /// `SPCH_ResetBankTable` against the generated body.
+    #[test]
+    fn oc815_sp_ch_reset_bank_table_matches() {
+        crate::difftest::check(
+            ee::s14::f_003d6d40__generated,
+            oc815_sp_ch_reset_bank_table,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x003d6d40;
+            },
+        );
+    }
+
+    /// `SPCH_GetConfig` against the generated body.
+    #[test]
+    fn oc815_sp_ch_get_config_matches() {
+        crate::difftest::check(
+            ee::s14::f_003d6768__generated,
+            oc815_sp_ch_get_config,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x003d6768;
+            },
+        );
+    }
+
+    /// `SPCH_SetTimeOffset` against the generated body.
+    #[test]
+    fn oc815_sp_ch_set_time_offset_matches() {
+        crate::difftest::check(
+            ee::s14::f_003da3c0__generated,
+            oc815_sp_ch_set_time_offset,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x003da3c0;
+            },
+        );
+    }
+
+    /// `SPCH_CalcBankTableSize` against the generated body.
+    #[test]
+    fn oc815_sp_ch_calc_bank_table_size_matches() {
+        crate::difftest::check(
+            ee::s14::f_003d6c58__generated,
+            oc815_sp_ch_calc_bank_table_size,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x815, 0);
+                c.pc = 0x003d6c58;
             },
         );
     }

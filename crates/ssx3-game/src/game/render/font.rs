@@ -20,6 +20,7 @@ pub(crate) use crate::game::fe::feasyncfile::p as p_4;
 pub(crate) use crate::game::fe::feasyncfile::p as p_5;
 pub(crate) use crate::game::fe::feasyncfile::p as p_6;
 pub(crate) use crate::game::fe::feasyncfile::p as p_7;
+pub(crate) use crate::game::fe::feridermanager::o760_lh;
 pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::object::instancenode::ui_vector_lw;
 pub(crate) use crate::game::object::movenode::AVALANCHE_GRMAN_GP;
@@ -35,6 +36,14 @@ use crate::game::render::particle::renderer_fields;
 use crate::game::render::particle::GM_FOG_MODE;
 #[cfg(test)]
 use crate::game::render::particle::GM_LIGHTS;
+pub(crate) use crate::game::sound::bankmonitor::o760_add;
+pub(crate) use crate::game::sound::bankmonitor::o760_addi;
+pub(crate) use crate::game::sound::bankmonitor::o760_ea;
+pub(crate) use crate::game::sound::bankmonitor::o760_lb;
+pub(crate) use crate::game::sound::bankmonitor::o760_lw;
+pub(crate) use crate::game::sound::bankmonitor::o760_sb;
+pub(crate) use crate::game::sound::bankmonitor::o760_sw;
+pub(crate) use crate::game::sound::bankmonitor::o760_sw0;
 pub(crate) use crate::game::sound::bankmonitor::p as p_2;
 pub(crate) use crate::game::wscript::wscriptman::p as p_3;
 use crate::guest::Addr;
@@ -285,6 +294,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_graphics_man_get_matrix,
         "PS2GraphicsMan_GetMatrix",
     ),
+    (0x0039_1788, font_parse_glyphs, "Font_ParseGlyphs"),
+    (0x0039_1a48, font_upload_texture, "Font_UploadTexture"),
+    (0x0039_4d50, defer_man_ctor, "DeferMan_ctor"),
+    (0x0039_7138, ui_engine_store_word, "UIEngine_StoreWord"),
 ];
 
 /// `DeferMan` layout (offsets from the `DeferMan*`).
@@ -3736,11 +3749,661 @@ pub(crate) fn abi_a0(c: &Cpu) -> u32 {
     c.g[A0][0] as u32
 }
 
+#[inline]
+pub(crate) fn o760_lhu(c: &mut Cpu, base: usize, off: u32) -> u64 {
+    let a = o760_ea(c, base, off);
+    Addr(a).lhu(c)
+}
+
+#[inline]
+pub(crate) fn o760_lbu(c: &mut Cpu, base: usize, off: u32) -> u64 {
+    let a = o760_ea(c, base, off);
+    Addr(a).lbu(c)
+}
+
+#[inline]
+pub(crate) fn o760_sh(c: &mut Cpu, base: usize, off: u32, val: usize) {
+    let a = o760_ea(c, base, off);
+    let v = c.g[val][0];
+    Addr(a).sh(c, v);
+}
+
+/// `void Font_ParseGlyphs(Font* font, const FontFile* file)` (0x391788,
+/// reference `cFont_linkFont`): builds the font's glyph table from a font
+/// file. Allocates `count` 12-byte glyph records (`font+4`), copies the 11
+/// meaningful bytes of each record from the file, extends the run of
+/// consecutive codes `font+0x10`, points `font+8` at the glyph of code 0xac,
+/// remembers the last glyph of code 0x20 (space) and gives a glyph of code
+/// 0xa0 (no-break space) that space's metrics, tracks the tallest glyph
+/// extent (`font+0x14`), then uploads the font texture.
+pub fn font_parse_glyphs(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 39;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 18, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = 0xc;
+        c.g[A1][0] = 0x4a0000;
+        c.g[V1][0] = o760_lb(c, S1, 0x10);
+        c.g[A1][0] = o760_addi(c, A1, 0x46f8);
+        c.g[A3][0] = o760_lb(c, S1, 0x11);
+        c.mtc1(3, 0);
+        c.cvt_s_w(0, 0);
+        c.g[V0][0] = o760_lw(c, S1, 0x14);
+        c.mtc1(7, 1);
+        c.cvt_s_w(1, 1);
+        c.g[S2][0] = o760_add(c, S1, V0); // the file's glyph records
+        c.g[A3][0] = 0;
+        let a = frame.at(c, 0);
+        c.swc1(0, a);
+        let a = frame.at(c, 4);
+        c.swc1(1, a);
+        let a = frame.at(c, 7);
+        c.ldl(2, a);
+        let a = frame.at(c, 0);
+        c.ldr(2, a);
+        let a = o760_ea(c, S0, 0x1f);
+        c.sdl(2, a);
+        let a = o760_ea(c, S0, 0x18);
+        c.sdr(2, a);
+        c.g[V0][0] = o760_lh(c, S1, 0xa); // glyph count
+        c.mult(0, 0, 2, 4);
+        c.g[A0][0] = c.lo[0];
+        o760_sw(c, S0, 0, V0);
+        call_ptr(c, 0x0031_7e30, 0x0039_1800)?; // alloc(count * 12)
+        o760_sw(c, S0, 0x4, V0);
+        c.g[T2][0] = 0;
+        o760_sw0(c, S0, 0x14);
+        c.g[T1][0] = 0;
+        c.g[V1][0] = o760_lw(c, S0, 0);
+        c.g[V0][0] = o760_lhu(c, S2, 0);
+        o760_sw(c, S0, 0x10, V0);
+        let no_glyphs = (c.g[V1][0] as i64) <= 0;
+        o760_sw(c, S0, 0xc, V0);
+        'glyphs: {
+            if no_glyphs {
+                break 'glyphs;
+            }
+            c.cycles += 5;
+            c.g[T4][0] = 0xac;
+            c.g[T3][0] = 0xa0;
+            c.g[A3][0] = c.g[S2][0];
+            c.g[T0][0] = 0;
+            loop {
+                // Copy the 11 bytes of glyph t1.
+                'copy: {
+                    c.cycles += 33;
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lhu(c, A3, 0);
+                    c.g[V0][0] = o760_add(c, T0, V0);
+                    o760_sh(c, V0, 0, A0);
+                    c.g[V1][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lbu(c, A3, 0x2);
+                    c.g[V1][0] = o760_add(c, T0, V1);
+                    o760_sb(c, V1, 0x2, A0);
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lbu(c, A3, 0x3);
+                    c.g[V0][0] = o760_add(c, T0, V0);
+                    o760_sb(c, V0, 0x3, A0);
+                    c.g[V1][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lhu(c, A3, 0x4);
+                    c.g[V1][0] = o760_add(c, T0, V1);
+                    o760_sh(c, V1, 0x4, A0);
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lhu(c, A3, 0x6);
+                    c.g[V0][0] = o760_add(c, T0, V0);
+                    o760_sh(c, V0, 0x6, A0);
+                    c.g[V1][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lbu(c, A3, 0x8);
+                    c.g[V1][0] = o760_add(c, T0, V1);
+                    o760_sb(c, V1, 0x8, A0);
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lbu(c, A3, 0x9);
+                    c.g[V0][0] = o760_add(c, T0, V0);
+                    o760_sb(c, V0, 0x9, A0);
+                    c.g[V1][0] = o760_lw(c, S0, 0x4);
+                    c.g[V0][0] = o760_lbu(c, A3, 0xa);
+                    c.g[V1][0] = o760_add(c, T0, V1);
+                    let first = c.g[T1][0] == 0;
+                    o760_sb(c, V1, 0xa, V0);
+                    if first {
+                        break 'copy;
+                    }
+                    // Extend the run of consecutive codes (font+0x10).
+                    c.cycles += 7;
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[V1][0] = o760_lw(c, S0, 0x10);
+                    c.g[V0][0] = o760_add(c, T0, V0);
+                    c.g[V0][0] = o760_lhu(c, V0, 0);
+                    c.g[V1][0] = o760_addi(c, V1, 1);
+                    if c.g[V0][0] == c.g[V1][0] {
+                        o760_sw(c, S0, 0x10, V0);
+                    }
+                }
+                // Code 0xac: font+8 points at its record; code 0x20: remember the index (t2).
+                'space: {
+                    c.cycles += 8;
+                    c.g[A1][0] = 0xc;
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.mult(0, 6, 9, 5);
+                    c.g[A0][0] = o760_add(c, A2, V0);
+                    c.g[V1][0] = o760_lhu(c, A0, 0);
+                    c.g[V0][0] = c.g[V1][0] ^ 0x20;
+                    let not_0xac = c.g[V1][0] != c.g[T4][0];
+                    if c.g[V0][0] == 0 {
+                        c.g[T2][0] = c.g[T1][0];
+                    }
+                    if not_0xac {
+                        break 'space;
+                    }
+                    c.cycles += 1;
+                    o760_sw(c, S0, 0x8, A0);
+                }
+                // A no-break space (0xa0) takes the metrics of the last space (record t2).
+                'nbsp: {
+                    c.cycles += 5;
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_add(c, A2, V0);
+                    c.g[V1][0] = o760_lhu(c, A0, 0);
+                    if c.g[V1][0] != c.g[T3][0] {
+                        c.g[V1][0] = o760_lw(c, S0, 0x4);
+                        break 'nbsp;
+                    }
+                    c.cycles += 29;
+                    c.mult(0, 2, 10, 5);
+                    c.g[A1][0] = o760_add(c, V0, S2);
+                    c.g[V0][0] = o760_lbu(c, A1, 0x2);
+                    o760_sb(c, A0, 0x2, V0);
+                    c.g[V1][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lbu(c, A1, 0x3);
+                    c.g[V1][0] = o760_add(c, A2, V1);
+                    o760_sb(c, V1, 0x3, A0);
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lhu(c, A1, 0x4);
+                    c.g[V0][0] = o760_add(c, A2, V0);
+                    o760_sh(c, V0, 0x4, A0);
+                    c.g[V1][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lhu(c, A1, 0x6);
+                    c.g[V1][0] = o760_add(c, A2, V1);
+                    o760_sh(c, V1, 0x6, A0);
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lbu(c, A1, 0x8);
+                    c.g[V0][0] = o760_add(c, A2, V0);
+                    o760_sb(c, V0, 0x8, A0);
+                    c.g[V1][0] = o760_lw(c, S0, 0x4);
+                    c.g[A0][0] = o760_lbu(c, A1, 0x9);
+                    c.g[V1][0] = o760_add(c, A2, V1);
+                    o760_sb(c, V1, 0x9, A0);
+                    c.g[V0][0] = o760_lw(c, S0, 0x4);
+                    c.g[V1][0] = o760_lbu(c, A1, 0xa);
+                    c.g[V0][0] = o760_add(c, A2, V0);
+                    o760_sb(c, V0, 0xa, V1);
+                    c.g[V1][0] = o760_lw(c, S0, 0x4);
+                }
+                // Track the greatest glyph extent (y offset + height) in font+0x14.
+                {
+                    c.cycles += 8;
+                    c.g[A0][0] = o760_lw(c, S0, 0x14);
+                    c.g[V1][0] = o760_add(c, A2, V1);
+                    c.g[A1][0] = o760_lb(c, V1, 0xa);
+                    c.g[V0][0] = o760_lbu(c, V1, 0x3);
+                    c.g[V0][0] = o760_add(c, V0, A1);
+                    c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[A0][0] != 0 {
+                        o760_sw(c, S0, 0x14, V0);
+                    }
+                }
+                c.cycles += 6;
+                c.g[V0][0] = o760_lw(c, S0, 0);
+                c.g[T1][0] = o760_addi(c, T1, 1);
+                c.g[A3][0] = o760_addi(c, A3, 0xc);
+                c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[T0][0] = o760_addi(c, T0, 0xc);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_1838);
+                    }
+                    continue;
+                }
+                break 'glyphs;
+            }
+        }
+        c.cycles += 10;
+        c.g[A1][0] = o760_lw(c, S1, 0x1c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = o760_add(c, S1, A1);
+        Callee {
+            addr: 0x0039_1a48,
+            f: ee::s12::Font_UploadTexture,
+        }
+        .call(c, 0x0039_19cc)?;
+        frame.restore(c, 16, 0x40);
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Font_UploadTexture(Font* self, FontTexHdr* img)` (0x391a48,
+/// `cFont::downloadTexture`): works out the power-of-two texture height,
+/// stores the UV scale (`1/height`, `1/width`) in the font, builds a 4-bit
+/// pixel buffer (`w * height / 2` bytes, copied from the header's shape data)
+/// and a 16-entry grey-alpha palette, uploads both through the graphics
+/// manager (`AddTexture1`) and frees the temporaries.
+pub fn font_upload_texture(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S0][0] = c.g[A1][0];
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S1][0] = 0x1;
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S4][0] = c.g[A0][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+        c.g[S5][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+        c.g[V1][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x6));
+        c.g[S1][0] = sx((c.g[S1][0] as u32) << 1);
+        'l_391a80: loop {
+            c.cycles += 7;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[S1][0] as i64)) as u64;
+            if c.g[V0][0] == 0u64 {
+                c.g[S1][0] = sx((c.g[S1][0] as u32) << 1);
+                if event_due(c) {
+                    deliver_event_here(c, 0x00391a80);
+                }
+                continue 'l_391a80;
+            } else {
+                'b_391b58: {
+                    c.cycles += 45;
+                    c.g[V0][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.mtc1(17, 1);
+                    c.cvt_s_w(1, 1);
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 0);
+                    c.g[A1][0] = 0x490000;
+                    c.mtc1(2, 2);
+                    c.cvt_s_w(2, 2);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2f40));
+                    c.div_s(1, 0, 1);
+                    c.g[A2][0] = 0x100;
+                    c.g[A3][0] = 0u64;
+                    c.div_s(0, 0, 2);
+                    c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x24));
+                    c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x27));
+                    c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sdl(2, (c.g[S4][0] as u32).wrapping_add(0x27));
+                    c.sdr(2, (c.g[S4][0] as u32).wrapping_add(0x20));
+                    c.g[A0][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.mult(0, 4, 4, 17);
+                    c.g[A0][0] = sx(((c.g[A0][0] as u32) as i32 >> 1) as u32);
+                    call_ptr(c, 0x00317e30, 0x00391af8)?;
+                    c.g[A1][0] = 0x490000;
+                    c.g[A3][0] = 0u64;
+                    c.g[A2][0] = 0x100;
+                    c.g[S3][0] = c.g[V0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2f50));
+                    c.g[A0][0] = 0x40;
+                    call_ptr(c, 0x00317e30, 0x00391b14)?;
+                    c.g[A2][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[S2][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[A1][0] = 0u64;
+                    c.mult(0, 6, 6, 17);
+                    c.g[A2][0] = sx(((c.g[A2][0] as u32) as i32 >> 1) as u32);
+                    call_ptr(c, 0x003e6448, 0x00391b30)?;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = 0u64;
+                    c.g[A2][0] = 0x40;
+                    call_ptr(c, 0x003e6448, 0x00391b40)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = c.g[V0][0] & 0x1000;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                    if t {
+                        break 'b_391b58;
+                    } else {
+                        c.cycles += 2;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                        c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        break 'b_391b58;
+                    }
+                }
+                c.cycles += 12;
+                c.g[A2][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = c.g[S3][0];
+                c.g[V0][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x6));
+                c.mult(0, 6, 6, 2);
+                c.g[A2][0] = sx(((c.g[A2][0] as u32) as i32 >> 1) as u32);
+                call_ptr(c, 0x003e6574, 0x00391b70)?;
+                c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_add(0x64));
+                c.g[T0][0] = 0xffffffffffffff80;
+                c.g[A3][0] = 0xf;
+                c.g[T1][0] = 0u64;
+                c.g[A1][0] = 0u64;
+                c.g[A0][0] = c.g[S2][0];
+                'l_391b88: loop {
+                    'b_391ba8: {
+                        c.cycles += 8;
+                        c.g[V0][0] = sx((c.g[A1][0] as u32) << 7);
+                        c.sb(c.g[A0][0] as u32, c.g[T0][0]);
+                        c.div(0, 2, 7);
+                        c.sb((c.g[A0][0] as u32).wrapping_add(0x1), c.g[T0][0]);
+                        c.sb((c.g[A0][0] as u32).wrapping_add(0x2), c.g[T0][0]);
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                        if c.g[A3][0] == c.g[T1][0] {
+                            break 'b_391ba8;
+                        } else {
+                            break 'b_391ba8;
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[V1][0] = ((c.g[A1][0] as i64) < 16i64) as u64;
+                    c.g[V0][0] = c.lo[0];
+                    c.sb((c.g[A0][0] as u32).wrapping_add(0x3), c.g[V0][0]);
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00391b88);
+                        }
+                        continue 'l_391b88;
+                    } else {
+                        'b_391c10: {
+                            c.cycles += 19;
+                            c.g[T3][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x10d8));
+                            c.g[V0][0] = 0x1;
+                            c.g[A3][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x4));
+                            c.g[V1][0] = 0xffffffffffffffff;
+                            c.g[A0][0] = c.lh((c.g[T3][0] as u32).wrapping_add(0x178));
+                            c.g[T0][0] = c.g[S1][0];
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                            c.g[A1][0] = c.g[S3][0];
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x18), c.g[V1][0]);
+                            c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            c.sw(c.g[SP][0] as u32, c.g[S2][0]);
+                            c.g[T1][0] = 0u64;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
+                            c.g[T2][0] = 0xb;
+                            c.g[V0][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x17c));
+                            let t = c.g[V0][0] as u32;
+                            c.g[T3][0] = 0x1;
+                            call_ptr(c, t, 0x00391c00)?;
+                            let t = c.g[S3][0] == 0u64;
+                            c.sw((c.g[S4][0] as u32).wrapping_add(0x60), c.g[V0][0]);
+                            if t {
+                                break 'b_391c10;
+                            } else {
+                                c.cycles += 2;
+                                c.g[A0][0] = c.g[S3][0];
+                                call_ptr(c, 0x00317e98, 0x00391c10)?;
+                                break 'b_391c10;
+                            }
+                        }
+                        'b_391c24: {
+                            c.cycles += 2;
+                            let t = c.g[S2][0] == 0u64;
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                            if t {
+                                break 'b_391c24;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.g[S2][0];
+                                call_ptr(c, 0x00317e98, 0x00391c20)?;
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                                break 'b_391c24;
+                            }
+                        }
+                        c.cycles += 8;
+                        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+                        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+                        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+                        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+                        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                        let t = c.g[RA][0] as u32;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// `DeferMan* DeferMan_ctor(DeferMan* self)` (0x394d50).
+///
+/// Constructs the deferred-work manager (`new (self) sFontCache`): fills
+/// three tables of `-1` halfword pairs (2599 records of 0x80 bytes from
+/// `+0x80`, 1023 records of 0x18 bytes from `+0x51484`, one 0x10-byte record
+/// at `+0x69ca8`), each record followed by `memset(rec, 0, 0x10)`, then
+/// runs two empty counting loops (0x800 and 12 iterations). Returns `self`.
+#[allow(unused_labels, unused_assignments, unused_parens, unreachable_code)]
+pub fn defer_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+        c.g[V0][0] = 0xa27;
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S3][0] = c.g[A0][0];
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x80));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S2][0] = 0xffffffffffffffff;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S4][0] = 0xffffffffffffffff;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        'l_394d80: loop {
+            c.cycles += 4;
+            c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x80));
+            c.g[A1][0] = 0u64;
+            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+            'l_394d90: loop {
+                c.cycles += 7;
+                c.sh(c.g[V1][0] as u32, c.g[S2][0]);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = (c.g[A1][0] < 0x2u64) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00394d90);
+                    }
+                    continue 'l_394d90;
+                } else {
+                    c.cycles += 6;
+                    c.g[A1][0] = 0u64;
+                    c.g[RA][0] = sx(0x00394db8);
+                    c.g[A2][0] = 0x10;
+                    call_ptr(c, 0x00416210, 0x00394db8)?;
+                    c.g[V0][0] = c.g[S1][0];
+                    let t = c.g[V0][0] != c.g[S4][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00394d80);
+                        }
+                        continue 'l_394d80;
+                    } else {
+                        c.cycles += 7;
+                        c.g[V0][0] = 0x50000;
+                        c.g[V1][0] = 0x3ff;
+                        c.g[V0][0] = c.g[V0][0] | 0x1484;
+                        c.g[S2][0] = 0xffffffffffffffff;
+                        c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[S4][0] = 0xffffffffffffffff;
+                        'l_394de0: loop {
+                            c.cycles += 4;
+                            c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                            c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+                            c.g[A1][0] = 0u64;
+                            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                            'l_394df0: loop {
+                                c.cycles += 7;
+                                c.sh(c.g[V1][0] as u32, c.g[S2][0]);
+                                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                c.g[V0][0] = (c.g[A1][0] < 0x2u64) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x00394df0);
+                                    }
+                                    continue 'l_394df0;
+                                } else {
+                                    c.cycles += 6;
+                                    c.g[A1][0] = 0u64;
+                                    c.g[RA][0] = sx(0x00394e18);
+                                    c.g[A2][0] = 0x10;
+                                    call_ptr(c, 0x00416210, 0x00394e18)?;
+                                    c.g[V1][0] = c.g[S1][0];
+                                    let t = c.g[V1][0] != c.g[S4][0];
+                                    c.g[A0][0] = c.g[S0][0];
+                                    if t {
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x00394de0);
+                                        }
+                                        continue 'l_394de0;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = 0x7ff;
+                                        c.g[V1][0] = 0xffffffffffffffff;
+                                        'l_394e30: loop {
+                                            c.cycles += 7;
+                                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                                            let t = c.g[V0][0] != c.g[V1][0];
+                                            c.g[A1][0] = 0u64;
+                                            if t {
+                                                if event_due(c) {
+                                                    deliver_event_here(c, 0x00394e30);
+                                                }
+                                                continue 'l_394e30;
+                                            } else {
+                                                c.cycles += 5;
+                                                c.g[V0][0] = 0x60000;
+                                                c.g[V0][0] = c.g[V0][0] | 0x9ca8;
+                                                c.g[A2][0] = 0xffffffffffffffff;
+                                                c.g[A0][0] = sx((c.g[S3][0] as u32)
+                                                    .wrapping_add(c.g[V0][0] as u32));
+                                                c.g[V1][0] =
+                                                    sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                                                'l_394e60: loop {
+                                                    c.cycles += 7;
+                                                    c.sh(c.g[V1][0] as u32, c.g[A2][0]);
+                                                    c.g[A1][0] =
+                                                        sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                                    c.g[V0][0] = (c.g[A1][0] < 0x2u64) as u64;
+                                                    let t = c.g[V0][0] != 0u64;
+                                                    c.g[V1][0] =
+                                                        sx((c.g[V1][0] as u32).wrapping_add(0x2));
+                                                    if t {
+                                                        if event_due(c) {
+                                                            deliver_event_here(c, 0x00394e60);
+                                                        }
+                                                        continue 'l_394e60;
+                                                    } else {
+                                                        c.cycles += 5;
+                                                        c.g[A1][0] = 0u64;
+                                                        c.g[RA][0] = sx(0x00394e88);
+                                                        c.g[A2][0] = 0x10;
+                                                        call_ptr(c, 0x00416210, 0x00394e88)?;
+                                                        c.g[V1][0] = 0xffffffffffffffff;
+                                                        c.g[V0][0] = 0xb;
+                                                        'l_394e90: loop {
+                                                            c.cycles += 7;
+                                                            c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                                .wrapping_sub(0x1));
+                                                            let t = c.g[V0][0] != c.g[V1][0];
+                                                            c.lq(
+                                                                17,
+                                                                (c.g[SP][0] as u32)
+                                                                    .wrapping_add(0x40),
+                                                            );
+                                                            if t {
+                                                                if event_due(c) {
+                                                                    deliver_event_here(
+                                                                        c, 0x00394e90,
+                                                                    );
+                                                                }
+                                                                continue 'l_394e90;
+                                                            } else {
+                                                                c.cycles += 8;
+                                                                c.g[V0][0] = c.g[S3][0];
+                                                                c.lq(
+                                                                    16,
+                                                                    (c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x50),
+                                                                );
+                                                                c.lq(
+                                                                    18,
+                                                                    (c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x30),
+                                                                );
+                                                                c.lq(
+                                                                    19,
+                                                                    (c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x20),
+                                                                );
+                                                                c.lq(
+                                                                    20,
+                                                                    (c.g[SP][0] as u32)
+                                                                        .wrapping_add(0x10),
+                                                                );
+                                                                c.g[RA][0] =
+                                                                    c.ld(c.g[SP][0] as u32);
+                                                                let t = c.g[RA][0] as u32;
+                                                                c.g[SP][0] = sx((c.g[SP][0]
+                                                                    as u32)
+                                                                    .wrapping_add(0x60));
+                                                                c.pc = t;
+                                                                return Ok(());
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
+/// `void UIEngine_StoreWord(int* dst, int value)` (0x397138): `*dst = value`.
+pub fn ui_engine_store_word(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    pub(crate) use crate::game::sound::bankmanager::tests::oc762_install_fakes;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc760_install_fakes;
+    pub(crate) use crate::game::visualfx::lensfx::tests::oc780_install_fakes;
 
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
@@ -5854,6 +6517,153 @@ pub(crate) mod tests {
                 let this = DATA + 0x1000;
                 c.g[A0][0] = sx(this);
                 c.bus.write32(this + 0x13e4, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::debugfe::tests::OC798_OBJ;
+    pub(crate) use crate::game::fe::feridermanager::tests::OC760_WORLD;
+    pub(crate) use crate::game::fe::festatecharselect::tests::oc762_force;
+
+    pub(crate) use crate::game::fe::festatecharselect::tests::FX_SELF_2 as FX_SELF;
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC760_CTRL;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC760_MAGIC;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC760_OBJ;
+    pub(crate) use crate::game::sound::soundsys::tests::oc780_arm;
+
+    pub(crate) use crate::game::worldpainter::worldpainterman::tests::oc762_machine;
+
+    pub(crate) const OC760_FILE: u32 = DATA + 0x22_0000;
+
+    pub(crate) const OC760_VT: u32 = DATA + 0x24_0000;
+
+    /// Build a font file with `n` glyph records and a texture header, the
+    /// world object the texture upload reads, and the fakes' gate.
+    #[test]
+    fn font_parse_glyphs_matches() {
+        check(
+            ee::s12::f_00391788__generated,
+            font_parse_glyphs,
+            200,
+            &|c, seed| {
+                oc760_install_fakes();
+                let mut r = machine(c, seed, 0x39_1788, 12);
+                c.bus.write32(OC760_CTRL, OC760_MAGIC);
+                let font = OC760_OBJ;
+                let file = OC760_FILE;
+                let n = 1 + seed % 7;
+                c.g[A0][0] = sx(font);
+                c.g[A1][0] = sx(file);
+                c.bus.write16(file + 0xa, n as u16);
+                c.bus.write8(file + 0x10, r.next_u32() as u8);
+                c.bus.write8(file + 0x11, r.next_u32() as u8);
+                c.bus.write32(file + 0x14, 0x100); // glyph records
+                c.bus.write32(file + 0x1c, 0x400); // texture header
+                for i in 0..n {
+                    let g = file + 0x100 + 12 * i;
+                    // Codes: space, no-break space, the 0xac fallback, consecutive, random.
+                    let code = match r.next_u32() % 5 {
+                        0 => 0x20,
+                        1 => 0xa0,
+                        2 => 0xac,
+                        3 => i,
+                        _ => r.next_u32() & 0xffff,
+                    };
+                    c.bus.write16(g, code as u16);
+                    for b in 2..11 {
+                        // Heights and offsets: bytes, some negative.
+                        c.bus.write8(g + b, r.next_u32() as u8);
+                    }
+                }
+                // The texture header.
+                let tex = file + 0x400;
+                c.bus.write16(tex + 4, 8 + 2 * (r.next_u32() & 7) as u16);
+                c.bus.write16(tex + 6, 1 + (r.next_u32() & 0x3f) as u16);
+                c.bus
+                    .write32(tex + 0xc, if seed % 2 == 0 { 0x1000 } else { 0 });
+                c.bus.write32(tex + 0x10, 0x40);
+                // gp+0x2a90: the world; world+0x10d8: its vtable block.
+                c.bus.write32(GAME_GP + 0x2a90, OC760_WORLD);
+                c.bus.write32(OC760_WORLD + 0x10d8, OC760_VT);
+                c.bus.write16(OC760_VT + 0x178, r.next_u32() as u16 & 0xff);
+                c.bus.write32(OC760_VT + 0x17c, fakes::FAKE);
+            },
+        );
+    }
+
+    pub(crate) const FX_NAME: u32 = DATA + 0x21_5000;
+
+    /// `Font_UploadTexture`: image heights 1..200 (so 1 to 8 doublings),
+    /// widths 2..64, with and without the 0x1000 "offset" flag; the two
+    /// buffer allocations return a pointer or 0 (forced), skipping the
+    /// matching `free`; the graphics-manager virtual call and the memory
+    /// helpers are fakes, some of which unwind.
+    #[test]
+    fn font_upload_texture_matches() {
+        oc762_install_fakes();
+        covered(
+            ssx3_ee::s12::f_00391a48__generated,
+            font_upload_texture,
+            300,
+            &|c, seed| {
+                let mut r = oc762_machine(c, seed, 0x0039_1a48, 7);
+                fill(c, &mut r, FX_SELF, 0x40);
+                let h = [1u32, 2, 3, 16, 31, 64, 100, 200, 0xffff][(seed % 9) as usize];
+                let w = 2 + 2 * (r.next_u32() % 32);
+                c.bus.write16(FX_NAME + 4, w as u16);
+                c.bus.write16(FX_NAME + 6, h as u16);
+                c.bus.write32(
+                    FX_NAME + 0xc,
+                    if seed % 2 == 0 {
+                        0x1000
+                    } else {
+                        r.next_u32() & !0x1000
+                    },
+                );
+                c.bus.write32(FX_NAME + 0x10, 0x20 + (r.next_u32() & 0x3c));
+                if seed % 7 == 3 {
+                    oc762_force(c, 0x0031_7e30, 0, 0);
+                }
+                if seed % 5 == 1 {
+                    oc762_force(c, 0x0031_7e30, 1, 0);
+                }
+                c.g[A0][0] = sx(FX_SELF);
+                c.g[A1][0] = sx(FX_NAME);
+            },
+        );
+    }
+
+    /// `DeferMan_ctor`: 3600 `memset` calls (faked, may unwind) between the
+    /// record loops.
+    #[test]
+    fn defer_man_ctor_matches() {
+        oc780_install_fakes();
+        fakes::covered(
+            ee::s13::f_00394d50__generated,
+            defer_man_ctor,
+            40,
+            &|c, seed| {
+                machine(c, seed, 0x780e, 3600);
+                oc780_arm(c);
+                c.g[A0][0] = sx(DATA + 0x1000);
+            },
+        );
+    }
+
+    /// `UIEngine_StoreWord`: stores `a1` at `a0`.
+    #[test]
+    fn ui_engine_store_word_matches() {
+        check(
+            ee::s13::f_00397138__generated,
+            ui_engine_store_word,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x798a, 0);
+                c.pc = 0x0039_7138;
+                c.g[RA][0] = sx(crate::difftest::RA);
+                c.g[A0][0] = sx(OC798_OBJ + 4 * (seed & 7));
+                c.g[A1][0] = r.next_u32() as u64 | ((seed as u64) << 40);
             },
         );
     }

@@ -86,8 +86,6 @@ pub mod native_files;
 pub mod oc643;
 #[cfg(feature = "oc658")]
 pub mod oc658;
-#[cfg(feature = "oc710")]
-pub mod oc710;
 pub mod plugin_host;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
@@ -114,8 +112,6 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
-    #[cfg(feature = "oc710")]
-    v.extend_from_slice(oc710::OVERRIDES);
     #[cfg(feature = "oc658")]
     v.extend_from_slice(oc658::OVERRIDES);
     #[cfg(feature = "oc643")]

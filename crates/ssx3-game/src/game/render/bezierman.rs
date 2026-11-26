@@ -41,6 +41,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_bezier_man_render_patch_fx,
         "PS2BezierMan_RenderPatchFX",
     ),
+    (0x0038_aef8, ps2_bezier_man_create, "PS2BezierMan_Create"),
+    (0x0038_af30, cps2_bezier_man_init, "PS2BezierMan_Init"),
+    (0x0038_b158, ps2_bezier_man_v04, "PS2BezierMan_v04"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -864,10 +867,224 @@ pub fn ps2_bezier_man_build_patch_packet(c: &mut Cpu) {
     ret(c);
 }
 
+/// `void cPS2BezierMan::Init(cPS2BezierMan* self)` (0x38af30).
+///
+/// Initialises the patch cache (`BezierPatchCache_Init(self + 0x10, 900, 220,
+/// 140, 0, 146, 93)`), allocates the three VIF caches (0x38400, 0xdc00,
+/// 0x8c00 bytes), sets the render flags and LOD distances, calls the base
+/// init (`0x38d638`), and fills the 6x6 (step 0.2) and 8x8 (step 1/7)
+/// grid UV tables at 0x5049c0 (`D_005049C0`).
+pub fn cps2_bezier_man_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 58;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.g[T0][0] = 0u64;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[T1][0] = 0x92;
+        c.g[S0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        c.g[T2][0] = 0x5d;
+        c.g[A1][0] = 0x384;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+        c.g[A2][0] = 0xdc;
+        c.g[A3][0] = 0x8c;
+        call_ptr(c, 0x00372b78, 0x0038af60)?;
+        c.g[A1][0] = 0x490000;
+        c.g[A0][0] = 0x30000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2eb0));
+        c.g[A0][0] = c.g[A0][0] | 0x8400;
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x0038af7c)?;
+        c.g[A1][0] = 0x490000;
+        c.g[A0][0] = 0xdc00;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2ec0));
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x440), c.g[V0][0]);
+        call_ptr(c, 0x00317e30, 0x0038af98)?;
+        c.g[A1][0] = 0x490000;
+        c.g[A2][0] = 0u64;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2ed0));
+        c.g[A0][0] = 0x8c00;
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x444), c.g[V0][0]);
+        call_ptr(c, 0x00317e30, 0x0038afb4)?;
+        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x440));
+        c.g[V1][0] = 0x1;
+        c.g[AT][0] = 0x41000000;
+        c.mtc1(1, 2);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x444));
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x26cc));
+        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x26c8));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x354), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x44c), c.g[A2][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x454), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x350), c.g[V1][0]);
+        c.swc1(2, (c.g[S0][0] as u32).wrapping_add(0x358));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x448), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x344), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x348), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x34c), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x450), c.g[A1][0]);
+        c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x33c));
+        c.swc1(1, (c.g[S0][0] as u32).wrapping_add(0x340));
+        call_ptr(c, 0x0038d638, 0x0038b008)?;
+        c.g[V0][0] = 0x500000;
+        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x26c4));
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4a00));
+        c.g[V1][0] = 0u64;
+        'l_38b018: loop {
+            c.cycles += 8;
+            c.mtc1(3, 0);
+            c.cvt_s_w(0, 0);
+            c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+            c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+            c.g[A0][0] = 0u64;
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            c.mul_s(1, 0, 2);
+            'l_38b038: loop {
+                c.cycles += 13;
+                c.mtc1(4, 0);
+                c.cvt_s_w(0, 0);
+                c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = ((c.g[A0][0] as i64) < 6i64) as u64;
+                c.mul_s(0, 0, 2);
+                c.swc1(0, c.g[SP][0] as u32);
+                c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
+                c.ldr(7, c.g[SP][0] as u32);
+                c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
+                c.sdr(7, c.g[V1][0] as u32);
+                let t = c.g[V0][0] != 0u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0038b038);
+                    }
+                    continue 'l_38b038;
+                } else {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.g[A1][0];
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < 6i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0x500000;
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0038b018);
+                        }
+                        continue 'l_38b018;
+                    } else {
+                        c.cycles += 3;
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x26c0));
+                        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4b80));
+                        c.g[V1][0] = 0u64;
+                        'l_38b088: loop {
+                            c.cycles += 8;
+                            c.mtc1(3, 0);
+                            c.cvt_s_w(0, 0);
+                            c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+                            c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                            c.g[A0][0] = 0u64;
+                            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                            c.mul_s(1, 0, 2);
+                            'l_38b0a8: loop {
+                                c.cycles += 13;
+                                c.mtc1(4, 0);
+                                c.cvt_s_w(0, 0);
+                                c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                                c.g[V0][0] = ((c.g[A0][0] as i64) < 8i64) as u64;
+                                c.mul_s(0, 0, 2);
+                                c.swc1(0, c.g[SP][0] as u32);
+                                c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
+                                c.ldr(7, c.g[SP][0] as u32);
+                                c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
+                                c.sdr(7, c.g[V1][0] as u32);
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x40));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x0038b0a8);
+                                    }
+                                    continue 'l_38b0a8;
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[V1][0] = c.g[A1][0];
+                                    c.g[V0][0] = ((c.g[V1][0] as i64) < 8i64) as u64;
+                                    let t = c.g[V0][0] != 0u64;
+                                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                    if t {
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x0038b088);
+                                        }
+                                        continue 'l_38b088;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                                        let t = c.g[RA][0] as u32;
+                                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                        c.pc = t;
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// `PS2BezierMan* PS2BezierMan_Create(void)` (0x38aef8): allocates 0x9c90
+/// bytes (`EA_MemAlloc` named, name at 0x492ea0) and runs the constructor.
+pub fn ps2_bezier_man_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx(0x0049_0000u32.wrapping_add(0x2ea0));
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x9c90;
+        call_ptr(c, 0x0031_7d70, 0x0038_af18)?;
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x0038_ae60,
+            f: ee::s12::PS2BezierMan_ctor,
+        }
+        .call(c, 0x0038_af20)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Offset of the embedded `BezierPatchCache` in `cPS2BezierMan`.
+pub(crate) const PS2_BEZIER_MAN_V04_CACHE: u32 = 0x10;
+
+/// `void PS2BezierMan_v04(cPS2BezierMan* man)` (0x38b158, `cPS2BezierMan_Reset`):
+/// resets the patch cache embedded at `man + 0x10`.
+pub fn ps2_bezier_man_v04(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(PS2_BEZIER_MAN_V04_CACHE));
+        call_ptr(c, 0x0037_39d0, 0x0038_b168)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc778_install_fakes;
 
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
@@ -1109,6 +1326,104 @@ pub(crate) mod tests {
                         let a = (bm as i32 + 0x44c + 4 * t) as u32;
                         c.bus.write32(a, DATA + 0x20000 + 0x800 * (t + 5) as u32);
                     }
+                }
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc778_arm;
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// `PS2BezierMan_Init`: the real `BezierPatchCache_Init` and the grid
+    /// loops over random FPU constants, with the unwinds of its calls.
+    #[test]
+    fn cps2_bezier_man_init_matches() {
+        oc778_install_fakes();
+        fakes::covered(
+            ee::s12::f_0038af30__generated,
+            cps2_bezier_man_init,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x778c, 16);
+                oc778_arm(c);
+                c.g[A0][0] = sx(DATA + 0x1_0000);
+                for off in [0x26ccu32, 0x26c8, 0x26c4, 0x26c0] {
+                    let v = r.f32(10.0);
+                    c.bus.write32(GAME_GP - off, v);
+                }
+            },
+        );
+    }
+
+    /// Gate word of the allocator fake (in each machine's own RAM).
+    pub(crate) const OC795_CTRL: u32 = DATA + 0x20_0010;
+
+    pub(crate) const OC795_MAGIC: u32 = 0x0795_f4c3;
+
+    pub(crate) static OC795_PREV_ALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gated fake of the allocator (`0x317d70`): logs the call like
+    /// `fakes::fake_call`, may unwind, returns a pointer into the data area.
+    pub(crate) fn oc795_fake_alloc(c: &mut Cpu) {
+        if c.bus.read32(OC795_CTRL) != OC795_MAGIC {
+            return fakes::fall_back(c, &OC795_PREV_ALLOC, ee::s10::f_00317d70__generated);
+        }
+        fakes::fake_call(c, 0x0031_7d70);
+    }
+
+    pub(crate) fn oc795_hook() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc795_fake_alloc,
+            &OC795_PREV_ALLOC,
+        );
+    }
+
+    /// `PS2BezierMan_Create`: the allocator is faked (and unwinds on some
+    /// seeds); the constructor runs for real on the fixture.
+    #[test]
+    fn ps2_bezier_man_create_matches() {
+        oc795_hook();
+        fakes::covered(
+            ee::s12::f_0038aef8__generated,
+            ps2_bezier_man_create,
+            30,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x7950_0002, 1);
+                c.bus.write32(OC795_CTRL, OC795_MAGIC);
+            },
+        );
+    }
+
+    /// `PS2BezierMan_v04`: resets the cache at +0x10; pool counts of 0..3 with
+    /// valid array pointers so the real `BezierPatchCache_Reset` and `MEM_fill`
+    /// run on short paths.
+    #[test]
+    fn ps2_bezier_man_v04_matches() {
+        check(
+            ssx3_ee::s12::f_0038b158__generated,
+            ps2_bezier_man_v04,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x799a, 0);
+                c.pc = 0x0038_b158;
+                let man = DATA + 0x1_0000;
+                let cache = man + PS2_BEZIER_MAN_V04_CACHE;
+                c.g[A0][0] = sx(man);
+                for k in 0..3u32 {
+                    let (n, nb) = (r.next_u32() % 4, r.next_u32() % 4);
+                    c.bus.write32(cache + 4 * k, n);
+                    c.bus.write32(cache + 0x1a8 + 4 * k, nb);
+                    c.bus
+                        .write32(cache + 0xc + 4 * k, DATA + 0x2_0000 + 0x400 * k);
+                    c.bus
+                        .write32(cache + 0x18 + 4 * k, DATA + 0x3_0000 + 0x400 * k);
+                    c.bus
+                        .write32(cache + 0x30 + 4 * k, DATA + 0x4_0000 + 0x400 * k);
+                    c.bus
+                        .write32(cache + 0x1cc + 4 * k, DATA + 0x5_0000 + 0x400 * k);
                 }
             },
         );

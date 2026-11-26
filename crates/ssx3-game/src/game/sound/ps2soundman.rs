@@ -7,10 +7,10 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Frame;
 pub(crate) use crate::game::be::belibrary::EA_MEM_FREE;
 use crate::guest::Addr;
-#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -18,11 +18,14 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
-    0x002a_9988,
-    snd_play_params_set_radius_vanish,
-    "SndPlayParams_SetRadiusVanish",
-)];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (
+        0x002a_9988,
+        snd_play_params_set_radius_vanish,
+        "SndPlayParams_SetRadiusVanish",
+    ),
+    (0x002a_9350, snd_play_params_ctor, "SndPlayParams_ctor"),
+];
 
 /// Direct calls through the generated function (which dispatches into the
 /// replacement when one is installed).
@@ -126,6 +129,346 @@ pub fn snd_play_params_dtor(c: &mut Cpu) {
     })
 }
 
+/// `cSndPlayOpts::cSndPlayOpts(this, inchrg, heap)` (`SndPlayParams_ctor`,
+/// 0x2a9350, frame 0x50): constructs the sound-manager ref at +0x88 when
+/// `inchrg` is set, points the object's vtable at its (stack copy of the)
+/// 0x483be0 table when not, then allocates the play-option arrays (current
+/// 0x60 bytes, nine 0x10-byte per-depth arrays, the 0x40 envelope array, five
+/// more 0x10 arrays), pushes one level (`depth` +0x1c from -1 to 0), seeds its
+/// fields (volume 127, envelope 100/90/50, ...), runs `SNDplaysetdef` on the
+/// level's descriptor, copies the result back into the object's current
+/// options (+4..+0x1c) and pops the level.
+pub fn snd_play_params_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2a9380: {
+            c.cycles += 8;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S0][0] = c.g[A1][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            c.g[S1][0] = c.g[A0][0];
+            let t = c.g[S0][0] == 0u64;
+            c.g[A1][0] = c.g[A2][0];
+            if t {
+                break 'b_2a9380;
+            } else {
+                c.cycles += 4;
+                c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x88));
+                c.g[A0][0] = c.g[V0][0];
+                c.g[RA][0] = sx(0x002a9380);
+                c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                Callee {
+                    addr: 0x002ade88,
+                    f: ee::s08::f_002ade88,
+                }
+                .call(c, 0x002a9380)?;
+                break 'b_2a9380;
+            }
+        }
+        'b_2a93d4: {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[V1][0] = 0x480000;
+            c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3be0));
+            let t = c.g[S0][0] != 0u64;
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A3][0]);
+            if t {
+                break 'b_2a93d4;
+            } else {
+                c.cycles += 16;
+                c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x3be0));
+                c.g[V0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x10));
+                c.g[A0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x18));
+                c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+                c.sd(c.g[SP][0] as u32, c.g[A2][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x18), c.g[A0][0]);
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[SP][0]);
+                c.g[V1][0] = c.lhu((c.g[A3][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x88));
+                c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                break 'b_2a93d4;
+            }
+        }
+        c.cycles += 251;
+        c.g[V0][0] = 0xffffffffffffffff;
+        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3178));
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+        c.g[A0][0] = 0x60;
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        c.g[RA][0] = sx(0x002a93f8);
+        c.g[S0][0] = 0x18;
+        call_ptr(c, 0x00317e30, 0x002a93f8)?;
+        c.g[A1][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3188));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a9414);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a9414)?;
+        c.g[A1][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3198));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a9430);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a9430)?;
+        c.g[A1][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x31a8));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a944c);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a944c)?;
+        c.g[A1][0] = 0x4a0000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x3c), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3750));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a9468);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a9468)?;
+        c.g[A1][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x60), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x31b8));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a9484);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a9484)?;
+        c.g[A1][0] = 0x4a0000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x64), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3758));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a94a0);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a94a0)?;
+        c.g[A1][0] = 0x4a0000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x68), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3760));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a94bc);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a94bc)?;
+        c.g[A1][0] = 0x4a0000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x6c), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3768));
+        c.g[A0][0] = 0x40;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a94d8);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a94d8)?;
+        c.g[A1][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x70), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x31c8));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a94f4);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a94f4)?;
+        c.g[A1][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x74), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x31d8));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a9510);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a9510)?;
+        c.g[A1][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x78), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x31e8));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a952c);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a952c)?;
+        c.g[A1][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x7c), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x31f8));
+        c.g[A0][0] = 0x10;
+        c.g[A2][0] = 0u64;
+        c.g[RA][0] = sx(0x002a9548);
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a9548)?;
+        c.g[A1][0] = 0x480000;
+        c.g[A3][0] = 0u64;
+        c.g[A0][0] = 0x10;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x80), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3208));
+        c.g[RA][0] = sx(0x002a9564);
+        c.g[A2][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x002a9564)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[A1][0] = 0u64;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x84), c.g[V0][0]);
+        c.g[A2][0] = 0x8;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.mult(0, 2, 2, 16);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.ldl(3, (c.g[S1][0] as u32).wrapping_add(0xb));
+        c.ldr(3, (c.g[S1][0] as u32).wrapping_add(0x4));
+        c.ldl(4, (c.g[S1][0] as u32).wrapping_add(0x13));
+        c.ldr(4, (c.g[S1][0] as u32).wrapping_add(0xc));
+        c.ldl(7, (c.g[S1][0] as u32).wrapping_add(0x1b));
+        c.ldr(7, (c.g[S1][0] as u32).wrapping_add(0x14));
+        c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x7));
+        c.sdr(3, c.g[V0][0] as u32);
+        c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0xf));
+        c.sdr(4, (c.g[V0][0] as u32).wrapping_add(0x8));
+        c.sdl(7, (c.g[V0][0] as u32).wrapping_add(0x17));
+        c.sdr(7, (c.g[V0][0] as u32).wrapping_add(0x10));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x24), 0u64);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[A3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
+        c.mult(0, 4, 4, 16);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+        c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[RA][0] = sx(0x002a9630);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+        call_ptr(c, 0x00416210, 0x002a9630)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[A0][0] = 0x64;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x60));
+        c.g[A1][0] = 0x5a;
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[A2][0] = 0x32;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A3][0] = 0x7f;
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[T0][0] = 0x1;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6c));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[A1][0]);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[A2][0]);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x80));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x78));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, c.g[A3][0]);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        c.mult(0, 4, 4, 16);
+        c.g[RA][0] = sx(0x002a975c);
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, 0x003ba020, 0x002a975c)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.g[S1][0];
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        c.mult(0, 4, 4, 16);
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.ldl(3, (c.g[A0][0] as u32).wrapping_add(0x7));
+        c.ldr(3, c.g[A0][0] as u32);
+        c.ldl(5, (c.g[A0][0] as u32).wrapping_add(0xf));
+        c.ldr(5, (c.g[A0][0] as u32).wrapping_add(0x8));
+        c.ldl(6, (c.g[A0][0] as u32).wrapping_add(0x17));
+        c.ldr(6, (c.g[A0][0] as u32).wrapping_add(0x10));
+        c.sdl(3, (c.g[S1][0] as u32).wrapping_add(0xb));
+        c.sdr(3, (c.g[S1][0] as u32).wrapping_add(0x4));
+        c.sdl(5, (c.g[S1][0] as u32).wrapping_add(0x13));
+        c.sdr(5, (c.g[S1][0] as u32).wrapping_add(0xc));
+        c.sdl(6, (c.g[S1][0] as u32).wrapping_add(0x1b));
+        c.sdr(6, (c.g[S1][0] as u32).wrapping_add(0x14));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -163,6 +506,42 @@ pub(crate) mod tests {
                     _ => r.edge_f32(),
                 };
                 c.g[A0][0] = sx(params);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc769_install_fakes;
+    pub(crate) use crate::game::sound::soundsys::tests::oc769_machine;
+
+    pub(crate) use crate::game::sound::soundsys::tests::OC769_THIS;
+
+    /// `SndPlayParams_ctor` with `inchrg` 1 (sound-manager ref constructed)
+    /// and 0 (vtable copy on the stack, `this` pointing at a vtable slot
+    /// area), a zeroed object, the fifteen allocations and the level setup
+    /// (real `memset`, faked allocator and `SNDplaysetdef`), and a fake
+    /// unwinding in one of the first calls.
+    #[test]
+    fn snd_play_params_ctor_matches() {
+        oc769_install_fakes();
+        check(
+            ee::s08::f_002a9350__generated,
+            snd_play_params_ctor,
+            80,
+            &|c, seed| {
+                let mut r = oc769_machine(c, seed, 18);
+                c.bus.write32(OC769_THIS, OC769_THIS + 0x4000);
+                for i in 1..0x30 {
+                    c.bus.write32(OC769_THIS + 4 * i, r.next_u32());
+                }
+                c.bus.write32(OC769_THIS, OC769_THIS + 0x4000);
+                // The constant table the vtable copy reads.
+                for i in 0..0x10 {
+                    c.bus.write32(0x0048_3be0 + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(OC769_THIS);
+                c.g[A1][0] = (seed % 2) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.pc = 0x002a_9350;
             },
         );
     }

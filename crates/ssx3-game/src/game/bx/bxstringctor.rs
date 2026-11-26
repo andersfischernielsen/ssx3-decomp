@@ -354,6 +354,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Path_GetFirstEventType1Start",
     ),
     (0x0026_ade8, path_data_get_field_4c, "PathData_GetField4C"),
+    (0x0026_ada8, path_data_load_file_2, "PathData_LoadFile"),
+    (
+        0x0026_ae70,
+        path_data_reload_paths_2,
+        "PathData_ReloadPaths",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3801,10 +3807,136 @@ pub fn path_data_reload_paths(c: &mut Cpu) {
     });
 }
 
+/// `PathData_LoadFile` (0x0026ada8): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn path_data_load_file_2(c: &mut Cpu) {
+    if c.pc != 0x0026ada8 {
+        return ee::s07::f_0026ada8__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 16;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = c.g[A1][0];
+        c.g[RA][0] = sx(0x0026adc4);
+        c.g[A1][0] = 0u64;
+        call_ptr(c, 0x003e22f0, 0x0026adc4)?;
+        c.g[V1][0] = 0x1;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x48), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), c.g[V1][0]);
+        c.g[RA][0] = sx(0x0026add8);
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0026adf0,
+            f: ee::s07::PathData_Parse,
+        }
+        .call(c, 0x0026add8)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void PathData_ReloadPaths(PathData* self, char* file)`: frees the old path buffer (or loads the file through `PathData_LoadFile` when there was none), then loads the decompressed file, remembers the buffer at +0x48 and re-reads the int header, the AI paths and the track paths.
+/// Hand port of the generated body (PathData_ReloadPaths, 0x0026ae70), every register, cycle and
+/// call kept; any other `pc` (a resume after an unwound callee) runs the generated body.
+pub fn path_data_reload_paths_2(c: &mut Cpu) {
+    if c.pc != 0x0026ae70 {
+        return ee::s07::f_0026ae70__generated(c);
+    }
+    guest(c, |c| {
+        'b_26aeb0: {
+            'b_26aea0: {
+                c.cycles += 8;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                c.g[S1][0] = c.g[A0][0];
+                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x48));
+                let t = c.g[A0][0] == 0u64;
+                c.g[S0][0] = c.g[A1][0];
+                if t {
+                    break 'b_26aea0;
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0026ae98);
+                    call_ptr(c, 0x00317e98, 0x0026ae98)?;
+                    let t = true;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x48), 0u64);
+                    if t {
+                        break 'b_26aeb0;
+                    } else {
+                        break 'b_26aea0;
+                    }
+                }
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[RA][0] = sx(0x0026aeac);
+            c.g[A1][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0026ada8,
+                f: ee::s07::PathData_LoadFile,
+            }
+            .call(c, 0x0026aeac)?;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x48), 0u64);
+            break 'b_26aeb0;
+        }
+        c.cycles += 20;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[RA][0] = sx(0x0026aebc);
+        c.g[A1][0] = 0u64;
+        call_ptr(c, 0x003e22f0, 0x0026aebc)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[SP][0];
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x48), c.g[S0][0]);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[RA][0] = sx(0x0026aed4);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+        Callee {
+            addr: 0x0026ba68,
+            f: ee::s07::PathData_ReadInt,
+        }
+        .call(c, 0x0026aed4)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x0026aee0);
+        c.g[A1][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0026b410,
+            f: ee::s07::PathData_ReadAIPaths,
+        }
+        .call(c, 0x0026aee0)?;
+        c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[RA][0] = sx(0x0026aeec);
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0026b310,
+            f: ee::s07::PathData_ReadTrackPaths,
+        }
+        .call(c, 0x0026aeec)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::main::game::tests::oc804_install_fakes;
 
     use crate::difftest::fakes::machine;
 
@@ -5698,5 +5830,81 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(table);
             },
         );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::sound::ssxaudio::tests::oc805_machine;
+    pub(crate) use crate::game::sound::ssxaudio::tests::oc805_paths;
+
+    // Fixture objects, all in DATA+0x200000 and up: clear of the fake log
+    // (DATA+0x100000) and of the pointers the fakes return (DATA..DATA+0x40000).
+    pub(crate) const OC804_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC804_MAGIC: u32 = 0x4f43_3834;
+
+    pub(crate) const OC804_SELF: u32 = DATA + 0x21_0000;
+
+    pub(crate) const OC804_NAME: u32 = DATA + 0x22_0000;
+
+    pub(crate) const OC804_WORLD: u32 = DATA + 0x25_0000;
+
+    /// Scrambled registers, fake hooks, the fakes' gate, stack junk below `sp`
+    /// (half of its words 0), the world at `gp-0x848`.
+    pub(crate) fn oc804_fixture(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let mut r = machine(c, seed, salt, calls);
+        c.bus.write32(OC804_CTRL, OC804_MAGIC);
+        for i in 1..=0x300u32 {
+            let w = if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.next_u32()
+            };
+            c.bus.write32(crate::difftest::SP - 4 * i, w);
+        }
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), OC804_WORLD);
+        r
+    }
+
+    /// `PathData_LoadFile(path, name)`: loads a file through the EA thunk,
+    /// stores the buffer and a "loaded" flag, then parses it.
+    #[test]
+    fn path_data_load_file_matches() {
+        oc804_install_fakes();
+        fakes::covered(
+            ee::s07::f_0026ada8__generated,
+            path_data_load_file_2,
+            60,
+            &|c, seed| {
+                let mut r = oc804_fixture(c, seed, 0x0026_ada8, 2);
+                fill(c, &mut r, OC804_SELF, 0x30);
+                c.g[A0][0] = sx(OC804_SELF);
+                c.g[A1][0] = sx(OC804_NAME);
+                c.pc = 0x0026_ada8;
+            },
+        );
+    }
+
+    pub(crate) fn reload_paths_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc805_machine(c, seed, 0xae70, 6, 0x0026_ae70);
+        let obj = DATA + 0x1000;
+        c.g[A0][0] = obj as u64;
+        c.g[A1][0] = (DATA + 0x2000) as u64;
+        // +0x48: the loaded path buffer (set: freed first, unset: LoadFile).
+        let buf = if seed % 2 == 0 { 0 } else { DATA + 0x3000 };
+        c.bus.write32(obj + 0x48, buf);
+        let _ = r.next_u32();
+    }
+
+    /// `PathData_ReloadPaths`: both the free path and the load path, with unwinds in every callee.
+    #[test]
+    fn path_data_reload_paths_matches() {
+        check(
+            ee::s07::f_0026ae70__generated,
+            path_data_reload_paths_2,
+            200,
+            &reload_paths_setup,
+        );
+        assert!(oc805_paths(ee::s07::f_0026ae70__generated, 200, &reload_paths_setup) >= 2);
     }
 }

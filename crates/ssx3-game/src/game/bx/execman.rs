@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
@@ -99,6 +100,70 @@ pub fn input_binding_eval_bool(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// Shared body of the `FEUIInput_Is*` button queries: `InputBinding_EvalBool(
+/// *(input + 0x18), button)` (0x320c48); `ret` is the call's return address.
+pub(crate) fn oc821_feui_eval(c: &mut Cpu, button: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = button;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
+        call_ptr(c, 0x0032_0c48, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// Shared body of the `FEUIInput_Is*` button queries: `InputBinding_EvalBool(
+/// *(input + 0x18), button)` (0x320c48); `ret` is the call's return address.
+pub(crate) fn oc822_feui_eval(c: &mut Cpu, button: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = button;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
+        call_ptr(c, 0x0032_0c48, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// Shared body of the `FEUIInput_Is*` d-pad queries: `InputBinding_EvalBool(
+/// *(input + 0x18), button)` (0x320c48); `ret` is the call's return address.
+pub(crate) fn oc823_feui_eval(c: &mut Cpu, button: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = button;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
+        call_ptr(c, 0x0032_0c48, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// Shared body of the `FEUIInput_Is*` shoulder queries: `InputBinding_EvalBool(
+/// *(input + 0x18), button)` (0x320c48); `ret` is the call's return address.
+pub(crate) fn oc824_feui_eval(c: &mut Cpu, button: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = button;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
+        call_ptr(c, 0x0032_0c48, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
 }
 
 #[cfg(test)]
