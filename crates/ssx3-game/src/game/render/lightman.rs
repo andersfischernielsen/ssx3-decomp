@@ -34,6 +34,7 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -150,6 +151,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Render2D_DrawFilledRect",
     ),
     (0x0039_15e8, font_ctor, "Font_ctor"),
+    (0x0038_ed90, render2d_draw_line, "Render2D_DrawLine"),
+    (0x003a_20a0, render2d_draw_sprite, "Render2D_DrawSprite"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -291,6 +294,16 @@ pub(crate) mod callee {
     pub(crate) const RENDER2D_TRANSFORM_POINT: Callee = Callee {
         addr: 0x0038_e0a8,
         f: ee::s12::Render2D_TransformPoint,
+    };
+
+    pub(crate) const RENDER2D_DRAW_QUAD: Callee = Callee {
+        addr: 0x0038_e118,
+        f: ee::s12::Render2D_DrawQuad,
+    };
+
+    pub(crate) const RENDER2D_DRAW_QUAD_ROT90: Callee = Callee {
+        addr: 0x0038_e200,
+        f: ee::s12::Render2D_DrawQuadRot90,
     };
 }
 
@@ -3219,6 +3232,246 @@ pub fn render2d_draw_filled_rect(c: &mut Cpu) {
     })
 }
 
+/// `void Render2D_DrawLine(...)` (0x38ed90): builds two coloured vertices
+/// from `p0`, `p1` and `col` on the stack and submits them through the
+/// renderer's DrawPrims hook.
+pub fn render2d_draw_line(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+        c.g[V0][0] = c.g[A1][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[RA][0]);
+        c.g[V1][0] = c.g[A2][0];
+        c.g[T0][0] = c.g[A3][0];
+        c.g[A0][0] = 0x1;
+        c.g[A1][0] = 0xffffffffffffffff;
+        'l_38edb0: loop {
+            c.cycles += 7;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+            let t = c.g[A0][0] != c.g[A1][0];
+            c.g[A2][0] = c.g[SP][0];
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_edb0);
+                }
+                continue 'l_38edb0;
+            }
+            c.cycles += 43;
+            c.lwc1(1, (c.g[T0][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = 0x2;
+            c.g[AT][0] = 0x437f0000;
+            c.mtc1(1, 0);
+            c.lwc1(2, (c.g[T0][0] as u32).wrapping_add(0x8));
+            c.g[A3][0] = 0u64;
+            c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0xc));
+            c.mul_s(1, 1, 0);
+            c.lwc1(5, c.g[T0][0] as u32);
+            c.mul_s(2, 2, 0);
+            c.lq(2, c.g[V0][0] as u32);
+            c.mul_s(3, 3, 0);
+            c.g[AT][0] = 0x43000000;
+            c.mtc1(1, 4);
+            c.cvt_w_s(0, 1);
+            c.mfc1(8, 0);
+            c.lq(3, c.g[V1][0] as u32);
+            c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.mul_s(5, 5, 4);
+            c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.cvt_w_s(0, 2);
+            c.mfc1(4, 0);
+            c.cvt_w_s(0, 3);
+            c.mfc1(2, 0);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[T0][0]);
+            c.cvt_w_s(0, 5);
+            c.mfc1(3, 0);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x40), c.g[T0][0]);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[A0][0]);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x44), c.g[A0][0]);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x48), c.g[V0][0]);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x4c), c.g[V1][0]);
+            c.g[T1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+            c.g[V0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x10d8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x248));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24c));
+            let t = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x0038_ee6c);
+            c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.pc = t;
+            call_indirect(c, t);
+            if c.pc != 0x0038_ee6c {
+                return Err(crate::call::Unwound);
+            }
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+            c.pc = t;
+            return Ok(());
+        }
+    })
+}
+
+/// `void Render2D_DrawSprite(...)` (0x3a20a0): draws the sprite `o` (tex,
+/// UVs) at rect `r` with colour `c`, flipping UVs by `flags` bits 0..1 and
+/// turning the corners through the rot90 path when bit 2 is set.
+pub fn render2d_draw_sprite(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_3a2218: {
+            'b_3a2214: {
+                c.cycles += 23;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xf0));
+                c.g[T0][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0xe0), c.g[RA][0]);
+                c.g[T2][0] = c.g[SP][0];
+                c.ldl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
+                c.ldr(2, c.g[A1][0] as u32);
+                c.ldl(3, (c.g[A1][0] as u32).wrapping_add(0xf));
+                c.ldr(3, (c.g[A1][0] as u32).wrapping_add(0x8));
+                c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
+                c.sdr(2, c.g[SP][0] as u32);
+                c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
+                c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
+                c.g[A1][0] = c.lw(c.g[T0][0] as u32);
+                c.ldl(11, (c.g[A2][0] as u32).wrapping_add(0x7));
+                c.ldr(11, c.g[A2][0] as u32);
+                c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0xf));
+                c.ldr(2, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.sdl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
+                c.sdr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x1f));
+                c.sdr(2, (c.g[SP][0] as u32).wrapping_add(0x18));
+                let t = (c.g[A1][0] as i64) < 0;
+                c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                if t {
+                    break 'b_3a2214;
+                }
+                'b_3a2128: {
+                    c.cycles += 9;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                    c.g[A0][0] = c.g[A3][0] & 0x1;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xe84));
+                    c.sh((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A1][0]);
+                    c.lwc1(6, (c.g[T0][0] as u32).wrapping_add(0xc));
+                    c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0x18));
+                    c.lwc1(5, (c.g[T0][0] as u32).wrapping_add(0x10));
+                    let t = c.g[A0][0] == 0u64;
+                    c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x14));
+                    if t {
+                        break 'b_3a2128;
+                    }
+                    c.cycles += 2;
+                    c.mov_s(5, 3);
+                    c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x10));
+                    break 'b_3a2128;
+                }
+                'b_3a213c: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[A3][0] & 0x2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = c.g[A3][0] & 0x4;
+                    if t {
+                        break 'b_3a213c;
+                    }
+                    c.cycles += 2;
+                    c.mov_s(6, 4);
+                    c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0xc));
+                    break 'b_3a213c;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = 0x3;
+                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[V1][0] = 0xffffffffffffffff;
+                'l_3a2148: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[V0][0] != c.g[V1][0];
+                    c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0xc0));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_2148);
+                        }
+                        continue 'l_3a2148;
+                    }
+                    c.cycles += 7;
+                    c.g[AT][0] = 0x43000000;
+                    c.mtc1(1, 2);
+                    c.g[V1][0] = c.g[A1][0];
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 7);
+                    c.lwc1(0, c.g[T1][0] as u32);
+                    'l_3a2180: loop {
+                        c.cycles += 20;
+                        c.mul_s(0, 0, 2);
+                        c.cvt_w_s(1, 0);
+                        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x1c));
+                        c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0x4));
+                        c.mul_s(1, 1, 2);
+                        c.cvt_w_s(0, 1);
+                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.lwc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+                        c.mul_s(0, 0, 2);
+                        c.cvt_w_s(1, 0);
+                        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x14));
+                        c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0xc));
+                        c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x8));
+                        c.mul_s(1, 1, 2);
+                        c.cvt_w_s(0, 1);
+                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x18));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.lwc1(0, c.g[T1][0] as u32);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003a_2180);
+                            }
+                            continue 'l_3a2180;
+                        }
+                        'b_3a2208: {
+                            c.cycles += 9;
+                            c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x54));
+                            c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x80));
+                            c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                            c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0xb4));
+                            c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+                            c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x24));
+                            c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x50));
+                            let t = c.g[A0][0] == 0u64;
+                            c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x84));
+                            if t {
+                                break 'b_3a2208;
+                            }
+                            c.cycles += 5;
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x844));
+                            c.g[A2][0] = c.g[T2][0];
+                            callee::RENDER2D_DRAW_QUAD_ROT90.call(c, 0x003a_2200)?;
+                            let t = true;
+                            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xe0));
+                            if t {
+                                break 'b_3a2218;
+                            }
+                            break 'b_3a2208;
+                        }
+                        c.cycles += 3;
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x844));
+                        c.g[A2][0] = c.g[T2][0];
+                        callee::RENDER2D_DRAW_QUAD.call(c, 0x003a_2214)?;
+                        break 'b_3a2214;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xe0));
+            break 'b_3a2218;
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf0));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4762,5 +5015,186 @@ pub(crate) mod tests {
                 schedule(c, &mut r, seed, 0x0038_ec40)
             },
         );
+    }
+
+    /// Points, colour and renderer hook for [`render2d_draw_line`]: `p0`,
+    /// `p1` edge floats, `col` 0..1, the DrawPrims slot the miss-hook fake.
+    pub(crate) const LINE_P0: u32 = DATA + 0x1234;
+
+    pub(crate) const LINE_P1: u32 = DATA + 0x12_0000;
+
+    pub(crate) const LINE_COL: u32 = DATA + 0x13_0000;
+
+    pub(crate) const LINE_CTX: u32 = DATA + 0x20_0000;
+
+    pub(crate) fn line_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = machine(c, seed, 0x38_ed90, 1);
+        c.pc = 0x0038_ed90;
+        for (base, edge) in [(LINE_P0, true), (LINE_P1, true), (LINE_COL, false)] {
+            for i in 0..4u32 {
+                let v = if edge { r.edge_f32() } else { r.f32(1.0) };
+                c.bus.write32(base + 4 * i, v);
+            }
+        }
+        c.bus.write32(LINE_COL, r.f32(1.0));
+        c.g[A1][0] = sx(LINE_P0);
+        c.g[A2][0] = sx(LINE_P1);
+        c.g[A3][0] = sx(LINE_COL);
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(GAME_GP + 0x2a90, LINE_CTX);
+        c.bus.write32(LINE_CTX + 0x10d8, LINE_CTX + 0x100);
+        c.bus.write16(LINE_CTX + 0x100 + 0x248, 0x10);
+        c.bus.write32(LINE_CTX + 0x100 + 0x24c, FAKE);
+        fill(c, &mut r, LINE_CTX + 0x200, 0x20);
+        r
+    }
+
+    /// Two delay-loop iterations then the hook; hook unwinds cover the
+    /// unwind return.
+    #[test]
+    fn render2d_draw_line_matches() {
+        covered(
+            ee::s12::f_0038ed90__generated,
+            render2d_draw_line,
+            200,
+            &|c, seed| {
+                line_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn render2d_draw_line_events() {
+        driven!(gen_line, ee::s12::f_0038ed90__generated);
+        driven!(hand_line, render2d_draw_line);
+        check_events(gen_line, hand_line, 60, &|c, seed| {
+            line_setup(c, seed / 3);
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            let mode = schedule(
+                c,
+                &mut Rng(0x38_ed90 ^ (seed as u64) << 8),
+                seed,
+                0x0038_ed90,
+            );
+            // The delay loop is only two iterations (14 cycles): the generic
+            // schedule's k (16, 17, 32, 33 for this salt) never lands inside,
+            // so force the event into the first iteration.
+            if mode != crate::difftest::events::Events::Off {
+                c.next_event = c.cycles + 2;
+            }
+            mode
+        });
+    }
+
+    /// Gates for [`render2d_draw_sprite`]: both quad callees are faked (each
+    /// has an override slot); the test checks sprite setup, UV flips and the
+    /// rot90 vs plain call choice.
+    pub(crate) const SPRITE_CTRL: u32 = DATA + 0x33_0000;
+
+    pub(crate) const SPRITE_MAGIC: u32 = 0x0c13_7101;
+
+    pub(crate) static SPRITE_PREV_QUAD: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static SPRITE_PREV_ROT90: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_draw_quad(c: &mut Cpu) {
+        if c.bus.read32(SPRITE_CTRL) != SPRITE_MAGIC {
+            return fakes::fall_back(c, &SPRITE_PREV_QUAD, ee::s12::f_0038e118__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn fake_draw_quad_rot90(c: &mut Cpu) {
+        if c.bus.read32(SPRITE_CTRL) != SPRITE_MAGIC {
+            return fakes::fall_back(c, &SPRITE_PREV_ROT90, ee::s12::f_0038e200__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn sprite_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038E118),
+            fake_draw_quad,
+            &SPRITE_PREV_QUAD,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038E200),
+            fake_draw_quad_rot90,
+            &SPRITE_PREV_ROT90,
+        );
+    }
+
+    /// Sprite at `SPRITE_O` (tex from `seed`, UVs edge floats), rect at
+    /// `SPRITE_R`, colour at `SPRITE_C`, flags from `seed`: bit 0 flips U,
+    /// bit 1 flips V, bit 2 selects rot90; tex negative (seed % 5 == 0)
+    /// exits early.
+    pub(crate) const SPRITE_O: u32 = DATA + 0x1234;
+
+    pub(crate) const SPRITE_R: u32 = DATA + 0x12_0000;
+
+    pub(crate) const SPRITE_C: u32 = DATA + 0x13_0000;
+
+    pub(crate) const SPRITE_GFX: u32 = DATA + 0x20_0000;
+
+    pub(crate) const SPRITE_TOP: u32 = DATA + 0x21_0000;
+
+    pub(crate) fn sprite_setup(c: &mut Cpu, seed: u32) {
+        use crate::difftest::scramble;
+        let mut r = machine(c, seed, 0x3a_20a0, 0);
+        scramble(c, &mut r);
+        c.bus.write32(SPRITE_CTRL, SPRITE_MAGIC);
+        c.pc = 0x003a_20a0;
+        let tex = if seed % 5 == 0 { -1 } else { (seed % 8) as i32 };
+        c.bus.write32(SPRITE_O, tex as u32);
+        for off in [0xcu32, 0x10, 0x14, 0x18] {
+            c.bus.write32(SPRITE_O + off, r.edge_f32());
+        }
+        for i in 0..4u32 {
+            c.bus.write32(SPRITE_R + 4 * i, r.edge_f32());
+            c.bus.write32(SPRITE_C + 4 * i, r.f32(1.0));
+        }
+        c.bus.write32(SPRITE_C, r.f32(1.0));
+        c.g[A0][0] = sx(SPRITE_O);
+        c.g[A1][0] = sx(SPRITE_R);
+        c.g[A2][0] = sx(SPRITE_C);
+        c.g[A3][0] = (seed / 3 % 8) as u64;
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(GAME_GP - 0x854, SPRITE_GFX);
+        c.bus.write32(SPRITE_GFX + 0xe84, SPRITE_TOP);
+        c.bus.write32(SPRITE_TOP + 0x10, 0);
+        c.bus.write32(GAME_GP - 0x844, SPRITE_GFX + 0x100);
+        fill(c, &mut r, SPRITE_GFX + 0x200, 0x20);
+        fill(c, &mut r, SPRITE_TOP + 0x20, 0x20);
+    }
+
+    /// Tex negative exits early; flags steer the UV flips and the rot90 vs
+    /// plain call; both delay loops run (event checks inside).
+    #[test]
+    fn render2d_draw_sprite_matches() {
+        sprite_hook();
+        check(
+            ee::s13::f_003a20a0__generated,
+            render2d_draw_sprite,
+            200,
+            &|c, seed| {
+                sprite_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn render2d_draw_sprite_events() {
+        sprite_hook();
+        driven!(gen_sprite, ee::s13::f_003a20a0__generated);
+        driven!(hand_sprite, render2d_draw_sprite);
+        check_events(gen_sprite, hand_sprite, 60, &|c, seed| {
+            sprite_setup(c, seed / 3);
+            schedule(
+                c,
+                &mut Rng(0x3a_20a0 ^ (seed as u64) << 8),
+                seed,
+                0x003a_20a0,
+            )
+        });
     }
 }

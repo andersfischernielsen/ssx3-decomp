@@ -365,6 +365,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_4540, shp_relocate, "SHP_Relocate"),
     (0x003b_4690, shp_clone, "SHP_Clone"),
     (0x003b_4708, shp_is_palette_format, "SHP_IsPaletteFormat"),
+    (0x003b_3e40, shp_calc_pixel_offset, "SHP_CalcPixelOffset"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8908,6 +8909,225 @@ pub fn shp_is_palette_format(c: &mut Cpu) {
     ret(c);
 }
 
+pub(crate) mod shp_header {
+
+    /// Pixel format byte.
+    pub const FORMAT: u32 = 0x0;
+
+    /// Image width (halfword).
+    pub const WIDTH: u32 = 0x4;
+
+    /// Image height (halfword).
+    pub const HEIGHT: u32 = 0x6;
+
+    /// Flags (bit 0x2000 selects the swizzle call).
+    pub const FLAGS: u32 = 0xc;
+}
+
+/// `uint SHP_CalcPixelOffset(header, x, y, level)` (0x3b3e40): the bit
+/// offset of pixel `(x, y)` at mip `level` in GS swizzled order (through
+/// `SHP_GetBpp`, shifting and masking for the small formats, the
+/// `SHP_SwizzleAddr` call when flags ask for it).
+pub fn shp_calc_pixel_offset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 31;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x50);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S5, 0x40);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save(c, S6, 0x30);
+        c.g[S6][0] = c.g[S4][0];
+        frame.save(c, S7, 0x20);
+        c.g[S7][0] = c.g[S5][0];
+        frame.save(c, FP, 0x10);
+        c.g[FP][0] = c.g[A3][0];
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        c.g[S3][0] = 0u64;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.lh((c.g[S2][0] as u32).wrapping_add(shp_header::WIDTH));
+        c.g[RA][0] = sx(0x003b_3e94);
+        c.g[S1][0] = c.lh((c.g[S2][0] as u32).wrapping_add(shp_header::HEIGHT));
+        callee::SHP_GET_BPP.call(c, 0x003b_3e94)?;
+        c.g[A3][0] = c.lbu((c.g[S2][0] as u32).wrapping_add(shp_header::FORMAT));
+        c.g[A0][0] = c.g[V0][0] ^ 0xf;
+        c.g[T1][0] = 0x10;
+        c.g[A2][0] = 0x40;
+        c.g[A1][0] = c.g[A3][0] & 0xff;
+        if c.g[A0][0] != 0 {
+            c.g[T1][0] = c.g[V0][0];
+        }
+        c.g[V1][0] = c.g[A1][0] ^ 0x60;
+        c.g[V0][0] = 0x60;
+        let direct = c.g[A1][0] != c.g[V0][0];
+        if c.g[V1][0] == 0 {
+            c.g[T1][0] = c.g[A2][0];
+        }
+        if !direct {
+            c.cycles += 4;
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3));
+            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x3));
+            c.g[S0][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+            c.g[S1][0] = sx(((c.g[V1][0] as u32) as i32 >> 2) as u32);
+        }
+        // Align the running offset down to 16 bytes, `fp` times.
+        c.cycles += 3;
+        c.g[T2][0] = c.g[A3][0];
+        let skip = (c.g[FP][0] as i64) <= 0;
+        c.g[T3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(shp_header::FLAGS));
+        if !skip {
+            c.cycles += 2;
+            c.g[A3][0] = c.g[FP][0];
+            c.g[T0][0] = 0xfffffffffffffff0;
+            loop {
+                c.cycles += 13;
+                c.mult(0, 4, 16, 17);
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(0xf));
+                c.g[S3][0] = c.g[V0][0] & c.g[T0][0];
+                c.g[A1][0] = ((c.g[S0][0] as i64) < 2i64) as u64;
+                c.g[V0][0] = sx(((c.g[S0][0] as u32) as i32 >> 1) as u32);
+                c.g[A2][0] = ((c.g[S1][0] as i64) < 2i64) as u64;
+                c.g[V1][0] = sx(((c.g[S1][0] as u32) as i32 >> 1) as u32);
+                if c.g[A1][0] == 0 {
+                    c.g[S0][0] = c.g[V0][0];
+                }
+                c.mult(0, 4, 4, 9);
+                if c.g[A2][0] == 0 {
+                    c.g[S1][0] = c.g[V1][0];
+                }
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
+                let more = c.g[A3][0] != 0u64;
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_3ee0);
+                }
+            }
+        }
+        // Shift and mask for the small formats.
+        c.cycles += 4;
+        c.g[A3][0] = c.g[T2][0] & 0xff;
+        c.g[V0][0] = 0x60;
+        let small = c.g[A3][0] != c.g[V0][0];
+        c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x20));
+        if small {
+            // Larger formats keep the shifted offset.
+        } else {
+            c.cycles += 10;
+            c.g[V0][0] = 0xffffffffffffffff;
+            c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x3));
+            c.g[A1][0] = ((c.g[V0][0] as i64) < (c.g[S5][0] as i64)) as u64;
+            c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x3));
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S4][0] as i64)) as u64;
+            if c.g[A1][0] != 0 {
+                c.g[V1][0] = c.g[S5][0];
+            }
+            if c.g[V0][0] != 0 {
+                c.g[A0][0] = c.g[S4][0];
+            }
+            c.g[S7][0] = sx(((c.g[V1][0] as u32) as i32 >> 2) as u32);
+            c.g[S6][0] = sx(((c.g[A0][0] as u32) as i32 >> 2) as u32);
+            c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x20));
+        }
+        'b_3b3fe0: {
+            'b_3b3fdc: {
+                'b_3b3fc0: {
+                    'b_3b3f9c: {
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                        let wide = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = c.g[T3][0] & 0x2000;
+                        if wide {
+                            break 'b_3b3f9c;
+                        }
+                        c.cycles += 2;
+                        let plain = c.g[V0][0] == 0u64;
+                        c.g[A2][0] = c.g[S6][0];
+                        if plain {
+                            break 'b_3b3fc0;
+                        }
+                        c.cycles += 8;
+                        'b_3b3f94: {
+                            'b_3b3f88: {
+                                c.g[V1][0] = 0xf;
+                                c.g[V0][0] = c.g[A2][0] & 0x1f;
+                                c.g[A1][0] = c.g[A2][0] ^ 0x18;
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
+                                c.g[A0][0] = 0x21;
+                                c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                                let other = c.g[A3][0] != c.g[A0][0];
+                                if c.g[V1][0] == 0 {
+                                    c.g[A2][0] = c.g[A1][0];
+                                }
+                                if other {
+                                    break 'b_3b3f88;
+                                }
+                                c.cycles += 2;
+                                c.g[A2][0] = sx((c.g[A2][0] as u32) << 5);
+                                break 'b_3b3f94;
+                            }
+                            c.cycles += 3;
+                            c.g[V1][0] = c.g[A3][0] ^ 0x20;
+                            c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+                            if c.g[V1][0] == 0 {
+                                c.g[A2][0] = c.g[V0][0];
+                            }
+                            c.cycles += 2;
+                            c.g[V0][0] = c.g[A2][0];
+                            break 'b_3b3fe0;
+                        }
+                    }
+                    c.cycles += 2;
+                    let swizzled = c.g[V0][0] == 0u64;
+                    c.g[A2][0] = c.g[S0][0];
+                    if swizzled {
+                        break 'b_3b3fc0;
+                    }
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S6][0];
+                    c.g[A1][0] = c.g[S7][0];
+                    c.g[A3][0] = c.g[S1][0];
+                    c.g[T0][0] = c.g[T1][0];
+                    callee::SHP_SWIZZLE_ADDR.call(c, 0x003b_3fb8)?;
+                    c.g[A2][0] = c.g[V0][0];
+                    break 'b_3b3fdc;
+                }
+                c.cycles += 7;
+                c.mult(0, 2, 16, 9);
+                c.g[V1][0] = 0xfffffffffffffff0;
+                c.mult(0, 4, 22, 9);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf));
+                c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+                c.mult(0, 2, 23, 2);
+                c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                break 'b_3b3fdc;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[S3][0] as u32));
+            break 'b_3b3fe0;
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -13275,6 +13495,85 @@ pub(crate) mod tests {
                 c.next_event = c.cycles + 400;
             }
             mode
+        });
+    }
+
+    /// SHP header and coordinates for [`shp_calc_pixel_offset`]: format
+    /// from `seed % 4` (0x20, 0x60, 0x40, 0x22), small widths/heights,
+    /// coordinates covering the shift arms and -1, level count
+    /// `seed / 6 % 3`. The game's image is loaded: `SHP_GetBpp` reads the
+    /// real bits-per-pixel table (format 0x20 gives 15).
+    pub(crate) const CALC_PIXEL_HEADER: u32 = DATA + 0x1234;
+
+    pub(crate) fn calc_pixel_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let r = machine(c, seed, 0x3b_3e40, 0);
+        elf_image(c);
+        c.pc = 0x003b_3e40;
+        // 0x20: palette-16 (bpp 15, the `^ 0xf` arm); 0x60: the shift
+        // path; 0x40: plain; 0x22: the `< 2` wide boundary.
+        let format = [0x20u32, 0x60, 0x40, 0x22][(seed % 4) as usize];
+        c.bus
+            .write8(CALC_PIXEL_HEADER + shp_header::FORMAT, format as u8);
+        // Widths/heights 2 and 4 drive the `< 2` halving arms to the
+        // boundary (the `== 2` / `<= 2` mutants change the decision there).
+        c.bus.write16(
+            CALC_PIXEL_HEADER + shp_header::WIDTH,
+            [64u16, 2, 4][(seed / 4 % 3) as usize],
+        );
+        c.bus.write16(
+            CALC_PIXEL_HEADER + shp_header::HEIGHT,
+            [64u16, 4, 2][(seed / 12 % 3) as usize],
+        );
+        c.bus.write32(
+            CALC_PIXEL_HEADER + shp_header::FLAGS,
+            (seed / 3 % 2 * 0x2000) as u32,
+        );
+        c.g[A0][0] = sx(CALC_PIXEL_HEADER);
+        // x/y: small coords, the `& 0x1f` high-bit arm (42), the exact-15
+        // arm (23), and -1 (the `< -1` boundary the `<=` mutants need).
+        c.g[A1][0] = match seed / 36 % 4 {
+            0 => (seed / 9 % 48) as u64,
+            1 => 23,
+            2 => 42,
+            _ => u64::MAX,
+        };
+        c.g[A2][0] = match seed / 7 % 4 {
+            0 => (seed / 57 % 48) as u64,
+            1 => 23,
+            2 => 42,
+            _ => u64::MAX,
+        };
+        c.g[A3][0] = (seed / 6 % 3) as u64;
+        r
+    }
+
+    /// Formats with and without the shift path (incl. the 0x22 wide
+    /// boundary), the 0x2000 flag on and off, widths/heights at the `< 2`
+    /// boundary, shift-arm and -1 coordinates, levels 0..2.
+    #[test]
+    fn shp_calc_pixel_offset_matches() {
+        check_lohi(
+            ee::s13::f_003b3e40__generated,
+            shp_calc_pixel_offset,
+            200,
+            &|c, seed| {
+                calc_pixel_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn shp_calc_pixel_offset_events() {
+        driven!(gen_calc, ee::s13::f_003b3e40__generated);
+        driven!(hand_calc, shp_calc_pixel_offset);
+        check_events(gen_calc, hand_calc, 60, &|c, seed| {
+            calc_pixel_setup(c, seed / 3);
+            schedule(
+                c,
+                &mut Rng(0x3b_3e40 ^ (seed as u64) << 8),
+                seed,
+                0x003b_3e40,
+            )
         });
     }
 }

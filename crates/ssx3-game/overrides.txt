@@ -10244,6 +10244,31 @@
 0x001c5198    cFEStateNetNews_TransitionIn
 0x001c5368    cFEStateNetNews_OnWidgetAction
 0x001c5630    cFEPopupConfirm_CfgReset
+# Phase 2 wave: oc1370, oc1371, oc1372, oc1373
+0x00386d10    PS2GraphicsMan_DrawShadowMeshPass
+0x0037e120    PS2GraphicsMan_EmitModelHeader
+0x0038ed90    Render2D_DrawLine
+0x003a20a0    Render2D_DrawSprite
+0x00392680    Font_FindLineBreakW
+0x003b3e40    SHP_CalcPixelOffset
+0x00383770    PS2GraphicsMan_UploadToDrawBuffer
+0x00395ed8    PS2GraphicsMan_ProjectPointToScreenInt
+0x00392980    Font_DrawTextCenteredW
+0x00392ad0    Font_DrawTextRightW
+0x003919e8    Font_Free
+0x0037df40    PS2GraphicsMan_TransformToClip
+0x0021d160    Font_DrawTextVarargs_2
+0x002223e8    Font_DrawTextCenteredVarargs_2
+0x003947d8    Renderer_HasLightStateChanged
+0x003943c0    Renderer_SetLightEntry
+0x00393008    Renderer_ReturnSelf
+0x003960e8    Renderer_SetDisplayRegsDefault
+0x003865e8    cPS2GridMesh_DeleteList
+0x0036a290    DeferredDelete_FlushAll
+0x00394c48    LightManBase_v09
+0x00394c50    LightManBase_v13
+0x00394c58    LightManBase_v14
+0x00394c60    LightManBase_v15
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

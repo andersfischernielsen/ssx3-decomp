@@ -556,6 +556,52 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bezier_patch_cache_reset,
         "BezierPatchCache_Reset",
     ),
+    (
+        0x0037_df40,
+        ps2_graphics_man_transform_to_clip,
+        "PS2GraphicsMan_TransformToClip",
+    ),
+    (
+        0x0037_e120,
+        ps2_graphics_man_emit_model_header,
+        "PS2GraphicsMan_EmitModelHeader",
+    ),
+    (
+        0x0038_3770,
+        ps2_graphics_man_upload_to_draw_buffer,
+        "PS2GraphicsMan_UploadToDrawBuffer",
+    ),
+    (
+        0x0038_65e8,
+        cps2_grid_mesh_delete_list,
+        "cPS2GridMesh_DeleteList",
+    ),
+    (
+        0x0038_6d10,
+        ps2_graphics_man_draw_shadow_mesh_pass,
+        "PS2GraphicsMan_DrawShadowMeshPass",
+    ),
+    (0x0039_3008, renderer_return_self, "Renderer_ReturnSelf"),
+    (
+        0x0039_43c0,
+        renderer_set_light_entry,
+        "Renderer_SetLightEntry",
+    ),
+    (
+        0x0039_47d8,
+        renderer_has_light_state_changed,
+        "Renderer_HasLightStateChanged",
+    ),
+    (
+        0x0039_5ed8,
+        ps2_graphics_man_project_point_to_screen_int,
+        "PS2GraphicsMan_ProjectPointToScreenInt",
+    ),
+    (
+        0x0039_60e8,
+        renderer_set_display_regs_default,
+        "Renderer_SetDisplayRegsDefault",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -1073,6 +1119,28 @@ pub(crate) mod callee {
         addr: 0x0036_7d20,
         f: ee::s12::TexMan_UpdateTextureData,
     };
+
+    pub(crate) use crate::game::render::font::callee::GS_UPLOAD_IMAGE;
+
+    pub(crate) const PS2_GRAPHICS_MAN_EMIT_SHADOW_STRIPS: Callee = Callee {
+        addr: 0x0038_7ec0,
+        f: ee::s12::PS2GraphicsMan_EmitShadowStrips,
+    };
+
+    pub(crate) const PS2_GRAPHICS_MAN_EMIT_MODEL_MATRIX2: Callee = Callee {
+        addr: 0x0037_e040,
+        f: ee::s12::PS2GraphicsMan_EmitModelMatrix2,
+    };
+
+    pub(crate) const PS2_GRAPHICS_MAN_EMIT_MODEL_LIGHTING: Callee = Callee {
+        addr: 0x0037_e098,
+        f: ee::s12::PS2GraphicsMan_EmitModelLighting,
+    };
+
+    pub(crate) const DEFERRED_DELETE_ADVANCE_FRAME: Callee = Callee {
+        addr: 0x0036_a1e8,
+        f: ee::s12::DeferredDelete_AdvanceFrame,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -1332,6 +1400,18 @@ pub(crate) mod grid_mesh {
     pub const ROW_TABS: u32 = 0x1b4;
 
     pub const ROWS: u32 = 0x1bc;
+
+    /// Next-list link in a delete-list entry.
+    pub const NEXT: u32 = 0x8;
+
+    /// Record pointer in a delete-list entry.
+    pub const RECORD: u32 = 0x4;
+
+    /// Field index (halfword) in the record.
+    pub const FIELD: u32 = 0x8;
+
+    /// Teardown-hook pointer in the record.
+    pub const TEARDOWN: u32 = 0xc;
 }
 
 /// `Cell`/`BoaderShadow` object layout (the fields this function touches).
@@ -19238,6 +19318,538 @@ pub fn bezier_patch_cache_reset(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod light_state {
+
+    /// Offset of the light table pointer in the renderer object.
+    pub const TABLE: u32 = 0x10d8;
+
+    /// Offset of the current light records in the renderer object.
+    pub const CURRENT: u32 = 0xe84;
+
+    /// Field index (halfword) inside a light table entry.
+    pub const FIELD: u32 = 0x200;
+
+    /// Update-hook pointer inside a light table entry.
+    pub const UPDATE: u32 = 0x204;
+}
+
+/// `void PS2GraphicsMan_DrawShadowMeshPass(...)` (0x386d10): walks `a2`
+/// mesh records at `a1` (each 0x14 bytes), emitting shadow strips for the
+/// ones whose kind at +0x8 is >= 2.
+pub fn ps2_graphics_man_draw_shadow_mesh_pass(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x60);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x50);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S2, 0x40);
+        c.g[S2][0] = c.g[T1][0];
+        frame.save(c, S3, 0x30);
+        c.g[S3][0] = c.g[T0][0];
+        frame.save(c, S4, 0x20);
+        c.g[S4][0] = c.g[A3][0];
+        frame.save(c, S5, 0x10);
+        frame.save_fpr(c, 21, 0x78);
+        c.g[S5][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x70);
+        c.mov_s(21, 12);
+        frame.save_ra(c, 0);
+        let empty = (c.g[S1][0] as i64) <= 0;
+        c.mov_s(20, 13);
+        if empty {
+            // No records: skip the loop.
+        } else {
+            c.cycles += 1;
+            loop {
+                'b_386d98: {
+                    c.cycles += 4;
+                    c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < 2i64) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                        break 'b_386d98;
+                    }
+                    c.cycles += 10;
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[A0][0] = c.g[S5][0];
+                    c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[T0][0] = c.g[S4][0];
+                    c.g[T1][0] = c.g[S3][0];
+                    c.g[T2][0] = c.g[S2][0];
+                    c.mov_s(12, 21);
+                    c.mov_s(13, 20);
+                    callee::PS2_GRAPHICS_MAN_EMIT_SHADOW_STRIPS.call(c, 0x0038_6d94)?;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    break 'b_386d98;
+                }
+                c.cycles += 2;
+                let more = (c.g[S1][0] as i64) > 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_6d60);
+                }
+            }
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x78);
+        frame.restore_fpr(c, 20, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PS2GraphicsMan_EmitModelHeader(...)` (0x37e120): emits the model
+/// packet header (matrix words, model words), then the optional matrix and
+/// lighting blocks.
+pub fn ps2_graphics_man_emit_model_header(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_37e1ec: {
+            c.cycles += 48;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+            c.por(2, 0, 0);
+            c.g[V0][0] = 0x10000000;
+            c.g[V0][0] = c.g[V0][0] | 0x6;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.g[A0][0] = 0x20000000;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[A3][0] = 0x6c050000;
+            c.g[A3][0] = c.g[A3][0] | 0x8000;
+            c.g[A3][0] = c.g[A3][0] << 16;
+            c.g[A3][0] = c.g[A3][0] | 0x100;
+            c.g[A3][0] = c.g[A3][0] << 16;
+            c.g[A3][0] = c.g[A3][0] | 0x101;
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[S1][0] = c.g[T2][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S0][0] = c.g[A1][0];
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S3][0] = c.g[A2][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            c.g[S4][0] = c.g[T3][0];
+            c.g[S2][0] = c.g[T1][0];
+            c.g[V1][0] = c.lw(c.g[S4][0] as u32);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+            c.sq(2, c.g[V1][0] as u32);
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd((c.g[V0][0] as u32).wrapping_add(0x10), c.g[A0][0]);
+            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd((c.g[V1][0] as u32).wrapping_add(0x18), c.g[A3][0]);
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x20));
+            c.lqc2(1, c.g[S0][0] as u32);
+            c.lqc2(2, (c.g[S0][0] as u32).wrapping_add(0x10));
+            c.lqc2(3, (c.g[S0][0] as u32).wrapping_add(0x20));
+            c.lqc2(4, (c.g[S0][0] as u32).wrapping_add(0x30));
+            c.sqc2(1, c.g[V0][0] as u32);
+            c.sqc2(2, (c.g[V0][0] as u32).wrapping_add(0x10));
+            c.sqc2(3, (c.g[V0][0] as u32).wrapping_add(0x20));
+            c.sqc2(4, (c.g[V0][0] as u32).wrapping_add(0x30));
+            c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[A1][0] = c.g[S1][0] << 32;
+            c.sd((c.g[A0][0] as u32).wrapping_add(0x60), 0u64);
+            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd((c.g[V1][0] as u32).wrapping_add(0x68), c.g[A1][0]);
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x70));
+            let t = c.g[T0][0] == 0u64;
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            if t {
+                break 'b_37e1ec;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[T0][0];
+            c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+            callee::PS2_GRAPHICS_MAN_EMIT_MODEL_MATRIX2.call(c, 0x0037_e1ec)?;
+            break 'b_37e1ec;
+        }
+        'b_37e210: {
+            c.cycles += 3;
+            c.g[V0][0] = c.g[S1][0] & 0x1;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[S2][0];
+            if t {
+                break 'b_37e210;
+            }
+            c.cycles += 6;
+            c.lq(2, (c.g[S0][0] as u32).wrapping_add(0x30));
+            c.g[A2][0] = c.g[S3][0];
+            c.g[A1][0] = c.g[SP][0];
+            c.sq(2, c.g[SP][0] as u32);
+            c.g[A3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+            callee::PS2_GRAPHICS_MAN_EMIT_MODEL_LIGHTING.call(c, 0x0037_e210)?;
+            break 'b_37e210;
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.sw(c.g[S4][0] as u32, c.g[V0][0]);
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void PS2GraphicsMan_UploadToDrawBuffer(...)` (0x383770): flushes the
+/// cache, then uploads the pending pixel rectangle with `Gs_UploadImage`
+/// (through the game's display-register state); returns 1.
+pub fn ps2_graphics_man_upload_to_draw_buffer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S1, 0x60);
+        frame.save(c, S0, 0x70);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x50);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S3, 0x40);
+        c.g[S2][0] = c.g[T1][0];
+        frame.save(c, S4, 0x30);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S5, 0x20);
+        c.g[S4][0] = c.g[T0][0];
+        frame.save_ra(c, 0x10);
+        c.g[S5][0] = c.g[A1][0];
+        c.g[RA][0] = sx(0x0038_37b0);
+        c.g[A0][0] = 0u64;
+        callee::FLUSH_CACHE.call(c, 0x0038_37b0)?;
+        c.sw(frame.at(c, 0), c.g[S0][0]);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A3][0] = c.g[S3][0];
+        c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x5a84));
+        c.g[T0][0] = c.g[S4][0];
+        c.g[T1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x5a30));
+        c.g[T3][0] = c.g[S5][0];
+        c.g[T2][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x5a3c));
+        c.g[RA][0] = sx(0x0038_37dc);
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << 5);
+        callee::GS_UPLOAD_IMAGE.call(c, 0x0038_37dc)?;
+        frame.restore(c, S0, 0x70);
+        c.g[V0][0] = 0x1;
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PS2GraphicsMan_ProjectPointToScreenInt(...)` (0x395ed8): refreshes
+/// the view matrices unless the view is valid, then transforms the point at
+/// `a1` by the matrix at `+0x58a0` and returns the fixed-point screen x.
+pub fn ps2_graphics_man_project_point_to_screen_int(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6b90));
+        let stale = c.g[V0][0] != 0u64;
+        c.g[S1][0] = c.g[A1][0];
+        if stale {
+            // The view is valid: skip the refresh.
+        } else {
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x0039_5f00);
+            callee::UPDATE_VIEW_MATRICES.call(c, 0x0039_5f00)?;
+        }
+        c.cycles += 24;
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x58a0));
+        c.lqc2(5, (c.g[S0][0] as u32).wrapping_add(0x5920));
+        c.lqc2(10, c.g[S1][0] as u32);
+        c.lqc2(1, c.g[V1][0] as u32);
+        c.lqc2(2, (c.g[V1][0] as u32).wrapping_add(0x10));
+        c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x20));
+        c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x30));
+        c.vu0().mula(0b1111, 1, Src::Bc(10, X));
+        c.vu0().madda(0b1111, 2, Src::Bc(10, Y));
+        c.vu0().madda(0b1111, 3, Src::Bc(10, Z));
+        c.vu0().madd(0b1111, 11, 4, Src::Bc(10, W));
+        c.vu0().mul(0b0001, 11, 11, Src::Bc(5, W));
+        c.vu0().max(0b0001, 11, 11, Src::Bc(0, X));
+        c.vu0().mini(0b0001, 11, 11, Src::Bc(5, X));
+        c.vu0().ftoi(0, 0b1111, 11, 11);
+        c.vu0().mtir(1, 11, 3);
+        c.cfc2(2, 1);
+        frame.restore(c, S0, 0x20);
+        c.g[V0][0] = c.g[V0][0] << 32;
+        c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PS2GraphicsMan_TransformToClip(...)` (0x37df40): transforms the
+/// vector at `a2` by the `a1 + 0x58a0` matrix, leaving the clip-space
+/// vector at `a0`.
+pub fn ps2_graphics_man_transform_to_clip(c: &mut Cpu) {
+    c.cycles += 17;
+    let frame = Frame::open(c, 0x10);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x58a0));
+    c.lqc2(10, c.g[A2][0] as u32);
+    c.lqc2(1, c.g[A1][0] as u32);
+    c.lqc2(2, (c.g[A1][0] as u32).wrapping_add(0x10));
+    c.lqc2(3, (c.g[A1][0] as u32).wrapping_add(0x20));
+    c.lqc2(4, (c.g[A1][0] as u32).wrapping_add(0x30));
+    c.vu0().mula(0b1111, 1, Src::Bc(10, X));
+    c.vu0().madda(0b1111, 2, Src::Bc(10, Y));
+    c.vu0().madda(0b1111, 3, Src::Bc(10, Z));
+    c.vu0().madd(0b1111, 11, 4, Src::Bc(10, W));
+    c.sqc2(11, sp(c));
+    c.lq(3, sp(c));
+    c.g[V0][0] = c.g[A0][0];
+    c.sq(3, c.g[A0][0] as u32);
+    frame.close(c);
+}
+
+/// `int Renderer_HasLightStateChanged(Renderer *r)` (0x3947d8): runs each
+/// light's update hook and compares the stored record with the refreshed
+/// value; returns 1 on the first mismatch, 0 when the four word records
+/// and the two halfword records all match.
+pub fn renderer_has_light_state_changed(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = 0u64;
+        frame.save(c, S1, 0x30);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(light_state::TABLE));
+        // Four word records.
+        loop {
+            c.cycles += 12;
+            c.g[S1][0] = sx((c.g[S3][0] as u32) << 2);
+            c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(light_state::CURRENT));
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(light_state::FIELD));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(light_state::UPDATE));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+            let update = c.g[V0][0] as u32;
+            c.g[RA][0] = sx(0x0039_481c);
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.pc = update;
+            call_indirect(c, update);
+            if c.pc != 0x0039_481c {
+                return Err(crate::call::Unwound);
+            }
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            let differs = c.g[A0][0] != c.g[V1][0];
+            c.g[V0][0] = 0x1;
+            if differs {
+                break;
+            }
+            c.cycles += 4;
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = ((c.g[S3][0] as i64) < 4i64) as u64;
+            let more = c.g[V0][0] != 0u64;
+            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(light_state::TABLE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0039_4800);
+            }
+        }
+        // The loop above leaves v0 = 0 exactly when all four records
+        // matched; only then do the two halfword records run.
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[S3][0] = 0u64;
+            loop {
+                c.cycles += 13;
+                c.g[S1][0] = sx((c.g[S3][0] as u32) << 1);
+                c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(light_state::CURRENT));
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(light_state::FIELD));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(light_state::UPDATE));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                let update = c.g[V0][0] as u32;
+                c.g[RA][0] = sx(0x0039_4868);
+                c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.pc = update;
+                call_indirect(c, update);
+                if c.pc != 0x0039_4868 {
+                    return Err(crate::call::Unwound);
+                }
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[A0][0] = c.lh(c.g[S0][0] as u32);
+                c.g[V1][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
+                let differs = c.g[A0][0] != c.g[V1][0];
+                c.g[V0][0] = 0x1;
+                if differs {
+                    break;
+                }
+                c.cycles += 4;
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = (c.g[S3][0] < 0x2u64) as u64;
+                if c.g[V0][0] != 0u64 {
+                    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(light_state::TABLE));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_4848);
+                    }
+                    continue;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0u64;
+                break;
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Renderer_SetLightEntry(Renderer *r, void *src, int i)` (0x3943c0):
+/// copies the 16-byte light record at `src` into slot `i` of the renderer's
+/// light table (staged through the stack, so unaligned ends stay exact).
+pub fn renderer_set_light_entry(c: &mut Cpu) {
+    c.cycles += 21;
+    let frame = Frame::open(c, 0x10);
+    c.g[A2][0] = sx((c.g[A2][0] as u32) << 4);
+    let src = c.g[A1][0] as u32;
+    let stack = sp(c);
+    c.ldl(2, src.wrapping_add(0x7));
+    c.ldr(2, src);
+    c.ldl(3, src.wrapping_add(0xf));
+    c.ldr(3, src.wrapping_add(0x8));
+    c.sdl(2, stack.wrapping_add(0x7));
+    c.sdr(2, stack);
+    c.sdl(3, stack.wrapping_add(0xf));
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.sdr(3, stack.wrapping_add(0x8));
+    c.ldl(2, stack.wrapping_add(0x7));
+    c.ldr(2, stack);
+    c.ldl(3, stack.wrapping_add(0xf));
+    c.ldr(3, stack.wrapping_add(0x8));
+    c.sdl(2, (c.g[A2][0] as u32).wrapping_add(0xf0b));
+    c.sdr(2, (c.g[A2][0] as u32).wrapping_add(0xf04));
+    c.sdl(3, (c.g[A2][0] as u32).wrapping_add(0xf13));
+    c.sdr(3, (c.g[A2][0] as u32).wrapping_add(0xf0c));
+    frame.close(c);
+}
+
+/// `Renderer *Renderer_ReturnSelf(Renderer *r, ...)` (0x393008): a vtable
+/// thunk that spills its register arguments to the stack and returns its
+/// object pointer.
+pub fn renderer_return_self(c: &mut Cpu) {
+    c.cycles += 15;
+    let frame = Frame::open(c, 0x80);
+    c.g[V0][0] = c.g[A0][0];
+    c.sd(frame.at(c, 0x48), c.g[A1][0]);
+    c.sd(frame.at(c, 0x50), c.g[A2][0]);
+    c.sd(frame.at(c, 0x58), c.g[A3][0]);
+    c.sd(frame.at(c, 0x60), c.g[T0][0]);
+    c.sd(frame.at(c, 0x68), c.g[T1][0]);
+    c.sd(frame.at(c, 0x70), c.g[T2][0]);
+    c.sd(frame.at(c, 0x78), c.g[T3][0]);
+    c.swc1(12, frame.at(c, 0x38));
+    c.swc1(14, frame.at(c, 0x3c));
+    c.swc1(16, frame.at(c, 0x40));
+    c.swc1(18, frame.at(c, 0x44));
+    frame.close(c);
+}
+
+/// `void Renderer_SetDisplayRegsDefault(Renderer *r)` (0x3960e8): selects
+/// display-register set 1 through [`callee::RENDERER_SET_DISPLAY_REGS`].
+pub fn renderer_set_display_regs_default(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0x1;
+        callee::RENDERER_SET_DISPLAY_REGS.call(c, 0x0039_60f8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPS2GridMesh_DeleteList(cPS2GridMesh *mesh)` (0x3865e8): walks the
+/// mesh's delete list, running each entry's teardown hook (flags 3).
+pub fn cps2_grid_mesh_delete_list(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        c.g[A2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x10);
+        let empty = c.g[A2][0] == 0u64;
+        frame.save_ra(c, 0);
+        if !empty {
+            c.cycles += 1;
+            loop {
+                c.cycles += 2;
+                let done = c.g[A2][0] == 0u64;
+                c.g[S0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(grid_mesh::NEXT));
+                if done {
+                    break;
+                }
+                c.cycles += 6;
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(grid_mesh::RECORD));
+                c.g[A1][0] = 0x3;
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(grid_mesh::FIELD));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(grid_mesh::TEARDOWN));
+                let teardown = c.g[V1][0] as u32;
+                c.g[RA][0] = sx(0x0038_6620);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.pc = teardown;
+                call_indirect(c, teardown);
+                if c.pc != 0x0038_6620 {
+                    return Err(crate::call::Unwound);
+                }
+                c.cycles += 3;
+                c.g[A2][0] = c.g[S0][0];
+                let more = c.g[A2][0] != 0u64;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_6600);
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -27929,5 +28541,584 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+
+    /// Gate for the [`ps2_graphics_man_draw_shadow_mesh_pass`] fixture: the
+    /// real `EmitShadowStrips` builds packets, so the test fakes it (it has
+    /// an override slot) and checks the walker's register setup and loop.
+    pub(crate) const SHADOW_CTRL: u32 = DATA + 0x30_0000;
+
+    pub(crate) const SHADOW_MAGIC: u32 = 0x0c13_7001;
+
+    pub(crate) static SHADOW_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_emit_shadow_strips(c: &mut Cpu) {
+        if c.bus.read32(SHADOW_CTRL) != SHADOW_MAGIC {
+            return fakes::fall_back(c, &SHADOW_PREV, ee::s12::f_00387ec0__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn shadow_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00387EC0),
+            fake_emit_shadow_strips,
+            &SHADOW_PREV,
+        );
+    }
+
+    /// Mesh records at `MESH`: kind at +0x8 from `seed` (0 skips, >= 2
+    /// calls), count from `seed / 2 % 3` (0..2, plus empty when `seed % 4 == 0`).
+    pub(crate) const SHADOW_MESH: u32 = DATA + 0x1234;
+
+    pub(crate) fn shadow_mesh_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x38_6d10, 0);
+        c.bus.write32(SHADOW_CTRL, SHADOW_MAGIC);
+        c.pc = 0x0038_6d10;
+        if seed % 4 == 0 {
+            c.g[A2][0] = 0;
+            c.g[A1][0] = sx(SHADOW_MESH);
+        } else {
+            let count = 1 + seed / 2 % 3;
+            for i in 0..count {
+                let rec = SHADOW_MESH + 0x14 * (i as u32);
+                fill(c, &mut r, rec, 5);
+                let kind = match seed / 7 % 3 {
+                    0 => 0u32,
+                    1 => 2u32,
+                    _ => 5u32,
+                };
+                c.bus.write32(rec, 0x01020304);
+                c.bus.write32(rec + 4, 0x05060708);
+                c.bus.write32(rec + 8, kind);
+                c.bus.write32(rec + 0xc, 0x090a0b0c);
+                c.bus.write32(rec + 0x10, 0x0d0e0f10);
+            }
+            c.g[A1][0] = sx(SHADOW_MESH);
+            c.g[A2][0] = count as u64;
+        }
+        c.g[A0][0] = sx(DATA + 0x20_0000);
+        c.g[A3][0] = (seed as u64).wrapping_mul(0x9e37) | 0x1000;
+        c.g[T0][0] = (seed as u64).wrapping_mul(0x51f3) | 0x2000;
+        c.g[T1][0] = (seed as u64).wrapping_mul(0x85eb) | 0x3000;
+        c.f[12] = 0x3f800000;
+        c.f[13] = 0x40000000;
+        fill(c, &mut r, DATA + 0x20_0000, 0x40);
+    }
+
+    /// Empty, all-skip and mixed records; the faked callee covers the call
+    /// arm and the count covers the loop-back edge.
+    #[test]
+    fn ps2_graphics_man_draw_shadow_mesh_pass_matches() {
+        shadow_hook();
+        check(
+            ee::s12::f_00386d10__generated,
+            ps2_graphics_man_draw_shadow_mesh_pass,
+            120,
+            &|c, seed| {
+                shadow_mesh_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_graphics_man_draw_shadow_mesh_pass_events() {
+        shadow_hook();
+        driven!(gen_shadow, ee::s12::f_00386d10__generated);
+        driven!(hand_shadow, ps2_graphics_man_draw_shadow_mesh_pass);
+        check_events(gen_shadow, hand_shadow, 60, &|c, seed| {
+            shadow_mesh_setup(c, seed / 3);
+            schedule(
+                c,
+                &mut Rng(0x38_6d10 ^ (seed as u64) << 8),
+                seed,
+                0x0038_6d10,
+            )
+        });
+    }
+
+    /// Gates for the [`ps2_graphics_man_emit_model_header`] fixture: both
+    /// callees build packets, so both are faked (each has an override slot).
+    pub(crate) const MODEL_CTRL: u32 = DATA + 0x31_0000;
+
+    pub(crate) const MODEL_MAGIC: u32 = 0x0c13_7002;
+
+    pub(crate) static MODEL_PREV_MATRIX: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static MODEL_PREV_LIGHTING: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_emit_model_matrix2(c: &mut Cpu) {
+        if c.bus.read32(MODEL_CTRL) != MODEL_MAGIC {
+            return fakes::fall_back(c, &MODEL_PREV_MATRIX, ee::s12::f_0037e040__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn fake_emit_model_lighting(c: &mut Cpu) {
+        if c.bus.read32(MODEL_CTRL) != MODEL_MAGIC {
+            return fakes::fall_back(c, &MODEL_PREV_LIGHTING, ee::s12::f_0037e098__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn model_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0037E040),
+            fake_emit_model_matrix2,
+            &MODEL_PREV_MATRIX,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0037E098),
+            fake_emit_model_lighting,
+            &MODEL_PREV_LIGHTING,
+        );
+    }
+
+    /// Model header at `MODEL_OUT`: `T0` from `seed % 2` (skip vs call the
+    /// matrix block), `T2` low bit from `seed / 2 % 2` (skip vs call the
+    /// lighting block); matrices and packet words non-zero. The header's
+    /// output pointer aims at `MODEL_SCRATCH` (mapped, prefilled
+    /// non-zero) so the packet words are checked; the old unmapped
+    /// pointer dropped every packet write into the IO void.
+    pub(crate) const MODEL_OUT: u32 = DATA + 0x1234;
+
+    pub(crate) const MODEL_MAT: u32 = DATA + 0x20_0000;
+
+    pub(crate) const MODEL_SCRATCH: u32 = DATA + 0x23_0000;
+
+    pub(crate) fn model_header_setup(c: &mut Cpu, seed: u32) {
+        use crate::difftest::scramble;
+        let mut r = machine(c, seed, 0x37_e120, 0);
+        scramble(c, &mut r);
+        c.bus.write32(MODEL_CTRL, MODEL_MAGIC);
+        c.pc = 0x0037_e120;
+        for i in 0..16u32 {
+            c.bus.write32(
+                MODEL_MAT + 4 * i,
+                0x01020304u32.wrapping_add(i).wrapping_add(seed),
+            );
+        }
+        for i in 0..8u32 {
+            c.bus
+                .write32(MODEL_OUT + 4 * i, 0x11121314u32.wrapping_add(i));
+        }
+        // The packet's output pointer: mapped scratch, prefilled non-zero
+        // so each header word written (`| 0x6`, the `A3` chain,
+        // `S1 << 32`) is observed in RAM.
+        c.bus.write32(MODEL_OUT, MODEL_SCRATCH);
+        for i in 0..0x20u32 {
+            c.bus
+                .write32(MODEL_SCRATCH + 4 * i, 0x1a2b_3c4du32.wrapping_add(i));
+        }
+        fill(c, &mut r, MODEL_OUT + 0x20, 0x20);
+        c.g[A1][0] = sx(MODEL_MAT);
+        c.g[A2][0] = (seed as u64).wrapping_mul(0x9e37) | 0x1000;
+        c.g[T0][0] = if seed % 2 == 0 { 0 } else { sx(MODEL_MAT) };
+        c.g[T1][0] = (seed as u64).wrapping_mul(0x51f3) | 0x2000;
+        c.g[T2][0] = if seed / 2 % 2 == 0 { 0 } else { 1 };
+        c.g[T3][0] = sx(MODEL_OUT);
+        c.g[A0][0] = sx(DATA + 0x21_0000);
+        fill(c, &mut r, DATA + 0x21_0000, 0x10);
+    }
+
+    /// Matrix block taken when `seed % 2 == 1`, lighting when
+    /// `seed / 2 % 2 == 1`.
+    #[test]
+    fn ps2_graphics_man_emit_model_header_matches() {
+        model_hook();
+        shadow_hook();
+        check(
+            ee::s12::f_0037e120__generated,
+            ps2_graphics_man_emit_model_header,
+            120,
+            &|c, seed| {
+                model_header_setup(c, seed);
+            },
+        );
+    }
+
+    /// Gates for [`ps2_graphics_man_upload_to_draw_buffer`]: the real
+    /// callees touch cache and GS hardware, so both are faked (each has an
+    /// override slot) and the test checks the wrapper's plumbing.
+    pub(crate) const UPLOAD_CTRL: u32 = DATA + 0x30_0000;
+
+    pub(crate) const UPLOAD_MAGIC: u32 = 0x0c13_7201;
+
+    pub(crate) static UPLOAD_PREV_FLUSH: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static UPLOAD_PREV_UPLOAD: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_upload_flush(c: &mut Cpu) {
+        if c.bus.read32(UPLOAD_CTRL) != UPLOAD_MAGIC {
+            return fakes::fall_back(c, &UPLOAD_PREV_FLUSH, ee::s15::f_00424020__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn fake_upload_image(c: &mut Cpu) {
+        if c.bus.read32(UPLOAD_CTRL) != UPLOAD_MAGIC {
+            return fakes::fall_back(c, &UPLOAD_PREV_UPLOAD, ee::s12::f_00383808__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn upload_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00424020),
+            fake_upload_flush,
+            &UPLOAD_PREV_FLUSH,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00383808),
+            fake_upload_image,
+            &UPLOAD_PREV_UPLOAD,
+        );
+    }
+
+    /// Renderer-ish object with the display register words the wrapper
+    /// forwards to `Gs_UploadImage`.
+    pub(crate) const UPLOAD_OBJ: u32 = DATA + 0x1234;
+
+    /// Flush and upload faked: checks the argument setup, the stack spill
+    /// and the return value.
+    #[test]
+    fn ps2_graphics_man_upload_to_draw_buffer_matches() {
+        upload_hook();
+        check(
+            ee::s12::f_00383770__generated,
+            ps2_graphics_man_upload_to_draw_buffer,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x38_3770, 0);
+                c.bus.write32(UPLOAD_CTRL, UPLOAD_MAGIC);
+                fill(c, &mut r, UPLOAD_OBJ, 0x6000 / 4);
+                c.bus.write32(UPLOAD_OBJ + 0x5a84, UPLOAD_OBJ + 0x100);
+                c.g[A0][0] = sx(UPLOAD_OBJ);
+                c.g[A1][0] = (seed as u64) | 0x2340_0000_0000;
+                c.g[A2][0] = (seed as u64).wrapping_mul(0x9e37) | 0x1000;
+                c.g[A3][0] = (seed as u64).wrapping_mul(0x51f3) | 0x2000;
+                c.g[T0][0] = (seed as u64).wrapping_mul(0x85eb) | 0x3000;
+                c.g[T1][0] = (seed as u64).wrapping_mul(0xc2b3) | 0x4000;
+                c.pc = 0x0038_3770;
+            },
+        );
+    }
+
+    /// Gates for [`ps2_graphics_man_project_point_to_screen_int`]: the
+    /// view-matrix refresh is faked (override slot); the VU0 transform
+    /// always runs.
+    pub(crate) const PROJECT_CTRL: u32 = DATA + 0x31_0000;
+
+    pub(crate) const PROJECT_MAGIC: u32 = 0x0c13_7202;
+
+    pub(crate) static PROJECT_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_update_view_matrices(c: &mut Cpu) {
+        if c.bus.read32(PROJECT_CTRL) != PROJECT_MAGIC {
+            return fakes::fall_back(c, &PROJECT_PREV, ee::s12::f_0037d968__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// View flag from `seed % 2` (refresh or not); edge-float or finite
+    /// matrix and vector from `seed / 2 % 2`.
+    #[test]
+    fn ps2_graphics_man_project_point_to_screen_int_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0037D968),
+            fake_update_view_matrices,
+            &PROJECT_PREV,
+        );
+        check(
+            ee::s13::f_00395ed8__generated,
+            ps2_graphics_man_project_point_to_screen_int,
+            200,
+            &|c, seed| {
+                use crate::difftest::scramble;
+                let mut r = machine(c, seed, 0x39_5ed8, 0);
+                scramble(c, &mut r);
+                c.bus.write32(PROJECT_CTRL, PROJECT_MAGIC);
+                const OBJ: u32 = DATA + 0x1234;
+                const VEC: u32 = DATA + 0x20_0000;
+                // Odd seed pairs: finite matrix rows, the `vf5` row at
+                // `+0x5920` and vector, so the projected `w` survives `ftoi`
+                // as a non-zero integer and the return's sign-extension is
+                // checked. Even pairs keep the edge floats.
+                if seed / 2 % 2 == 1 {
+                    for i in 0..36u32 {
+                        c.bus.write32(OBJ + 0x58a0 + 4 * i, r.f32(64.0));
+                    }
+                    for i in 0..4u32 {
+                        c.bus.write32(VEC + 4 * i, r.f32(64.0));
+                    }
+                } else {
+                    for i in 0..20u32 {
+                        c.bus.write32(OBJ + 0x58a0 + 4 * i, r.edge_f32());
+                    }
+                    for i in 0..4u32 {
+                        c.bus.write32(VEC + 4 * i, r.edge_f32());
+                    }
+                }
+                c.bus.write32(OBJ + 0x6b90, (seed % 2) as u32);
+                c.g[A0][0] = sx(OBJ);
+                c.g[A1][0] = sx(VEC);
+                c.pc = 0x0039_5ed8;
+            },
+        );
+    }
+
+    /// `PS2GraphicsMan_TransformToClip`: an edge-float matrix and vector;
+    /// the clip-space vector lands at `a0`.
+    #[test]
+    fn ps2_graphics_man_transform_to_clip_matches() {
+        use crate::difftest::scramble;
+        check(
+            ee::s12::f_0037df40__generated,
+            ps2_graphics_man_transform_to_clip,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_df40, 0);
+                scramble(c, &mut r);
+                const MAT: u32 = DATA + 0x1234;
+                const VEC: u32 = DATA + 0x20_0000;
+                const OUT: u32 = DATA + 0x21_0000;
+                for i in 0..16u32 {
+                    c.bus.write32(MAT + 0x58a0 + 4 * i, r.edge_f32());
+                }
+                for i in 0..4u32 {
+                    c.bus.write32(VEC + 4 * i, r.edge_f32());
+                }
+                fill(c, &mut r, OUT, 8);
+                c.g[A0][0] = sx(OUT);
+                c.g[A1][0] = sx(MAT);
+                c.g[A2][0] = sx(VEC);
+                c.pc = 0x0037_df40;
+            },
+        );
+    }
+
+    /// Renderer-shaped object, light table, current records and the fake
+    /// update-hook results for [`renderer_has_light_state_changed`].
+    pub(crate) const LIGHT_OBJ: u32 = DATA + 0x1234;
+
+    pub(crate) const LIGHT_TABLE: u32 = DATA + 0x20_0000;
+
+    pub(crate) const LIGHT_CURRENT: u32 = DATA + 0x21_0000;
+
+    pub(crate) const LIGHT_RESULT: u32 = DATA + 0x22_0000;
+
+    /// Fixture for [`renderer_has_light_state_changed`]: the table points at
+    /// the miss-hook fake, the forced `v0` of call `n` is `LIGHT_RESULT +
+    /// 0x40*n`, and seed digits steer the first mismatch (`seed % 5` for the
+    /// word records, 4 for none; `seed / 5 % 3` for the halfword records, 2
+    /// for none).
+    pub(crate) fn light_state_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = machine(c, seed, 0x39_47d8, 6);
+        c.g[A0][0] = sx(LIGHT_OBJ);
+        c.pc = 0x0039_47d8;
+        c.bus
+            .write32(LIGHT_OBJ + light_state::CURRENT, LIGHT_CURRENT);
+        c.bus.write32(LIGHT_OBJ + light_state::TABLE, LIGHT_TABLE);
+        c.bus.write16(LIGHT_TABLE + light_state::FIELD, 0x30);
+        c.bus.write32(LIGHT_TABLE + light_state::UPDATE, FAKE);
+        fill(c, &mut r, LIGHT_CURRENT, 0x40);
+        let word_miss = (seed % 5) as u32;
+        for i in 0..4u32 {
+            let result = LIGHT_RESULT + 0x40 * i;
+            fill(c, &mut r, result, 0x10);
+            c.bus.write32(LOG_RESULTS + 4 * i, result);
+            let same = c.bus.read32(LIGHT_CURRENT + 4 * i);
+            c.bus.write32(result + 4 * i, same);
+            if i == word_miss {
+                c.bus.write32(LIGHT_CURRENT + 4 * i, same.wrapping_add(1));
+            }
+        }
+        let half_miss = (seed / 5 % 3) as u32;
+        for j in 0..2u32 {
+            let result = LIGHT_RESULT + 0x40 * (4 + j);
+            fill(c, &mut r, result, 0x10);
+            c.bus.write32(LOG_RESULTS + 4 * (4 + j), result);
+            let addr = LIGHT_CURRENT + 0x10 + 2 * j;
+            let same = c.bus.read16(addr) as u32;
+            c.bus.write16(result + 2 * j + 0x10, same as u16);
+            if j == half_miss {
+                c.bus.write16(addr, (same + 1) as u16);
+            }
+        }
+        r
+    }
+
+    /// Word records mismatch at `seed % 5` (4 runs the halfword records),
+    /// halfword records at `seed / 5 % 3` (2 returns 0); hook unwinds cover
+    /// the unwind returns after each update call.
+    #[test]
+    fn renderer_has_light_state_changed_matches() {
+        covered(
+            ee::s13::f_003947d8__generated,
+            renderer_has_light_state_changed,
+            200,
+            &|c, seed| {
+                light_state_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn renderer_has_light_state_changed_events() {
+        driven!(gen_changed, ee::s13::f_003947d8__generated);
+        driven!(hand_changed, renderer_has_light_state_changed);
+        check_events(gen_changed, hand_changed, 60, &|c, seed| {
+            light_state_setup(c, seed / 3);
+            // Fake unwinds stay in the `covered` test above: `drive`
+            // cannot resume the miss-hook unwind pc.
+            c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+            schedule(
+                c,
+                &mut Rng(0x39_47d8 ^ (seed as u64) << 8),
+                seed,
+                0x0039_47d8,
+            )
+        });
+    }
+
+    /// `Renderer_SetLightEntry`: a record with non-zero bytes at an
+    /// alignment the seed picks, copied into the slot the seed picks.
+    #[test]
+    fn renderer_set_light_entry_matches() {
+        check(
+            ee::s13::f_003943c0__generated,
+            renderer_set_light_entry,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x39_43c0, 0);
+                let src = DATA + 0x1234 + (seed / 4 % 4);
+                let table = DATA + 0x20_0000;
+                fill(c, &mut r, src & !3, 8);
+                c.bus.write32(src, 0x01020304);
+                c.bus.write32(src + 12, 0x05060708);
+                fill(c, &mut r, table, 0x400);
+                c.g[A0][0] = sx(table);
+                c.g[A1][0] = sx(src);
+                c.g[A2][0] = (seed % 4) as u64;
+                c.pc = 0x0039_43c0;
+            },
+        );
+    }
+
+    /// `Renderer_ReturnSelf`: scrambled registers; the object comes back in
+    /// `v0` and the spills land on the stack.
+    #[test]
+    fn renderer_return_self_matches() {
+        check(
+            ee::s13::f_00393008__generated,
+            renderer_return_self,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x39_3008, 0);
+                c.g[A0][0] = (DATA + 0x1234) as u64;
+                c.pc = 0x0039_3008;
+            },
+        );
+    }
+
+    /// Gate for the [`renderer_set_display_regs_default`] fixture: the real
+    /// `Renderer_SetDisplayRegs` touches display hardware, so the test fakes
+    /// it (it has an override slot) and checks the wrapper's plumbing.
+    pub(crate) const SET_REGS_CTRL: u32 = DATA + 0x30_0000;
+
+    pub(crate) const SET_REGS_MAGIC: u32 = 0x0c13_7301;
+
+    pub(crate) static SET_REGS_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_set_display_regs(c: &mut Cpu) {
+        if c.bus.read32(SET_REGS_CTRL) != SET_REGS_MAGIC {
+            return fakes::fall_back(c, &SET_REGS_PREV, ee::s12::f_00382af0__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// `Renderer_SetDisplayRegsDefault`: checks `a2 = 1`, the frame and the
+    /// return through the gated fake.
+    #[test]
+    fn renderer_set_display_regs_default_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00382AF0),
+            fake_set_display_regs,
+            &SET_REGS_PREV,
+        );
+        check(
+            ee::s13::f_003960e8__generated,
+            renderer_set_display_regs_default,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x39_60e8, 0);
+                c.bus.write32(SET_REGS_CTRL, SET_REGS_MAGIC);
+                c.g[A0][0] = (DATA + 0x1234) as u64;
+                c.pc = 0x0039_60e8;
+            },
+        );
+    }
+
+    /// Grid-mesh delete-list nodes for [`cps2_grid_mesh_delete_list`].
+    pub(crate) const GRID_DELETE_NODES: u32 = DATA + 0x20_0000;
+
+    pub(crate) const GRID_DELETE_REC: u32 = DATA + 0x21_0000;
+
+    /// Fixture for [`cps2_grid_mesh_delete_list`]: `seed % 4` picks an empty
+    /// list (a quarter of the seeds) or a 2-4 node list (`seed / 4 % 3`),
+    /// each node's teardown hook the miss-hook fake; hook unwinds cover the
+    /// unwind return. Lists run at least two nodes so the event test's
+    /// scheduled events land inside the loop.
+    pub(crate) fn grid_delete_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = machine(c, seed, 0x38_65e8, 2);
+        c.pc = 0x0038_65e8;
+        if seed % 4 == 0 {
+            c.g[A0][0] = 0;
+            return r;
+        }
+        let count = 2 + seed / 4 % 3;
+        for i in 0..count {
+            let node = GRID_DELETE_NODES + 0x40 * i as u32;
+            let next = if i + 1 < count { node + 0x40 } else { 0 };
+            c.bus.write32(node, next);
+            let rec = GRID_DELETE_REC + 0x40 * i as u32;
+            c.bus.write32(node + grid_mesh::NEXT, next);
+            c.bus.write32(node + grid_mesh::RECORD, rec);
+            c.bus.write16(rec + grid_mesh::FIELD, 0x1234);
+            c.bus.write32(rec + grid_mesh::TEARDOWN, FAKE);
+            fill(c, &mut r, rec + 0x10, 8);
+        }
+        c.g[A0][0] = GRID_DELETE_NODES as u64;
+        r
+    }
+
+    #[test]
+    fn cps2_grid_mesh_delete_list_matches() {
+        covered(
+            ee::s12::f_003865e8__generated,
+            cps2_grid_mesh_delete_list,
+            200,
+            &|c, seed| {
+                grid_delete_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn cps2_grid_mesh_delete_list_events() {
+        driven!(gen_delete, ee::s12::f_003865e8__generated);
+        driven!(hand_delete, cps2_grid_mesh_delete_list);
+        check_events(gen_delete, hand_delete, 60, &|c, seed| {
+            grid_delete_setup(c, seed / 3);
+            // Fake unwinds stay in the `covered` test above: `drive`
+            // cannot resume the miss-hook unwind pc.
+            c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+            schedule(
+                c,
+                &mut Rng(0x38_65e8 ^ (seed as u64) << 8),
+                seed,
+                0x0038_65e8,
+            )
+        });
     }
 }

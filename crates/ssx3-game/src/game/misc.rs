@@ -343,6 +343,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RefPack_GetUnpackedSize",
     ),
     (0x003b_4d00, refpack_get_sizes, "RefPack_GetSizes"),
+    (0x0039_4c48, light_man_base_v09, "LightManBase_v09"),
+    (0x0039_4c50, light_man_base_v13, "LightManBase_v13"),
+    (0x0039_4c58, light_man_base_v14, "LightManBase_v14"),
+    (0x0039_4c60, light_man_base_v15, "LightManBase_v15"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -18764,6 +18768,34 @@ pub(crate) fn fseek_positioned(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
+/// `void LightManBase_v09()` (0x394c48): an empty LightManBase virtual slot;
+/// returns to its caller at once.
+pub fn light_man_base_v09(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void LightManBase_v13()` (0x394c50): an empty LightManBase virtual slot;
+/// returns to its caller at once.
+pub fn light_man_base_v13(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void LightManBase_v14()` (0x394c58): an empty LightManBase virtual slot;
+/// returns to its caller at once.
+pub fn light_man_base_v14(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void LightManBase_v15()` (0x394c60): an empty LightManBase virtual slot;
+/// returns to its caller at once.
+pub fn light_man_base_v15(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -26463,6 +26495,60 @@ pub(crate) mod tests {
 
     /// Output buffer for the printf family.
     pub(crate) const OUT: u32 = DATA + 0x2000;
+
+    /// The four empty `LightManBase` virtual slots: scrambled machines,
+    /// return address only.
+    #[test]
+    fn light_man_base_v09_matches() {
+        check(
+            ee::s13::f_00394c48__generated,
+            light_man_base_v09,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x39_4c48, 0);
+                c.pc = 0x0039_4c48;
+            },
+        );
+    }
+
+    #[test]
+    fn light_man_base_v13_matches() {
+        check(
+            ee::s13::f_00394c50__generated,
+            light_man_base_v13,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x39_4c50, 0);
+                c.pc = 0x0039_4c50;
+            },
+        );
+    }
+
+    #[test]
+    fn light_man_base_v14_matches() {
+        check(
+            ee::s13::f_00394c58__generated,
+            light_man_base_v14,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x39_4c58, 0);
+                c.pc = 0x0039_4c58;
+            },
+        );
+    }
+
+    #[test]
+    fn light_man_base_v15_matches() {
+        check(
+            ee::s13::f_00394c60__generated,
+            light_man_base_v15,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x39_4c60, 0);
+                c.pc = 0x0039_4c60;
+            },
+        );
+    }
 }
 
 pub(crate) mod callee {
