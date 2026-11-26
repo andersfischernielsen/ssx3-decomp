@@ -10,6 +10,7 @@ use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::returned;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
@@ -38,6 +39,7 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -343,6 +345,30 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RefPack_GetUnpackedSize",
     ),
     (0x003b_4d00, refpack_get_sizes, "RefPack_GetSizes"),
+    (0x002c_76c0, huff_decode_stream, "HUFF_DecodeStream"),
+    (0x002c_8e48, huff_analysis, "HUFF_analysis"),
+    (0x0031_7d20, ea_mem_alloc_default, "EA_MemAllocDefault"),
+    (0x0031_7d48, ea_mem_alloc_tagged, "EA_MemAllocTagged"),
+    (0x0031_7ee0, ea_mem_sync_lock, "EA_MemSyncLock"),
+    (
+        0x0031_7f18,
+        ea_mem_report_stats_wrapper,
+        "EA_MemReportStats_Wrapper",
+    ),
+    (0x003b_4818, eac_get_unpacked_size, "EAC_GetUnpackedSize"),
+    (0x003e_49b8, ea_run_fatal_handlers, "EA_RunFatalHandlers"),
+    (0x003e_4a10, ea_abort, "EA_Abort"),
+    (
+        0x003e_4a30,
+        ea_add_shutdown_handler,
+        "EA_AddShutdownHandler",
+    ),
+    (0x003e_6070, ea_debug_message, "EA_DebugMessage"),
+    (0x003e_60e8, ea_fatal_error, "EA_FatalError"),
+    (0x003e_6188, ea_mem_move, "EA_MemMove"),
+    (0x003e_6240, ea_is_valid_pointer, "EA_IsValidPointer"),
+    (0x003e_62b0, ea_assert_not_busy, "EA_AssertNotBusy"),
+    (0x003e_62d0, ea_crc16, "EA_Crc16"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -18764,6 +18790,3859 @@ pub(crate) fn fseek_positioned(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
+pub(crate) mod decode {
+
+    pub const ENTRY: u32 = 0x002c_76c0;
+
+    pub const END: u32 = 0x002c_8344;
+
+    /// Outer table-build loop.
+    pub const TBL_BUILD: u32 = 0x002c_7880;
+
+    /// Per-level bit loop.
+    pub const TBL_STEP: u32 = 0x002c_7884;
+
+    /// First code-length bit loop.
+    pub const BIT_LOOP_B: u32 = 0x002c_78f8;
+
+    /// Second code-length bit loop.
+    pub const BIT_LOOP_A: u32 = 0x002c_7958;
+
+    /// Scratch-table clear loop.
+    pub const CLEAR_TBL: u32 = 0x002c_7ae8;
+
+    /// Second table-build pass.
+    pub const TBL2: u32 = 0x002c_7b18;
+
+    /// Third code-length bit loop.
+    pub const BIT_LOOP_C: u32 = 0x002c_7b78;
+
+    /// Fourth code-length bit loop.
+    pub const BIT_LOOP_D: u32 = 0x002c_7bd8;
+
+    /// Symbol-scan loop.
+    pub const SCAN_SYM: u32 = 0x002c_7d08;
+
+    /// Output-table fill loop.
+    pub const OUT_FILL: u32 = 0x002c_7d58;
+
+    /// Byte-copy loop.
+    pub const COPY_PAIR: u32 = 0x002c_7dd8;
+
+    /// Copy-restart test.
+    pub const COPY_RESTART: u32 = 0x002c_7db8;
+
+    /// Symbol-table init loop.
+    pub const SYM_INIT: u32 = 0x002c_7d98;
+
+    /// Main decode loop.
+    pub const MAIN: u32 = 0x002c_7e60;
+
+    /// Multi-symbol decode chain.
+    pub const SYMBOLS: u32 = 0x002c_7e78;
+
+    /// Single-symbol refill step.
+    pub const SYMBOL: u32 = 0x002c_7e28;
+
+    /// Match-length bit loop.
+    pub const MATCH_LEN: u32 = 0x002c_7f48;
+
+    /// First length-class bit loop.
+    pub const LEN_BITS: u32 = 0x002c_8040;
+
+    /// Second length-class bit loop.
+    pub const LEN_BITS2: u32 = 0x002c_80a0;
+
+    /// Match-run fill loop.
+    pub const RUN_FILL: u32 = 0x002c_81d8;
+
+    /// Checksum accumulation loop.
+    pub const CHECKSUM: u32 = 0x002c_82a8;
+
+    /// Delta accumulation loop.
+    pub const DELTA_ACC: u32 = 0x002c_82f8;
+}
+
+// ---------------------------------------------------------------------------
+// HUFF_analysis (0x2c8e48)
+
+/// Stack frame size of `HUFF_analysis`.
+pub(crate) const ANALYSIS_FRAME: u32 = 0x8c0;
+
+/// Per-run input counter in the analysis state.
+pub(crate) const AN_RUN_COUNT: u32 = 0x900;
+
+/// Sum of the input bytes in the analysis state.
+pub(crate) const AN_BYTE_SUM: u32 = 0x2dbc;
+
+/// Slot holding the input size (`a2` on entry) in the analysis state.
+pub(crate) const AN_SIZE_SLOT: u32 = 0x2dc8;
+
+/// Delta-window search source in the analysis state.
+pub(crate) const AN_DELTA_SRC: u32 = 0x2de8;
+
+/// Per-length symbol counts (`s1 + 0xd00`).
+pub(crate) const AN_LEN_COUNTS: u32 = 0xd00;
+
+/// Scratch table low end (`s4`-relative) for the delta search.
+pub(crate) const AN_SCR_LO: u32 = 0x404;
+
+/// Scratch table high end (`s4`-relative) for the delta search.
+pub(crate) const AN_SCR_HI: u32 = 0x7fc;
+
+/// Scratch table output (`s4`-relative); aliases the run counter word.
+pub(crate) const AN_SCR_OUT: u32 = 0x800;
+
+/// Div-result spill in the analysis frame.
+pub(crate) const AN_SP_LO: u32 = 0x800;
+
+/// Code-length base (`s5`) spill in the analysis frame.
+pub(crate) const AN_SP_CODETAB: u32 = 0x804;
+
+/// Small-input flag in the analysis frame.
+pub(crate) const AN_SP_SMALL: u32 = 0x808;
+
+/// Scratch buffer base (`sp + 0x400`) in the analysis frame.
+pub(crate) const AN_SP_SCRATCH: u32 = 0x80c;
+
+/// Length-counts base (`s1 + 0xd00`) spill in the analysis frame.
+pub(crate) const AN_SP_LENTAB: u32 = 0x810;
+
+/// Entry-`a1` flag word (`a1 & 0x20`) in the analysis frame.
+pub(crate) const AN_SP_FLAGS: u32 = 0x814;
+
+// ---------------------------------------------------------------------------
+// HUFF_DecodeStream (0x2c76c0)
+
+/// Stack frame size of `HUFF_DecodeStream` (saves s0-s7/fp, tables, spills).
+pub(crate) const DECODE_FRAME: u32 = 0x570;
+
+/// First level-table entry (`sp + 0x4`) in the decode frame: the class-1
+/// count priming the symbol-table init after the output table is filled.
+pub(crate) const DS_LVL1: u32 = 0x4;
+
+/// Word holding the output pointer (`a1` on entry) in the decode frame.
+pub(crate) const DS_OUT: u32 = 0x4c0;
+
+/// Word holding the decoded length (the `v0` result) in the decode frame.
+pub(crate) const DS_LEN: u32 = 0x4c4;
+
+/// Spill slot for the match-run bit (`t8`) in the decode frame.
+pub(crate) const DS_T8: u32 = 0x4c8;
+
+/// Pointer to the level table (`sp + 0x40`) in the decode frame.
+pub(crate) const DS_BASE: u32 = 0x4cc;
+
+/// Pointer to the length table (`sp + 0x80`) in the decode frame.
+pub(crate) const DS_TAB: u32 = 0x4d0;
+
+/// Stages of `HUFF_DecodeStream` between its resume entries: each stage runs
+/// forward from its head to the next head (shared regions live in helpers
+/// below, which is why several stages call them).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum DecodeStage {
+    Entry,
+    TblBuild,
+    TblStep,
+    BitLoopB,
+    BitLoopA,
+    ClearTbl,
+    Tbl2,
+    BitLoopC,
+    BitLoopD,
+    ScanSym,
+    OutFill,
+    CopyPair,
+    CopyRestart,
+    SymInit,
+    Main,
+    Symbols,
+    Symbol,
+    MatchLen,
+    LenBits,
+    LenBits2,
+    RunFill,
+    Checksum,
+    DeltaAcc,
+}
+
+/// Where a shared decode region transfers control: resume another stage, or
+/// stop (returned from the function, or unwound for an event).
+pub(crate) type TailNext = Option<DecodeStage>;
+
+/// Refill the bit buffer from the stream: the next two bytes extend `a3`,
+/// shifted into `a2` by the bit deficit. One identical fragment at 18 sites
+/// (the charge stays at the call site: +10, or +11/+9/+1/+2 around splits).
+#[inline(always)]
+pub(crate) fn decode_refill_bits(c: &mut Cpu) {
+    c.g[V1][0] = c.lbu(c.g[T1][0] as u32);
+    c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+    c.g[A0][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+    c.g[A1][0] = sx(0u32.wrapping_sub(c.g[T2][0] as u32));
+    c.g[A3][0] = c.g[V1][0] | c.g[V0][0];
+    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2));
+    c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+    c.g[A3][0] = c.g[A0][0] | c.g[V0][0];
+    c.g[A2][0] = sx((c.g[A3][0] as u32) << ((c.g[A1][0] as u32) & 31));
+}
+
+/// Run-cost region (0x2c7998..0x2c7a78): decode the repeat count (`t4`) into
+/// a table index (`v0`), by direct shift or by refill-assisted bit tests,
+/// then fall into the table store below. Entered at the top from the first
+/// code-length bit loops.
+pub(crate) fn decode_run_cost(c: &mut Cpu) -> TailNext {
+    // 0x002c7998.
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[T4][0] as i64) < 17i64) as u64;
+    let short = c.g[V0][0] != 0u64;
+    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[T4][0] as u32));
+    if short {
+        // 0x002c7a38.
+        c.cycles += 4;
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T4][0] as u32));
+        c.g[T0][0] = sx((c.g[A2][0] as u32) >> ((c.g[V0][0] as u32) & 31));
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[T4][0] as u32) & 31));
+        if (c.g[T2][0] as i64) >= 0 {
+            // 0x002c7a70.
+            c.cycles += 2;
+            c.g[V0][0] = sx((c.g[S3][0] as u32) << ((c.g[T4][0] as u32) & 31));
+            c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        } else {
+            // 0x002c7a48: refill, then the same join.
+            c.cycles += 10;
+            decode_refill_bits(c);
+            c.cycles += 2;
+            c.g[V0][0] = sx((c.g[S3][0] as u32) << ((c.g[T4][0] as u32) & 31));
+            c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        }
+    } else {
+        // 0x002c79a4.
+        c.cycles += 8;
+        c.g[V0][0] = 0x30;
+        c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[T4][0] as u32));
+        c.g[V1][0] = sx((c.g[T4][0] as u32).wrapping_sub(0x10));
+        c.g[T0][0] = sx((c.g[A2][0] as u32) >> ((c.g[V0][0] as u32) & 31));
+        c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[T4][0] as u32));
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[V1][0] as u32) & 31));
+        if (c.g[T2][0] as i64) >= 0 {
+            // 0x002c79ec.
+            c.cycles += 4;
+            c.g[T5][0] = sx((c.g[A2][0] as u32) >> 16);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x10));
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 16);
+            if (c.g[T2][0] as i64) < 0 {
+                // 0x002c79fc: refill, then the same join.
+                c.cycles += 10;
+                decode_refill_bits(c);
+            }
+        } else {
+            // 0x002c79c4: refill, then the 0x002c79ec join.
+            c.cycles += 10;
+            decode_refill_bits(c);
+            c.cycles += 4;
+            c.g[T5][0] = sx((c.g[A2][0] as u32) >> 16);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x10));
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 16);
+            if (c.g[T2][0] as i64) < 0 {
+                c.cycles += 10;
+                decode_refill_bits(c);
+            }
+        }
+        // 0x002c7a24.
+        c.cycles += 5;
+        c.g[V0][0] = sx((c.g[T0][0] as u32) << 16);
+        c.g[V1][0] = sx((c.g[S3][0] as u32) << ((c.g[T4][0] as u32) & 31));
+        c.g[V0][0] = c.g[T5][0] | c.g[V0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    }
+    // 0x002c7a78.
+    c.cycles += 1;
+    c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+    decode_table_store(c)
+}
+
+/// Table-store region (0x2c7a7c..0x2c7ac0): file the decoded index into the
+/// level table, advance the level, and either restart the build, step to the
+/// next level entry, or leave for the table clear. Entered at the top from
+/// the run-cost region and from the per-level bit loop.
+pub(crate) fn decode_table_store(c: &mut Cpu) -> TailNext {
+    // 0x002c7a7c.
+    c.cycles += 6;
+    c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[T9][0] as u32));
+    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[T0][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[T0][0]);
+    c.g[T8][0] = sx((c.g[T8][0] as u32).wrapping_add(c.g[T0][0] as u32));
+    let level_done = c.g[T0][0] == 0u64;
+    c.g[A0][0] = 0u64;
+    if !level_done {
+        // 0x002c7a94.
+        c.cycles += 4;
+        c.g[V0][0] = 0x10;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+        c.g[V0][0] = sx((c.g[T8][0] as u32) << ((c.g[V0][0] as u32) & 31));
+        c.g[A0][0] = c.g[V0][0] & 0xffff;
+    }
+    // 0x002c7aa4.
+    c.cycles += 5;
+    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_TAB));
+    c.g[T3][0] = c.g[T7][0];
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T9][0] as u32));
+    let restart = c.g[T0][0] == 0u64;
+    c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+    if restart {
+        if back_edge_unwinds(c, decode::TBL_BUILD) {
+            return None;
+        }
+        return Some(DecodeStage::TblBuild);
+    }
+    // 0x002c7ab8.
+    c.cycles += 2;
+    let step_next = c.g[A0][0] != 0u64;
+    c.g[V1][0] = sx((c.g[T3][0] as u32) << 2);
+    if step_next {
+        if back_edge_unwinds(c, decode::TBL_STEP) {
+            return None;
+        }
+        return Some(DecodeStage::TblStep);
+    }
+    // 0x002c7ac0.
+    c.cycles += 10;
+    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_TAB));
+    c.g[S3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x1));
+    c.g[V1][0] = 0xffff_ffff_ffff_0000;
+    c.g[V0][0] = sx((c.g[S3][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V1][0] = c.g[V1][0] | 0xffff;
+    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+    c.g[A0][0] = 0x10;
+    c.g[V0][0] = c.g[S4][0];
+    Some(DecodeStage::ClearTbl)
+}
+
+/// Symbol-cost region (0x2c7c18..0x2c7cfc): decode the second table's repeat
+/// count (`t3`) into an index and file it, by direct shift or by
+/// refill-assisted bit tests. Entered at the top from the second
+/// code-length bit loops; falls through to the symbol scan.
+pub(crate) fn decode_symbol_cost(c: &mut Cpu) {
+    // 0x002c7c18.
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[T3][0] as i64) < 17i64) as u64;
+    let short = c.g[V0][0] != 0u64;
+    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[T3][0] as u32));
+    if short {
+        // 0x002c7cb8.
+        c.cycles += 4;
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+        c.g[T0][0] = sx((c.g[A2][0] as u32) >> ((c.g[V0][0] as u32) & 31));
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[T3][0] as u32) & 31));
+        if (c.g[T2][0] as i64) >= 0 {
+            // 0x002c7cf0.
+            c.cycles += 2;
+            c.g[V0][0] = sx((c.g[S5][0] as u32) << ((c.g[T3][0] as u32) & 31));
+            c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        } else {
+            // 0x002c7cc8: refill, then the same join.
+            c.cycles += 10;
+            decode_refill_bits(c);
+            c.cycles += 2;
+            c.g[V0][0] = sx((c.g[S5][0] as u32) << ((c.g[T3][0] as u32) & 31));
+            c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        }
+    } else {
+        // 0x002c7c24.
+        c.cycles += 8;
+        c.g[V0][0] = 0x30;
+        c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+        c.g[V1][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x10));
+        c.g[T0][0] = sx((c.g[A2][0] as u32) >> ((c.g[V0][0] as u32) & 31));
+        c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[V1][0] as u32) & 31));
+        if (c.g[T2][0] as i64) >= 0 {
+            // 0x002c7c6c.
+            c.cycles += 4;
+            c.g[T4][0] = sx((c.g[A2][0] as u32) >> 16);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x10));
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 16);
+            if (c.g[T2][0] as i64) < 0 {
+                // 0x002c7c7c: refill, then the same join.
+                c.cycles += 10;
+                decode_refill_bits(c);
+            }
+        } else {
+            // 0x002c7c44: refill, then the 0x002c7c6c join.
+            c.cycles += 10;
+            decode_refill_bits(c);
+            c.cycles += 4;
+            c.g[T4][0] = sx((c.g[A2][0] as u32) >> 16);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x10));
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 16);
+            if (c.g[T2][0] as i64) < 0 {
+                c.cycles += 10;
+                decode_refill_bits(c);
+            }
+        }
+        // 0x002c7ca4.
+        c.cycles += 5;
+        c.g[V0][0] = sx((c.g[T0][0] as u32) << 16);
+        c.g[V1][0] = sx((c.g[S5][0] as u32) << ((c.g[T3][0] as u32) & 31));
+        c.g[V0][0] = c.g[T4][0] | c.g[V0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    }
+    // 0x002c7cf8.
+    c.cycles += 1;
+    c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+    // 0x002c7cfc.
+    c.cycles += 3;
+    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+    c.g[A1][0] = c.g[S4][0];
+    c.g[V1][0] = sx((c.g[T8][0] as u32).wrapping_add(0x1));
+}
+
+/// Symbol-tail region (0x2c7dfc..0x2c7e08): the symbol-table init's exit
+/// test: short classes loop back to the init, others join the main loop.
+/// Entered at the top from the copy-restart paths.
+pub(crate) fn decode_symbol_tail(c: &mut Cpu) -> TailNext {
+    // 0x002c7dfc.
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[A0][0] as i64)) as u64;
+    let to_init = c.g[V0][0] == 0u64;
+    c.g[T8][0] = c.g[A0][0];
+    if !to_init {
+        // 0x002c7e1c: leave the init with the default table window.
+        c.cycles += 3;
+        c.g[S2][0] = 0x20;
+        c.g[T7][0] = 0x1;
+        return Some(DecodeStage::Main);
+    }
+    // 0x002c7e08.
+    c.cycles += 5;
+    c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+    c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = ((c.g[A0][0] as i64) < 9i64) as u64;
+    c.g[V1][0] = c.lw(c.g[V1][0] as u32);
+    if c.g[A0][0] != 0u64 {
+        if back_edge_unwinds(c, decode::SYM_INIT) {
+            return None;
+        }
+        return Some(DecodeStage::SymInit);
+    }
+    Some(DecodeStage::Main)
+}
+
+/// Main-step region (0x2c7f20..0x2c7f6c): after a symbol decode, either take
+/// another symbol bit, or dispatch on the length class: the end marker
+/// joins the match path, other classes search the length table. Entered at
+/// the top from the main loop and the symbol chain.
+pub(crate) fn decode_main_step(c: &mut Cpu) -> TailNext {
+    // 0x002c7f20.
+    c.cycles += 2;
+    let need_bit = (c.g[T2][0] as i64) >= 0;
+    c.g[V0][0] = sx((c.g[A2][0] as u32) >> 24);
+    if need_bit {
+        if back_edge_unwinds(c, decode::SYMBOL) {
+            return None;
+        }
+        return Some(DecodeStage::Symbol);
+    }
+    // 0x002c7f28.
+    c.cycles += 4;
+    c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x10));
+    c.g[V1][0] = 0x60;
+    let end_marker = c.g[T3][0] == c.g[V1][0];
+    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    if end_marker {
+        // 0x002c7f6c.
+        c.cycles += 2;
+        c.g[T3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_T8));
+        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_BASE));
+        return decode_symbol_outcome(c);
+    }
+    // 0x002c7f38: look the class up in the length table.
+    c.cycles += 4;
+    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_TAB));
+    c.g[A0][0] = sx((c.g[A2][0] as u32) >> 16);
+    c.g[T3][0] = 0x8;
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x20));
+    Some(DecodeStage::MatchLen)
+}
+
+/// Symbol-outcome region (0x2c7f74..0x2c8094): resolve the decoded class:
+/// a literal byte is stored and the main loop resumes, the repeat class
+/// reads its bit and dispatches to a length loop, and other classes fall
+/// into the match-length tail. Entered at the top from the match-length
+/// stage and the main step.
+pub(crate) fn decode_symbol_outcome(c: &mut Cpu) -> TailNext {
+    // 0x002c7f74.
+    c.cycles += 11;
+    c.g[V0][0] = sx((c.g[T3][0] as u32) << 2);
+    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = sx((c.g[A2][0] as u32) >> ((c.g[A0][0] as u32) & 31));
+    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+    c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[T0][0] = c.lbu(c.g[V1][0] as u32);
+    let is_repeat = c.g[T0][0] == c.g[S6][0];
+    c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[T3][0] as u32) & 31));
+    if !is_repeat {
+        // 0x002c7fa0: a literal byte; refill first when the buffer is empty.
+        c.cycles += 2;
+        if (c.g[T2][0] as i64) >= 0 {
+            // 0x002c7fa8: store it.
+            c.cycles += 2;
+            c.sb(c.g[T6][0] as u32, c.g[T0][0]);
+        } else {
+            // Refill edge of 0x002c7fa0 (V1 first, no extra charge), the
+            // 0x002c7fbc tail, and the 0x002c7fe0 store (T0 differs here).
+            c.g[V1][0] = c.lbu(c.g[T1][0] as u32);
+            c.cycles += 9;
+            c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+            c.g[A0][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+            c.g[A1][0] = sx(0u32.wrapping_sub(c.g[T2][0] as u32));
+            c.g[A3][0] = c.g[V1][0] | c.g[V0][0];
+            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2));
+            c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+            c.g[A3][0] = c.g[A0][0] | c.g[V0][0];
+            c.g[A2][0] = sx((c.g[A3][0] as u32) << ((c.g[A1][0] as u32) & 31));
+            c.cycles += 2;
+            c.sb(c.g[T6][0] as u32, c.g[T0][0]);
+        }
+        // 0x002c8274: count the byte and rejoin the main loop.
+        c.cycles += 2;
+        c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+        if back_edge_unwinds(c, decode::MAIN) {
+            return None;
+        }
+        return Some(DecodeStage::Main);
+    }
+    // Repeat class: 0x002c7fb0, refilling first when the buffer is empty
+    // (0x002c7fb8 takes the V1 load, 0x002c7fbc the tail below).
+    c.cycles += 2;
+    if (c.g[T2][0] as i64) < 0 {
+        c.cycles += 1;
+        c.g[V1][0] = c.lbu(c.g[T1][0] as u32);
+        c.cycles += 9;
+        c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+        c.g[A0][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+        c.g[A1][0] = sx(0u32.wrapping_sub(c.g[T2][0] as u32));
+        c.g[A3][0] = c.g[V1][0] | c.g[V0][0];
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2));
+        c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+        c.g[A3][0] = c.g[A0][0] | c.g[V0][0];
+        c.g[A2][0] = sx((c.g[A3][0] as u32) << ((c.g[A1][0] as u32) & 31));
+    }
+    // 0x002c7fe0: T0 still equals the repeat symbol here, so no store.
+    c.cycles += 2;
+    // 0x002c7fe8: repeat class; T4 marks the output point for the run.
+    c.cycles += 2;
+    c.g[T4][0] = c.g[T6][0];
+    if (c.g[A2][0] as i64) >= 0 {
+        // 0x002c8030.
+        c.cycles += 3;
+        c.g[V0][0] = sx((c.g[A2][0] as u32) >> 16);
+        c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+        if c.g[V0][0] == 0u64 {
+            // 0x002c8094.
+            c.cycles += 3;
+            c.g[T0][0] = 0x2;
+            c.g[T3][0] = sx((c.g[A2][0] as u32) >> 31);
+            return Some(DecodeStage::LenBits2);
+        }
+        // 0x002c803c.
+        c.cycles += 1;
+        c.g[T0][0] = 0x2;
+        return Some(DecodeStage::LenBits);
+    }
+    // 0x002c7ff0.
+    c.cycles += 4;
+    c.g[T3][0] = sx((c.g[A2][0] as u32) >> 29);
+    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x3));
+    c.g[A2][0] = sx((c.g[A2][0] as u32) << 3);
+    if (c.g[T2][0] as i64) >= 0 {
+        // 0x002c8028: drop the low bits, then the match-length tail.
+        c.cycles += 2;
+        c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x4));
+    } else {
+        // 0x002c8000: refill, then the same join.
+        c.cycles += 10;
+        decode_refill_bits(c);
+        c.cycles += 2;
+        c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x4));
+    }
+    decode_length_tail(c)
+}
+
+/// Length-value region (0x2c80e0..0x2c81c0): decode the match-length class
+/// (`t0`) into a byte count (`t3`), by direct shift or by refill-assisted
+/// bit tests. Entered at the top from the length loops; falls through to
+/// the match-length tail.
+pub(crate) fn decode_length_value(c: &mut Cpu) -> TailNext {
+    // 0x002c80e0.
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[T0][0] as i64) < 17i64) as u64;
+    let short = c.g[V0][0] != 0u64;
+    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+    if short {
+        // 0x002c8180.
+        c.cycles += 4;
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+        c.g[T3][0] = sx((c.g[A2][0] as u32) >> ((c.g[V0][0] as u32) & 31));
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[T0][0] as u32) & 31));
+        if (c.g[T2][0] as i64) >= 0 {
+            // 0x002c81b8.
+            c.cycles += 2;
+            c.g[V0][0] = sx((c.g[T7][0] as u32) << ((c.g[T0][0] as u32) & 31));
+            c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        } else {
+            // 0x002c8190: refill, then the same join.
+            c.cycles += 10;
+            decode_refill_bits(c);
+            c.cycles += 2;
+            c.g[V0][0] = sx((c.g[T7][0] as u32) << ((c.g[T0][0] as u32) & 31));
+            c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        }
+    } else {
+        // 0x002c80ec.
+        c.cycles += 8;
+        c.g[V0][0] = 0x30;
+        c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+        c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x10));
+        c.g[T3][0] = sx((c.g[A2][0] as u32) >> ((c.g[V0][0] as u32) & 31));
+        c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[V1][0] as u32) & 31));
+        if (c.g[T2][0] as i64) >= 0 {
+            // 0x002c8134.
+            c.cycles += 4;
+            c.g[T5][0] = sx((c.g[A2][0] as u32) >> 16);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x10));
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 16);
+            if (c.g[T2][0] as i64) < 0 {
+                // 0x002c8144: refill, then the same join.
+                c.cycles += 10;
+                decode_refill_bits(c);
+            }
+        } else {
+            // 0x002c810c: refill, then the 0x002c8134 join.
+            c.cycles += 10;
+            decode_refill_bits(c);
+            c.cycles += 4;
+            c.g[T5][0] = sx((c.g[A2][0] as u32) >> 16);
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x10));
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 16);
+            if (c.g[T2][0] as i64) < 0 {
+                c.cycles += 10;
+                decode_refill_bits(c);
+            }
+        }
+        // 0x002c816c.
+        c.cycles += 5;
+        c.g[V0][0] = sx((c.g[T3][0] as u32) << 16);
+        c.g[V1][0] = sx((c.g[T7][0] as u32) << ((c.g[T0][0] as u32) & 31));
+        c.g[V0][0] = c.g[T5][0] | c.g[V0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    }
+    // 0x002c81c0.
+    c.cycles += 1;
+    c.g[T3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+    decode_length_tail(c)
+}
+
+/// Match-length tail (0x2c81c4..0x2c8318): turn the class (`t3`) into a
+/// match: a zero class reads one more bit, otherwise the previous byte is
+/// repeated; the end marker selects the checksum or delta post-pass, and
+/// anything else rejoins the main loop. Entered at the top from the
+/// length-value region and the symbol outcome.
+pub(crate) fn decode_length_tail(c: &mut Cpu) -> TailNext {
+    // 0x002c81c4.
+    c.cycles += 2;
+    let no_match = c.g[T3][0] == 0u64;
+    c.g[V1][0] = sx((c.g[T6][0] as u32).wrapping_add(c.g[T3][0] as u32));
+    if !no_match {
+        // 0x002c81cc: repeat the previous byte over the run.
+        c.cycles += 3;
+        c.g[T0][0] = c.lbu((c.g[T6][0] as u32).wrapping_sub(0x1));
+        c.sb(c.g[T4][0] as u32, c.g[T0][0]);
+        return Some(DecodeStage::RunFill);
+    }
+    // 0x002c81fc.
+    c.cycles += 4;
+    c.g[T0][0] = sx((c.g[A2][0] as u32) >> 31);
+    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x1));
+    c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+    if (c.g[T2][0] as i64) >= 0 {
+        // 0x002c8234.
+        c.cycles += 2;
+    } else {
+        // 0x002c820c: refill, then the same join.
+        c.cycles += 10;
+        decode_refill_bits(c);
+        c.cycles += 2;
+    }
+    let end_stream = c.g[T0][0] != 0u64;
+    c.g[T0][0] = sx((c.g[A2][0] as u32) >> 24);
+    if end_stream {
+        // 0x002c827c: the magic selects the post-pass.
+        c.cycles += 3;
+        c.g[V0][0] = 0x32fb;
+        let not_raw = c.g[S7][0] != c.g[V0][0];
+        c.g[V0][0] = 0x34fb;
+        if not_raw {
+            // 0x002c82cc.
+            c.cycles += 2;
+            let not_delta = c.g[S7][0] != c.g[V0][0];
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+            if not_delta {
+                decode_epilogue(c);
+                return None;
+            }
+            // 0x002c82d4: bounds-check the delta accumulation.
+            c.cycles += 7;
+            c.g[T6][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_OUT));
+            c.g[V1][0] = 0u64;
+            c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+            c.g[A1][0] = sx((c.g[T6][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V0][0] = (c.g[T6][0] < c.g[A1][0]) as u64;
+            c.g[A0][0] = 0u64;
+            if c.g[V0][0] == 0u64 {
+                // 0x002c8314: report the decoded length.
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+                decode_epilogue(c);
+                return None;
+            }
+            // 0x002c82f0.
+            c.cycles += 2;
+            c.g[V0][0] = c.lbu(c.g[T6][0] as u32);
+            return Some(DecodeStage::DeltaAcc);
+        }
+        // 0x002c8288: bounds-check the checksum accumulation.
+        c.cycles += 6;
+        c.g[T6][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_OUT));
+        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+        c.g[A0][0] = sx((c.g[T6][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = (c.g[T6][0] < c.g[A0][0]) as u64;
+        c.g[V1][0] = 0u64;
+        if c.g[V0][0] == 0u64 {
+            // 0x002c8314: report the decoded length.
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+            decode_epilogue(c);
+            return None;
+        }
+        // 0x002c82a0.
+        c.cycles += 2;
+        c.g[V0][0] = c.lbu(c.g[T6][0] as u32);
+        return Some(DecodeStage::Checksum);
+    }
+    // 0x002c823c.
+    c.cycles += 3;
+    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x8));
+    c.g[A2][0] = sx((c.g[A2][0] as u32) << 8);
+    if (c.g[T2][0] as i64) >= 0 {
+        // 0x002c8270: store the byte and rejoin the main loop.
+        c.cycles += 1;
+    } else {
+        // 0x002c8248: refill, then the same join.
+        c.cycles += 10;
+        decode_refill_bits(c);
+        c.cycles += 1;
+    }
+    c.sb(c.g[T6][0] as u32, c.g[T0][0]);
+    // 0x002c8274: count the byte and rejoin the main loop.
+    c.cycles += 2;
+    c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+    if back_edge_unwinds(c, decode::MAIN) {
+        return None;
+    }
+    Some(DecodeStage::Main)
+}
+
+/// Epilogue (0x2c8318): restore the callee-saved registers, drop the frame
+/// and return through the live return address, exactly as the generated
+/// body does (`ra` is never spilled: it returns `jr ra` with `sp + 0x570`).
+/// Callers landing at 0x2c8314 load the decoded length first.
+pub(crate) fn decode_epilogue(c: &mut Cpu) {
+    c.cycles += 11;
+    let frame = Frame { size: DECODE_FRAME };
+    frame.restore(c, S0, 0x560);
+    frame.restore(c, S1, 0x550);
+    frame.restore(c, S2, 0x540);
+    frame.restore(c, S3, 0x530);
+    frame.restore(c, S4, 0x520);
+    frame.restore(c, S5, 0x510);
+    frame.restore(c, S6, 0x500);
+    frame.restore(c, S7, 0x4f0);
+    frame.restore(c, FP, 0x4e0);
+    frame.close(c);
+}
+
+/// `int HUFF_DecodeStream(src, out)` (0x2c76c0): decode one Huffman block
+/// from the stream at `src`, writing the output bytes at `out`; returns the
+/// decoded length (`[sp + 0x4c4]`). A null `src` returns 0 at once. The bit
+/// buffer (`a2`/`t2`) refills from the stream as the table builders and the
+/// main symbol loop consume it; the magic (`s7`) selects the raw, checksum
+/// or delta post-pass.
+pub fn huff_decode_stream(c: &mut Cpu) {
+    let mut st = match c.pc {
+        decode::ENTRY => DecodeStage::Entry,
+        decode::TBL_BUILD => DecodeStage::TblBuild,
+        decode::TBL_STEP => DecodeStage::TblStep,
+        decode::BIT_LOOP_B => DecodeStage::BitLoopB,
+        decode::BIT_LOOP_A => DecodeStage::BitLoopA,
+        decode::CLEAR_TBL => DecodeStage::ClearTbl,
+        decode::TBL2 => DecodeStage::Tbl2,
+        decode::BIT_LOOP_C => DecodeStage::BitLoopC,
+        decode::BIT_LOOP_D => DecodeStage::BitLoopD,
+        decode::SCAN_SYM => DecodeStage::ScanSym,
+        decode::OUT_FILL => DecodeStage::OutFill,
+        decode::COPY_PAIR => DecodeStage::CopyPair,
+        decode::COPY_RESTART => DecodeStage::CopyRestart,
+        decode::SYM_INIT => DecodeStage::SymInit,
+        decode::MAIN => DecodeStage::Main,
+        decode::SYMBOLS => DecodeStage::Symbols,
+        decode::SYMBOL => DecodeStage::Symbol,
+        decode::MATCH_LEN => DecodeStage::MatchLen,
+        decode::LEN_BITS => DecodeStage::LenBits,
+        decode::LEN_BITS2 => DecodeStage::LenBits2,
+        decode::RUN_FILL => DecodeStage::RunFill,
+        decode::CHECKSUM => DecodeStage::Checksum,
+        decode::DELTA_ACC => DecodeStage::DeltaAcc,
+        pc => {
+            c.jump_out(pc, decode::ENTRY, decode::END);
+            return;
+        }
+    };
+    loop {
+        st = match st {
+            DecodeStage::Entry => {
+                // 0x002c76c0: frame and the null-source exit.
+                c.cycles += 16;
+                let frame = Frame::open(c, DECODE_FRAME);
+                c.g[T1][0] = c.g[A0][0];
+                c.sw((c.g[SP][0] as u32).wrapping_add(DS_OUT), c.g[A1][0]);
+                frame.save(c, S0, 0x560);
+                frame.save(c, S1, 0x550);
+                c.g[T6][0] = c.g[A1][0];
+                frame.save(c, S2, 0x540);
+                frame.save(c, S3, 0x530);
+                frame.save(c, S4, 0x520);
+                frame.save(c, S5, 0x510);
+                frame.save(c, S6, 0x500);
+                frame.save(c, S7, 0x4f0);
+                frame.save(c, FP, 0x4e0);
+                c.sw((c.g[SP][0] as u32).wrapping_add(DS_T8), 0u64);
+                let null_src = c.g[T1][0] == 0u64;
+                c.sw((c.g[SP][0] as u32).wrapping_add(DS_LEN), 0u64);
+                if null_src {
+                    // 0x002c8314: report the decoded length.
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+                    decode_epilogue(c);
+                    return;
+                }
+                // 0x002c7700: read the stream magic and seed the buffer.
+                c.cycles += 17;
+                c.g[A3][0] = c.lbu(c.g[T1][0] as u32);
+                c.g[T2][0] = 0u64;
+                c.g[V1][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2));
+                c.g[A3][0] = c.g[V1][0] | c.g[V0][0];
+                c.g[A0][0] = c.lbu(c.g[T1][0] as u32);
+                c.g[S7][0] = c.g[A3][0];
+                c.g[A1][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = sx((c.g[S7][0] as u32) << 8);
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2));
+                c.g[A3][0] = c.g[A0][0] | c.g[V0][0];
+                c.g[V1][0] = c.g[S7][0] & 0x100;
+                c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+                c.g[A3][0] = c.g[A1][0] | c.g[V0][0];
+                let short_hdr = c.g[V1][0] == 0u64;
+                c.g[A2][0] = sx((c.g[A3][0] as u32) << 16);
+                if !short_hdr {
+                    // 0x002c7744: long header, four more stream bytes.
+                    c.cycles += 16;
+                    c.g[V1][0] = c.lbu(c.g[T1][0] as u32);
+                    c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+                    c.g[A2][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+                    c.g[T2][0] = 0x8;
+                    c.g[A3][0] = c.g[V1][0] | c.g[V0][0];
+                    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2));
+                    c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+                    c.g[A0][0] = c.lbu(c.g[T1][0] as u32);
+                    c.g[A3][0] = c.g[A2][0] | c.g[V0][0];
+                    c.g[A1][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = sx((c.g[A3][0] as u32) << 8);
+                    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2));
+                    c.g[A3][0] = c.g[A0][0] | c.g[V1][0];
+                    c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+                    c.g[A3][0] = c.g[A1][0] | c.g[V0][0];
+                    c.g[A2][0] = sx((c.g[A3][0] as u32) << 8);
+                }
+                // 0x002c7784: fold the top byte out, masking the magic.
+                c.cycles += 7;
+                c.g[V0][0] = 0xffff_ffff_ffff_0000;
+                c.g[T0][0] = sx((c.g[A2][0] as u32) >> 24);
+                c.g[V0][0] = c.g[V0][0] | 0xfeff;
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 8);
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x8));
+                c.g[S7][0] = c.g[S7][0] & c.g[V0][0];
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c77a0: refill, then the same join.
+                    c.cycles += 10;
+                    decode_refill_bits(c);
+                }
+                // 0x002c77c8.
+                c.cycles += 5;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) >> 16);
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x10));
+                c.sw((c.g[SP][0] as u32).wrapping_add(DS_LEN), c.g[V0][0]);
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 16);
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c77dc: refill, then the same join.
+                    c.cycles += 10;
+                    decode_refill_bits(c);
+                }
+                // 0x002c7804.
+                c.cycles += 8;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+                c.g[V0][0] = sx((c.g[T0][0] as u32) << 16);
+                c.g[T0][0] = sx((c.g[A2][0] as u32) >> 24);
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x8));
+                c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 8);
+                c.sw((c.g[SP][0] as u32).wrapping_add(DS_LEN), c.g[V1][0]);
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c7824: refill, then the same join.
+                    c.cycles += 10;
+                    decode_refill_bits(c);
+                }
+                // 0x002c784c: point the four tables at the frame.
+                c.cycles += 13;
+                c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                c.sw((c.g[SP][0] as u32).wrapping_add(DS_BASE), c.g[A0][0]);
+                c.g[S6][0] = c.g[T0][0] & 0xff;
+                c.sw((c.g[SP][0] as u32).wrapping_add(DS_TAB), c.g[V0][0]);
+                c.g[S2][0] = 0u64;
+                c.g[T3][0] = 0x1;
+                c.g[T8][0] = 0u64;
+                c.g[S4][0] = sx((c.g[SP][0] as u32).wrapping_add(0x3c0));
+                c.g[FP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc0));
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x2c0));
+                c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x1c0));
+                c.g[S3][0] = 0x1;
+                DecodeStage::TblBuild
+            }
+            DecodeStage::TblBuild => {
+                // 0x002c7880: next level's slot.
+                c.cycles += 1;
+                c.g[V1][0] = sx((c.g[T3][0] as u32) << 2);
+                DecodeStage::TblStep
+            }
+            DecodeStage::TblStep => {
+                // 0x002c7884: file the bit-run length for this level.
+                c.cycles += 7;
+                c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_BASE));
+                c.g[T8][0] = sx((c.g[T8][0] as u32) << 1);
+                c.g[T9][0] = c.g[V1][0];
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[V0][0] = sx((c.g[T8][0] as u32).wrapping_sub(c.g[S2][0] as u32));
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                if (c.g[A2][0] as i64) >= 0 {
+                    // 0x002c78e4.
+                    c.cycles += 3;
+                    c.g[V0][0] = sx((c.g[A2][0] as u32) >> 16);
+                    c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+                    if c.g[V0][0] == 0u64 {
+                        // 0x002c794c: second code-length bit loop.
+                        c.cycles += 3;
+                        c.g[T4][0] = 0x2;
+                        c.g[T7][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                        c.g[T0][0] = sx((c.g[A2][0] as u32) >> 31);
+                        DecodeStage::BitLoopA
+                    } else {
+                        // 0x002c78f0: first code-length bit loop.
+                        c.cycles += 2;
+                        c.g[T4][0] = 0x2;
+                        c.g[T7][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                        DecodeStage::BitLoopB
+                    }
+                } else {
+                    // 0x002c78a0.
+                    c.cycles += 4;
+                    c.g[T0][0] = sx((c.g[A2][0] as u32) >> 29);
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x3));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 3);
+                    if (c.g[T2][0] as i64) < 0 {
+                        // 0x002c78b0: refill, then the same join.
+                        c.cycles += 10;
+                        decode_refill_bits(c);
+                    }
+                    // 0x002c78d8: store the level entry directly.
+                    c.cycles += 3;
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x4));
+                    c.g[T7][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                    match decode_table_store(c) {
+                        Some(s) => s,
+                        None => return,
+                    }
+                }
+            }
+            DecodeStage::BitLoopB => {
+                loop {
+                    // 0x002c78f8.
+                    c.cycles += 7;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                    let more_bits = (c.g[A2][0] as i64) >= 0;
+                    c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(0x1));
+                    if !more_bits {
+                        break;
+                    }
+                    if back_edge_unwinds(c, decode::BIT_LOOP_B) {
+                        return;
+                    }
+                }
+                // 0x002c7914.
+                c.cycles += 3;
+                c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[T4][0] as u32));
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c7920: refill, then the run-cost region.
+                    c.cycles += 11;
+                    decode_refill_bits(c);
+                }
+                match decode_run_cost(c) {
+                    Some(s) => s,
+                    None => return,
+                }
+            }
+            DecodeStage::BitLoopA => loop {
+                // 0x002c7958.
+                c.cycles += 4;
+                c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(0x1));
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x1));
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c7968: refill, then the same join.
+                    c.cycles += 10;
+                    decode_refill_bits(c);
+                }
+                // 0x002c7990.
+                c.cycles += 2;
+                let stay = c.g[T0][0] == 0u64;
+                c.g[T0][0] = sx((c.g[A2][0] as u32) >> 31);
+                if stay {
+                    if back_edge_unwinds(c, decode::BIT_LOOP_A) {
+                        return;
+                    }
+                    continue;
+                }
+                break match decode_run_cost(c) {
+                    Some(s) => s,
+                    None => return,
+                };
+            },
+            DecodeStage::ClearTbl => {
+                loop {
+                    // 0x002c7ae8: clear one scratch row.
+                    c.cycles += 7;
+                    c.sw(c.g[V0][0] as u32, 0u64);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+                    let more = c.g[A0][0] != 0u64;
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0xc), 0u64);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+                    if !more {
+                        break;
+                    }
+                    if back_edge_unwinds(c, decode::CLEAR_TBL) {
+                        return;
+                    }
+                }
+                // 0x002c7b04: skip the second pass when the table is empty.
+                c.cycles += 4;
+                c.g[T8][0] = 0xff;
+                c.g[T5][0] = 0u64;
+                let empty = (c.g[S2][0] as i64) <= 0;
+                c.g[T9][0] = ((c.g[S3][0] as i64) < 1i64) as u64;
+                if empty {
+                    // 0x002c7d44: fill the output table with the gap marker.
+                    c.cycles += 5;
+                    c.g[V1][0] = 0x4040_0000;
+                    c.g[A0][0] = 0x10;
+                    c.g[V1][0] = c.g[V1][0] | 0x4040;
+                    c.g[V0][0] = c.g[S0][0];
+                    DecodeStage::OutFill
+                } else {
+                    // 0x002c7b14.
+                    c.cycles += 1;
+                    c.g[S5][0] = 0x1;
+                    DecodeStage::Tbl2
+                }
+            }
+            DecodeStage::Tbl2 => {
+                // 0x002c7b18: second table-build pass over the levels.
+                c.cycles += 2;
+                let level_bit = (c.g[A2][0] as i64) >= 0;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) >> 16);
+                if level_bit {
+                    // 0x002c7b64.
+                    c.cycles += 2;
+                    let done = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+                    if done {
+                        // 0x002c7bcc.
+                        c.cycles += 3;
+                        c.g[T3][0] = 0x2;
+                        c.g[T7][0] = sx((c.g[T5][0] as u32).wrapping_add(0x1));
+                        c.g[T0][0] = sx((c.g[A2][0] as u32) >> 31);
+                        DecodeStage::BitLoopD
+                    } else {
+                        // 0x002c7b6c: third code-length bit loop.
+                        c.cycles += 3;
+                        c.g[T3][0] = 0x2;
+                        c.g[T7][0] = sx((c.g[T5][0] as u32).wrapping_add(0x1));
+                        DecodeStage::BitLoopC
+                    }
+                } else {
+                    // 0x002c7b20.
+                    c.cycles += 4;
+                    c.g[T0][0] = sx((c.g[A2][0] as u32) >> 29);
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x3));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 3);
+                    if (c.g[T2][0] as i64) < 0 {
+                        // 0x002c7b30: refill, then the same join.
+                        c.cycles += 10;
+                        decode_refill_bits(c);
+                    }
+                    // 0x002c7b58.
+                    c.cycles += 3;
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x4));
+                    c.g[T7][0] = sx((c.g[T5][0] as u32).wrapping_add(0x1));
+                    // 0x002c7cfc.
+                    c.cycles += 3;
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[V1][0] = sx((c.g[T8][0] as u32).wrapping_add(0x1));
+                    DecodeStage::ScanSym
+                }
+            }
+            DecodeStage::BitLoopC => {
+                loop {
+                    // 0x002c7b78.
+                    c.cycles += 7;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                    let more_bits = (c.g[A2][0] as i64) >= 0;
+                    c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                    if !more_bits {
+                        break;
+                    }
+                    if back_edge_unwinds(c, decode::BIT_LOOP_C) {
+                        return;
+                    }
+                }
+                // 0x002c7b94.
+                c.cycles += 3;
+                c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c7ba0: refill, then the symbol-cost region.
+                    c.cycles += 11;
+                    decode_refill_bits(c);
+                }
+                decode_symbol_cost(c);
+                DecodeStage::ScanSym
+            }
+            DecodeStage::BitLoopD => loop {
+                // 0x002c7bd8.
+                c.cycles += 4;
+                c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x1));
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c7be8: refill, then the same join.
+                    c.cycles += 10;
+                    decode_refill_bits(c);
+                }
+                // 0x002c7c10.
+                c.cycles += 2;
+                let stay = c.g[T0][0] == 0u64;
+                c.g[T0][0] = sx((c.g[A2][0] as u32) >> 31);
+                if stay {
+                    if back_edge_unwinds(c, decode::BIT_LOOP_D) {
+                        return;
+                    }
+                    continue;
+                }
+                break {
+                    decode_symbol_cost(c);
+                    DecodeStage::ScanSym
+                };
+            },
+            DecodeStage::ScanSym => loop {
+                // 0x002c7d08: scan the level table for the next symbol.
+                c.cycles += 7;
+                c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x1));
+                c.g[T8][0] = c.g[V1][0] & 0xff;
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T8][0] as u32));
+                c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+                if c.g[V1][0] == 0 {
+                    c.g[T0][0] = c.g[A0][0];
+                }
+                let more = c.g[T0][0] != 0u64;
+                c.g[V1][0] = sx((c.g[T8][0] as u32).wrapping_add(0x1));
+                if more {
+                    if back_edge_unwinds(c, decode::SCAN_SYM) {
+                        return;
+                    }
+                    continue;
+                }
+                // 0x002c7d24: file the symbol, or loop the table pass.
+                c.cycles += 8;
+                c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_add(c.g[T5][0] as u32));
+                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[T8][0] as u32));
+                c.g[V0][0] = 0x1;
+                c.g[T5][0] = c.g[T7][0];
+                c.sb(c.g[A0][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = ((c.g[T5][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                c.sb(c.g[A1][0] as u32, c.g[T8][0]);
+                if c.g[V1][0] != 0u64 {
+                    if back_edge_unwinds(c, decode::TBL2) {
+                        return;
+                    }
+                    break DecodeStage::Tbl2;
+                }
+                // 0x002c7d44: fill the output table with the gap marker.
+                c.cycles += 5;
+                c.g[V1][0] = 0x4040_0000;
+                c.g[A0][0] = 0x10;
+                c.g[V1][0] = c.g[V1][0] | 0x4040;
+                c.g[V0][0] = c.g[S0][0];
+                break DecodeStage::OutFill;
+            },
+            DecodeStage::OutFill => {
+                loop {
+                    // 0x002c7d58.
+                    c.cycles += 7;
+                    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                    let more = c.g[A0][0] != 0u64;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+                    if !more {
+                        break;
+                    }
+                    if back_edge_unwinds(c, decode::OUT_FILL) {
+                        return;
+                    }
+                }
+                // 0x002c7d74.
+                c.cycles += 5;
+                c.g[T7][0] = c.g[FP][0];
+                c.g[T5][0] = c.g[S1][0];
+                c.g[T4][0] = c.g[S0][0];
+                let blocked = c.g[T9][0] != 0u64;
+                c.g[T8][0] = 0x1;
+                if blocked {
+                    DecodeStage::Main
+                } else {
+                    // 0x002c7d88: prime the symbol-table init.
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LVL1));
+                    c.g[S5][0] = 0x8;
+                    c.g[S4][0] = 0x1;
+                    c.g[S2][0] = 0xffff_ffff_ffff_ffff;
+                    DecodeStage::SymInit
+                }
+            }
+            DecodeStage::SymInit => {
+                // 0x002c7d98: count the live entries of each class.
+                c.cycles += 5;
+                c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_sub(c.g[T8][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                c.g[T3][0] = sx((c.g[S4][0] as u32) << ((c.g[V0][0] as u32) & 31));
+                let to_tail = c.g[V1][0] == c.g[S2][0];
+                c.g[A0][0] = sx((c.g[T8][0] as u32).wrapping_add(0x1));
+                if to_tail {
+                    match decode_symbol_tail(c) {
+                        Some(s) => s,
+                        None => return,
+                    }
+                } else {
+                    // 0x002c7dac: restart the copy test below the end.
+                    c.cycles += 3;
+                    c.g[T9][0] = 0xffff_ffff_ffff_ffff;
+                    c.g[T0][0] = c.lbu(c.g[T7][0] as u32);
+                    DecodeStage::CopyRestart
+                }
+            }
+            DecodeStage::CopyRestart => loop {
+                // 0x002c7db8: test the next byte against the repeat mark.
+                c.cycles += 3;
+                c.g[A1][0] = c.g[T8][0];
+                let mismatch = c.g[T0][0] != c.g[S6][0];
+                c.g[T7][0] = sx((c.g[T7][0] as u32).wrapping_add(0x1));
+                if !mismatch {
+                    // 0x002c7dc4: remember the run length.
+                    c.cycles += 2;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(DS_T8), c.g[T8][0]);
+                    c.g[A1][0] = 0x60;
+                }
+                // 0x002c7dcc.
+                c.cycles += 2;
+                let short = (c.g[T3][0] as i64) <= 0;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                if !short {
+                    // 0x002c7dd4: a live run heads for the copy loop.
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[T3][0];
+                    break DecodeStage::CopyPair;
+                }
+                // 0x002c7df4 (shared with the copy loop below).
+                c.cycles += 2;
+                if c.g[V1][0] != c.g[T9][0] {
+                    c.g[T0][0] = c.lbu(c.g[T7][0] as u32);
+                    if back_edge_unwinds(c, decode::COPY_RESTART) {
+                        return;
+                    }
+                    continue;
+                }
+                break match decode_symbol_tail(c) {
+                    Some(s) => s,
+                    None => return,
+                };
+            },
+            DecodeStage::CopyPair => {
+                loop {
+                    // 0x002c7dd8: copy one byte of the run pair.
+                    c.cycles += 7;
+                    c.sb(c.g[T5][0] as u32, c.g[T0][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    c.sb(c.g[T4][0] as u32, c.g[A1][0]);
+                    c.g[T5][0] = sx((c.g[T5][0] as u32).wrapping_add(0x1));
+                    let more = c.g[V0][0] != 0u64;
+                    c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(0x1));
+                    if !more {
+                        break;
+                    }
+                    if back_edge_unwinds(c, decode::COPY_PAIR) {
+                        return;
+                    }
+                }
+                // 0x002c7df4 (shared with the restart test above).
+                c.cycles += 2;
+                if c.g[V1][0] != c.g[T9][0] {
+                    c.g[T0][0] = c.lbu(c.g[T7][0] as u32);
+                    if back_edge_unwinds(c, decode::COPY_RESTART) {
+                        return;
+                    }
+                    DecodeStage::CopyRestart
+                } else {
+                    match decode_symbol_tail(c) {
+                        Some(s) => s,
+                        None => return,
+                    }
+                }
+            }
+            DecodeStage::Main => {
+                // 0x002c7e60: index the output table with the top bits.
+                c.cycles += 6;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) >> 24);
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[T3][0] = c.lbu(c.g[V0][0] as u32);
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+                if (c.g[T2][0] as i64) < 0 {
+                    // By way of 0x002c7f20: fold the top bits back in, then
+                    // take the main-step region (which charges its cycles).
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+                    match decode_main_step(c) {
+                        Some(s) => s,
+                        None => return,
+                    }
+                } else {
+                    DecodeStage::Symbols
+                }
+            }
+            DecodeStage::Symbols => {
+                loop {
+                    // 0x002c7e78: decode one symbol of the chain.
+                    c.cycles += 11;
+                    c.g[V0][0] = sx((c.g[A2][0] as u32) >> 24);
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[T3][0] as u32) & 31));
+                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[A0][0] = sx((c.g[A2][0] as u32) >> 24);
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.sb(c.g[T6][0] as u32, c.g[V1][0]);
+                    c.g[T3][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+                    c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+                    if (c.g[T2][0] as i64) < 0 {
+                        break;
+                    }
+                    // 0x002c7ea4: decode the next symbol of the chain.
+                    c.cycles += 10;
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[T3][0] as u32) & 31));
+                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[A0][0] = sx((c.g[A2][0] as u32) >> 24);
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.sb(c.g[T6][0] as u32, c.g[V1][0]);
+                    c.g[T3][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+                    c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+                    if (c.g[T2][0] as i64) < 0 {
+                        break;
+                    }
+                    // 0x002c7ecc: decode the next symbol of the chain.
+                    c.cycles += 10;
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[T3][0] as u32) & 31));
+                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[A0][0] = sx((c.g[A2][0] as u32) >> 24);
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.sb(c.g[T6][0] as u32, c.g[V1][0]);
+                    c.g[T3][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+                    c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+                    if (c.g[T2][0] as i64) < 0 {
+                        break;
+                    }
+                    // 0x002c7ef4: decode the last symbol of the chain.
+                    c.cycles += 10;
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << ((c.g[T3][0] as u32) & 31));
+                    c.g[A0][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[V1][0] = sx((c.g[A2][0] as u32) >> 24);
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sb(c.g[T6][0] as u32, c.g[A0][0]);
+                    c.g[T3][0] = c.lbu(c.g[V1][0] as u32);
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[T3][0] as u32));
+                    let chain_more = (c.g[T2][0] as i64) >= 0;
+                    c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+                    if chain_more {
+                        if back_edge_unwinds(c, decode::SYMBOLS) {
+                            return;
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                // 0x002c7f1c.
+                c.cycles += 1;
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+                match decode_main_step(c) {
+                    Some(s) => s,
+                    None => return,
+                }
+            }
+            DecodeStage::Symbol => {
+                // 0x002c7e28: store one symbol byte, then refill and rejoin.
+                c.cycles += 14;
+                c.g[A1][0] = sx((c.g[A3][0] as u32) << 8);
+                c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = 0x10;
+                c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[T2][0] as u32));
+                c.sb(c.g[T6][0] as u32, c.g[V1][0]);
+                c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = c.lbu(c.g[T1][0] as u32);
+                c.g[V1][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+                c.g[A3][0] = c.g[V0][0] | c.g[A1][0];
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x2));
+                c.g[V0][0] = sx((c.g[A3][0] as u32) << 8);
+                c.g[A3][0] = c.g[V1][0] | c.g[V0][0];
+                c.g[A2][0] = sx((c.g[A3][0] as u32) << ((c.g[A0][0] as u32) & 31));
+                DecodeStage::Main
+            }
+            DecodeStage::MatchLen => {
+                loop {
+                    // 0x002c7f48: search the length table for the class.
+                    c.cycles += 7;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+                    let found = c.g[V0][0] == 0u64;
+                    c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                    if !found {
+                        break;
+                    }
+                    if back_edge_unwinds(c, decode::MATCH_LEN) {
+                        return;
+                    }
+                }
+                // 0x002c7f64.
+                c.cycles += 2;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_BASE));
+                match decode_symbol_outcome(c) {
+                    Some(s) => s,
+                    None => return,
+                }
+            }
+            DecodeStage::LenBits => {
+                loop {
+                    // 0x002c8040.
+                    c.cycles += 7;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                    let more_bits = (c.g[A2][0] as i64) >= 0;
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                    if !more_bits {
+                        break;
+                    }
+                    if back_edge_unwinds(c, decode::LEN_BITS) {
+                        return;
+                    }
+                }
+                // 0x002c805c.
+                c.cycles += 3;
+                c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c8068: refill, then the length-value region.
+                    c.cycles += 11;
+                    decode_refill_bits(c);
+                }
+                match decode_length_value(c) {
+                    Some(s) => s,
+                    None => return,
+                }
+            }
+            DecodeStage::LenBits2 => loop {
+                // 0x002c80a0.
+                c.cycles += 4;
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x1));
+                c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+                if (c.g[T2][0] as i64) < 0 {
+                    // 0x002c80b0: refill, then the same join.
+                    c.cycles += 10;
+                    decode_refill_bits(c);
+                }
+                // 0x002c80d8.
+                c.cycles += 2;
+                let stay = c.g[T3][0] == 0u64;
+                c.g[T3][0] = sx((c.g[A2][0] as u32) >> 31);
+                if stay {
+                    if back_edge_unwinds(c, decode::LEN_BITS2) {
+                        return;
+                    }
+                    continue;
+                }
+                break match decode_length_value(c) {
+                    Some(s) => s,
+                    None => return,
+                };
+            },
+            DecodeStage::RunFill => {
+                loop {
+                    // 0x002c81d8: repeat the previous byte over the run.
+                    c.cycles += 7;
+                    c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(0x1));
+                    let more = c.g[T4][0] < c.g[V1][0];
+                    if !more {
+                        break;
+                    }
+                    c.sb(c.g[T4][0] as u32, c.g[T0][0]);
+                    if back_edge_unwinds(c, decode::RUN_FILL) {
+                        return;
+                    }
+                }
+                // 0x002c81f4: the run reached the output point.
+                c.cycles += 2;
+                c.g[T6][0] = c.g[T4][0];
+                if back_edge_unwinds(c, decode::MAIN) {
+                    return;
+                }
+                DecodeStage::Main
+            }
+            DecodeStage::Checksum => {
+                loop {
+                    // 0x002c82a8: accumulate the checksum over the output.
+                    c.cycles += 7;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sb(c.g[T6][0] as u32, c.g[V1][0]);
+                    c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+                    let more = c.g[T6][0] < c.g[A0][0];
+                    if !more {
+                        break;
+                    }
+                    c.g[V0][0] = c.lbu(c.g[T6][0] as u32);
+                    if back_edge_unwinds(c, decode::CHECKSUM) {
+                        return;
+                    }
+                }
+                // 0x002c82c4: the length is already in `v0`; return it.
+                c.cycles += 2;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+                decode_epilogue(c);
+                return;
+            }
+            DecodeStage::DeltaAcc => {
+                loop {
+                    // 0x002c82f8: accumulate the deltas over the output.
+                    c.cycles += 7;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sb(c.g[T6][0] as u32, c.g[A0][0]);
+                    c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x1));
+                    let more = c.g[T6][0] < c.g[A1][0];
+                    if !more {
+                        break;
+                    }
+                    c.g[V0][0] = c.lbu(c.g[T6][0] as u32);
+                    if back_edge_unwinds(c, decode::DELTA_ACC) {
+                        return;
+                    }
+                }
+                // 0x002c8314: report the decoded length.
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(DS_LEN));
+                decode_epilogue(c);
+                return;
+            }
+        };
+    }
+}
+
+/// `void HUFF_analysis(state, flags, size)` (0x2c8e48): histogram the
+/// pending input bytes, pick the pack mode (raw, repeat, multi-level) and
+/// the delta window, then size the code tables with `HUFF_maketree` and
+/// `HUFF_minrep`. Event checks never unwind (their result is ignored), so
+/// the body is straight-line structured code with three calls.
+pub fn huff_analysis(c: &mut Cpu) {
+    guest(c, |c| {
+        // Prologue: frame, scratch pointers and the zeroed length area.
+        c.cycles += 20;
+        let frame = Frame::open(c, ANALYSIS_FRAME);
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x8a0));
+        c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x400));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x870));
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x8b0));
+        c.g[S4][0] = sx((c.g[S1][0] as u32).wrapping_add(0x100));
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x840));
+        c.g[S0][0] = 0u64;
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x890));
+        c.g[S7][0] = c.g[A2][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x880));
+        c.g[V1][0] = c.g[S4][0];
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x860));
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x850));
+        c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x830));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x820), c.g[RA][0]);
+        c.sw((c.g[SP][0] as u32).wrapping_add(AN_SP_LO), 0u64);
+        c.sw((c.g[SP][0] as u32).wrapping_add(AN_SP_SCRATCH), c.g[V0][0]);
+        // 0x002c8e98: clear the 0x300 length words at the scratch base.
+        'clear_lens: loop {
+            c.cycles += 7;
+            c.sw(c.g[V1][0] as u32, 0u64);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = (c.g[S0][0] < 0x300u64) as u64;
+            let more = c.g[V0][0] != 0u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+            if !more {
+                break 'clear_lens;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_8e98);
+            }
+        }
+        // Histogram over the input range: per-byte counts, run lengths and
+        // the byte sum. Skipped when the range is empty.
+        c.cycles += 14;
+        c.g[FP][0] = !(0u64 | c.g[A1][0]);
+        c.g[T3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_IN_PTR));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_IN_END));
+        c.g[A1][0] = c.g[A1][0] & 0x20;
+        c.sw((c.g[SP][0] as u32).wrapping_add(AN_SP_FLAGS), c.g[A1][0]);
+        c.g[A0][0] = (c.g[S7][0] < 0x63u64) as u64;
+        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(AN_LEN_COUNTS));
+        c.g[A2][0] = 0x100;
+        c.g[S2][0] = 0u64;
+        c.g[V0][0] = (c.g[T3][0] < c.g[V1][0]) as u64;
+        c.g[S5][0] = sx((c.g[S1][0] as u32).wrapping_add(HUFF_CODE_LEN));
+        c.sw((c.g[SP][0] as u32).wrapping_add(AN_SP_SMALL), c.g[A0][0]);
+        let has_input = c.g[V0][0] == 0u64;
+        c.sw((c.g[SP][0] as u32).wrapping_add(AN_SP_LENTAB), c.g[A1][0]);
+        if !has_input {
+            c.cycles += 1;
+            c.g[A3][0] = c.g[S4][0];
+            // 0x002c8ef0: one pass per input position.
+            'histogram: loop {
+                // Inner run/byte handling: only the run path files a run
+                // length. The run count below bumps only on the long-run
+                // path (generated `break 'b_2c8f60` falls into it); a
+                // filed run and a non-run byte both rejoin at the byte
+                // filing without bumping (generated `break 'b_2c8f6c`).
+                c.cycles += 5;
+                c.g[S0][0] = c.lbu(c.g[T3][0] as u32);
+                c.g[T0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x100));
+                c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                let mut filed = false;
+                let mut run_path = false;
+                if c.g[S0][0] == c.g[A2][0] {
+                    run_path = true;
+                    // 0x002c8f3c: count the run of the fill byte.
+                    c.cycles += 6;
+                    c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_add(0x7530));
+                    c.g[V0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A0][0] = c.g[V1][0];
+                    }
+                    c.g[V1][0] = (c.g[T3][0] < c.g[A0][0]) as u64;
+                    c.g[S3][0] = 0u64;
+                    if c.g[V1][0] != 0u64 {
+                        c.cycles += 1;
+                        c.g[S0][0] = c.lbu(c.g[T3][0] as u32);
+                        // 0x002c8f20: extend the run while bytes repeat.
+                        'run: loop {
+                            c.cycles += 4;
+                            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                            c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            if c.g[S0][0] == c.g[A2][0] {
+                                c.cycles += 3;
+                                c.g[V0][0] = (c.g[T3][0] < c.g[A0][0]) as u64;
+                                if c.g[V0][0] == 0u64 {
+                                    break 'run;
+                                }
+                                c.g[S0][0] = c.lbu(c.g[T3][0] as u32);
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002c_8f20);
+                                }
+                                continue 'run;
+                            }
+                            break 'run;
+                        }
+                    }
+                    // 0x002c8f60: file the run length (long runs skip it).
+                    // A filed run skips the run count below; a non-run
+                    // byte never reaches it.
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S3][0] < 0xffu64) as u64;
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x200));
+                    filed = c.g[V0][0] != 0u64;
+                    if filed {
+                        c.cycles += 6;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                        c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                        c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                    }
+                }
+                if run_path && !filed {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(AN_RUN_COUNT));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.sw((c.g[S1][0] as u32).wrapping_add(AN_RUN_COUNT), c.g[V0][0]);
+                }
+                // 0x002c8ef0 tail: file the byte's own count.
+                c.cycles += 17;
+                c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+                c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[V1][0] = c.g[V1][0] & 0xff;
+                c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x100));
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sw(c.g[A1][0] as u32, c.g[A0][0]);
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_IN_END));
+                c.g[V0][0] = (c.g[T3][0] < c.g[V1][0]) as u64;
+                c.g[A2][0] = c.g[S0][0];
+                if c.g[V0][0] == 0u64 {
+                    break 'histogram;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002c_8ef0);
+                }
+            }
+        }
+        // 0x002c8fc4: at least one run; stash the byte sum.
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(AN_RUN_COUNT));
+        c.sw((c.g[S1][0] as u32).wrapping_add(AN_BYTE_SUM), c.g[S2][0]);
+        if c.g[V0][0] == 0u64 {
+            c.cycles += 2;
+            c.g[V0][0] = 0x1;
+            c.sw((c.g[S1][0] as u32).wrapping_add(AN_RUN_COUNT), c.g[V0][0]);
+        }
+        // Mode select: the most frequent byte becomes the literal
+        // selector, with its count and the repeat/delta bases.
+        c.cycles += 7;
+        c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE), 0u64);
+        c.g[S2][0] = 0u64;
+        c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL), 0u64);
+        c.g[S0][0] = 0u64;
+        c.g[A3][0] = c.g[S4][0];
+        c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
+        // 0x002c8fe0: one pass per candidate byte.
+        'mode_select: loop {
+            // 0x002c8fe0/0x002c903c: test this byte's count.
+            c.cycles += 10;
+            c.g[V1][0] = sx((c.g[S2][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+            c.g[A2][0] = c.g[S0][0];
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            c.g[S3][0] = 0u64;
+            c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+            let smaller = c.g[A0][0] != 0u64;
+            if c.g[V0][0] != 0 {
+                c.g[S2][0] = c.g[S0][0];
+            }
+            if smaller {
+                // Found a live count: file it and scan on.
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+            } else {
+                // No count here: scan forward for the next live one.
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[S0][0] < 0x100u64) as u64;
+                if c.g[V0][0] == 0u64 {
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+                    // Fall through to the select test below.
+                } else {
+                    c.cycles += 3;
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                    // 0x002c9020: scan for a live count.
+                    'live_scan: loop {
+                        c.cycles += 4;
+                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                        if c.g[V0][0] != 0u64 {
+                            break 'live_scan;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[S0][0] < 0x100u64) as u64;
+                        if c.g[V0][0] == 0u64 {
+                            break 'live_scan;
+                        }
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002c_9020);
+                        }
+                        continue 'live_scan;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+                }
+            }
+            // 0x002c9078/0x002c9074: keep the best byte so far.
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[S3][0] < c.g[V0][0]) as u64;
+            if c.g[V0][0] == 0u64 {
+                c.cycles += 5;
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                c.sw(
+                    (c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE),
+                    c.g[A2][0],
+                );
+                c.g[V0][0] = (c.g[S3][0] < c.g[V1][0]) as u64;
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL), c.g[S3][0]);
+                if c.g[V0][0] == 0u64 {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                    c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL), c.g[V1][0]);
+                    c.sw(
+                        (c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE),
+                        c.g[V0][0],
+                    );
+                    c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR), c.g[A2][0]);
+                    c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE), c.g[S3][0]);
+                }
+                c.cycles += 1;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            } else {
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[S0][0] < 0x100u64) as u64;
+            c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
+            if c.g[V0][0] == 0u64 {
+                break 'mode_select;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_8fe0);
+            }
+        }
+        // Flag ladders: the entry flags enable the delta mode and level
+        // adjustments. Each compare is captured before the delay slot
+        // overwrites `v0` with the next flag bit.
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_FLAGS));
+        let skip_delta = c.g[V0][0] == 0u64;
+        c.g[V0][0] = c.g[FP][0] & 0x2;
+        if !skip_delta {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+            let keep_mode = c.g[V0][0] != 0u64;
+            c.g[V0][0] = c.g[FP][0] & 0x2;
+            if !keep_mode {
+                c.cycles += 4;
+                c.g[V0][0] = 0x1;
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR), c.g[S2][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE), c.g[V0][0]);
+                c.g[V0][0] = c.g[FP][0] & 0x2;
+            }
+        }
+        c.cycles += 2;
+        let skip_levels = c.g[V0][0] == 0u64;
+        c.g[V0][0] = c.g[FP][0] & 0x4;
+        if !skip_levels {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+            c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+            let single_level = c.g[V0][0] != 0u64;
+            c.g[V0][0] = c.g[FP][0] & 0x1;
+            if !single_level {
+                c.cycles += 3;
+                c.g[V0][0] = 0x1;
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE), c.g[V0][0]);
+                c.g[V0][0] = c.g[FP][0] & 0x1;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] != 0u64 {
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE), 0u64);
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[FP][0] & 0x4;
+        }
+        // Mode/value cross-check: large literal selectors demote the mode.
+        // A set flag bit clears the selector and skips the cross-check
+        // (`v0` still holds the flag bit from the ladder above).
+        c.cycles += 2;
+        if c.g[V0][0] == 0u64 {
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[V1][0] < 0xbu64) as u64;
+            if c.g[V0][0] != 0u64 {
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+            } else {
+                c.cycles += 8;
+                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                c.g[S3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE));
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE), c.g[V1][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR), c.g[V0][0]);
+                c.sw(
+                    (c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE),
+                    c.g[A2][0],
+                );
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL), c.g[S3][0]);
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+            }
+            // Re-halve the rebalanced selector into the window (generated
+            // `'b_2c9144` tail: reached only on this (flag-clear) path; the
+            // flag-set path breaks out past it, to the delta window).
+            c.cycles += 5;
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = (c.g[V0][0] < c.g[A0][0]) as u64;
+            let halve_down = c.g[V0][0] != 0u64;
+            c.g[V0][0] = sx((c.g[A0][0] as u32) >> 2);
+            if halve_down {
+                c.cycles += 6;
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE), c.g[V0][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL), c.g[A0][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR), c.g[V1][0]);
+            }
+        } else {
+            // Set flag bit: clear the selector and skip the cross-check
+            // and halve above (the generated `break 'b_2c9144` lands past
+            // both, at the delta window).
+            c.cycles += 2;
+            c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL), 0u64);
+        }
+        // Delta window: derive the delta min/max from the halved range,
+        // then search the scratch tables for the window edges.
+        c.cycles += 3;
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+        c.g[V1][0] = 0x19;
+        if c.g[A1][0] != 0u64 {
+            // Halve the selector (rounding toward negative infinity).
+            c.cycles += 12;
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(AN_DELTA_SRC));
+            c.g[V0][0] = sx((c.g[A1][0] as u32) >> 31);
+            c.g[S0][0] = 0x1;
+            c.divu(0, 4, 3);
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+            c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MIN), c.g[V0][0]);
+            c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MAX), c.g[A0][0]);
+            // 0x002c91d4: pin the low edge into the scratch table.
+            c.cycles += 3;
+            c.g[A2][0] = c.lo[0];
+            c.sw((c.g[SP][0] as u32).wrapping_add(AN_SP_LO), c.g[A2][0]);
+            if c.g[A0][0] != 0u64 {
+                c.cycles += 3;
+                c.g[A1][0] = 0u64;
+                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(AN_SCR_LO));
+                // 0x002c9198: walk up while the entry is below the edge.
+                'pin_low: loop {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[V0][0] = (c.g[A2][0] < c.g[V1][0]) as u64;
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MAX));
+                    } else {
+                        c.cycles += 6;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MAX));
+                    }
+                    c.cycles += 5;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2));
+                    c.g[V0][0] = (c.g[V0][0] < c.g[S0][0]) as u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    if c.g[V0][0] != 0u64 {
+                        break 'pin_low;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_9198);
+                    }
+                }
+            }
+            // 0x002c922c: pin the high edge into the scratch table.
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MIN));
+            c.g[S0][0] = 0x1;
+            if c.g[V0][0] != 0u64 {
+                c.cycles += 2;
+                c.g[A1][0] = 0u64;
+                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(AN_SCR_HI));
+                // 0x002c91e8: walk down while the entry is above the edge.
+                'pin_high: loop {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[V0][0] = (c.g[A2][0] < c.g[V1][0]) as u64;
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MIN));
+                    } else {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MIN));
+                    }
+                    c.cycles += 6;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2));
+                    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V0][0] = (c.g[V0][0] < c.g[S0][0]) as u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x4));
+                    if c.g[V0][0] != 0u64 {
+                        break 'pin_high;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_91e8);
+                    }
+                }
+            }
+            // 0x002c9264: find the last live level below the selector.
+            c.cycles += 4;
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+            c.g[S3][0] = 0u64;
+            c.g[S0][0] = 0u64;
+            if c.g[A0][0] != 0u64 {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                // 0x002c9248: scan the levels for the last live one.
+                'last_live: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    if c.g[V0][0] != 0 {
+                        c.g[S3][0] = c.g[S0][0];
+                    }
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = (c.g[S0][0] < c.g[A0][0]) as u64;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                    if c.g[V0][0] == 0u64 {
+                        break 'last_live;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_9248);
+                    }
+                }
+            }
+            // 0x002c92a0: rebalance the window around the last live level.
+            c.cycles += 10;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE));
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S3][0] as u32));
+            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+            c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+            c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL), c.g[V0][0]);
+            if c.g[A1][0] == c.g[V1][0] {
+                c.cycles += 5;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR), c.g[V1][0]);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE), c.g[V0][0]);
+            }
+            // Re-halve the rebalanced selector into the window.
+            c.cycles += 8;
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+            c.g[V0][0] = sx((c.g[V1][0] as u32) >> 31);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+            c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MIN), c.g[V0][0]);
+            c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MAX), c.g[V1][0]);
+        }
+        // 0x002c930c: copy the windowed levels to the code table.
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+        if c.g[V0][0] != 0u64 {
+            c.cycles += 2;
+            c.g[S0][0] = 0u64;
+            c.cycles += 3;
+            c.g[A2][0] = c.g[S4][0];
+            c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_add(AN_SCR_OUT));
+            // 0x002c92e0: copy each level's base word across.
+            'copy_levels: loop {
+                c.cycles += 11;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                c.g[V1][0] = (c.g[S0][0] < c.g[V1][0]) as u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+                if c.g[V1][0] == 0u64 {
+                    break 'copy_levels;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002c_92e0);
+                }
+            }
+        }
+        // Table build: size every level's repeat code, then clear the
+        // working tables. Small modes skip the level loop.
+        c.cycles += 6;
+        c.g[RA][0] = sx(0x002c_9314);
+        c.g[A0][0] = c.g[S1][0];
+        callee::HUFF_MAKETREE.call(c, 0x002c_9314)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+        c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_SCRATCH));
+        if c.g[V1][0] >= 0x2u64 {
+            c.cycles += 4;
+            c.g[S0][0] = 0x1;
+            if c.g[S0][0] >= c.g[V1][0] {
+                // Unreachable (the mode is at least 2 here).
+                c.g[S0][0] = 0u64;
+            } else {
+                c.cycles += 3;
+                c.g[S6][0] = 0x8;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                // 0x002c9340: price one level per pass.
+                'level_cost: loop {
+                    c.cycles += 9;
+                    c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[V1][0] = (c.g[A2][0] < 0x9u64) as u64;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    if c.g[V1][0] == 0 {
+                        c.g[A2][0] = c.g[S6][0];
+                    }
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[A0][0] = c.g[S1][0];
+                    if c.g[V1][0] == 0u64 {
+                        // Empty level: file nothing, take the join below.
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                    } else {
+                        c.cycles += 11;
+                        c.g[RA][0] = sx(0x002c_936c);
+                        c.g[A1][0] = c.g[S0][0];
+                        callee::HUFF_MINREP.call(c, 0x002c_936c)?;
+                        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                        c.g[A2][0] = c.g[V0][0];
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                        c.g[A3][0] = sx((c.g[V1][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[V0][0] as u32);
+                        c.g[V1][0] = (c.g[V0][0] < c.g[A2][0]) as u64;
+                        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                        if c.g[V1][0] == 0u64 {
+                            // Repeat costs more: file nothing.
+                            c.cycles += 2;
+                            c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                            c.sw(c.g[V0][0] as u32, 0u64);
+                            c.cycles += 1;
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                        } else {
+                            c.cycles += 7;
+                            c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                            c.g[A0][0] = sx((c.g[S0][0] as u32) >> 1);
+                            c.mult(0, 2, 2, 5);
+                            c.g[V0][0] = (c.g[V0][0] < c.g[A0][0]) as u64;
+                            if c.g[V0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                            } else {
+                                c.cycles += 2;
+                                c.g[V0][0] =
+                                    sx((c.g[S4][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                                c.sw(c.g[V0][0] as u32, 0u64);
+                                c.cycles += 1;
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                    if c.g[V0][0] == 0u64 {
+                        c.cycles += 1;
+                        c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_SCRATCH));
+                        break 'level_cost;
+                    }
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_9340);
+                    }
+                }
+            }
+        }
+        // Level-cost shared exit (0x002c93d0 tail): the generated skip and
+        // loop-completion breaks both land on `cycles += 1; S0 = 0`.
+        c.cycles += 1;
+        c.g[S0][0] = 0u64;
+        // 0x002c93d8: clear the working tables, saving each word aside.
+        c.cycles += 2;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S4][0];
+        'clear_tables: loop {
+            c.cycles += 12;
+            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[A0][0] as u32, 0u64);
+            c.g[V1][0] = (c.g[S0][0] < 0x100u64) as u64;
+            c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+            c.sw(c.g[A2][0] as u32, 0u64);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[A0][0] as u32).wrapping_add(0x400), 0u64);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[A0][0] as u32).wrapping_add(0x800), 0u64);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            if c.g[V1][0] == 0u64 {
+                break 'clear_tables;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_93d8);
+            }
+        }
+        // Second histogram: re-scan the input with the windowed tables,
+        // charging each run's multi-level cost and filing the delta index.
+        c.cycles += 5;
+        c.g[T3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_IN_PTR));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_IN_END));
+        c.g[V0][0] = (c.g[T3][0] < c.g[V1][0]) as u64;
+        c.g[A2][0] = 0x100;
+        if c.g[V0][0] != 0u64 {
+            c.cycles += 3;
+            c.sw((c.g[SP][0] as u32).wrapping_add(AN_SP_CODETAB), c.g[S5][0]);
+            c.g[S6][0] = c.g[S5][0];
+            c.g[T7][0] = c.g[S4][0];
+            // 0x002c9428: one pass per input position.
+            'rescan: loop {
+                // 0x002c9604: run-length handling for this byte.
+                c.cycles += 3;
+                c.g[S0][0] = c.lbu(c.g[T3][0] as u32);
+                c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                if c.g[S0][0] == c.g[A2][0] {
+                    // 0x002c9470: count the run against the window end.
+                    c.cycles += 8;
+                    c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_add(0x7530));
+                    c.g[S3][0] = 0u64;
+                    c.g[V0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+                    c.g[T4][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_MODE));
+                    if c.g[V0][0] != 0 {
+                        c.g[A0][0] = c.g[V1][0];
+                    }
+                    c.g[V0][0] = (c.g[T3][0] < c.g[A0][0]) as u64;
+                    c.g[T9][0] = sx((c.g[S0][0] as u32) << 2);
+                    if c.g[V0][0] != 0u64 {
+                        c.cycles += 1;
+                        c.g[S0][0] = c.lbu(c.g[T3][0] as u32);
+                        // 0x002c9458: extend the run while bytes repeat.
+                        'run2: loop {
+                            c.cycles += 3;
+                            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                            c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                            if c.g[S0][0] == c.g[A2][0] {
+                                c.cycles += 3;
+                                c.g[V0][0] = (c.g[T3][0] < c.g[A0][0]) as u64;
+                                if c.g[V0][0] == 0u64 {
+                                    break 'run2;
+                                }
+                                c.g[S0][0] = c.lbu(c.g[T3][0] as u32);
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002c_9458);
+                                }
+                                continue 'run2;
+                            }
+                            break 'run2;
+                        }
+                    }
+                    // 0x002c9558/0x002c9554: charge the run's level cost.
+                    // A single level left skips the split and the settle
+                    // below, rejoining at the cheaper-cost test.
+                    c.cycles += 6;
+                    c.g[V0][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T9][0] as u32));
+                    c.g[T6][0] = 0x7d00;
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[T2][0] = 0x7d00;
+                    c.mult(0, 24, 19, 3);
+                    // With no live levels the head cost stands and only
+                    // the tail below runs; a single level skips the split,
+                    // the settle and the tail.
+                    let t4_live = c.g[T4][0] != 0u64;
+                    let mut settle_costs = t4_live;
+                    if c.g[T4][0] != 0u64 {
+                        // 0x002c94cc: table cost against the live levels.
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                        c.g[A0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[A3][0] = c.g[V0][0];
+                        c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        let table_empty = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = (c.g[S3][0] < 0xfcu64) as u64;
+                        if table_empty {
+                            // Empty level: keep the fallback cost.
+                        } else if c.g[V0][0] == 0u64 {
+                            // Long run: keep the fallback cost.
+                            c.cycles += 2;
+                            c.g[T6][0] = 0x14;
+                        } else {
+                            c.cycles += 2;
+                            c.g[T6][0] = 0x14;
+                            c.cycles += 8;
+                            c.g[V1][0] = sx((c.g[S3][0] as u32) << 2);
+                            c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.g[A1][0] = c.lw(c.g[A0][0] as u32);
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(HUFF_NUM_BITS));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3));
+                            c.g[T6][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        }
+                        // Charge the multi-level split when more levels wait.
+                        // A single level left skips the split and the
+                        // settle below, rejoining at the cheaper-cost test.
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[T4][0] < 0x2u64) as u64;
+                        let single_level = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = (c.g[T6][0] < c.g[T8][0]) as u64;
+                        if single_level {
+                            settle_costs = false;
+                        } else {
+                            c.cycles += 4;
+                            c.g[T0][0] = c.g[S3][0];
+                            c.g[S2][0] = sx((c.g[T4][0] as u32).wrapping_sub(0x1));
+                            c.g[T2][0] = 0u64;
+                            if c.g[S2][0] != 0u64 {
+                                c.cycles += 8;
+                                c.g[V0][0] = sx((c.g[A3][0] as u32) << 2);
+                                c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_CODETAB));
+                                c.g[V1][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[SP][0] as u32));
+                                c.g[A0][0] = sx((c.g[S2][0] as u32) << 2);
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                c.g[T1][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                c.g[A3][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                c.g[T5][0] = 0u64;
+                                // 0x002c9508: one pass per remaining level.
+                                'split_cost: loop {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lw(c.g[T1][0] as u32);
+                                    if c.g[V0][0] != 0u64 {
+                                        c.cycles += 3;
+                                        c.divu(0, 8, 18);
+                                        c.cycles += 8;
+                                        c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                                        c.g[V1][0] = c.lo[0];
+                                        c.g[A1][0] = c.lo[0];
+                                        c.mult(0, 2, 5, 18);
+                                        c.mult(0, 3, 5, 4);
+                                        c.g[T0][0] =
+                                            sx((c.g[T0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                                        c.g[T2][0] =
+                                            sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                                        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x4));
+                                    } else {
+                                        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x4));
+                                    }
+                                    c.cycles += 3;
+                                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                                    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x4));
+                                    if c.g[S2][0] == 0u64 {
+                                        break 'split_cost;
+                                    }
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x002c_9508);
+                                    }
+                                }
+                            }
+                        }
+                        if settle_costs {
+                            c.cycles += 2;
+                            c.g[V0][0] = 0x7d00;
+                            if c.g[T0][0] != 0 {
+                                c.g[T2][0] = c.g[V0][0];
+                            }
+                        }
+                        // The tail rejoins every path that ran the head
+                        // cost; a single level keeps its pre-split compare.
+                        // (Inside `T4 != 0`, `t4_live` is always true, so
+                        // this is just `settle_costs`.)
+                        if settle_costs {
+                            c.cycles += 1;
+                            c.g[V0][0] = (c.g[T6][0] < c.g[T8][0]) as u64;
+                        }
+                    } else {
+                        // No live levels: generated breaks `'b_2c9554`
+                        // straight onto the shared `+1; V0 = (T6 < T8)` tail.
+                        c.cycles += 1;
+                        c.g[V0][0] = (c.g[T6][0] < c.g[T8][0]) as u64;
+                    }
+                    // 0x002c9580: keep the cheaper of the two run costs. A
+                    // stored run skips the filing and the spread below.
+                    c.cycles += 2;
+                    let skip_cheaper = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = (c.g[T6][0] < c.g[T2][0]) as u64;
+                    let mut to_delta = false;
+                    if !skip_cheaper {
+                        c.cycles += 3;
+                        let skip_store = (c.g[T2][0] < c.g[T8][0]) as u64 != 0;
+                        c.g[V0][0] = (c.g[T6][0] < c.g[T2][0]) as u64;
+                        if !skip_store {
+                            c.cycles += 5;
+                            c.g[V1][0] = sx((c.g[T7][0] as u32).wrapping_add(c.g[T9][0] as u32));
+                            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                            c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                            to_delta = true;
+                        }
+                    }
+                    // 0x002c95a4: file the level counts for the next pass.
+                    // A filed count skips the spread below as well.
+                    if !to_delta {
+                        c.cycles += 2;
+                        if c.g[V0][0] != 0u64 {
+                            c.cycles += 7;
+                            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                            c.g[V1][0] = sx((c.g[T7][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                            to_delta = true;
+                        } else {
+                            c.g[S2][0] = sx((c.g[T4][0] as u32).wrapping_sub(0x1));
+                        }
+                    }
+                    // A stored or filed count skips the spread below; the
+                    // delta index still runs either way.
+                    if !to_delta {
+                        c.cycles += 2;
+                        c.g[T0][0] = c.g[S3][0];
+                        if c.g[S2][0] != 0u64 {
+                            c.cycles += 3;
+                            c.g[T2][0] = 0u64;
+                            c.g[T1][0] = c.g[S4][0];
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                            // 0x002c95b8: spread the remainder over the levels.
+                            'spread_levels: loop {
+                                c.cycles += 6;
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                c.g[A3][0] = sx((c.g[V0][0] as u32) << 2);
+                                c.g[V1][0] =
+                                    sx((c.g[SP][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                if c.g[V0][0] != 0u64 {
+                                    c.cycles += 3;
+                                    c.divu(0, 8, 18);
+                                    c.cycles += 8;
+                                    c.g[V1][0] =
+                                        sx((c.g[T1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                    c.g[A1][0] = c.lo[0];
+                                    c.mult(0, 4, 5, 18);
+                                    c.g[V0][0] =
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                                    c.g[T0][0] =
+                                        sx((c.g[T0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                                } else {
+                                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                                }
+                                c.cycles += 2;
+                                if c.g[S2][0] == 0u64 {
+                                    break 'spread_levels;
+                                }
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002c_95b8);
+                                }
+                            }
+                        }
+                    }
+                }
+                // 0x002c96cc: pick the delta index for this byte.
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_LIT_SEL));
+                c.g[T0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+                if c.g[V0][0] == 0u64 {
+                    // No selector: keep the previous index.
+                    c.cycles += 1;
+                    c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
+                }
+                if c.g[V0][0] != 0u64 {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MAX));
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                    c.g[S2][0] = 0u64;
+                    if c.g[V0][0] == 0u64 {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_MIN));
+                        c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let below_window = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x1));
+                        if !below_window {
+                            // Inside the window: settle the delta index.
+                            c.cycles += 5;
+                            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_DELTA_BASE));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                            c.g[V1][0] = (c.g[S0][0] < c.g[A2][0]) as u64;
+                            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                            // Generated takes the +5 when S0 < A2 (V1 != 0).
+                            if c.g[V1][0] != 0u64 {
+                                c.cycles += 5;
+                                c.g[V0][0] =
+                                    sx((c.g[A2][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            }
+                            // Settle the winning index against the live tables (inside
+                            // the window: generated breaks past it when below).
+                            c.cycles += 7;
+                            c.g[T2][0] = sx((c.g[T0][0] as u32) << 2);
+                            c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_LO));
+                            c.g[V0][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                            c.g[T1][0] = sx((c.g[S0][0] as u32) << 2);
+                            if c.g[V0][0] == 0u64 {
+                                // Keep the settled index.
+                            } else {
+                                c.cycles += 13;
+                                c.g[A0][0] =
+                                    sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                                c.g[V0][0] =
+                                    sx((c.g[SP][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                                c.g[A1][0] = c.lw(c.g[A0][0] as u32);
+                                c.g[A3][0] = c.lw(c.g[V0][0] as u32);
+                                c.g[A2][0] =
+                                    sx((c.g[S6][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                                c.g[V1][0] = 0x3;
+                                c.g[A0][0] = c.lw(c.g[A2][0] as u32);
+                                c.g[S2][0] = 0x1;
+                                c.g[V1][0] = (c.g[V1][0] < c.g[A3][0]) as u64;
+                                if c.g[V1][0] != 0 {
+                                    c.g[S2][0] = 0u64;
+                                }
+                                c.g[V0][0] = (c.g[A1][0] < c.g[A0][0]) as u64;
+                                c.g[S2][0] =
+                                    sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                if c.g[A1][0] == c.g[A0][0] {
+                                    c.cycles += 6;
+                                    c.g[V1][0] =
+                                        sx((c.g[T7][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                                    c.g[A0][0] =
+                                        sx((c.g[T7][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                                    c.g[A1][0] = c.lw(c.g[V1][0] as u32);
+                                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                                    c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+                                    c.g[S2][0] =
+                                        sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    let settled = c.g[S2][0] != 0u64;
+                    c.g[V1][0] = sx((c.g[T0][0] as u32) << 2);
+                    if !settled {
+                        c.cycles += 1;
+                        c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
+                    }
+                }
+                // File the winning index and loop over the input.
+                c.cycles += 8;
+                c.g[V1][0] = sx((c.g[T7][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_IN_END));
+                c.g[V0][0] = (c.g[T3][0] < c.g[V1][0]) as u64;
+                c.g[A2][0] = c.g[S0][0];
+                if c.g[V0][0] == 0u64 {
+                    break 'rescan;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002c_9428);
+                }
+            }
+        }
+        // Flag-gated count bump: with the small-input flag set, grow the
+        // live-symbol count once.
+        c.cycles += 3;
+        c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_FLAGS));
+        if c.g[A0][0] != 0u64 {
+            c.cycles += 6;
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_CUR));
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+        }
+        // Second table build: rebuild the decode tables, then fix the
+        // per-symbol counts against the winning indices.
+        c.cycles += 6;
+        c.g[RA][0] = sx(0x002c_9718);
+        c.g[A0][0] = c.g[S1][0];
+        callee::HUFF_MAKETREE.call(c, 0x002c_9718)?;
+        c.sw((c.g[S1][0] as u32).wrapping_add(AN_SIZE_SLOT), 0u64);
+        c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_SMALL));
+        c.g[V0][0] = c.g[FP][0] & 0x8;
+        if c.g[A1][0] != 0u64 {
+            c.cycles += 6;
+            c.g[T3][0] = c.g[S4][0];
+            c.g[T6][0] = c.g[A1][0];
+            c.g[T5][0] = c.g[T3][0];
+            c.g[T0][0] = c.g[S5][0];
+            c.g[T4][0] = c.g[S5][0];
+            // 0x002c9740: one pass per table slot.
+            'fix_counts: loop {
+                c.cycles += 4;
+                c.g[A2][0] = 0u64;
+                c.g[S0][0] = 0u64;
+                c.g[A1][0] = c.g[T0][0];
+                c.g[A0][0] = c.g[T3][0];
+                // 0x002c9750: find the slowest live level.
+                'slowest_level: loop {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                    if c.g[V0][0] != 0u64 {
+                        c.cycles += 4;
+                        c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                        c.g[V0][0] = (c.g[V1][0] < c.g[A2][0]) as u64;
+                        if c.g[V0][0] == 0u64 {
+                            c.cycles += 4;
+                            c.g[S2][0] = c.g[S3][0];
+                            c.g[A2][0] = c.g[V1][0];
+                            c.g[S3][0] = c.g[S0][0];
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                        } else {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                        }
+                    } else {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    }
+                    c.cycles += 4;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = (c.g[S0][0] < 0x100u64) as u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    if c.g[V0][0] == 0u64 {
+                        break 'slowest_level;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_9750);
+                    }
+                }
+                // 0x002c987c: settle the winning index for this slot.
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[S7][0] < c.g[A2][0]) as u64;
+                c.g[A2][0] = 0u64;
+                if c.g[V0][0] != 0u64 {
+                    // 0x002c97f0/0x002c97b8: probe the live tables, unless
+                    // one already decides the index.
+                    let mut scan_win = true;
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_SYM_FLAG));
+                    c.g[T2][0] = sx((c.g[S2][0] as u32) << 2);
+                    c.g[T1][0] = sx((c.g[S3][0] as u32) << 2);
+                    if c.g[V0][0] != 0u64 {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2564));
+                        c.g[V0][0] = (c.g[V0][0] < c.g[S7][0]) as u64;
+                        if c.g[V0][0] == 0u64 {
+                            scan_win = true;
+                        } else {
+                            c.g[S0][0] = c.g[A2][0];
+                            scan_win = false;
+                        }
+                    }
+                    if scan_win {
+                        // 0x002c97bc: scan for the winning index, starting
+                        // past the already-probed slot.
+                        c.cycles += 1;
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                        'winning_index: loop {
+                            c.cycles += 3;
+                            c.g[V0][0] = (c.g[A2][0] < 0x100u64) as u64;
+                            c.g[A0][0] = sx((c.g[A2][0] as u32) << 2);
+                            if c.g[V0][0] == 0u64 {
+                                break 'winning_index;
+                            }
+                            c.cycles += 4;
+                            c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            if c.g[V1][0] != 0u64 {
+                                c.cycles += 5;
+                                c.g[V1][0] =
+                                    sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                c.g[V0][0] = (c.g[V0][0] < c.g[S7][0]) as u64;
+                                if c.g[V0][0] != 0u64 {
+                                    break 'winning_index;
+                                }
+                            }
+                            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002c_97bc);
+                            }
+                        }
+                    }
+                    // 0x002c9848/0x002c9808: probe the code tables.
+                    c.cycles += 1;
+                    c.g[S0][0] = c.g[A2][0];
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S0][0] < 0x100u64) as u64;
+                    // The generated `t = (V0 == 0)` tests the bound above;
+                    // `V0` is recomputed for the scan addresses below.
+                    let scan_codes = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+                    if scan_codes {
+                        c.cycles += 3;
+                        c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T5][0] as u32));
+                        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
+                        // 0x002c9808: scan for the cheapest code.
+                        'cheapest_code: loop {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                            if c.g[V0][0] == 0u64 {
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                            } else {
+                                c.cycles += 4;
+                                c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+                                c.g[V0][0] = (c.g[A0][0] < c.g[S7][0]) as u64;
+                                // The generated `t = (V0 == 0)` tests the
+                                // code bound above; `V0` is recomputed for
+                                // the length-table address below.
+                                let code_live = c.g[V0][0] != 0u64;
+                                c.g[V0][0] = sx((c.g[A2][0] as u32) << 2);
+                                if code_live {
+                                    c.cycles += 4;
+                                    c.g[V0][0] =
+                                        sx((c.g[S5][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                                    c.g[V1][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+                                    if c.g[V1][0] != 0 {
+                                        c.g[A2][0] = c.g[S0][0];
+                                    }
+                                }
+                                c.cycles += 1;
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                            }
+                            c.cycles += 4;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = (c.g[S0][0] < 0x100u64) as u64;
+                            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x4));
+                            if c.g[V0][0] == 0u64 {
+                                break 'cheapest_code;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002c_9808);
+                            }
+                        }
+                    }
+                    // File the settled counts.
+                    c.cycles += 13;
+                    c.g[V1][0] = sx((c.g[A2][0] as u32) << 2);
+                    c.g[A1][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                    c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.sw(c.g[V1][0] as u32, c.g[S0][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[S0][0]);
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+                    c.sw((c.g[S1][0] as u32).wrapping_add(AN_SIZE_SLOT), c.g[S7][0]);
+                    if c.g[T6][0] == 0u64 {
+                        c.cycles += 1;
+                        c.g[V0][0] = c.g[FP][0] & 0x8;
+                        break 'fix_counts;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_9740);
+                    }
+                    continue 'fix_counts;
+                }
+                // The slowest level settled at or below the input size:
+                // leave the fix-up region, as the generated body breaks
+                // out to the flag test below.
+                c.cycles += 1;
+                c.g[V0][0] = c.g[FP][0] & 0x8;
+                break 'fix_counts;
+            }
+        }
+        // Count tables: zero the length histogram, rebuild it from the
+        // code lengths, then emit the order list and the final counts.
+        c.cycles += 2;
+        c.g[S0][0] = 0u64;
+        if c.g[V0][0] != 0u64 {
+            c.cycles += 2;
+            c.g[A2][0] = 0x8;
+            c.g[V1][0] = c.g[S5][0];
+            // 0x002c9890: stamp the small-length band.
+            'stamp_band: loop {
+                c.cycles += 7;
+                c.sw(c.g[V1][0] as u32, c.g[A2][0]);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = (c.g[S0][0] < 0x100u64) as u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                if c.g[V0][0] == 0u64 {
+                    break 'stamp_band;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002c_9890);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_LENTAB));
+        c.g[S0][0] = 0u64;
+        // 0x002c98b8: zero the 17 length counts.
+        'zero_counts: loop {
+            c.cycles += 7;
+            c.sw(c.g[V1][0] as u32, 0u64);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = (c.g[S0][0] < 0x11u64) as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+            if c.g[V0][0] == 0u64 {
+                break 'zero_counts;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_98b8);
+            }
+        }
+        c.cycles += 3;
+        c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_LENTAB));
+        c.g[S0][0] = 0u64;
+        c.g[A0][0] = c.g[S5][0];
+        // 0x002c98e0: histogram the code lengths per length value.
+        'hist_lengths: loop {
+            c.cycles += 4;
+            c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+            c.g[V0][0] = (c.g[V1][0] < 0x11u64) as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            if c.g[V0][0] != 0u64 {
+                c.cycles += 4;
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+            }
+            c.cycles += 4;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = (c.g[S0][0] < 0x100u64) as u64;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            if c.g[V0][0] == 0u64 {
+                break 'hist_lengths;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_98e0);
+            }
+        }
+        c.cycles += 6;
+        c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(AN_SP_LENTAB));
+        c.g[S2][0] = 0u64;
+        c.g[S3][0] = 0x1;
+        c.g[T0][0] = c.g[S5][0];
+        c.g[A1][0] = 0x2dec;
+        c.g[V0][0] = sx((c.g[S3][0] as u32) << 2);
+        // 0x002c9928: emit the order list for each newly seen length.
+        // Unseen lengths file nothing but still advance to the next
+        // length; the loop only ends past length 16.
+        'order_lengths: loop {
+            c.cycles += 4;
+            c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+            if c.g[V1][0] != 0u64 {
+                c.cycles += 4;
+                c.g[A2][0] = 0u64;
+                c.g[A0][0] = c.g[T0][0];
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                // 0x002c9948: file this length's symbols in order.
+                'file_length: loop {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                    if c.g[V0][0] == c.g[S3][0] {
+                        c.cycles += 4;
+                        c.sw(c.g[V1][0] as u32, c.g[A2][0]);
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                    }
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[A2][0] < 0x100u64) as u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    if c.g[V0][0] == 0u64 {
+                        break 'file_length;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_9948);
+                    }
+                }
+                c.cycles += 1;
+                c.g[S2][0] = c.g[S3][0];
+            }
+            c.cycles += 4;
+            c.g[S3][0] = c.g[A3][0];
+            c.g[V0][0] = (c.g[S3][0] < 0x11u64) as u64;
+            let more_lengths = c.g[V0][0] != 0u64;
+            c.g[V0][0] = sx((c.g[S3][0] as u32) << 2);
+            if !more_lengths {
+                break 'order_lengths;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_9928);
+            }
+        }
+        // 0x002c9a14: emit the pending order-list counts.
+        c.cycles += 6;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_ORDER_COUNT));
+        c.g[T0][0] = 0u64;
+        c.sw((c.g[S1][0] as u32).wrapping_add(HUFF_NUM_COUNT), c.g[S2][0]);
+        c.g[S3][0] = 0u64;
+        c.g[S0][0] = 0u64;
+        if c.g[V0][0] != 0u64 {
+            c.cycles += 3;
+            c.g[T2][0] = sx((c.g[S1][0] as u32).wrapping_add(HUFF_ORDER_TAB));
+            c.g[T1][0] = c.g[S5][0];
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(HUFF_CODE));
+            // 0x002c99a8: walk the order list, accumulating code bits.
+            'walk_order: loop {
+                c.cycles += 9;
+                c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A3][0] = sx((c.g[A2][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.g[V0][0] = (c.g[S3][0] < c.g[V0][0]) as u64;
+                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                if c.g[V0][0] == 0u64 {
+                    // Length class already covered: file the running code.
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    // 0x002c99d8: accumulate this code's bits.
+                    'accum_bits: loop {
+                        c.cycles += 7;
+                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = (c.g[S3][0] < c.g[V1][0]) as u64;
+                        c.g[T0][0] = sx((c.g[T0][0] as u32) << 1);
+                        if c.g[V0][0] == 0u64 {
+                            break 'accum_bits;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002c_99d8);
+                        }
+                    }
+                }
+                c.cycles += 8;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) << 2);
+                c.g[S0][0] = c.g[A1][0];
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sw(c.g[V0][0] as u32, c.g[T0][0]);
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(HUFF_ORDER_COUNT));
+                c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                if c.g[V0][0] == 0u64 {
+                    break 'walk_order;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002c_99a8);
+                }
+            }
+        }
+        // Epilogue: restore the callee-saved registers and return.
+        c.cycles += 12;
+        frame.restore(c, S0, 0x8b0);
+        frame.restore(c, S1, 0x8a0);
+        frame.restore(c, S2, 0x890);
+        frame.restore(c, S3, 0x880);
+        frame.restore(c, S4, 0x870);
+        frame.restore(c, S5, 0x860);
+        frame.restore(c, S6, 0x850);
+        frame.restore(c, S7, 0x840);
+        frame.restore(c, FP, 0x830);
+        frame.restore_ra(c, 0x820);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EA_MemSyncLock(void)` (0x317ee0): lock then unlock the global EA
+/// memory mutex (`0x538b00`, the `MEM_MUTEX` word): a full barrier that
+/// serializes this thread against concurrent allocators. Returns nothing.
+pub fn ea_mem_sync_lock(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = 0x540000;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x7500));
+        c.g[RA][0] = sx(0x0031_7efc);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, callee::EA_MUTEX_LOCK, 0x0031_7efc)?;
+        c.g[RA][0] = sx(0x0031_7f04);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0031_7f04)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *EA_MemAllocTagged(size_t size, ...)` (0x317d48): allocate
+/// `size` bytes with the default tag: the tag word from `GP+0xd94`, the
+/// fixed name at `0x4a3e88`, flags 0. Its body is identical to
+/// [`ea_mem_alloc_default`]'s apart from the return address; transcribed
+/// as generated.
+pub fn ea_mem_alloc_tagged(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xd94));
+        c.g[A1][0] = 0x4a0000;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3e88));
+        c.g[RA][0] = sx(0x0031_7d64);
+        c.g[A3][0] = 0u64;
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_7d64)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *EA_MemAllocDefault(size_t size)` (0x317d20): allocate `size`
+/// bytes with the default tag: the tag word from `GP+0xd94`, the fixed
+/// name at `0x4a3e88`, flags 0. Identical body to [`ea_mem_alloc_tagged`];
+/// transcribed as generated.
+pub fn ea_mem_alloc_default(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xd94));
+        c.g[A1][0] = 0x4a0000;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3e88));
+        c.g[RA][0] = sx(0x0031_7d3c);
+        c.g[A3][0] = 0u64;
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0031_7d3c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EA_MemReportStats_Wrapper(void)` (0x317f18): report the pool
+/// statistics under the memory-manager lock (tail call into
+/// `MEM_ReportStatsLocked`).
+pub fn ea_mem_report_stats_wrapper(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0031_7f28);
+        callee::MEM_REPORT_STATS_LOCKED.call(c, 0x0031_7f28)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// EAC_GetUnpackedSize.
+
+/// `int EAC_GetUnpackedSize(void* data)` (0x3b4818): the unpacked size from
+/// an EAC/RefPack header: when `data[1]` is `0xFB`, a 24-bit size for the
+/// short-form tags (`0x10`, `0x18`, `0x1A`, `0x1E`, `0x30`, `0x32`, `0x34`,
+/// `0x46`), a 32-bit size for the long-form tags (`0x90`, `0x98`, `0x9A`,
+/// `0x9E`, `0xB0`, `0xB2`, `0xB4`, `0xC6`), and 0 for `0xC0` and everything
+/// else. The tag test masks the low bit (`p[0] & 0xFE`), so odd neighbours
+/// of a listed tag take the same arm; the range dispatch below mirrors the
+/// generated decision tree block for block (charges included): `0x90` goes
+/// straight to the 32-bit read, every other tagged input passes through the
+/// `0x3b48cc` recheck head (`+2`) into the short or long dispatch, and the
+/// size arms rejoin through the `+1; V0 = A0` head while the default arms
+/// return `V0 = 0` without it.
+pub fn eac_get_unpacked_size(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[A2][0] = c.g[A0][0];
+    c.g[V0][0] = 0xfb;
+    c.g[V1][0] = Addr(r32(c, A2)).off(1).lbu(c);
+    let untagged = c.g[V1][0] != c.g[V0][0];
+    c.g[A0][0] = 0;
+    if untagged {
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A0][0];
+    } else {
+        c.cycles += 5;
+        c.g[V0][0] = Addr(r32(c, A2)).lbu(c);
+        c.g[V1][0] = 0x90;
+        c.g[A1][0] = c.g[V0][0] & 0xfe;
+        c.g[V0][0] = ((c.g[A1][0] as i64) < 145) as u64;
+        if c.g[A1][0] == c.g[V1][0] {
+            // `0x90` (and odd `0x91`): straight to the 32-bit size read,
+            // skipping the recheck head and range dispatch below.
+            eac_get32(c);
+        } else {
+            // The generated `0x3b48cc` head rechecks the range (`+2`) before
+            // the dispatch: `tag >= 145` takes the long form, otherwise the
+            // short form (whose `0x46`-miss falls through to the long form).
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                eac_long_form(c);
+            } else {
+                eac_short_form(c);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// The short-form tags of [`eac_get_unpacked_size`] (`0x10`, `0x18`, `0x1A`,
+/// `0x1E`, `0x30`, `0x32`, `0x34`, `0x46`, all `< 145` and not `0x90`): a
+/// 24-bit size, else 0 (a `0x46`-miss is the default arm).
+/// Charges match the generated range dispatch.
+pub(crate) fn eac_short_form(c: &mut Cpu) {
+    // Entered after the caller's `0x3b48cc` recheck head (`+2`), so the
+    // short arm implies `tag < 145` and `tag != 0x90` from here on.
+    // 0x1e?
+    c.cycles += 2;
+    if c.g[A1][0] == 0x1e {
+        eac_get24(c);
+        return;
+    }
+    // 31 <= tag?
+    c.cycles += 2;
+    if (c.g[A1][0] as i64) >= 31 {
+        // 0x32?
+        c.cycles += 3;
+        if c.g[A1][0] == 0x32 {
+            eac_get24(c);
+            return;
+        }
+        // 51 <= tag?
+        c.cycles += 2;
+        if (c.g[A1][0] as i64) >= 51 {
+            // 0x34?
+            c.cycles += 3;
+            if c.g[A1][0] == 0x34 {
+                eac_get24(c);
+                return;
+            }
+            // 0x46?
+            c.cycles += 2;
+            if c.g[A1][0] == 0x46 {
+                eac_get24(c);
+                return;
+            }
+            // Miss: the generated `0x46`-miss breaks straight to the
+            // default (`'b_3b49a8`, `V0` already `A0` = 0). Only tags
+            // `>= 145` reach the long dispatch, via the `0x3b48cc` head
+            // break — never a short-form miss.
+            c.cycles += 2;
+            c.g[V0][0] = c.g[A0][0];
+            return;
+        }
+        // 0x30?
+        c.cycles += 2;
+        if c.g[A1][0] == 0x30 {
+            eac_get24(c);
+            return;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = c.g[A0][0];
+        return;
+    }
+    // 0x18?
+    c.cycles += 2;
+    if c.g[A1][0] == 0x18 {
+        eac_get24(c);
+        return;
+    }
+    // 25 <= tag?
+    c.cycles += 2;
+    if (c.g[A1][0] as i64) >= 25 {
+        // 0x1a?
+        c.cycles += 3;
+        if c.g[A1][0] == 0x1a {
+            eac_get24(c);
+            return;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = c.g[A0][0];
+        return;
+    }
+    // 0x10?
+    c.cycles += 2;
+    if c.g[A1][0] == 0x10 {
+        eac_get24(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+}
+
+/// The long-form tags of [`eac_get_unpacked_size`] (`>= 145`; `0x90` goes
+/// straight to the size read and never enters here): a 32-bit size for
+/// `0x98`, `0x9A`, `0x9E`, `0xB0`, `0xB2`, `0xB4`, `0xC6`, 0 for `0xC0` and
+/// everything else.
+pub(crate) fn eac_long_form(c: &mut Cpu) {
+    // 0xb0?
+    c.cycles += 3;
+    if c.g[A1][0] == 0xb0 {
+        eac_get32(c);
+        return;
+    }
+    // 177 <= tag?
+    c.cycles += 2;
+    if (c.g[A1][0] as i64) >= 177 {
+        // 0xb4?
+        c.cycles += 3;
+        if c.g[A1][0] == 0xb4 {
+            eac_get32(c);
+            return;
+        }
+        // 181 <= tag?
+        c.cycles += 2;
+        if (c.g[A1][0] as i64) >= 181 {
+            // 0xc0: present but unpacked size 0.
+            c.cycles += 3;
+            if c.g[A1][0] == 0xc0 {
+                c.cycles += 1;
+                c.g[V0][0] = c.g[A0][0];
+                return;
+            }
+            // 0xc6?
+            c.cycles += 2;
+            if c.g[A1][0] == 0xc6 {
+                eac_get32(c);
+                return;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = c.g[A0][0];
+            return;
+        }
+        // 0xb2?
+        c.cycles += 2;
+        if c.g[A1][0] == 0xb2 {
+            eac_get32(c);
+            return;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = c.g[A0][0];
+        return;
+    }
+    // 0x9a?
+    c.cycles += 2;
+    if c.g[A1][0] == 0x9a {
+        eac_get32(c);
+        return;
+    }
+    // 155 <= tag?
+    c.cycles += 2;
+    if (c.g[A1][0] as i64) >= 155 {
+        // 0x9e?
+        c.cycles += 3;
+        if c.g[A1][0] == 0x9e {
+            eac_get32(c);
+            return;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = c.g[A0][0];
+        return;
+    }
+    // 0x98?
+    c.cycles += 2;
+    if c.g[A1][0] == 0x98 {
+        eac_get32(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+}
+
+/// The 24-bit size read of [`eac_get_unpacked_size`]: `p[2..5]` big-endian.
+pub(crate) fn eac_get24(c: &mut Cpu) {
+    c.cycles += 9;
+    c.g[A0][0] = sx(r32(c, A2).wrapping_add(2));
+    c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(1)).lbu(c);
+    c.g[A1][0] = Addr(r32(c, A0).wrapping_add(2)).lbu(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_shl(16));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_shl(8));
+    c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+    c.g[A0][0] = c.g[V0][0] | c.g[A1][0];
+    c.cycles += 1;
+    c.g[V0][0] = c.g[A0][0];
+}
+
+/// The 32-bit size read of [`eac_get_unpacked_size`]: `p[2..6]` big-endian.
+pub(crate) fn eac_get32(c: &mut Cpu) {
+    c.cycles += 11;
+    c.g[A0][0] = sx(r32(c, A2).wrapping_add(2));
+    c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(1)).lbu(c);
+    c.g[A1][0] = Addr(r32(c, A0).wrapping_add(2)).lbu(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_shl(24));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_shl(16));
+    c.g[A2][0] = Addr(r32(c, A0).wrapping_add(3)).lbu(c);
+    c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+    c.g[A1][0] = sx(r32(c, A1).wrapping_shl(8));
+    c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
+    c.g[A0][0] = c.g[V0][0] | c.g[A2][0];
+    c.cycles += 1;
+    c.g[V0][0] = c.g[A0][0];
+}
+
+// ---------------------------------------------------------------------------
+// Small EA utilities.
+
+/// `void EA_FatalError(const char* fmt, ...)` (0x3e60e8): format into a
+/// stack buffer, print it on channel 2 (twice when the verbose flag at
+/// `0x45100c` is set), then abort. The abort trap ends the machine: tests
+/// cover everything up to it with the abort call faked to return.
+pub fn ea_fatal_error(c: &mut Cpu) {
+    guest(c, |c| {
+        const PRINT_RET: u32 = 0x003e_6150;
+        const PRINT_TAIL_RET: u32 = 0x003e_6174;
+        const ABORT_RET: u32 = 0x003e_617c;
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x290);
+        frame.save_ra(c, 0x200);
+        Addr(sp(c).wrapping_add(0x258)).sd(c, c.g[A1][0]);
+        Addr(sp(c).wrapping_add(0x260)).sd(c, c.g[A2][0]);
+        Addr(sp(c).wrapping_add(0x268)).sd(c, c.g[A3][0]);
+        Addr(sp(c).wrapping_add(0x270)).sd(c, c.g[T0][0]);
+        Addr(sp(c).wrapping_add(0x278)).sd(c, c.g[T1][0]);
+        Addr(sp(c).wrapping_add(0x280)).sd(c, c.g[T2][0]);
+        Addr(sp(c).wrapping_add(0x288)).sd(c, c.g[T3][0]);
+        c.swc1(12, sp(c).wrapping_add(0x248));
+        c.swc1(14, sp(c).wrapping_add(0x24c));
+        c.swc1(16, sp(c).wrapping_add(0x250));
+        let null_fmt = c.g[A0][0] == 0;
+        c.swc1(18, sp(c).wrapping_add(0x254));
+        if null_fmt {
+            c.cycles += 2;
+            c.sb(sp(c), 0);
+            c.g[A1][0] = 0x490000;
+        } else {
+            c.cycles += 6;
+            c.g[A1][0] = c.g[A0][0];
+            c.g[A2][0] = sx(sp(c).wrapping_add(0x258));
+            c.g[RA][0] = sx(0x003e_6130);
+            c.g[A0][0] = sx(sp(c));
+            call_ptr(c, callee::VSPRINTF, 0x003e_6130)?;
+            c.g[A1][0] = 0x490000;
+        }
+        // Print the buffer on channel 2, then again with the verbose detail
+        // when the flag at 0x45100c is set.
+        c.cycles += 8;
+        c.g[A2][0] = sx(sp(c));
+        c.g[A0][0] = 0x2;
+        c.g[RA][0] = sx(PRINT_RET);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x5ef0));
+        callee::DEBUG_PRINTF.call(c, PRINT_RET)?;
+        c.g[V0][0] = 0x450000;
+        c.g[A2][0] = Addr(r32(c, V0).wrapping_add(0x100c)).lw(c);
+        let verbose = c.g[A2][0] != 0;
+        c.g[V0][0] = 0x450000;
+        if verbose {
+            c.cycles += 5;
+            c.g[A1][0] = 0x490000;
+            c.g[A3][0] = Addr(r32(c, V0).wrapping_add(0x1010)).lw(c);
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x5f00));
+            c.g[RA][0] = sx(PRINT_TAIL_RET);
+            c.g[A0][0] = 0x2;
+            callee::DEBUG_PRINTF.call(c, PRINT_TAIL_RET)?;
+        }
+        c.cycles += 5;
+        callee::EA_ABORT.call(c, ABORT_RET)?;
+        c.g[RA][0] = Addr(sp(c).wrapping_add(0x200)).ld(c);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EA_DebugMessage(const char* fmt, ...)` (0x3e6070): format into a
+/// stack buffer and hand it to the abort-message hook at `0x450dd8`; a null
+/// `fmt` sends an empty message.
+pub fn ea_debug_message(c: &mut Cpu) {
+    guest(c, |c| {
+        const VSPRINTF_RET: u32 = 0x003e_60b8;
+        const HOOK_RET: u32 = 0x003e_60dc;
+        const HOOK_TABLE: u32 = 0x0045_0dd8;
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x290);
+        frame.save_ra(c, 0x200);
+        Addr(sp(c).wrapping_add(0x258)).sd(c, c.g[A1][0]);
+        Addr(sp(c).wrapping_add(0x260)).sd(c, c.g[A2][0]);
+        Addr(sp(c).wrapping_add(0x268)).sd(c, c.g[A3][0]);
+        Addr(sp(c).wrapping_add(0x270)).sd(c, c.g[T0][0]);
+        Addr(sp(c).wrapping_add(0x278)).sd(c, c.g[T1][0]);
+        Addr(sp(c).wrapping_add(0x280)).sd(c, c.g[T2][0]);
+        Addr(sp(c).wrapping_add(0x288)).sd(c, c.g[T3][0]);
+        c.swc1(12, sp(c).wrapping_add(0x248));
+        c.swc1(14, sp(c).wrapping_add(0x24c));
+        c.swc1(16, sp(c).wrapping_add(0x250));
+        let null_fmt = c.g[A0][0] == 0;
+        c.swc1(18, sp(c).wrapping_add(0x254));
+        if null_fmt {
+            c.cycles += 2;
+            c.sb(sp(c), 0);
+            c.g[V0][0] = 0x450000;
+        } else {
+            c.cycles += 6;
+            c.g[A1][0] = c.g[A0][0];
+            c.g[A2][0] = sx(sp(c).wrapping_add(0x258));
+            c.g[RA][0] = sx(VSPRINTF_RET);
+            c.g[A0][0] = sx(sp(c));
+            call_ptr(c, callee::VSPRINTF, VSPRINTF_RET)?;
+            c.g[V0][0] = 0x450000;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = 0x490000;
+        c.g[V1][0] = Addr(HOOK_TABLE).lw(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x5ee8));
+        c.g[RA][0] = sx(HOOK_RET);
+        c.g[A1][0] = sx(sp(c));
+        let hook = r32(c, V1);
+        c.pc = hook;
+        call_indirect(c, hook);
+        returned(c, HOOK_RET)?;
+        c.g[RA][0] = Addr(sp(c).wrapping_add(0x200)).ld(c);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int EA_IsValidPointer(void* p)` (0x3e6240): nonzero when `p` lies in a
+/// mapped range (low RAM, the exception vectors, the two cached mirrors, or
+/// the scratchpad window).
+pub fn ea_is_valid_pointer(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[V0][0] = 0xffff_ffff_fff0_0000;
+    c.g[A1][0] = 0x07ef_0000;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+    c.g[A1][0] = c.g[A1][0] | 0xffff;
+    c.g[V0][0] = (c.g[A1][0] < c.g[V0][0]) as u64;
+    let low_ram = c.g[V0][0] == 0;
+    c.g[A2][0] = 0;
+    // Each range below returns 1 on a hit; the scratchpad test is last and
+    // its miss falls out with `A2` still 0.
+    let valid = if low_ram {
+        true
+    } else {
+        c.cycles += 6;
+        c.g[V0][0] = 0xffff_ffff_f000_0000;
+        c.g[V1][0] = 0x0400_0000;
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+        let vectors = c.g[V1][0] == 0;
+        c.g[V0][0] = 0xffff_ffff_dff0_0000;
+        if vectors {
+            true
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+            c.g[V0][0] = (c.g[A1][0] < c.g[V0][0]) as u64;
+            let cached = c.g[V0][0] == 0;
+            c.g[V0][0] = 0xffff_ffff_cff0_0000;
+            if cached {
+                true
+            } else {
+                c.cycles += 4;
+                c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                c.g[V0][0] = (c.g[A1][0] < c.g[V0][0]) as u64;
+                let uncached = c.g[V0][0] == 0;
+                c.g[V0][0] = 0xffff_ffff_9000_0000;
+                if uncached {
+                    true
+                } else {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                    c.g[V0][0] = (c.g[V0][0] < 0x4000u64) as u64;
+                    c.g[V0][0] != 0
+                }
+            }
+        }
+    };
+    if valid {
+        c.cycles += 1;
+        c.g[A2][0] = 0x1;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A2][0];
+    ret(c);
+}
+
+/// `void EA_MemMove(void* dst, const void* src, size_t n)` (0x3e6188):
+/// copy `n` bytes, going backwards from the ends when `dst` overlaps the
+/// tail of `[src, src+n)`; otherwise forward through `EA_MemCopy`.
+pub fn ea_mem_move(c: &mut Cpu) {
+    guest(c, |c| {
+        const FORWARD_RET: u32 = 0x003e_61b0;
+        const BACK_HEAD: u32 = 0x003e_61d0;
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        // Unsigned `src < dst` (`0x3e6188` compares full 64-bit addresses;
+        // a signed compare misroutes non-canonical `src` like seed 3's
+        // `0xffffffff7fffffff` to the backward arm).
+        c.g[V0][0] = (c.g[A1][0] < c.g[A0][0]) as u64;
+        let forward = c.g[V0][0] == 0;
+        c.sd(sp(c), c.g[RA][0]);
+        if forward {
+            // `src >= dst`: plain forward copy.
+            c.cycles += 4;
+            callee::EA_MEM_COPY.call(c, FORWARD_RET)?;
+            c.g[RA][0] = Addr(sp(c)).ld(c);
+        } else {
+            c.cycles += 4;
+            c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, A2)));
+            // Unsigned `dst < src+n` (same non-canonical reason as above).
+            c.g[V0][0] = (c.g[A0][0] < c.g[V1][0]) as u64;
+            if c.g[V0][0] == 0 {
+                // `dst` past the end: plain forward copy.
+                c.cycles += 4;
+                callee::EA_MEM_COPY.call(c, FORWARD_RET)?;
+                c.g[RA][0] = Addr(sp(c)).ld(c);
+            } else {
+                // Overlap: copy backwards from `dst+n`/`src+n`.
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A2)));
+                c.cycles += 4;
+                c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+                let empty = c.g[A2][0] == c.g[V0][0];
+                c.g[A1][0] = c.g[V1][0];
+                if !empty {
+                    c.cycles += 2;
+                    c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+                    loop {
+                        c.cycles += 7;
+                        c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+                        c.g[V0][0] = Addr(r32(c, A1)).lbu(c);
+                        c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+                        let more = c.g[A2][0] != c.g[V1][0];
+                        Addr(r32(c, A0)).sb(c, c.g[V0][0]);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, BACK_HEAD);
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.g[RA][0] = Addr(sp(c)).ld(c);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EA_AddShutdownHandler(void (*fn)(void))` (0x3e4a30): register `fn`
+/// in the 64-slot table at `0x450c78` unless already present; a second scan
+/// finds the first empty slot when the table is full of others (slot 0
+/// written directly when it is free). Silently keeps a full table.
+pub fn ea_add_shutdown_handler(c: &mut Cpu) {
+    const TABLE: u32 = 0x0045_0c78;
+    const SLOTS: u64 = 64;
+    const SCAN_HEAD: u32 = 0x003e_4a40;
+    const EMPTY_HEAD: u32 = 0x003e_4a74;
+    c.cycles += 4;
+    c.g[A3][0] = 0x450000;
+    c.g[A2][0] = c.g[A0][0];
+    c.g[A1][0] = 0;
+    c.g[V1][0] = sx(TABLE);
+    'outer: loop {
+        'done: {
+            // First scan: already registered?
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+            let found = c.g[V0][0] == c.g[A2][0];
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+            if found {
+                break 'done;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[A1][0] as i64) < SLOTS as i64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, SCAN_HEAD);
+                }
+                continue 'outer;
+            }
+            // Second scan: first empty slot.
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, A3).wrapping_add(0xc78)).lw(c);
+            let slot0_used = c.g[V0][0] != 0;
+            c.g[A1][0] = 0;
+            if !slot0_used {
+                // Slot 0 free: the generated `0x3e4a30` writes and returns
+                // at once (`+2`, `sw`, `pc = RA`), skipping the shared
+                // `+2` return the other paths take below.
+                c.cycles += 2;
+                Addr(r32(c, A3).wrapping_add(0xc78)).sw(c, c.g[A2][0]);
+                ret(c);
+                return;
+            }
+            c.cycles += 1;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A1][0] as i64) < SLOTS as i64) as u64;
+                let full = c.g[V0][0] == 0;
+                c.g[V0][0] = sx(r32(c, A3).wrapping_add(0xc78));
+                if full {
+                    break 'done;
+                }
+                c.cycles += 5;
+                c.g[V1][0] = sx(r32(c, A1).wrapping_shl(2));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+                let occupied = c.g[A0][0] != 0;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                if occupied {
+                    if event_due(c) {
+                        deliver_event_here(c, EMPTY_HEAD);
+                    }
+                } else {
+                    c.cycles += 1;
+                    Addr(r32(c, V1)).sw(c, c.g[A2][0]);
+                    break 'done;
+                }
+            }
+        }
+        break;
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int EA_Crc16(void* buf, int size, int seed)` (0x3e62d0): CRC-16 over
+/// `size` bytes with the table at `0x451018`, seeded with `seed & 0xFFFF`;
+/// an empty (or backwards) range returns the seed unchanged.
+pub fn ea_crc16(c: &mut Cpu) {
+    const HEAD: u32 = 0x003e_62f0;
+    c.cycles += 6;
+    c.g[A3][0] = c.g[A0][0];
+    c.g[V1][0] = c.g[A2][0] & 0xffff;
+    c.g[A2][0] = sx(r32(c, A3).wrapping_add(r32(c, A1)));
+    // Unsigned `buf < buf+size` (`0x3e62d0` compares full addresses; a
+    // signed compare takes seed 50's non-canonical `buf` with `size 0`
+    // into the byte loop instead of the empty arm).
+    c.g[V0][0] = (c.g[A3][0] < c.g[A2][0]) as u64;
+    let empty = c.g[V0][0] == 0;
+    c.g[V0][0] = 0x450000;
+    if empty {
+        c.cycles += 2;
+        c.g[V0][0] = c.g[V1][0] & 0xffff;
+    } else {
+        c.cycles += 2;
+        c.g[T0][0] = sx(0x0045_0000u32.wrapping_add(0x1018));
+        loop {
+            c.cycles += 11;
+            c.g[V0][0] = Addr(r32(c, A3)).lbu(c);
+            c.g[A1][0] = sx(r32(c, V1).wrapping_shr(8));
+            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+            c.g[V0][0] = c.g[V0][0] ^ c.g[V1][0];
+            c.g[A0][0] = (c.g[A3][0] < c.g[A2][0]) as u64;
+            c.g[V0][0] = c.g[V0][0] & 0xff;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_shl(1));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T0)));
+            c.g[V1][0] = Addr(r32(c, V0)).lhu(c);
+            let cont = c.g[A0][0] != 0;
+            c.g[V1][0] = c.g[V1][0] ^ c.g[A1][0];
+            if !cont {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, HEAD);
+            }
+        }
+        c.cycles += 2;
+        c.g[V0][0] = c.g[V1][0] & 0xffff;
+    }
+    ret(c);
+}
+
+/// `void EA_RunFatalHandlers(void)` (0x3e49b8): call every set handler in
+/// the table at `0x450c78` from the top slot down, clearing each slot after
+/// it runs (or is skipped).
+pub fn ea_run_fatal_handlers(c: &mut Cpu) {
+    guest(c, |c| {
+        const TABLE_TOP: u32 = 0x0045_0d74;
+        const SLOTS: u64 = 0x40;
+        const HANDLER_RET: u32 = 0x003e_49ec;
+        const HEAD: u32 = 0x003e_49d8;
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x450000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx(0x0045_0000u32.wrapping_add(0xc78));
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = sx(TABLE_TOP);
+        c.sd(sp(c), c.g[RA][0]);
+        c.g[S1][0] = SLOTS - 1;
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+            let empty = c.g[V0][0] == 0;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+            if !empty {
+                c.cycles += 2;
+                c.g[RA][0] = sx(HANDLER_RET);
+                let handler = r32(c, V0);
+                c.pc = handler;
+                call_indirect(c, handler);
+                returned(c, HANDLER_RET)?;
+            }
+            c.cycles += 3;
+            Addr(r32(c, S0)).sw(c, 0);
+            let more = (c.g[S1][0] as i64) >= 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_sub(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, HEAD);
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EA_Abort(void)` (0x3e4a10): run the fatal handlers, then trap
+/// (`break 0xffff`). Installed in `OVERRIDES` without a differential test:
+/// the trap stops the machine on both sides, so no differential run can
+/// complete past it.
+pub fn ea_abort(c: &mut Cpu) {
+    guest(c, |c| {
+        const HANDLERS_RET: u32 = 0x003e_4a20;
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::EA_RUN_FATAL_HANDLERS.call(c, HANDLERS_RET)?;
+        c.brk(0x003e_4a20, 65535);
+        Ok(())
+    })
+}
+
+/// `void EA_AssertNotBusy(void)` (0x3e62b0): trap unless the busy flag at
+/// `0x450da4` is clear. Only the clear arm returns, so only it is tested.
+pub fn ea_assert_not_busy(c: &mut Cpu) {
+    const BUSY: u32 = 0x0045_0da4;
+    c.cycles += 4;
+    c.g[V0][0] = 0x450000;
+    c.g[V1][0] = Addr(BUSY).lw(c);
+    let idle = c.g[V1][0] == 0;
+    if idle {
+        c.cycles += 2;
+        ret(c);
+    } else {
+        c.cycles += 1;
+        c.brk(0x003e_62c0, 6);
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -26463,6 +30342,1567 @@ pub(crate) mod tests {
 
     /// Output buffer for the printf family.
     pub(crate) const OUT: u32 = DATA + 0x2000;
+
+    use crate::difftest::check_lohi;
+
+    use crate::game::bx::cubicspline::tests::heap_alloc_machine;
+    use crate::game::bx::cubicspline::tests::heap_slot;
+    use crate::game::bx::cubicspline::tests::write_filled;
+    use crate::game::fe::festatetrophyroom::tests::belib;
+    use crate::game::misc::HUFF_CODE;
+    use crate::game::misc::HUFF_CODE_LEN;
+    use crate::game::misc::HUFF_CUR;
+    use crate::game::misc::HUFF_DELTA_MAX;
+    use crate::game::misc::HUFF_DELTA_MIN;
+    use crate::game::misc::HUFF_IN_END;
+    use crate::game::misc::HUFF_IN_PTR;
+    use crate::game::misc::HUFF_LIT_SEL;
+    use crate::game::misc::HUFF_MODE;
+
+    driven!(gen_huff_decode_stream, ee::s08::f_002c76c0__generated);
+
+    driven!(hand_huff_decode_stream, huff_decode_stream);
+
+    /// Decode input: null source (early exit) or a block built by the real
+    /// encoder, mirroring `huff_decode_matches` but calling the stream
+    /// decoder directly.
+    pub(crate) fn decode_stream_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        if seed % 4 == 0 {
+            c.g[A0][0] = 0;
+        } else {
+            huffmem_install_fakes();
+            ea_fixed_costs(c);
+            c.bus.write32(HUFFMEM_CTRL, HUFFMEM_MAGIC);
+            for i in 0..0x3200u32 {
+                c.bus.write8(HUFFMEM_AREA + i, 0x5a);
+            }
+            for i in 0..0x400u32 {
+                c.bus.write8(HUFFMEM_TMP + i, 0xa5);
+            }
+            const SRC: u32 = DATA + 0x500;
+            for i in 0..16u32 {
+                c.bus.write8(SRC + i, (r.next_u32() | 1) as u8);
+            }
+            const DST: u32 = DATA + 0x600;
+            for i in 0..0x400u32 {
+                c.bus.write8(DST + i, 0xa5);
+            }
+            c.bus.write32(HUFFMEM_RET_ALLOC, HUFFMEM_AREA);
+            c.bus.write32(HUFFMEM_RET_NEW, HUFFMEM_TMP);
+            c.g[A0][0] = SRC as u64;
+            c.g[A1][0] = [1, 8, 16][(seed % 3) as usize] as u64;
+            c.g[A2][0] = DST as u64;
+            c.g[A3][0] = 0;
+            c.g[RA][0] = SENTINEL as u64;
+            ee::s09::f_002ca100__generated(c);
+            c.g[A0][0] = DST as u64;
+        }
+        for i in 0..16u32 {
+            c.bus.write8(DATA + 0x300 + i, 0x5a);
+        }
+        c.g[A1][0] = (DATA + 0x300) as u64;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_76c0;
+    }
+
+    /// Null source plus encoder-built streams (modes from `lenclass`).
+    #[test]
+    fn huff_decode_stream_matches() {
+        check(
+            gen_huff_decode_stream,
+            hand_huff_decode_stream,
+            24,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002c_76c0, 0);
+                decode_stream_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// Null-source early exit only (generated total 28).
+    #[test]
+    fn huff_decode_stream_paths() {
+        check_paths(
+            gen_huff_decode_stream,
+            hand_huff_decode_stream,
+            8,
+            &[28],
+            &|c, seed| {
+                let _r = machine(c, seed, 0x002c_76c0, 0);
+                c.g[A0][0] = 0;
+                c.g[A1][0] = (DATA + 0x300) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x002c_76c0;
+            },
+        );
+    }
+
+    /// Event delivery and unwinds over the stream decode.
+    #[test]
+    fn huff_decode_stream_events() {
+        check_events(
+            gen_huff_decode_stream,
+            hand_huff_decode_stream,
+            24,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002c_76c0, 0);
+                decode_stream_fixture(c, &mut r, seed);
+                schedule(c, &mut r, seed, 0x002c_76c0)
+            },
+        );
+    }
+
+    /// Deep decode input: the real encoder over 128 source bytes in four
+    /// content classes (odd-random, single-byte runs, ramp multisymbol,
+    /// high bytes), lengths 1/8/16/64/128, and options modes 0-3, so the
+    /// stream exercises multi-level tables and the MODE>=2 decode paths.
+    pub(crate) fn decode_stream_deep_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        huffmem_install_fakes();
+        ea_fixed_costs(c);
+        c.bus.write32(HUFFMEM_CTRL, HUFFMEM_MAGIC);
+        for i in 0..0x3200u32 {
+            c.bus.write8(HUFFMEM_AREA + i, 0x5a);
+        }
+        for i in 0..0x400u32 {
+            c.bus.write8(HUFFMEM_TMP + i, 0xa5);
+        }
+        const SRC: u32 = DATA + 0x500;
+        for i in 0..128u32 {
+            let b = match seed / 5 % 4 {
+                0 => (r.next_u32() | 1) as u8,
+                1 => (seed * 31 + 7) as u8,
+                2 => (i * 37 + 11) as u8,
+                _ => (0x80 + 0x3b * i) as u8,
+            };
+            c.bus.write8(SRC + i, b);
+        }
+        const DST: u32 = DATA + 0x600;
+        for i in 0..0x400u32 {
+            c.bus.write8(DST + i, 0xa5);
+        }
+        const OPT: u32 = DATA + 0x700;
+        let mode = (seed / 20 % 4) as u32;
+        c.bus.write32(OPT, mode);
+        c.bus.write32(HUFFMEM_RET_ALLOC, HUFFMEM_AREA);
+        c.bus.write32(HUFFMEM_RET_NEW, HUFFMEM_TMP);
+        c.g[A0][0] = SRC as u64;
+        c.g[A1][0] = [1, 8, 16, 64, 128][(seed % 5) as usize] as u64;
+        c.g[A2][0] = DST as u64;
+        c.g[A3][0] = if seed / 100 % 2 == 0 { 0 } else { OPT as u64 };
+        c.g[RA][0] = SENTINEL as u64;
+        ee::s09::f_002ca100__generated(c);
+        c.g[A0][0] = DST as u64;
+        for i in 0..128u32 {
+            c.bus.write8(DATA + 0x300 + i, 0x5a);
+        }
+        c.g[A1][0] = (DATA + 0x300) as u64;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_76c0;
+    }
+
+    /// Deep streams on both bodies, with the generated path totals pinned.
+    pub(crate) const DECODE_STREAM_DEEP_PATHS: &[u64] = &[
+        2353, 2437, 2465, 2764, 2906, 3092, 3235, 3277, 3452, 3515, 3523, 3578, 3669, 3803, 3844,
+        3858, 4138, 4341, 4425, 4712, 4834, 4925, 4986, 5067, 5097, 5210, 5288, 5350, 5504, 5548,
+        6938, 7253, 7543, 7551, 7697, 9274, 10370, 10582, 11034, 11051, 11082, 13138, 13401, 13520,
+    ];
+
+    /// Deep decode streams (multi-level tables, MODE>=2, boundary sizes).
+    #[test]
+    fn huff_decode_stream_deep_matches() {
+        check_paths(
+            gen_huff_decode_stream,
+            hand_huff_decode_stream,
+            64,
+            DECODE_STREAM_DEEP_PATHS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002c_76c0, 0);
+                decode_stream_deep_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// Synthetic stream lengths: odd/even small values, powers-of-two
+    /// neighbours (T2==0 refill boundaries cluster here) and large
+    /// values (decoded lengths ≥ 0x100 put nonzero bytes in the B2
+    /// length slot the small fixtures leave zero).
+    pub(crate) const DECODE_SYNTH_LENS: [u32; 18] = [
+        1, 2, 3, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 255,
+    ];
+
+    /// Synthetic decode input: encoder-built streams from synthetic sources
+    /// the existing fixtures never emit — 1/2/256-symbol inputs, full-range
+    /// bytes (deep uses odd-only), small-nonzero multisymbol (00/01 beds
+    /// for the empty-table arms), swept lengths to 255 plus 64KB seeds
+    /// (B2 length byte, DS_LEN bit 16), OPT modes on/off and nonzero buffer
+    /// prefills — driving the T2==0-boundary, table, length-high-byte and
+    /// max-length arms. (The long-header arm stays out: B0 bit0 selects it,
+    /// the encoder always emits B0 even across modes and lengths to 64KB,
+    /// and B0-odd patched streams spin both bodies at MatchLen — no
+    /// terminating input is known.)
+    pub(crate) fn decode_stream_synthetic_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        huffmem_install_fakes();
+        ea_fixed_costs(c);
+        c.bus.write32(HUFFMEM_CTRL, HUFFMEM_MAGIC);
+        for i in 0..0x3200u32 {
+            c.bus.write8(HUFFMEM_AREA + i, 0x5a);
+        }
+        for i in 0..0x400u32 {
+            c.bus.write8(HUFFMEM_TMP + i, 0xa5);
+        }
+        // Seeds 252-255: 64KB zero inputs (decoded length 0x10000 puts a
+        // nonzero byte in the B2 length slot and DS_LEN ≥ 0x10000).
+        let big = seed >= 252;
+        const SRC: u32 = DATA + 0x1000;
+        const DST: u32 = DATA + 0x2000;
+        const OUT: u32 = DATA + 0x3000;
+        const OPT: u32 = DATA + 0x3400;
+        const BIG_SRC: u32 = DATA + 0x1_0000;
+        const BIG_DST: u32 = DATA + 0x200;
+        const BIG_OPT: u32 = DATA + 0x5000;
+        const BIG_OUT: u32 = DATA + 0x3_0000;
+        let (src, dst, out, optp, len, cls) = if big {
+            // Seeds 252-255: 64KB zeros (decoded length 0x10000 puts a
+            // nonzero byte in the B2 length slot and DS_LEN bit 16 up);
+            // 252 has no OPT, 253-255 use OPT modes 1-3.
+            (BIG_SRC, BIG_DST, BIG_OUT, BIG_OPT, 0x1_0000, 0)
+        } else {
+            (
+                SRC,
+                DST,
+                OUT,
+                OPT,
+                DECODE_SYNTH_LENS[(seed / 2 % 18) as usize],
+                seed / 36 % 7,
+            )
+        };
+        for i in 0..(if big { 0x1_0000 } else { 256u32 }) {
+            let b = match cls {
+                0 => 0u8,
+                1 => 0x41,
+                2 => [0x41, 0x42][(i % 2) as usize],
+                3 => i as u8,
+                4 => (r.next_u32() & 0xff) as u8,
+                5 => (0x80 + 0x3b * i) as u8,
+                _ => [0x00, 0x01][(i % 2) as usize],
+            };
+            c.bus.write8(src + i, b);
+        }
+        let dpref = [0xa5u8, 0x5a, 0xff][(seed % 3) as usize];
+        for i in 0..0x400u32 {
+            c.bus.write8(dst + i, dpref);
+        }
+        let opref = [0x5au8, 0xa5, 0x33][(seed % 3) as usize];
+        for i in 0..(if big { 0x1_1000 } else { 0x400 }) {
+            c.bus.write8(out + i, opref);
+        }
+        let mode = (seed / 2 % 4) as u32;
+        c.bus.write32(optp, mode);
+        c.bus.write32(HUFFMEM_RET_ALLOC, HUFFMEM_AREA);
+        c.bus.write32(HUFFMEM_RET_NEW, HUFFMEM_TMP);
+        c.g[A0][0] = src as u64;
+        c.g[A1][0] = len as u64;
+        c.g[A2][0] = dst as u64;
+        if big {
+            // Big seeds: 252 has no OPT, 253-255 use OPT modes 1-3.
+            c.bus.write32(optp, (seed - 252) as u32);
+            c.g[A3][0] = if seed == 252 { 0 } else { optp as u64 };
+        } else {
+            c.g[A3][0] = if seed % 2 == 0 { 0 } else { optp as u64 };
+        }
+        c.g[RA][0] = SENTINEL as u64;
+        ee::s09::f_002ca100__generated(c);
+        c.g[A0][0] = dst as u64;
+        c.g[A1][0] = out as u64;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_76c0;
+    }
+
+    /// Synthetic stream path totals, pinned from the generated side.
+    pub(crate) const DECODE_STREAM_SYNTH_PATHS: &[u64] = &[
+        2332, 2342, 2349, 2362, 2364, 2383, 2393, 2403, 2415, 2465, 2479, 2489, 2514, 2521, 2528,
+        2538, 2548, 2633, 2640, 2647, 2655, 2732, 2745, 2836, 2846, 2853, 2856, 2860, 2864, 2871,
+        2877, 2878, 2897, 2907, 2948, 2959, 2969, 2990, 2991, 3005, 3008, 3013, 3015, 3022, 3067,
+        3084, 3105, 3137, 3144, 3151, 3198, 3265, 3277, 3286, 3294, 3313, 3320, 3329, 3368, 3375,
+        3382, 3434, 3482, 3567, 3633, 3654, 3823, 3830, 4012, 4076, 4089, 4163, 4223, 4282, 4313,
+        4321, 4337, 4364, 4369, 4408, 4425, 4481, 4561, 4633, 4641, 4726, 4728, 4776, 4806, 4834,
+        4854, 4907, 4949, 4990, 5031, 5036, 5076, 5091, 5158, 5163, 5166, 5210, 5260, 5285, 5326,
+        5332, 5336, 5498, 5539, 5548, 5557, 5732, 5784, 5803, 5805, 5821, 5841, 5929, 5933, 5973,
+        5990, 6004, 6005, 6016, 6023, 6124, 6127, 6161, 6173, 6175, 6196, 6263, 6277, 6379, 6383,
+        6431, 6531, 6605, 6913, 6952, 7276, 7330, 7358, 7451, 7631, 7697, 7702, 7881, 7940, 7968,
+        8060, 8656, 9324, 9328, 9331, 9404, 9469, 9557, 9620, 9873, 10381, 11637, 13779, 13855,
+        16376, 17745, 19426, 461557,
+    ];
+
+    /// `huff_decode_stream` over synthetic streams (252 swept plus 4
+    /// 64KB seeds for the length-high-byte arms).
+    #[test]
+    fn huff_decode_stream_synthetic() {
+        check_paths(
+            gen_huff_decode_stream,
+            hand_huff_decode_stream,
+            256,
+            DECODE_STREAM_SYNTH_PATHS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002c_76c0, 0);
+                decode_stream_synthetic_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    driven!(gen_huff_analysis, ee::s09::f_002c8e48__generated);
+
+    driven!(hand_huff_analysis, huff_analysis);
+
+    /// Valid analysis state: scratch tables zeroed, code lengths and
+    /// frequencies filled small, input bytes, flags and sizes steered by
+    /// seed. Covers the histogram, mode select, delta window, both table
+    /// builds and the small-input fix-up entry/exit (every loop bound
+    /// stays tiny so every seed terminates).
+    pub(crate) fn huff_analysis_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        for i in 0..0x3000u32 {
+            c.bus.write8(HUFF_S + i, 0);
+        }
+        // Code lengths 0..4 and frequencies 0..2 keep maketree/minrep short.
+        for sym in 0..256u32 {
+            c.bus
+                .write32(HUFF_S + HUFF_CODE_LEN + sym * 4, r.next_u32() % 5);
+            c.bus.write32(HUFF_S + 0x100 + sym * 4, r.next_u32() % 3);
+            c.bus.write32(HUFF_S + HUFF_CODE + sym * 4, 0);
+        }
+        // Input bytes: zeros, runs, or arbitrary bytes by seed class.
+        let in_len: u32 = [0, 1, 8, 16, 64][(seed % 5) as usize];
+        for i in 0..in_len {
+            let b = match seed % 3 {
+                0 => 0u8,
+                1 => (i % 4) as u8,
+                _ => (r.next_u32() & 0xff) as u8,
+            };
+            c.bus.write8(HUFF_IN + i, b);
+        }
+        for i in in_len..72u32 {
+            c.bus.write8(HUFF_IN + i, 0xa5);
+        }
+        c.bus.write32(HUFF_S + HUFF_IN_PTR, HUFF_IN);
+        c.bus.write32(HUFF_S + HUFF_IN_END, HUFF_IN + in_len);
+        // Mode/selector/delta fields stay tiny (they bound loops).
+        c.bus.write32(HUFF_S + HUFF_MODE, (seed % 4) as u32);
+        c.bus.write32(HUFF_S + HUFF_LIT_SEL, (seed % 3) as u32);
+        c.bus.write32(HUFF_S + HUFF_CUR, (seed % 3) as u32);
+        c.bus.write32(HUFF_S + HUFF_DELTA_MIN, (seed % 2) as u32);
+        c.bus.write32(HUFF_S + HUFF_DELTA_MAX, (seed % 2) as u32);
+        c.bus.write32(HUFF_S + AN_BYTE_SUM, 0);
+        c.bus.write32(HUFF_S + AN_SIZE_SLOT, 0);
+        c.bus.write32(HUFF_S + AN_DELTA_SRC, (seed % 3) as u32);
+        c.g[A0][0] = HUFF_S as u64;
+        c.g[A1][0] = [0, 1, 0x20, 0x21][(seed % 4) as usize] as u64;
+        // Sizes the generated body exits on: at or above 0x63 the small
+        // fix-up region is skipped; below 0x63 it is entered but every
+        // code length here is at most 4, so the slowest level settles at
+        // or below the size and the region exits. (Smaller sizes hang the
+        // generated body in that region, as on hardware.)
+        c.g[A2][0] = [0x63, 0x64, 0x100, 5, 10, 0x62][(seed % 6) as usize] as u64;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_8e48;
+    }
+
+    /// Histogram, mode select, delta window and both table builds, with
+    /// LO/HI compared (the delta window divides).
+    #[test]
+    fn huff_analysis_matches() {
+        check_lohi(gen_huff_analysis, hand_huff_analysis, 24, &|c, seed| {
+            let mut r = machine(c, seed, 0x002c_8e48, 0);
+            huff_analysis_fixture(c, &mut r, seed);
+        });
+    }
+
+    /// Event delivery over the analysis (its checks never unwind).
+    #[test]
+    fn huff_analysis_events() {
+        check_events(gen_huff_analysis, hand_huff_analysis, 24, &|c, seed| {
+            let mut r = machine(c, seed, 0x002c_8e48, 0);
+            huff_analysis_fixture(c, &mut r, seed);
+            schedule(c, &mut r, seed, 0x002c_8e48)
+        });
+    }
+
+    /// Deep analysis state: frequencies to 7 drive the multi-level table
+    /// builds; input lengths to the 72-byte buffer limit, ramp content and
+    /// modes 0-3 drive the MODE>=2 paths; A1 gains 0x40 and sizes gain
+    /// 0x65/0x200.
+    pub(crate) fn huff_analysis_deep_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        for i in 0..0x3000u32 {
+            c.bus.write8(HUFF_S + i, 0);
+        }
+        for sym in 0..256u32 {
+            c.bus
+                .write32(HUFF_S + HUFF_CODE_LEN + sym * 4, r.next_u32() % 5);
+            c.bus.write32(HUFF_S + 0x100 + sym * 4, r.next_u32() % 8);
+            c.bus.write32(HUFF_S + HUFF_CODE + sym * 4, 0);
+        }
+        let in_len: u32 = [0, 1, 8, 16, 64, 72][(seed % 6) as usize];
+        for i in 0..in_len {
+            let b = match seed / 6 % 4 {
+                0 => 0u8,
+                1 => (i % 4) as u8,
+                2 => (i * 37 + 11) as u8,
+                _ => (r.next_u32() & 0xff) as u8,
+            };
+            c.bus.write8(HUFF_IN + i, b);
+        }
+        for i in in_len..72u32 {
+            c.bus.write8(HUFF_IN + i, 0xa5);
+        }
+        c.bus.write32(HUFF_S + HUFF_IN_PTR, HUFF_IN);
+        c.bus.write32(HUFF_S + HUFF_IN_END, HUFF_IN + in_len);
+        c.bus.write32(HUFF_S + HUFF_MODE, (seed % 4) as u32);
+        c.bus.write32(HUFF_S + HUFF_LIT_SEL, (seed % 3) as u32);
+        c.bus.write32(HUFF_S + HUFF_CUR, (seed % 3) as u32);
+        c.bus.write32(HUFF_S + HUFF_DELTA_MIN, (seed % 2) as u32);
+        c.bus.write32(HUFF_S + HUFF_DELTA_MAX, (seed % 2) as u32);
+        c.bus.write32(HUFF_S + AN_BYTE_SUM, 0);
+        c.bus.write32(HUFF_S + AN_SIZE_SLOT, 0);
+        c.bus.write32(HUFF_S + AN_DELTA_SRC, (seed % 3) as u32);
+        c.g[A0][0] = HUFF_S as u64;
+        c.g[A1][0] = [0, 1, 0x20, 0x21, 0x40][(seed % 5) as usize] as u64;
+        c.g[A2][0] = [0x63, 0x64, 0x100, 5, 10, 0x62, 0x65, 0x200][(seed % 8) as usize] as u64;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_8e48;
+    }
+
+    /// Deep state on both bodies, with the generated path totals pinned.
+    pub(crate) const HUFF_ANALYSIS_DEEP_PATHS: &[u64] = &[
+        21762, 21783, 21855, 21876, 21910, 22028, 22038, 22199, 22332, 23148, 23291, 23587, 23589,
+        23669, 23725, 23866, 23979, 23984, 24125, 24263, 24488, 24609, 24713, 24887, 24900, 25067,
+        26308, 26331, 27201, 27344, 28940, 30172, 30408, 77822, 79237, 85107, 90501, 90621, 91488,
+        107684, 107694,
+    ];
+
+    /// Deep analysis state (multi-level tables, MODE>=2, boundary sizes).
+    #[test]
+    fn huff_analysis_deep_matches() {
+        check_paths_lohi(
+            gen_huff_analysis,
+            hand_huff_analysis,
+            48,
+            HUFF_ANALYSIS_DEEP_PATHS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002c_8e48, 0);
+                huff_analysis_deep_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// Flag-word analysis state: the entry flag word with low bits set
+    /// (A1=0x3f exercises the `FP & 0x2/0x4` arms the agreeing set leaves
+    /// clear). Regression test for the flag-word divergence.
+    #[test]
+    fn huff_analysis_flagword_matches() {
+        check(gen_huff_analysis, hand_huff_analysis, 16, &|c, seed| {
+            let mut r = machine(c, seed, 0x002c_8e48, 0);
+            huff_analysis_deep_fixture(c, &mut r, seed);
+            c.g[A1][0] = 0x3f;
+        });
+    }
+
+    /// Minimal flag-word state (small fixture + A1=0x3f) to isolate the flag-word arms.
+    #[test]
+    fn huff_analysis_flagword_small() {
+        check(gen_huff_analysis, hand_huff_analysis, 24, &|c, seed| {
+            let mut r = machine(c, seed, 0x002c_8e48, 0);
+            huff_analysis_fixture(c, &mut r, seed);
+            c.g[A1][0] = 0x3f;
+        });
+    }
+
+    /// Minimal single-byte divergence case for the flag-word arms.
+    #[test]
+    fn huff_analysis_flagword_min() {
+        check(gen_huff_analysis, hand_huff_analysis, 1, &|c, _seed| {
+            let _ = machine(c, 2, 0x002c_8e48, 0);
+            for i in 0..0x3000u32 {
+                c.bus.write8(HUFF_S + i, 0);
+            }
+            for sym in 0..256u32 {
+                c.bus.write32(HUFF_S + HUFF_CODE_LEN + sym * 4, 1);
+                c.bus.write32(HUFF_S + 0x100 + sym * 4, 1);
+            }
+            c.bus.write8(HUFF_IN, 0x01);
+            c.bus.write32(HUFF_S + HUFF_IN_PTR, HUFF_IN);
+            c.bus.write32(HUFF_S + HUFF_IN_END, HUFF_IN + 1);
+            c.bus.write32(HUFF_S + HUFF_MODE, 2);
+            c.bus.write32(HUFF_S + HUFF_LIT_SEL, 2);
+            c.bus.write32(HUFF_S + HUFF_CUR, 2);
+            c.bus.write32(HUFF_S + HUFF_DELTA_MIN, 0);
+            c.bus.write32(HUFF_S + HUFF_DELTA_MAX, 0);
+            c.bus.write32(HUFF_S + AN_BYTE_SUM, 0);
+            c.bus.write32(HUFF_S + AN_SIZE_SLOT, 0);
+            c.bus.write32(HUFF_S + AN_DELTA_SRC, 0);
+            c.g[A0][0] = HUFF_S as u64;
+            c.g[A1][0] = 0x3f;
+            c.g[A2][0] = 0x100;
+            c.g[RA][0] = SENTINEL as u64;
+            c.pc = 0x002c_8e48;
+        });
+    }
+
+    /// Synthetic analysis input lengths (the 72-byte buffer limit and
+    /// small odd/even values).
+    pub(crate) const ANALYSIS_SYNTH_INL: [u32; 7] = [0, 1, 2, 7, 8, 71, 72];
+
+    /// Synthetic analysis state: code lengths ramped to a max (1/4/8/16/32,
+    /// driving the max-length arms), frequency classes (zeros, ones, ramp,
+    /// sparse-large), input lengths to the buffer limit, sizes kept at or
+    /// above 0x63 (0x100+ for max lengths ≥ 8, which hang the fix-up region
+    /// below that, as on hardware) and the struct prefilled nonzero
+    /// (existing fixtures zero it) to catch reads of unwritten words.
+    pub(crate) fn huff_analysis_synthetic_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let maxlen = [1u32, 4, 8, 16, 32][(seed % 5) as usize];
+        let fq = (seed / 5) % 4;
+        let in_len = ANALYSIS_SYNTH_INL[(seed / 20 % 7) as usize];
+        let pre = [0x5au8, 0xa5, 0xff, 0x11][(seed % 4) as usize];
+        for i in 0..0x3000u32 {
+            c.bus.write8(HUFF_S + i, pre);
+        }
+        for sym in 0..256u32 {
+            c.bus
+                .write32(HUFF_S + HUFF_CODE_LEN + sym * 4, 1 + (sym * maxlen / 256));
+            c.bus.write32(
+                HUFF_S + 0x100 + sym * 4,
+                match fq {
+                    0 => 0,
+                    1 => 1,
+                    2 => r.next_u32() % 8,
+                    _ => {
+                        if sym % 5 == 0 {
+                            0x1_0000 + sym
+                        } else {
+                            sym
+                        }
+                    }
+                },
+            );
+            c.bus.write32(HUFF_S + HUFF_CODE + sym * 4, 0);
+        }
+        for i in 0..in_len {
+            c.bus.write8(HUFF_IN + i, (i * 37 + 11) as u8);
+        }
+        for i in in_len..72u32 {
+            c.bus.write8(HUFF_IN + i, 0xa5);
+        }
+        c.bus.write32(HUFF_S + HUFF_IN_PTR, HUFF_IN);
+        c.bus.write32(HUFF_S + HUFF_IN_END, HUFF_IN + in_len);
+        c.bus.write32(HUFF_S + HUFF_MODE, (seed % 4) as u32);
+        c.bus.write32(HUFF_S + HUFF_LIT_SEL, (seed / 2 % 3) as u32);
+        c.bus.write32(HUFF_S + HUFF_CUR, (seed / 4 % 3) as u32);
+        c.bus.write32(HUFF_S + HUFF_DELTA_MIN, (seed % 2) as u32);
+        c.bus
+            .write32(HUFF_S + HUFF_DELTA_MAX, (seed / 2 % 2) as u32);
+        c.bus.write32(HUFF_S + AN_BYTE_SUM, 0);
+        c.bus.write32(HUFF_S + AN_SIZE_SLOT, 0);
+        c.bus.write32(HUFF_S + AN_DELTA_SRC, (seed / 3 % 3) as u32);
+        c.g[A0][0] = HUFF_S as u64;
+        c.g[A1][0] = [0, 1, 2, 3, 0x20, 0x21, 0x3f, 0x40][(seed / 7 % 8) as usize] as u64;
+        c.g[A2][0] = if maxlen < 8 {
+            [0x63, 0x64, 0x100, 0x200][(seed / 3 % 4) as usize] as u64
+        } else {
+            [0x100, 0x200][(seed / 3 % 2) as usize] as u64
+        };
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002c_8e48;
+    }
+
+    /// Synthetic analysis path totals, pinned from the generated side.
+    pub(crate) const ANALYSIS_SYNTH_PATHS: &[u64] = &[
+        21762, 21783, 22044, 22162, 22198, 22474, 24041, 24244, 24455, 24699, 24900, 25117, 25562,
+        26460, 28107, 28156, 104553, 105612, 105822, 107684, 107882,
+    ];
+
+    /// `huff_analysis` over synthetic states.
+    #[test]
+    fn huff_analysis_synthetic() {
+        check_paths(
+            gen_huff_analysis,
+            hand_huff_analysis,
+            140,
+            ANALYSIS_SYNTH_PATHS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002c_8e48, 0);
+                huff_analysis_synthetic_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// Heap class under test (below the arena/Log regions; every word has
+    /// a nonzero low byte).
+    pub(crate) const HEAP_ALLOC_CLS: u32 = DATA + 0x2010;
+
+    /// Free-list nodes N1..N4 (ends 0x40/0x50/size/0x100) and the mutex.
+    pub(crate) const HEAP_ALLOC_N1: u32 = DATA + 0x3010;
+
+    pub(crate) const HEAP_ALLOC_N2: u32 = DATA + 0x3110;
+
+    pub(crate) const HEAP_ALLOC_N3: u32 = DATA + 0x3210;
+
+    pub(crate) const HEAP_ALLOC_N4: u32 = DATA + 0x3310;
+
+    pub(crate) const HEAP_ALLOC_MUTEX: u32 = DATA + 0x2410;
+
+    /// Long insert-chain nodes above the split point (events test only).
+    pub(crate) const HEAP_ALLOC_H1: u32 = DATA + 0x9010;
+
+    pub(crate) const HEAP_ALLOC_H2: u32 = DATA + 0x9110;
+
+    /// High found block for the forward-long insert variant.
+    pub(crate) const HEAP_ALLOC_N3H: u32 = DATA + 0x8010;
+
+    /// Heap table slot used by every seed.
+    pub(crate) const HEAP_ALLOC_SLOT: u32 = 2;
+
+    /// Build the heap fixture for `mode` (0..8). `t0src` selects the heap
+    /// word source (T0 vs `GP-0x278`); `locked` sets the class lock bit
+    /// (through the real mutexes). Returns S6.
+    pub(crate) fn mem_heap_alloc_aligned_build(
+        c: &mut Cpu,
+        mode: u32,
+        t0src: bool,
+        locked: bool,
+    ) -> u32 {
+        // Hard pre-fill: every word the port reads or writes is nonzero.
+        for w in 0..0x40u32 {
+            write_filled(c, HEAP_ALLOC_N1 + 4 * w, 0x1000 + w);
+            write_filled(c, HEAP_ALLOC_N2 + 4 * w, 0x2000 + w);
+            write_filled(c, HEAP_ALLOC_N3 + 4 * w, 0x3000 + w);
+            write_filled(c, HEAP_ALLOC_N4 + 4 * w, 0x4000 + w);
+            write_filled(c, HEAP_ALLOC_CLS + 4 * w, 0x5000 + w);
+        }
+        let n3size = match mode {
+            3 | 4 => 0x80,
+            8 => 0xd0,
+            _ => 0xc0,
+        };
+        // Node tags and ends (the walk compares +4 against the rounded
+        // size and stops at the 0x4253 sentinel).
+        c.bus.write16(HEAP_ALLOC_N1, 0x4246);
+        c.bus.write32(HEAP_ALLOC_N1 + 0x4, 0x40);
+        c.bus.write32(HEAP_ALLOC_N1 + 0x10, HEAP_ALLOC_N2);
+        c.bus.write32(HEAP_ALLOC_N1 + 0x14, 0);
+        c.bus.write16(HEAP_ALLOC_N2, 0x4246);
+        c.bus.write32(HEAP_ALLOC_N2 + 0x4, 0x50);
+        c.bus.write32(HEAP_ALLOC_N2 + 0x10, HEAP_ALLOC_N3);
+        c.bus.write32(HEAP_ALLOC_N2 + 0x14, HEAP_ALLOC_N1);
+        c.bus.write16(HEAP_ALLOC_N3, 0x4246);
+        c.bus.write32(HEAP_ALLOC_N3 + 0x4, n3size);
+        c.bus.write32(HEAP_ALLOC_N3 + 0x10, HEAP_ALLOC_N4);
+        c.bus.write32(HEAP_ALLOC_N3 + 0x14, HEAP_ALLOC_N2);
+        c.bus.write16(HEAP_ALLOC_N4, 0x4253);
+        c.bus.write32(HEAP_ALLOC_N4 + 0x4, 0x100);
+        c.bus.write32(HEAP_ALLOC_N4 + 0x10, 0);
+        c.bus.write32(HEAP_ALLOC_N4 + 0x14, HEAP_ALLOC_N3);
+        // Class words: heads, quantum, align, overhead, lock, mutex.
+        c.bus.write32(
+            HEAP_ALLOC_CLS + 0x20,
+            if mode == 1 {
+                HEAP_ALLOC_N4
+            } else {
+                HEAP_ALLOC_N1
+            },
+        );
+        c.bus.write32(
+            HEAP_ALLOC_CLS + 0x24,
+            if mode == 2 || mode == 7 {
+                // Backward-walk tail: starting from the head runs the
+                // generated walk off the list (prev 0) into a spin.
+                HEAP_ALLOC_N4
+            } else {
+                HEAP_ALLOC_N1
+            },
+        );
+        c.bus.write32(HEAP_ALLOC_CLS + 0x28, 0x10);
+        c.bus.write32(HEAP_ALLOC_CLS + 0x2c, 0x20);
+        c.bus.write32(HEAP_ALLOC_CLS + 0x30, 0x10);
+        c.bus.write32(HEAP_ALLOC_CLS + 0x38, locked as u32);
+        c.bus.write32(HEAP_ALLOC_CLS + 0x3c, HEAP_ALLOC_MUTEX);
+        c.bus.write32(heap_slot(HEAP_ALLOC_SLOT), HEAP_ALLOC_CLS);
+        let flags = match mode {
+            0 | 1 | 3 | 4 | 6 => 0x200,
+            2 => 0x100,
+            5 => 0x000,
+            7 => 0x300,
+            _ => 0x600,
+        };
+        let s6 = HEAP_ALLOC_SLOT | flags;
+        c.bus.write32(GAME_GP - 0x278, s6);
+        c.bus.write32(GAME_GP - 0x274, 0);
+        c.g[T0][0] = if t0src { s6 as u64 } else { 0 };
+        // S1 is entry garbage the plain-scan FP variant compares against:
+        // 0 ends its walk at once (a longer walk would chase garbage
+        // links, so that arm stays uncovered).
+        c.g[S1][0] = 0;
+        // The entry name is never read; the entry A3 offsets the aligned
+        // address and must keep the block stores inside the span.
+        c.g[A0][0] = (DATA + 0x910) as u64;
+        c.g[A1][0] = if mode == 0 {
+            0xffff_ffff_ffff_ffff
+        } else {
+            0x40
+        };
+        c.g[A2][0] = if mode == 4 || mode == 8 { 0 } else { 8 };
+        c.g[A3][0] = 0x20;
+        s6
+    }
+
+    /// Sync lock: straight-line lock/unlock of the global mutex through
+    /// the real mutex code; single arm.
+    #[test]
+    fn ea_mem_sync_lock_matches() {
+        check(
+            ee::s10::f_00317ee0__generated,
+            ea_mem_sync_lock,
+            40,
+            &|c, seed| {
+                machine(c, seed, 0x317e_e0, 0);
+                c.pc = 0x0031_7ee0;
+            },
+        );
+    }
+
+    /// Tagged alloc: the wrapper passes the tag word, fixed name and zero
+    /// flags into the real named allocator (real DLHeap on the heap
+    /// fixture, so path totals vary and are not pinned).
+    #[test]
+    fn ea_mem_alloc_tagged_matches() {
+        check(
+            ee::s10::f_00317d48__generated,
+            ea_mem_alloc_tagged,
+            64,
+            &|c, seed| {
+                heap_alloc_machine(c, seed, 0x317d_48);
+                c.bus.write32(
+                    GAME_GP + 0xd94,
+                    [0x0000_0001, 0x0000_0401, 0x0100_0001, 0x1000_0001][(seed / 8 % 4) as usize],
+                );
+                c.g[A0][0] = [0x10, 0x11, 0x40, 0x100, 0x1000, 0x8000, 0x20000, 0x100000]
+                    [(seed % 8) as usize];
+                c.g[A1][0] = (DATA + 0x901) as u64;
+                c.g[A3][0] = seed as u64;
+                c.pc = 0x0031_7d48;
+            },
+        );
+    }
+
+    /// Default alloc: identical body to the tagged wrapper (apart from
+    /// the return address); same fixture shape.
+    #[test]
+    fn ea_mem_alloc_default_matches() {
+        check(
+            ee::s10::f_00317d20__generated,
+            ea_mem_alloc_default,
+            64,
+            &|c, seed| {
+                heap_alloc_machine(c, seed, 0x317d_20);
+                c.bus.write32(
+                    GAME_GP + 0xd94,
+                    [0x0000_0001, 0x0000_0401, 0x0100_0001, 0x1000_0001][(seed / 8 % 4) as usize],
+                );
+                c.g[A0][0] = [0x10, 0x11, 0x40, 0x100, 0x1000, 0x8000, 0x20000, 0x100000]
+                    [(seed % 8) as usize];
+                c.g[A1][0] = (DATA + 0x901) as u64;
+                c.g[A3][0] = seed as u64;
+                c.pc = 0x0031_7d20;
+            },
+        );
+    }
+
+    /// Report-stats wrapper: straight-line call into the real locked
+    /// reporter; the pool flag steers its empty/non-empty arms ( pool
+    /// heads stay zero, as in the reporter's own test).
+    #[test]
+    fn ea_mem_report_stats_wrapper_matches() {
+        check(
+            ee::s10::f_00317f18__generated,
+            ea_mem_report_stats_wrapper,
+            48,
+            &|c, seed| {
+                machine(c, seed, 0x317f_18, 0);
+                belib(c);
+                c.bus.write32(GAME_GP + 0xdd8, seed % 2);
+                for off in [0x2a60u32, 0x2a68, 0x2a6c, 0x2a70, 0x2a78, 0x2a7c, 0x2a84] {
+                    c.bus.write32(GAME_GP + off, 0);
+                }
+                c.pc = 0x0031_7f18;
+            },
+        );
+    }
+
+    // ------------------------------------------------- cBXString_FormatV.
+
+    /// Fixture addresses (all with nonzero low bytes).
+    pub(crate) const FV_THIS: u32 = crate::difftest::DATA + 0x104;
+
+    pub(crate) const FV_BUF: u32 = crate::difftest::DATA + 0x1304;
+
+    pub(crate) const FV_FMT: u32 = crate::difftest::DATA + 0x2104;
+
+    pub(crate) const FV_ARGS: u32 = crate::difftest::DATA + 0x2204;
+
+    pub(crate) const FV_SARG: u32 = crate::difftest::DATA + 0x2304;
+
+    pub(crate) const FV_SARG2: u32 = crate::difftest::DATA + 0x2310;
+
+    pub(crate) const FV_NPTR: u32 = crate::difftest::DATA + 0x2410;
+
+    /// Slot values for the format at `which`: every specifier the format
+    /// consumes finds a valid argument (strings for `%s`, 1.0 for floats,
+    /// small widths for `'*'`, a writable word for `%n`). Ints vary on
+    /// `seed / 45`, the empty/nonempty string choice on `seed / 9`.
+    pub(crate) fn fv_slots(c: &mut Cpu, seed: u32, which: usize) {
+        let d1 = [0u64, 1, 42, 0xffff_ffff, 123456][seed as usize / 45 % 5];
+        let d2 = (seed % 100) as u64;
+        let d3 = ((seed * 7) % 100) as u64;
+        let dw = (1 + seed % 6) as u64;
+        const ONE: u64 = 0x3ff0_0000_0000_0000;
+        let (s0, s1) = match which {
+            8 | 9 | 24 | 25 | 26 | 27 => (FV_SARG as u64, d2),
+            10 | 11 | 12 | 13 => (ONE, d2),
+            28 | 29 => (dw, d1),
+            15 => (d1, FV_NPTR as u64),
+            35 | 36 | 37 => (d1, [FV_SARG as u64, FV_SARG2 as u64][seed as usize / 9 % 2]),
+            38 => (d1, d2),
+            _ => (d1, d2),
+        };
+        c.bus.write64(FV_ARGS, s0);
+        c.bus.write64(FV_ARGS + 8, s1);
+        c.bus.write64(FV_ARGS + 16, d3);
+    }
+
+    /// The shared FormatV fixture: the game image first (the two jump
+    /// tables the generated side dispatches through), then a heap-backed
+    /// string object, the format and its argument slots, float and scratch
+    /// registers, and the entry state. `which` selects the slot layout for
+    /// `fmt` (an index into [`FV_FMTS`] for the same shape).
+    pub(crate) fn fv_fixture(c: &mut Cpu, seed: u32, fmt: &[u8], which: usize) {
+        use crate::difftest::{elf_image, fill};
+        use crate::game::bx::bxstring::tests::string_obj;
+        use crate::game::bx::cubicspline::tests::heap_alloc_machine;
+        use crate::game::misc::tests::put_cstr;
+        elf_image(c);
+        assert_eq!(
+            c.bus.read32(0x0048_d860),
+            0x0031_9354,
+            "format table missing"
+        );
+        let mut r = heap_alloc_machine(c, seed, 0x3191_c0);
+        string_obj(c, FV_THIS, FV_BUF, 1, 5, 0x100);
+        put_cstr(c, FV_BUF, b"hello");
+        fill(c, &mut r, FV_BUF + 8, 4);
+        put_cstr(c, FV_SARG, b"w\xe9rld");
+        put_cstr(c, FV_SARG2, b"");
+        c.bus.write32(FV_NPTR, 0);
+        put_cstr(c, FV_FMT, fmt);
+        // A trailing '%' scans one past the NUL: keep the guard zeroed so it
+        // terminates deterministically.
+        for i in 1..64u32 {
+            c.bus.write8(FV_FMT + fmt.len() as u32 + i, 0);
+        }
+        fv_slots(c, seed, which);
+        for (i, f) in [12, 14, 16, 18].into_iter().enumerate() {
+            c.f[f] = 0x3f80_0000 + 0x0011_0000 * i as u32 + seed;
+        }
+        for (i, t) in [T0, T1, T2, T3].into_iter().enumerate() {
+            c.g[t][0] = 0x1357_0000_0000_0100 * (i as u64 + 1) + seed as u64;
+        }
+        c.pc = 0x0031_91c0;
+        c.g[A0][0] = FV_THIS as u64;
+        c.g[A1][0] = FV_FMT as u64;
+        c.g[A2][0] = FV_ARGS as u64;
+    }
+
+    // ------------------------------------------------- EAC_GetUnpackedSize.
+
+    /// Header bytes for the EAC fixture, `seed % 28`: the eight short-form
+    /// tags, the eight long-form tags, `0xC0`, nine defaults at different
+    /// dispatch depths, and two odd neighbours proving the low-bit mask
+    /// (`0x11` takes the `0x10` arm, `0x91` the `0x90` arm).
+    pub(crate) const EAC_TAGS: [u8; 28] = [
+        0x10, 0x18, 0x1a, 0x1e, 0x30, 0x32, 0x34, 0x46, 0x90, 0x98, 0x9a, 0x9e, 0xb0, 0xb2, 0xb4,
+        0xc6, 0xc0, 0x00, 0x1b, 0x40, 0x50, 0xa0, 0xc2, 0xff, 0x7f, 0x11, 0x91, 0x20,
+    ];
+
+    /// `EAC_GetUnpackedSize`: every tag class and armlength, the tagged bit
+    /// on `seed / 28`, the data bytes from the fixture RNG. Totals are the
+    /// generated costs observed in the run (no calls), listed in the
+    /// `check_paths`.
+    #[test]
+    fn eac_get_unpacked_size_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check_paths, fill, DATA};
+        check_paths(
+            ee::s13::f_003b4818__generated,
+            eac_get_unpacked_size,
+            200,
+            &[8, 24, 26, 27, 28, 29, 30, 31, 33, 34, 35, 36, 37, 38, 41],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b48_18, 0);
+                const HDR: u32 = DATA + 0x105;
+                fill(c, &mut r, HDR + 2, 1);
+                c.bus.write8(HDR, EAC_TAGS[seed as usize % 28]);
+                c.bus.write8(
+                    HDR + 1,
+                    if seed / 28 % 2 == 0 {
+                        0xfb
+                    } else {
+                        [0x00, 0xfa, 0xfc][seed as usize / 56 % 3]
+                    },
+                );
+                c.pc = 0x003b_4818;
+                c.g[A0][0] = HDR as u64
+                    | if seed / 112 % 2 == 1 {
+                        0xffff_0000_0000_0000
+                    } else {
+                        0
+                    };
+            },
+        );
+    }
+
+    // ------------------------------------------------- EA_IsValidPointer.
+
+    /// Probe addresses, `seed % 16`: each range's edges in and out, plus
+    /// misses (zero, past the end, all bits set). Reads never happen (pure
+    /// arithmetic), so any mapped or unmapped address is safe; the exact
+    /// boundaries are the point.
+    pub(crate) const VALID_PTRS: [u64; 16] = [
+        0x0010_0000,
+        0x008e_ffff,
+        0x0080_0000,
+        0x1000_0000,
+        0x1400_0000,
+        0x1400_0001,
+        0x2010_0000,
+        0x27ff_ffff,
+        0x3010_0000,
+        0x37ff_ffff,
+        0x7000_0000,
+        0x7000_3fff,
+        0x0000_0000,
+        0x0090_0000,
+        0x7000_4000,
+        0xffff_ffff,
+    ];
+
+    /// `EA_IsValidPointer`: every range arm, totals hand-counted (no calls).
+    #[test]
+    fn ea_is_valid_pointer_matches() {
+        use crate::difftest::check_paths;
+        use crate::difftest::fakes::machine;
+        check_paths(
+            ee::s14::f_003e6240__generated,
+            ea_is_valid_pointer,
+            160,
+            &[10, 16, 20, 24, 27, 28],
+            &|c, seed| {
+                machine(c, seed, 0x3e62_40, 0);
+                c.pc = 0x003e_6240;
+                c.g[A0][0] = VALID_PTRS[seed as usize % 16];
+            },
+        );
+    }
+
+    /// Edge probes: the `A1 == V0` tie (`0x07ffffff`, where the wrapped sum
+    /// lands exactly on the masked high word) and its neighbours, plus a
+    /// scratch-window address. Pure arithmetic, so any address is safe.
+    pub(crate) const VALID_PTR_EDGES: [u64; 8] = [
+        0x07ff_ffff,
+        0x07ff_fffe,
+        0x0800_0000,
+        0x07ef_ffff,
+        0x0000_1000,
+        0x7000_0000,
+        0xffff_ffff,
+        0x1234_5678,
+    ];
+
+    /// `EA_IsValidPointer` edge probes (boundary ties).
+    pub(crate) const VALID_PTR_EDGE_PATHS: &[u64] = &[10, 16, 27, 28];
+
+    /// `EA_IsValidPointer`: boundary ties.
+    #[test]
+    fn ea_is_valid_pointer_edges() {
+        use crate::difftest::check_paths;
+        use crate::difftest::fakes::machine;
+        check_paths(
+            ee::s14::f_003e6240__generated,
+            ea_is_valid_pointer,
+            16,
+            VALID_PTR_EDGE_PATHS,
+            &|c, seed| {
+                machine(c, seed, 0x3e62_40, 0);
+                c.pc = 0x003e_6240;
+                c.g[A0][0] = VALID_PTR_EDGES[seed as usize % 8];
+            },
+        );
+    }
+
+    // ------------------------------------------------- EA_MemMove.
+
+    /// `EA_MemMove`: forward disjoint (`dst` below and above `src`),
+    /// backwards overlap, and a backwards-with-zero-length case built from a
+    /// non-canonical address (`seed % 4`), lengths `seed / 4 % 25` (0
+    /// included). The zero-length backward arm only triggers when the 32-bit
+    /// wrapped end still exceeds `dst` while the full 64-bit `src` precedes
+    /// it. No `check_paths`: the forward arm's totals run through the real
+    /// `EA_MemCopy`.
+    #[test]
+    fn ea_mem_move_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        check(
+            ee::s14::f_003e6188__generated,
+            ea_mem_move,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e61_88, 0);
+                const BASE: u32 = DATA + 0x204;
+                fill(c, &mut r, BASE, 16);
+                let n = seed / 4 % 25;
+                let (dst, src, len) = match seed % 4 {
+                    0 => (BASE as u64, (BASE + 0x20) as u64, n as u64),
+                    1 => ((BASE + 0x20) as u64, BASE as u64, n as u64),
+                    2 => ((BASE + 8) as u64, BASE as u64, n as u64),
+                    _ => (0, 0xffff_ffff_7fff_ffff, 0),
+                };
+                c.pc = 0x003e_6188;
+                c.g[A0][0] = dst;
+                c.g[A1][0] = src;
+                c.g[A2][0] = len;
+            },
+        );
+    }
+
+    driven!(gen_mem_move, ee::s14::f_003e6188__generated);
+
+    driven!(hand_mem_move, ea_mem_move);
+
+    /// `EA_MemMove` with real events: the backward loop's head delivers on
+    /// both sides (structured loop, no unwind); forward seeds run the real
+    /// copy under the same schedule (a mid-call unwind restarts both sides
+    /// identically).
+    #[test]
+    fn ea_mem_move_events() {
+        check_events(gen_mem_move, hand_mem_move, 48, &|c, seed| {
+            use crate::difftest::events::schedule;
+            use crate::difftest::fakes::machine;
+            use crate::difftest::{fill, DATA};
+            let mut r = machine(c, seed, 0x3e61_88, 0);
+            const BASE: u32 = DATA + 0x204;
+            fill(c, &mut r, BASE, 16);
+            let back = seed % 2 == 0;
+            let n = 8 + seed % 8;
+            c.pc = 0x003e_6188;
+            c.g[A0][0] = (if back { BASE + 8 } else { BASE }) as u64;
+            c.g[A1][0] = BASE as u64;
+            c.g[A2][0] = n as u64;
+            let mut r2 = Rng(0x3e61_8800 ^ seed as u64);
+            let mode = seed / 2 % 3;
+            let ev = schedule(c, &mut r2, mode, 0x003e_6188);
+            c.pc = 0x003e_6188;
+            c.g[A0][0] = (if back { BASE + 8 } else { BASE }) as u64;
+            c.g[A1][0] = BASE as u64;
+            c.g[A2][0] = n as u64;
+            c.cycles = 1000;
+            if mode != 0 {
+                c.next_event = 1000;
+            }
+            let _ = r;
+            ev
+        });
+        use crate::difftest::{fresh, run_generated};
+        let mut c = fresh();
+        {
+            use crate::difftest::fakes::machine;
+            use crate::difftest::{fill, DATA};
+            let mut r = machine(&mut c, 0, 0x3e61_88, 0);
+            const BASE: u32 = DATA + 0x204;
+            fill(&mut c, &mut r, BASE, 16);
+            c.pc = 0x003e_6188;
+            c.g[A0][0] = (BASE + 8) as u64;
+            c.g[A1][0] = BASE as u64;
+            c.g[A2][0] = 12;
+            c.cycles = 1000;
+            c.next_event = 1000;
+        }
+        run_generated(&mut c, ee::s14::f_003e6188__generated);
+        // Structured loop (`deliver_event_here` ignores the unwind request):
+        // the event delivers and the function returns to `RA`, it never
+        // resumes at the head. `RA` is what the framework records.
+        assert_eq!(
+            c.pc,
+            crate::difftest::RA,
+            "backward: deliver-only, no unwind"
+        );
+    }
+
+    // ------------------------------------------------- EA_AddShutdownHandler.
+
+    /// `EA_AddShutdownHandler`: the walk runs from the top slot down, so a
+    /// handler at slot 63 is found at once (+9) and at slot 0 last (+387);
+    /// insert at slot 0 (+393), slot 1 (+403) and slot 5 (+435), and a full
+    /// table (+901), on `seed % 6`. Totals are the generated costs observed
+    /// in the run (no calls). Filler words stay distinct from the handler.
+    #[test]
+    fn ea_add_shutdown_handler_matches() {
+        use crate::difftest::check_paths;
+        use crate::difftest::fakes::machine;
+        check_paths(
+            ee::s14::f_003e4a30__generated,
+            ea_add_shutdown_handler,
+            200,
+            &[9, 387, 393, 403, 435, 901],
+            &|c, seed| {
+                machine(c, seed, 0x3e4a_30, 0);
+                const TABLE: u32 = 0x0045_0c78;
+                let mode = seed % 6;
+                let handler = 0x0100_00a0u64 + (seed / 6 % 16) as u64;
+                for i in 0..64u32 {
+                    let used = 0x0200_0101u64 + i as u64;
+                    let v = match mode {
+                        0 => {
+                            if i == 0 {
+                                handler as u32
+                            } else {
+                                used as u32
+                            }
+                        }
+                        1 => {
+                            if i == 63 {
+                                handler as u32
+                            } else {
+                                used as u32
+                            }
+                        }
+                        2 => {
+                            if i == 0 {
+                                0
+                            } else {
+                                used as u32
+                            }
+                        }
+                        3 => {
+                            if i == 0 {
+                                used as u32
+                            } else if i == 1 {
+                                0
+                            } else {
+                                used as u32
+                            }
+                        }
+                        4 => {
+                            if i < 5 {
+                                used as u32
+                            } else if i == 5 {
+                                0
+                            } else {
+                                used as u32
+                            }
+                        }
+                        _ => used as u32,
+                    };
+                    c.bus.write32(TABLE + 4 * i, v);
+                }
+                c.pc = 0x003e_4a30;
+                c.g[A0][0] = handler;
+            },
+        );
+    }
+
+    driven!(gen_add_shutdown_handler, ee::s14::f_003e4a30__generated);
+
+    driven!(hand_add_shutdown_handler, ea_add_shutdown_handler);
+
+    /// Full-table setup shared by the shutdown-handler event seeds: the
+    /// handler is absent, so both scans run their whole length.
+    pub(crate) fn shutdown_full_table(c: &mut Cpu) {
+        const TABLE: u32 = 0x0045_0c78;
+        for i in 0..64u32 {
+            c.bus.write32(TABLE + 4 * i, 0x0200_0101 + i);
+        }
+    }
+
+    /// `EA_AddShutdownHandler` with real events, `seed % 3`: deliver at the
+    /// first scan's head, deliver at the second scan's head (the deadline is
+    /// hand-counted past the whole first scan), and deliver-only. Both
+    /// loops are structured (`deliver_event_here` ignores the unwind
+    /// request), so no seed unwinds: the extra runs below assert the
+    /// deliver-only return to `RA` per deadline class.
+    #[test]
+    fn ea_add_shutdown_handler_events() {
+        check_events(
+            gen_add_shutdown_handler,
+            hand_add_shutdown_handler,
+            48,
+            &|c, seed| {
+                use crate::difftest::events::schedule;
+                use crate::difftest::fakes::machine;
+                machine(c, seed, 0x3e4a_30, 0);
+                shutdown_full_table(c);
+                let variant = seed % 3;
+                let mode = [1u32, 1, 2][variant as usize];
+                let mut r = Rng(0x3e4a_3000 ^ seed as u64);
+                let ev = schedule(c, &mut r, mode, 0x003e_4a30);
+                c.pc = 0x003e_4a30;
+                c.g[A0][0] = 0x0100_00a0;
+                c.cycles = 1000;
+                // The first scan's last back edge runs at cycle 1385 and the
+                // second scan's first at 1392: 1390 lands the first unwind
+                // on the second head.
+                c.next_event = if variant == 1 { 1390 } else { 1000 };
+                ev
+            },
+        );
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{fresh, run_generated};
+        for (seed, at) in [(0u32, 1000u64), (1, 1390)] {
+            let mut c = fresh();
+            machine(&mut c, seed, 0x3e4a_30, 0);
+            shutdown_full_table(&mut c);
+            c.pc = 0x003e_4a30;
+            c.g[A0][0] = 0x0100_00a0;
+            c.cycles = 1000;
+            c.next_event = at;
+            run_generated(&mut c, ee::s14::f_003e4a30__generated);
+            assert_eq!(
+                c.pc,
+                crate::difftest::RA,
+                "seed {seed}: deliver-only, no unwind"
+            );
+        }
+    }
+
+    // ------------------------------------------------- EA_Crc16.
+
+    /// `EA_Crc16`: lengths `seed % 25` (0 takes the skip arm), negative
+    /// sizes and high-bit pointers on higher digits (same skip total), the
+    /// table and buffer filled from the fixture RNG. Totals hand-counted:
+    /// 8 empty, `10 + 11 * len` otherwise.
+    #[test]
+    fn ea_crc16_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check_paths, fill, DATA};
+        check_paths(
+            ee::s14::f_003e62d0__generated,
+            ea_crc16,
+            200,
+            &[
+                8, 21, 32, 43, 54, 65, 76, 87, 98, 109, 120, 131, 142, 153, 164, 175, 186, 197,
+                208, 219, 230, 241, 252, 263, 274,
+            ],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e62_d0, 0);
+                const BUF: u32 = DATA + 0x204;
+                const TAB: u32 = 0x0045_1018;
+                fill(c, &mut r, TAB, 128);
+                fill(c, &mut r, BUF, 8);
+                let len = seed % 25;
+                let neg = seed / 25 % 2 == 1;
+                c.pc = 0x003e_62d0;
+                c.g[A0][0] = BUF as u64
+                    | if seed / 50 % 2 == 1 {
+                        0xffff_0000_0000_0000
+                    } else {
+                        0
+                    };
+                c.g[A1][0] = if neg {
+                    0xffff_ffff_ffff_fff8
+                } else {
+                    len as u64
+                };
+                c.g[A2][0] = seed as u64 * 0x1_2345;
+            },
+        );
+    }
+
+    driven!(gen_crc16, ee::s14::f_003e62d0__generated);
+
+    driven!(hand_crc16, ea_crc16);
+
+    /// `EA_Crc16` with real events on the byte-loop head (no calls;
+    /// structured loop, so deliver-only: the extra run asserts the return
+    /// to `RA`, never a resume at the head).
+    #[test]
+    fn ea_crc16_events() {
+        check_events(gen_crc16, hand_crc16, 48, &|c, seed| {
+            use crate::difftest::events::schedule;
+            use crate::difftest::fakes::machine;
+            use crate::difftest::{fill, DATA};
+            let mut r = machine(c, seed, 0x3e62_d0, 0);
+            const BUF: u32 = DATA + 0x204;
+            const TAB: u32 = 0x0045_1018;
+            fill(c, &mut r, TAB, 128);
+            fill(c, &mut r, BUF, 8);
+            let mode = seed % 3;
+            let mut r2 = Rng(0x3e62_d000 ^ seed as u64);
+            let ev = schedule(c, &mut r2, mode, 0x003e_62d0);
+            c.pc = 0x003e_62d0;
+            c.g[A0][0] = BUF as u64;
+            c.g[A1][0] = (8 + seed % 8) as u64;
+            c.g[A2][0] = seed as u64;
+            c.cycles = 1000;
+            if mode != 0 {
+                c.next_event = 1000;
+            }
+            let _ = r;
+            ev
+        });
+        use crate::difftest::{fresh, run_generated};
+        let mut c = fresh();
+        {
+            use crate::difftest::fakes::machine;
+            use crate::difftest::{fill, DATA};
+            let mut r = machine(&mut c, 0, 0x3e62_d0, 0);
+            const BUF: u32 = DATA + 0x204;
+            const TAB: u32 = 0x0045_1018;
+            fill(&mut c, &mut r, TAB, 128);
+            fill(&mut c, &mut r, BUF, 8);
+            c.pc = 0x003e_62d0;
+            c.g[A0][0] = BUF as u64;
+            c.g[A1][0] = 12;
+            c.g[A2][0] = 0;
+            c.cycles = 1000;
+            c.next_event = 1000;
+        }
+        run_generated(&mut c, ee::s14::f_003e62d0__generated);
+        assert_eq!(
+            c.pc,
+            crate::difftest::RA,
+            "byte loop: deliver-only, no unwind"
+        );
+    }
+
+    // ------------------------------------------------- EA_RunFatalHandlers.
+
+    /// `EA_RunFatalHandlers`: zero, one and two set handlers (`seed % 3`,
+    /// positions on higher digits) against `EA_AssertNotBusy` as the handler
+    /// leaf. Totals are the generated costs observed in the run: 397
+    /// empty, +8 per call.
+    #[test]
+    fn ea_run_fatal_handlers_matches() {
+        use crate::difftest::check_paths;
+        use crate::difftest::fakes::machine;
+        check_paths(
+            ee::s14::f_003e49b8__generated,
+            ea_run_fatal_handlers,
+            120,
+            &[397, 405, 413],
+            &|c, seed| {
+                machine(c, seed, 0x3e49_b8, 0);
+                const TABLE: u32 = 0x0045_0c78;
+                const LEAF: u32 = 0x003e_62b0;
+                c.bus.write32(0x0045_0da4, 0);
+                for i in 0..64u32 {
+                    c.bus.write32(TABLE + 4 * i, 0);
+                }
+                let mode = seed % 3;
+                if mode >= 1 {
+                    c.bus.write32(TABLE + 4 * (seed / 3 % 64), LEAF);
+                }
+                if mode >= 2 {
+                    c.bus.write32(TABLE + 4 * ((seed / 3 % 64 + 32) % 64), LEAF);
+                }
+                c.pc = 0x003e_49b8;
+            },
+        );
+    }
+
+    driven!(gen_run_fatal_handlers, ee::s14::f_003e49b8__generated);
+
+    driven!(hand_run_fatal_handlers, ea_run_fatal_handlers);
+
+    /// `EA_RunFatalHandlers` with real events on the slot-walk head (the
+    /// handler leaf has no loops, so no mid-call unwind; the walk itself is
+    /// structured, so deliver-only: the extra run asserts the return to
+    /// `RA`, never a resume at the head).
+    #[test]
+    fn ea_run_fatal_handlers_events() {
+        check_events(
+            gen_run_fatal_handlers,
+            hand_run_fatal_handlers,
+            48,
+            &|c, seed| {
+                use crate::difftest::events::schedule;
+                use crate::difftest::fakes::machine;
+                machine(c, seed, 0x3e49_b8, 0);
+                const TABLE: u32 = 0x0045_0c78;
+                const LEAF: u32 = 0x003e_62b0;
+                c.bus.write32(0x0045_0da4, 0);
+                for i in 0..64u32 {
+                    c.bus.write32(TABLE + 4 * i, 0);
+                }
+                if seed % 2 == 0 {
+                    c.bus.write32(TABLE + 4 * (seed / 2 % 64), LEAF);
+                }
+                let mode = seed / 2 % 3;
+                let mut r = Rng(0x3e49_b800 ^ seed as u64);
+                let ev = schedule(c, &mut r, mode, 0x003e_49b8);
+                c.pc = 0x003e_49b8;
+                c.cycles = 1000;
+                if mode != 0 {
+                    c.next_event = 1000;
+                }
+                ev
+            },
+        );
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{fresh, run_generated};
+        let mut c = fresh();
+        machine(&mut c, 0, 0x3e49_b8, 0);
+        c.bus.write32(0x0045_0da4, 0);
+        c.pc = 0x003e_49b8;
+        c.cycles = 1000;
+        c.next_event = 1000;
+        run_generated(&mut c, ee::s14::f_003e49b8__generated);
+        assert_eq!(
+            c.pc,
+            crate::difftest::RA,
+            "slot walk: deliver-only, no unwind"
+        );
+    }
+
+    // ------------------------------------------------- EA_FatalError.
+
+    /// Gate word (in the machine's RAM) for this module's abort fake.
+    pub(crate) const EA_ABORT_TEST_CTRL: u32 = crate::difftest::DATA + 0x3e_0000;
+
+    pub(crate) const EA_ABORT_TEST_MAGIC: u32 = 0x0c13_3300;
+
+    pub(crate) static EA_ABORT_TEST_PREV_ABORT: AtomicUsize = AtomicUsize::new(0);
+
+    /// The abort call at the end of `EA_FatalError`, faked to return when
+    /// this module's gate word is set (the trap itself cannot run in a
+    /// differential test); otherwise whatever was installed before.
+    pub(crate) fn ea_abort_fake_abort(c: &mut Cpu) {
+        use crate::difftest::fakes::fall_back;
+        if c.bus.read32(EA_ABORT_TEST_CTRL) == EA_ABORT_TEST_MAGIC {
+            c.pc = c.g[RA][0] as u32;
+            return;
+        }
+        fall_back(c, &EA_ABORT_TEST_PREV_ABORT, ee::s14::f_003e4a10__generated);
+    }
+
+    pub(crate) fn ea_abort_install_fake() {
+        use crate::difftest::fakes::hook;
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E4A10),
+            ea_abort_fake_abort,
+            &EA_ABORT_TEST_PREV_ABORT,
+        );
+    }
+
+    /// `EA_FatalError`: null and formatted messages (`seed % 2`), the
+    /// verbose second print on `seed / 8`, argument values on higher digits.
+    /// The abort call is faked to return (gate word set); everything up to
+    /// the trap is compared.
+    #[test]
+    fn ea_fatal_error_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, elf_image, DATA};
+        use crate::game::misc::tests::put_cstr;
+        ea_abort_install_fake();
+        check(
+            ee::s14::f_003e60e8__generated,
+            ea_fatal_error,
+            48,
+            &|c, seed| {
+                elf_image(c);
+                machine(c, seed, 0x3e60_e8, 0);
+                c.bus.write32(EA_ABORT_TEST_CTRL, EA_ABORT_TEST_MAGIC);
+                const FMT: u32 = DATA + 0x2104;
+                const SARG: u32 = DATA + 0x2304;
+                put_cstr(c, SARG, b"w\xe9rld");
+                put_cstr(c, FMT, b"e=%s! n=%d");
+                let verbose = seed / 8 % 2 == 1;
+                c.bus.write32(0x0045_100c, verbose as u32);
+                c.bus.write32(0x0045_1010, SARG);
+                // `%s` always reads the first slot: it stays a valid string;
+                // the `%d` varies through the second slot.
+                for (i, t) in [A2, A3, T0, T1, T2, T3].into_iter().enumerate() {
+                    c.g[t][0] = (seed as u64 + 1) * (0x100 + 0x110 * i as u64);
+                }
+                c.g[A1][0] = SARG as u64;
+                for (i, f) in [12, 14, 16, 18].into_iter().enumerate() {
+                    c.f[f] = 0x3f80_0000 + 0x0011_0000 * i as u32 + seed;
+                }
+                c.pc = 0x003e_60e8;
+                c.g[A0][0] = if seed % 2 == 0 { 0 } else { FMT as u64 };
+            },
+        );
+    }
+
+    // ------------------------------------------------- EA_DebugMessage.
+
+    /// `EA_DebugMessage`: null and formatted messages, the hook table
+    /// pointing at a tiny leaf. Both arms return, so both are tested.
+    #[test]
+    fn ea_debug_message_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, elf_image, DATA};
+        use crate::game::misc::tests::put_cstr;
+        check(
+            ee::s14::f_003e6070__generated,
+            ea_debug_message,
+            48,
+            &|c, seed| {
+                elf_image(c);
+                machine(c, seed, 0x3e60_70, 0);
+                // The abort-message hook: a tiny leaf that returns while the
+                // busy flag is clear.
+                c.bus.write32(0x0045_0dd8, 0x003e_62b0);
+                c.bus.write32(0x0045_0da4, 0);
+                const FMT: u32 = DATA + 0x2104;
+                const SARG: u32 = DATA + 0x2304;
+                put_cstr(c, SARG, b"w\xe9rld");
+                put_cstr(
+                    c,
+                    FMT,
+                    [b"%d".as_slice(), b"%s", b"%d-%d", b"x"][seed as usize % 4],
+                );
+                for (i, t) in [A1, A2, A3, T0, T1, T2, T3].into_iter().enumerate() {
+                    c.g[t][0] = (seed as u64 + 1) * (0x100 + 0x110 * i as u64);
+                }
+                c.g[A1][0] = if seed % 4 == 1 {
+                    SARG as u64
+                } else {
+                    seed as u64
+                };
+                for (i, f) in [12, 14, 16, 18].into_iter().enumerate() {
+                    c.f[f] = 0x3f80_0000 + 0x0011_0000 * i as u32 + seed;
+                }
+                c.pc = 0x003e_6070;
+                c.g[A0][0] = if seed % 8 < 2 { 0 } else { FMT as u64 };
+            },
+        );
+    }
+
+    // ------------------------------------------------- EA_AssertNotBusy.
+
+    /// `EA_AssertNotBusy`: the clear-flag arm (the only returnable one). The
+    /// trap arm (`0x450da4` nonzero) ends the machine and is not tested.
+    #[test]
+    fn ea_assert_not_busy_matches() {
+        use crate::difftest::check_paths;
+        use crate::difftest::fakes::machine;
+        check_paths(
+            ee::s14::f_003e62b0__generated,
+            ea_assert_not_busy,
+            24,
+            &[6],
+            &|c, seed| {
+                machine(c, seed, 0x3e62_b0, 0);
+                c.bus.write32(0x0045_0da4, 0);
+                c.pc = 0x003e_62b0;
+            },
+        );
+    }
 }
 
 pub(crate) mod callee {
@@ -26852,6 +32292,55 @@ pub(crate) mod callee {
     pub(crate) const EA_MEM_FREE: Callee = Callee {
         addr: 0x0031_7e98,
         f: ee::s10::EA_MemFree,
+    };
+
+    pub(crate) use crate::game::bx::cubicspline::callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::bx::cubicspline::callee::EA_MUTEX_LOCK;
+    pub(crate) use crate::game::bx::cubicspline::callee::EA_MUTEX_UNLOCK;
+
+    pub(crate) use crate::game::fe::feasyncfile::callee::VSPRINTF;
+
+    /// `void HUFF_maketree(s)` (0x2c8770): rebuild the decode tables.
+    pub(crate) const HUFF_MAKETREE: Callee = Callee {
+        addr: 0x002c_8770,
+        f: ee::s09::f_002c8770,
+    };
+
+    /// `MEM_ReportStatsLocked` (0x319cc8): pool-statistics reporter under
+    /// the memory-manager lock (no crate callee name exists yet).
+    pub(crate) const MEM_REPORT_STATS_LOCKED: Callee = Callee {
+        addr: 0x0031_9cc8,
+        f: ee::s10::f_00319cc8,
+    };
+
+    /// `void cBXString_ReleaseBuffer(cBXString* self, int n)` (0x318a88).
+    pub(crate) const CBX_STRING_RELEASE_BUFFER: Callee = Callee {
+        addr: 0x0031_8a88,
+        f: ee::s10::cBXString_ReleaseBuffer,
+    };
+
+    /// `void EA_RunFatalHandlers(void)` (0x3e49b8).
+    pub(crate) const EA_RUN_FATAL_HANDLERS: Callee = Callee {
+        addr: 0x003e_49b8,
+        f: ee::s14::EA_RunFatalHandlers,
+    };
+
+    /// `void EA_Abort(void)` (0x3e4a10).
+    pub(crate) const EA_ABORT: Callee = Callee {
+        addr: 0x003e_4a10,
+        f: ee::s14::EA_Abort,
+    };
+
+    /// `void EA_MemCopy(void* dst, const void* src, size_t n)` (0x3e6574).
+    pub(crate) const EA_MEM_COPY: Callee = Callee {
+        addr: 0x003e_6574,
+        f: ee::s14::f_003e6574,
+    };
+
+    /// `void Debug_Printf(int ch, const char* fmt, ...)` (0x3e5d30).
+    pub(crate) const DEBUG_PRINTF: Callee = Callee {
+        addr: 0x003e_5d30,
+        f: ee::s14::Debug_Printf,
     };
 }
 

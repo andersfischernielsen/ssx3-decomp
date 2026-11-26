@@ -12,6 +12,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
@@ -159,6 +160,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_0538, mem_report_pool_stat4, "MEM_ReportPoolStat4"),
     (0x0032_0540, mem_report_pool_stat5, "MEM_ReportPoolStat5"),
     (0x0032_0548, mem_report_pool_stat6, "MEM_ReportPoolStat6"),
+    (0x0025_2a10, mem_heap_alloc_aligned, "MEM_HeapAllocAligned"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -6248,6 +6250,827 @@ pub fn mem_report_pool_stat6(c: &mut Cpu) {
     ret(c);
 }
 
+pub(crate) mod heap_alloc {
+
+    pub const ENTRY: u32 = 0x0025_2a10;
+
+    /// Outer retry after the heap changed under us (0x252f20's check).
+    pub const RETRY: u32 = 0x0025_2a88;
+
+    /// Size-walk reload (0x252b48) and scan (0x252b54).
+    pub const WALK1_RELOAD: u32 = 0x0025_2b48;
+
+    pub const WALK1_SCAN: u32 = 0x0025_2b54;
+
+    /// Backward size-walk reload (0x252b90) and scan (0x252b9c).
+    pub const WALK2_RELOAD: u32 = 0x0025_2b90;
+
+    pub const WALK2_SCAN: u32 = 0x0025_2b9c;
+
+    /// Plain scan (0x252be0) and its forward-pointer variant (0x252c0c).
+    pub const WALK3_SCAN: u32 = 0x0025_2be0;
+
+    pub const WALK3_FP_SCAN: u32 = 0x0025_2c0c;
+
+    /// Split inserts, forward (0x252d48) and backward (0x252d74) halves of
+    /// the first, forward (0x252e38) and backward (0x252e64) of the second.
+    pub const INS1_FWD: u32 = 0x0025_2d48;
+
+    pub const INS1_BWD: u32 = 0x0025_2d74;
+
+    pub const INS2_FWD: u32 = 0x0025_2e38;
+
+    pub const INS2_BWD: u32 = 0x0025_2e64;
+
+    /// End of the generated range (for `jump_out`).
+    pub const END: u32 = 0x0025_2f60;
+}
+
+/// Stages of [`mem_heap_alloc_aligned`] between its resume heads: one
+/// stage per generated block group, driven by the loop in the entry
+/// function. Loop state lives in the registers (reloaded from them after
+/// every event check), so resuming at a head just re-enters its stage.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum Heap {
+    Entry,
+    LockCheck,
+    /// `0x252a88`: lock-state dispatch both the entry and the retry
+    /// path share. The retry path (`0x252f20`) enters here directly:
+    /// it already reloaded the lock word into V0, skipping LockCheck.
+    LockCheckJoin,
+    RoundSize,
+    Walk1First,
+    Walk1Reload,
+    Walk1Scan,
+    Walk1Check,
+    Walk2First,
+    Walk2Reload,
+    Walk2Scan,
+    Walk2Check,
+    Walk3First,
+    Walk3Scan,
+    Walk3FpScan,
+    Walk3FpCheck,
+    Walk3Check,
+    Walk3Join,
+    Found,
+    Unlink,
+    FitFwd,
+    FitPlain,
+    FitJoin,
+    NoSplit,
+    Split,
+    SplitInsCall,
+    SplitInsFwdPrime,
+    SplitInsFwd,
+    SplitInsBwdPrime,
+    SplitInsBwd,
+    SplitInsLink,
+    SplitPlainCall,
+    Ins2FwdPrime,
+    Ins2Fwd,
+    Ins2BwdPrime,
+    Ins2Bwd,
+    Ins2Link,
+    Common,
+    Fail,
+    /// `0x252f08`: fail-path lock-word reload (+1). The success path
+    /// skips this block: Common's `+10` tail (0x252ec4) already
+    /// reloaded V0 for free.
+    UnlockCheck,
+    /// `0x252f0c`: lock-state dispatch both exits share.
+    UnlockJoin,
+    RetryCheck,
+    /// Normal exit via `0x252f2c`: the `V0 = S5` move (and its +1), then
+    /// the shared `0x252f30` tail.
+    Epilogue,
+    /// `0x252f30` tail: the frame restore both exits share. The
+    /// negative-size early exit enters here straight from the entry
+    /// (skipping the `V0 = S5` move); `V0` keeps the entry delay-slot 0.
+    EpilogueTail,
+}
+
+/// `void *MEM_HeapAllocAligned(const char *name, size_t size, int align,
+/// int a3, void *heap_or_null, int ignored)` (0x252a10): the heap
+/// allocator core. Picks the heap class from `heap_or_null` (or the
+/// default heap word at `GP-0x278` when null), rounds the request, walks
+/// the free list for a fitting block, unlinks and optionally splits it,
+/// and returns the aligned data pointer (`S5`), or null when no block
+/// fits (invoking the out-of-memory callback at `GP-0x274` first, and
+/// retrying when it reports the heap changed). `name` and the last flag
+/// pass through untouched: the core never reads them. Re-entered at its
+/// loop heads after an unwind.
+pub fn mem_heap_alloc_aligned(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut st = match c.pc {
+            heap_alloc::ENTRY => Heap::Entry,
+            heap_alloc::RETRY => Heap::LockCheckJoin,
+            heap_alloc::WALK1_RELOAD => Heap::Walk1Reload,
+            heap_alloc::WALK1_SCAN => Heap::Walk1Scan,
+            heap_alloc::WALK2_RELOAD => Heap::Walk2Reload,
+            heap_alloc::WALK2_SCAN => Heap::Walk2Scan,
+            heap_alloc::WALK3_SCAN => Heap::Walk3Scan,
+            heap_alloc::WALK3_FP_SCAN => Heap::Walk3FpScan,
+            heap_alloc::INS1_FWD => Heap::SplitInsFwd,
+            heap_alloc::INS1_BWD => Heap::SplitInsBwd,
+            heap_alloc::INS2_FWD => Heap::Ins2Fwd,
+            heap_alloc::INS2_BWD => Heap::Ins2Bwd,
+            pc => {
+                c.jump_out(pc, heap_alloc::ENTRY, heap_alloc::END);
+                return Ok(());
+            }
+        };
+        // The frame is opened at the entry stage; resume stages reuse it.
+        let frame = Frame { size: 0xd0 };
+        loop {
+            st = match st {
+                Heap::Entry => {
+                    c.cycles += 25;
+                    Frame::open(c, 0xd0);
+                    c.g[V1][0] = 0x4d0000;
+                    frame.save(c, S6, 0x60);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2438));
+                    c.g[S6][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x278));
+                    frame.save(c, S5, 0x70);
+                    if c.g[T0][0] != 0 {
+                        c.g[S6][0] = c.g[T0][0];
+                    }
+                    frame.save(c, S0, 0xc0);
+                    c.g[V0][0] = c.g[S6][0] & 0x3f;
+                    frame.save(c, S1, 0xb0);
+                    frame.save(c, S3, 0x90);
+                    frame.save(c, S4, 0x80);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    frame.save(c, S2, 0xa0);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    frame.save(c, S7, 0x50);
+                    c.g[S5][0] = 0u64;
+                    frame.save(c, FP, 0x40);
+                    frame.save_ra(c, 0x30);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[A2][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x18), c.g[A3][0]);
+                    c.g[S2][0] = c.lw(c.g[V0][0] as u32);
+                    let t = (c.g[A1][0] as i64) < 0;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        Heap::EpilogueTail
+                    } else {
+                        Heap::LockCheck
+                    }
+                }
+                Heap::LockCheck => {
+                    // 0x252a74: the heap lock, taken when the class
+                    // word says so. The RETRY resume skips this block
+                    // and enters LockCheckJoin directly (see below).
+                    c.cycles += 5;
+                    c.g[V0][0] = c.g[S6][0] & 0x200;
+                    c.g[FP][0] = c.g[S6][0] & 0x100;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                    c.g[S7][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+                    Heap::LockCheckJoin
+                }
+                Heap::LockCheckJoin => {
+                    // 0x252a88: lock-state dispatch both entries share.
+                    // The retry path (0x252f20) enters here with V0
+                    // already reloaded, skipping the block above.
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), 0u64);
+                    if t {
+                        Heap::RoundSize
+                    } else {
+                        c.cycles += 2;
+                        c.g[RA][0] = sx(0x0025_2a98);
+                        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(MEM_CLS_MUTEX));
+                        call_ptr(c, callee::EA_MUTEX_LOCK, 0x0025_2a98)?;
+                        Heap::RoundSize
+                    }
+                }
+                Heap::RoundSize => {
+                    // Quantum/alignment mask (S3), overhead, and the
+                    // rounded request (A2).
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_QUANTUM));
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    if t {
+                        c.cycles += 2;
+                        c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+                        c.g[S3][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.g[S6][0] & 0x400;
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[S3][0] = c.g[S4][0];
+                        if !t {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_ALIGN));
+                            c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                        }
+                    }
+                    c.cycles += 15;
+                    c.g[A0][0] = 0u64;
+                    c.g[RA][0] = sx(0x0025_2ad4);
+                    c.g[A1][0] = c.g[S6][0];
+                    callee::MEM_GET_HEAP_BLOCK_OVERHEAD.call(c, 0x0025_2ad4)?;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x10));
+                    c.g[T2][0] = c.g[A0][0];
+                    c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = 0x7;
+                    c.g[V1][0] = 0x8;
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[A3][0] = c.g[V1][0];
+                    }
+                    c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+                    if t {
+                        Heap::Walk3First
+                    } else {
+                        Heap::Walk1First
+                    }
+                }
+                Heap::Walk1First => {
+                    // Bisection setup: forward (size) walk or backward
+                    // walk by the FP bit; the plain scan when the size
+                    // bit is clear is chosen above.
+                    c.cycles += 5;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    c.g[T1][0] = 0u64;
+                    let t = c.g[FP][0] != 0u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[A0][0] = 0u64;
+                    }
+                    if t {
+                        Heap::Walk2First
+                    } else {
+                        c.cycles += 6;
+                        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_NEXT));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0u64 {
+                            c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                            Heap::Walk1Scan
+                        } else {
+                            c.cycles += 4;
+                            c.g[V0][0] = c.lhu(c.g[V1][0] as u32);
+                            c.g[A0][0] = 0x4253;
+                            let t = c.g[V0][0] == c.g[A0][0];
+                            c.g[S0][0] = c.g[T1][0];
+                            if t {
+                                Heap::Found
+                            } else {
+                                c.cycles += 2;
+                                c.g[T1][0] = c.g[V1][0];
+                                Heap::Walk1Reload
+                            }
+                        }
+                    }
+                }
+                Heap::Walk1Reload => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
+                    c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                    Heap::Walk1Scan
+                }
+                Heap::Walk1Scan => {
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0u64 {
+                            c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                            if back_edge_unwinds(c, heap_alloc::WALK1_SCAN) {
+                                return Ok(());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    Heap::Walk1Check
+                }
+                Heap::Walk1Check => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lhu(c.g[V1][0] as u32);
+                    c.g[A0][0] = 0x4253;
+                    if c.g[V0][0] != c.g[A0][0] {
+                        c.g[T1][0] = c.g[V1][0];
+                        if back_edge_unwinds(c, heap_alloc::WALK1_RELOAD) {
+                            return Ok(());
+                        }
+                        Heap::Walk1Reload
+                    } else {
+                        c.cycles += 2;
+                        c.g[S0][0] = c.g[T1][0];
+                        Heap::Found
+                    }
+                }
+                Heap::Walk2First => {
+                    c.cycles += 2;
+                    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_PREV));
+                    Heap::Walk2Scan
+                }
+                Heap::Walk2Reload => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
+                    c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(MEM_FREE_PREV));
+                    Heap::Walk2Scan
+                }
+                Heap::Walk2Scan => {
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0u64 {
+                            c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(MEM_FREE_PREV));
+                            if back_edge_unwinds(c, heap_alloc::WALK2_SCAN) {
+                                return Ok(());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    Heap::Walk2Check
+                }
+                Heap::Walk2Check => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lhu(c.g[V1][0] as u32);
+                    c.g[A0][0] = 0x4253;
+                    if c.g[V0][0] != c.g[A0][0] {
+                        c.g[T1][0] = c.g[V1][0];
+                        if back_edge_unwinds(c, heap_alloc::WALK2_RELOAD) {
+                            return Ok(());
+                        }
+                        Heap::Walk2Reload
+                    } else {
+                        c.cycles += 2;
+                        c.g[S0][0] = c.g[T1][0];
+                        Heap::Found
+                    }
+                }
+                Heap::Walk3First => {
+                    // Plain scan without the size bit: the forward walk,
+                    // or its forward-pointer variant with the FP bit.
+                    c.cycles += 2;
+                    let t = c.g[FP][0] != 0u64;
+                    c.g[T1][0] = c.g[S7][0];
+                    if t {
+                        c.cycles += 1;
+                        c.g[T1][0] = c.lw((c.g[T1][0] as u32).wrapping_add(MEM_FREE_PREV));
+                        Heap::Walk3FpScan
+                    } else {
+                        c.cycles += 2;
+                        c.g[T1][0] = c.lw((c.g[T1][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                        Heap::Walk3Scan
+                    }
+                }
+                Heap::Walk3Scan => {
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[T1][0] = c.lw((c.g[T1][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                            if back_edge_unwinds(c, heap_alloc::WALK3_SCAN) {
+                                return Ok(());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    Heap::Walk3Check
+                }
+                Heap::Walk3FpScan => {
+                    // Forward-pointer variant: walk the +0x14 chain while
+                    // the node's size sits below the request (A2), as the
+                    // generated 0x252c0c head does.
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[T1][0] = c.lw((c.g[T1][0] as u32).wrapping_add(MEM_FREE_PREV));
+                            if back_edge_unwinds(c, heap_alloc::WALK3_FP_SCAN) {
+                                return Ok(());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    Heap::Walk3FpCheck
+                }
+                Heap::Walk3FpCheck => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lhu(c.g[T1][0] as u32);
+                    Heap::Walk3Join
+                }
+                Heap::Walk3Check => {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lhu(c.g[T1][0] as u32);
+                    Heap::Walk3Join
+                }
+                Heap::Walk3Join => {
+                    c.cycles += 3;
+                    c.g[S0][0] = 0u64;
+                    c.g[V0][0] = c.g[V0][0] ^ 0x4253;
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.g[T1][0];
+                    }
+                    Heap::Found
+                }
+                Heap::Found => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] == 0u64;
+                    c.g[A0][0] = 0x424f;
+                    if t {
+                        Heap::Fail
+                    } else {
+                        Heap::Unlink
+                    }
+                }
+                Heap::Unlink => {
+                    // Unhook the found block and retag it allocated.
+                    c.cycles += 15;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_FREE_PREV));
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                    c.g[S1][0] = 0u64;
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_SIZE));
+                    c.sw((c.g[V1][0] as u32).wrapping_add(MEM_FREE_NEXT), c.g[V0][0]);
+                    c.sw((c.g[V0][0] as u32).wrapping_add(MEM_FREE_PREV), c.g[V1][0]);
+                    c.sh(c.g[S0][0] as u32, c.g[A0][0]);
+                    c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    c.g[V0][0] = c.g[V0][0] & 0xbfff;
+                    c.sh((c.g[S0][0] as u32).wrapping_add(MEM_BLK_FLAGS), c.g[V0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_PREV));
+                    let t = c.g[FP][0] == 0u64;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    if t {
+                        Heap::FitPlain
+                    } else {
+                        Heap::FitFwd
+                    }
+                }
+                Heap::FitFwd => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+                    c.g[V1][0] = !(0u64 | c.g[S3][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[S1][0] = c.g[S0][0];
+                    Heap::FitJoin
+                }
+                Heap::FitPlain => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                    c.g[V1][0] = !(0u64 | c.g[S3][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    Heap::FitJoin
+                }
+                Heap::FitJoin => {
+                    // Aligned data address (S5) and the split decision.
+                    c.cycles += 12;
+                    c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+                    c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+                    c.g[S0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x10));
+                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(0x30));
+                    c.sw((c.g[S5][0] as u32).wrapping_sub(0x8), c.g[V0][0]);
+                    c.g[S3][0] = c.g[S0][0];
+                    c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                    let t = c.g[V1][0] == 0u64;
+                    c.sw((c.g[S5][0] as u32).wrapping_sub(0x4), c.g[V0][0]);
+                    if t {
+                        Heap::NoSplit
+                    } else {
+                        Heap::Split
+                    }
+                }
+                Heap::NoSplit => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S0][0]);
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_PREV));
+                    c.sw((c.g[V1][0] as u32).wrapping_add(MEM_BLK_NEXT), c.g[S0][0]);
+                    Heap::Common
+                }
+                Heap::Split => {
+                    c.cycles += 2;
+                    let t = c.g[FP][0] == 0u64;
+                    c.g[A0][0] = c.g[S1][0];
+                    if t {
+                        Heap::SplitPlainCall
+                    } else {
+                        Heap::SplitInsCall
+                    }
+                }
+                Heap::SplitInsCall => {
+                    // Forward-pool split: header the new block, bisect
+                    // the free list for its slot, and link it in.
+                    c.cycles += 25;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    c.g[A1][0] = 0u64;
+                    c.g[A2][0] = 0u64;
+                    c.sw((c.g[V0][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S0][0]);
+                    c.g[A3][0] = 0u64;
+                    c.g[T0][0] = 0u64;
+                    c.g[T2][0] = c.g[S0][0];
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    c.sw((c.g[S5][0] as u32).wrapping_sub(0x4), c.g[S1][0]);
+                    c.sw((c.g[S5][0] as u32).wrapping_sub(0x8), c.g[V0][0]);
+                    c.g[RA][0] = sx(0x0025_2d10);
+                    c.g[T1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_PREV));
+                    callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_2d10)?;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_NEXT));
+                    c.g[A3][0] = c.g[S7][0];
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_PREV));
+                    c.g[A2][0] = c.g[A3][0];
+                    c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32) >> 31);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = (c.g[A0][0] < c.g[S1][0]) as u64;
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if t {
+                        Heap::SplitInsBwdPrime
+                    } else {
+                        Heap::SplitInsFwdPrime
+                    }
+                }
+                Heap::SplitInsFwdPrime => {
+                    c.cycles += 1;
+                    c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(MEM_FREE_PREV));
+                    Heap::SplitInsFwd
+                }
+                Heap::SplitInsFwd => {
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = (c.g[S1][0] < c.g[A2][0]) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(MEM_FREE_PREV));
+                            if back_edge_unwinds(c, heap_alloc::INS1_FWD) {
+                                return Ok(());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[A3][0] = c.lw((c.g[A2][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                    Heap::SplitInsLink
+                }
+                Heap::SplitInsBwdPrime => {
+                    c.cycles += 1;
+                    c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                    Heap::SplitInsBwd
+                }
+                Heap::SplitInsBwd => {
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = (c.g[A3][0] < c.g[S1][0]) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                            if back_edge_unwinds(c, heap_alloc::INS1_BWD) {
+                                return Ok(());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[A2][0] = c.lw((c.g[A3][0] as u32).wrapping_add(MEM_FREE_PREV));
+                    Heap::SplitInsLink
+                }
+                Heap::SplitInsLink => {
+                    c.cycles += 11;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_SIZE), c.g[A1][0]);
+                    c.g[V1][0] = 0x4246;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(MEM_FREE_NEXT), c.g[A3][0]);
+                    c.sw((c.g[S1][0] as u32).wrapping_add(MEM_FREE_PREV), c.g[A2][0]);
+                    c.sw((c.g[A2][0] as u32).wrapping_add(MEM_FREE_NEXT), c.g[S1][0]);
+                    c.sw((c.g[A3][0] as u32).wrapping_add(MEM_FREE_PREV), c.g[S1][0]);
+                    c.sh(c.g[S1][0] as u32, c.g[V1][0]);
+                    c.g[V0][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                    c.g[V0][0] = c.g[V0][0] | 0x4000;
+                    c.sh((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS), c.g[V0][0]);
+                    Heap::Common
+                }
+                Heap::SplitPlainCall => {
+                    // Plain split: header the tail, bisect, and link it.
+                    c.cycles += 29;
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    c.g[V1][0] = !(0u64 | c.g[S4][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                    c.g[S1][0] = c.g[V0][0] & c.g[V1][0];
+                    c.g[A1][0] = 0u64;
+                    c.sw((c.g[A0][0] as u32).wrapping_add(MEM_BLK_PREV), c.g[S1][0]);
+                    c.g[A2][0] = 0u64;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A3][0] = 0u64;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_PREV));
+                    c.g[T0][0] = 0u64;
+                    c.g[T1][0] = c.g[S0][0];
+                    c.sw((c.g[V0][0] as u32).wrapping_add(MEM_BLK_NEXT), c.g[S0][0]);
+                    c.g[T2][0] = c.lw((c.g[S5][0] as u32).wrapping_sub(0x8));
+                    c.g[RA][0] = sx(0x0025_2e00);
+                    callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_2e00)?;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_NEXT));
+                    c.g[A3][0] = c.g[S7][0];
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_PREV));
+                    c.g[A2][0] = c.g[A3][0];
+                    c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32) >> 31);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = (c.g[A0][0] < c.g[S1][0]) as u64;
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if t {
+                        Heap::Ins2BwdPrime
+                    } else {
+                        Heap::Ins2FwdPrime
+                    }
+                }
+                Heap::Ins2FwdPrime => {
+                    c.cycles += 1;
+                    c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(MEM_FREE_PREV));
+                    Heap::Ins2Fwd
+                }
+                Heap::Ins2Fwd => {
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = (c.g[S1][0] < c.g[A2][0]) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(MEM_FREE_PREV));
+                            if back_edge_unwinds(c, heap_alloc::INS2_FWD) {
+                                return Ok(());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[A3][0] = c.lw((c.g[A2][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                    Heap::Ins2Link
+                }
+                Heap::Ins2BwdPrime => {
+                    c.cycles += 1;
+                    c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                    Heap::Ins2Bwd
+                }
+                Heap::Ins2Bwd => {
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = (c.g[A3][0] < c.g[S1][0]) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[A3][0] = c.lw((c.g[A3][0] as u32).wrapping_add(MEM_FREE_NEXT));
+                            if back_edge_unwinds(c, heap_alloc::INS2_BWD) {
+                                return Ok(());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    // 0x252e80: backward-tail single load (+1); the forward
+                    // tail (0x252e54) is +2.
+                    c.cycles += 1;
+                    c.g[A2][0] = c.lw((c.g[A3][0] as u32).wrapping_add(MEM_FREE_PREV));
+                    Heap::Ins2Link
+                }
+                Heap::Ins2Link => {
+                    c.cycles += 12;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(MEM_BLK_SIZE), c.g[A1][0]);
+                    c.g[V1][0] = 0x4246;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(MEM_FREE_NEXT), c.g[A3][0]);
+                    c.sw((c.g[S1][0] as u32).wrapping_add(MEM_FREE_PREV), c.g[A2][0]);
+                    c.sw((c.g[A2][0] as u32).wrapping_add(MEM_FREE_NEXT), c.g[S1][0]);
+                    c.sw((c.g[A3][0] as u32).wrapping_add(MEM_FREE_PREV), c.g[S1][0]);
+                    c.sh(c.g[S1][0] as u32, c.g[V1][0]);
+                    c.g[V0][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS));
+                    c.g[V0][0] = c.g[V0][0] | 0x4000;
+                    c.sh((c.g[S1][0] as u32).wrapping_add(MEM_BLK_FLAGS), c.g[V0][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT), c.g[S1][0]);
+                    Heap::Common
+                }
+                Heap::Common => {
+                    // Header the allocated block, then the unlock check.
+                    c.cycles += 10;
+                    c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_NEXT));
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[A3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_OVERHEAD));
+                    c.g[A1][0] = 0u64;
+                    c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MEM_BLK_PREV));
+                    c.g[T0][0] = c.g[S6][0];
+                    c.g[RA][0] = sx(0x0025_2ee4);
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                    callee::MEM_INIT_BLOCK_HEADER.call(c, 0x0025_2ee4)?;
+                    // 0x252ec4's tail: the lock-word reload rides in the
+                    // +10 (no separate charge on this edge).
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+                    Heap::UnlockJoin
+                }
+                Heap::Fail => {
+                    // No block fit: run the out-of-memory callback when
+                    // one is installed, then fall through to unlock.
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x274));
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                    if t {
+                        Heap::UnlockCheck
+                    } else {
+                        c.cycles += 4;
+                        c.g[A0][0] = 0u64;
+                        let t = c.g[V0][0] as u32;
+                        c.g[RA][0] = sx(0x0025_2f04);
+                        c.g[A2][0] = c.g[S6][0];
+                        call_ptr(c, t, 0x0025_2f04)?;
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                        Heap::UnlockCheck
+                    }
+                }
+                Heap::UnlockCheck => {
+                    // 0x252f08: fail-path entry only (Common bypasses it).
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+                    Heap::UnlockJoin
+                }
+                Heap::UnlockJoin => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                    if t {
+                        Heap::RetryCheck
+                    } else {
+                        c.cycles += 3;
+                        c.g[RA][0] = sx(0x0025_2f1c);
+                        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(MEM_CLS_MUTEX));
+                        call_ptr(c, callee::EA_MUTEX_UNLOCK, 0x0025_2f1c)?;
+                        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                        Heap::RetryCheck
+                    }
+                }
+                Heap::RetryCheck => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x1;
+                    if c.g[V1][0] == c.g[V0][0] {
+                        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(MEM_CLS_LOCKED));
+                        if back_edge_unwinds(c, heap_alloc::RETRY) {
+                            return Ok(());
+                        }
+                        Heap::LockCheckJoin
+                    } else {
+                        Heap::Epilogue
+                    }
+                }
+                Heap::Epilogue => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S5][0];
+                    Heap::EpilogueTail
+                }
+                Heap::EpilogueTail => {
+                    c.cycles += 12;
+                    frame.restore(c, S0, 0xc0);
+                    frame.restore(c, S1, 0xb0);
+                    frame.restore(c, S2, 0xa0);
+                    frame.restore(c, S3, 0x90);
+                    frame.restore(c, S4, 0x80);
+                    frame.restore(c, S5, 0x70);
+                    frame.restore(c, S6, 0x60);
+                    frame.restore(c, S7, 0x50);
+                    frame.restore(c, FP, 0x40);
+                    frame.restore_ra(c, 0x30);
+                    frame.close(c);
+                    return Ok(());
+                }
+            };
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9384,6 +10207,264 @@ pub(crate) mod tests {
                 c.g[RA][0] = sx(DATA + 0x100 + 0x10 * (seed % 16));
                 c.pc = 0x0032_0548;
             },
+        );
+    }
+
+    pub(crate) use crate::game::misc::tests::mem_heap_alloc_aligned_build;
+
+    /// Modes of [`mem_heap_alloc_aligned_build`]: negative size, failed
+    /// walk, forward-pointer plain scan, no-split walk1 (explicit and
+    /// quantum mask), split walk3/walk1/walk2, split walk1 (class mask).
+    pub(crate) const HEAP_ALLOC_MODES: u32 = 9;
+
+    /// Matches-test setup: `seed % 9` the mode, `seed / 9 % 2` the heap
+    /// word source, `seed / 18 % 2` the lock bit. All four walk
+    /// directions, the FP-plain arm, split/no-split, the empty walk and
+    /// the negative size.
+    pub(crate) use crate::game::misc::tests::HEAP_ALLOC_CLS;
+    pub(crate) use crate::game::misc::tests::HEAP_ALLOC_H1;
+    pub(crate) use crate::game::misc::tests::HEAP_ALLOC_H2;
+    pub(crate) use crate::game::misc::tests::HEAP_ALLOC_N1;
+    pub(crate) use crate::game::misc::tests::HEAP_ALLOC_N4;
+
+    /// Matches-test setup: `seed % 9` the mode, `seed / 9 % 2` the heap
+    /// word source, `seed / 18 % 2` the lock bit. All 72 seeds terminate
+    /// on both bodies; the generated totals are pinned.
+    pub(crate) fn mem_heap_alloc_aligned_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x252a_10, 0);
+        mem_heap_alloc_aligned_build(
+            c,
+            seed % HEAP_ALLOC_MODES,
+            seed / 9 % 2 == 1,
+            seed / 18 % 2 == 1,
+        );
+        c.pc = 0x0025_2a10;
+    }
+
+    /// Totals (generated costs, all 72 seeds terminate): mode 0 negative
+    /// size 37; mode 1 no-split walk1 100 (194 locked); mode 2 FP-plain
+    /// 99 (200 locked); mode 3 split walk1 179 (273 locked); mode 4
+    /// split walk2 180 (281 locked); mode 5 split walk3 221 (314
+    /// locked); mode 6 split walk1 236 (333 locked); mode 7 backward
+    /// walk from the tail, found-tag empty, fail path 105 (205 locked);
+    /// mode 8 split walk1 with the class mask 240 (336 locked). Locked
+    /// seeds take the real mutexes; their costs are seed-hash dependent
+    /// but deterministic, so all are pinned.
+    #[test]
+    fn mem_heap_alloc_aligned_matches() {
+        check_paths(
+            ee::s06::f_00252a10__generated,
+            mem_heap_alloc_aligned,
+            72,
+            &[
+                37, 99, 100, 105, 179, 180, 194, 200, 205, 221, 236, 240, 273, 281, 314, 333, 336,
+            ],
+            &mem_heap_alloc_aligned_setup,
+        );
+    }
+
+    /// Tie/boundary heap shapes for the backward walk, the split bisect
+    /// and the fit/split joins: `seed % 5` the shape (backward size tie,
+    /// backward advance, split/no-split tie, long-chain split, class-mask
+    /// split), `seed / 5` the request size. Every shape patches the
+    /// standard build, so the existing tests are untouched. Generated
+    /// totals pinned by `HEAP_ALLOC_SHAPE_PATHS`.
+    pub(crate) fn mem_heap_alloc_aligned_shapes_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x252a_10, 0);
+        let a1 = [0x40u64, 0x50, 0x60, 0x80][(seed / 4 % 4) as usize];
+        match seed % 4 {
+            0 => {
+                mem_heap_alloc_aligned_build(c, 4, false, false);
+                c.bus.write32(HEAP_ALLOC_CLS + 0x28, 0x11);
+            }
+            1 => {
+                mem_heap_alloc_aligned_build(c, 3, false, false);
+                for w in 0..0x40u32 {
+                    write_filled(c, HEAP_ALLOC_H1 + 4 * w, 0x6000 + w);
+                    write_filled(c, HEAP_ALLOC_H2 + 4 * w, 0x7000 + w);
+                }
+                c.bus.write32(HEAP_ALLOC_H1 + 0x4, 0x40);
+                c.bus.write32(HEAP_ALLOC_H1 + 0x14, HEAP_ALLOC_H2);
+                c.bus.write32(HEAP_ALLOC_H2 + 0x4, 0x40);
+                c.bus.write32(HEAP_ALLOC_H2 + 0x14, HEAP_ALLOC_N1);
+                c.bus.write32(HEAP_ALLOC_CLS + 0x24, HEAP_ALLOC_H1);
+            }
+            2 => {
+                mem_heap_alloc_aligned_build(c, 2, false, false);
+            }
+            _ => {
+                mem_heap_alloc_aligned_build(c, 8, false, false);
+            }
+        }
+        c.g[A1][0] = a1;
+        c.pc = 0x0025_2a10;
+    }
+
+    /// Tie/boundary heap shapes (split bisect, fit joins, FP scan).
+    pub(crate) const HEAP_ALLOC_SHAPE_PATHS: &[u64] = &[123, 124, 179, 180, 183, 240];
+
+    /// Tie/boundary heap shapes for `mem_heap_alloc_aligned`.
+    #[test]
+    fn mem_heap_alloc_aligned_shapes() {
+        check_paths(
+            ee::s06::f_00252a10__generated,
+            mem_heap_alloc_aligned,
+            16,
+            HEAP_ALLOC_SHAPE_PATHS,
+            &mem_heap_alloc_aligned_shapes_setup,
+        );
+    }
+
+    /// Walk3 size-walk regression: mode-2 build with machine seed 0 and
+    /// A1=0x40. The old hand body walked Walk3FpScan on addresses
+    /// (pc 0x252c0c) where the generated body walks on sizes and ends
+    /// in 0x63 cycles. S1 is forced huge: the old loop bounded on the
+    /// entry S1 garbage, and machine seed 0's S1 happens to be small
+    /// (exits at once); a huge S1 chases garbage PREV links into the
+    /// reported spin. `check` caps cycles at 50M so a spin fails
+    /// instead of hanging.
+    #[test]
+    fn mem_heap_alloc_aligned_mode2_spin() {
+        use crate::difftest::check;
+        check(
+            ee::s06::f_00252a10__generated,
+            mem_heap_alloc_aligned,
+            1,
+            &|c, _seed| {
+                machine(c, 0, 0x252a_10, 0);
+                mem_heap_alloc_aligned_build(c, 2, false, false);
+                c.g[A1][0] = 0x40;
+                c.g[S1][0] = 0xffff_ffff_ffff_ffff;
+                c.pc = 0x0025_2a10;
+            },
+        );
+    }
+
+    /// Walk3 size-walk regression: mode-2 build with the N4 tail size
+    /// shrunk to 0x40. Generated takes 0xd9 cycles, hand 0x63 (same root
+    /// cause as the mode2 spin: the Walk3FpScan address walk).
+    #[test]
+    fn mem_heap_alloc_aligned_n4_shrink() {
+        use crate::difftest::check;
+        check(
+            ee::s06::f_00252a10__generated,
+            mem_heap_alloc_aligned,
+            1,
+            &|c, _seed| {
+                machine(c, 0, 0x252a_10, 0);
+                mem_heap_alloc_aligned_build(c, 2, false, false);
+                c.bus.write32(HEAP_ALLOC_N4 + 0x4, 0x40);
+                c.g[A1][0] = 0x40;
+                c.pc = 0x0025_2a10;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    pub(crate) use crate::game::misc::tests::HEAP_ALLOC_N2;
+    pub(crate) use crate::game::misc::tests::HEAP_ALLOC_N3H;
+
+    driven!(gen_mem_heap_alloc_aligned, ee::s06::f_00252a10__generated);
+
+    driven!(hand_mem_heap_alloc_aligned, mem_heap_alloc_aligned);
+
+    /// Events setup: `seed % 8` the shape (walk1, walk2, walk3, walk1
+    /// with a long forward insert, walk3 with a long backward insert,
+    /// empty walk, no-split walk1, empty walk with a forced callback).
+    /// `seed / 8 % 2` the lock bit (timed targets only run unlocked, so
+    /// the unknown mutex costs cannot shift them), `seed / 16 % 2` the
+    /// heap word source, `seed / 64 % 3` the targeted head. The first
+    /// executed check fires on its own; later heads are timed by prefix
+    /// cycles (scan 79/75/72, reload 82/90, second scan 75/82, insert
+    /// 186/169, retry 87): earlier checks see `cycles < next_event` and
+    /// stay quiet, so a mistimed constant only moves the resume, never
+    /// breaks agreement.
+    pub(crate) fn mem_heap_alloc_aligned_events_setup(c: &mut Cpu, seed: u32) -> Events {
+        let mut r = machine(c, seed, 0x252a_10, 0);
+        let shape = seed % 8;
+        let locked = seed / 8 % 2 == 1 && shape != 7;
+        let (mode, retry) = match shape {
+            0 => (6, false),
+            1 => (7, false),
+            2 => (5, false),
+            3 => (6, false),
+            4 => (5, false),
+            5 => (1, false),
+            6 => (3, false),
+            _ => (1, true),
+        };
+        mem_heap_alloc_aligned_build(c, mode, seed / 16 % 2 == 1, locked);
+        if shape == 3 || shape == 4 {
+            // Long insert chain above the split point: H1 -> H2 -> N1.
+            for w in 0..0x40u32 {
+                write_filled(c, HEAP_ALLOC_H1 + 4 * w, 0x6000 + w);
+                write_filled(c, HEAP_ALLOC_H2 + 4 * w, 0x7000 + w);
+            }
+            c.bus.write32(HEAP_ALLOC_H1 + 0x4, 0x40);
+            c.bus.write32(HEAP_ALLOC_H1 + 0x14, HEAP_ALLOC_H2);
+            c.bus.write32(HEAP_ALLOC_H2 + 0x4, 0x40);
+            c.bus.write32(HEAP_ALLOC_H2 + 0x14, HEAP_ALLOC_N1);
+            c.bus.write32(HEAP_ALLOC_CLS + 0x24, HEAP_ALLOC_H1);
+        }
+        if shape == 3 {
+            // High found block: the insert midpoint then falls below the
+            // split point and the forward insert walks twice.
+            for w in 0..0x40u32 {
+                write_filled(c, HEAP_ALLOC_N3H + 4 * w, 0x8000 + w);
+            }
+            c.bus.write16(HEAP_ALLOC_N3H, 0x4246);
+            c.bus.write32(HEAP_ALLOC_N3H + 0x4, 0xc0);
+            c.bus.write32(HEAP_ALLOC_N3H + 0x10, HEAP_ALLOC_N4);
+            c.bus.write32(HEAP_ALLOC_N3H + 0x14, HEAP_ALLOC_N2);
+            c.bus.write32(HEAP_ALLOC_N2 + 0x10, HEAP_ALLOC_N3H);
+            c.bus.write32(HEAP_ALLOC_N4 + 0x14, HEAP_ALLOC_N3H);
+        }
+        if retry {
+            // Force the first callback to report a changed heap (the
+            // retry arm), the second to use its hash (exit).
+            c.bus.write32(GAME_GP - 0x274, FAKE);
+            c.bus.write32(LOG_RESULTS, 1);
+        }
+        c.pc = 0x0025_2a10;
+        let m = schedule(c, &mut r, seed, 0x0025_2a10);
+        if m != Events::Off && !locked {
+            let base = c.cycles;
+            let at = match (shape, seed / 64 % 3) {
+                // Walk1 reload (scan step at +79 stays quiet).
+                (0 | 6, 1) => base + 82,
+                // Walk2 second scan / reload.
+                (1, 1) => base + 90,
+                (1, 2) => base + 76,
+                // Walk3 second scan.
+                (2, 1) => base + 75,
+                // Long inserts (walk checks below +100 stay quiet).
+                (3 | 4, 1) => base + 100,
+                // Walk1 reload on the long shapes.
+                (3, 2) => base + 82,
+                // Retry check (no earlier check exists on this shape).
+                (7, _) => base + 87,
+                _ => return m,
+            };
+            c.next_event = at;
+        }
+        m
+    }
+
+    /// Every loop head under both driven sides: first-edge scans fire on
+    /// their own; reloads, second scans, long inserts and the retry arm
+    /// are timed above. Expected resumes: scan heads on every walk
+    /// shape, reload heads on walk1/walk2, insert heads on the long
+    /// shapes, the retry head on shape 7. The FP-plain scan head
+    /// (0x252c0c) never fires (S1 = 0 exits its walk at once) and
+    /// post-call addresses never resume in tests (no callee unwinds).
+    #[test]
+    fn mem_heap_alloc_aligned_events() {
+        check_events(
+            gen_mem_heap_alloc_aligned,
+            hand_mem_heap_alloc_aligned,
+            96,
+            &mem_heap_alloc_aligned_events_setup,
         );
     }
 }
