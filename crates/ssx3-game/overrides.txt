@@ -10244,6 +10244,10 @@
 0x001c5198    cFEStateNetNews_TransitionIn
 0x001c5368    cFEStateNetNews_OnWidgetAction
 0x001c5630    cFEPopupConfirm_CfgReset
+# Phase 2 wave: oc904, oc905, oc906, oc907, oc908, oc909, oc910, oc911, oc912, oc913, oc914, oc915, oc916, oc917, oc918, oc919, oc920, oc921, oc922, oc923, oc924, oc925, oc926
+# Phase 2 wave: oc904, oc905, oc906, oc907, oc908, oc909, oc910, oc911, oc912, oc913, oc914, oc915, oc916, oc917, oc918, oc919, oc920, oc921, oc922, oc923, oc924, oc925, oc926, oc927
+# Phase 2 wave: oc904, oc905, oc906, oc907, oc908, oc909, oc910, oc911, oc912, oc913, oc914, oc915, oc916, oc917, oc918, oc919, oc920, oc921, oc922, oc923, oc924, oc925, oc926, oc927
+# Phase 2 wave: oc904, oc905, oc906, oc907, oc908, oc909, oc910, oc911, oc912, oc913, oc914, oc915, oc916, oc917, oc918, oc919, oc920, oc921, oc922, oc923, oc924, oc925, oc926, oc927
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
@@ -10373,3 +10377,113 @@
 
 # Registered ports (cleanup 2)
 0x00398138    UIEngine_LoadTextures
+
+# Registered ports (cleanup 3)
+0x003b0b40    PS2_SONY_CODEC_INTERNAL_FeedBitstream
+0x001c7258    cFEPopupConfirm_LayoutBodyText
+0x0020a088    OVScreenSession_DestroyIndicators
+0x002cfb58    MenuSysGroupItem_Measure
+0x0017d0a8    DebugMenu_StartMultiplayer
+# Registered ports (cleanup 3)
+0x003b07f8    PS2_SONY_CODEC_INTERNAL_InitFrame
+0x001b4018    cFEStateNetConfig_dtor
+0x001b40d0    cFEStateNetConfig_Init
+0x001b4c40    cFEStateNetConfig_OnRetryPopupEvent
+0x001bdc18    cFEStateLobbyMenu_OnWidgetNotify
+0x001be720    cFEStateLobbyMenu_UpdatePlayerScrollArrows
+0x001bf5a8    cFEStateLogin_OnDisconnectPopupEvent
+0x001c4d28    cFEStateStats_FocusNextColumn
+0x001c4e40    cFEStateStats_FocusPrevColumn
+0x001a7f78    cFEStateReadMessagePopup_LoadMessages
+0x001a8b88    NetFEState_OnNetEvent
+0x001a8e40    NetFEState_HandleNetEvent
+0x001a93d0    NetFEState_OnChildEventDefault
+0x001a97b8    NetFEState_OnChildEvent
+0x001a9cc0    NetFEState_ShowNetErrorPopup
+0x001aab68    NetFEState_UpdateMessageCount
+0x001aad50    NetFE_SetQualityIcons
+0x001aaf90    cFEStateNetConfig_GetErrorText
+0x001ab178    NetFEState_ShowChallengeErrorPopup
+0x001ab288    NetFEState_ShowSessionLostPopup
+0x001abb30    NetFEState_ReadOrSendMessage
+0x001abcd0    NetFEState_OpenChallengePopup
+0x001ac5c0    cFEUseExistingAccount_OnWidgetAction
+0x001acef8    cFEUseExistingAccount_v31
+0x001ad5e8    cFEStateSelectPersona_OnWidgetAction
+0x001ada30    cFEStateSelectPersona_v31
+0x001adfe8    cFEStateChallengePopup_OnActivate
+0x001ae7a0    cFEStateChallengePopup_OnWidgetAction
+0x001aec60    cFEStateChallengePopup_SetSettingsLocked
+0x001af470    cFEStateChallengePopup_v31
+0x001af728    cFEStateChallengePopup_FillChallengeText
+0x001afa60    NetFE_ShowPlayerStats
+0x001afe68    cFEStateChallengeReceivedPopup_Init
+0x001b0150    cFEStateChallengeReceivedPopup_OnWidgetCreated
+0x001b0708    cFEStateChallengeReceivedPopup_v31
+0x001b0850    cFEStateChallengeReceivedPopup_FillChallengeText
+0x001b15d8    cFEStateOnlineCharacterSelect_v31
+0x001b1b98    cFEStateOnlineCharacterSelect_ShowCharStats
+0x001b2070    cFEStateChatRoom_Init
+0x001b2378    cFEStateChatRoom_RefreshPlayerList
+0x001b25e0    NetFE_FormatRoomName
+0x001b27b0    cFEStateChatRoom_ShowPlayerInfo
+0x001b2eb8    cFEStateChatRoom_OnWidgetCreated
+0x001b31a0    cFEStateChatRoom_OnWidgetAction
+0x001b35b0    cFEStateChatRoom_OnBuddyActionEvent
+0x001b3a30    cFEStateChatRoom_v31
+0x001b41a8    cFEStateNetConfig_Update
+0x001b4470    cFEStateNetConfig_ScanNextCard
+0x001b45e8    cFEStateNetConfig_StartConnect
+0x001b4888    cFEStateNetConfig_ShowCardErrorPopup
+0x001b52c8    cFEStateNetConfig_OnWidgetCreated
+0x001b55b0    cFEStateNetConfig_OnConnectingPopupEvent
+0x001b5830    cFEStateNetConfig_OnAuthPopupEvent
+0x001b5a58    cFEStateNetConfig_OnLoginPopupEvent
+0x001b5bd8    cFEStateNetConfig_OnCreateConfigPopupEvent
+0x001b5d58    cFEStateNetConfig_OnChildEvent
+0x001b5e28    cFEStateNetConfig_v31
+0x001b60a8    cFEStateNetConfig_OnWidgetAction
+0x001b63e8    NetConfigAuthPopup_Init
+0x001b65c0    NetConfigAuthPopup_OnWidgetCreated
+0x001b6798    NetConfigAuthPopup_Update
+0x001b6c98    cFEStateAuthDNASError_TransitionIn
+0x001b6ed0    cFEStateNetAccountMem_ctor
+0x001b7cb8    cFEStateNetAccountMem_Update
+0x001b7e40    cFEStateNetAccountMem_ShowErrorPopup
+0x001b8238    cFEStateNetAccountMem_FormatNotDetectedText
+0x001b83c0    cFEStateNetAccountMem_FormatFailedText
+0x001b84d8    cFEStateNetAccountMem_OnChildEvent
+0x001b8c38    cFEStateCreateStep1_OnWidgetAction
+0x001b92c8    cFEStateCreateStep1_OnEditDonePopupEvent
+0x001b9b18    cFEStateCreateStep1_ValidateEmail
+0x001b9d68    cFEStateCreateStep1_ValidateAccountName
+0x001b9fa0    cFEStateCreateStep1_ValidatePassword
+0x001ba618    cFEStateCreateStep2_OnWidgetAction
+0x001baa88    cFEStateCreateStep2_OnChildEvent
+0x001baed8    cFEStateCreateStep2_OnCreatedPopupEvent
+0x001bc990    cFEStateCreateDuplicate_OnCreatedPopupEvent
+0x001bce38    cFEStateLobbyMenu_OnWidgetCreated
+0x001bd1b8    cFEStateLobbyMenu_OnWidgetAction
+0x001bd738    cFEStateLobbyMenu_v31
+0x001bd8c8    cFEStateLobbyMenu_OnJoinRoomResult
+0x001be0a8    cFEStateLobbyMenu_RefreshRoomLists
+0x001bea38    cFEStateNetCreateRoomPopup_OnWidgetAction
+0x001bef60    cFEStateLogin_OnWidgetCreated
+0x001bf758    cFEStateLogin_OnWidgetAction
+0x001bfe70    cFEStateOnlineMainMenu_OnWidgetAction
+0x001c0540    cFEStateOnlineAgreement_LoadTermsText
+0x001c0d28    cFEStateOnlineAgreement_OnWidgetAction
+0x001c1080    cFEStateNetQuickPlayPopup_OnWidgetCreated
+0x001c1560    cFEStateNetQuickPlayPopup_OnWidgetAction
+0x001c19c8    cFEStateNetQuickPlayPopup_v31
+0x001c1ea8    cFEStateNetSSXWorld_OnWidgetAction
+0x001c2740    cFEStateNetQuickMessages_OnWidgetAction
+0x001c2a18    cFEStateNetQuickMessages_StoreEditedMessage
+0x001c3310    cFEStateStats_RefreshResults
+0x001c3668    cFEStateStats_OnWidgetAction
+0x001c3d68    cFEStateStats_UpdateScrollBar
+0x001c4538    cFEStateStats_SetEventCourseVisible
+0x001c47a8    cFEStateStats_FillEventList
+0x001c49c8    cFEStateStats_FillCourseList
+0x001c4bd8    cFEStateStats_PostInput
+0x001c5430    cFEStateNetNews_v31

@@ -10,7 +10,6 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
-#[cfg(test)]
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -54,6 +53,11 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (
+        0x0017_d0a8,
+        oc817_debug_menu_start_multiplayer,
+        "DebugMenu_StartMultiplayer",
+    ),
     (0x0017_d298, lobby_menu_ctor, "LobbyMenu_ctor"),
     (
         0x0017_d008,
@@ -4791,21 +4795,13 @@ pub fn oc817_debug_menu_dispatch_item_action(c: &mut Cpu) {
     c.pc = t;
 }
 
-// Not installed: its callees 0x256038/0x255bf8/0x255d50/0x256bf8 are generated
-// code without override slots, and the real network chain runs away on test
-// data (allocator loop at pc 0x31ef40), so no differential test can bound it.
-// The port is otherwise exact.
-#[cfg(test)]
-#[allow(dead_code)]
 /// `DebugMenu_StartMultiplayer` (0x0017d0a8): the normal entry, converted from the generated body
 /// (a `match pc` / labelled-block body: every register, cycle and call kept).
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn oc817_debug_menu_start_multiplayer(c: &mut Cpu) {
     if c.pc != 0x0017d0a8 {
-        // At install: switch this to `f_0017d0a8__generated` (calling the slot
-        // wrapper `f_0017d0a8` from here would recurse).
-        return ee::s02::f_0017d0a8(c);
+        return ee::s02::f_0017d0a8__generated(c);
     }
     guest(c, |c| {
         let mut pc: u32 = 0x0017d0a8;
@@ -10727,6 +10723,46 @@ pub(crate) mod tests {
                     .write32(OC816_SELF + 0x8000 + 0xc34, r.next_u32() & 0xffff);
                 c.bus.write32(OC816_SELF + 0x8000 + 0xc44, (bits >> 12) % 4);
                 c.g[A0][0] = sx(OC816_SELF);
+            },
+        );
+    }
+
+    /// `DebugMenu_StartMultiplayer`, no network session object (`0x534b30`
+    /// is 0): the BE interface call and the return only.
+    #[test]
+    fn debug_menu_start_multiplayer_idle_matches() {
+        check(
+            ee::s02::f_0017d0a8__generated,
+            oc817_debug_menu_start_multiplayer,
+            30,
+            &|c, seed| {
+                let _ = fakes::machine_rt(c, seed, 0x817_0a8, 0);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x100);
+                c.bus.write32(DATA + 0x100 + 0x78, DATA + 0x200);
+                c.bus.write32(0x0053_4b30, 0);
+                c.pc = 0x0017_d0a8;
+            },
+        );
+    }
+
+    /// `DebugMenu_StartMultiplayer` with a session object: runs the real,
+    /// unported network callees (0x256038, 0x255bf8, 0x255d50, 0x256bf8), which
+    /// may not be bounded by a fixture; drop this test if it spins.
+    #[test]
+    fn debug_menu_start_multiplayer_session_matches() {
+        check(
+            ee::s02::f_0017d0a8__generated,
+            oc817_debug_menu_start_multiplayer,
+            30,
+            &|c, seed| {
+                let _ = fakes::machine_rt(c, seed, 0x817_0a9, 0);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x100);
+                c.bus.write32(DATA + 0x100 + 0x78, DATA + 0x200);
+                c.bus.write32(GAME_GP.wrapping_sub(0x238), DATA + 0x1000);
+                c.bus.write32(GAME_GP.wrapping_add(0x304), DATA + 0x2000);
+                c.bus.write32(0x0053_4b30, DATA + 0x3000);
+                c.bus.write32(0x0053_4b38, seed % 2);
+                c.pc = 0x0017_d0a8;
             },
         );
     }

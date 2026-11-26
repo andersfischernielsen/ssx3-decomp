@@ -59,6 +59,11 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (
+        0x001c_7258,
+        c_fe_popup_confirm_layout_body_text,
+        "cFEPopupConfirm_LayoutBodyText",
+    ),
+    (
         0x001c_5a90,
         c_fe_popup_confirm_base_dtor,
         "cFEPopupConfirm_BaseDtor",
@@ -4542,9 +4547,9 @@ pub fn c_fe_popup_confirm_layout_body_text(c: &mut Cpu) {
                 c.lwc1(1, (c.g[SP][0] as u32).wrapping_add(0x10));
                 c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x260));
                 c.c_lt_s(0, 1);
-                let overflow = !c.fcc();
+                let skip_resize = !c.fcc();
                 c.g[A1][0] = c.g[S1][0];
-                if overflow {
+                if !skip_resize {
                     c.cycles += 2;
                     c.g[RA][0] = sx(0x001c_731c);
                     c.g[A0][0] = c.g[S0][0];
@@ -7413,6 +7418,78 @@ pub(crate) mod tests {
     }
 
     // -- 0x0018eb40 FEScreenSelectProfile_OnWidgetAction ----------------
+
+    // -- 0x001c7258 cFEPopupConfirm_LayoutBodyText ----------------------
+
+    static LBT_PREV_RESIZE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    const LBT_CTRL: u32 = DATA + 0x6000;
+    const LBT_MAGIC: u32 = 0x1c72_5800;
+
+    /// Gated fake of `cFEPopupConfirm_ResizeTextWidgets` (the real body walks
+    /// allocator lists on test data): logs the call, returns.
+    fn lbt_fake_resize(c: &mut Cpu) {
+        if c.bus.read32(LBT_CTRL) != LBT_MAGIC {
+            return fakes::fall_back(c, &LBT_PREV_RESIZE, ee::s03::f_001c70f0__generated);
+        }
+        fakes::fake_call(c, 0x001c_70f0);
+    }
+
+    #[test]
+    fn c_fe_popup_confirm_layout_body_text_matches() {
+        // No text widget; a text widget alone; with the second widget, both
+        // with and without the height overflow (`+0x260` against the wrap
+        // size). The callees are faked (Resize through a gated hook; its real
+        // body walks allocator lists on test data).
+        check(
+            ee::s03::f_001c7258__generated,
+            c_fe_popup_confirm_layout_body_text,
+            120,
+            &|c, seed| {
+                fakes::hook(
+                    std::ptr::addr_of_mut!(ee::s03::OVERRIDE_001C70F0),
+                    lbt_fake_resize,
+                    &LBT_PREV_RESIZE,
+                );
+                let mut r = fakes::machine_rt(c, seed, 0x1c7258, 4);
+                c.bus.write32(LBT_CTRL, LBT_MAGIC);
+                let this = DATA + 0x1000;
+                let text = DATA + 0x3000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x2000);
+                fill(c, &mut r, this + 0x1b8, 4);
+                fill(c, &mut r, this + 0x260, 4);
+                wf(c, this + 0x264, r.f32(20.0));
+                wf(c, this + 0x1bc, r.f32(50.0));
+                wf(
+                    c,
+                    this + 0x260,
+                    if seed & 2 == 0 {
+                        (-1.0e30f32).to_bits()
+                    } else {
+                        1.0e30f32.to_bits()
+                    },
+                );
+                fill(c, &mut r, text, 0x40);
+                let has_text = seed % 5 != 0;
+                w(c, this + 0x74, if has_text { text } else { 0 });
+                w(c, this + 0x78, 0);
+                w(c, this + 0x7c, 0);
+                w(
+                    c,
+                    this + 0x2cc,
+                    if seed & 1 == 0 { 0 } else { DATA + 0x4000 },
+                );
+                if has_text {
+                    let vt = DATA + 0x5000;
+                    w(c, text + 8, vt);
+                    c.bus.write16(vt + 0xa0, 0);
+                    w(c, vt + 0xa4, FAKE);
+                    c.bus.write16(vt + 0xa8, 0);
+                    w(c, vt + 0xac, FAKE + 0x40);
+                }
+            },
+        );
+    }
 
     // -- 0x001c70f0 cFEPopupConfirm_ResizeTextWidgets -------------------
 

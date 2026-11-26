@@ -1991,6 +1991,77 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_fe_popup_confirm_cfg_reset,
         "cFEPopupConfirm_CfgReset",
     ),
+    (
+        0x001a_3ea0,
+        cfe_state_net_messenger_dtor,
+        "cFEStateNetMessenger_dtor",
+    ),
+    (
+        0x001a_4750,
+        fe_state_net_messenger_submit_keyboard_input,
+        "cFEStateNetMessenger_SubmitKeyboardInput",
+    ),
+    (
+        0x0026_0e50,
+        lobby_man_get_error_string,
+        "LobbyMan_GetErrorString",
+    ),
+    (
+        0x0026_9240,
+        setup_man_client_recv_msg0,
+        "cSetupMan_ClientRecvMsg0",
+    ),
+    (
+        0x0026_9300,
+        setup_man_client_recv_msg2,
+        "cSetupMan_ClientRecvMsg2",
+    ),
+    (0x002a_8cb0, ps2_sound_manager_init, "PS2SoundManager_Init"),
+    (
+        0x003b_07f8,
+        ps2_sony_codec_internal_init_frame,
+        "PS2_SONY_CODEC_INTERNAL_InitFrame",
+    ),
+    (
+        0x001b_4018,
+        fe_state_net_config_dtor,
+        "cFEStateNetConfig_dtor",
+    ),
+    (
+        0x001b_40d0,
+        cfe_state_net_config_init,
+        "cFEStateNetConfig_Init",
+    ),
+    (
+        0x001b_4c40,
+        cfe_state_net_config_on_retry_popup_event,
+        "cFEStateNetConfig_OnRetryPopupEvent",
+    ),
+    (
+        0x001b_dc18,
+        c_fe_state_lobby_menu_on_widget_notify,
+        "cFEStateLobbyMenu_OnWidgetNotify",
+    ),
+    (
+        0x001b_e720,
+        cfe_lobby_menu_update_player_scroll_arrows,
+        "cFEStateLobbyMenu_UpdatePlayerScrollArrows",
+    ),
+    (
+        0x001b_f5a8,
+        cfe_state_net_config_on_child_event,
+        "cFEStateLogin_OnDisconnectPopupEvent",
+    ),
+    (
+        0x001c_4d28,
+        cfe_state_stats_focus_next_column,
+        "cFEStateStats_FocusNextColumn",
+    ),
+    (
+        0x001c_4e40,
+        cfe_state_stats_focus_prev_column,
+        "cFEStateStats_FocusPrevColumn",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2008,9 +2079,6 @@ pub(crate) mod callee {
     pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_INFORM;
     pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_PASSWORD;
     pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_SHARE_INFO;
-
-    pub(crate) use crate::game::ai::rider::callee::LOGIN_ON_ACCOUNT_MEM_POPUP;
-    pub(crate) use crate::game::ai::rider::callee::LOGIN_ON_DISCONNECT_POPUP;
 
     pub(crate) use crate::game::ai::rider::callee::NET_ACCOUNT_MEM_CTOR;
     pub(crate) use crate::game::ai::rider::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_11;
@@ -2773,14 +2841,6 @@ pub(crate) mod callee {
 
     pub const NET_FE_STATE_SHOW_DISCONNECTED_POPUP_2: u32 = 0x001a_9930;
 
-    pub const CFS_GET_CHARACTER_INFO: u32 = 0x0039_a738;
-
-    pub const CFS_SHOW_CHARACTER: u32 = 0x001b_1b10;
-
-    pub const CFS_SHOW_OPPONENT_CHAR: u32 = 0x001b_1760;
-
-    pub const CFS_FILL_PLAYER_INFO: u32 = 0x001b_1808;
-
     pub const MESSAGE_CENTER_SET_FLAG: u32 = 0x001e_3a78;
 
     pub const OVSCREEN_PDA_TEMPLATE_CLOSE: u32 = 0x0020_d190;
@@ -3241,31 +3301,6 @@ pub(crate) mod callee {
     pub const OVERLAY_UPDATE: u32 = 0x0020_e900;
 
     pub const UI_SCREEN_SET_OBJECT_VALUE: u32 = 0x0039_83f0;
-
-    pub const FE_ON_ABORT_POPUP_EVENT: Callee = Callee {
-        addr: 0x001a_ca88,
-        f: ee::s03::f_001aca88,
-    };
-
-    pub const FE_ON_EMAIL_POPUP_EVENT: Callee = Callee {
-        addr: 0x001a_c9c0,
-        f: ee::s03::f_001ac9c0,
-    };
-
-    pub const FE_ON_LOGIN_POPUP_EVENT: Callee = Callee {
-        addr: 0x001a_cb48,
-        f: ee::s03::f_001acb48,
-    };
-
-    pub const FE_ON_SAVE_ACCOUNT_ANSWER: Callee = Callee {
-        addr: 0x001a_ccd0,
-        f: ee::s03::f_001accd0,
-    };
-
-    pub const NET_FE_STATE_ON_CHILD_EVENT_12: Callee = Callee {
-        addr: 0x001a_97b8,
-        f: ee::s03::f_001a97b8,
-    };
 
     pub const CHALLENGE_POPUP_SET_SETTINGS_LOCKED: Callee = Callee {
         addr: 0x001a_ec60,
@@ -10106,41 +10141,45 @@ pub fn c_fe_state_lobby_menu_on_widget_notify(c: &mut Cpu) {
         frame.save_ra(c, 0);
         c.g[S1][0] = c.g[A0][0];
         c.g[V0][0] = Addr(p(r32(c, S1), 0x6d4)).lw(c);
-        if c.g[S0][0] != c.g[V0][0] {
-            c.g[V0][0] = Addr(p(r32(c, S1), 0x6d0)).lw(c);
-        } else {
-            c.cycles += 3;
-            c.g[V0][0] = 0x5;
-            let wrong = c.g[A2][0] != c.g[V0][0];
-            c.g[V0][0] = 0x101;
-            if !wrong {
-                c.cycles += 7;
-                c.g[RA][0] = sx(0x001b_dc50);
-                c.g[A1][0] = Addr(p(r32(c, S0), 0xa0)).lw(c);
-                callee::FE_STATE_LOBBY_MENU_SHOW_ROOM_TAB.call(c, 0x001b_dc50)?;
-                c.g[A1][0] = Addr(p(r32(c, S0), 0xa0)).lw(c);
-                c.g[RA][0] = sx(0x001b_dc5c);
-                c.g[A0][0] = c.g[S1][0];
-                callee::FE_STATE_LOBBY_MENU_UPDATE_PLAYERS_IN_ROOM.call(c, 0x001b_dc5c)?;
+        'tail: {
+            if c.g[S0][0] != c.g[V0][0] {
+                c.g[V0][0] = Addr(p(r32(c, S1), 0x6d0)).lw(c);
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0x5;
+                let wrong = c.g[A2][0] != c.g[V0][0];
                 c.g[V0][0] = 0x101;
+                if !wrong {
+                    c.cycles += 7;
+                    c.g[RA][0] = sx(0x001b_dc50);
+                    c.g[A1][0] = Addr(p(r32(c, S0), 0xa0)).lw(c);
+                    callee::FE_STATE_LOBBY_MENU_SHOW_ROOM_TAB.call(c, 0x001b_dc50)?;
+                    c.g[A1][0] = Addr(p(r32(c, S0), 0xa0)).lw(c);
+                    c.g[RA][0] = sx(0x001b_dc5c);
+                    c.g[A0][0] = c.g[S1][0];
+                    callee::FE_STATE_LOBBY_MENU_UPDATE_PLAYERS_IN_ROOM.call(c, 0x001b_dc5c)?;
+                    c.g[V0][0] = 0x101;
+                }
+                // The matching child skips the second check.
+                break 'tail;
             }
-        }
-        c.cycles += 2;
-        let other = c.g[S0][0] != c.g[V0][0];
-        c.g[V0][0] = 0x101;
-        if !other {
-            c.cycles += 3;
-            c.g[V0][0] = 0x4;
-            let wrong = c.g[A2][0] != c.g[V0][0];
+            c.cycles += 2;
+            let other = c.g[S0][0] != c.g[V0][0];
             c.g[V0][0] = 0x101;
-            if !wrong {
-                c.cycles += 5;
-                Addr(p(r32(c, S1), 0x778)).sw(c, c.g[A3][0]);
-                c.g[A0][0] = c.g[S1][0];
-                c.g[RA][0] = sx(0x001b_dc88);
-                c.g[A1][0] = Addr(p(r32(c, A0), 0x774)).lw(c);
-                callee::FE_STATE_LOBBY_MENU_REFRESH_PLAYER_LIST.call(c, 0x001b_dc88)?;
+            if !other {
+                c.cycles += 3;
+                c.g[V0][0] = 0x4;
+                let wrong = c.g[A2][0] != c.g[V0][0];
                 c.g[V0][0] = 0x101;
+                if !wrong {
+                    c.cycles += 5;
+                    Addr(p(r32(c, S1), 0x778)).sw(c, c.g[A3][0]);
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x001b_dc88);
+                    c.g[A1][0] = Addr(p(r32(c, A0), 0x774)).lw(c);
+                    callee::FE_STATE_LOBBY_MENU_REFRESH_PLAYER_LIST.call(c, 0x001b_dc88)?;
+                    c.g[V0][0] = 0x101;
+                }
             }
         }
         c.cycles += 5;
@@ -10593,60 +10632,6 @@ pub fn net_fe_state_v26(c: &mut Cpu) {
     })
 }
 
-/// `int cFEStateOnlineCharacterSelect_TransitionIn(self, int a1)` (0x1b1068):
-/// if entering, show the local character, ask the BE interface for
-/// interface 7, and if a remote player is present also show their character;
-/// then fill the player info panel and clear the "entering" flag.
-pub fn cfe_state_online_character_select_transition_in(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 6;
-        let frame = Frame::open(c, 0x30);
-        let self_ = abi::arg(c, 0);
-        let entering = abi::arg64(c, 1);
-        frame.save(c, S0, 0x20);
-        frame.save(c, S1, 0x10);
-        c.g[S0][0] = sx(self_);
-        frame.save_ra(c, 0);
-        if entering != 0 {
-            c.cycles += 15;
-            c.g[A0][0] = c.lw(p(self_, 0x6d0));
-            call_ptr(c, callee::CFS_GET_CHARACTER_INFO, 0x001b_1088)?;
-            c.g[A1][0] = c.g[V0][0];
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A2][0] = 0;
-            call_ptr(c, callee::CFS_SHOW_CHARACTER, 0x001b_1098)?;
-            c.g[V0][0] = c.lw(gp_12(c, -0x848));
-            c.g[A1][0] = 0x7;
-            c.g[A0][0] = c.lw(at(c, V0, 0x78));
-            call_ptr(c, callee::BE_GET_INTERFACE, 0x001b_10a8)?;
-            c.g[V1][0] = 0x0053_0000;
-            c.g[S1][0] = sx(p(r32(c, V1), 0x4b30));
-            c.g[A1][0] = c.lw(at(c, S1, 0x32c));
-            let absent = (c.g[A1][0] as i64) < 0;
-            if !absent {
-                c.cycles += 6;
-                c.g[A0][0] = c.g[S0][0];
-                call_ptr(c, callee::CFS_SHOW_OPPONENT_CHAR, 0x001b_10c4)?;
-                c.g[A1][0] = c.lw(at(c, S1, 0x32c));
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A2][0] = 1;
-                call_ptr(c, callee::CFS_SHOW_CHARACTER, 0x001b_10d4)?;
-            }
-        }
-        c.cycles += 3;
-        c.g[A0][0] = c.g[S0][0];
-        call_ptr(c, callee::CFS_FILL_PLAYER_INFO, 0x001b_10dc)?;
-        c.sw(at(c, S0, 0x6dc), 0);
-        c.cycles += 6;
-        frame.restore(c, S0, 0x20);
-        c.g[V0][0] = 0;
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `void cFEStateCreateStep2_SubmitAccount(self, int a1)` (0x1ba9f8): fill in
 /// and show the network popup (a "connecting" message), then either hide the
 /// lobby overlay or show it.
@@ -10951,12 +10936,12 @@ pub fn cfe_state_net_config_init(c: &mut Cpu) {
         // A loaded network adapter gets dropped before the scan restarts.
         c.cycles += 3;
         c.g[V0][0] = Addr(gp_13(c, -0x204)).lw(c);
-        c.g[A0][0] = c.g[S1][0];
         if c.g[V0][0] != 0 {
+            // The generated body calls with a0 as the earlier calls left it.
             c.cycles += 3;
             call_ptr(c, table_callee::UI_ENGINE_GET_INTERFACE, 0x001b_4134)?;
-            c.g[A0][0] = c.g[S1][0];
         }
+        c.g[A0][0] = c.g[S1][0];
         c.cycles += 11;
         c.g[A1][0] = 0;
         callee::START_CARD_SCAN.call(c, 0x001b_4140)?;
@@ -10975,6 +10960,15 @@ pub fn cfe_state_net_config_init(c: &mut Cpu) {
 /// the checking-card popup's outcome selects whether the config state is
 /// flagged complete (`0x70C`/`0x708`) or the child event is forwarded.
 pub fn cfe_state_net_config_on_retry_popup_event(c: &mut Cpu) {
+    /// The three exits of the generated body: 0x0F shows the checking-card
+    /// popup (`ShowPopup`), 0x10 and 0x14 forward the event with the short
+    /// tail (`ForwardShort`, return address 0x1b4cb0), everything else forwards
+    /// it with the long tail (`ForwardLong`, 0x1b4cc0).
+    enum Arm {
+        ShowPopup,
+        ForwardShort,
+        ForwardLong,
+    }
     guest(c, |c| {
         c.cycles += 7;
         let frame = Frame::open(c, 0x30);
@@ -10982,41 +10976,37 @@ pub fn cfe_state_net_config_on_retry_popup_event(c: &mut Cpu) {
         frame.save(c, S1, 0x10);
         frame.save(c, S0, 0x20);
         c.g[S1][0] = c.g[A0][0];
-        let event = c.g[A2][0];
-        let at_1b4ca8 = event == c.g[V0][0];
+        let is_0x10 = c.g[A2][0] == c.g[V0][0];
         frame.save_ra(c, 0);
-        // 1 = case 0x0F, 2 = fall through the first switch arm,
-        // 3 = the 0x10/0x14 arm, 4 = the default (forward) arm.
-        let mut stage: u8;
-        if at_1b4ca8 {
-            stage = 3;
+        let arm = if is_0x10 {
+            Arm::ForwardShort
         } else {
             c.cycles += 3;
-            c.g[V0][0] = (event < 0x11) as u64;
-            let below = c.g[V0][0] == 0;
+            c.g[V0][0] = (c.g[A2][0] < 0x11) as u64;
+            let at_least_0x11 = c.g[V0][0] == 0;
             c.g[V0][0] = 0xf;
-            if below {
-                stage = 2;
-            } else if event == c.g[V0][0] {
-                Addr(gp_13(c, -0x1570)).sw(c, 0);
-                stage = 1;
-            } else {
+            if !at_least_0x11 {
                 c.cycles += 2;
-                stage = 4;
-            }
-        }
-        if stage == 2 {
-            c.cycles += 3;
-            c.g[V0][0] = 0x14;
-            if event == c.g[V0][0] {
-                stage = 3;
+                if c.g[A2][0] == c.g[V0][0] {
+                    Addr(gp_13(c, -0x1570)).sw(c, 0);
+                    Arm::ShowPopup
+                } else {
+                    c.cycles += 2;
+                    Arm::ForwardLong
+                }
             } else {
-                c.cycles += 2;
-                stage = 4;
+                c.cycles += 3;
+                c.g[V0][0] = 0x14;
+                if c.g[A2][0] == c.g[V0][0] {
+                    Arm::ForwardShort
+                } else {
+                    c.cycles += 2;
+                    Arm::ForwardLong
+                }
             }
-        }
-        match stage {
-            1 => {
+        };
+        match arm {
+            Arm::ShowPopup => {
                 c.cycles += 7;
                 c.g[S0][0] = 1;
                 Addr(c.g[S1][0] as u32).off(0x70c).sw(c, c.g[S0][0]);
@@ -11027,17 +11017,17 @@ pub fn cfe_state_net_config_on_retry_popup_event(c: &mut Cpu) {
                 c.cycles += 1;
                 frame.restore(c, S0, 0x20);
             }
-            3 => {
+            Arm::ForwardShort => {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S1][0];
+                callee::NET_FE_STATE_ON_CHILD_EVENT_11.call(c, 0x001b_4cb0)?;
+                frame.restore(c, S0, 0x20);
+            }
+            Arm::ForwardLong => {
                 c.cycles += 2;
                 c.g[A0][0] = c.g[S1][0];
                 callee::NET_FE_STATE_ON_CHILD_EVENT_11.call(c, 0x001b_4cc0)?;
                 c.cycles += 1;
-                frame.restore(c, S0, 0x20);
-            }
-            _ => {
-                c.cycles += 4;
-                c.g[A0][0] = c.g[S1][0];
-                callee::NET_FE_STATE_ON_CHILD_EVENT_11.call(c, 0x001b_4cb0)?;
                 frame.restore(c, S0, 0x20);
             }
         }
@@ -11095,76 +11085,6 @@ pub fn cfe_state_create_step1_transition_in(c: &mut Cpu) {
         c.g[V0][0] = 0;
         frame.restore(c, S1, 0x10);
         frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void cFEStateLogin_OnChildEvent(self, child, event)` (0x1bf6c0): dispatch
-/// the login state's child events (account-memory popup, disconnect popup,
-/// keyboard popup) and forward everything else.
-pub fn cfe_state_login_on_child_event(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 6;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        c.g[V0][0] = 0x82c;
-        let event = Addr(c.g[A1][0] as u32).off(0x18).lw(c);
-        c.g[V1][0] = event;
-        let is_82c = event == c.g[V0][0];
-        c.g[A3][0] = c.g[A0][0];
-        // 0 = default (forward), 1 = 0x82C, 2 = 0x80E, 3 = 0x848.
-        let stage: u8;
-        if is_82c {
-            stage = 1;
-        } else {
-            c.cycles += 3;
-            c.g[V0][0] = (event < 0x82d) as u64;
-            let above = c.g[V0][0] == 0;
-            c.g[V0][0] = 0x80e;
-            if above {
-                c.cycles += 3;
-                c.g[V0][0] = 0x848;
-                if event == c.g[V0][0] {
-                    stage = 3;
-                } else {
-                    c.cycles += 2;
-                    stage = 0;
-                }
-            } else if event == c.g[V0][0] {
-                c.g[V0][0] = lw_4(c, A3, 0x8);
-                stage = 2;
-            } else {
-                c.cycles += 2;
-                stage = 0;
-            }
-        }
-        match stage {
-            1 => {
-                c.cycles += 4;
-                c.g[A0][0] = c.g[A3][0];
-                callee::LOGIN_ON_ACCOUNT_MEM_POPUP.call(c, 0x001b_f728)?;
-            }
-            2 => {
-                c.cycles += 6;
-                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x108).lh(c);
-                c.g[V1][0] = lw_4(c, V0, 0x10c);
-                c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                call_ptr(c, c.g[V1][0] as u32, 0x001b_f718)?;
-            }
-            3 => {
-                c.cycles += 4;
-                c.g[A0][0] = c.g[A3][0];
-                callee::LOGIN_ON_DISCONNECT_POPUP.call(c, 0x001b_f738)?;
-            }
-            _ => {
-                c.cycles += 3;
-                c.g[A0][0] = c.g[A3][0];
-                callee::NET_FE_STATE_ON_CHILD_EVENT_11.call(c, 0x001b_f748)?;
-            }
-        }
-        frame.restore_ra(c, 0);
-        c.cycles += 2;
         frame.close(c);
         Ok(())
     })
@@ -11983,69 +11903,6 @@ pub(crate) fn sw_4(c: &mut Cpu, reg: usize, off: u32, v: u64) {
 // ---------------------------------------------------------------------------
 // Front-end / online state handlers.
 
-/// `void cFEUseExistingAccount_OnChildEvent(self, child)` (0x1ac920): the
-/// child event's id at `child+0x18` selects one of the four account popup
-/// handlers (0x80E abort, 0x80F email, 0x81E login, 0x82C save answer);
-/// anything else is forwarded to `NetFEState_OnChildEvent`.
-pub fn cfe_use_existing_account_on_child_event(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 6;
-        let frame = Frame::open(c, 0x10);
-        c.g[V0][0] = 0x80f;
-        frame.save_ra(c, 0);
-        let event = Addr(abi::arg(c, 1)).off(0x18).lw(c);
-        c.g[V1][0] = event;
-        let below = (event < 0x810) as u64;
-        c.g[V0][0] = below;
-        if event == 0x80f {
-            c.cycles += 4;
-            callee::FE_ON_EMAIL_POPUP_EVENT.call(c, 0x001a_c984)?;
-            frame.restore_ra(c, 0);
-        } else {
-            c.cycles += 2;
-            c.g[V0][0] = 0x80e;
-            if below != 0 {
-                c.cycles += 2;
-                if event == 0x80e {
-                    c.cycles += 4;
-                    callee::FE_ON_ABORT_POPUP_EVENT.call(c, 0x001a_c974)?;
-                    frame.restore_ra(c, 0);
-                } else {
-                    c.cycles += 2;
-                    c.cycles += 3;
-                    callee::NET_FE_STATE_ON_CHILD_EVENT_12.call(c, 0x001a_c9b4)?;
-                    frame.restore_ra(c, 0);
-                }
-            } else {
-                c.cycles += 3;
-                c.g[V0][0] = 0x81e;
-                let login = event == 0x81e;
-                c.g[V0][0] = 0x82c;
-                if login {
-                    c.cycles += 4;
-                    callee::FE_ON_LOGIN_POPUP_EVENT.call(c, 0x001a_c994)?;
-                    frame.restore_ra(c, 0);
-                } else {
-                    c.cycles += 2;
-                    if event == 0x82c {
-                        c.cycles += 4;
-                        callee::FE_ON_SAVE_ACCOUNT_ANSWER.call(c, 0x001a_c9a4)?;
-                        frame.restore_ra(c, 0);
-                    } else {
-                        c.cycles += 2;
-                        c.cycles += 3;
-                        callee::NET_FE_STATE_ON_CHILD_EVENT_12.call(c, 0x001a_c9b4)?;
-                        frame.restore_ra(c, 0);
-                    }
-                }
-            }
-        }
-        c.cycles += 2;
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `void cFEStateChallengePopup_ShowSetOptions(self)` (0x1af688): reset the
 /// settings lock, refresh the popup's unicode strings and re-apply the
 /// settings-locked state.
@@ -12340,71 +12197,6 @@ pub(crate) fn gp_15(c: &Cpu, off: i32) -> u32 {
 
 // ---------------------------------------------------------------------------
 // Front end.
-
-/// `void cFEStateChallengeReceivedPopup_OnWidgetAction(self, a1, int msg)`
-/// (0x1b0538): route a widget message. Kind 5 shows the waiting text (popup
-/// state 0xb) or accepts (state 0xc), kind 7 is ignored, anything else is
-/// handed to the base net state handler.
-pub fn cfe_challenge_received_popup_on_widget_action(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 5;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0);
-        let msg = c.g[A2][0];
-        if c.g[A1][0] == 0 {
-            c.cycles += 2;
-            c.g[A0][0] = c.g[S0][0];
-            call_ptr(c, 0x001a_8918, 0x001b_05cc)?;
-        } else {
-            c.cycles += 3;
-            c.g[V0][0] = 5;
-            let kind5 = msg == c.g[V0][0];
-            c.g[V0][0] = 7;
-            if kind5 {
-                let this = r32(c, S0);
-                c.cycles += 4;
-                c.g[A1][0] = Addr(p(this, 0x18)).lw(c);
-                c.g[V0][0] = 0xb;
-                let state_b = c.g[A1][0] == c.g[V0][0];
-                c.g[V0][0] = 0xc;
-                if state_b {
-                    c.cycles += 3;
-                    c.g[V0][0] = Addr(p(this, 0x6d4)).lw(c);
-                    if c.g[V0][0] == 0 {
-                        c.cycles += 8;
-                        c.g[A0][0] = c.g[S0][0];
-                        call_ptr(c, 0x001b_0c08, 0x001b_059c)?;
-                        c.g[A0][0] = Addr(gp_15(c, -0xc8)).lw(c);
-                        c.g[A2][0] = Addr(p(this, 0x14)).lb(c);
-                        c.g[A1][0] = Addr(p(r32(c, A0), 0x98)).lw(c);
-                        call_ptr(c, 0x0025_fb58, 0x001b_05ac)?;
-                    }
-                } else {
-                    c.cycles += 2;
-                    if c.g[A1][0] == c.g[V0][0] {
-                        c.cycles += 4;
-                        c.g[A0][0] = c.g[S0][0];
-                        call_ptr(c, 0x001b_0e10, 0x001b_05bc)?;
-                    }
-                }
-            } else {
-                c.cycles += 2;
-                if msg != c.g[V0][0] {
-                    c.cycles += 2;
-                    c.g[A0][0] = c.g[S0][0];
-                    call_ptr(c, 0x001a_8918, 0x001b_05cc)?;
-                }
-            }
-        }
-        c.cycles += 1;
-        frame.restore(c, S0, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
 
 /// `void cFEStateOnlineCharacterSelect_ShowOpponentChar(self, int player)`
 /// (0x1b1760): look the opponent's name text up on the screen and set it from
@@ -13353,97 +13145,6 @@ pub fn net_create_room_popup_validate_room_name(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Front end.
 
-/// `void cFEStateNetNews_OnWidgetAction(self, widget, int msg)` (0x1c5368):
-/// the net-news screen's widget router. Message 8 opens the messenger when
-/// no other popup is up, 6 builds and enters the SSX World state, 5 is
-/// ignored and everything else (and a missing widget) goes to the base net
-/// state handler.
-pub fn cfe_state_net_news_on_widget_action(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 5;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        let this = c.g[A0][0];
-        c.g[S0][0] = this;
-        let msg = c.g[A2][0];
-        let mut tail = 1; // the `cycles += 1` only the shared exit charges
-        if c.g[A1][0] == 0 {
-            c.cycles += 2;
-            c.g[A0][0] = this;
-            call_ptr(c, 0x001a_8918, 0x001c_540c)?;
-        } else {
-            c.cycles += 3;
-            c.g[V0][0] = 6;
-            let is6 = msg == 6;
-            c.g[V0][0] = (msg < 7) as u64;
-            if is6 {
-                // message 6: enter a fresh SSX World state
-                net_news_enter_ssx_world(c)?;
-                tail = 0;
-            } else {
-                c.cycles += 2;
-                let ge7 = c.g[V0][0] == 0;
-                c.g[V0][0] = 5;
-                if !ge7 {
-                    c.cycles += 2;
-                    if msg == 5 {
-                        tail = 0;
-                    } else {
-                        c.cycles += 2;
-                        c.cycles += 2;
-                        c.g[A0][0] = this;
-                        call_ptr(c, 0x001a_8918, 0x001c_540c)?;
-                    }
-                } else {
-                    c.cycles += 3;
-                    c.g[V0][0] = 8;
-                    if msg != 8 {
-                        c.cycles += 2;
-                        c.g[A0][0] = this;
-                        call_ptr(c, 0x001a_8918, 0x001c_540c)?;
-                    } else {
-                        c.cycles += 4;
-                        c.g[V0][0] = Addr(p(c.g[S0][0] as u32, 0x1c)).lw(c);
-                        c.g[V0][0] = c.g[V0][0] & 0x6;
-                        if c.g[V0][0] == 0 {
-                            c.cycles += 4;
-                            c.g[A0][0] = c.g[S0][0];
-                            call_ptr(c, 0x001a_9b58, 0x001c_53c4)?;
-                        }
-                        tail = 0;
-                    }
-                }
-            }
-        }
-        c.cycles += tail;
-        frame.restore(c, S0, 0x10);
-        c.cycles += 3;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// The `case 6` body of [`cfe_state_net_news_on_widget_action`]: allocate a
-/// 0x6d0-byte SSX World state, construct it and enter it.
-pub(crate) fn net_news_enter_ssx_world(c: &mut Cpu) -> Flow {
-    c.cycles += 14;
-    c.g[A1][0] = 0x460000;
-    c.g[A0][0] = 0x6d0;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x11a8));
-    c.g[A2][0] = 0;
-    c.g[A3][0] = 0;
-    call_ptr(c, 0x0031_7d70, 0x001c_53e4)?;
-    c.g[A1][0] = Addr(p(c.g[S0][0] as u32, 0x10)).lw(c);
-    c.g[A0][0] = c.g[V0][0];
-    call_ptr(c, 0x001c_1c50, 0x001c_53f0)?;
-    c.g[A0][0] = c.g[S0][0];
-    c.g[A1][0] = c.g[V0][0];
-    call_ptr(c, 0x001a_8a40, 0x001c_53fc)?;
-    Ok(())
-}
-
 /// `void cFEStateOnlineMainMenu_OnDisconnectPopupEvent(self, item, msg)`
 /// (0x1c0240): on message 0xf tear down the current net connection and push
 /// the account memory-card popup, otherwise offer the event to the base net
@@ -13548,7 +13249,7 @@ pub fn cfe_lobby_menu_update_player_scroll_arrows(c: &mut Cpu) {
 pub(crate) fn set_widget_enabled(c: &mut Cpu, enabled: u32, ret: u32) -> Flow {
     c.g[A1][0] = enabled as u64;
     c.g[V0][0] = Addr(p(c.g[A2][0] as u32, 8)).lw(c);
-    c.g[A0][0] = Addr(c.g[V0][0] as u32).lh(c);
+    c.g[A0][0] = Addr(p(c.g[V0][0] as u32, 0x48)).lh(c);
     c.g[V1][0] = Addr(p(c.g[V0][0] as u32, 0x4c)).lw(c);
     let target = c.g[V1][0] as u32;
     c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
@@ -14227,74 +13928,6 @@ pub fn fe_state_create_step2_init(c: &mut Cpu) {
 
 // ---------------------------------------------------------------------------
 // FE state constructors.
-
-/// `cFEStateChatRoom* cFEStateChatRoom_ctor(cFEStateChatRoom* self, int a1)`
-/// (0x1b1f88): run the net FE-state constructor, retag the vtable, clear the
-/// two item pairs and the four colour floats (1,1,1,1), then copy the global
-/// player name into +0x72c.
-pub fn cfe_state_chat_room_ctor(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 14;
-        open(c, 0x30);
-        c.g[A2][0] = 0;
-        c.sq(16, at_6(c.g[SP][0] as u32, 0x20));
-        c.sd(at_6(c.g[SP][0] as u32, 0x10), c.g[RA][0]);
-        c.g[RA][0] = sx(0x001b_1fa0);
-        let this = c.g[A0][0];
-        c.g[S0][0] = this;
-        call_ptr(c, 0x001a_8500, 0x001b_1fa0)?;
-        c.g[V1][0] = 0x470000;
-        c.g[V0][0] = 0x3d;
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x51a8));
-        Addr(this as u32).off(0xc).sw(c, c.g[V0][0]);
-        Addr(this as u32).off(8).sw(c, c.g[V1][0]);
-        c.g[V0][0] = sx((this as u32).wrapping_add(0x704));
-        Addr(this as u32).off(0x6f8).sw(c, 0);
-        c.g[V1][0] = 1;
-        loop {
-            c.cycles += 7;
-            Addr((c.g[V0][0] as u32).wrapping_sub(8)).sw(c, 0);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
-            Addr(c.g[V0][0] as u32).sw(c, 0);
-            let more = (c.g[V1][0] as i64) >= 0;
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(4));
-            if !more {
-                break;
-            }
-            if event_due(c) {
-                deliver_event_here(c, 0x001b_1fc0);
-            }
-        }
-        c.cycles += 26;
-        c.g[AT][0] = 0x3f80_0000;
-        c.mtc1(1, 0);
-        c.g[A0][0] = sx((this as u32).wrapping_add(0x70c));
-        Addr(this as u32).off(0x6ec).sw(c, 0);
-        c.swc1(0, at_6(c.g[SP][0] as u32, 0xc));
-        c.swc1(0, c.g[SP][0] as u32);
-        c.swc1(0, at_6(c.g[SP][0] as u32, 4));
-        c.swc1(0, at_6(c.g[SP][0] as u32, 8));
-        Addr(this as u32).off(0x6f0).sw(c, 0);
-        Addr(this as u32).off(0x6f4).sw(c, 0);
-        c.ldl(2, at_6(c.g[SP][0] as u32, 7));
-        c.ldr(2, c.g[SP][0] as u32);
-        c.ldl(3, at_6(c.g[SP][0] as u32, 0xf));
-        c.ldr(3, at_6(c.g[SP][0] as u32, 8));
-        c.sdl(2, at_6(this as u32, 0x733));
-        c.sdr(2, at_6(this as u32, 0x72c));
-        c.sdl(3, at_6(this as u32, 0x73b));
-        c.sdr(3, at_6(this as u32, 0x734));
-        c.g[V0][0] = sx((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        c.g[RA][0] = sx(0x001b_2030);
-        c.g[A1][0] = Addr(c.g[V0][0] as u32).off(0x80).lw(c);
-        call_ptr(c, 0x0041_66f4, 0x001b_2030)?;
-        c.g[V0][0] = c.g[S0][0];
-        c.g[RA][0] = c.ld(at_6(c.g[SP][0] as u32, 0x10));
-        c.lq(16, at_6(c.g[SP][0] as u32, 0x20));
-        close(c, 0x30);
-        Ok(())
-    })
-}
 
 /// A `gp_17`-relative global.
 #[inline(always)]
@@ -17008,98 +16641,6 @@ pub fn ps2_sound_manager_init(c: &mut Cpu) {
 }
 
 // ---------------------------------------------------------------------------
-// cBXString_ConcatInPlace (0x0000318830).
-
-/// `cBXString_ConcatInPlace`: append a C string to a cBXString in place, growing the buffer when needed.
-pub fn c_bx_string_concat_in_place(c: &mut Cpu) {
-    guest(c, |c| {
-        'b_3188f8: {
-            'b_3188c4: {
-                'b_318880: {
-                    c.cycles += 14;
-                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
-                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
-                    c.g[S1][0] = c.g[A0][0];
-                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.g[S2][0] = c.g[A1][0];
-                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.g[S3][0] = c.g[A2][0];
-                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
-                    c.g[A3][0] = c.lw(c.g[S1][0] as u32);
-                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0xc));
-                    c.g[V0][0] = ((c.g[V0][0] as i64) < 2i64) as u64;
-                    let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0xc));
-                    if t {
-                        break 'b_318880;
-                    } else {
-                        c.cycles += 6;
-                        c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0x8));
-                        c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0x4));
-                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
-                        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                        if c.g[V1][0] == 0u64 {
-                            c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
-                            break 'b_3188c4;
-                        } else {
-                            break 'b_318880;
-                        }
-                    }
-                }
-                c.cycles += 17;
-                c.g[A0][0] = c.g[SP][0];
-                c.g[A1][0] = c.g[S1][0];
-                call_ptr(c, 0x00317fe8, 0x0031888c)?;
-                c.g[S0][0] = c.lw(c.g[S1][0] as u32);
-                c.g[A0][0] = c.g[S1][0];
-                call_ptr(c, 0x003180b8, 0x00318898)?;
-                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_sub(0x8));
-                c.g[A0][0] = c.g[S1][0];
-                c.g[A3][0] = c.g[S2][0];
-                c.g[T0][0] = c.g[S3][0];
-                c.g[A2][0] = c.g[S0][0];
-                call_ptr(c, 0x00318540, 0x003188b0)?;
-                c.g[A0][0] = c.g[SP][0];
-                c.g[A1][0] = 0x2;
-                call_ptr(c, 0x00318260, 0x003188bc)?;
-                let t = true;
-                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-                if t {
-                    break 'b_3188f8;
-                } else {
-                    break 'b_3188c4;
-                }
-            }
-            c.cycles += 13;
-            c.g[A1][0] = c.g[S3][0];
-            c.g[A2][0] = c.g[S2][0];
-            c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
-            call_ptr(c, 0x0041605c, 0x003188d4)?;
-            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
-            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_sub(0x8));
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
-            c.sw((c.g[A0][0] as u32).wrapping_sub(0x8), c.g[V0][0]);
-            c.g[V1][0] = c.lw(c.g[S1][0] as u32);
-            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x8));
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-            c.sb(c.g[V1][0] as u32, 0u64);
-            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-            break 'b_3188f8;
-        }
-        c.cycles += 6;
-        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-        let t = c.g[RA][0] as u32;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
-        c.pc = t;
-        Ok(())
-    });
-}
-
-// ---------------------------------------------------------------------------
 // PS2_SONY_CODEC_INTERNAL_InitFrame (0x00003b07f8).
 
 /// `PS2_SONY_CODEC_INTERNAL_InitFrame`: initialise one Sony codec frame descriptor.
@@ -17425,59 +16966,6 @@ pub fn net_fe_state_show_disconnected_popup(c: &mut Cpu) {
     });
 }
 
-/// `cFEStateStats_v25(self, state)` (0x1c3570): the stats screen's second
-/// constructor vtable entry: set the numeric field, hash and store the title
-/// string, then hash and install the five statistic rows.
-pub fn cfestate_stats_v25(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 62;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, 16, 0x10);
-        c.g[S0][0] = c.g[A1][0];
-        frame.save_ra(c, 0);
-        c.g[A1][0] = 5;
-        c.g[RA][0] = sx(0x001c_358c);
-        c.g[A0][0] = c.g[S0][0];
-        call_ptr(c, 0x001d_a528, 0x001c_358c)?; // set number 5
-        c.g[A0][0] = 0x46_0000;
-        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5dc0));
-        call_ptr(c, 0x0031_7670, 0x001c_3598)?; // StrHash(title)
-        c.g[A0][0] = 0x46_0000;
-        c.sw(p(c.g[S0][0] as u32, 0x54), c.g[V0][0]);
-        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5dd8));
-        call_ptr(c, 0x0031_7670, 0x001c_35a8)?;
-        c.g[A0][0] = c.g[S0][0];
-        c.g[A2][0] = c.g[V0][0];
-        c.g[RA][0] = sx(0x001c_35b8);
-        c.g[A1][0] = 0;
-        call_ptr(c, 0x001d_a530, 0x001c_35b8)?;
-        // the five statistic rows: (label string, row, a3)
-        for (i, (name, row, a3)) in [
-            (0x45_fe60u32, 0u64, 3u64),
-            (0x45_fe40, 1, 4),
-            (0x46_1458, 2, 2),
-            (0x46_5df8, 3, 8),
-            (0x46_14e8, 4, 1),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let ret = 0x001c_35c4 + 0x1c * i as u32;
-            c.g[A0][0] = sx(name);
-            call_ptr(c, 0x0031_7670, ret)?;
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A2][0] = c.g[V0][0];
-            c.g[A1][0] = row;
-            c.g[A3][0] = a3;
-            call_ptr(c, 0x001d_a510, ret + 0x14)?;
-        }
-        frame.restore(c, 16, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `lh_2` (sign-extended).
 #[inline(always)]
 pub(crate) fn lh_2(c: &mut Cpu, a: u32) -> u64 {
@@ -17604,111 +17092,6 @@ pub fn cfestate_lobby_menu_transition_in(c: &mut Cpu) {
         c.cycles += 5;
         c.g[V0][0] = 0;
         frame.restore(c, 17, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `cFEStateSelectPersona_FillPersonaList(self, list)` (0x1ad3e8): fill the
-/// list box with one entry per persona in the global persona manager, giving
-/// each entry its index, then the four fixed persona slots.
-pub fn cfestate_select_persona_fill_persona_list(c: &mut Cpu) {
-    const LIST_GET_AT: u32 = 0x0039_7870;
-    const LISTBOX_ADD_ENTRY: u32 = 0x003a_0c50;
-    const STR_ID: u32 = 0x0031_7670;
-    const LISTBOX_SET_STR: u32 = 0x003a_1000;
-
-    guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x60);
-        c.g[S3][0] = lw(c, gp(c, -0xc8));
-        frame.save(c, 19, 0x20);
-        frame.save(c, 17, 0x40);
-        frame.save(c, 20, 0x10);
-        frame.save(c, 16, 0x50);
-        frame.save(c, 18, 0x30);
-        c.g[S1][0] = 0;
-        frame.save_ra(c, 0);
-        c.g[V0][0] = lw(c, p(c.g[S3][0] as u32, 0x6c));
-        let empty = (c.g[V0][0] as i64) <= 0;
-        c.g[S4][0] = c.g[A1][0];
-        if !empty {
-            c.cycles += 2;
-            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(0x70));
-            c.g[A1][0] = c.g[S1][0];
-            loop {
-                c.cycles += 19;
-                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x74));
-                call_ptr(c, LIST_GET_AT, 0x001a_d428)?;
-                c.g[S0][0] = c.g[V0][0];
-                sw_6(c, p(c.g[S0][0] as u32, 0x18), c.g[S1][0]);
-                c.g[A0][0] = c.g[S0][0];
-                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
-                c.g[A1][0] = lw(c, c.g[S2][0] as u32);
-                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(4));
-                call_ptr(c, LISTBOX_ADD_ENTRY, 0x001a_d444)?;
-                c.g[V0][0] = lw(c, p(c.g[S0][0] as u32, 8));
-                c.g[A1][0] = 1;
-                c.g[A0][0] = lh_2(c, p(c.g[V0][0] as u32, 0x48));
-                c.g[V1][0] = lw(c, p(c.g[V0][0] as u32, 0x4c));
-                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                call_ptr(c, c.g[V1][0] as u32, 0x001a_d45c)?;
-                c.g[V0][0] = lw(c, p(c.g[S3][0] as u32, 0x6c));
-                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                let more = c.g[V0][0] != 0;
-                c.g[A1][0] = c.g[S1][0];
-                if !more {
-                    break;
-                }
-                if event_due(c) {
-                    deliver_event_here(c, 0x001a_d420);
-                }
-            }
-        }
-        // Four fixed persona slots.
-        c.cycles += 3;
-        c.g[V0][0] = ((c.g[S1][0] as i64) < 4) as u64;
-        let full = c.g[V0][0] == 0;
-        c.g[S2][0] = 0x0046_0000;
-        if !full {
-            c.cycles += 2;
-            c.g[A1][0] = c.g[S1][0];
-            loop {
-                c.cycles += 19;
-                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x74));
-                call_ptr(c, LIST_GET_AT, 0x001a_d488)?;
-                c.g[S0][0] = c.g[V0][0];
-                c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x2e58));
-                sw_6(c, p(c.g[S0][0] as u32, 0x18), c.g[S1][0]);
-                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
-                call_ptr(c, STR_ID, 0x001a_d49c)?;
-                c.g[A1][0] = c.g[V0][0];
-                c.g[A0][0] = c.g[S0][0];
-                call_ptr(c, LISTBOX_SET_STR, 0x001a_d4a8)?;
-                c.g[V0][0] = lw(c, p(c.g[S0][0] as u32, 8));
-                c.g[A1][0] = 1;
-                c.g[A0][0] = lh_2(c, p(c.g[V0][0] as u32, 0x48));
-                c.g[V1][0] = lw(c, p(c.g[V0][0] as u32, 0x4c));
-                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                call_ptr(c, c.g[V1][0] as u32, 0x001a_d4c0)?;
-                c.g[V0][0] = ((c.g[S1][0] as i64) < 4) as u64;
-                let more = c.g[V0][0] != 0;
-                c.g[A1][0] = c.g[S1][0];
-                if !more {
-                    break;
-                }
-                if event_due(c) {
-                    deliver_event_here(c, 0x001a_d480);
-                }
-            }
-        }
-        c.cycles += 8;
-        frame.restore(c, 16, 0x50);
-        frame.restore(c, 17, 0x40);
-        frame.restore(c, 18, 0x30);
-        frame.restore(c, 19, 0x20);
-        frame.restore(c, 20, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -17910,130 +17293,6 @@ pub fn cfe_state_create_step2_on_widget_created(c: &mut Cpu) {
     })
 }
 
-/// `cFEStateCreateDuplicate_OnWidgetCreated(self, text)` (0x001bbe00): one of
-/// the duplicate-rider widgets was created; give its text the right label (a
-/// fixed caption string, or one of the four weekday names).
-pub fn cfe_state_create_duplicate_on_widget_created(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 14;
-        let frame = Frame::open(c, 0x90);
-        frame.save(c, S1, 0x70);
-        frame.save(c, S2, 0x60);
-        c.g[S1][0] = c.g[A0][0];
-        frame.save(c, S3, 0x50);
-        c.g[S2][0] = c.g[A1][0];
-        frame.save_ra(c, 0x40);
-        frame.save(c, S0, 0x80);
-        let this = c.g[S1][0];
-        let text = c.g[S2][0];
-
-        // A fixed caption.
-        c.g[S0][0] = lw_9(c, text, 0x38);
-        c.g[A0][0] = sx(0x0046_4c68);
-        call_ptr(c, STR_HASH, 0x001b_be30)?;
-        if c.g[S0][0] == c.g[V0][0] {
-            c.cycles += 3;
-            c.g[V0][0] = 4;
-            sw_7(c, text, 0x18, c.g[V0][0]);
-            c.cycles += 1;
-            frame.restore(c, S0, 0x80);
-        } else {
-            // Two captions only apply while no rider slot is selected.
-            let mut label = 0u64;
-            let mut weekday_loop = false;
-            c.g[V0][0] = lw_9(c, this, 0x6d0);
-            c.cycles += 2;
-            c.g[S1][0] = 0;
-            if c.g[V0][0] != 0 {
-                weekday_loop = true;
-            } else {
-                c.cycles += 6;
-                c.g[S0][0] = lw_9(c, text, 0x38);
-                c.g[A0][0] = sx(0x0046_1520);
-                call_ptr(c, STR_HASH, 0x001b_be5c)?;
-                if c.g[S0][0] == c.g[V0][0] {
-                    c.cycles += 3;
-                    label = 0x0046_4c78;
-                } else {
-                    c.g[V0][0] = lw_9(c, this, 0x6d0);
-                    c.cycles += 2;
-                    c.g[S1][0] = 0;
-                    if c.g[V0][0] != 0 {
-                        weekday_loop = true;
-                    } else {
-                        c.cycles += 6;
-                        c.g[S0][0] = lw_9(c, text, 0x38);
-                        c.g[A0][0] = sx(0x0046_4c90);
-                        call_ptr(c, STR_HASH, 0x001b_be88)?;
-                        let mismatch = c.g[S0][0] != c.g[V0][0];
-                        c.g[S1][0] = 0;
-                        if mismatch {
-                            weekday_loop = true;
-                        } else {
-                            c.cycles += 2;
-                            label = 0x0046_4ca0;
-                        }
-                    }
-                }
-            }
-            if label != 0 {
-                // `UIText_SetTextId(text, GetHashValue32(name))`.
-                c.cycles += 7;
-                c.g[A0][0] = sx(label as u32);
-                call_ptr(c, STR_HASH, 0x001b_bea0)?;
-                c.g[A0][0] = text;
-                c.g[A1][0] = c.g[V0][0];
-                call_ptr(c, UI_TEXT_SET_TEXT_ID, 0x001b_beac)?;
-                frame.restore(c, S0, 0x80);
-            } else {
-                debug_assert!(weekday_loop);
-                // Try the four weekday names.
-                c.cycles += 1;
-                c.g[S3][0] = 0x0046_0000;
-                loop {
-                    c.cycles += 3;
-                    c.g[V0][0] = (c.g[S1][0] < 4) as u64;
-                    let done = c.g[V0][0] == 0;
-                    c.g[A0][0] = c.g[SP][0];
-                    if done {
-                        break;
-                    }
-                    c.cycles += 8;
-                    c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x4cb8));
-                    c.g[A2][0] = c.g[S1][0];
-                    call_ptr(c, SPRINTF, 0x001b_bed4)?;
-                    c.g[S0][0] = lw_9(c, text, 0x38);
-                    c.g[A0][0] = c.g[SP][0];
-                    call_ptr(c, STR_HASH, 0x001b_bee0)?;
-                    if c.g[S0][0] != c.g[V0][0] {
-                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
-                        if event_due(c) {
-                            deliver_event_here(c, 0x001b_bebc);
-                        }
-                        continue;
-                    }
-                    c.cycles += 4;
-                    c.g[A0][0] = text;
-                    c.g[A1][0] = c.g[SP][0];
-                    call_ptr(c, UI_TEXT_SET_STRING, 0x001b_bef4)?;
-                    sw_7(c, text, 0x18, c.g[S1][0]);
-                    break;
-                }
-                c.cycles += 1;
-                frame.restore(c, S0, 0x80);
-            }
-        }
-
-        c.cycles += 6;
-        frame.restore(c, S1, 0x70);
-        frame.restore(c, S2, 0x60);
-        frame.restore(c, S3, 0x50);
-        frame.restore_ra(c, 0x40);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `cFEStateNetConfig_OnChildEvent(self, child, kind)` (0x001bf5a8): a widget
 /// of the network-config screen fired. Kind 15 ("OK") allocates and enters the
 /// network-config state; 16 and 20 (and everything else) go to the base
@@ -18092,8 +17351,10 @@ pub fn cfe_state_net_config_on_child_event(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A0][0] = Addr(gp(c, 0x238)).lw(c);
                     call_ptr(c, 0x0026_1460, 0x001b_f644)?;
+                    // The test reads the call's result; v0 is reloaded after it.
+                    let ready = c.g[V0][0] != 0;
                     c.g[V0][0] = Addr(gp(c, 0x238)).lw(c);
-                    if c.g[V0][0] == 0 {
+                    if !ready {
                         c.cycles += 3;
                         c.g[A0][0] = Addr(gp(c, 0x238)).lw(c);
                         call_ptr(c, 0x0026_13c8, 0x001b_f654)?;
@@ -18114,16 +17375,19 @@ pub fn cfe_state_net_config_on_child_event(c: &mut Cpu) {
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A1][0] = 0;
                     call_ptr(c, 0x0026_36f0, 0x001b_f68c)?;
+                } else {
+                    c.cycles += 1;
                 }
-                c.cycles += 1;
             } else {
-                c.cycles += 3 + 2 + 2 + 2 + 1;
+                c.cycles += 3 + 2 + 2 + 2;
                 c.g[A0][0] = this;
                 Callee {
                     addr: 0x001a_97b8,
                     f: ee::s03::NetFEState_OnChildEvent,
                 }
                 .call(c, 0x001b_f6ac)?;
+                // The block's `+1` (restore s0) comes after the call.
+                c.cycles += 1;
             }
         } else {
             c.cycles += 3 + 3;
@@ -18136,13 +17400,15 @@ pub fn cfe_state_net_config_on_child_event(c: &mut Cpu) {
                 }
                 .call(c, 0x001b_f69c)?;
             } else {
-                c.cycles += 2 + 2 + 1;
+                c.cycles += 2 + 2;
                 c.g[A0][0] = this;
                 Callee {
                     addr: 0x001a_97b8,
                     f: ee::s03::NetFEState_OnChildEvent,
                 }
                 .call(c, 0x001b_f6ac)?;
+                // The block's `+1` (restore s0) comes after the call.
+                c.cycles += 1;
             }
         }
 
@@ -18222,7 +17488,7 @@ pub fn cfe_state_stats_focus_next_column(c: &mut Cpu) {
                 let item = lw_9(c, this, 0x6dc);
                 c.g[A2][0] = item;
                 c.g[A1][0] = 1;
-                vcall_v0(c, item, 8, 0x38, 0x001c_4dd8)?;
+                vcall_v1(c, item, 8, 0x38, 0x001c_4dd8)?;
                 c.g[A0][0] = this;
                 Callee {
                     addr: 0x001c_4d28,
@@ -18246,7 +17512,7 @@ pub fn cfe_state_stats_focus_next_column(c: &mut Cpu) {
             c.g[A1][0] = 1;
             if focused {
                 c.cycles += 7;
-                vcall_v0(c, item, 8, 0x38, 0x001c_4e18)?;
+                vcall_v1(c, item, 8, 0x38, 0x001c_4e18)?;
                 frame.restore(c, S0, 0x20);
                 break 'out;
             }
@@ -18333,7 +17599,7 @@ pub fn cfe_state_stats_focus_prev_column(c: &mut Cpu) {
                 let item = lw_9(c, this, 0x6dc);
                 c.g[A2][0] = item;
                 c.g[A1][0] = 1;
-                vcall_v0(c, item, 8, 0x38, 0x001c_4ef0)?;
+                vcall_v1(c, item, 8, 0x38, 0x001c_4ef0)?;
                 c.g[A0][0] = this;
                 Callee {
                     addr: 0x001c_4e40,
@@ -18357,7 +17623,7 @@ pub fn cfe_state_stats_focus_prev_column(c: &mut Cpu) {
             c.g[A1][0] = 1;
             if focused {
                 c.cycles += 7;
-                vcall_v0(c, item, 8, 0x38, 0x001c_4f30)?;
+                vcall_v1(c, item, 8, 0x38, 0x001c_4f30)?;
                 frame.restore(c, S0, 0x20);
                 break 'out;
             }
@@ -18382,138 +17648,6 @@ pub fn cfe_state_stats_focus_prev_column(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // 0x001b7650 cFEStateNetAccountMem_ShowPopup
 // ---------------------------------------------------------------------------
-
-/// `void cFEStateNetAccountMem_ShowPopup(void* self, void* state, int kind,
-/// int text_id, int* a, int b, int c)` (0x1b7650).
-///
-/// Builds the account-memory popup: `NetFEState_GetPopup` supplies the popup
-/// object, which is configured with one or two option strings and then shown
-/// through `NetFEState_ShowPopup`.
-pub fn cfe_state_net_account_mem_show_popup(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 22;
-        let frame = Frame::open(c, 0xa0);
-        frame.save(c, 23, 0x20);
-        frame.save(c, 18, 0x70);
-        c.g[S7][0] = c.g[A0][0];
-        frame.save(c, 19, 0x60);
-        c.g[S2][0] = c.g[A3][0];
-        frame.save(c, 20, 0x50);
-        c.g[S3][0] = c.g[T0][0];
-        frame.save(c, 21, 0x40);
-        c.g[S4][0] = c.g[A2][0];
-        frame.save(c, 22, 0x30);
-        c.g[S5][0] = c.g[T1][0];
-        frame.save(c, 30, 0x10);
-        c.g[S6][0] = c.g[T2][0];
-        frame.save(c, 16, 0x90);
-        frame.save(c, 17, 0x80);
-        frame.save_ra(c, 0);
-        c.g[RA][0] = sx(0x001b_769c);
-        c.g[FP][0] = c.g[A1][0];
-        call_ptr(c, 0x001a_9c50, 0x001b_769c)?; // NetFEState_GetPopup
-        c.g[S1][0] = c.g[V0][0];
-        let t = c.g[T0][0] == 0;
-        c.g[S0][0] = sx(c.g[S1][0] as u32 + 0xbc);
-        'ret: {
-            if t {
-                break 'ret;
-            }
-            'two: {
-                c.cycles += 2;
-                let t = c.g[S3][0] == 0;
-                c.g[V0][0] = 2;
-                if t {
-                    break 'two;
-                }
-                c.cycles += 11;
-                c.g[A2][0] = c.g[S2][0];
-                c.sw(p(c.g[S1][0] as u32, 0xbc), c.g[V0][0]);
-                c.g[A0][0] = c.g[S0][0];
-                c.g[RA][0] = sx(0x001b_76c4);
-                c.g[A1][0] = 0;
-                call_ptr(c, 0x001c_57c0, 0x001b_76c4)?;
-                c.g[A2][0] = c.g[S3][0];
-                c.g[A0][0] = c.g[S0][0];
-                c.g[RA][0] = sx(0x001b_76d4);
-                c.g[A1][0] = 1;
-                call_ptr(c, 0x001c_57c0, 0x001b_76d4)?;
-                let t = true;
-                c.sw(p(c.g[S1][0] as u32, 0x168), c.g[S4][0]);
-                if t {
-                    break 'ret;
-                }
-                break 'two;
-            }
-            // One option only.
-            c.cycles += 8;
-            c.g[V0][0] = 1;
-            c.g[A2][0] = c.g[S2][0];
-            c.sw(p(c.g[S1][0] as u32, 0xbc), c.g[V0][0]);
-            c.g[A0][0] = c.g[S0][0];
-            c.g[RA][0] = sx(0x001b_76f4);
-            c.g[A1][0] = 0;
-            call_ptr(c, 0x001c_57c0, 0x001b_76f4)?;
-            let t = true;
-            c.sw(p(c.g[S1][0] as u32, 0x168), 0);
-            if t {
-                break 'ret;
-            }
-            c.cycles += 3;
-            c.sw(p(c.g[S1][0] as u32, 0xbc), 0);
-            c.sw(p(c.g[S1][0] as u32, 0x164), 0);
-            c.sw(p(c.g[S1][0] as u32, 0x168), 0);
-            break 'ret;
-        }
-
-        'opt1: {
-            c.cycles += 2;
-            let t = c.g[S5][0] == 0;
-            c.g[V0][0] = 1;
-            if t {
-                break 'opt1;
-            }
-            c.cycles += 2;
-            c.sw(p(c.g[S0][0] as u32, 0x10), c.g[S5][0]);
-            c.sw(p(c.g[S0][0] as u32, 0xc), c.g[V0][0]);
-            break 'opt1;
-        }
-        'opt2: {
-            c.cycles += 2;
-            let t = c.g[S6][0] == 0;
-            c.g[V0][0] = 1;
-            if t {
-                break 'opt2;
-            }
-            c.cycles += 2;
-            c.sw(p(c.g[S0][0] as u32, 8), c.g[S6][0]);
-            c.sw(p(c.g[S0][0] as u32, 4), c.g[V0][0]);
-            break 'opt2;
-        }
-        c.cycles += 19;
-        c.sw(p(c.g[S0][0] as u32, 0x94), c.g[FP][0]);
-        c.g[V0][0] = 1;
-        c.sw(p(c.g[S0][0] as u32, 0xa8), 0);
-        c.g[A0][0] = c.g[S7][0];
-        c.sw(p(c.g[S0][0] as u32, 0x98), c.g[V0][0]);
-        c.g[RA][0] = sx(0x001b_7744);
-        c.g[A1][0] = c.g[S1][0];
-        call_ptr(c, 0x001a_9bc0, 0x001b_7744)?; // NetFEState_ShowPopup
-
-        frame.restore(c, 16, 0x90);
-        frame.restore(c, 17, 0x80);
-        frame.restore(c, 18, 0x70);
-        frame.restore(c, 19, 0x60);
-        frame.restore(c, 20, 0x50);
-        frame.restore(c, 21, 0x40);
-        frame.restore(c, 22, 0x30);
-        frame.restore(c, 23, 0x20);
-        frame.restore(c, 30, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
 
 /// `void cFEStateNetQuickPlayPopup_SetOptionsEnabled(Popup* self, int value)`
 /// (0x1c17f8): pass `value` to the setter (slot 0x40/0x44 of the object's
@@ -18687,101 +17821,6 @@ pub fn c_fe_state_create_step2_fill_day_list(c: &mut Cpu) {
 
 // ---------------------------------------------------------------------------
 // Functions.
-
-/// `void cFEPopupConfirm_CfgReset(cFEPopupConfirm *self)` (0x1c5630): clear
-/// the four 8-byte entries at +4, the five {8-byte, 12-byte} pairs at +0x24
-/// and +0x54, then reset the popup's counters, the vector at +0x9c and the
-/// "no selection" index (-1).
-pub fn cfepopupconfirm_cfg_reset(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 28;
-        let frame = Frame::open(c, 0x50);
-        frame.save(c, 16, 0x40);
-        frame.save(c, 17, 0x30);
-        frame.save(c, 18, 0x20);
-        frame.save(c, 19, 0x10);
-        frame.save_ra(c, 0);
-        let this = abi::arg(c, 0);
-        c.g[S0][0] = abi::arg64(c, 0);
-
-        // The four 8-byte entries at +4, +0xc, +0x14, +0x1c.
-        c.g[A1][0] = 0;
-        c.g[A2][0] = 8;
-        const CLEAR_RETS: [u32; 4] = [0x001c_5664, 0x001c_5678, 0x001c_5688, 0x001c_5698];
-        for (i, off) in [4u32, 0xc, 0x14, 0x1c].into_iter().enumerate() {
-            c.g[A0][0] = sx(this.wrapping_add(off));
-            callee::MEMSET_4.call(c, CLEAR_RETS[i])?;
-        }
-
-        // Five iterations clearing an 8-byte entry (from +0x24, stride 8) and
-        // a 12-byte entry (from +0x54, stride 0xc).
-        c.g[S1][0] = sx(this.wrapping_add(0x24));
-        c.g[S2][0] = sx(this.wrapping_add(0x54));
-        c.g[S3][0] = 4;
-        loop {
-            c.cycles += 12;
-            c.g[A0][0] = c.g[S1][0];
-            c.g[A1][0] = 0;
-            c.g[A2][0] = 8;
-            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(8));
-            callee::MEMSET_4.call(c, 0x001c_56b0)?;
-            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(1));
-            c.g[A0][0] = c.g[S2][0];
-            c.g[A1][0] = 0;
-            c.g[A2][0] = 0xc;
-            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
-            callee::MEMSET_4.call(c, 0x001c_56c8)?;
-            let more = (c.g[S3][0] as i64) >= 0;
-            c.g[A0][0] = c.g[S1][0];
-            if !more {
-                break;
-            }
-            if event_due(c) {
-                deliver_event_here(c, 0x001c_56a0);
-            }
-        }
-
-        c.cycles += 32;
-        c.g[A0][0] = sx(this.wrapping_add(0x4c));
-        c.g[A1][0] = 0;
-        c.g[A2][0] = 8;
-        callee::MEMSET_4.call(c, 0x001c_56e0)?;
-
-        let one = 1;
-        c.g[V1][0] = one;
-        c.sw(this.wrapping_add(0x98), 0);
-        c.sw(this.wrapping_add(0xbc), one);
-        c.g[V0][0] = 0x0050_0000;
-        c.sw(this.wrapping_add(0xa8), one);
-        let minus_one = u64::MAX;
-        c.g[A0][0] = minus_one;
-        c.sw(this.wrapping_add(0x94), 0);
-        c.sw(this.wrapping_add(0xb8), 0);
-        c.sw(this.wrapping_add(0xb0), 0);
-        c.sw(this, 0);
-        c.sw(this.wrapping_add(0x90), 0);
-        // *(sVec3*)(self + 0x9c) = D_004FF0D8 (a 12-byte copy, unaligned).
-        let src = (c.g[V0][0] as u32).wrapping_sub(0xf28);
-        c.g[A3][0] = sx(src);
-        c.ldl(3, src.wrapping_add(7));
-        c.ldr(3, src);
-        c.g[A1][0] = c.lw(src.wrapping_add(8));
-        c.sdl(3, this.wrapping_add(0xa3));
-        c.sdr(3, this.wrapping_add(0x9c));
-        c.sw(this.wrapping_add(0xa4), c.g[A1][0]);
-        c.sw(this.wrapping_add(0xac), minus_one);
-        c.sw(this.wrapping_add(0xb4), 0);
-        c.sw(this.wrapping_add(0xc0), 0);
-
-        frame.restore(c, 16, 0x40);
-        frame.restore(c, 17, 0x30);
-        frame.restore(c, 18, 0x20);
-        frame.restore(c, 19, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
 
 pub(crate) mod fe_async {
 
@@ -27270,8 +26309,10 @@ pub fn cfe_use_existing_account_on_widget_created(c: &mut Cpu) {
         // TextOK: mMiscData = 4 (the hash of the 0x4a1a80 string).
         c.cycles += 5;
         widget_hash(c, 0x004a_0000, 0x1a80, 0x001a_c290)?;
+        // The compare reads s0 before the `lq` in the delay slot restores it.
+        let mismatch = c.g[S0][0] != c.g[V0][0];
         frame.restore(c, 16, 0x30);
-        if c.g[S0][0] != c.g[V0][0] {
+        if mismatch {
             widget_epilogue(c, frame);
         } else {
             c.cycles += 1;
@@ -49848,13 +48889,8 @@ pub(crate) mod tests {
                     0x0046_2ba0,
                     0x004a_1a80,
                 ];
-                // The TextOK name (0x4a1a80, the only string outside the
-                // 0x46xxxx block) is left out: its fixture hash differs from
-                // the one the generated body computes (seed 6 failed with the
-                // match stored in the port only), so the TextOK match store is
-                // not covered here. The TextOK mismatch is still covered.
                 let pick = (seed % 8) as usize;
-                let name = if pick < 6 {
+                let name = if pick < 7 {
                     uex_hash_at(c, names[pick])
                 } else {
                     r.next_u32() as u64
@@ -53403,6 +52439,661 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _r = machine(c, seed, 0x5630, 0);
                 c.g[A0][0] = sx(OC903_SELF + 0x200 * (seed % 4));
+            },
+        );
+    }
+    // -----------------------------------------------------------------
+    // Tests of the formerly unregistered net-config / lobby-menu /
+    // messenger ports: gated fakes for the callees that have an override
+    // slot, real leaf callees otherwise.
+
+    /// The gate word of the `fa_*` fakes: while it holds `FA_MAGIC` in the
+    /// machine's RAM the fakes log and return like `fakes::fake_call`.
+    pub(crate) const FA_CTRL: u32 = DATA + 0x4f_0000;
+    pub(crate) const FA_MAGIC: u32 = 0x00fa_5eed;
+    /// Result mailboxes (`{mode, value}` per callee, indexed by its address).
+    pub(crate) const FA_MAIL: u32 = DATA + 0x50_0000;
+
+    /// Make the gated fake of `addr` return `v` (sign-extended) in `v0`.
+    pub(crate) fn fa_force(c: &mut Cpu, addr: u32, v: u32) {
+        let mail = FA_MAIL + (addr & 0xffff) * 8;
+        c.bus.write32(mail, 1);
+        c.bus.write32(mail + 4, v);
+    }
+
+    /// The gated fake callee: like `fakes::fake_call`, then the forced result
+    /// of its mailbox unless it unwound.
+    pub(crate) fn fa_fake_call(c: &mut Cpu, addr: u32) {
+        let ra = c.g[RA][0] as u32;
+        let mail = FA_MAIL + (addr & 0xffff) * 8;
+        let mode = c.bus.read32(mail);
+        let val = c.bus.read32(mail + 4);
+        fakes::fake_call(c, addr);
+        if c.pc == ra && mode == 1 {
+            c.g[V0][0] = sx(val);
+        }
+    }
+
+    macro_rules! fa_fakes {
+        ($(($fake:ident, $slot:expr, $gen:path, $addr:expr)),* $(,)?) => {
+            $(
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(FA_CTRL) != FA_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($fake), $gen);
+                    }
+                    fa_fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn fa_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, fakes::prev_cell($fake)); )*
+            }
+        };
+    }
+
+    fa_fakes!(
+        (
+            fa_fake_ea_free,
+            ee::s10::OVERRIDE_00317E98,
+            ee::s10::f_00317e98__generated,
+            0x0031_7e98
+        ),
+        (
+            fa_fake_card_destroy,
+            ee::s08::OVERRIDE_002C2300,
+            ee::s08::f_002c2300__generated,
+            0x002c_2300
+        ),
+        (
+            fa_fake_net_fe_state_dtor,
+            ee::s03::OVERRIDE_001A85D0,
+            ee::s03::f_001a85d0__generated,
+            0x001a_85d0
+        ),
+        (
+            fa_fake_create_screen,
+            ee::s13::OVERRIDE_00397CC0,
+            ee::s13::f_00397cc0__generated,
+            0x0039_7cc0
+        ),
+        (
+            fa_fake_start_thread,
+            ee::s13::OVERRIDE_0039C870,
+            ee::s13::f_0039c870__generated,
+            0x0039_c870
+        ),
+        (
+            fa_fake_start_card_scan,
+            ee::s03::OVERRIDE_001B5268,
+            ee::s03::f_001b5268__generated,
+            0x001b_5268
+        ),
+        (
+            fa_fake_audio_instance,
+            ee::s07::OVERRIDE_0028B180,
+            ee::s07::f_0028b180__generated,
+            0x0028_b180
+        ),
+        (
+            fa_fake_stop_song,
+            ee::s08::OVERRIDE_002B3AC0,
+            ee::s08::f_002b3ac0__generated,
+            0x002b_3ac0
+        ),
+        (
+            fa_fake_show_checking_card_popup,
+            ee::s03::OVERRIDE_001B47C0,
+            ee::s03::f_001b47c0__generated,
+            0x001b_47c0
+        ),
+        (
+            fa_fake_show_room_tab,
+            ee::s03::OVERRIDE_001BDF60,
+            ee::s03::f_001bdf60__generated,
+            0x001b_df60
+        ),
+        (
+            fa_fake_update_players_in_room,
+            ee::s03::OVERRIDE_001BE3A8,
+            ee::s03::f_001be3a8__generated,
+            0x001b_e3a8
+        ),
+        (
+            fa_fake_refresh_player_list,
+            ee::s03::OVERRIDE_001BE510,
+            ee::s03::f_001be510__generated,
+            0x001b_e510
+        ),
+        (
+            fa_fake_find_user,
+            ee::s03::OVERRIDE_001A4810,
+            ee::s03::f_001a4810__generated,
+            0x001a_4810
+        ),
+        (
+            fa_fake_get_selected_user,
+            ee::s03::OVERRIDE_001A98B0,
+            ee::s03::f_001a98b0__generated,
+            0x001a_98b0
+        ),
+        (
+            fa_fake_buddy_send_message,
+            ee::s07::OVERRIDE_00262690,
+            ee::s07::f_00262690__generated,
+            0x0026_2690
+        ),
+        (
+            fa_fake_clear_name_list,
+            ee::s03::OVERRIDE_001A5450,
+            ee::s03::f_001a5450__generated,
+            0x001a_5450
+        ),
+        (
+            fa_fake_builtin_delete,
+            ee::s10::OVERRIDE_00317E50,
+            ee::s10::f_00317e50__generated,
+            0x0031_7e50
+        ),
+        (
+            fa_fake_string_dtor,
+            ee::s10::OVERRIDE_00318260,
+            ee::s10::f_00318260__generated,
+            0x0031_8260
+        ),
+        (
+            fa_fake_string_ctor_cstr,
+            ee::s10::OVERRIDE_003182D8,
+            ee::s10::f_003182d8__generated,
+            0x0031_82d8
+        ),
+        (
+            fa_fake_string_format,
+            ee::s10::OVERRIDE_003194A8,
+            ee::s10::f_003194a8__generated,
+            0x0031_94a8
+        ),
+        (
+            fa_fake_string_ctor_copy,
+            ee::s10::OVERRIDE_00317FE8,
+            ee::s10::f_00317fe8__generated,
+            0x0031_7fe8
+        ),
+        (
+            fa_fake_setup_set_remote_character,
+            ee::s07::OVERRIDE_00264D80,
+            ee::s07::f_00264d80__generated,
+            0x0026_4d80
+        ),
+        (
+            fa_fake_alloc_named,
+            ee::s10::OVERRIDE_00317D70,
+            ee::s10::f_00317d70__generated,
+            0x0031_7d70
+        ),
+        (
+            fa_fake_operator_new_named,
+            ee::s10::OVERRIDE_00317E30,
+            ee::s10::f_00317e30__generated,
+            0x0031_7e30
+        ),
+        (
+            fa_fake_snd_start_timer_service,
+            ee::s13::OVERRIDE_003B5478,
+            ee::s13::f_003b5478__generated,
+            0x003b_5478
+        ),
+        (
+            fa_fake_snd_init,
+            ee::s13::OVERRIDE_003B5158,
+            ee::s13::f_003b5158__generated,
+            0x003b_5158
+        ),
+        (
+            fa_fake_snd_spu_mem_get_free,
+            ee::s13::OVERRIDE_003B5B68,
+            ee::s13::f_003b5b68__generated,
+            0x003b_5b68
+        ),
+        (
+            fa_fake_shp_create,
+            ee::s13::OVERRIDE_003B2A68,
+            ee::s13::f_003b2a68__generated,
+            0x003b_2a68
+        ),
+        (
+            fa_fake_shp_find_info_data,
+            ee::s13::OVERRIDE_003B3D40,
+            ee::s13::f_003b3d40__generated,
+            0x003b_3d40
+        ),
+        (
+            fa_fake_mem_set,
+            ee::s14::OVERRIDE_003E6448,
+            ee::s14::f_003e6448__generated,
+            0x003e_6448
+        ),
+        (
+            fa_fake_buddy_disconnect,
+            ee::s06::OVERRIDE_00261408,
+            ee::s06::f_00261408__generated,
+            0x0026_1408
+        ),
+        (
+            fa_fake_goto_next_state,
+            ee::s03::OVERRIDE_001A8A40,
+            ee::s03::f_001a8a40__generated,
+            0x001a_8a40
+        ),
+        (
+            fa_fake_net_config_ctor,
+            ee::s03::OVERRIDE_001B3F78,
+            ee::s03::f_001b3f78__generated,
+            0x001b_3f78
+        ),
+        (
+            fa_fake_net_disconnect_all,
+            ee::s07::OVERRIDE_002636F0,
+            ee::s07::f_002636f0__generated,
+            0x0026_36f0
+        ),
+    );
+
+    #[test]
+    fn fe_state_net_config_dtor_matches() {
+        check(
+            ee::s03::f_001b4018,
+            fe_state_net_config_dtor,
+            160,
+            &|c, seed| {
+                fa_install_fakes();
+                let mut r = machine(c, seed, 0x001b_4018, 6);
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                let this = DATA + 0x100;
+                // Each optional sub-object is present or absent.
+                for (i, off) in [0x704u32, 0x710, 0x714, 0x718].into_iter().enumerate() {
+                    let v = if (seed >> i) & 1 != 0 {
+                        DATA + 0x2000 + off
+                    } else {
+                        0
+                    };
+                    c.bus.write32(this + off, v);
+                }
+                let card = if (seed >> 4) & 1 != 0 {
+                    DATA + 0x3000
+                } else {
+                    0
+                };
+                c.bus.write32(GAME_GP.wrapping_sub(0x1578), card);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.pc = 0x001b_4018;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_net_config_init_matches() {
+        check(
+            ee::s03::f_001b40d0,
+            cfe_state_net_config_init,
+            120,
+            &|c, seed| {
+                fa_install_fakes();
+                let _r = machine(c, seed, 0x001b_40d0, 8);
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                // The screen name the real hash reads.
+                oc865_str(c, 0x0046_3ed0, "NetConfigScreen");
+                let this = DATA + 0x100;
+                c.bus.write32(this + 0x10, DATA + 0x1000);
+                // The screen is created or not (v0 = 0 skips PlayFrame).
+                if seed % 3 == 0 {
+                    fa_force(c, 0x0039_7cc0, 0);
+                }
+                // The network adapter interface (gp-0x204) stays absent: the
+                // real GameComm_Destroy behind it has no bounded fixture.
+                c.bus.write32(GAME_GP.wrapping_sub(0x204), 0);
+                c.g[A0][0] = sx(this);
+                c.pc = 0x001b_40d0;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_net_config_on_retry_popup_event_matches() {
+        check(
+            ee::s03::f_001b4c40,
+            cfe_state_net_config_on_retry_popup_event,
+            140,
+            &|c, seed| {
+                fa_install_fakes();
+                let _r = machine(c, seed, 0x001b_4c40, 4);
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                let this = DATA + 0x100;
+                // A child that is not the keyboard popup, of a kind the base
+                // handler ignores.
+                let child = DATA + 0x3000;
+                c.bus.write32(child + 0x18, 0x100);
+                let events = [
+                    0xfu64,
+                    0x10,
+                    0x14,
+                    0x11,
+                    0x0,
+                    0x13,
+                    0x20,
+                    0xffff_ffff_ffff_fff0,
+                    0x1_0000_000f,
+                ];
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(child);
+                c.g[A2][0] = events[(seed as usize) % events.len()];
+                c.pc = 0x001b_4c40;
+            },
+        );
+    }
+
+    #[test]
+    fn c_fe_state_lobby_menu_on_widget_notify_matches() {
+        check(
+            ee::s03::f_001bdc18,
+            c_fe_state_lobby_menu_on_widget_notify,
+            180,
+            &|c, seed| {
+                fa_install_fakes();
+                let mut r = machine(c, seed, 0x001b_dc18, 4);
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                let this = DATA + 0x100;
+                let obj = DATA + 0x2000;
+                let other = DATA + 0x2400;
+                // The object is the room tab (+0x6d4), the player list
+                // (+0x6d0) or neither.
+                let (tab, list) = match seed % 3 {
+                    0 => (obj, other),
+                    1 => (other, obj),
+                    _ => (other, other + 0x100),
+                };
+                c.bus.write32(this + 0x6d4, tab);
+                c.bus.write32(this + 0x6d0, list);
+                c.bus.write32(this + 0x774, r.next_u32());
+                c.bus.write32(obj + 0xa0, r.next_u32());
+                let msgs = [5u64, 4, 0, 5, 4, 6, 0x1_0000_0005];
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(obj);
+                c.g[A2][0] = msgs[((seed / 3) as usize) % msgs.len()];
+                c.g[A3][0] = r.next_u32() as u64;
+                c.pc = 0x001b_dc18;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_lobby_menu_update_player_scroll_arrows_matches() {
+        check(
+            ee::s03::f_001be720,
+            cfe_lobby_menu_update_player_scroll_arrows,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x001b_e720, 4);
+                let this = DATA + 0x100;
+                let up = DATA + 0x2000;
+                let down = DATA + 0x2100;
+                let vt = vtable(c, &mut r, &[0x48]);
+                c.bus.write32(up + 8, vt);
+                c.bus.write32(down + 8, vt);
+                c.bus.write32(this + 0x728, up);
+                c.bus.write32(this + 0x72c, down);
+                let counts = [0u32, 3, 100, 0xffff_fff0];
+                let totals = [0u32, 5, 20, 200, 0x8000_0000];
+                c.bus.write32(this + 0x778, counts[(seed as usize) % 4]);
+                c.bus
+                    .write32(this + 0x77c, totals[((seed / 4) as usize) % 5]);
+                c.g[A0][0] = sx(this);
+                c.pc = 0x001b_e720;
+            },
+        );
+    }
+    #[test]
+    fn cfe_state_net_messenger_dtor_matches() {
+        check(
+            ee::s03::f_001a3ea0__generated,
+            cfe_state_net_messenger_dtor,
+            160,
+            &|c, seed| {
+                fa_install_fakes();
+                let mut r = machine(c, seed, 0x001a_3ea0, 8);
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                let this = DATA + 0x100;
+                // The captured child is released through its vtable slot 0x100.
+                let child = DATA + 0x2000;
+                let vt = vtable(c, &mut r, &[0x100]);
+                c.bus.write32(child + 8, vt);
+                c.bus.write32(this + 0x20, child);
+                // The name list: absent, one element or several.
+                let begin = if seed % 3 == 0 { 0 } else { DATA + 0x3000 };
+                let bytes = [0u32, 4, 8, 0x40][((seed / 3) % 4) as usize];
+                c.bus.write32(this + 0x6e8, begin);
+                c.bus.write32(this + 0x6f0, begin + bytes);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.pc = 0x001a_3ea0;
+            },
+        );
+    }
+
+    #[test]
+    fn fe_state_net_messenger_submit_keyboard_input_matches() {
+        check(
+            ee::s03::f_001a4750__generated,
+            fe_state_net_messenger_submit_keyboard_input,
+            200,
+            &|c, seed| {
+                // The shared messenger fixture (gated session fakes) plus the
+                // callees of this function that it does not fake.
+                let mut r = oc865_base(c, seed, 0x001a_4750, 8, seed % 2 == 0, true);
+                fa_install_fakes();
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                let popup = DATA + 0x2000;
+                // The popup state at +0x18: 1 or 2 search for the user typed,
+                // anything else sends the selected user a message.
+                c.bus
+                    .write32(popup + 0x18, [1u32, 2, 5, 0][(seed % 4) as usize]);
+                c.bus.write32(OC865_SELF + 0x69c, popup);
+                oc865_force(c, 0x0026_1460, ((seed / 4) % 2) as u32);
+                c.g[A0][0] = OC865_SELF as u64;
+                let _ = r.next_u32();
+                c.pc = 0x001a_4750;
+            },
+        );
+    }
+    #[test]
+    fn lobby_man_get_error_string_matches() {
+        check(
+            ee::s06::f_00260e50__generated,
+            lobby_man_get_error_string,
+            100,
+            &|c, seed| {
+                fa_install_fakes();
+                let mut r = machine(c, seed, 0x0026_0e50, 6);
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                // The generic-error text pointer the third arm stores.
+                c.bus.write32(GAME_GP.wrapping_add(0xda0), r.next_u32());
+                // The packed codes: "dupl", "time", anything else.
+                let codes = [0x6475_706cu64, 0x7469_6d65, 0x1234_5678, 0x0102_0304, 0];
+                c.g[A0][0] = sx(DATA + 0x3000);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = codes[(seed as usize) % codes.len()];
+                c.pc = 0x0026_0e50;
+            },
+        );
+    }
+
+    /// Fixture of the two `cSetupMan_ClientRecvMsg` handlers: the LobbyMan
+    /// record behind `gp-0xc8` with the list node at `+0xf0`.
+    fn fa_setup_recv_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        fa_install_fakes();
+        let mut r = machine(c, seed, salt, 4);
+        c.bus.write32(FA_CTRL, FA_MAGIC);
+        let lobby = DATA + 0x2000;
+        let node = DATA + 0x2100;
+        c.bus.write32(GAME_GP.wrapping_sub(0xc8), lobby);
+        c.bus.write32(lobby + 0xf0, node);
+        c.bus.write32(node + 4, DATA + 0x2200);
+        c.g[A0][0] = sx(DATA + 0x3000);
+        c.g[A1][0] = r.next_u32() as u64;
+        c.g[A2][0] = r.next_u32() as u64;
+        c.g[A3][0] = r.next_u32() as u64;
+    }
+
+    #[test]
+    fn setup_man_client_recv_msg0_matches() {
+        check(
+            ee::s07::f_00269240__generated,
+            setup_man_client_recv_msg0,
+            60,
+            &|c, seed| {
+                fa_setup_recv_fixture(c, seed, 0x0026_9240);
+                c.pc = 0x0026_9240;
+            },
+        );
+    }
+
+    #[test]
+    fn setup_man_client_recv_msg2_matches() {
+        check(
+            ee::s07::f_00269300__generated,
+            setup_man_client_recv_msg2,
+            60,
+            &|c, seed| {
+                fa_setup_recv_fixture(c, seed, 0x0026_9300);
+                c.pc = 0x0026_9300;
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_sound_manager_init_matches() {
+        check(
+            ee::s08::f_002a8cb0__generated,
+            ps2_sound_manager_init,
+            60,
+            &|c, seed| {
+                fa_install_fakes();
+                let mut r = machine(c, seed, 0x002a_8cb0, 6);
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                let this = DATA + 0x2000;
+                // The object's vtable: slot 0x10 is the setup call.
+                let vt = vtable(c, &mut r, &[0x10]);
+                c.bus.write32(this, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.pc = 0x002a_8cb0;
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_sony_codec_internal_init_frame_matches() {
+        check(
+            ee::s13::f_003b07f8,
+            ps2_sony_codec_internal_init_frame,
+            80,
+            &|c, seed| {
+                fa_install_fakes();
+                let mut r = machine(c, seed, 0x003b_07f8, 6);
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                // The SHP the create call returns: bit 0x1000 of +0xc picks
+                // which header size follows.
+                let shp = DATA + 0x2000;
+                c.bus
+                    .write32(shp + 0xc, if seed % 2 == 0 { 0x1000 } else { 0 });
+                c.bus.write32(shp + 0x10, r.next_u32() & 0xff0);
+                fa_force(c, 0x003b_2a68, shp);
+                c.g[A0][0] = sx(DATA + 0x3000);
+                c.g[A1][0] =
+                    [0u32, 0x100, 0x1f0, r.next_u32() & 0xffff][(seed as usize / 2) % 4] as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.pc = 0x003b_07f8;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_net_config_on_child_event_matches() {
+        check(
+            ee::s03::f_001bf5a8,
+            cfe_state_net_config_on_child_event,
+            200,
+            &|c, seed| {
+                let mut r = oc865_base(c, seed, 0x001b_f5a8, 12, seed % 2 == 0, true);
+                fa_install_fakes();
+                c.bus.write32(FA_CTRL, FA_MAGIC);
+                // The child is not the keyboard popup, of a kind the base
+                // handler ignores; GotoNextState succeeds or fails.
+                let child = DATA + 0x3000;
+                c.bus.write32(child + 0x18, 0x100);
+                c.bus.write32(OC865_SELF + 0x10, DATA + 0x1000);
+                if (seed / 2) % 2 == 0 {
+                    fa_force(c, 0x001a_8a40, 0);
+                }
+                oc865_force(c, 0x0026_1460, ((seed / 4) % 2) as u32);
+                let events = [0xfu64, 0x10, 0x14, 0x11, 0x0, 0x13, 0x20];
+                c.g[A0][0] = OC865_SELF as u64;
+                c.g[A1][0] = sx(child);
+                c.g[A2][0] = events[((seed / 8) as usize) % events.len()];
+                let _ = r.next_u32();
+                c.pc = 0x001b_f5a8;
+            },
+        );
+    }
+
+    /// The stats screen: `this` at `DATA+0x100`, four column items behind
+    /// `+0x6d0`, the focus widget behind `+0x10`; at least one column is
+    /// focusable so the recursion ends.
+    fn fa_stats_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 10);
+        let this = DATA + 0x100;
+        let panel = DATA + 0x1000;
+        let old = DATA + 0x2000;
+        let vt = vtable(c, &mut r, &[0x10, 0x38]);
+        c.bus.write32(this + 0x10, panel);
+        c.bus
+            .write32(panel + 0x14, if seed % 4 == 0 { 0 } else { old });
+        c.bus.write32(old, vt);
+        // The global widget used when nothing has focus (gp + 0x2968).
+        c.bus.write32(GAME_GP.wrapping_add(0x2968), vt);
+        let mask = 1 + (seed / 4) % 7;
+        for i in 0..4u32 {
+            let item = DATA + 0x3000 + 0x100 * i;
+            c.bus.write32(this + 0x6d0 + 4 * i, item);
+            c.bus.write32(item + 8, vt);
+            let flags = if i < 3 { ((mask >> i) & 1) << 6 } else { 0x40 };
+            c.bus.write32(item + 0x14, flags);
+        }
+        c.bus.write32(this + 0x6e4, (seed / 28) % 4);
+        c.g[A0][0] = sx(this);
+    }
+
+    #[test]
+    fn cfe_state_stats_focus_next_column_matches() {
+        check(
+            ee::s03::f_001c4d28,
+            cfe_state_stats_focus_next_column,
+            112,
+            &|c, seed| {
+                fa_stats_fixture(c, seed, 0x001c_4d28);
+                c.pc = 0x001c_4d28;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_stats_focus_prev_column_matches() {
+        check(
+            ee::s03::f_001c4e40,
+            cfe_state_stats_focus_prev_column,
+            112,
+            &|c, seed| {
+                fa_stats_fixture(c, seed, 0x001c_4e40);
+                c.pc = 0x001c_4e40;
             },
         );
     }

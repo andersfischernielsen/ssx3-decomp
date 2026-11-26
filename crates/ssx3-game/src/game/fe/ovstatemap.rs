@@ -48,6 +48,11 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (
+        0x0020_a088,
+        ov_screen_session_destroy_indicators,
+        "OVScreenSession_DestroyIndicators",
+    ),
+    (
         0x0020_8b00,
         ov_screen_session_on_activate,
         "OVScreenSession_OnActivate",
@@ -571,9 +576,9 @@ pub fn ov_screen_session_destroy_indicators(c: &mut Cpu) {
                 c.cycles += 5;
                 call_indicator_method(c, c.g[A2][0], 0x8, 0xc, 0x0020_a0e0)?;
             }
+            c.cycles += 1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xe0), 0u64);
         }
-        c.cycles += 1;
-        c.sw((c.g[S0][0] as u32).wrapping_add(0xe0), 0u64);
         c.cycles += 3;
         c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xe4));
         c.g[S2][0] = 0u64;
@@ -593,9 +598,9 @@ pub fn ov_screen_session_destroy_indicators(c: &mut Cpu) {
                     c.cycles += 5;
                     call_indicator_method(c, c.g[A2][0], 0x8, 0xc, 0x0020_a130)?;
                 }
+                c.cycles += 1;
+                c.sw(c.g[S1][0] as u32, 0u64);
             }
-            c.cycles += 1;
-            c.sw(c.g[S1][0] as u32, 0u64);
             c.cycles += 3;
             c.g[A2][0] = c.lw(c.g[S0][0] as u32);
             let none = c.g[A2][0] == 0;
@@ -610,9 +615,9 @@ pub fn ov_screen_session_destroy_indicators(c: &mut Cpu) {
                     c.cycles += 5;
                     call_indicator_method(c, c.g[A2][0], 0x8, 0xc, 0x0020_a174)?;
                 }
+                c.cycles += 1;
+                c.sw(c.g[S0][0] as u32, 0u64);
             }
-            c.cycles += 1;
-            c.sw(c.g[S0][0] as u32, 0u64);
             c.cycles += 5;
             c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
@@ -1671,6 +1676,35 @@ pub(crate) mod tests {
     pub(crate) const MAP_LIST: u32 = DATA + 0x1_2000;
 
     pub(crate) const MAP_ICONS: u32 = DATA + 0x1_3000;
+
+    /// `OVScreenSession_DestroyIndicators`: each of the 17 indicator slots
+    /// (`+0xe0`, `+0xe4..`, `+0x104..`) is empty or holds an object whose
+    /// vtable methods (`+0x4c`, `+0xc`) are fakes; some of them unwind.
+    #[test]
+    fn ov_screen_session_destroy_indicators_matches() {
+        check(
+            ee::s05::f_0020a088__generated,
+            ov_screen_session_destroy_indicators,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x20a088, 34);
+                let this = DATA + 0x100;
+                let vt = DATA + 0x3000;
+                fake_method(c, vt, 0x48);
+                fake_method(c, vt, 0x8);
+                c.g[A0][0] = sx(this);
+                let slots = std::iter::once(0xe0u32)
+                    .chain((0..8).map(|i| 0xe4 + 4 * i))
+                    .chain((0..8).map(|i| 0x104 + 4 * i));
+                for (i, off) in slots.enumerate() {
+                    let obj = DATA + 0x4000 + 0x100 * i as u32;
+                    let present = r.next_u32() % 4 != 0;
+                    w(c, this + off, if present { obj } else { 0 });
+                    w(c, obj + 8, vt);
+                }
+            },
+        );
+    }
 
     #[test]
     fn ov_screen_session_update_indicators_matches() {
