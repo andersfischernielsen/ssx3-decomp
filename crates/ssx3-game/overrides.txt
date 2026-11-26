@@ -10248,6 +10248,41 @@
 # Phase 2 wave: oc904, oc905, oc906, oc907, oc908, oc909, oc910, oc911, oc912, oc913, oc914, oc915, oc916, oc917, oc918, oc919, oc920, oc921, oc922, oc923, oc924, oc925, oc926, oc927
 # Phase 2 wave: oc904, oc905, oc906, oc907, oc908, oc909, oc910, oc911, oc912, oc913, oc914, oc915, oc916, oc917, oc918, oc919, oc920, oc921, oc922, oc923, oc924, oc925, oc926, oc927
 # Phase 2 wave: oc904, oc905, oc906, oc907, oc908, oc909, oc910, oc911, oc912, oc913, oc914, oc915, oc916, oc917, oc918, oc919, oc920, oc921, oc922, oc923, oc924, oc925, oc926, oc927
+# Phase 2 wave: oc1380, oc1381, oc1382, oc1383
+0x001d59a0    MemCardUI_WriteSaveData
+0x001d64c0    MemCardUI_ApplySoundMode
+0x001d5c28    MemCardUI_ReadSaveChunk
+0x001d5d78    MemCardUI_WriteReplaySaveBlock
+0x001ddd58    MemCardUI_TakeFlag1e4
+0x001ddd88    MemCardUI_TakeFlag1f8
+0x001ddd98    MemCardUI_TakeFlag1fc
+0x001dddb8    MemCardUI_TakeFlag1ec
+0x001ddd28    MemCardUI_GetField1dc
+0x001ddd38    MemCardUI_GetField1f4
+0x001ddd48    MemCardUI_GetField1e0
+0x001ddd68    MemCardUI_GetField1f0
+0x001ddd78    MemCardUI_GetField1a8
+0x001ddda8    MemCardUI_GetField1e8
+0x001d5f38    MemCardUI_OnSaveStart
+0x001d86a0    MemCardStateBase_Finish
+0x001d93b0    MemCardStateBase_Restart
+0x001d93a8    MemCardStateBase_v27
+0x001d93c0    MemCardStateBase_v28
+0x001d93c8    MemCardStateBase_v30
+0x001d93d0    MemCardStateBase_v29
+0x001d9878    MemCardStateBase_OnDeactivate
+0x001dddd8    MemCardStateBase_Init
+0x001ddde0    MemCardStateBase_v13
+0x001ddde8    MemCardStateBase_OnWidgetAction
+0x001dddf0    MemCardStateBase_v26
+0x001dddf8    MemCardStateBase_v33
+0x001dde00    MemCardStateBase_v37
+0x001dde08    MemCardStateBase_v38
+0x001dde10    MemCardStateBase_v39
+0x002d37b8    MemCardBase_v26
+0x002d37c0    MemCardBase_v27
+0x002d37c8    MemCardBase_v28
+0x002d37d0    MemCardBase_v74
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
