@@ -129,7 +129,9 @@ pub fn ui_state_hide_object(c: &mut Cpu) {
         c.g[S1][0] = c.g[A1][0];
         callee::UI_LIST_FIRST.call(c, 0x0039_e8d4)?;
         c.g[S0][0] = c.g[V0][0];
-        if c.g[S0][0] != 0 {
+        if c.g[S0][0] == 0 {
+            frame.restore(c, S0, 0x20);
+        } else {
             loop {
                 c.cycles += 8;
                 c.g[A0][0] = c.g[S1][0];
