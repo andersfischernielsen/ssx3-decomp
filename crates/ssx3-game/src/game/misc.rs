@@ -343,6 +343,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RefPack_GetUnpackedSize",
     ),
     (0x003b_4d00, refpack_get_sizes, "RefPack_GetSizes"),
+    (0x002d_37b8, mem_card_base_v26, "MemCardBase_v26"),
+    (0x002d_37c0, mem_card_base_v27, "MemCardBase_v27"),
+    (0x002d_37c8, mem_card_base_v28, "MemCardBase_v28"),
+    (0x002d_37d0, mem_card_base_v74, "MemCardBase_v74"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -18764,6 +18768,34 @@ pub(crate) fn fseek_positioned(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
+/// `int MemCardBase_v26(void)` (0x2d37b8): the card base's always-true slot.
+pub fn mem_card_base_v26(c: &mut Cpu) {
+    c.cycles += 2;
+    let ret = c.g[RA][0] as u32;
+    c.g[V0][0] = 0x1;
+    c.pc = ret;
+}
+
+/// `void MemCardBase_v27(void)` (0x2d37c0): unimplemented card-base slot.
+pub fn mem_card_base_v27(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void MemCardBase_v28(void)` (0x2d37c8): unimplemented card-base slot.
+pub fn mem_card_base_v28(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int MemCardBase_v74(void)` (0x2d37d0): the card base's always-false slot.
+pub fn mem_card_base_v74(c: &mut Cpu) {
+    c.cycles += 2;
+    let ret = c.g[RA][0] as u32;
+    c.g[V0][0] = 0;
+    c.pc = ret;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -26463,6 +26495,54 @@ pub(crate) mod tests {
 
     /// Output buffer for the printf family.
     pub(crate) const OUT: u32 = DATA + 0x2000;
+
+    #[test]
+    fn mem_card_base_v26_matches() {
+        check(
+            ee::s09::f_002d37b8__generated,
+            mem_card_base_v26,
+            16,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2d_37b8, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn mem_card_base_v27_matches() {
+        check(
+            ee::s09::f_002d37c0__generated,
+            mem_card_base_v27,
+            16,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2d_37c0, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn mem_card_base_v28_matches() {
+        check(
+            ee::s09::f_002d37c8__generated,
+            mem_card_base_v28,
+            16,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2d_37c8, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn mem_card_base_v74_matches() {
+        check(
+            ee::s09::f_002d37d0__generated,
+            mem_card_base_v74,
+            16,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2d_37d0, 0);
+            },
+        );
+    }
 }
 
 pub(crate) mod callee {
