@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -118,6 +119,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "UIText_SetWideStringInternal",
     ),
     (0x003a_1000, ui_text_set_text_id, "UIText_SetTextId"),
+    (0x003a_0b90, ui_text_count_lines, "UIText_CountLines"),
+    (
+        0x003a_0d00,
+        cui_text_set_unicode_string_wrap,
+        "cUIText_setUnicodeStringWrap",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2051,6 +2058,265 @@ pub fn ui_text_set_text_id(c: &mut Cpu) {
     })
 }
 
+/// The address `gp + off` (a 32-bit guest pointer).
+pub(crate) fn spch_gp(c: &Cpu, off: u32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_add(off)
+}
+
+/// The address `base + off`, for a register value `base`.
+pub(crate) fn spch_ea(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// `void cUIText_setUnicodeStringWrap(cUIText* self, const u16* str)`
+/// (0x3a0d00): sets the wide string and wraps it. It asks the text's font
+/// (`UIText_GetFont`, through the object's vtable slot +0x2c), and when there
+/// is one, copies `str` (`USTR_copy`) into a fresh buffer of `len + 1`
+/// halfwords (`operator_new_named`), breaking the copy into lines: each
+/// glyph's advance (`Font_GetCharWidthW`, scaled by the object's +0x50 and
+/// +0x60 floats) is summed, and a line break is taken at a space (0x20) or
+/// at the width limit. The lines are stored with `UIText_SetWideStringInternal`
+/// and the buffer is freed afterwards.
+pub fn cui_text_set_unicode_string_wrap(c: &mut Cpu) {
+    guest(c, cui_text_set_unicode_string_wrap_body);
+}
+
+pub(crate) fn cui_text_set_unicode_string_wrap_body(c: &mut Cpu) -> Flow {
+    c.cycles += 24;
+    let frame = Frame::open(c, 0xa0);
+    frame.save(c, S0, 0x80);
+    frame.save(c, S3, 0x50);
+    c.g[S0][0] = c.g[A1][0];
+    frame.save(c, S6, 0x20);
+    c.g[S3][0] = c.g[A0][0];
+    frame.save(c, S1, 0x70);
+    c.g[A1][0] = 1;
+    frame.save(c, S2, 0x60);
+    frame.save(c, S4, 0x40);
+    frame.save(c, S5, 0x30);
+    frame.save(c, S7, 0x10);
+    frame.save_ra(c, 0);
+    frame.save_fpr(c, 20, 0x90);
+    c.g[V0][0] = c.lw(spch_ea(c.g[S3][0], 0x8));
+    c.g[A0][0] = c.lh(spch_ea(c.g[V0][0], 0x28));
+    c.g[V1][0] = c.lw(spch_ea(c.g[V0][0], 0x2c));
+    let t = c.g[V1][0] as u32;
+    c.g[A0][0] = sx(spch_ea(c.g[S3][0], c.g[A0][0] as u32));
+    call_ptr(c, t, 0x003a_0d4c)?;
+    c.g[A0][0] = c.g[S3][0];
+    Callee {
+        addr: 0x003a_04f0,
+        f: ee::s13::f_003a04f0,
+    }
+    .call(c, 0x003a_0d54)?;
+    c.g[S6][0] = c.g[V0][0];
+    if c.g[S6][0] == 0 {
+        frame.restore(c, S0, 0x80);
+    } else {
+        'b_3a0e44: {
+            c.cycles += 19;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S4][0] = u64::MAX;
+            call_ptr(c, 0x003d_bca0, 0x003a_0d6c)?;
+            c.mtc1(0, 20);
+            c.g[S5][0] = c.g[V0][0];
+            c.g[A1][0] = 0x49_0000;
+            c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(0x1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4078));
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 1);
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            c.g[S1][0] = 0;
+            call_ptr(c, 0x0031_7e30, 0x003a_0d94)?;
+            c.g[S2][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x003d_be20, 0x003a_0da4)?;
+            let t = (c.g[S5][0] as i64) <= 0;
+            c.g[S7][0] = 0xd;
+            if t {
+                break 'b_3a0e44;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[S1][0] as u32) << 1);
+            loop {
+                'b_3a0e38: {
+                    'b_3a0de8: {
+                        'b_3a0de4: {
+                            c.cycles += 6;
+                            c.g[V1][0] = c.lhu(spch_gp(c, 0x16b8));
+                            c.g[S0][0] = c.g[V0][0];
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                            c.g[A0][0] = c.lhu(c.g[V0][0] as u32);
+                            let t = c.g[A0][0] != c.g[V1][0];
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                            if t {
+                                break 'b_3a0de4;
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lhu(spch_ea(c.g[V0][0], 0x2));
+                            let t = c.g[V0][0] != c.g[A0][0];
+                            c.g[A0][0] = c.g[S6][0];
+                            if t {
+                                break 'b_3a0de8;
+                            }
+                            c.cycles += 4;
+                            c.g[S4][0] = u64::MAX;
+                            c.mtc1(0, 20);
+                            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2));
+                            break 'b_3a0e38;
+                        }
+                        c.cycles += 1;
+                        c.g[A0][0] = c.g[S6][0];
+                    }
+                    'b_3a0e34: {
+                        c.cycles += 12;
+                        c.g[RA][0] = sx(0x003a_0df0);
+                        c.g[A1][0] = c.lhu(c.g[S0][0] as u32);
+                        Callee {
+                            addr: 0x0039_2c60,
+                            f: ee::s13::f_00392c60,
+                        }
+                        .call(c, 0x003a_0df0)?;
+                        c.lwc1(1, spch_ea(c.g[S3][0], 0x50));
+                        c.lwc1(2, spch_ea(c.g[S3][0], 0x60));
+                        c.mul_s(0, 0, 1);
+                        c.g[V0][0] = c.lhu(c.g[S0][0] as u32);
+                        c.g[V0][0] ^= 0x20;
+                        c.add_s(20, 20, 0);
+                        c.c_lt_s(2, 20);
+                        let t = !c.fcc();
+                        if c.g[V0][0] == 0 {
+                            c.g[S4][0] = c.g[S1][0];
+                        }
+                        if t {
+                            break 'b_3a0e34;
+                        }
+                        c.cycles += 2;
+                        let t = (c.g[S4][0] as i64) < 0;
+                        c.g[V0][0] = sx((c.g[S4][0] as u32) << 1);
+                        if t {
+                            break 'b_3a0e34;
+                        }
+                        c.cycles += 5;
+                        c.g[S1][0] = c.g[S4][0];
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                        c.mtc1(0, 20);
+                        c.sh(c.g[V0][0] as u32, c.g[S7][0]);
+                        c.g[S4][0] = u64::MAX;
+                    }
+                    c.cycles += 1;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S5][0] as i64)) as u64;
+                let t = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[S1][0] as u32) << 1);
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_0db0);
+                    }
+                    continue;
+                }
+                break 'b_3a0e44;
+            }
+        }
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[S2][0];
+        Callee {
+            addr: 0x003a_0eb0,
+            f: ee::s13::f_003a0eb0,
+        }
+        .call(c, 0x003a_0e50)?;
+        let t = c.g[S2][0] == 0;
+        frame.restore(c, S0, 0x80);
+        if !t {
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x003a_0e60);
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0031_7e98, 0x003a_0e60)?;
+            frame.restore(c, S0, 0x80);
+        }
+    }
+    c.cycles += 11;
+    frame.restore(c, S1, 0x70);
+    frame.restore(c, S2, 0x60);
+    frame.restore(c, S3, 0x50);
+    frame.restore(c, S4, 0x40);
+    frame.restore(c, S5, 0x30);
+    frame.restore(c, S6, 0x20);
+    frame.restore(c, S7, 0x10);
+    frame.restore_ra(c, 0);
+    frame.restore_fpr(c, 20, 0x90);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cUIText_getNumTextLines` (0x3a0b90): the number of lines in the text of a
+/// UI text object (`self+0xb4`, a zero-terminated array of 16-bit characters).
+/// A pair of equal line-break characters (`gp+0x16b8`) counts as one line, and
+/// a carriage return (13) ends a line. Returns the count as a sign-extended
+/// byte.
+pub fn ui_text_count_lines(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0xb4)).lw(c);
+    let has_text = c.g[V0][0] != 0;
+    c.g[V1][0] = c.g[V0][0];
+    if !has_text {
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        ret(c);
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).lhu(c);
+    c.g[A1][0] = 1;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[A2][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x16b8)).lhu(c);
+        c.g[A3][0] = 0xd;
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).lhu(c);
+            let t = c.g[V0][0] != c.g[A2][0];
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(2)).lhu(c);
+            let mut pair = false;
+            if !t {
+                c.cycles += 2;
+                pair = c.g[A0][0] == c.g[V0][0];
+            }
+            if pair {
+                // Two equal line-break characters: skip both, one line.
+                c.cycles += 3;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(4));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+            } else {
+                c.cycles += 2;
+                let carriage = c.g[V0][0] == c.g[A3][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(2));
+                if carriage {
+                    c.cycles += 1;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                }
+            }
+            // Loop test at the back edge.
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).lhu(c);
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003a_0bb8);
+            }
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 24);
+    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2920,6 +3186,78 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(OC445_OBJ);
                 c.g[A1][0] = sx(OC445_STR);
                 c.pc = 0x003a_0eb0;
+            },
+        );
+    }
+
+    /// `cUIText_setUnicodeStringWrap`: a short wide string (possibly with
+    /// spaces) against a zeroed text object whose vtable's font method is a
+    /// fake. The font lookup (`UIText_GetFont`) and the glyph advance are the
+    /// real functions; the allocator is the test heap.
+    #[test]
+    fn cui_text_set_unicode_string_wrap_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        const SELF: u32 = DATA + 0xa000;
+        const VT: u32 = DATA + 0xa200;
+        const STR: u32 = DATA + 0xa800;
+        check_lohi(
+            ee::s13::f_003a0d00__generated,
+            cui_text_set_unicode_string_wrap,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003a_0d00, 0);
+                crate::game::ai::computer::tests::rbc_test_allocator(c);
+                c.g[RA][0] = 0x0012_3450;
+                c.pc = 0x003a_0d00;
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(STR);
+                c.bus.write32(SELF + 0x8, VT);
+                c.bus.write16(VT + 0x28, 0);
+                c.bus.write32(VT + 0x2c, FAKE);
+                c.bus.write32(SELF + 0x50, r.f32(2.0));
+                c.bus.write32(SELF + 0x60, r.f32(2.0));
+                c.bus.write16(GAME_GP + 0x16b8, 0x0a);
+                let len = r.next_u32() % 20;
+                for i in 0..len {
+                    let ch = if r.next_u32() % 4 == 0 {
+                        0x20
+                    } else {
+                        0x41 + (r.next_u32() % 26) as u16
+                    };
+                    c.bus.write16(STR + 2 * i, ch);
+                }
+                c.bus.write16(STR + 2 * len, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_text_count_lines_matches() {
+        check(
+            ee::s13::f_003a0b90__generated,
+            ui_text_count_lines,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003a_0b90 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003a_0b90;
+                c.g[GP][0] = sx(GAME_GP);
+                c.g[A0][0] = sx(DATA);
+                let text = DATA + 0x1000;
+                c.bus
+                    .write32(DATA + 0xb4, if seed % 9 == 0 { 0 } else { text });
+                let a2: u16 = [0x0a, 0x0d, 0x61][(seed % 3) as usize];
+                c.bus.write16(GAME_GP + 0x16b8, a2);
+                let n = if seed % 7 == 0 { 0 } else { r.next_u32() % 16 };
+                for i in 0..n {
+                    let ch: u16 = match r.next_u32() % 4 {
+                        0 | 1 => a2,
+                        2 => 0x0d,
+                        _ => 0x61,
+                    };
+                    c.bus.write16(text + 2 * i, ch);
+                }
+                c.bus.write16(text + 2 * n, 0);
             },
         );
     }

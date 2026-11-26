@@ -455,6 +455,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_ps2_mem_card_get_current_port_error,
         "cPS2MemCard_GetCurrentPortError",
     ),
+    (
+        0x002c_6dc0,
+        loc_string_table_resolve_string,
+        "LocStringTable_ResolveString",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -10046,6 +10051,14 @@ pub fn c_ps2_mem_card_base_dtor(c: &mut Cpu) {
     })
 }
 
+/// `void LocStringTable_ResolveString(LocStringTable* t)` (0x2c6dc0): a
+/// forwarder. Calls `LocStringTable_GetStringPtr` (0x3dbb68) through the
+/// function table with `a0 = t->table` (+4), in a 0x10 frame holding `ra`,
+/// and returns to the caller at 0x2c6dd0 with that call's results.
+pub fn loc_string_table_resolve_string(c: &mut Cpu) {
+    crate::call::tail_wrapper(c, Some(0x4), Target::Table(0x003d_bb68), 0x002c_6dd0);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15829,5 +15842,30 @@ pub(crate) mod tests {
             &setup,
         );
         require_paths(ee::s09::f_002d3788__generated, 200, &[10], &setup);
+    }
+
+    /// `LocStringTable_ResolveString`: the forwarder runs the real
+    /// `LocStringTable_GetStringPtr` on the table pointer at +4.
+    #[test]
+    fn loc_string_table_resolve_string_matches() {
+        const LT: u32 = DATA + 0x6000;
+        const TABLE: u32 = DATA + 0x6100;
+        check(
+            ee::s08::f_002c6dc0__generated,
+            loc_string_table_resolve_string,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2c6d_c0 ^ (seed as u64) << 9);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[RA][0] = 0x0012_3450;
+                c.pc = 0x002c_6dc0;
+                c.g[A0][0] = sx(LT);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.bus.write32(LT + 4, TABLE);
+                fill(c, &mut r, TABLE, 0x40);
+                c.bus.write8(TABLE + 8, (r.next_u32() & !1) as u8);
+            },
+        );
     }
 }

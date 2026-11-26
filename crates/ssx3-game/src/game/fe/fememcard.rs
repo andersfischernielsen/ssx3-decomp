@@ -91,6 +91,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_fe_state_mem_card_ctor_2,
         "cFEStateMemCard_ctor_2",
     ),
+    (0x0018_76a8, cfe_state_mem_card_v26, "cFEStateMemCard_v26"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -915,6 +916,83 @@ pub fn c_fe_state_mem_card_ctor_2(c: &mut Cpu) {
     });
 }
 
+/// Menu-kind values `cFEStateMemCard_v26` compares the manager's word at
+/// +0x130 against, in the order the generated compare chain tests them.
+pub(crate) const CFE_MEM_CARD_KINDS: [u64; 13] = [
+    0x1f, 0x21, 0x20, 0x22, 0x31, 0x32, 0x33, 0x35, 0x36, 0x34, 0x2, 0x3, 0x6,
+];
+
+/// `cFEStateMemCard_v26` (0x1876a8, reached through `cFEStateMemCard`): asks
+/// the UI screen (`gp-0x1c38`) for an object by hash name, asks the MC
+/// manager for its message kind (`+0x130`), and either pulls the message
+/// from the overlay manager and sets the text (kinds in the table above), or
+/// calls the object's vtable slot. Frame 0x660, s0 saved at +0x650.
+pub fn cfe_state_mem_card_v26(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x660);
+        frame.save(c, S0, 0x650);
+        c.g[A0][0] = sx(0x0046_0000u32.wrapping_sub(0x2380));
+        frame.save_ra(c, 0x640);
+        c.g[S0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1c38)).lw(c);
+        call_ptr(c, 0x0031_7670, 0x0018_76c4)?;
+        c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x40)).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_d860, 0x0018_76d0)?;
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        c.g[S0][0] = c.g[V0][0];
+        call_ptr(c, 0x0022_7f80, 0x0018_76dc)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x130)).lw(c);
+
+        // The kind compare chain: each step costs 2 cycles after the first.
+        let mut matched = false;
+        for (i, &kind) in CFE_MEM_CARD_KINDS.iter().enumerate() {
+            if i > 0 {
+                c.cycles += 2;
+            }
+            let hit = c.g[V1][0] == kind;
+            c.g[V0][0] = CFE_MEM_CARD_KINDS[(i + 1).min(CFE_MEM_CARD_KINDS.len() - 1)];
+            if hit {
+                matched = true;
+                break;
+            }
+        }
+
+        if matched {
+            c.cycles += 14;
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A2][0] = 0x320;
+            call_ptr(c, 0x0024_1e18, 0x0018_775c)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            call_ptr(c, 0x003a_0d00, 0x0018_7768)?;
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x8)).lw(c);
+            c.g[A1][0] = 1;
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x48)).lh(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x4c)).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0018_7780)?;
+            frame.restore(c, S0, 0x650);
+        } else {
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x8)).lw(c);
+            c.cycles += 6;
+            c.g[A1][0] = 0;
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x48)).lh(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x4c)).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0018_779c)?;
+            frame.restore(c, S0, 0x650);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x640);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1259,6 +1337,202 @@ pub(crate) mod tests {
             c_fe_state_mem_card_ctor_2,
             0x001d_e950,
             false,
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::scramble;
+    use std::ptr::addr_of_mut;
+
+    /// Gate of the callee fakes: they answer only while this word holds
+    /// `OC709_MAGIC` (otherwise the generated body runs).
+    pub(crate) const OC709_CTRL: u32 = DATA + 0x0020_0000;
+
+    pub(crate) const OC709_MAGIC: u32 = 0x0709_c0de;
+
+    /// Per-call results of the path-exists fake (four words, one per call index).
+    pub(crate) const OC709_RES: u32 = DATA + 0x0020_1000;
+
+    pub(crate) const OC709_UI: u32 = DATA + 0x0020_3000;
+
+    pub(crate) const OC709_OBJ: u32 = DATA + 0x0020_4000;
+
+    pub(crate) const OC709_OBJ2: u32 = DATA + 0x0020_5000;
+
+    pub(crate) const OC709_MGR: u32 = DATA + 0x0020_6000;
+
+    /// The bank object the allocator fake returns.
+    pub(crate) const OC709_BANK: u32 = DATA + 0x0030_0000;
+
+    pub(crate) fn oc709_open(c: &mut Cpu) -> bool {
+        c.bus.read32(OC709_CTRL) == OC709_MAGIC
+    }
+
+    pub(crate) fn oc709_fake_317670(c: &mut Cpu) {
+        if !oc709_open(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc709_fake_317670),
+                ee::s10::f_00317670__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0031_7670);
+    }
+
+    pub(crate) fn oc709_fake_39d860(c: &mut Cpu) {
+        if !oc709_open(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc709_fake_39d860),
+                ee::s13::f_0039d860__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0039_d860);
+    }
+
+    pub(crate) fn oc709_fake_227f80(c: &mut Cpu) {
+        if !oc709_open(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc709_fake_227f80),
+                ee::s05::f_00227f80__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0022_7f80);
+    }
+
+    pub(crate) fn oc709_fake_241e18(c: &mut Cpu) {
+        if !oc709_open(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc709_fake_241e18),
+                ee::s06::f_00241e18__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0024_1e18);
+    }
+
+    pub(crate) fn oc709_fake_417828(c: &mut Cpu) {
+        if !oc709_open(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc709_fake_417828),
+                ee::s15::f_00417828__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0041_7828);
+    }
+
+    pub(crate) fn oc709_fake_3e18c8(c: &mut Cpu) {
+        if !oc709_open(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc709_fake_3e18c8),
+                ee::s14::f_003e18c8__generated,
+            );
+        }
+        fakes::fake_call(c, 0x003e_18c8);
+    }
+
+    /// `EAFile_PathExists`: answers the per-call word the setup wrote.
+    pub(crate) fn oc709_fake_317f38(c: &mut Cpu) {
+        if !oc709_open(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc709_fake_317f38),
+                ee::s10::f_00317f38__generated,
+            );
+        }
+        let n = c.bus.read32(fakes::LOG_COUNT);
+        let exists = c.bus.read32(OC709_RES + 4 * (n % 4));
+        fakes::fake_call(c, 0x0031_7f38);
+        c.g[V0][0] = exists as u64;
+    }
+
+    /// The bank allocator: a fixed object (the constructor runs on it).
+    pub(crate) fn oc709_fake_317d70(c: &mut Cpu) {
+        if !oc709_open(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc709_fake_317d70),
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0031_7d70);
+        c.g[V0][0] = OC709_BANK as u64;
+    }
+
+    pub(crate) fn oc709_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317670),
+            oc709_fake_317670,
+            fakes::prev_cell(oc709_fake_317670),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039D860),
+            oc709_fake_39d860,
+            fakes::prev_cell(oc709_fake_39d860),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_00227F80),
+            oc709_fake_227f80,
+            fakes::prev_cell(oc709_fake_227f80),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00241E18),
+            oc709_fake_241e18,
+            fakes::prev_cell(oc709_fake_241e18),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            oc709_fake_417828,
+            fakes::prev_cell(oc709_fake_417828),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E18C8),
+            oc709_fake_3e18c8,
+            fakes::prev_cell(oc709_fake_3e18c8),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317F38),
+            oc709_fake_317f38,
+            fakes::prev_cell(oc709_fake_317f38),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc709_fake_317d70,
+            fakes::prev_cell(oc709_fake_317d70),
+        );
+    }
+
+    #[test]
+    fn cfe_state_mem_card_v26_matches() {
+        oc709_install_fakes();
+        check(
+            ee::s02::f_001876a8__generated,
+            cfe_state_mem_card_v26,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0018_76a8 ^ seed as u64);
+                scramble(c, &mut r);
+                let _ = fakes::machine(c, seed, 0x0018_76a8, 0);
+                c.pc = 0x0018_76a8;
+                c.bus.write32(OC709_CTRL, OC709_MAGIC);
+                c.bus.write32(GAME_GP - 0x1c38, OC709_UI);
+                // Call 1 returns the UI object, call 2 the manager.
+                c.bus.write32(fakes::LOG_RESULTS + 4, OC709_OBJ);
+                c.bus.write32(fakes::LOG_RESULTS + 8, OC709_MGR);
+                c.bus.write32(OC709_OBJ + 8, OC709_OBJ2);
+                c.bus
+                    .write16(OC709_OBJ2 + 0x48, (0x10 * (seed % 3 + 1)) as u16);
+                c.bus.write32(OC709_OBJ2 + 0x4c, fakes::FAKE);
+                let kind = if seed % 4 == 0 {
+                    r.next_u32()
+                } else {
+                    CFE_MEM_CARD_KINDS[(seed % 13) as usize] as u32
+                };
+                c.bus.write32(OC709_MGR + 0x130, kind);
+            },
         );
     }
 }

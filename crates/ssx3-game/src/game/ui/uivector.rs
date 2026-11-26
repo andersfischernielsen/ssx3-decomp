@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -21,6 +22,7 @@ pub(crate) use crate::game::object::instancenode::ui_vector_lw;
 pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
 pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::leave;
+pub(crate) use crate::game::ui::uitext::spch_ea;
 pub(crate) use crate::game::ui::uithing::ui_anim_update;
 pub(crate) use crate::game::wscript::wscriptman::p;
 use crate::guest::Addr;
@@ -82,6 +84,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ui_object_set_vec3_at_9c,
         "UIObject_SetVec3At9c",
     ),
+    (0x003a_34c0, cui_vector_set_ui_data, "cUIVector_setUIData"),
+    (0x003a_4e80, uiicon_dtor, "UIIcon_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -113,11 +117,6 @@ pub(crate) mod callee {
     pub const UI_PAIR_FREE_CHILDREN: Callee = Callee {
         addr: 0x0039_be70,
         f: ee::s13::f_0039be70,
-    };
-
-    pub const UI_OBJECT_DTOR: Callee = Callee {
-        addr: 0x0039_fc48,
-        f: ee::s13::f_0039fc48,
     };
 
     pub const UI_LIST_BOX_CLEAR: Callee = Callee {
@@ -1311,6 +1310,245 @@ pub fn ui_object_set_vec3_at_9c(c: &mut Cpu) {
     frame.close(c);
 }
 
+/// `void cUIVector_setUIData(cUIVector* self, UIVectorData* data)`
+/// (0x3a34c0): loads the base object (`cUIThing_setUIData`, 0x39fe00), then
+/// sets the vector's flag bits from `data` (+0x22, +0x21) in the word at
+/// +0x74, and allocates the element arrays for `data->count` (+0x20, a
+/// signed byte): one of 16 bytes per element (self+0x80), two of 12 bytes
+/// (+0x84 and self+0x7c, which holds its pointer on the second) and an
+/// optional 48-byte block when the flag at +0x74 says so. The element copy
+/// loop moves 16-byte records from the static table at 0x4ff0d8 into the
+/// element array at +0x80.
+pub fn cui_vector_set_ui_data(c: &mut Cpu) {
+    guest(c, cui_vector_set_ui_data_body);
+}
+
+pub(crate) fn cui_vector_set_ui_data_body(c: &mut Cpu) -> Flow {
+    c.cycles += 32;
+    let frame = Frame::open(c, 0x70);
+    frame.save(c, S1, 0x50);
+    frame.save(c, S2, 0x40);
+    c.g[S1][0] = c.g[A0][0];
+    frame.save(c, S0, 0x60);
+    frame.save(c, S3, 0x30);
+    frame.save(c, S4, 0x20);
+    frame.save(c, S5, 0x10);
+    frame.save_ra(c, 0);
+    c.g[RA][0] = sx(0x003a_34ec);
+    c.g[S2][0] = c.g[A1][0];
+    Callee {
+        addr: 0x0039_fe00,
+        f: ee::s13::f_0039fe00,
+    }
+    .call(c, 0x003a_34ec)?;
+    // 'b_3a3548: the flag bits at +0x74.
+    c.g[A0][0] = c.lbu(spch_ea(c.g[S2][0], 0x22));
+    c.g[A2][0] = 0xffff_ffff_ffff_fffe;
+    c.g[V0][0] = c.lw(spch_ea(c.g[S1][0], 0x74));
+    c.g[V1][0] = 0xffff_ffff_ffff_fffd;
+    c.g[A0][0] &= 0x1;
+    c.g[A1][0] = 0xffff_ffff_fffe_0000;
+    c.g[V0][0] &= c.g[A2][0];
+    c.g[A1][0] |= 0x3;
+    c.g[V0][0] |= c.g[A0][0];
+    c.g[A2][0] = 0x10000;
+    c.g[V1][0] &= c.g[V0][0];
+    c.g[A2][0] |= 0xfffc;
+    c.sw(spch_ea(c.g[S1][0], 0x74), c.g[V1][0]);
+    c.g[V1][0] &= c.g[A1][0];
+    c.g[V0][0] = c.lb(spch_ea(c.g[S2][0], 0x21));
+    c.g[V0][0] &= 0x7fff;
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V1][0] |= c.g[V0][0];
+    c.g[A2][0] &= c.g[V1][0];
+    let t = c.g[A2][0] == 0;
+    c.sw(spch_ea(c.g[S1][0], 0x74), c.g[V1][0]);
+    if !t {
+        c.cycles += 2;
+        c.g[V0][0] = sx(spch_ea(c.g[S2][0], 0x24));
+        c.sw(spch_ea(c.g[S1][0], 0x78), c.g[V0][0]);
+    }
+    'b_3a3660: {
+        c.cycles += 11;
+        c.g[A0][0] = c.lb(spch_ea(c.g[S2][0], 0x20));
+        c.g[V1][0] = 0x10000;
+        c.g[V0][0] = c.lw(spch_ea(c.g[S1][0], 0x74));
+        c.g[V1][0] |= 0xffff;
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 17);
+        c.g[V0][0] &= c.g[V1][0];
+        c.g[V0][0] |= c.g[A0][0];
+        c.sw(spch_ea(c.g[S1][0], 0x74), c.g[V0][0]);
+        c.g[S0][0] = c.lb(spch_ea(c.g[S2][0], 0x20));
+        let t = c.g[S0][0] == 0;
+        c.g[A2][0] = 0x100;
+        if t {
+            break 'b_3a3660;
+        }
+        'b_3a35a0: {
+            c.cycles += 10;
+            c.g[A1][0] = 0x49_0000;
+            c.g[A0][0] = sx((c.g[S0][0] as u32) << 4);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40c8));
+            c.g[A3][0] = 0;
+            c.g[S3][0] = sx(spch_ea(c.g[S1][0], 0x7c));
+            call_ptr(c, 0x0031_7e30, 0x003a_358c)?;
+            c.g[S4][0] = sx(spch_ea(c.g[S1][0], 0x80));
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            let t = c.g[S0][0] == 0;
+            c.g[S5][0] = sx(spch_ea(c.g[S1][0], 0x84));
+            if t {
+                break 'b_3a35a0;
+            }
+            c.cycles += 1;
+            c.g[A0][0] = u64::MAX;
+        }
+        'b_3a35d8: {
+            c.cycles += 12;
+            c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+            c.g[A0][0] = 0xc;
+            c.g[A1][0] = 0x49_0000;
+            c.g[A2][0] = 0x100;
+            c.g[S0][0] = c.lb(spch_ea(c.g[S2][0], 0x20));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40d8));
+            c.mult(0, 0, 16, 4);
+            c.g[A0][0] = c.lo[0];
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7e30, 0x003a_35c8)?;
+            let t = c.g[S0][0] == 0;
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                break 'b_3a35d8;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+        }
+        'b_3a3610: {
+            c.cycles += 12;
+            c.sw(c.g[S4][0] as u32, c.g[V0][0]);
+            c.g[A0][0] = 0xc;
+            c.g[A1][0] = 0x49_0000;
+            c.g[A2][0] = 0x100;
+            c.g[S0][0] = c.lb(spch_ea(c.g[S2][0], 0x20));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40e8));
+            c.mult(0, 0, 16, 4);
+            c.g[A0][0] = c.lo[0];
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7e30, 0x003a_3600)?;
+            let t = c.g[S0][0] == 0;
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                break 'b_3a3610;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 4;
+        c.sw(c.g[S5][0] as u32, c.g[V0][0]);
+        c.g[V0][0] = c.lb(spch_ea(c.g[S2][0], 0x20));
+        let t = (c.g[V0][0] as i64) <= 0;
+        c.g[V1][0] = 0;
+        if t {
+            break 'b_3a3660;
+        }
+        c.cycles += 2;
+        c.g[A1][0] = 0x50_0000;
+        c.g[A0][0] = 0;
+        loop {
+            c.cycles += 14;
+            c.g[V0][0] = c.lw(spch_ea(c.g[S1][0], 0x80));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[T1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf28));
+            c.ldl(6, spch_ea(c.g[T1][0], 0x7));
+            c.ldr(6, spch_ea(c.g[T1][0], 0));
+            c.g[A3][0] = c.lw(spch_ea(c.g[T1][0], 0x8));
+            c.sdl(6, spch_ea(c.g[V0][0], 0x7));
+            c.sdr(6, spch_ea(c.g[V0][0], 0));
+            c.sw(spch_ea(c.g[V0][0], 0x8), c.g[A3][0]);
+            c.g[V0][0] = c.lb(spch_ea(c.g[S2][0], 0x20));
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let t = c.g[V0][0] != 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x003a_3628);
+                }
+                continue;
+            }
+            break 'b_3a3660;
+        }
+    }
+    'b_3a36b0: {
+        c.cycles += 4;
+        c.g[S0][0] = c.lw(spch_ea(c.g[S1][0], 0x74));
+        c.g[V0][0] = c.g[S0][0] & 0x1;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x60);
+            break 'b_3a36b0;
+        }
+        'b_3a36a8: {
+            c.cycles += 12;
+            c.g[S0][0] = sx((c.g[S0][0] as u32) >> 17);
+            c.g[A0][0] = 0x30;
+            c.mult(0, 0, 16, 4);
+            c.g[A1][0] = 0x49_0000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40f8));
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            c.g[A0][0] = c.lo[0];
+            c.g[S1][0] = sx(spch_ea(c.g[S1][0], 0x8c));
+            call_ptr(c, 0x0031_7e30, 0x003a_3698)?;
+            let t = c.g[S0][0] == 0;
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                break 'b_3a36a8;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 2;
+        c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+        frame.restore(c, S0, 0x60);
+    }
+    c.cycles += 8;
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore(c, S3, 0x30);
+    frame.restore(c, S4, 0x20);
+    frame.restore(c, S5, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+pub(crate) const UI_OBJECT_DTOR: Callee = Callee {
+    addr: 0x0039_fc48,
+    f: ee::s13::f_0039fc48,
+};
+
+// ---------------------------------------------------------------------------
+// UIIcon_dtor
+
+/// `void UIIcon_dtor(UIIcon* self)` (0x3a4e80): set the icon's vtable word
+/// (+0x8, 0x494aa8) and run `UIObject_dtor(self)`.
+pub fn uiicon_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x49_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4aa8));
+        let vtable = c.g[V0][0];
+        let obj = c.g[V1][0] as u32;
+        c.sw(obj.wrapping_add(0x8), vtable);
+        UI_OBJECT_DTOR.call(c, 0x003a_4e9c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2052,6 +2290,73 @@ pub(crate) mod tests {
                 let mut r = oc508_setup(c, seed, 0x1dd950);
                 fill(c, &mut r, DATA + 0x2000, 4);
                 c.g[A1][0] = sx(DATA + 0x2000);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC715_GATE;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC715_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// `cUIVector_setUIData` on a zeroed-object base: the base load
+    /// (`UIObject_Load`) is the real function, the element arrays come from
+    /// the test heap, and `data->count` (0..=3) picks the loop and the
+    /// allocation sizes; the flag word at +0x74 is kept small so the 48-byte
+    /// block is taken for some seeds and skipped for others.
+    #[test]
+    fn cui_vector_set_ui_data_matches() {
+        const SELF: u32 = DATA + 0x9000;
+        const OBJ: u32 = DATA + 0x9200;
+        check(
+            ee::s13::f_003a34c0__generated,
+            cui_vector_set_ui_data,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3a34_c0 ^ (seed as u64) << 11);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                crate::game::ai::computer::tests::rbc_test_allocator(c);
+                c.g[RA][0] = 0x0012_3450;
+                c.pc = 0x003a_34c0;
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(OBJ);
+                fill(c, &mut r, SELF, 0x40);
+                fill(c, &mut r, OBJ, 0x20);
+                c.bus.write8(OBJ + 0x20, (seed % 4) as u8);
+                c.bus.write32(SELF + 0x74, r.next_u32() & 0x0003_ffff);
+            },
+        );
+    }
+
+    pub(crate) static OC715_PREV_DTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc715_fake_object_dtor(c: &mut Cpu) {
+        if c.bus.read32(OC715_GATE) != OC715_MAGIC {
+            return fall_back(c, &OC715_PREV_DTOR, ee::s13::f_0039fc48__generated);
+        }
+        fake_call(c, 0x0039_fc48);
+    }
+
+    #[test]
+    fn uiicon_dtor_matches() {
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039FC48),
+            oc715_fake_object_dtor,
+            &OC715_PREV_DTOR,
+        );
+        check(
+            ee::s13::f_003a4e80__generated,
+            uiicon_dtor,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x003a_4e80 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(OC715_GATE, OC715_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 0x40);
             },
         );
     }

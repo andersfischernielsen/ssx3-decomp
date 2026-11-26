@@ -20,6 +20,7 @@ pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::debugfe::gp;
 pub(crate) use crate::game::fe::debugfe::r32_2;
 pub(crate) use crate::game::fe::festateload::event_select_notify;
+pub(crate) use crate::game::fe::ovstatehud::oc738_copy_blocks;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::main::ssxappdtor::p;
 pub(crate) use crate::game::movie::movieplayer::at as at_2;
@@ -121,6 +122,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0020_3d40,
         event_select_refresh_peak_list,
         "EventSelect_RefreshPeakList",
+    ),
+    (
+        0x0020_0b50,
+        event_select_is_event_completed,
+        "EventSelect_IsEventCompleted",
     ),
 ];
 
@@ -5271,6 +5277,136 @@ pub fn event_select_update(c: &mut Cpu) {
     })
 }
 
+/// `int EventSelect_IsEventCompleted(void* self, sPeakGoal goal, int peak)`
+/// (0x200b50), the C++ `cUITemplate_MAP_isMapEventCompleted`. `goal` is a
+/// 0x6c-byte struct passed by value (`location` at +0, `gameEvent` at +8).
+/// Location 23 is never completed; event types 4 and 5 (the peak-1/2/3 mission
+/// events) are completed when the player interface says the event for that
+/// peak is not locked; every other event is completed when the character has a
+/// track medal for it.
+pub fn event_select_is_event_completed(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0xb0);
+        c.g[V1][0] = c.g[A1][0];
+        frame.save(c, S1, 0x90);
+        c.g[A0][0] = c.g[SP][0];
+        frame.save(c, S0, 0xa0);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S2, 0x80);
+        c.g[V0][0] = c.g[A1][0] & 0x7;
+        let aligned = c.g[V0][0] == 0;
+        frame.save_ra(c, 0x70);
+        c.cycles += 1;
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x60));
+        if aligned {
+            oc738_copy_blocks(c, V1, A0, V0, true, [A1, A2, A3, T0], 0x0020_0bd4);
+        } else {
+            oc738_copy_blocks(c, V1, A0, V0, false, [A1, A2, A3, T0], 0x0020_0b7c);
+            c.cycles += 2;
+        }
+
+        // The trailing 12 bytes of the struct.
+        c.cycles += 23;
+        let src = c.g[V1][0] as u32;
+        c.ldl(2, src.wrapping_add(0x7));
+        c.ldr(2, src);
+        c.g[A1][0] = Addr(src.wrapping_add(0x8)).lw(c);
+        let dst = c.g[A0][0] as u32;
+        c.sdl(2, dst.wrapping_add(0x7));
+        c.sdr(2, dst);
+        c.sw(dst.wrapping_add(0x8), c.g[A1][0]);
+        call_ptr(c, 0x0014_dc80, 0x0020_0c1c)?; // BELibrary_GetInstance
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x0014_dd58, 0x0020_0c28)?; // BELibrary_GetInterface(be, 1)
+        c.g[S2][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dc80, 0x0020_0c30)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xd;
+        call_ptr(c, 0x0014_dd58, 0x0020_0c3c)?; // BELibrary_GetInterface(be, 13)
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = 0;
+        call_ptr(c, 0x0014_a080, 0x0020_0c48)?; // BELibrary_GetCharacterID(0)
+        c.g[A2][0] = c.g[V0][0];
+        c.g[T0][0] = Addr(sp(c)).lw(c);
+        c.g[V0][0] = 0x17;
+        let not_summit = c.g[T0][0] != c.g[V0][0];
+        c.g[A3][0] = Addr(sp(c).wrapping_add(0x8)).lw(c);
+        if !not_summit {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+            oc738_event_completed_exit(c, frame);
+            return Ok(());
+        }
+
+        c.cycles += 3;
+        c.g[V0][0] = 0x4;
+        let not_four = c.g[A3][0] != c.g[V0][0];
+        c.g[V0][0] = 0x5;
+        if !not_four {
+            c.cycles += 7;
+            c.g[V1][0] = c.g[S1][0] ^ 0x1;
+            c.g[A0][0] = 0x7;
+            c.g[S0][0] = 0x6;
+            c.g[A1][0] = c.g[S1][0] ^ 0x2;
+            if c.g[V1][0] == 0 {
+                c.g[S0][0] = c.g[A0][0];
+            }
+            c.g[V0][0] = 0x8;
+        } else {
+            c.cycles += 2;
+            let is_five = c.g[A3][0] == c.g[V0][0];
+            c.g[V1][0] = c.g[S1][0] ^ 0x1;
+            if !is_five {
+                // Any other event type: a track medal exists.
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x0015_8910, 0x0020_0ca0)?; // getTrackMedal(rw, 0, cid, event, loc)
+                c.g[V0][0] = !(0u64 | c.g[V0][0]);
+                c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+                oc738_event_completed_exit(c, frame);
+                return Ok(());
+            }
+            c.cycles += 5;
+            c.g[A0][0] = 0xa;
+            c.g[S0][0] = 0x9;
+            c.g[A1][0] = c.g[S1][0] ^ 0x2;
+            if c.g[V1][0] == 0 {
+                c.g[S0][0] = c.g[A0][0];
+            }
+            c.g[V0][0] = 0xb;
+        }
+
+        // Event types 4 and 5: the event index for the peak is in S0.
+        c.cycles += 9;
+        if c.g[A1][0] == 0 {
+            c.g[S0][0] = c.g[V0][0];
+        }
+        c.g[A0][0] = 0;
+        call_ptr(c, 0x0014_a080, 0x0020_0ccc)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A3][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_6a70, 0x0020_0ce0)?; // isEventLocked_b(np, 0, cid, idx)
+        c.g[V0][0] ^= 0x1;
+        oc738_event_completed_exit(c, frame);
+        Ok(())
+    });
+}
+
+/// Epilogue of `EventSelect_IsEventCompleted`.
+pub(crate) fn oc738_event_completed_exit(c: &mut Cpu, frame: Frame) {
+    c.cycles += 6;
+    frame.restore(c, S0, 0xa0);
+    frame.restore(c, S1, 0x90);
+    frame.restore(c, S2, 0x80);
+    frame.restore_ra(c, 0x70);
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6491,6 +6627,55 @@ pub(crate) mod tests {
                 c.bus.write32(OC444_OBJ + 0x2f0, (seed % 3 == 0) as u32);
                 let state = if seed % 4 < 2 { 3 } else { r.next_u32() % 3 };
                 c.bus.write32(OC444_ASYNC + 0x114 + 0x11c * slot, state);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    pub(crate) use crate::game::sound::asyncsys::tests::oc738_install_fakes;
+    pub(crate) use crate::game::sound::asyncsys::tests::oc738_machine;
+    pub(crate) use crate::game::sound::asyncsys::tests::OC738_CTRL;
+
+    /// Control words `OC738_CTRL + 4, 8, 0xc`: non-zero makes the medal fake
+    /// return -1, `isLoaded` and `IsActiveNISInTransition` return 0.
+    pub(crate) const OC738_MEDAL_M1: u32 = OC738_CTRL + 4;
+
+    /// An unaligned guest word store (byte stores).
+    pub(crate) fn oc738_put32(c: &mut Cpu, a: u32, v: u32) {
+        for i in 0..4 {
+            c.bus.write8(a + i, (v >> (8 * i)) as u8);
+        }
+    }
+
+    /// `EventSelect_IsEventCompleted`: the goal struct at an aligned or
+    /// unaligned address; location 23, event types 4/5 (peaks 0..2) and
+    /// other event types (medal present or -1).
+    #[test]
+    fn event_select_is_event_completed_matches() {
+        oc738_install_fakes();
+        fakes::covered(
+            ee::s05::f_00200b50__generated,
+            event_select_is_event_completed,
+            400,
+            &|c, seed| {
+                let mut r = oc738_machine(c, seed, 0x20_0b50, 6);
+                let base = DATA + 0x1000;
+                fill(c, &mut r, base, 0x20);
+                let off = if seed % 3 == 0 { 0 } else { 1 + (seed / 3) % 7 };
+                let location = if seed % 5 == 0 {
+                    0x17
+                } else {
+                    r.next_u32() % 40
+                };
+                let event = [4u32, 5, 4, 5, 0, 1, 2, 3, 6][((seed / 5) % 9) as usize];
+                oc738_put32(c, base + off, location);
+                oc738_put32(c, base + off + 8, event);
+                c.bus.write32(OC738_MEDAL_M1, ((seed / 45) % 2) as u32);
+                c.g[A0][0] = sx(DATA + 0x2000);
+                c.g[A1][0] = sx(base + off);
+                c.g[A2][0] = (seed % 4) as u64;
+                c.pc = 0x0020_0b50;
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -35,6 +36,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ui_state_mgr_process_states,
         "UIStateMgr_ProcessStates",
     ),
+    (0x0039_eca8, uistatemgr_render_stub, "UIStateMgr_RenderStub"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -826,6 +828,15 @@ pub(crate) fn phase_closed(c: &mut Cpu) -> crate::call::Flow {
     step_next(c)
 }
 
+// ---------------------------------------------------------------------------
+// UIStateMgr_RenderStub
+
+/// `void UIStateMgr_RenderStub(void)` (0x39eca8): an empty render hook.
+pub fn uistatemgr_render_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1062,5 +1073,20 @@ pub(crate) mod tests {
             let mut r = process_states_setup(c, seed, 0);
             schedule(c, &mut r, seed, 0x0039_ecb0)
         });
+    }
+
+    use crate::difftest::scramble;
+
+    #[test]
+    fn uistatemgr_render_stub_matches() {
+        check(
+            ee::s13::f_0039eca8__generated,
+            uistatemgr_render_stub,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x0039_eca8 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
     }
 }

@@ -38,6 +38,7 @@ pub(crate) use crate::game::scripter::ssxscriptengine::low;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::ui::uiengine::oc391_at;
+pub(crate) use crate::game::ui::uiengine::BOLT_FREE_SLOT;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use callee::*;
@@ -267,6 +268,25 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0019_d250, bolt_file_cache_update, "BoltFile_CacheUpdate"),
     (0x0019_d4b8, bolt_file_free_slot, "BoltFile_FreeSlot"),
+    (0x0019_d000, bolt_file_unpack_slot, "BoltFile_UnpackSlot"),
+    (
+        0x0019_d140,
+        bolt_file_start_next_queued,
+        "BoltFile_StartNextQueued",
+    ),
+    (
+        0x0019_d578,
+        bolt_file_ensure_budget,
+        "BoltFile_EnsureBudget",
+    ),
+    (0x0019_d8b8, bolt_file_load_slot, "BoltFile_LoadSlot"),
+    (0x0019_da10, bolt_file_acquire, "BoltFile_Acquire"),
+    (0x0019_dc20, bolt_file_release, "BoltFile_Release"),
+    (
+        0x0019_dd10,
+        bolt_file_compare_model_slots_2,
+        "BoltFile_CompareModelSlots",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4421,6 +4441,1325 @@ pub fn bolt_file_free_slot(c: &mut Cpu) {
     })
 }
 
+/// Result of the compare passes of `BoltFile_CompareModelSlots`: where the
+/// function leaves to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BoltCompareExit {
+    /// Second pass over the records (their words at +0 and +0x110/+0x11c).
+    Second,
+    /// Early return (1 cycle, then the epilogue).
+    Early,
+    /// Late return (2 cycles, then the epilogue).
+    Late,
+    /// Compare the two names (`+4`) with `strcasecmp`, then return.
+    Names,
+}
+
+/// First pass of `BoltFile_CompareModelSlots`: the record at `a0` (the
+/// computed slot) and the one at `a1` must match in their words at +0 (3 for
+/// `a0`), +0x110 (8) and +0x11c (0).
+pub(crate) fn bcms_first_pass(c: &mut Cpu) -> BoltCompareExit {
+    if c.g[V1][0] != c.g[A3][0] {
+        c.g[A2][0] = Addr(c.g[A1][0] as u32).lw(c);
+        return BoltCompareExit::Second;
+    }
+    c.cycles += 4;
+    c.g[A2][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x110)).lw(c);
+    c.g[V0][0] = 8;
+    if c.g[A2][0] != c.g[V0][0] {
+        c.g[A2][0] = Addr(c.g[A1][0] as u32).lw(c);
+        return BoltCompareExit::Second;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x11c)).lw(c);
+    if c.g[V0][0] != 0 {
+        c.g[A2][0] = Addr(c.g[A1][0] as u32).lw(c);
+        return BoltCompareExit::Second;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+    let t = c.g[V0][0] != c.g[V1][0];
+    c.g[V0][0] = u64::MAX;
+    if t {
+        return BoltCompareExit::Early;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x110)).lw(c);
+    let t = c.g[V0][0] != c.g[A2][0];
+    c.g[V0][0] = u64::MAX;
+    if t {
+        return BoltCompareExit::Early;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x11c)).lw(c);
+    let t = c.g[V0][0] == 0;
+    c.g[V0][0] = u64::MAX;
+    if t {
+        return BoltCompareExit::Names;
+    }
+    BoltCompareExit::Late
+}
+
+/// Second pass of `BoltFile_CompareModelSlots`: the same words again, with
+/// `a2` (the word at +0 of `a1`) as the expected value of `a0`'s word at +0.
+pub(crate) fn bcms_second_pass(c: &mut Cpu) -> BoltCompareExit {
+    c.cycles += 3;
+    c.g[V0][0] = 3;
+    let t = c.g[A2][0] != c.g[V0][0];
+    c.g[V0][0] = 0;
+    if t {
+        return BoltCompareExit::Early;
+    }
+    c.cycles += 4;
+    c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x110)).lw(c);
+    c.g[V0][0] = 8;
+    let t = c.g[V1][0] != c.g[V0][0];
+    c.g[V0][0] = 0;
+    if t {
+        return BoltCompareExit::Early;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x11c)).lw(c);
+    let t = c.g[V0][0] != 0;
+    c.g[V0][0] = 0;
+    if t {
+        return BoltCompareExit::Early;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(c.g[A0][0] as u32).lw(c);
+    let t = c.g[V0][0] != c.g[A2][0];
+    c.g[V0][0] = 1;
+    if t {
+        return BoltCompareExit::Early;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x110)).lw(c);
+    let t = c.g[V0][0] != c.g[V1][0];
+    c.g[V0][0] = 1;
+    if t {
+        return BoltCompareExit::Early;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x11c)).lw(c);
+    let t = c.g[V0][0] != 0;
+    c.g[V0][0] = 1;
+    if t {
+        return BoltCompareExit::Early;
+    }
+    BoltCompareExit::Names
+}
+
+/// `BoltFile_CompareModelSlots` (0x19dd10): finds the slot of a model in a
+/// bolt file table and compares it with the slot named by the second
+/// argument. `a0` points at a word whose high half selects a row (times
+/// `0x12000`) and whose low half selects a slot (times `0x120`, the slot
+/// record size); `a1` points at a 16-bit slot index. The two records are
+/// compared on their type words (3 and 8) and their name field at +0x11c
+/// (0); equal records compare their names (`+4`) with `strcasecmp`. Returns
+/// the `strcasecmp` result, or 0/1/-1 for the early outs.
+pub fn bolt_file_compare_model_slots_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 0x12000;
+        c.g[T0][0] = 0x120;
+        c.g[A3][0] = 3;
+        c.g[V1][0] = Addr(crate::abi::arg(c, 0)).lw(c);
+        c.g[A2][0] = Addr(crate::abi::arg(c, 1)).lhu(c);
+        c.g[A0][0] = sx(((c.g[V1][0] as u32) as i32 >> 16) as u32);
+        c.mult(0, A0, A0, V0);
+        c.g[V1][0] &= 0xffff;
+        c.mult(0, V1, V1, T0);
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1784)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.mult(0, V1, A2, T0);
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+
+        let exit = match bcms_first_pass(c) {
+            BoltCompareExit::Second => bcms_second_pass(c),
+            other => other,
+        };
+        match exit {
+            BoltCompareExit::Early => {
+                c.cycles += 1;
+                frame.restore_ra(c, 0);
+            }
+            BoltCompareExit::Late => {
+                c.cycles += 2;
+                frame.restore_ra(c, 0);
+            }
+            BoltCompareExit::Names => {
+                c.cycles += 5;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
+                call_ptr(c, 0x0041_aa88, 0x0019_de00)?;
+                frame.restore_ra(c, 0);
+            }
+            BoltCompareExit::Second => {}
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `BoltFile_UnpackSlot` (0x19d000).
+pub(crate) const BOLT_UNPACK_SLOT_2: u32 = 0x0019_d000;
+
+/// `void BoltFile_Release(BoltFile* f, int a1, int a2)` (0x19dc20): drops one
+/// use of a 0x120-byte slot of the bolt file table. The slot is at
+/// `f + a1 * 0x12000 + a2 * 0x120`; its use count is at +0x114. When the count
+/// stays positive the release ends there. Otherwise a slot whose state word
+/// (+0) is 2 is unpacked (or its state is cleared when the callee says so),
+/// and any other slot is freed with `BoltFile_FreeSlot`.
+pub fn bolt_file_release(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x60);
+        c.g[A3][0] = 0x10000;
+        frame.save(c, S2, 0x30);
+        c.g[A3][0] = c.g[A3][0] | 0x2000;
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        c.mult(0, 2, 18, 7);
+        c.g[S3][0] = c.g[A2][0];
+        c.g[V1][0] = 0x120;
+        frame.save(c, S1, 0x40);
+        c.mult(0, 3, 19, 3);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x50);
+        frame.save_ra(c, 0x10);
+        c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+        c.g[S0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+
+        let plus_one = bolt_file_release_slot(c)?;
+        if plus_one {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        c.cycles += 6;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The slot part of `BoltFile_Release`, with `s0` the slot. Returns true when
+/// the generated code takes its extra `+1` cycle block on the way out; false
+/// after an early exit (the state already decided by a callee).
+pub(crate) fn bolt_file_release_slot(c: &mut Cpu) -> Result<bool, Unwound> {
+    let slot = c.g[S0][0] as u32;
+    c.g[V0][0] = Addr(slot.wrapping_add(0x114)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+    let uses = c.g[V0][0];
+    Addr(slot.wrapping_add(0x114)).sw(c, uses);
+    if (uses as i64) > 0 {
+        return Ok(true);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = Addr(slot).lw(c);
+    c.g[V0][0] = 2;
+    if c.g[V1][0] != c.g[V0][0] {
+        c.g[V0][0] = Addr(slot.wrapping_add(0x104)).lw(c);
+    } else {
+        c.cycles += 5;
+        c.g[A0][0] = Addr(slot.wrapping_add(0x108)).lw(c);
+        call_ptr(c, 0x003d_f980, 0x0019_dc88)?;
+        c.g[V1][0] = 1;
+        if c.g[V0][0] != c.g[V1][0] {
+            return Ok(false);
+        }
+        c.cycles += 16;
+        c.g[A0][0] = Addr(slot.wrapping_add(0x108)).lw(c);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x003d_f9d8, 0x0019_dca4)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[S0][0];
+        Callee {
+            addr: BOLT_UNPACK_SLOT_2,
+            f: ee::s03::f_0019d000,
+        }
+        .call(c, 0x0019_dcb4)?;
+        Addr(slot.wrapping_add(0x10c)).sw(c, 0);
+        c.g[V1][0] = 0x000b_0000;
+        Addr(slot).sw(c, 0);
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        let table = c.g[V1][0] as u32;
+        c.g[V0][0] = Addr(table.wrapping_add(0x4004)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        let count = c.g[V0][0];
+        Addr(table.wrapping_add(0x4004)).sw(c, count);
+        c.g[V0][0] = Addr(slot.wrapping_add(0x104)).lw(c);
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        Addr(slot).sw(c, 0);
+        return Ok(true);
+    }
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A2][0] = c.g[S3][0];
+    Callee {
+        addr: BOLT_FREE_SLOT,
+        f: ee::s03::f_0019d4b8,
+    }
+    .call(c, 0x0019_dcec)?;
+    Ok(false)
+}
+
+/// `BoltFile_EnsureBudget(mgr, bank, size)` (0x19d578): keeps the bolt file
+/// cache under its 9999999-byte budget before `size` more bytes are loaded:
+/// when `mem_used + size` is over, frees unreferenced idle slots of the other
+/// banks first, then the oldest (smallest stamp) idle slots of `bank` until
+/// the budget holds or none is left. Slots are 0x120 bytes, 256 per bank, 10
+/// banks 0x12000 apart.
+#[allow(unused_labels, unused_variables, unused_assignments)]
+pub fn bolt_file_ensure_budget(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_19d704: {
+            c.cycles += 22;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+            c.g[V0][0] = 0xb0000;
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[V1][0] = 0x980000;
+            c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S4][0] = c.g[A0][0];
+            c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+            c.g[S7][0] = c.g[A2][0];
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.g[V1][0] = c.g[V1][0] | 0x967f;
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4000));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S7][0] as u32));
+            c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            let t = c.g[V1][0] == 0u64;
+            c.g[FP][0] = c.g[A1][0];
+            if t {
+                break 'b_19d704;
+            } else {
+                c.cycles += 2;
+                c.g[S3][0] = 0u64;
+                c.g[S6][0] = 0u64;
+                'l_19d5d8: loop {
+                    'b_19d64c: {
+                        c.cycles += 2;
+                        let t = c.g[S3][0] == c.g[FP][0];
+                        c.g[V0][0] = 0xb0000;
+                        if t {
+                            break 'b_19d64c;
+                        } else {
+                            c.cycles += 6;
+                            c.g[S1][0] = 0x980000;
+                            c.g[S2][0] = 0u64;
+                            c.g[S5][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[S1][0] = c.g[S1][0] | 0x967f;
+                            c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S6][0] as u32));
+                            'l_19d5f8: loop {
+                                'b_19d640: {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x104));
+                                    if c.g[V0][0] == 0u64 {
+                                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                                        break 'b_19d640;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x114));
+                                        if c.g[V0][0] != 0u64 {
+                                            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                                            break 'b_19d640;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                                            if c.g[V0][0] != 0u64 {
+                                                c.g[S2][0] =
+                                                    sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                                                break 'b_19d640;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.g[A0][0] = c.g[S4][0];
+                                                c.g[A1][0] = c.g[S3][0];
+                                                c.g[A2][0] = c.g[S2][0];
+                                                call_ptr(c, 0x0019d4b8, 0x0019d62c)?;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[S5][0] as u32).wrapping_add(0x4000));
+                                                c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[S7][0] as u32));
+                                                c.g[V0][0] = ((c.g[S1][0] as i64)
+                                                    < (c.g[V0][0] as i64))
+                                                    as u64;
+                                                let t = c.g[V0][0] == 0u64;
+                                                c.g[S2][0] =
+                                                    sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                                                if t {
+                                                    break 'b_19d704;
+                                                } else {
+                                                    break 'b_19d640;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.g[V0][0] = ((c.g[S2][0] as i64) < 256i64) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x120));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x0019d5f8);
+                                    }
+                                    continue 'l_19d5f8;
+                                } else {
+                                    break 'b_19d64c;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 6;
+                    c.g[V1][0] = 0x10000;
+                    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = c.g[V1][0] | 0x2000;
+                    c.g[V0][0] = ((c.g[S3][0] as i64) < 10i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0019d5d8);
+                        }
+                        continue 'l_19d5d8;
+                    } else {
+                        c.cycles += 7;
+                        c.mult(0, 18, 30, 3);
+                        c.g[V0][0] = 0xb0000;
+                        c.g[S0][0] = 0x980000;
+                        c.g[S1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[S0][0] = c.g[S0][0] | 0x967f;
+                        c.g[A2][0] = 0xffffffffffffffff;
+                        'l_19d680: loop {
+                            c.cycles += 4;
+                            c.g[A3][0] = 0u64;
+                            c.g[A1][0] = 0u64;
+                            c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                            'l_19d690: loop {
+                                'b_19d6d4: {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x104));
+                                    if c.g[V0][0] == 0u64 {
+                                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                        break 'b_19d6d4;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                                        if c.g[V0][0] != 0u64 {
+                                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                            break 'b_19d6d4;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[A0][0] as u32).wrapping_add(0x114));
+                                            if c.g[V0][0] != 0u64 {
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                                break 'b_19d6d4;
+                                            } else {
+                                                'b_19d6c8: {
+                                                    c.cycles += 2;
+                                                    let t = (c.g[A2][0] as i64) < 0;
+                                                    c.g[V1][0] =
+                                                        c.lw(
+                                                            (c.g[A0][0] as u32).wrapping_add(0x11c)
+                                                        );
+                                                    if t {
+                                                        break 'b_19d6c8;
+                                                    } else {
+                                                        c.cycles += 3;
+                                                        c.g[V0][0] =
+                                                            (c.g[V1][0] < c.g[A3][0]) as u64;
+                                                        if c.g[V0][0] == 0u64 {
+                                                            c.g[A1][0] = sx((c.g[A1][0] as u32)
+                                                                .wrapping_add(0x1));
+                                                            break 'b_19d6d4;
+                                                        } else {
+                                                            break 'b_19d6c8;
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 3;
+                                                c.g[A3][0] = c.g[V1][0];
+                                                c.g[A2][0] = c.g[A1][0];
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                                break 'b_19d6d4;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.g[V0][0] = ((c.g[A1][0] as i64) < 256i64) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x120));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x0019d690);
+                                    }
+                                    continue 'l_19d690;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = (c.g[A2][0] as i64) < 0;
+                                    c.g[A0][0] = c.g[S4][0];
+                                    if t {
+                                        break 'b_19d704;
+                                    } else {
+                                        c.cycles += 7;
+                                        c.g[A1][0] = c.g[FP][0];
+                                        call_ptr(c, 0x0019d4b8, 0x0019d6f0)?;
+                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4000));
+                                        c.g[V0][0] =
+                                            sx((c.g[V0][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                                        c.g[V0][0] =
+                                            ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                        let t = c.g[V0][0] != 0u64;
+                                        c.g[A2][0] = 0xffffffffffffffff;
+                                        if t {
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x0019d680);
+                                            }
+                                            continue 'l_19d680;
+                                        } else {
+                                            break 'b_19d704;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 12;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `BoltFile_Acquire(mgr, bank, name, file_type, async, deferred)` (0x19da10):
+/// finds the cached slot of `name` in `bank` (or takes a free one, freeing it
+/// first and copying the name), stamps it (0 when deferred, else the bank's
+/// running counter), bumps its use count and starts or schedules the load
+/// (async loads wait as state 3 when load threads exist). Returns the slot
+/// index.
+#[allow(unused_labels, unused_variables, unused_assignments)]
+pub fn bolt_file_acquire(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_19dbf4: {
+            'b_19dbf0: {
+                'b_19db28: {
+                    c.cycles += 20;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.g[S1][0] = c.g[A0][0];
+                    c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S2][0] = c.g[A1][0];
+                    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.g[S6][0] = c.g[A2][0];
+                    c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.g[S4][0] = c.g[T1][0];
+                    c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S5][0] = c.g[T0][0];
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                    c.g[S7][0] = c.g[A3][0];
+                    call_ptr(c, 0x0019d428, 0x0019da54)?;
+                    c.g[S3][0] = c.g[V0][0];
+                    let t = (c.g[S3][0] as i64) < 0;
+                    c.g[V0][0] = 0x10000;
+                    if t {
+                        break 'b_19db28;
+                    } else {
+                        'b_19daa8: {
+                            'b_19da84: {
+                                c.cycles += 7;
+                                c.g[V1][0] = 0x120;
+                                c.g[V0][0] = c.g[V0][0] | 0x2000;
+                                c.mult(0, 3, 19, 3);
+                                c.mult(0, 4, 18, 2);
+                                c.g[V0][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                                let t = c.g[S4][0] == 0u64;
+                                c.g[S0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                if t {
+                                    break 'b_19da84;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = true;
+                                    c.sw((c.g[S0][0] as u32).wrapping_add(0x11c), 0u64);
+                                    if t {
+                                        break 'b_19daa8;
+                                    } else {
+                                        break 'b_19da84;
+                                    }
+                                }
+                            }
+                            c.cycles += 9;
+                            c.g[V0][0] = 0xb0000;
+                            c.g[A0][0] = sx((c.g[S2][0] as u32) << 2);
+                            c.g[V0][0] = c.g[V0][0] | 0x4008;
+                            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x11c), c.g[V1][0]);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                            c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                            break 'b_19daa8;
+                        }
+                        'b_19db1c: {
+                            'b_19db18: {
+                                'b_19dac8: {
+                                    c.cycles += 2;
+                                    if c.g[S5][0] == 0u64 {
+                                        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                                        break 'b_19dac8;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                                        if c.g[V0][0] != 0u64 {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x114));
+                                            break 'b_19db1c;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[V0][0] = 0x1;
+                                            let t = true;
+                                            c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                                            if t {
+                                                break 'b_19db18;
+                                            } else {
+                                                break 'b_19dac8;
+                                            }
+                                        }
+                                    }
+                                }
+                                'b_19db0c: {
+                                    'b_19daec: {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = 0x2;
+                                        let t = c.g[V1][0] != c.g[V0][0];
+                                        c.sw((c.g[S0][0] as u32).wrapping_add(0x10c), 0u64);
+                                        if t {
+                                            break 'b_19daec;
+                                        } else {
+                                            c.cycles += 6;
+                                            c.g[A0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x108));
+                                            c.g[A1][0] = 0u64;
+                                            c.g[A2][0] = c.g[SP][0];
+                                            call_ptr(c, 0x003df9d8, 0x0019dae4)?;
+                                            let t = true;
+                                            c.g[V0][0] = 0x1;
+                                            if t {
+                                                break 'b_19db0c;
+                                            } else {
+                                                break 'b_19daec;
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 3;
+                                    c.g[V0][0] = 0x3;
+                                    let t = c.g[V1][0] != c.g[V0][0];
+                                    c.g[V0][0] = 0x1;
+                                    if t {
+                                        break 'b_19db0c;
+                                    } else {
+                                        c.cycles += 5;
+                                        c.g[A0][0] = c.g[S1][0];
+                                        c.g[A1][0] = c.g[S2][0];
+                                        c.g[A2][0] = c.g[S3][0];
+                                        call_ptr(c, 0x0019d8b8, 0x0019db08)?;
+                                        c.g[V0][0] = 0x1;
+                                        break 'b_19db0c;
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.g[V1][0] = 0xffffffffffffffff;
+                                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0x108), c.g[V1][0]);
+                                break 'b_19db18;
+                            }
+                            c.cycles += 1;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x114));
+                            break 'b_19db1c;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                        let t = true;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x114), c.g[V0][0]);
+                        if t {
+                            break 'b_19dbf0;
+                        } else {
+                            break 'b_19db28;
+                        }
+                    }
+                }
+                'b_19db94: {
+                    'b_19db74: {
+                        c.cycles += 17;
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[S2][0];
+                        call_ptr(c, 0x0019d3b0, 0x0019db34)?;
+                        c.g[V1][0] = 0x10000;
+                        c.g[S3][0] = c.g[V0][0];
+                        c.g[V1][0] = c.g[V1][0] | 0x2000;
+                        c.g[V0][0] = 0x120;
+                        c.mult(0, 4, 18, 3);
+                        c.mult(0, 2, 19, 2);
+                        c.g[A1][0] = c.g[S2][0];
+                        c.g[A2][0] = c.g[S3][0];
+                        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        call_ptr(c, 0x0019d4b8, 0x0019db64)?;
+                        let t = c.g[S4][0] == 0u64;
+                        c.g[V0][0] = 0xb0000;
+                        if t {
+                            break 'b_19db74;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x11c), 0u64);
+                            if t {
+                                break 'b_19db94;
+                            } else {
+                                break 'b_19db74;
+                            }
+                        }
+                    }
+                    c.cycles += 8;
+                    c.g[A0][0] = sx((c.g[S2][0] as u32) << 2);
+                    c.g[V0][0] = c.g[V0][0] | 0x4008;
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x11c), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                    break 'b_19db94;
+                }
+                'b_19dbec: {
+                    'b_19dbe8: {
+                        c.cycles += 9;
+                        c.g[A1][0] = c.g[S6][0];
+                        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                        call_ptr(c, 0x004166f4, 0x0019dba0)?;
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x114));
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x110), c.g[S7][0]);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x10c), c.g[S5][0]);
+                        let t = c.g[S4][0] != 0u64;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x114), c.g[V1][0]);
+                        if t {
+                            break 'b_19dbe8;
+                        } else {
+                            'b_19dbd0: {
+                                c.cycles += 2;
+                                let t = c.g[S5][0] == 0u64;
+                                c.g[V0][0] = 0xb0000;
+                                if t {
+                                    break 'b_19dbd0;
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[V0][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4004));
+                                    let t = (c.g[V1][0] as i64) > 0;
+                                    c.g[V0][0] = 0x3;
+                                    if t {
+                                        break 'b_19dbec;
+                                    } else {
+                                        break 'b_19dbd0;
+                                    }
+                                }
+                            }
+                            c.cycles += 6;
+                            c.g[A0][0] = c.g[S1][0];
+                            c.g[A1][0] = c.g[S2][0];
+                            c.g[A2][0] = c.g[S3][0];
+                            call_ptr(c, 0x0019d8b8, 0x0019dbe0)?;
+                            let t = true;
+                            c.g[V0][0] = c.g[S3][0];
+                            if t {
+                                break 'b_19dbf4;
+                            } else {
+                                break 'b_19dbe8;
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = 0x3;
+                    break 'b_19dbec;
+                }
+                c.cycles += 1;
+                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                break 'b_19dbf0;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S3][0];
+            break 'b_19dbf4;
+        }
+        c.cycles += 11;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `void BoltFile_UnpackSlot(BoltTable* self, int bank, BoltSlot* slot)`
+/// (0x19d000): replaces the compressed data of a loaded slot (`+0x104`) by
+/// its unpacked copy: asks for the unpacked size, makes room
+/// (`BoltFile_EnsureBudget`), allocates the buffer (evicting and retrying
+/// while the allocator fails), unpacks, frees the old data and books the size
+/// difference in the table's memory counter (`+0xb4000`).
+pub fn bolt_file_unpack_slot(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_19d118: {
+            'b_19d114: {
+                c.cycles += 13;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[S2][0] = c.g[A2][0];
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[S4][0] = c.g[A1][0];
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.g[S5][0] = c.g[A0][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x10));
+                let t = c.g[S2][0] == 0u64;
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                if t {
+                    break 'b_19d114;
+                } else {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x104));
+                    let t = c.g[A0][0] == 0u64;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    if t {
+                        break 'b_19d118;
+                    } else {
+                        c.cycles += 5;
+                        c.g[RA][0] = sx(0x0019d048);
+                        call_ptr(c, 0x003b4818, 0x0019d048)?;
+                        c.g[S1][0] = c.g[V0][0];
+                        let t = (c.g[S1][0] as i64) <= 0;
+                        c.g[A0][0] = c.g[S5][0];
+                        if t {
+                            break 'b_19d114;
+                        } else {
+                            'b_19d0d4: {
+                                c.cycles += 13;
+                                c.g[A1][0] = c.g[S4][0];
+                                c.g[A2][0] = c.g[S1][0];
+                                c.g[RA][0] = sx(0x0019d064);
+                                c.g[S0][0] = 0x460000;
+                                Callee {
+                                    addr: 0x0019d578,
+                                    f: ee::s03::BoltFile_EnsureBudget,
+                                }
+                                .call(c, 0x0019d064)?;
+                                c.g[S6][0] = c.g[S0][0];
+                                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x9d8));
+                                c.g[A0][0] = c.g[S1][0];
+                                c.g[A2][0] = 0x60000000;
+                                c.g[RA][0] = sx(0x0019d07c);
+                                c.g[A3][0] = 0u64;
+                                call_ptr(c, 0x00317e30, 0x0019d07c)?;
+                                c.g[S0][0] = c.g[V0][0];
+                                if c.g[S0][0] != 0u64 {
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x104));
+                                    break 'b_19d0d4;
+                                } else {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = 0x540000;
+                                    c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7500));
+                                    'l_19d090: loop {
+                                        c.cycles += 16;
+                                        c.g[RA][0] = sx(0x0019d098);
+                                        c.g[A0][0] = c.g[S3][0];
+                                        call_ptr(c, 0x003e5700, 0x0019d098)?;
+                                        c.g[RA][0] = sx(0x0019d0a0);
+                                        c.g[A0][0] = c.g[S3][0];
+                                        call_ptr(c, 0x003e5760, 0x0019d0a0)?;
+                                        c.g[A0][0] = c.g[S5][0];
+                                        c.g[A1][0] = c.g[S4][0];
+                                        c.g[RA][0] = sx(0x0019d0b0);
+                                        c.g[A2][0] = c.g[S1][0];
+                                        Callee {
+                                            addr: 0x0019d738,
+                                            f: ee::s03::BoltFile_EvictBytes,
+                                        }
+                                        .call(c, 0x0019d0b0)?;
+                                        c.g[A0][0] = c.g[S1][0];
+                                        c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_add(0x9d8));
+                                        c.g[A2][0] = 0x60000000;
+                                        c.g[RA][0] = sx(0x0019d0c4);
+                                        c.g[A3][0] = 0u64;
+                                        call_ptr(c, 0x00317e30, 0x0019d0c4)?;
+                                        c.g[S0][0] = c.g[V0][0];
+                                        let t = c.g[S0][0] == 0u64;
+
+                                        if t {
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x0019d090);
+                                            }
+                                            continue 'l_19d090;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A0][0] =
+                                                c.lw((c.g[S2][0] as u32).wrapping_add(0x104));
+                                            break 'b_19d0d4;
+                                        }
+                                    }
+                                }
+                            }
+                            'b_19d0f4: {
+                                c.cycles += 5;
+                                c.g[RA][0] = sx(0x0019d0dc);
+                                c.g[A1][0] = c.g[S0][0];
+                                call_ptr(c, 0x003b47f8, 0x0019d0dc)?;
+                                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x104));
+                                if c.g[A0][0] == 0u64 {
+                                    c.sw((c.g[S2][0] as u32).wrapping_add(0x104), c.g[S0][0]);
+                                    break 'b_19d0f4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[RA][0] = sx(0x0019d0f0);
+                                    call_ptr(c, 0x00317e98, 0x0019d0f0)?;
+                                    c.sw((c.g[S2][0] as u32).wrapping_add(0x104), c.g[S0][0]);
+                                    break 'b_19d0f4;
+                                }
+                            }
+                            c.cycles += 8;
+                            c.g[V0][0] = 0xb0000;
+                            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x118));
+                            c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4000));
+                            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.sw((c.g[V0][0] as u32).wrapping_add(0x4000), c.g[A0][0]);
+                            c.sw((c.g[S2][0] as u32).wrapping_add(0x118), c.g[S1][0]);
+                            break 'b_19d114;
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+            break 'b_19d118;
+        }
+        c.cycles += 9;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void BoltFile_StartNextQueued(BoltTable* self, int bank)` (0x19d140):
+/// picks the queued slot (flags 3) with the oldest stamp (`+0x11c`) in
+/// `bank`, else in the first other bank that has one, and loads it
+/// (`BoltFile_LoadSlot`).
+pub fn bolt_file_start_next_queued(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[V0][0] = 0x10000;
+        c.g[T6][0] = c.g[A1][0];
+        c.g[V0][0] = c.g[V0][0] | 0x2000;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.mult(0, 3, 14, 2);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[T2][0] = 0u64;
+        c.g[A2][0] = 0xffffffffffffffff;
+        c.g[T0][0] = 0u64;
+        c.g[T1][0] = 0x3;
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        'l_19d170: loop {
+            'b_19d19c: {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                if c.g[V0][0] != c.g[T1][0] {
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                    break 'b_19d19c;
+                } else {
+                    'b_19d190: {
+                        c.cycles += 2;
+                        let t = c.g[T2][0] == 0u64;
+                        c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x11c));
+                        if t {
+                            break 'b_19d190;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = (c.g[V1][0] < c.g[T2][0]) as u64;
+                            if c.g[V0][0] == 0u64 {
+                                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                                break 'b_19d19c;
+                            } else {
+                                break 'b_19d190;
+                            }
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[T2][0] = c.g[V1][0];
+                    c.g[A2][0] = c.g[T0][0];
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                    break 'b_19d19c;
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[T0][0] as i64) < 256i64) as u64;
+            let t = c.g[V0][0] != 0u64;
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x120));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0019d170);
+                }
+                continue 'l_19d170;
+            } else {
+                'b_19d244: {
+                    'b_19d238: {
+                        'b_19d230: {
+                            c.cycles += 3;
+                            c.g[V0][0] = 0xffffffffffffffff;
+                            let t = c.g[A2][0] != c.g[V0][0];
+
+                            if t {
+                                break 'b_19d230;
+                            } else {
+                                c.cycles += 5;
+                                c.g[T3][0] = 0x10000;
+                                c.g[T1][0] = 0u64;
+                                c.g[T5][0] = 0u64;
+                                c.g[T3][0] = c.g[T3][0] | 0x2000;
+                                'l_19d1c8: loop {
+                                    'b_19d224: {
+                                        c.cycles += 2;
+                                        if c.g[T1][0] == c.g[T6][0] {
+                                            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x1));
+                                            break 'b_19d224;
+                                        } else {
+                                            c.cycles += 4;
+                                            c.g[A3][0] =
+                                                sx((c.g[A0][0] as u32)
+                                                    .wrapping_add(c.g[T5][0] as u32));
+                                            c.g[T0][0] = 0u64;
+                                            c.g[T4][0] = 0x3;
+                                            'l_19d1e0: loop {
+                                                'b_19d210: {
+                                                    c.cycles += 3;
+                                                    c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                                                    if c.g[V0][0] != c.g[T4][0] {
+                                                        c.g[T0][0] =
+                                                            sx((c.g[T0][0] as u32)
+                                                                .wrapping_add(0x1));
+                                                        break 'b_19d210;
+                                                    } else {
+                                                        'b_19d200: {
+                                                            c.cycles += 2;
+                                                            let t = c.g[T2][0] == 0u64;
+                                                            c.g[V1][0] = c.lw((c.g[A3][0] as u32)
+                                                                .wrapping_add(0x11c));
+                                                            if t {
+                                                                break 'b_19d200;
+                                                            } else {
+                                                                c.cycles += 3;
+                                                                c.g[V0][0] = (c.g[V1][0]
+                                                                    < c.g[T2][0])
+                                                                    as u64;
+                                                                if c.g[V0][0] == 0u64 {
+                                                                    c.g[T0][0] = sx((c.g[T0][0]
+                                                                        as u32)
+                                                                        .wrapping_add(0x1));
+                                                                    break 'b_19d210;
+                                                                } else {
+                                                                    break 'b_19d200;
+                                                                }
+                                                            }
+                                                        }
+                                                        c.cycles += 4;
+                                                        c.g[T2][0] = c.g[V1][0];
+                                                        c.g[A1][0] = c.g[T1][0];
+                                                        c.g[A2][0] = c.g[T0][0];
+                                                        c.g[T0][0] =
+                                                            sx((c.g[T0][0] as u32)
+                                                                .wrapping_add(0x1));
+                                                        break 'b_19d210;
+                                                    }
+                                                }
+                                                c.cycles += 3;
+                                                c.g[V0][0] = ((c.g[T0][0] as i64) < 256i64) as u64;
+                                                let t = c.g[V0][0] != 0u64;
+                                                c.g[A3][0] =
+                                                    sx((c.g[A3][0] as u32).wrapping_add(0x120));
+                                                if t {
+                                                    if event_due(c) {
+                                                        deliver_event_here(c, 0x0019d1e0);
+                                                    }
+                                                    continue 'l_19d1e0;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = (c.g[A2][0] as i64) >= 0;
+                                                    c.g[T1][0] =
+                                                        sx((c.g[T1][0] as u32).wrapping_add(0x1));
+                                                    if t {
+                                                        break 'b_19d238;
+                                                    } else {
+                                                        break 'b_19d224;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 3;
+                                    c.g[V0][0] = ((c.g[T1][0] as i64) < 10i64) as u64;
+                                    let t = c.g[V0][0] != 0u64;
+                                    c.g[T5][0] =
+                                        sx((c.g[T5][0] as u32).wrapping_add(c.g[T3][0] as u32));
+                                    if t {
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x0019d1c8);
+                                        }
+                                        continue 'l_19d1c8;
+                                    } else {
+                                        break 'b_19d230;
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        let t = (c.g[A2][0] as i64) < 0;
+                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                        if t {
+                            break 'b_19d244;
+                        } else {
+                            break 'b_19d238;
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[RA][0] = sx(0x0019d240);
+                    Callee {
+                        addr: 0x0019d8b8,
+                        f: ee::s03::BoltFile_LoadSlot,
+                    }
+                    .call(c, 0x0019d240)?;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    break 'b_19d244;
+                }
+                c.cycles += 2;
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    });
+}
+
+/// `void BoltFile_LoadSlot(BoltTable* self, int bank, int idx)` (0x19d8b8):
+/// asks the file's size, makes room, allocates the data buffer (evicting and
+/// retrying while the allocator fails), books the size, and loads the file:
+/// synchronously (flags 1) or as an asynchronous read (flags 2, counted in
+/// `+0xb4004`).
+pub fn bolt_file_load_slot(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_19d984: {
+            c.cycles += 33;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+            c.g[V0][0] = 0x10000;
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[V0][0] = c.g[V0][0] | 0x2000;
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S3][0] = c.g[A0][0];
+            c.g[S4][0] = c.g[A1][0];
+            c.g[V1][0] = 0x120;
+            c.mult(0, 4, 20, 2);
+            c.mult(0, 6, 6, 3);
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[S0][0] = 0x460000;
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+            c.g[RA][0] = sx(0x0019d90c);
+            c.g[S5][0] = c.g[S0][0];
+            call_ptr(c, 0x00317f60, 0x0019d90c)?;
+            c.g[S1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = c.g[S4][0];
+            c.g[RA][0] = sx(0x0019d920);
+            c.g[A2][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0019d578,
+                f: ee::s03::BoltFile_EnsureBudget,
+            }
+            .call(c, 0x0019d920)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x9f0));
+            c.g[A2][0] = 0x60000000;
+            c.g[RA][0] = sx(0x0019d934);
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00317e30, 0x0019d934)?;
+            let t = c.g[V0][0] != 0u64;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x104), c.g[V0][0]);
+            if t {
+                break 'b_19d984;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0x540000;
+                c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7500));
+                'l_19d948: loop {
+                    c.cycles += 15;
+                    c.g[RA][0] = sx(0x0019d950);
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x003e5700, 0x0019d950)?;
+                    c.g[RA][0] = sx(0x0019d958);
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x003e5760, 0x0019d958)?;
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[RA][0] = sx(0x0019d968);
+                    c.g[A2][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x0019d738,
+                        f: ee::s03::BoltFile_EvictBytes,
+                    }
+                    .call(c, 0x0019d968)?;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x9f0));
+                    c.g[A2][0] = 0x60000000;
+                    c.g[RA][0] = sx(0x0019d97c);
+                    c.g[A3][0] = 0u64;
+                    call_ptr(c, 0x00317e30, 0x0019d97c)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x104), c.g[V0][0]);
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0019d948);
+                        }
+                        continue 'l_19d948;
+                    } else {
+                        break 'b_19d984;
+                    }
+                }
+            }
+        }
+        'b_19d9ec: {
+            'b_19d9d0: {
+                c.cycles += 8;
+                c.g[V0][0] = 0xb0000;
+                c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4000));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4000), c.g[V1][0]);
+                c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10c));
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = 0x2;
+                if t {
+                    break 'b_19d9d0;
+                } else {
+                    c.cycles += 11;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x118), c.g[S1][0]);
+                    c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x104));
+                    c.g[A2][0] = c.g[S1][0];
+                    c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                    c.g[RA][0] = sx(0x0019d9bc);
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+                    call_ptr(c, 0x003df748, 0x0019d9bc)?;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x108), c.g[V0][0]);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4004));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    let t = true;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x4004), c.g[V0][0]);
+                    if t {
+                        break 'b_19d9ec;
+                    } else {
+                        break 'b_19d9d0;
+                    }
+                }
+            }
+            c.cycles += 7;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x118), c.g[S1][0]);
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x104));
+            c.g[RA][0] = sx(0x0019d9e4);
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+            call_ptr(c, 0x003e1bb8, 0x0019d9e4)?;
+            c.g[V1][0] = 0x1;
+            c.sw(c.g[S2][0] as u32, c.g[V1][0]);
+            break 'b_19d9ec;
+        }
+        c.cycles += 9;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6050,6 +7389,887 @@ pub(crate) mod tests {
                     if seed % 4 == 0 { 0 } else { DATA + 0xd_0000 },
                 );
                 c.bus.write32(this + BOLT_CACHE_BYTES, r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::LOG_RESULTS;
+
+    pub(crate) use crate::game::ui::uiengine::tests::oc726_hook;
+    pub(crate) use crate::game::ui::uiengine::tests::CTRL;
+    pub(crate) use crate::game::ui::uiengine::tests::CTRL_MAGIC;
+    pub(crate) use crate::game::ui::uiengine::tests::SEEDS_10 as SEEDS_3;
+
+    use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn bolt_file_compare_model_slots_matches() {
+        check(
+            ee::s03::f_0019dd10__generated,
+            bolt_file_compare_model_slots_2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0019_dd10 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0019_dd10;
+                c.g[GP][0] = sx(GAME_GP);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x40);
+                let table = DATA + 0x0020_0000;
+                let k = seed % 3;
+                let j = 3 + seed % 3;
+                c.bus.write32(DATA, k);
+                c.bus.write16(DATA + 0x40, j as u16);
+                c.bus.write32(GAME_GP - 0x1784, table);
+                fill(c, &mut r, table, 0x120 * 8 / 4);
+                let a = table + k * 0x120;
+                let b = table + j * 0x120;
+                // Modes walk the first pass, the second pass and the names.
+                let (a0, a110, a11c, b0, b110, b11c) = match seed % 8 {
+                    0 => (0, 8, 0, 3, 8, 0),
+                    1 => (3, 0, 0, 3, 8, 0),
+                    2 => (3, 8, 1, 3, 8, 0),
+                    3 => (3, 8, 0, 4, 8, 0),
+                    4 => (3, 8, 0, 3, 0, 0),
+                    5 => (3, 8, 0, 3, 8, 1),
+                    6 => (3, 8, 0, 3, 8, 0),
+                    _ => (9, 8, 0, 3, 8, 0),
+                };
+                c.bus.write32(a, a0);
+                c.bus.write32(a + 0x110, a110);
+                c.bus.write32(a + 0x11c, a11c);
+                c.bus.write32(b, b0);
+                c.bus.write32(b + 0x110, b110);
+                c.bus.write32(b + 0x11c, b11c);
+                // The names at +4 differ in the third letter.
+                c.bus.write32(a + 4, u32::from_le_bytes(*b"ABC\0"));
+                c.bus.write32(b + 4, u32::from_le_bytes(*b"ABD\0"));
+            },
+        );
+    }
+
+    #[test]
+    fn bolt_file_release_matches() {
+        oc726_hook();
+        check(
+            ee::s03::f_0019dc20__generated,
+            bolt_file_release,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 728, 1);
+                // The first callee of the state-2 branch returns 2 (not the
+                // unpack branch's 1, which would run the real unpacker).
+                c.bus.write32(LOG_RESULTS, 2);
+                let slot = DATA + 0x1000;
+                c.g[A0][0] = slot as u64;
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0;
+                c.bus.write32(slot + 0x114, seed % 4);
+                c.bus
+                    .write32(slot, if seed % 3 == 0 { 2 } else { r.next_u32() });
+                c.bus
+                    .write32(slot + 0x104, if seed % 2 == 0 { 0 } else { r.next_u32() });
+                c.bus.write32(slot + 0x108, DATA + 0x2000);
+                // The slot table's use count at the table base (slot + 0xb0000).
+                c.bus.write32(slot + 0xb0000 + 0x4004, 5);
+                c.pc = 0x0019_dc20;
+                c.bus.write32(CTRL, CTRL_MAGIC);
+            },
+        );
+    }
+
+    // Fixture objects, all in DATA+0x200000 and up (clear of the fake log).
+    pub(crate) const OC737_FX_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC737_FX_MAGIC: u32 = 0x4f43_3737;
+
+    pub(crate) const OC737_FX_MGR: u32 = DATA + 0x30_0000;
+
+    pub(crate) const OC737_FX_NAME: u32 = DATA + 0x3c_0000;
+
+    // Result queues of the fakes, inside the control block: `[next, len,
+    // results...]`.
+    pub(crate) const OC737_Q_RIDER: u32 = 0x100;
+
+    pub(crate) const OC737_Q_FIND: u32 = 0x140;
+
+    pub(crate) const OC737_Q_FREE: u32 = 0x180;
+
+    pub(crate) const OC737_Q_TABLE: u32 = 0x1c0;
+
+    pub(crate) const OC737_Q_TEXT: u32 = 0x200;
+
+    macro_rules! oc737_fake {
+        ($fake:ident, $prev:ident, $gen:path, $addr:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC737_FX_CTRL) != OC737_FX_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                fakes::fake_call(c, $addr);
+            }
+        };
+        ($fake:ident, $prev:ident, $gen:path, $addr:expr, queue $q:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC737_FX_CTRL) != OC737_FX_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                fakes::fake_call(c, $addr);
+                // The next queued result, if any (else the fake's own).
+                let base = OC737_FX_CTRL + $q;
+                let next = c.bus.read32(base);
+                c.bus.write32(base, next + 1);
+                if next < c.bus.read32(base + 4) {
+                    let v = c.bus.read32(base + 8 + 4 * next);
+                    c.g[V0][0] = sx(v);
+                }
+            }
+        };
+    }
+
+    oc737_fake!(oc737_fake_rider, OC737_PREV_RIDER, ee::s03::f_001a0548__generated, 0x001a_0548, queue OC737_Q_RIDER);
+
+    oc737_fake!(
+        oc737_fake_set_pose,
+        OC737_PREV_SET_POSE,
+        ee::s03::f_0019f3e8__generated,
+        0x0019_f3e8
+    );
+
+    oc737_fake!(
+        oc737_fake_set_board,
+        OC737_PREV_SET_BOARD,
+        ee::s03::f_0019f548__generated,
+        0x0019_f548
+    );
+
+    oc737_fake!(
+        oc737_fake_set_visible,
+        OC737_PREV_SET_VISIBLE,
+        ee::s03::f_0019e538__generated,
+        0x0019_e538
+    );
+
+    oc737_fake!(oc737_fake_find_name, OC737_PREV_FIND_NAME, ee::s03::f_0019d428__generated, 0x0019_d428, queue OC737_Q_FIND);
+
+    oc737_fake!(oc737_fake_find_free, OC737_PREV_FIND_FREE, ee::s03::f_0019d3b0__generated, 0x0019_d3b0, queue OC737_Q_FREE);
+
+    oc737_fake!(
+        oc737_fake_quat,
+        OC737_PREV_QUAT,
+        ee::s10::f_0031be50__generated,
+        0x0031_be50
+    );
+
+    oc737_fake!(
+        oc737_fake_anim_reset,
+        OC737_PREV_ANIM_RESET,
+        ee::s10::f_00311a50__generated,
+        0x0031_1a50
+    );
+
+    oc737_fake!(
+        oc737_fake_anim_play,
+        OC737_PREV_ANIM_PLAY,
+        ee::s10::f_003128e8__generated,
+        0x0031_28e8
+    );
+
+    oc737_fake!(
+        oc737_fake_hash,
+        OC737_PREV_HASH,
+        ee::s10::f_00317670__generated,
+        0x0031_7670
+    );
+
+    oc737_fake!(
+        oc737_fake_alloc,
+        OC737_PREV_ALLOC,
+        ee::s10::f_00317f60__generated,
+        0x0031_7f60
+    );
+
+    oc737_fake!(
+        oc737_fake_open,
+        OC737_PREV_OPEN,
+        ee::s10::f_00317e30__generated,
+        0x0031_7e30
+    );
+
+    oc737_fake!(
+        oc737_fake_be,
+        OC737_PREV_BE,
+        ee::s01::f_0014dc80__generated,
+        0x0014_dc80
+    );
+
+    oc737_fake!(
+        oc737_fake_iface,
+        OC737_PREV_IFACE,
+        ee::s01::f_0014dd58__generated,
+        0x0014_dd58
+    );
+
+    oc737_fake!(oc737_fake_uber, OC737_PREV_UBER, ee::s01::f_0014ff90__generated, 0x0014_ff90, queue OC737_Q_TABLE);
+
+    oc737_fake!(
+        oc737_fake_money,
+        OC737_PREV_MONEY,
+        ee::s01::f_00150928__generated,
+        0x0015_0928
+    );
+
+    oc737_fake!(
+        oc737_fake_char_id,
+        OC737_PREV_CHAR_ID,
+        ee::s01::f_00147488__generated,
+        0x0014_7488
+    );
+
+    oc737_fake!(
+        oc737_fake_list_first,
+        OC737_PREV_LIST_FIRST,
+        ee::s13::f_00397840__generated,
+        0x0039_7840
+    );
+
+    oc737_fake!(oc737_fake_by_hash, OC737_PREV_BY_HASH, ee::s13::f_0039d860__generated, 0x0039_d860, queue OC737_Q_TEXT);
+
+    oc737_fake!(
+        oc737_fake_set_text,
+        OC737_PREV_SET_TEXT,
+        ee::s13::f_003a0c70__generated,
+        0x003a_0c70
+    );
+
+    oc737_fake!(
+        oc737_fake_release,
+        OC737_PREV_RELEASE,
+        ee::s14::f_003df9d8__generated,
+        0x003d_f9d8
+    );
+
+    oc737_fake!(
+        oc737_fake_read,
+        OC737_PREV_READ,
+        ee::s14::f_003df748__generated,
+        0x003d_f748
+    );
+
+    oc737_fake!(
+        oc737_fake_wait,
+        OC737_PREV_WAIT,
+        ee::s14::f_003e1bb8__generated,
+        0x003e_1bb8
+    );
+
+    oc737_fake!(
+        oc737_fake_strcpy,
+        OC737_PREV_STRCPY,
+        ee::s15::f_004166f4__generated,
+        0x0041_66f4
+    );
+
+    oc737_fake!(
+        oc737_fake_text_draw,
+        OC737_PREV_TEXT_DRAW,
+        ee::s12::f_00391e30__generated,
+        0x0039_1e30
+    );
+
+    oc737_fake!(
+        oc737_fake_font_text,
+        OC737_PREV_FONT_TEXT,
+        ee::s12::f_00391cb0__generated,
+        0x0039_1cb0
+    );
+
+    pub(crate) static OC737_PREV_FREE_SLOT: AtomicUsize = AtomicUsize::new(0);
+
+    /// `BoltFile_FreeSlot` fake: logs the call like the others, then does
+    /// what the real one's callers rely on: the slot loses its data pointer
+    /// and the cache's byte count drops by the control block's `+4` word.
+    pub(crate) fn oc737_fake_free_slot(c: &mut Cpu) {
+        if c.bus.read32(OC737_FX_CTRL) != OC737_FX_MAGIC {
+            return fakes::fall_back(c, &OC737_PREV_FREE_SLOT, ee::s03::f_0019d4b8__generated);
+        }
+        let mgr = c.g[A0][0] as u32;
+        let bank = c.g[A1][0] as u32;
+        let index = c.g[A2][0] as u32;
+        let slot = mgr
+            .wrapping_add(bank.wrapping_mul(0x12000))
+            .wrapping_add(index.wrapping_mul(0x120));
+        fakes::fake_call(c, 0x0019_d4b8);
+        c.bus.write32(slot.wrapping_add(0x104), 0);
+        let used = c.bus.read32(mgr.wrapping_add(0xb4000));
+        let drop = c.bus.read32(OC737_FX_CTRL + 4);
+        c.bus
+            .write32(mgr.wrapping_add(0xb4000), used.wrapping_sub(drop));
+    }
+
+    macro_rules! oc737_hook {
+        ($shard:ident, $slot:ident, $fake:ident, $prev:ident) => {
+            fakes::hook(std::ptr::addr_of_mut!(ee::$shard::$slot), $fake, &$prev);
+        };
+    }
+
+    pub(crate) fn oc737_install_fakes() {
+        oc737_hook!(s03, OVERRIDE_001A0548, oc737_fake_rider, OC737_PREV_RIDER);
+        oc737_hook!(
+            s03,
+            OVERRIDE_0019F3E8,
+            oc737_fake_set_pose,
+            OC737_PREV_SET_POSE
+        );
+        oc737_hook!(
+            s03,
+            OVERRIDE_0019F548,
+            oc737_fake_set_board,
+            OC737_PREV_SET_BOARD
+        );
+        oc737_hook!(
+            s03,
+            OVERRIDE_0019E538,
+            oc737_fake_set_visible,
+            OC737_PREV_SET_VISIBLE
+        );
+        oc737_hook!(
+            s03,
+            OVERRIDE_0019D428,
+            oc737_fake_find_name,
+            OC737_PREV_FIND_NAME
+        );
+        oc737_hook!(
+            s03,
+            OVERRIDE_0019D3B0,
+            oc737_fake_find_free,
+            OC737_PREV_FIND_FREE
+        );
+        oc737_hook!(
+            s03,
+            OVERRIDE_0019D4B8,
+            oc737_fake_free_slot,
+            OC737_PREV_FREE_SLOT
+        );
+        oc737_hook!(s10, OVERRIDE_0031BE50, oc737_fake_quat, OC737_PREV_QUAT);
+        oc737_hook!(
+            s10,
+            OVERRIDE_00311A50,
+            oc737_fake_anim_reset,
+            OC737_PREV_ANIM_RESET
+        );
+        oc737_hook!(
+            s10,
+            OVERRIDE_003128E8,
+            oc737_fake_anim_play,
+            OC737_PREV_ANIM_PLAY
+        );
+        oc737_hook!(s10, OVERRIDE_00317670, oc737_fake_hash, OC737_PREV_HASH);
+        oc737_hook!(s10, OVERRIDE_00317F60, oc737_fake_alloc, OC737_PREV_ALLOC);
+        oc737_hook!(s10, OVERRIDE_00317E30, oc737_fake_open, OC737_PREV_OPEN);
+        oc737_hook!(s01, OVERRIDE_0014DC80, oc737_fake_be, OC737_PREV_BE);
+        oc737_hook!(s01, OVERRIDE_0014DD58, oc737_fake_iface, OC737_PREV_IFACE);
+        oc737_hook!(s01, OVERRIDE_0014FF90, oc737_fake_uber, OC737_PREV_UBER);
+        oc737_hook!(s01, OVERRIDE_00150928, oc737_fake_money, OC737_PREV_MONEY);
+        oc737_hook!(
+            s01,
+            OVERRIDE_00147488,
+            oc737_fake_char_id,
+            OC737_PREV_CHAR_ID
+        );
+        oc737_hook!(
+            s13,
+            OVERRIDE_00397840,
+            oc737_fake_list_first,
+            OC737_PREV_LIST_FIRST
+        );
+        oc737_hook!(
+            s13,
+            OVERRIDE_0039D860,
+            oc737_fake_by_hash,
+            OC737_PREV_BY_HASH
+        );
+        oc737_hook!(
+            s13,
+            OVERRIDE_003A0C70,
+            oc737_fake_set_text,
+            OC737_PREV_SET_TEXT
+        );
+        oc737_hook!(
+            s14,
+            OVERRIDE_003DF9D8,
+            oc737_fake_release,
+            OC737_PREV_RELEASE
+        );
+        oc737_hook!(s14, OVERRIDE_003DF748, oc737_fake_read, OC737_PREV_READ);
+        oc737_hook!(s14, OVERRIDE_003E1BB8, oc737_fake_wait, OC737_PREV_WAIT);
+        oc737_hook!(s15, OVERRIDE_004166F4, oc737_fake_strcpy, OC737_PREV_STRCPY);
+        oc737_hook!(
+            s12,
+            OVERRIDE_00391E30,
+            oc737_fake_text_draw,
+            OC737_PREV_TEXT_DRAW
+        );
+        oc737_hook!(
+            s12,
+            OVERRIDE_00391CB0,
+            oc737_fake_font_text,
+            OC737_PREV_FONT_TEXT
+        );
+    }
+
+    /// A machine with the fakes installed, gated on, and `calls` as the range
+    /// of fake-call indices at which a call may unwind.
+    pub(crate) fn oc737_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        oc737_install_fakes();
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC737_FX_CTRL, OC737_FX_MAGIC);
+        r
+    }
+
+    /// Queues the results the next calls of a queued fake return.
+    pub(crate) fn oc737_queue(c: &mut Cpu, q: u32, results: &[u32]) {
+        c.bus.write32(OC737_FX_CTRL + q, 0);
+        c.bus.write32(OC737_FX_CTRL + q + 4, results.len() as u32);
+        for (i, v) in results.iter().enumerate() {
+            c.bus.write32(OC737_FX_CTRL + q + 8 + 4 * i as u32, *v);
+        }
+    }
+
+    /// The bolt file manager of the cache tests: slot `index` of `bank`.
+    pub(crate) fn oc737_slot(bank: u32, index: u32) -> u32 {
+        OC737_FX_MGR + bank * 0x12000 + index * 0x120
+    }
+
+    /// `BoltFile_EnsureBudget`: bytes in use around the budget, a handful of
+    /// slots in the banks (idle ones with data, and decoys that are
+    /// referenced, busy or empty), and a free that lowers the byte count by
+    /// nothing, a little or everything.
+    #[test]
+    fn bolt_file_ensure_budget_matches() {
+        fakes::covered(
+            ee::s03::f_0019d578__generated,
+            bolt_file_ensure_budget,
+            200,
+            &|c, seed| {
+                let mut r = oc737_machine(c, seed, 0x0019_d578, 8);
+                let bank = r.next_u32() % 10;
+                let drop = [0u32, 700_000, 100_000_000][(r.next_u32() % 3) as usize];
+                c.bus.write32(OC737_FX_CTRL + 4, drop);
+                let used = match seed % 4 {
+                    0 => 0,
+                    1 => 9_999_000,
+                    _ => 10_000_000 + r.next_u32() % 5000,
+                };
+                c.bus.write32(OC737_FX_MGR + 0xb4000, used);
+                for k in 0..10u32 {
+                    let b = if k < 4 { bank } else { r.next_u32() % 10 };
+                    let slot = oc737_slot(b, r.next_u32() % 256);
+                    c.bus.write32(slot + 0x104, 1 + r.next_u32() % 1000);
+                    c.bus.write32(slot + 0x11c, r.next_u32() >> 4);
+                    match r.next_u32() % 4 {
+                        0 => c.bus.write32(slot, 1),
+                        1 => c.bus.write32(slot + 0x114, 1),
+                        2 => c.bus.write32(slot + 0x104, 0),
+                        _ => {}
+                    }
+                }
+                c.g[A0][0] = sx(OC737_FX_MGR);
+                c.g[A1][0] = bank as u64;
+                c.g[A2][0] = (r.next_u32() % 3000) as u64;
+                c.pc = 0x0019_d578;
+            },
+        );
+    }
+
+    /// `BoltFile_Acquire`: a cached slot of that name in each state, or a new
+    /// one; async and deferred requests; load threads or none.
+    #[test]
+    fn bolt_file_acquire_matches() {
+        fakes::covered(
+            ee::s03::f_0019da10__generated,
+            bolt_file_acquire,
+            300,
+            &|c, seed| {
+                let mut r = oc737_machine(c, seed, 0x0019_da10, 12);
+                let bank = r.next_u32() % 10;
+                let found = r.next_u32() % 256;
+                let free = r.next_u32() % 256;
+                c.bus.write32(OC737_FX_CTRL + 4, 0);
+                c.bus
+                    .write32(OC737_FX_MGR + 0xb4000, r.next_u32() % 1_000_000);
+                let threads = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 3
+                };
+                c.bus.write32(OC737_FX_MGR + 0xb4004, threads);
+                c.bus
+                    .write32(OC737_FX_MGR + 0xb4008 + 4 * bank, r.next_u32() % 100);
+                for slot in [oc737_slot(bank, found), oc737_slot(bank, free)] {
+                    c.bus.write32(slot, r.next_u32() % 4);
+                    c.bus.write32(slot + 0x114, r.next_u32() % 4);
+                    c.bus.write32(slot + 0x108, r.next_u32());
+                    c.bus.write32(slot + 0x10c, r.next_u32() % 3);
+                    c.bus.write32(slot + 0x11c, r.next_u32());
+                }
+                let hit = if (seed / 4) % 3 != 0 { found } else { u32::MAX };
+                oc737_queue(c, OC737_Q_FIND, &[hit]);
+                oc737_queue(c, OC737_Q_FREE, &[free]);
+                c.g[A0][0] = sx(OC737_FX_MGR);
+                c.g[A1][0] = bank as u64;
+                c.g[A2][0] = sx(OC737_FX_NAME);
+                c.g[A3][0] = (r.next_u32() % 8) as u64;
+                c.g[T0][0] = (seed & 1) as u64;
+                c.g[T1][0] = ((seed >> 1) & 1) as u64;
+                c.pc = 0x0019_da10;
+            },
+        );
+    }
+
+    // Fixture objects, all in DATA+0x200000 and up: clear of the fake log
+    // (DATA+0x100000) and of the pointers the fakes return (DATA..DATA+0x40000).
+    pub(crate) const FX_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const FX_MAGIC: u32 = 0x4f43_3734;
+
+    /// Allocation fake: calls made (`+0x10`) and calls that fail first (`+0x14`).
+    pub(crate) const FX_ALLOC_COUNT: u32 = FX_CTRL + 0x10;
+
+    pub(crate) const FX_ALLOC_FAILS: u32 = FX_CTRL + 0x14;
+
+    pub(crate) const FX_PACKED: u32 = DATA + 0x24_0000;
+
+    /// The Bolt file table (`cFEBoltFileManager`): 10 banks of 256 slots,
+    /// then the memory counters (`+0xb4000` bytes used, `+0xb4004` async loads).
+    pub(crate) const FX_TABLE: u32 = DATA + 0x30_0000;
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then gives the
+    /// results the ported code's branches need: `GetHashValue32` (an
+    /// injective hash: static strings hash to their address, the key buffer
+    /// on the stack to `0x70000000 + first byte`), a file size from
+    /// `BXFILE_sizez`, and an allocator that fails its first calls.
+    pub(crate) fn oc748_fake_call(c: &mut Cpu, addr: u32) {
+        let a0 = c.g[A0][0] as u32;
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, addr);
+        if c.pc != ra {
+            return;
+        }
+        match addr {
+            0x0031_7670 => {
+                c.g[V0][0] = if a0 >= 0x0100_0000 {
+                    let b = c.bus.read8(a0);
+                    0x7000_0000 + b as u64
+                } else {
+                    a0 as u64
+                };
+            }
+            0x0031_7f60 => c.g[V0][0] = 0x1000 + (a0 & 0xff0) as u64,
+            0x0031_7e30 => {
+                let n = c.bus.read32(FX_ALLOC_COUNT);
+                c.bus.write32(FX_ALLOC_COUNT, n + 1);
+                if n < c.bus.read32(FX_ALLOC_FAILS) {
+                    c.g[V0][0] = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    macro_rules! oc748_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(FX_CTRL) != FX_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    oc748_fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc748_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc748_fakes!(
+        (
+            oc748_fake_317670,
+            OC748_PREV_317670,
+            ee::s10::OVERRIDE_00317670,
+            ee::s10::f_00317670__generated,
+            0x0031_7670
+        ),
+        (
+            oc748_fake_14dc80,
+            OC748_PREV_14DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80
+        ),
+        (
+            oc748_fake_14dd58,
+            OC748_PREV_14DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58
+        ),
+        (
+            oc748_fake_14eec8,
+            OC748_PREV_14EEC8,
+            ee::s01::OVERRIDE_0014EEC8,
+            ee::s01::f_0014eec8__generated,
+            0x0014_eec8
+        ),
+        (
+            oc748_fake_3a1000,
+            OC748_PREV_3A1000,
+            ee::s13::OVERRIDE_003A1000,
+            ee::s13::f_003a1000__generated,
+            0x003a_1000
+        ),
+        (
+            oc748_fake_3a0c70,
+            OC748_PREV_3A0C70,
+            ee::s13::OVERRIDE_003A0C70,
+            ee::s13::f_003a0c70__generated,
+            0x003a_0c70
+        ),
+        (
+            oc748_fake_3b47f8,
+            OC748_PREV_3B47F8,
+            ee::s13::OVERRIDE_003B47F8,
+            ee::s13::f_003b47f8__generated,
+            0x003b_47f8
+        ),
+        (
+            oc748_fake_317e30,
+            OC748_PREV_317E30,
+            ee::s10::OVERRIDE_00317E30,
+            ee::s10::f_00317e30__generated,
+            0x0031_7e30
+        ),
+        (
+            oc748_fake_317e98,
+            OC748_PREV_317E98,
+            ee::s10::OVERRIDE_00317E98,
+            ee::s10::f_00317e98__generated,
+            0x0031_7e98
+        ),
+        (
+            oc748_fake_317f60,
+            OC748_PREV_317F60,
+            ee::s10::OVERRIDE_00317F60,
+            ee::s10::f_00317f60__generated,
+            0x0031_7f60
+        ),
+        (
+            oc748_fake_3e5700,
+            OC748_PREV_3E5700,
+            ee::s14::OVERRIDE_003E5700,
+            ee::s14::f_003e5700__generated,
+            0x003e_5700
+        ),
+        (
+            oc748_fake_3e5760,
+            OC748_PREV_3E5760,
+            ee::s14::OVERRIDE_003E5760,
+            ee::s14::f_003e5760__generated,
+            0x003e_5760
+        ),
+        (
+            oc748_fake_3df748,
+            OC748_PREV_3DF748,
+            ee::s14::OVERRIDE_003DF748,
+            ee::s14::f_003df748__generated,
+            0x003d_f748
+        ),
+        (
+            oc748_fake_3e1bb8,
+            OC748_PREV_3E1BB8,
+            ee::s14::OVERRIDE_003E1BB8,
+            ee::s14::f_003e1bb8__generated,
+            0x003e_1bb8
+        ),
+    );
+
+    /// Machine state of the four tests: scrambled registers, fake hooks and
+    /// their gate, the allocator's failure count, and the junk below `sp`.
+    pub(crate) fn oc748_fixture(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let mut r = machine(c, seed, salt, calls);
+        c.bus.write32(FX_CTRL, FX_MAGIC);
+        c.bus.write32(FX_ALLOC_COUNT, 0);
+        c.bus.write32(FX_ALLOC_FAILS, (seed / 7) % 3);
+        for i in 1..=0x300u32 {
+            let w = if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.next_u32()
+            };
+            c.bus.write32(crate::difftest::SP - 4 * i, w);
+        }
+        r
+    }
+
+    /// Address of slot `idx` of `bank` in the fixture table.
+    pub(crate) fn oc748_slot(bank: u32, idx: u32) -> u32 {
+        FX_TABLE + bank * 0x12000 + idx * 0x120
+    }
+
+    /// A queued slot: `flags`, a load-time stamp (`+0x11c`), a data pointer
+    /// (never with flags 0, which would send the real `EvictBytes` into
+    /// `FreeSlot`), the async flag, and sizes.
+    pub(crate) fn oc748_put_slot(
+        c: &mut Cpu,
+        r: &mut Rng,
+        bank: u32,
+        idx: u32,
+        flags: u32,
+        stamp: u32,
+    ) {
+        let s = oc748_slot(bank, idx);
+        c.bus.write32(s, flags);
+        c.bus
+            .write32(s + 0x104, 0x0090_0000 + (r.next_u32() & 0xfff0));
+        c.bus.write32(s + 0x10c, r.next_u32() & 1);
+        c.bus.write32(s + 0x114, r.next_u32() & 1);
+        c.bus.write32(s + 0x118, r.next_u32() & 0xffff);
+        c.bus.write32(s + 0x11c, stamp);
+        c.bus.write32(s + 4, r.next_u32());
+    }
+
+    /// The compressed data of an unpack test: a header byte (known size
+    /// formats and unknown ones), the `0xfb` marker (or not) and a size that
+    /// is positive, zero or (32-bit formats) negative.
+    pub(crate) fn oc748_packed(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        const HDRS: [u8; 8] = [0x10, 0x11, 0x90, 0x91, 0x30, 0xb0, 0x34, 0x77];
+        let hdr = HDRS[(seed % 8) as usize];
+        c.bus.write8(FX_PACKED, hdr);
+        c.bus
+            .write8(FX_PACKED + 1, if (seed / 8) % 6 == 0 { 0x12 } else { 0xfb });
+        let size = (r.next_u32() % 100) + 1;
+        let (b2, b3, b4, b5) = match (seed / 5) % 5 {
+            0 => (0, 0, 0, 0),
+            1 => (0x80, 0, 0, 0),
+            _ => (0, 0, size as u8, (r.next_u32() % 3) as u8),
+        };
+        c.bus.write8(FX_PACKED + 2, b2);
+        c.bus.write8(FX_PACKED + 3, b3);
+        c.bus.write8(FX_PACKED + 4, b4);
+        c.bus.write8(FX_PACKED + 5, b5);
+    }
+
+    /// `BoltFile_UnpackSlot`: no slot, no data, unknown or empty or negative
+    /// sizes, and a real unpack with the allocator failing 0 to 2 times (the
+    /// real `EnsureBudget` returns at once, the real `EvictBytes` finds no
+    /// slot to free).
+    #[test]
+    fn bolt_file_unpack_slot_matches() {
+        oc748_install_fakes();
+        fakes::covered(
+            ee::s03::f_0019d000__generated,
+            bolt_file_unpack_slot,
+            400,
+            &|c, seed| {
+                let mut r = oc748_fixture(c, seed, 0x0019_d000, 8);
+                let bank = seed % 10;
+                let slot = oc748_slot(bank, (seed / 10) % 256);
+                c.bus
+                    .write32(slot + 0x104, if seed % 11 == 1 { 0 } else { FX_PACKED });
+                c.bus.write32(slot + 0x118, r.next_u32() & 0xffff);
+                // Flags non-zero: the real `EvictBytes` must not free this slot.
+                c.bus.write32(slot, 1);
+                c.bus.write32(FX_TABLE + 0xb4000, r.next_u32() & 0xffff);
+                oc748_packed(c, &mut r, seed);
+                c.g[A0][0] = sx(FX_TABLE);
+                c.g[A1][0] = bank as u64;
+                c.g[A2][0] = if seed % 13 == 0 { 0 } else { sx(slot) };
+                c.pc = 0x0019_d000;
+            },
+        );
+    }
+
+    /// `BoltFile_StartNextQueued`: no queued slot, the oldest queued slot in
+    /// the own bank (ties and the stamp-0 rule), and a queued slot found only
+    /// in another bank; the real `LoadSlot` runs on the fakes.
+    #[test]
+    fn bolt_file_start_next_queued_matches() {
+        oc748_install_fakes();
+        fakes::covered(
+            ee::s03::f_0019d140__generated,
+            bolt_file_start_next_queued,
+            300,
+            &|c, seed| {
+                let mut r = oc748_fixture(c, seed, 0x0019_d140, 12);
+                let bank = seed % 10;
+                // Decoys that are not queued (flags 1 and 2).
+                for k in 0..3u32 {
+                    let b = r.next_u32() % 10;
+                    let i = r.next_u32() % 256;
+                    let stamp = r.next_u32() % 4;
+                    oc748_put_slot(c, &mut r, b, i, 1 + (k & 1), stamp);
+                }
+                match (seed / 10) % 3 {
+                    0 => {}
+                    1 => {
+                        for _ in 0..1 + r.next_u32() % 3 {
+                            let i = r.next_u32() % 256;
+                            let stamp = r.next_u32() % 3;
+                            oc748_put_slot(c, &mut r, bank, i, 3, stamp);
+                        }
+                    }
+                    _ => {
+                        let b = (bank + 1 + r.next_u32() % 9) % 10;
+                        for _ in 0..1 + r.next_u32() % 3 {
+                            let i = r.next_u32() % 256;
+                            let stamp = r.next_u32() % 3;
+                            oc748_put_slot(c, &mut r, b, i, 3, stamp);
+                        }
+                        if seed % 2 == 0 {
+                            let b2 = (b + 1 + r.next_u32() % 9) % 10;
+                            if b2 != bank {
+                                let i = r.next_u32() % 256;
+                                oc748_put_slot(c, &mut r, b2, i, 3, 1);
+                            }
+                        }
+                    }
+                }
+                c.bus.write32(FX_TABLE + 0xb4000, 0);
+                c.g[A0][0] = sx(FX_TABLE);
+                c.g[A1][0] = bank as u64;
+                c.pc = 0x0019_d140;
+            },
+        );
+    }
+
+    /// `BoltFile_LoadSlot`: synchronous and asynchronous slots, the allocator
+    /// failing 0 to 2 times first (the real `EvictBytes` finds nothing to
+    /// free).
+    #[test]
+    fn bolt_file_load_slot_matches() {
+        oc748_install_fakes();
+        fakes::covered(
+            ee::s03::f_0019d8b8__generated,
+            bolt_file_load_slot,
+            300,
+            &|c, seed| {
+                let mut r = oc748_fixture(c, seed, 0x0019_d8b8, 8);
+                let bank = seed % 10;
+                let idx = r.next_u32() % 256;
+                let slot = oc748_slot(bank, idx);
+                c.bus.write32(slot + 0x10c, (seed / 10) % 2);
+                c.bus.write32(slot + 4, r.next_u32());
+                c.bus.write32(FX_TABLE + 0xb4000, r.next_u32() & 0xffff);
+                c.bus.write32(FX_TABLE + 0xb4004, r.next_u32() & 0xff);
+                c.g[A0][0] = sx(FX_TABLE);
+                c.g[A1][0] = bank as u64;
+                c.g[A2][0] = idx as u64;
+                c.pc = 0x0019_d8b8;
             },
         );
     }

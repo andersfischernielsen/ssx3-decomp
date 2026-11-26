@@ -15,11 +15,18 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
-    0x0018_3de0,
-    cfe_state_uber_trick_refresh_trick_list,
-    "cFEStateUberTrick_RefreshTrickList",
-)];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (
+        0x0018_3de0,
+        cfe_state_uber_trick_refresh_trick_list,
+        "cFEStateUberTrick_RefreshTrickList",
+    ),
+    (
+        0x0018_4520,
+        cfe_state_uber_trick_update_cost,
+        "cFEStateUberTrick_UpdateCost",
+    ),
+];
 
 /// `cFEStateUberTrick::updateTrickMenuEntry(self)` (0x184520): refreshes the
 /// uber-trick menu's cost text (the trick's cost from the table the category
@@ -121,6 +128,117 @@ pub fn fe_uber_trick_update_cost(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `cFEStateUberTrick_UpdateCost(self)` (0x184520): refreshes the two text
+/// objects of the uber-trick screen: the cost of the selected trick
+/// (`getDollarString(table[trick].cost)` into "cost_num") and the player's
+/// money (into "have_num"), each only when the screen has that object.
+#[allow(unused_labels, unused_variables, unused_assignments)]
+pub fn cfe_state_uber_trick_update_cost(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1845c8: {
+            c.cycles += 36;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x50));
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4c));
+            c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa0));
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xa0));
+            c.g[S4][0] = c.lb((c.g[A1][0] as u32).wrapping_add(0x18));
+            c.g[S0][0] = c.lb((c.g[A0][0] as u32).wrapping_add(0x18));
+            call_ptr(c, 0x0014dc80, 0x0018455c)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0x6;
+            call_ptr(c, 0x0014dd58, 0x00184568)?;
+            c.g[A1][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x44));
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A3][0] = c.g[SP][0];
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0014ff90, 0x0018457c)?;
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x24));
+            c.g[S2][0] = c.g[V0][0];
+            call_ptr(c, 0x00397840, 0x00184588)?;
+            c.g[A0][0] = 0x460000;
+            c.g[S3][0] = c.g[V0][0];
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2648));
+            call_ptr(c, 0x00317670, 0x00184598)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S3][0];
+            call_ptr(c, 0x0039d860, 0x001845a4)?;
+            c.g[S0][0] = c.g[V0][0];
+            let t = c.g[S0][0] == 0u64;
+            c.g[V0][0] = sx((c.g[S4][0] as u32) << 3);
+            if t {
+                break 'b_1845c8;
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[A0][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x6));
+                call_ptr(c, 0x00198af0, 0x001845bc)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x003a0c50, 0x001845c8)?;
+                break 'b_1845c8;
+            }
+        }
+        'b_18464c: {
+            c.cycles += 9;
+            c.g[A0][0] = 0x460000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2638));
+            call_ptr(c, 0x00317670, 0x001845d4)?;
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0039d860, 0x001845e0)?;
+            c.g[S2][0] = c.g[V0][0];
+            if c.g[S2][0] == 0u64 {
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                break 'b_18464c;
+            } else {
+                c.cycles += 24;
+                call_ptr(c, 0x0014dc80, 0x001845f4)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0x1;
+                call_ptr(c, 0x0014dd58, 0x00184600)?;
+                c.g[A1][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x44));
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x00147488, 0x0018460c)?;
+                c.g[S0][0] = sx((c.g[V0][0] as u32) << 24);
+                c.g[S0][0] = sx(((c.g[S0][0] as u32) as i32 >> 24) as u32);
+                call_ptr(c, 0x0014dc80, 0x00184618)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0xb;
+                call_ptr(c, 0x0014dd58, 0x00184624)?;
+                c.g[A1][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x44));
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A2][0] = c.g[S0][0];
+                call_ptr(c, 0x00150928, 0x00184634)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x00198af0, 0x0018463c)?;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x003a0c50, 0x00184648)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                break 'b_18464c;
+            }
+        }
+        c.cycles += 7;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        Ok(())
+    });
 }
 
 #[cfg(test)]
@@ -385,6 +503,59 @@ pub(crate) mod tests {
         assert!(
             out.status.success() && text.contains("1 passed"),
             "child run of {name}:\n{text}"
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::oc737_machine;
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::oc737_queue;
+
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::OC737_Q_TABLE;
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::OC737_Q_TEXT;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::OC737_FX_SELF;
+
+    pub(crate) const OC737_FX_MM: u32 = DATA + 0x25_0000;
+
+    pub(crate) const OC737_FX_TM: u32 = DATA + 0x26_0000;
+
+    pub(crate) const OC737_FX_P1: u32 = DATA + 0x27_0000;
+
+    pub(crate) const OC737_FX_P2: u32 = DATA + 0x28_0000;
+
+    pub(crate) const OC737_FX_TBL: u32 = DATA + 0x29_0000;
+
+    pub(crate) const OC737_FX_TXT1: u32 = DATA + 0x2a_0000;
+
+    pub(crate) const OC737_FX_TXT2: u32 = DATA + 0x2b_0000;
+
+    /// `cFEStateUberTrick_UpdateCost`: the selected category and trick, the
+    /// cost table, and which of the two text objects the screen has.
+    #[test]
+    fn cfe_state_uber_trick_update_cost_matches() {
+        fakes::covered(
+            ee::s02::f_00184520__generated,
+            cfe_state_uber_trick_update_cost,
+            200,
+            &|c, seed| {
+                let mut r = oc737_machine(c, seed, 0x0018_4520, 16);
+                c.bus.write32(OC737_FX_SELF + 0x4c, OC737_FX_MM);
+                c.bus.write32(OC737_FX_SELF + 0x50, OC737_FX_TM);
+                c.bus.write8(OC737_FX_SELF + 0x44, (r.next_u32() % 4) as u8);
+                c.bus.write32(OC737_FX_MM + 0xa0, OC737_FX_P1);
+                c.bus.write32(OC737_FX_TM + 0xa0, OC737_FX_P2);
+                c.bus.write8(OC737_FX_P1 + 0x18, (r.next_u32() % 16) as u8);
+                let trick = (r.next_u32() % 81) as i32 - 40;
+                c.bus.write8(OC737_FX_P2 + 0x18, trick as u8);
+                fill(c, &mut r, OC737_FX_TBL - 0x400, 0x200);
+                let first = if seed % 3 == 1 { 0 } else { OC737_FX_TXT1 };
+                let second = if seed % 5 == 2 { 0 } else { OC737_FX_TXT2 };
+                oc737_queue(c, OC737_Q_TABLE, &[OC737_FX_TBL]);
+                // Both lookups of the hash-named text objects.
+                oc737_queue(c, OC737_Q_TEXT, &[first, second]);
+                c.g[A0][0] = sx(OC737_FX_SELF);
+                c.pc = 0x0018_4520;
+            },
         );
     }
 }

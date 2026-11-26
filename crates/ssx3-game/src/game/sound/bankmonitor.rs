@@ -562,6 +562,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         path_track_submit_queue,
         "PATH_TrackSubmitQueue",
     ),
+    (0x002a_f960, speech_bank_load, "SpeechBank_Load"),
 ];
 
 /// Same-shard direct callees used above.
@@ -10448,6 +10449,107 @@ pub fn speech_system_stream_start_callback(c: &mut Cpu) {
     })
 }
 
+/// `SpeechBank_Load` (0x2af960): builds the bank path with sprintf from the
+/// format at 0x4a37c0 and `a0`. When `a2` is 0 it loads the file (only if the
+/// file exists; otherwise it returns 0). It then allocates and constructs a
+/// 0x4c-byte bank object, registers the bank with the sound system, copies the
+/// path into the object and stores the file name part (after the last
+/// backslash). Returns the object.
+pub fn speech_bank_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S2, 0x80);
+        c.g[A1][0] = 0x004a_37c0;
+        frame.save(c, S3, 0x70);
+        c.g[S2][0] = c.g[A2][0];
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S4, 0x60);
+        frame.save(c, S0, 0xa0);
+        c.g[S4][0] = (c.g[S2][0] < 0x1) as u64;
+        frame.save(c, S1, 0x90);
+        c.g[A0][0] = c.g[SP][0];
+        frame.save_ra(c, 0x50);
+        c.g[A2][0] = c.g[S3][0];
+        call_ptr(c, 0x0041_7828, 0x002a_f99c)?;
+
+        c.g[A1][0] = 0x0048_0000;
+        let mut loaded = true;
+        if c.g[S2][0] == 0 {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[SP][0];
+            call_ptr(c, 0x0031_7f38, 0x002a_f9ac)?;
+            let exists = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[SP][0];
+            if exists {
+                c.cycles += 4;
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x003e_18c8, 0x002a_f9c4)?;
+                c.g[S2][0] = c.g[V0][0];
+                c.g[A1][0] = 0x0048_0000;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                loaded = false;
+            }
+        }
+
+        if loaded {
+            c.cycles += 22;
+            c.g[A2][0] = 0;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x32b0));
+            c.g[A3][0] = 0;
+            c.g[A0][0] = 0x4c;
+            call_ptr(c, 0x0031_7d70, 0x002a_f9e0)?;
+            c.g[A0][0] = c.g[V0][0];
+            Callee {
+                addr: 0x002a_f8e0,
+                f: ee::s08::f_002af8e0,
+            }
+            .call(c, 0x002a_f9e8)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S2][0];
+            let s4 = c.g[S4][0];
+            Addr((c.g[S0][0] as u32).wrapping_add(0x48)).sw(c, s4);
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+            let s2 = c.g[S2][0];
+            Addr((c.g[S0][0] as u32).wrapping_add(0x44)).sw(c, s2);
+            call_ptr(c, 0x003d_69f0, 0x002a_fa00)?;
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A0][0] = c.g[S1][0];
+            let bank = c.g[V0][0];
+            Addr(c.g[S0][0] as u32).sw(c, bank);
+            call_ptr(c, 0x0041_66f4, 0x002a_fa10)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x5c;
+            call_ptr(c, 0x0041_acc0, 0x002a_fa1c)?;
+            let found = c.g[V0][0] != 0;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            if found {
+                c.cycles += 1;
+                let name = c.g[V0][0];
+                Addr((c.g[S0][0] as u32).wrapping_add(0x40)).sw(c, name);
+            } else {
+                c.cycles += 2;
+                let path = c.g[S1][0];
+                Addr((c.g[S0][0] as u32).wrapping_add(0x40)).sw(c, path);
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S0][0];
+        }
+
+        c.cycles += 8;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14986,6 +15088,47 @@ pub(crate) mod tests {
                 );
                 c.g[A0][0] = sx(sys);
                 c.g[A1][0] = sx(msg);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fememcard::tests::oc709_install_fakes;
+
+    pub(crate) use crate::game::fe::fememcard::tests::OC709_CTRL;
+    pub(crate) use crate::game::fe::fememcard::tests::OC709_MAGIC;
+    pub(crate) use crate::game::fe::fememcard::tests::OC709_RES;
+
+    pub(crate) const OC709_NAME: u32 = DATA + 0x0020_7000;
+
+    pub(crate) const OC709_FILE: u32 = DATA + 0x0020_8000;
+
+    #[test]
+    fn speech_bank_load_matches() {
+        oc709_install_fakes();
+        check(
+            ee::s08::f_002af960__generated,
+            speech_bank_load,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x002a_f960 ^ seed as u64);
+                scramble(c, &mut r);
+                let _ = fakes::machine(c, seed, 0x002a_f960, 0);
+                c.pc = 0x002a_f960;
+                c.bus.write32(OC709_CTRL, OC709_MAGIC);
+                let name: &[u8] = if seed % 2 == 0 {
+                    b"data\\bank.snd\0"
+                } else {
+                    b"bank.snd\0"
+                };
+                for (i, byte) in name.iter().enumerate() {
+                    c.bus.write8(OC709_NAME + i as u32, *byte);
+                }
+                c.g[A0][0] = sx(OC709_NAME);
+                c.g[A2][0] = if seed % 3 == 1 { sx(OC709_FILE) } else { 0 };
+                let exists = (seed % 3 != 0) as u32;
+                for i in 0..4 {
+                    c.bus.write32(OC709_RES + 4 * i, exists);
+                }
             },
         );
     }

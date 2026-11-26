@@ -316,6 +316,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         sphere_tree_collide_tree_node,
         "SphereTree_CollideTreeNode",
     ),
+    (
+        0x0032_db40,
+        sphere_tree_sort_child_order_2,
+        "SphereTree_SortChildOrder",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9404,6 +9409,83 @@ pub fn sphere_tree_collide_tree_node(c: &mut Cpu) {
     })
 }
 
+/// `SphereTree_SortChildOrder` (0x32db40): builds the four child keys with
+/// VU0 (`-1000` scaled by the sphere's centre), fills the order and distance
+/// arrays for four children, then sorts the key/value pairs descending with
+/// `ShellSortDesc_KeyVal` (0x32da40).
+pub fn sphere_tree_sort_child_order_2(c: &mut Cpu) {
+    guest(c, sort_child_order_body_2)
+}
+
+pub(crate) fn sort_child_order_body_2(c: &mut Cpu) -> Flow {
+    c.cycles += 20;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+    c.g[AT][0] = 0xffff_ffff_c47a_0000;
+    c.mtc1(1, 0);
+    c.sd(sp(c).wrapping_add(0x40), c.g[RA][0]);
+    c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x9c));
+    c.mfc1(2, 0);
+    c.lqc2(4, c.g[A1][0] as u32);
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, sp(c).wrapping_add(0x30));
+    c.g[T2][0] = 0;
+    c.lq(2, sp(c).wrapping_add(0x30));
+    c.g[A1][0] = c.g[A0][0];
+    c.g[T4][0] = 0x7;
+    c.g[T3][0] = sx((c.g[A0][0] as u32).wrapping_add(0xb8));
+    c.sq(2, sp(c).wrapping_add(0x20));
+    c.g[T1][0] = c.g[A2][0];
+    c.g[T0][0] = sx(sp(c).wrapping_add(0x1c));
+    c.g[A3][0] = c.g[SP][0];
+    loop {
+        c.cycles += 25;
+        c.lqc2(3, c.g[A1][0] as u32);
+        c.lqc2(5, sp(c).wrapping_add(0x20));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.qmfc2(2, 4);
+        c.mtc1(2, 0);
+        c.g[V1][0] = sx((c.g[T4][0] as u32).wrapping_sub(c.g[T2][0] as u32));
+        c.cvt_w_s(1, 0);
+        c.mfc1(4, 1);
+        c.sw(c.g[T1][0] as u32, c.g[T2][0]);
+        c.sw(c.g[T3][0] as u32, c.g[V1][0]);
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+        c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x4));
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = sx(0u32.wrapping_sub(c.g[A0][0] as u32));
+        c.sw(c.g[A3][0] as u32, c.g[A0][0]);
+        c.sw(c.g[T0][0] as u32, c.g[V0][0]);
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x4));
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x4));
+        c.g[V0][0] = ((c.g[T2][0] as i64) < 4i64) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_db90);
+        }
+    }
+    c.cycles += 6;
+    c.g[A0][0] = 0x8;
+    c.g[A1][0] = c.g[SP][0];
+    Callee {
+        addr: 0x0032_da40,
+        f: ee::s11::f_0032da40,
+    }
+    .call(c, 0x0032_dc00)?;
+    c.g[RA][0] = c.ld(sp(c).wrapping_add(0x40));
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x50));
+    ret(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12124,6 +12206,53 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = tree_node_collide_base(c, seed);
                 tree_node_collide_fixture(c, seed, &mut r);
+            },
+        );
+    }
+
+    pub(crate) const FX_SORT: u32 = DATA + 0x30_0000;
+
+    pub(crate) const FX_SORT_GATE: u32 = DATA + 0x31_0000;
+
+    pub(crate) const FX_SORT_MAGIC: u32 = 0x5027_0706;
+
+    // ShellSortDesc_KeyVal is bounded only by its input: the gated fake logs the
+    // call and returns, the generated body runs otherwise.
+    pub(crate) fn oc706_sort_fake(c: &mut Cpu) {
+        if c.bus.read32(FX_SORT_GATE) != FX_SORT_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc706_sort_fake),
+                ee::s11::f_0032da40__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0032_da40);
+    }
+
+    pub(crate) fn oc706_sort_install() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0032DA40),
+            oc706_sort_fake,
+            fakes::prev_cell(oc706_sort_fake),
+        );
+    }
+
+    #[test]
+    fn sphere_tree_sort_child_order_matches() {
+        check(
+            ee::s11::f_0032db40__generated,
+            sphere_tree_sort_child_order_2,
+            200,
+            &|c, seed| {
+                oc706_sort_install();
+                c.bus.write32(FX_SORT_GATE, FX_SORT_MAGIC);
+                let mut r = Rng(0x0032_db40 ^ seed as u64);
+                for i in 0..0x60u32 {
+                    c.bus.write32(FX_SORT + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(FX_SORT);
+                c.g[A1][0] = sx(FX_SORT + 0x40);
+                c.pc = 0x0032_db40;
             },
         );
     }

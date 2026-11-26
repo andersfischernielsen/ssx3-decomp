@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
@@ -29,6 +30,7 @@ pub(crate) use crate::game::sound::soundsys::p as p_5;
 pub(crate) use crate::game::wscript::wscriptman::p as p_2;
 use crate::guest::Addr;
 use crate::tick;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -94,6 +96,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_e6f0,
         c_fe_state_main_menu_ctor_2,
         "cFEStateMainMenu_ctor_2",
+    ),
+    (
+        0x0019_4bf0,
+        cfe_state_main_menu_on_render,
+        "cFEStateMainMenu_OnRender",
     ),
 ];
 
@@ -770,6 +777,136 @@ pub fn c_fe_state_main_menu_ctor_2(c: &mut Cpu) {
     });
 }
 
+/// `void cFEStateMainMenu_OnRender(cFEStateMainMenu* self)` (0x194bf0): looks
+/// up the screen object (`UIScreen_FindObject(self->screen, StrHash(...))`,
+/// +0x40), and when it exists and `self`'s mode bits (`lb +0x55 < 2`, then
+/// the `& 0x3f == 5` test on the global at gp-0x704) say so, animates the
+/// menu's two sub-objects through their vtables (the entries at +0xc8/+0xcc
+/// and +0x40/+0x44 of the object's vtable), then the object's +0x58/+0x5c
+/// slot, with the alpha-half show on the way out.
+pub fn cfe_state_main_menu_on_render(c: &mut Cpu) {
+    guest(c, cfe_state_main_menu_on_render_body);
+}
+
+pub(crate) fn cfe_state_main_menu_on_render_body(c: &mut Cpu) -> Flow {
+    let frame = Frame::open(c, 0x40);
+    'b_194cd0: {
+        c.cycles += 14;
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        c.g[A0][0] = 0x46_0000;
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+        call_ptr(c, 0x0031_7670, 0x0019_4c10)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_d860, 0x0019_4c1c)?;
+        c.g[S0][0] = c.g[V0][0];
+        let t = c.g[S0][0] == 0;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x704));
+        if t {
+            break 'b_194cd0;
+        }
+        'b_194c48: {
+            c.cycles += 4;
+            c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x55));
+            c.g[V0][0] = ((c.g[V0][0] as i64) < 2) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x1d));
+                break 'b_194c48;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0019_4498,
+                f: ee::s02::f_00194498,
+            }
+            .call(c, 0x0019_4c40)?;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x704));
+            break 'b_194cd0;
+        }
+        c.cycles += 4;
+        c.g[V1][0] = 0x5;
+        c.g[V0][0] &= 0x3f;
+        let t = c.g[V0][0] != c.g[V1][0];
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x704));
+        if t {
+            break 'b_194cd0;
+        }
+        c.cycles += 30;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0xc8));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xcc));
+        let t = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0019_4c70)?;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x40));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
+        let t = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0019_4c88)?;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0);
+        c.g[A1][0] = c.g[SP][0];
+        c.ldl(2, (c.g[S0][0] as u32).wrapping_add(0x23));
+        c.ldr(2, (c.g[S0][0] as u32).wrapping_add(0x1c));
+        c.ldl(3, (c.g[S0][0] as u32).wrapping_add(0x2b));
+        c.ldr(3, (c.g[S0][0] as u32).wrapping_add(0x24));
+        let sp_now = sp(c);
+        c.sdl(2, sp_now.wrapping_add(0x7));
+        c.sdr(2, sp_now);
+        c.sdl(3, sp_now.wrapping_add(0xf));
+        c.sdr(3, sp_now.wrapping_add(0x8));
+        c.swc1(0, sp_now);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x58));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5c));
+        let t = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0019_4ccc)?;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x704));
+        break 'b_194cd0;
+    }
+    'b_194d04: {
+        c.cycles += 2;
+        let t = c.g[V0][0] != 0;
+        frame.restore(c, S0, 0x30);
+        if t {
+            break 'b_194d04;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = 0x4a_0000;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x17d8));
+        call_ptr(c, 0x0031_7670, 0x0019_4ce4)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_d860, 0x0019_4cf0)?;
+        let t = c.g[V0][0] == 0;
+        frame.restore(c, S0, 0x30);
+        if t {
+            break 'b_194d04;
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x0019_4498,
+            f: ee::s02::f_00194498,
+        }
+        .call(c, 0x0019_4d00)?;
+        frame.restore(c, S0, 0x30);
+        break 'b_194d04;
+    }
+    c.cycles += 4;
+    frame.restore(c, S1, 0x20);
+    frame.restore_ra(c, 0x10);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1247,6 +1384,40 @@ pub(crate) mod tests {
             ee::s04::f_001de6f0__generated,
             c_fe_state_main_menu_ctor_2,
             0x001d_e6f0,
+        );
+    }
+
+    /// `cFEStateMainMenu_OnRender` with the screen lookup returning nothing
+    /// (the zeroed object, `+0x3c == 0`), so the paths through the vtable
+    /// calls are taken only when the lookup succeeds: this covers the
+    /// lookup-miss paths and the mode-bit tests. The vtable slots point at
+    /// the fake methods (the `miss` hook), so the call log is compared.
+    #[test]
+    fn cfe_state_main_menu_on_render_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        const SELF: u32 = DATA + 0x8000;
+        const OBJ: u32 = DATA + 0x8100;
+        const VT: u32 = DATA + 0x8200;
+        check(
+            ee::s02::f_00194bf0__generated,
+            cfe_state_main_menu_on_render,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0019_4bf0, 0);
+                c.g[RA][0] = 0x0012_3450;
+                c.pc = 0x0019_4bf0;
+                c.g[A0][0] = sx(SELF);
+                for (i, off) in [0xc8u32, 0x40, 0x58].into_iter().enumerate() {
+                    c.bus.write16(VT + off, 0);
+                    c.bus.write32(VT + off + 4, FAKE + 0x10 * i as u32);
+                }
+                c.bus.write32(OBJ + 0x8, VT);
+                c.bus.write32(OBJ + 0x3c, 0);
+                c.bus.write32(SELF + 0x40, OBJ);
+                c.bus.write8(SELF + 0x55, r.next_u32() as u8);
+                c.bus.write8(SELF + 0x1d, r.next_u32() as u8);
+                c.bus.write32(GAME_GP - 0x704, r.next_u32() & 0x3f);
+            },
         );
     }
 }

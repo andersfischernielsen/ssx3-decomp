@@ -2,6 +2,7 @@
 
 use ssx3_ee_rt::funcs::GuestFn;
 
+pub mod all_in_one_fe;
 pub mod debugfe;
 pub mod feasyncfile;
 pub mod feflowstate;
@@ -60,6 +61,7 @@ pub mod uitemplatemap;
 /// Every replacement in this directory.
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v = Vec::new();
+    v.extend_from_slice(all_in_one_fe::OVERRIDES);
     v.extend_from_slice(debugfe::OVERRIDES);
     v.extend_from_slice(feasyncfile::OVERRIDES);
     v.extend_from_slice(feflowstate::OVERRIDES);

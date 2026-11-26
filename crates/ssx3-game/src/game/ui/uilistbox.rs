@@ -5,6 +5,8 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
 use crate::call::VSlot;
@@ -12,6 +14,9 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::sound::bankmonitor::p;
+pub(crate) use crate::game::ui::uiengine::LIST_STRING_COPY;
+pub(crate) use crate::game::ui::uiengine::LIST_STRING_LENGTH;
+pub(crate) use crate::game::ui::uiengine::LIST_TEXT_ALLOC;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -56,6 +61,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         uimenu_find_prev_selectable,
         "UIMenu_FindPrevSelectable",
     ),
+    (
+        0x0039_a568,
+        ui_list_box_add_item_str_id,
+        "UIListBox_AddItemStrId",
+    ),
+    (0x0039_a928, ui_menu_set_focus, "UIMenu_SetFocus"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -598,6 +609,347 @@ pub fn uimenu_find_prev_selectable(c: &mut Cpu) {
     })
 }
 
+/// `UIMenu::setSelectedByIndex` (0x39b960).
+pub(crate) const OC711_UI_MENU_SET_SELECTION: Callee = Callee {
+    addr: 0x0039_b960,
+    f: ee::s13::f_0039b960,
+};
+
+/// `UIMenu::findFirstSelectable` (0x39b7b0).
+pub(crate) const OC711_UI_MENU_FIND_FIRST: Callee = Callee {
+    addr: 0x0039_b7b0,
+    f: ee::s13::f_0039b7b0,
+};
+
+/// `UIObject::getEventThread` (0x39ff78).
+pub(crate) const OC711_UI_OBJECT_EVENT_THREAD: Callee = Callee {
+    addr: 0x0039_ff78,
+    f: ee::s13::f_0039ff78,
+};
+
+/// `UIScreen::startThread` (0x39c870).
+pub(crate) const OC711_UI_SCREEN_START_THREAD: Callee = Callee {
+    addr: 0x0039_c870,
+    f: ee::s13::f_0039c870,
+};
+
+/// `lw off(base)`, sign-extended.
+#[inline]
+pub(crate) fn oc711_lw(c: &mut Cpu, base: u64, off: u32) -> u64 {
+    Addr((base as u32).wrapping_add(off)).lw(c)
+}
+
+/// `lh off(base)`, sign-extended.
+#[inline]
+pub(crate) fn oc711_lh(c: &mut Cpu, base: u64, off: u32) -> u64 {
+    Addr((base as u32).wrapping_add(off)).lh(c)
+}
+
+/// `lbu off(base)`.
+#[inline]
+pub(crate) fn oc711_lbu(c: &mut Cpu, base: u64, off: u32) -> u64 {
+    Addr((base as u32).wrapping_add(off)).lbu(c)
+}
+
+/// `void cUIMenu::setFocus(bool on)` (0x39a928, `UIMenu_SetFocus`): stores
+/// `on` as bit 4 of the flags at `+0x14`, then, when focused, re-selects the
+/// stored index (or the first highlightable item) and starts the selected
+/// item's screen and event thread; when unfocused it does the same for the
+/// current selection's event. The blocks below follow the generated body's
+/// exits: every path ends in the common `lq s0` and epilogue.
+pub fn ui_menu_set_focus(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = (0u64 < c.g[A1][0]) as u64;
+        frame.save(c, S0, 0x10);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = 0xffff_ffff_ffff_ffef;
+        let me = c.g[S0][0];
+        c.g[V0][0] = oc711_lw(c, me, 0x14);
+        c.g[V0][0] = c.g[V0][0] & c.g[A0][0];
+        c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+        let on = c.g[A1][0] != 0;
+        let flags = c.g[V0][0];
+        Addr((me as u32).wrapping_add(0x14)).sw(c, flags);
+        if on {
+            ui_menu_focus_on(c)?;
+        } else {
+            ui_menu_focus_off(c)?;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The focused branch of `UIMenu_SetFocus` (generated blocks `'b_39a978`,
+/// `'b_39a9ac`, `'b_39a9f0` and the tail at 0x39aa08).
+pub(crate) fn ui_menu_focus_on(c: &mut Cpu) -> Flow {
+    let s0 = c.g[S0][0];
+    c.cycles += 4;
+    c.g[V1][0] = oc711_lbu(c, s0, 0xa4);
+    c.g[V0][0] = 0xff;
+    let stored_none = c.g[V1][0] == c.g[V0][0];
+    c.g[A0][0] = s0;
+    if !stored_none {
+        // The stored index is valid: select it and leave.
+        c.cycles += 4;
+        let a0 = c.g[A0][0];
+        c.g[A1][0] = oc711_lbu(c, a0, 0xa4);
+        OC711_UI_MENU_SET_SELECTION.call(c, 0x0039_a970)?;
+        return Ok(());
+    }
+    // No stored index: the current item, else the first highlightable one.
+    c.cycles += 3;
+    c.g[A0][0] = oc711_lw(c, s0, 0xa0);
+    if c.g[A0][0] != 0 {
+        let a0 = c.g[A0][0];
+        c.g[V0][0] = oc711_lw(c, a0, 0x14);
+    } else {
+        c.cycles += 10;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = s0;
+        OC711_UI_MENU_FIND_FIRST.call(c, 0x0039_a990)?;
+        c.g[V1][0] = c.g[V0][0] ^ 0xff;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = s0;
+        if c.g[V1][0] != 0 {
+            c.g[A1][0] = c.g[V0][0];
+        }
+        OC711_UI_MENU_SET_SELECTION.call(c, 0x0039_a9a4)?;
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 4) as u32);
+    c.g[V0][0] = c.g[V0][0] & 0x1;
+    if c.g[V0][0] != 0 {
+        return Ok(());
+    }
+    // The selected item has no keyframer event yet: start its screen.
+    c.cycles += 6;
+    c.g[A1][0] = 0;
+    OC711_UI_OBJECT_EVENT_THREAD.call(c, 0x0039_a9c4)?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[V0][0] = 0xffff;
+    if c.g[A1][0] == c.g[V0][0] {
+        c.g[A2][0] = oc711_lw(c, s0, 0xa0);
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = oc711_lw(c, s0, 0xa0);
+        let v0 = c.g[V0][0];
+        c.g[A0][0] = oc711_lw(c, v0, 0x5c);
+        if c.g[A0][0] == 0 {
+            c.g[A2][0] = oc711_lw(c, s0, 0xa0);
+        } else {
+            c.cycles += 3;
+            c.g[A2][0] = 1;
+            OC711_UI_SCREEN_START_THREAD.call(c, 0x0039_a9ec)?;
+            c.g[A2][0] = oc711_lw(c, s0, 0xa0);
+        }
+    }
+    // Tail: the item's `vtable[0x3c]` method and the screen's `vtable[0x9c]`.
+    c.cycles += 17;
+    c.g[A1][0] = 1;
+    let a2 = c.g[A2][0];
+    c.g[V0][0] = oc711_lw(c, a2, 8);
+    let v0 = c.g[V0][0];
+    c.g[A0][0] = oc711_lh(c, v0, 0x38);
+    c.g[V1][0] = oc711_lw(c, v0, 0x3c);
+    let target = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((a2 as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0039_aa08)?;
+    c.g[A0][0] = oc711_lw(c, s0, 0x5c);
+    c.g[A2][0] = 1;
+    c.g[A1][0] = oc711_lw(c, s0, 0xa0);
+    let a0 = c.g[A0][0];
+    c.g[A3][0] = oc711_lw(c, a0, 0xd0);
+    let a3 = c.g[A3][0];
+    c.g[V0][0] = oc711_lw(c, a3, 8);
+    let v0 = c.g[V0][0];
+    c.g[A0][0] = oc711_lh(c, v0, 0x98);
+    c.g[V1][0] = oc711_lw(c, v0, 0x9c);
+    let target = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((a3 as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0039_aa2c)?;
+    Ok(())
+}
+
+/// The unfocused branch of `UIMenu_SetFocus` (generated block at 0x39aa48
+/// onwards): when a selection exists, its event thread is started and both
+/// vtable methods are called with the flag value 2.
+pub(crate) fn ui_menu_focus_off(c: &mut Cpu) -> Flow {
+    let s0 = c.g[S0][0];
+    c.cycles += 3;
+    c.g[A0][0] = oc711_lw(c, s0, 0xa0);
+    if c.g[A0][0] == 0 {
+        return Ok(());
+    }
+    c.cycles += 6;
+    c.g[A1][0] = 1;
+    OC711_UI_OBJECT_EVENT_THREAD.call(c, 0x0039_aa48)?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[V0][0] = 0xffff;
+    if c.g[A1][0] == c.g[V0][0] {
+        c.g[A2][0] = oc711_lw(c, s0, 0xa0);
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = oc711_lw(c, s0, 0xa0);
+        let v0 = c.g[V0][0];
+        c.g[A0][0] = oc711_lw(c, v0, 0x5c);
+        if c.g[A0][0] == 0 {
+            c.g[A2][0] = oc711_lw(c, s0, 0xa0);
+        } else {
+            c.cycles += 3;
+            c.g[A2][0] = 1;
+            OC711_UI_SCREEN_START_THREAD.call(c, 0x0039_aa70)?;
+            c.g[A2][0] = oc711_lw(c, s0, 0xa0);
+        }
+    }
+    c.cycles += 16;
+    c.g[A1][0] = 0;
+    let a2 = c.g[A2][0];
+    c.g[V0][0] = oc711_lw(c, a2, 8);
+    let v0 = c.g[V0][0];
+    c.g[A0][0] = oc711_lh(c, v0, 0x38);
+    c.g[V1][0] = oc711_lw(c, v0, 0x3c);
+    let target = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((a2 as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0039_aa8c)?;
+    c.g[A0][0] = oc711_lw(c, s0, 0x5c);
+    c.g[A2][0] = 2;
+    c.g[A1][0] = oc711_lw(c, s0, 0xa0);
+    let a0 = c.g[A0][0];
+    c.g[A3][0] = oc711_lw(c, a0, 0xd0);
+    let a3 = c.g[A3][0];
+    c.g[V0][0] = oc711_lw(c, a3, 8);
+    let v0 = c.g[V0][0];
+    c.g[A0][0] = oc711_lh(c, v0, 0x98);
+    c.g[V1][0] = oc711_lw(c, v0, 0x9c);
+    let target = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((a3 as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0039_aab0)?;
+    Ok(())
+}
+
+/// `unsigned char cUIListBox_addEntryByStringID(void* box, int id, int idx)`
+/// (0x39a568): adds an entry to the list box. The entry's string comes from
+/// the object's string table (its virtual `get` at +0x24 for the id in
+/// `a2`'s entry). A non-empty string is copied to a fresh buffer, and a
+/// 0x14-byte item record is written at the box's current count (`box+0x318`),
+/// which is then incremented (the return value is the old count, low byte).
+pub fn ui_list_box_add_item_str_id(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S4, 0x10);
+        frame.save(c, S0, 0x50);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save(c, S2, 0x30);
+        frame.save_ra(c, 0);
+
+        let list_box = c.g[S1][0] as u32;
+        c.g[V0][0] = Addr(list_box).off(0x5c).lw(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xd0).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x10).lw(c);
+        c.g[A2][0] = Addr(c.g[A0][0] as u32).off(0x10).lw(c);
+        let has_entry = c.g[A2][0] != 0;
+        c.g[S3][0] = c.g[A1][0];
+
+        let mut count_up = true;
+        if has_entry {
+            c.cycles += 8;
+            c.g[V1][0] = Addr(c.g[A2][0] as u32).off(4).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x20).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x24).lw(c);
+            let get_string = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, get_string, 0x0039_a5b8)?;
+            c.g[S2][0] = c.g[V0][0];
+            if c.g[S2][0] == 0 {
+                c.g[V0][0] = Addr(list_box.wrapping_add(0x318)).lbu(c);
+                count_up = false;
+            } else {
+                add_item_text(c, list_box)?;
+            }
+        }
+
+        if count_up {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(list_box.wrapping_add(0x318)).lbu(c);
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x50);
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        frame.restore(c, S2, 0x30);
+        let count_next = c.g[V1][0];
+        Addr(list_box.wrapping_add(0x318)).sb(c, count_next);
+        c.g[V0][0] &= 0xff;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The text branch of `ui_list_box_add_item_str_id` (0x39a5cc..0x39a63c): with
+/// the string in `s2`, copies it to a new buffer and fills the item record at
+/// the box's current count (`s0` holds the buffer).
+pub(crate) fn add_item_text(c: &mut Cpu, list_box: u32) -> Flow {
+    c.cycles += 30;
+    c.g[A0][0] = c.g[S2][0];
+    call_ptr(c, LIST_STRING_LENGTH, 0x0039_a5cc)?;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.g[A1][0] = sx(0x0049_3de0);
+    c.g[A2][0] = 0x100;
+    c.g[A3][0] = 0;
+    c.g[A0][0] = sx((c.g[V0][0] as u32) << 1);
+    call_ptr(c, LIST_TEXT_ALLOC, 0x0039_a5e8)?;
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, LIST_STRING_COPY, 0x0039_a5f8)?;
+
+    // Four stores into the item record at `index * 0x14`.
+    c.g[V1][0] = Addr(list_box.wrapping_add(0x318)).lbu(c);
+    c.g[A0][0] = 0x14;
+    c.mult(0, 2, 3, 4);
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(list_box));
+    let slot_a = (c.g[V1][0] as u32).wrapping_add(0xa0);
+    Addr(slot_a).sw(c, 0);
+
+    c.g[V0][0] = Addr(list_box.wrapping_add(0x318)).lbu(c);
+    c.mult(0, 3, 2, 4);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(list_box));
+    let text_at = (c.g[V0][0] as u32).wrapping_add(0x9c);
+    let text = c.g[S0][0];
+    Addr(text_at).sw(c, text);
+
+    c.g[V1][0] = Addr(list_box.wrapping_add(0x318)).lbu(c);
+    c.mult(0, 2, 3, 4);
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(list_box));
+    let id_at = (c.g[V1][0] as u32).wrapping_add(0xa4);
+    let id = c.g[S4][0];
+    Addr(id_at).sw(c, id);
+
+    c.g[V0][0] = Addr(list_box.wrapping_add(0x318)).lbu(c);
+    c.mult(0, 3, 2, 4);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(list_box));
+    let item_at = (c.g[V0][0] as u32).wrapping_add(0x98);
+    let item = c.g[S3][0];
+    Addr(item_at).sw(c, item);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -849,6 +1201,97 @@ pub(crate) mod tests {
                 w(c, menu + 0x5c, DATA + 0x2800);
                 c.g[A0][0] = sx(menu);
                 c.pc = 0x0039_ac48;
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::FAKE;
+
+    pub(crate) use crate::game::ui::uiengine::tests::oc726_hook;
+    pub(crate) use crate::game::ui::uiengine::tests::CTRL;
+    pub(crate) use crate::game::ui::uiengine::tests::CTRL_MAGIC;
+    pub(crate) use crate::game::ui::uiengine::tests::SEEDS_10 as SEEDS_2;
+
+    /// Writes a pointer-sized word at `at`.
+    pub(crate) fn put(c: &mut Cpu, at: u32, v: u32) {
+        c.bus.write32(at, v);
+    }
+
+    /// The menu's focus change: the flag word, the stored index (0xff or a
+    /// real one), a selection or none, the screen, and vtable methods that
+    /// land on the fake callee (`FAKE`, which logs and returns).
+    #[test]
+    fn ui_menu_set_focus_matches() {
+        check(
+            ee::s13::f_0039a928__generated,
+            ui_menu_set_focus,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0039_a928 ^ seed as u64);
+                scramble(c, &mut r);
+                let me = DATA + 0x100;
+                let sel = DATA + 0x300;
+                let screen = DATA + 0x600;
+                let vt = DATA + 0x500;
+                let obj = DATA + 0x700;
+                let vt2 = DATA + 0xa00;
+                let a3 = DATA + 0x900;
+                put(c, me + 0x14, r.next_u32());
+                c.bus.write8(
+                    me + 0xa4,
+                    if seed % 3 == 0 {
+                        0xff
+                    } else {
+                        (r.next_u32() % 8) as u8
+                    },
+                );
+                put(c, me + 0xa0, if seed % 4 == 0 { 0 } else { sel });
+                put(c, me + 0x5c, obj);
+                put(c, sel + 0x5c, if seed % 5 == 0 { 0 } else { screen });
+                put(c, sel + 0x14, r.next_u32());
+                put(c, sel + 8, vt);
+                put(c, vt + 0x3c, FAKE);
+                put(c, obj + 0xd0, a3);
+                put(c, a3 + 8, vt2);
+                put(c, vt2 + 0x9c, FAKE);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = if seed % 2 == 0 { 1 } else { 0 };
+            },
+        );
+    }
+
+    #[test]
+    fn ui_list_box_add_item_str_id_matches() {
+        oc726_hook();
+        check(
+            ee::s13::f_0039a568__generated,
+            ui_list_box_add_item_str_id,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 729, 1);
+                let list_box = DATA + 0x1000;
+                c.bus.write32(list_box + 0x5c, DATA + 0x2000);
+                c.bus.write32(DATA + 0x2000 + 0xd0, DATA + 0x2100);
+                c.bus.write32(DATA + 0x2100 + 0x10, DATA + 0x2200);
+                let entry = if seed % 5 == 0 { 0 } else { DATA + 0x2300 };
+                c.bus.write32(DATA + 0x2200 + 0x10, entry);
+                c.bus.write32(DATA + 0x2300 + 4, DATA + 0x2400);
+                c.bus.write16(DATA + 0x2400 + 0x20, (seed % 0x40) as u16);
+                // A real leaf that returns 0 (no text), or the miss hook's
+                // fake (non-zero text).
+                let get_string = if seed % 2 == 0 {
+                    0x0014_06c0
+                } else {
+                    fakes::FAKE
+                };
+                c.bus.write32(DATA + 0x2400 + 0x24, get_string);
+                c.bus.write8(list_box + 0x318, (seed % 4) as u8);
+                c.g[A0][0] = list_box as u64;
+                c.g[A1][0] = fakes::ptr(&mut r) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.pc = 0x0039_a568;
+                c.bus.write32(CTRL, CTRL_MAGIC);
             },
         );
     }

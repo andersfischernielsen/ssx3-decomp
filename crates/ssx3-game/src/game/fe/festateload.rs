@@ -11,6 +11,7 @@ use crate::call::Frame;
 use crate::call::VSlot;
 pub(crate) use crate::game::dirtysock::tagsunk::arg;
 pub(crate) use crate::game::fe::festatebonusmaterial::FE_UI_STATE_CTOR;
+pub(crate) use crate::game::fe::festatecharselect::EVENT_SELECT_WIDGET_CREATED_CALLEE;
 pub(crate) use crate::game::fe::festatecharsetup::oc437_fe_state_dtor;
 pub(crate) use crate::game::fe::ovstatepause::p;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
@@ -68,6 +69,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_e4e8,
         c_fe_state_event_select_ctor_2,
         "cFEStateEventSelect_ctor_2",
+    ),
+    (
+        0x0018_6708,
+        cfe_state_event_select_on_widget_created,
+        "cFEStateEventSelect_OnWidgetCreated",
     ),
 ];
 
@@ -638,6 +644,33 @@ pub fn c_fe_state_event_select_ctor_2(c: &mut Cpu) {
     });
 }
 
+/// The return address after that call (the generated `RA` value).
+pub(crate) const EVENT_SELECT_WIDGET_CREATED_RET: u32 = 0x0018_6718;
+
+/// Offset of the event-select state inside the state object the widget
+/// belongs to; the callee gets `this + STATE_OFFSET`.
+pub(crate) const EVENT_SELECT_STATE_OFFSET: u32 = 0x48;
+
+/// `void cFEStateEventSelect_OnWidgetCreated(void* self)` (0x186708): hands
+/// the event-select state (`self + 0x48`) to `EventSelect_OnWidgetCreated`.
+/// The argument is an add, not a load, so this is not a plain wrapper.
+pub fn cfe_state_event_select_on_widget_created(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(EVENT_SELECT_STATE_OFFSET));
+        call_ptr(
+            c,
+            EVENT_SELECT_WIDGET_CREATED_CALLEE,
+            EVENT_SELECT_WIDGET_CREATED_RET,
+        )?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -937,6 +970,30 @@ pub(crate) mod tests {
             c_fe_state_event_select_ctor_2,
             0x001d_e4e8,
             false,
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::fe::festatecharselect::tests::oc716_hook;
+    pub(crate) use crate::game::fe::festatecharselect::tests::CTRL_MAGIC;
+    pub(crate) use crate::game::fe::festatecharselect::tests::EVT_CTRL;
+
+    pub(crate) use crate::game::fe::festatecharselect::tests::SEEDS_3 as SEEDS;
+
+    #[test]
+    fn cfe_state_event_select_on_widget_created_matches() {
+        oc716_hook();
+        check(
+            ee::s02::f_00186708__generated,
+            cfe_state_event_select_on_widget_created,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 717, 1);
+                c.g[A0][0] = fakes::ptr(&mut r) as u64;
+                c.pc = 0x0018_6708;
+                c.bus.write32(EVT_CTRL, CTRL_MAGIC);
+            },
         );
     }
 }

@@ -223,6 +223,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_fog_particle_man_v02,
         "cPS2FogParticleMan_v02",
     ),
+    (
+        0x002f_7ba8,
+        rider_base_reset_attack_fx_thunk,
+        "RiderBase_ResetAttackFXThunk",
+    ),
+    (
+        0x002f_7ed0,
+        rider_base_reset_power_up_trail_thunk,
+        "RiderBase_ResetPowerUpTrailThunk",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4404,6 +4414,34 @@ pub(crate) fn fog_v02_clipped(c: &mut Cpu, out: u32, gfx: u32) -> bool {
     c.g[V0][0] != 0
 }
 
+/// `void RiderBase_ResetAttackFXThunk(void)` (0x2f7ba8): forwards to
+/// `RiderBase_ResetAttackFX`.
+pub fn rider_base_reset_attack_fx_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x002f_1148, 0x002f_7bb8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void RiderBase_ResetPowerUpTrailThunk(void)` (0x2f7ed0): forwards to
+/// `RiderBase_ResetPowerUpTrail`.
+pub fn rider_base_reset_power_up_trail_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x002e_adc0, 0x002f_7ee0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5885,6 +5923,38 @@ pub(crate) mod tests {
                 } else {
                     1 + (r.next_u32() % 9) as u64
                 };
+            },
+        );
+    }
+
+    #[test]
+    fn rider_base_reset_attack_fx_thunk_matches() {
+        check(
+            ee::s09::f_002f7ba8__generated,
+            rider_base_reset_attack_fx_thunk,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x002f_7ba8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x002f_7ba8;
+                c.g[GP][0] = GAME_GP as u64;
+                let _ = seed;
+            },
+        );
+    }
+
+    #[test]
+    fn rider_base_reset_power_up_trail_thunk_matches() {
+        check(
+            ee::s09::f_002f7ed0__generated,
+            rider_base_reset_power_up_trail_thunk,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x002f_7ed0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x002f_7ed0;
+                c.g[GP][0] = GAME_GP as u64;
+                let _ = seed;
             },
         );
     }

@@ -4,8 +4,14 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
+use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::Callee;
+use crate::call::Frame;
+pub(crate) use crate::game::ui::uiengine::WPQ_ALLOC;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -40,6 +46,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "tWPIGD_Sun_GetElevation",
     ),
     (0x002c_1568, twpigd_sun_get_azimuth, "tWPIGD_Sun_GetAzimuth"),
+    (
+        0x002c_0a58,
+        world_painter_query_create,
+        "WorldPainterQuery_Create",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -148,6 +159,46 @@ pub fn twpigd_sun_get_azimuth(c: &mut Cpu) {
     c.cycles += 2;
     c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x10));
     ret(c);
+}
+
+/// Return address after the allocation in `WorldPainterQuery_Create`.
+pub(crate) const WPQ_ALLOC_RET: u32 = 0x002c_0a80;
+
+/// Return address after `WorldPainterQuery_ctor` in `WorldPainterQuery_Create`.
+pub(crate) const WPQ_CTOR_RET: u32 = 0x002c_0a8c;
+
+/// `WorldPainterQuery_ctor` (0x2c0408).
+pub(crate) const WPQ_CTOR: u32 = 0x002c_0408;
+
+/// `WorldPainterQuery* cWorldPainterMan_getQuery(void* self, cWorldPainterManArg* arg)`
+/// (0x2c0a58): allocates a 0x18-byte `WorldPainterQuery` (named by a string in
+/// the image), constructs it from the word `*arg` points at, and returns it in
+/// `v0`. The frame keeps `s0` (the `arg` pointer) and `ra` across the calls.
+pub fn world_painter_query_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A2][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A3][0] = 0;
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        // EA_MemAlloc(0x18, name): a0 = size, a1 = name string.
+        c.g[A0][0] = 0x18;
+        c.g[A1][0] = sx(0x0048_3de8);
+        call_ptr(c, WPQ_ALLOC, WPQ_ALLOC_RET)?;
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: WPQ_CTOR,
+            f: ee::s08::f_002c0408,
+        }
+        .call(c, WPQ_CTOR_RET)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
 }
 
 #[cfg(test)]
@@ -273,6 +324,35 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = Rng(0x2c15_68 ^ seed as u64);
                 scramble(c, &mut r);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::machine;
+
+    pub(crate) use crate::game::ui::uiengine::tests::oc726_hook;
+    pub(crate) use crate::game::ui::uiengine::tests::CTRL;
+    pub(crate) use crate::game::ui::uiengine::tests::CTRL_MAGIC;
+    pub(crate) use crate::game::ui::uiengine::tests::SEEDS_10 as SEEDS;
+
+    #[test]
+    fn world_painter_query_create_matches() {
+        oc726_hook();
+        check(
+            ee::s08::f_002c0a58__generated,
+            world_painter_query_create,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 726, 1);
+                let arg = fakes::ptr(&mut r);
+                // The constructor skips its type switch when byte 1 of the word
+                // is at least 0xe (it then makes no calls of its own).
+                let word = ((0x0e + (r.next_u32() & 0xfff)) << 8) | (r.next_u32() & 0xff);
+                c.bus.write32(arg, word);
+                c.g[A1][0] = arg as u64;
+                c.pc = 0x002c_0a58;
+                c.bus.write32(CTRL, CTRL_MAGIC);
             },
         );
     }

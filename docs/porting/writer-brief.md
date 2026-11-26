@@ -294,3 +294,19 @@ pseudo-C, how useful it was.
 - Flat static-init tables (hundreds of stores) are best generated from the
   generated text by script with the cycle/store counts checked, not retyped.
 
+- Extracting a generated body with a script: stop at the next `pub fn`, `///` or
+  `#[` line, not at the first blank line (the bodies contain none).
+- Before porting a function, grep every `oc*.rs` module for its address with and
+  without the digit separator (`0x0030_2680`): lists built before earlier writers
+  report overlap, and two modules must never hold the same `OVERRIDES` address.
+- `fakes::covered` counts only fakes installed through the machine's miss hook:
+  gated `fakes::hook` fakes do not register, so a test whose callees are all
+  gated or real uses `check`. A `covered` test needs at least one unwind: pass
+  `machine(c, seed, salt, calls)` a `calls` count inside the real call count.
+- A helper that adds the gp itself (a prologue taking an offset) must not be
+  passed `gp + offset` by its callers (oc732: the guard word was read from
+  `2*gp + off`).
+- Tests that run a real callee which has no override slot cannot be faked: if it
+  runs away, shrink the fixture (empty lists, count 0) or drop the entry and test.
+- Long skipped functions go to a fresh writer on a stronger model with a list of
+  at most six; short leaf and sibling families work on a small model with eight.

@@ -904,6 +904,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ScriptEngine_EvalChoiceParams",
     ),
     (0x0028_16a0, script_view_obj_tick, "ScriptViewObj_Tick"),
+    (
+        0x0027_a860,
+        script_engine_queue_finish_scripts_4,
+        "ScriptEngine_QueueFinishScripts",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -18126,6 +18131,131 @@ pub fn script_view_obj_tick(c: &mut Cpu) {
     });
 }
 
+/// One `ScriptEngine_ListAddChoice(self = a0, 1 = a1, a2, a3, t0, -1, -1, -1)`
+/// call (a0 and a1 are set by the caller), returning to `ret`.
+pub(crate) fn oc738_list_add_choice(c: &mut Cpu, a2: u64, a3: u64, t0: u64, ret: u32) -> Flow {
+    c.g[A2][0] = a2;
+    c.g[A3][0] = a3;
+    c.g[T0][0] = t0;
+    c.g[T1][0] = u64::MAX;
+    c.g[T2][0] = u64::MAX;
+    c.g[T3][0] = u64::MAX;
+    call_ptr(c, 0x0027_8e50, ret)
+}
+
+/// `void ScriptEngine_QueueFinishScripts(ScriptEngine* self, int online, int
+/// intro)` (0x27a860), the C++ `cSSXScriptEngine_PlayTransportSequence`:
+/// queues the finish-line NIS scripts as a list (an optional intro, the
+/// finish script, and the world-mode dependent final script; offline also
+/// sets the graphics manager's skip-page-flip flag), prepares and starts the
+/// list, and sends the music event 20.
+pub fn script_engine_queue_finish_scripts_4(c: &mut Cpu) {
+    guest(c, |c| {
+        let gp = c.g[GP][0] as u32;
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let online = c.g[A1][0] != 0;
+        c.g[S0][0] = c.g[A0][0];
+        // `world->+0x84->+0xc->+0x7c == 1` (the world mode).
+        let world_mode_is_one = |c: &mut Cpu| -> bool {
+            c.g[A1][0] = 0x1;
+            let w = c.g[A0][0] as u32;
+            c.g[V0][0] = Addr(w.wrapping_add(0x84)).lw(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xc)).lw(c);
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x7c)).lw(c);
+            let one = c.g[A0][0] == c.g[A1][0];
+            c.g[A0][0] = c.g[S0][0];
+            one
+        };
+        'queued: {
+            if online {
+                c.cycles += 2;
+                let intro = c.g[A2][0] != 0;
+                c.g[A1][0] = 0x1;
+                if intro {
+                    c.cycles += 7;
+                    oc738_list_add_choice(c, 0x12, 1, 1, 0x0027_a898)?;
+                }
+                c.cycles += 16;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0x1;
+                oc738_list_add_choice(c, 0x13, 0, 0, 0x0027_a8bc)?;
+                c.g[A0][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+                let one = world_mode_is_one(c);
+                c.cycles += 4;
+                c.g[A2][0] = if one { 0x14 } else { 0x15 };
+                c.g[A3][0] = 0x8;
+                c.g[T0][0] = 0;
+                // The last finish script (A2, A3, T0 as set above).
+                c.cycles += 6;
+                c.g[T1][0] = u64::MAX;
+                c.g[T2][0] = u64::MAX;
+                c.g[T3][0] = u64::MAX;
+                call_ptr(c, 0x0027_8e50, 0x0027_a984)?;
+                c.g[A0][0] = c.g[S0][0];
+                break 'queued;
+            }
+            c.cycles += 2;
+            let intro = c.g[A2][0] != 0;
+            c.g[A0][0] = c.g[S0][0];
+            if intro {
+                c.cycles += 8;
+                c.g[A1][0] = 0x1;
+                oc738_list_add_choice(c, 0xc, 1, 1, 0x0027_a920)?;
+            }
+            c.cycles += 18;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0x1;
+            oc738_list_add_choice(c, 0xd, 0, 1, 0x0027_a944)?;
+            c.g[V1][0] = Addr(gp.wrapping_sub(0x854)).lw(c);
+            c.g[A1][0] = 0x1;
+            c.g[A0][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+            let flags = c.g[V1][0] as u32;
+            c.sw(flags.wrapping_add(0xf44), c.g[A1][0]);
+            c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x84)).lw(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xc)).lw(c);
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x7c)).lw(c);
+            let one = c.g[A0][0] == c.g[A1][0];
+            c.g[A0][0] = c.g[S0][0];
+            if one {
+                c.cycles += 3;
+                c.g[A2][0] = 0xe;
+                c.g[A3][0] = 0x8;
+                c.g[T0][0] = 1;
+                c.cycles += 6;
+                c.g[T1][0] = u64::MAX;
+                c.g[T2][0] = u64::MAX;
+                c.g[T3][0] = u64::MAX;
+                call_ptr(c, 0x0027_8e50, 0x0027_a984)?;
+                c.g[A0][0] = c.g[S0][0];
+            } else {
+                c.cycles += 8;
+                oc738_list_add_choice(c, 0xf, 8, 0, 0x0027_a9a8)?;
+                c.g[A0][0] = c.g[S0][0];
+            }
+        }
+        c.cycles += 17;
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x0027_8f38, 0x0027_a9b4)?; // ScriptEngine_ListPrepare(self, 1)
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0x1;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0x1;
+        call_ptr(c, 0x0027_8f68, 0x0027_a9c8)?; // ScriptEngine_ListStart(self, 1, 0, 1)
+        call_ptr(c, 0x0028_b180, 0x0027_a9d0)?; // SSXAudioSystem_GetInstance
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x14;
+        c.g[A2][0] = 0x1;
+        call_ptr(c, 0x0028_e8c0, 0x0027_a9e0)?; // SSXAudioSystem_HandleMusicEvent(audio, 20, 1)
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -24566,6 +24696,67 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x002816a0;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::asyncsys::tests::oc738_install_fakes;
+    pub(crate) use crate::game::sound::asyncsys::tests::oc738_machine;
+
+    /// The globals `ScriptEngine_QueueFinishScripts` reads: the world mode
+    /// (`world->+0x84->+0xc->+0x7c`) and the graphics manager's flag block.
+    pub(crate) fn oc738_queue_finish_fixture(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let r = oc738_machine(c, seed, salt, 6);
+        let gp = GAME_GP;
+        let (w, x, y, g) = (DATA + 0x1100, DATA + 0x1200, DATA + 0x1300, DATA + 0x1400);
+        c.bus.write32(gp.wrapping_sub(0x848), w);
+        c.bus.write32(w + 0x84, x);
+        c.bus.write32(x + 0xc, y);
+        c.bus
+            .write32(y + 0x7c, [1u32, 0, 2][((seed / 4) % 3) as usize]);
+        c.bus.write32(gp.wrapping_sub(0x854), g);
+        c.g[A0][0] = sx(DATA + 0x1000);
+        c.g[A1][0] = (seed % 2) as u64;
+        c.g[A2][0] = ((seed / 2) % 2) as u64;
+        c.pc = 0x0027_a860;
+        r
+    }
+
+    /// `ScriptEngine_QueueFinishScripts`, online and offline, with and
+    /// without the intro, world mode 1 or not. The final callee
+    /// (`SSXAudioSystem_HandleMusicEvent`) has no override slot and its real
+    /// body does not stay short on test data, so every seed unwinds at or
+    /// before the `GetInstance` call before it (the full path is in the
+    /// ignored test below).
+    #[test]
+    fn script_engine_queue_finish_scripts_matches() {
+        oc738_install_fakes();
+        fakes::covered(
+            ee::s07::f_0027a860__generated,
+            script_engine_queue_finish_scripts_4,
+            400,
+            &|c, seed| {
+                let mut r = oc738_queue_finish_fixture(c, seed, 0x27_a860);
+                let intro = (seed / 2) % 2;
+                c.bus
+                    .write32(fakes::LOG_UNWIND_AT, r.next_u32() % (5 + intro));
+            },
+        );
+    }
+
+    /// The same with the real `HandleMusicEvent` at the end: it runs the real
+    /// audio code on test data; run it with `--ignored` where that is
+    /// bounded.
+    #[test]
+    #[ignore = "the real SSXAudioSystem_HandleMusicEvent has no bounded fixture"]
+    fn script_engine_queue_finish_scripts_full_matches() {
+        oc738_install_fakes();
+        check(
+            ee::s07::f_0027a860__generated,
+            script_engine_queue_finish_scripts_4,
+            100,
+            &|c, seed| {
+                let _ = oc738_queue_finish_fixture(c, seed, 0x27_a861);
             },
         );
     }

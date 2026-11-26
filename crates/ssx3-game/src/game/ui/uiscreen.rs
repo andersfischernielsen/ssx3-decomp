@@ -139,6 +139,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ui_screen_create_objects,
         "UIScreen_CreateObjects",
     ),
+    (0x0039_c870, ui_screen_start_thread, "UIScreen_StartThread"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2753,6 +2754,115 @@ pub fn ui_screen_create_objects(c: &mut Cpu) {
     })
 }
 
+/// `UIScreen::StartThread` (0x39c870): `(self a0, thread type a1 & 0xffff,
+/// a2)`. When `a2 == 0` the screen's primary thread (if any) is destroyed
+/// first. Allocates a 0x100-byte UI thread, initialises its fields, pushes
+/// it on the screen's thread list (`self + 0x18`) and returns it in v0.
+pub fn ui_screen_start_thread(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A1][0] & 0xffff;
+        frame.save_ra(c, 0);
+        if c.g[S1][0] == 0 {
+            c.cycles += 4;
+            Callee {
+                addr: 0x0039_c7c0,
+                f: ee::s13::f_0039c7c0,
+            }
+            .call(c, 0x0039_c8a0)?;
+            if c.g[V0][0] == 0 {
+                c.g[A1][0] = 0x490000;
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[V0][0];
+                Callee {
+                    addr: 0x0039_c518,
+                    f: ee::s13::f_0039c518,
+                }
+                .call(c, 0x0039_c8b0)?;
+                c.cycles += 1;
+                c.g[A1][0] = 0x490000;
+            }
+        } else {
+            c.cycles += 1;
+            c.g[A1][0] = 0x490000;
+        }
+        c.cycles += 49;
+        c.g[A0][0] = 0x14;
+        c.g[A2][0] = 0x100;
+        c.g[A3][0] = 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3e10));
+        call_ptr(c, 0x0031_7d70, 0x0039_c8c8)?;
+        c.g[S0][0] = c.g[V0][0];
+        let node = c.g[S0][0] as u32;
+        c.g[V1][0] = 1;
+        c.g[V0][0] = 0xffff;
+        let v = c.g[V1][0];
+        Addr(node.wrapping_add(0x12)).sb(c, v);
+        let v = c.g[V0][0];
+        Addr(node.wrapping_add(0x10)).sh(c, v);
+        c.g[A2][0] = 0xffff_ffff_feff_0000;
+        c.g[A2][0] |= 0xffff;
+        c.g[A3][0] = 0xffff_ffff_fdff_0000;
+        c.g[V0][0] = Addr(node.wrapping_add(0x10)).lw(c);
+        c.g[A3][0] |= 0xffff;
+        c.g[T0][0] = 0xffff;
+        c.g[A0][0] = 1;
+        c.g[V0][0] &= c.g[A2][0];
+        c.g[T1][0] = 0x0100_0000;
+        c.g[V0][0] &= c.g[A3][0];
+        c.g[V1][0] = (c.g[S1][0] < 0x1) as u64;
+        let v = c.g[V0][0];
+        Addr(node.wrapping_add(0x10)).sw(c, v);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 25);
+        c.g[V0][0] = 0x490000;
+        let v = c.g[A0][0];
+        Addr(node.wrapping_add(0x12)).sb(c, v);
+        let v = c.g[T0][0];
+        Addr(node.wrapping_add(0x10)).sh(c, v);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x46a0));
+        let v = c.g[V0][0];
+        Addr(node.wrapping_add(0x8)).sw(c, v);
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x18));
+        c.g[V0][0] = Addr(node.wrapping_add(0x10)).lw(c);
+        c.g[A1][0] = c.g[S0][0];
+        let v = c.g[S3][0];
+        Addr(node.wrapping_add(0xc)).sh(c, v);
+        c.g[V0][0] &= c.g[A2][0];
+        let v = c.g[T0][0];
+        Addr(node.wrapping_add(0xe)).sh(c, v);
+        c.g[V0][0] |= c.g[T1][0];
+        let v = c.g[S0][0];
+        Addr(node.wrapping_add(0x4)).sw(c, v);
+        c.g[V0][0] &= c.g[A3][0];
+        let v = c.g[S0][0];
+        Addr(node).sw(c, v);
+        c.g[V0][0] |= c.g[V1][0];
+        let v = c.g[V0][0];
+        Addr(node.wrapping_add(0x10)).sw(c, v);
+        Callee {
+            addr: 0x0039_7910,
+            f: ee::s13::f_00397910,
+        }
+        .call(c, 0x0039_c958)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4553,6 +4663,24 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(OC445_OBJ);
                 c.pc = 0x0039_ced0;
+            },
+        );
+    }
+
+    #[test]
+    fn ui_screen_start_thread_matches() {
+        check(
+            ee::s13::f_0039c870__generated,
+            ui_screen_start_thread,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0039_c870 ^ seed as u64);
+                scramble(c, &mut r);
+                crate::game::ai::computer::tests::rbc_test_allocator(c);
+                let this = DATA + 0x6000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = if seed % 3 == 0 { 1 } else { 0 };
             },
         );
     }

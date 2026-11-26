@@ -350,6 +350,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         input_sync_send_sample_3,
         "InputSync_SendSample",
     ),
+    (
+        0x0023_6960,
+        game_state_event_switch_load_update,
+        "GameStateEventSwitchLoad_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7091,6 +7096,171 @@ pub fn input_sync_send_sample_3(c: &mut Cpu) {
     });
 }
 
+/// `void GameStateEventSwitchLoad_Update(GameState* self)` (0x236960), the C++
+/// `cGFSectionLoadState_update`. While the section manager waits for the
+/// transport (`mWaitTransport`, +0x1c8) it steps `self->state` (+0x10):
+/// state 0 waits for the section to be loaded, then puts the world-view
+/// stream focus (slot `idx`, the one the player camera does not use) at the
+/// NIS end position (radius 45000) and moves to state 1; state 1 waits until
+/// the focus is closer than 20000 and the transition manager, the NIS
+/// transition and the script engine are idle, then ends the transport
+/// sequence, activates the section (7) and moves to state 2.
+pub fn game_state_event_switch_load_update(c: &mut Cpu) {
+    guest(c, |c| {
+        let gp = c.g[GP][0] as u32;
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+        frame.save(c, S4, 0x30);
+        frame.save(c, S0, 0x70);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save_ra(c, 0x20);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x84)).lw(c);
+        c.g[S2][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x78)).lw(c);
+        c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x1c8)).lw(c);
+        let not_waiting = c.g[V0][0] == 0;
+        c.g[S3][0] = 0x1;
+        'exit: {
+            'done: {
+                if not_waiting {
+                    break 'done;
+                }
+                'state1: {
+                    c.cycles += 7;
+                    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x84)).lw(c);
+                    c.g[A1][0] = Addr((c.g[S4][0] as u32).wrapping_add(0x10)).lw(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x4)).lw(c);
+                    c.g[S1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x10)).lw(c);
+                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xb0)).lw(c);
+                    let is_state1 = c.g[A1][0] == c.g[S3][0];
+                    c.g[S0][0] = (c.g[V0][0] < 0x1u64) as u64;
+                    if is_state1 {
+                        break 'state1;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < 2i64) as u64;
+                    if c.g[V0][0] == 0 {
+                        frame.restore(c, S0, 0x70);
+                        break 'exit;
+                    }
+                    c.cycles += 2;
+                    if c.g[A1][0] != 0 {
+                        frame.restore(c, S0, 0x70);
+                        break 'exit;
+                    }
+
+                    // State 0: wait for the section to be loaded.
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x1bc)).lw(c);
+                    call_ptr(c, 0x0022_d278, 0x0023_69d4)?; // cSectionMan_isLoaded
+                    let not_loaded = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[SP][0];
+                    if not_loaded {
+                        break 'done;
+                    }
+                    c.cycles += 19;
+                    c.g[A1][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+                    c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x84)).lw(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xc)).lw(c);
+                    c.g[A2][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x40)).lw(c);
+                    c.g[A1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x18)).lw(c);
+                    call_ptr(c, 0x0012_3f38, 0x0023_69f4)?; // cRider_GetNISEndPosition
+                    c.g[V0][0] = 0x50;
+                    c.g[V1][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    c.mult(0, 2, 16, 2);
+                    c.lwc1(12, gp.wrapping_sub(0x5168));
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A2][0] = c.g[SP][0];
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    let slot = c.g[V1][0] as u32;
+                    c.sw(slot.wrapping_add(0x250), c.g[S3][0]);
+                    c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                    call_ptr(c, 0x003a_9658, 0x0023_6a20)?; // cWorldView_setFocus
+                    let state = c.g[S4][0] as u32;
+                    c.sw(state.wrapping_add(0x10), c.g[S3][0]);
+                    break 'done;
+                }
+
+                // State 1: wait for the focus to arrive and everything to idle.
+                c.cycles += 12;
+                c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = c.g[SP][0];
+                c.g[A3][0] = sx(sp(c).wrapping_add(0x10));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                call_ptr(c, 0x003a_9770, 0x0023_6a40)?; // cWorldView_getTestFocus
+                c.lwc1(1, sp(c).wrapping_add(0x10));
+                c.lwc1(0, gp.wrapping_sub(0x5164));
+                c.c_lt_s(1, 0);
+                let close = c.fcc();
+                frame.restore(c, S0, 0x70);
+                if close {
+                    break 'exit;
+                }
+                c.cycles += 13;
+                c.g[V0][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+                c.g[A1][0] = 0;
+                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x84)).lw(c);
+                call_ptr(c, 0x0023_0698, 0x0023_6a68)?; // GameModule_GetTransitionMan
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1c)).lw(c);
+                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x40)).lh(c);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x44)).lw(c);
+                let is_busy = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, is_busy, 0x0023_6a84)?; // isBusy()
+                if c.g[V0][0] != 0 {
+                    frame.restore(c, S0, 0x70);
+                    break 'exit;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x44)).lw(c);
+                let playing = c.g[V0][0] != 0;
+                frame.restore(c, S0, 0x70);
+                if playing {
+                    break 'exit;
+                }
+                c.cycles += 4;
+                c.g[A0][0] = Addr(gp.wrapping_sub(0x84c)).lw(c);
+                call_ptr(c, 0x0027_9298, 0x0023_6aa0)?; // IsActiveNISInTransition
+                let nis = c.g[V0][0] != 0;
+                frame.restore(c, S0, 0x70);
+                if nis {
+                    break 'exit;
+                }
+                c.cycles += 9;
+                c.g[A0][0] = Addr(gp.wrapping_sub(0x84c)).lw(c);
+                call_ptr(c, 0x0027_a9f0, 0x0023_6ab0)?; // EndTransportSequence
+                let man = c.g[S2][0] as u32;
+                c.sw(man.wrapping_add(0x1c8), 0);
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A2][0] = 0x7;
+                c.g[A1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x1bc)).lw(c);
+                call_ptr(c, 0x0022_d088, 0x0023_6ac4)?; // cSectionMan_activate
+                c.g[V0][0] = 0x2;
+                let state = c.g[S4][0] as u32;
+                c.sw(state.wrapping_add(0x10), c.g[V0][0]);
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x70);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9513,6 +9683,94 @@ pub(crate) mod tests {
                 c.g[A0][0] = (OC682_OBJ + 0x100) as u64;
                 c.g[A1][0] = (OC682_OBJ + 0x200) as u64;
                 let _ = r.next_u32();
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::asyncsys::tests::oc738_install_fakes;
+    pub(crate) use crate::game::sound::asyncsys::tests::oc738_machine;
+    pub(crate) use crate::game::sound::asyncsys::tests::OC738_CTRL;
+
+    pub(crate) const OC738_NOT_LOADED: u32 = OC738_CTRL + 8;
+
+    pub(crate) const OC738_NIS_IDLE: u32 = OC738_CTRL + 0xc;
+
+    /// `sp` inside the frame of the 0x80-byte functions called with the
+    /// machine's stack.
+    pub(crate) const SP_AFTER_FRAME: u32 = crate::difftest::SP - 0x80;
+
+    /// `GameStateEventSwitchLoad_Update`: not waiting; state 0 (section not
+    /// loaded / loaded); state 1 (focus too far; transition manager busy, a
+    /// transition playing, NIS active, or all idle); other states.
+    #[test]
+    fn game_state_event_switch_load_update_matches() {
+        oc738_install_fakes();
+        fakes::covered(
+            ee::s06::f_00236960__generated,
+            game_state_event_switch_load_update,
+            600,
+            &|c, seed| {
+                let mut r = oc738_machine(c, seed, 0x23_6960, 6);
+                let gp = GAME_GP;
+                let (holder, game, sm, vm, vm2) = (
+                    DATA + 0x1000,
+                    DATA + 0x1100,
+                    DATA + 0x1200,
+                    DATA + 0x1300,
+                    DATA + 0x1400,
+                );
+                let (focus, views, this, tm, tm_vt) = (
+                    DATA + 0x1500,
+                    DATA + 0x1600,
+                    DATA + 0x1700,
+                    DATA + 0x1800,
+                    DATA + 0x1900,
+                );
+                c.bus.write32(gp.wrapping_sub(0x848), holder);
+                c.bus.write32(holder + 0x84, game);
+                c.bus.write32(game + 0x78, sm);
+                c.bus
+                    .write32(sm + 0x1c8, [0u32, 1, 1, 1][(seed % 4) as usize]);
+                c.bus.write32(game + 0x84, vm);
+                c.bus.write32(vm + 4, vm2);
+                c.bus
+                    .write32(vm2 + 0xb0, [0u32, 1, 2][((seed / 4) % 3) as usize]);
+                c.bus.write32(game + 0x10, focus);
+                c.bus.write32(focus, views);
+                c.bus.write32(game + 0xc, DATA + 0x1a00);
+                c.bus.write32(DATA + 0x1a00 + 0x40, DATA + 0x1b00);
+                // The player camera slot read for the NIS end position.
+                c.bus.write32(DATA + 0x1b00 + 0x18, DATA + 0x1c00);
+                c.bus.write32(sm + 0x1bc, r.next_u32());
+                let state = [0u32, 1, 1, 1, 2, 3, u32::MAX][((seed / 12) % 7) as usize];
+                c.bus.write32(this + 0x10, state);
+                // 45000.0 / 20000.0 float constants.
+                c.bus.write32(gp.wrapping_sub(0x5168), 0x472f_c800);
+                c.bus.write32(gp.wrapping_sub(0x5164), 0x469c_4000);
+                // The focus distance getTestFocus leaves at sp+0x10.
+                let dist = if (seed / 3) % 2 == 0 {
+                    0x461c_4000u32
+                } else {
+                    0x46ea_6000
+                };
+                c.bus.write32(SP_AFTER_FRAME + 0x10, dist);
+                c.bus.write32(OC738_NOT_LOADED, (seed / 7) % 2);
+                c.bus.write32(OC738_NIS_IDLE, (seed / 5) % 2);
+                // Fake call 1 of state 1 is GetTransitionMan: a real object.
+                c.bus.write32(fakes::LOG_RESULTS + 4, tm);
+                c.bus.write32(tm + 0x1c, tm_vt);
+                c.bus
+                    .write16(tm_vt + 0x40, (r.next_u32() as i16 as i32 & !3) as u16);
+                // isBusy: the zero leaf (idle) or a fake (busy).
+                let busy = if (seed / 2) % 2 == 0 {
+                    0x0014_06c0
+                } else {
+                    fakes::FAKE
+                };
+                c.bus.write32(tm_vt + 0x44, busy);
+                c.bus.write32(tm + 0x44, (seed / 11) % 2);
+                c.g[A0][0] = sx(this);
+                c.pc = 0x0023_6960;
             },
         );
     }

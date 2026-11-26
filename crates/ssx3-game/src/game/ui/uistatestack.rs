@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
@@ -17,6 +18,7 @@ pub(crate) use crate::game::main::gamestate::p_2 as p;
 pub(crate) use crate::game::main::gamestate::vslot;
 pub(crate) use crate::game::render::particle::this_with_delta;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
+pub(crate) use crate::game::ui::uilistbox::oc711_lw;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
@@ -69,6 +71,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "UIObject_ApplyAlignment",
     ),
     (0x0039_ff60, uiobject_find_by_id, "UIObject_FindById"),
+    (0x0039_fb30, ui_object_ctor, "cUIThing_cUIThing"),
+    (
+        0x0039_ff50,
+        ui_object_get_state_data,
+        "UIObject_GetStateData",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -807,6 +815,105 @@ pub fn ui_state_mgr_switch_state_close_popups(c: &mut Cpu) {
     });
 }
 
+/// `cUIThing_cUIThing(void* self, void* pScreen, void* pParent)` (0x39fb30):
+/// the UI object constructor. Sets the vtable (at +8), the self-linked list
+/// node (+0 next, +4 prev), the attribute flags (+0x14: bit 0 and bit 1 set,
+/// bits 2, 4, 5, 7, 8 cleared, bits 3 and 6 set, the align field set to 9),
+/// zeroes the anim pointer, playback byte, misc data and the zero vectors
+/// (copied from a static zero table), sets colour and scale to 1.0 and the
+/// two sound ids to 4 and 6. Field offsets follow the reference struct; the
+/// generated body copies the zero vectors through `ldl`/`ldr` into
+/// t1/t4/a2/a1, so those registers are left as the copies leave them.
+pub fn ui_object_ctor(c: &mut Cpu) {
+    let this = c.g[A0][0] as u32;
+    c.cycles += 69;
+    c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+    c.g[V1][0] = 0xffff_ffff_ffff_ff7f;
+    c.g[A3][0] = 0xffff_ffff_ffff_e0ff;
+    c.g[T1][0] = 0xffff_ffff_ffff_ffdf;
+    c.g[V0][0] = c.g[V0][0] | 0x1;
+    c.g[T2][0] = 0xffff_ffff_ffff_ffef;
+    c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+    c.g[T3][0] = 0xffff_ffff_ffff_fffb;
+    c.g[V0][0] = c.g[V0][0] & c.g[A3][0];
+    c.g[T0][0] = 0xffff_ffff_fff8_0000;
+    c.g[V0][0] = c.g[V0][0] & c.g[T1][0];
+    c.g[T0][0] = c.g[T0][0] | 0x1fff;
+    c.g[V0][0] = c.g[V0][0] & c.g[T2][0];
+    c.g[A3][0] = 0x10000;
+    c.g[V0][0] = c.g[V0][0] & c.g[T3][0];
+    c.g[V1][0] = 0x490000;
+    c.g[V0][0] = c.g[V0][0] | 0x4a;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 0);
+    c.g[A3][0] = c.g[A3][0] | 0x2000;
+    c.g[V0][0] = c.g[V0][0] & c.g[T0][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4bd8));
+    c.g[V0][0] = c.g[V0][0] | c.g[A3][0];
+    c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+    c.g[T0][0] = 0x4;
+    c.sw(this.wrapping_add(0x14), c.g[V0][0]);
+    c.g[V1][0] = 0x500000;
+    c.sw(this.wrapping_add(0x4), c.g[A0][0]);
+    c.g[A3][0] = 0x6;
+    c.sw(this, c.g[A0][0]);
+    c.g[V0][0] = c.g[A0][0];
+    c.sw(this.wrapping_add(0xc), 0);
+    c.sb(this.wrapping_add(0x10), 0);
+    c.sw(this.wrapping_add(0x18), 0);
+    c.swc1(0, this.wrapping_add(0x1c));
+    c.swc1(0, this.wrapping_add(0x20));
+    c.swc1(0, this.wrapping_add(0x24));
+    c.swc1(0, this.wrapping_add(0x28));
+    // Zero vector at +0x2c (12 bytes, copied through the 8-byte loads).
+    c.g[T4][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xf28));
+    c.ldl(9, (c.g[T4][0] as u32).wrapping_add(0x7));
+    c.ldr(9, c.g[T4][0] as u32);
+    c.g[T2][0] = c.lw((c.g[T4][0] as u32).wrapping_add(0x8));
+    c.sdl(9, this.wrapping_add(0x33));
+    c.sdr(9, this.wrapping_add(0x2c));
+    c.sw(this.wrapping_add(0x34), c.g[T2][0]);
+    c.sw(this.wrapping_add(0x40), c.g[A2][0]);
+    c.sw(this.wrapping_add(0x38), 0);
+    c.sw(this.wrapping_add(0x3c), 0);
+    // Zero vector at +0x44.
+    c.g[T3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xf28));
+    c.ldl(6, (c.g[T3][0] as u32).wrapping_add(0x7));
+    c.ldr(6, c.g[T3][0] as u32);
+    c.g[T1][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x8));
+    c.sdl(6, this.wrapping_add(0x4b));
+    c.sdr(6, this.wrapping_add(0x44));
+    c.sw(this.wrapping_add(0x4c), c.g[T1][0]);
+    c.swc1(0, this.wrapping_add(0x58));
+    c.sw(this.wrapping_add(0x5c), c.g[A1][0]);
+    c.swc1(0, this.wrapping_add(0x50));
+    c.swc1(0, this.wrapping_add(0x54));
+    // Zero vector at +0x60.
+    c.g[T1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xf28));
+    c.ldl(12, (c.g[T1][0] as u32).wrapping_add(0x7));
+    c.ldr(12, c.g[T1][0] as u32);
+    c.g[A1][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x8));
+    c.sdl(12, this.wrapping_add(0x67));
+    c.sdr(12, this.wrapping_add(0x60));
+    c.sw(this.wrapping_add(0x68), c.g[A1][0]);
+    c.sw(this.wrapping_add(0x6c), c.g[T0][0]);
+    c.sw(this.wrapping_add(0x70), c.g[A3][0]);
+    ret(c);
+}
+
+/// `undefined UIObject_GetStateData(obj)` (0x39ff50, `cUIThing_getEngine`):
+/// the state word at `*(*(obj+0x5c)+0xd0)+0x10`.
+pub fn ui_object_get_state_data(c: &mut Cpu) {
+    c.cycles += 4;
+    let obj = c.g[A0][0];
+    c.g[V0][0] = oc711_lw(c, obj, 0x5c);
+    let v0 = c.g[V0][0];
+    c.g[V1][0] = oc711_lw(c, v0, 0xd0);
+    let v1 = c.g[V1][0];
+    c.g[V0][0] = oc711_lw(c, v1, 0x10);
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1108,6 +1215,45 @@ pub(crate) mod tests {
                     _ => 0x20 | 0x40,
                 };
                 w(c, trans + 0x1c, tf | ((seed as u32) << 12));
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ui::uilistbox::tests::put;
+
+    #[test]
+    fn ui_object_ctor_matches() {
+        check(
+            ee::s13::f_0039fb30__generated,
+            ui_object_ctor,
+            200,
+            &|c: &mut Cpu, seed: u32| {
+                let mut r = Rng(0x0039_fb30 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(r.next_u32());
+                c.bus.write32(DATA + 0x14, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn ui_object_get_state_data_matches() {
+        check(
+            ee::s13::f_0039ff50__generated,
+            ui_object_get_state_data,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0039_ff50 ^ seed as u64);
+                scramble(c, &mut r);
+                let obj = DATA + 0x100;
+                let state = DATA + 0x200;
+                let data = DATA + 0x300;
+                put(c, obj + 0x5c, state);
+                put(c, state + 0xd0, data);
+                put(c, data + 0x10, r.next_u32());
+                c.g[A0][0] = sx(obj);
             },
         );
     }

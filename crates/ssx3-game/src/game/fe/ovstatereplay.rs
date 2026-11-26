@@ -5,9 +5,12 @@ use crate::abi;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Frame;
+use crate::call::Target;
 pub(crate) use crate::game::fe::feasyncfile::gp_18 as gp;
 pub(crate) use crate::game::fe::feasyncfile::p_6 as p;
+pub(crate) use crate::game::ui::uilistbox::oc711_lw;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -27,6 +30,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "OVScreenReplayMenu_UpdateProgressBar",
     ),
     (0x0026_f980, replay_end_playback, "Replay_EndPlayback"),
+    (
+        0x0020_e8e0,
+        cov_state_overlay_render,
+        "cOVStateOverlay_Render",
+    ),
+    (
+        0x0020_e900,
+        ov_state_overlay_update,
+        "cOVStateOverlay_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -328,6 +341,45 @@ pub fn ov_screen_replay_menu_on_widget_created(c: &mut Cpu) {
     });
 }
 
+/// `void cOVState::onUpdate(self)` (0x20e900, `cOVStateOverlay_Update`):
+/// pauses the game (`cGame_activatePauseMenu(SSXApp->Game, 1)`), then runs
+/// the state's `cUIState::onUpdate(self)`.
+pub fn ov_state_overlay_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = 0x1;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let v0 = c.g[V0][0];
+        c.g[A0][0] = oc711_lw(c, v0, 0x84);
+        call_ptr(c, 0x0023_1840, 0x0020_e920)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0039_e510, 0x0020_e928)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Callees.
+
+pub(crate) const UI_STATE_RENDER: u32 = 0x0039_e6b8;
+
+// ---------------------------------------------------------------------------
+// cOVStateOverlay_Render
+
+/// `void cOVStateOverlay_Render(void)` (0x20e8e0): `UIState_Render()`, a
+/// forwarding wrapper (7 cycles, 0x10 frame, tail call through the table).
+pub fn cov_state_overlay_render(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(UI_STATE_RENDER), 0x0020_e8f0)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -437,6 +489,118 @@ pub(crate) mod tests {
                 w(c, DATA + 0x3100, r.next_u32());
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = sx(widget);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    pub(crate) use crate::game::ui::uilistbox::tests::put;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// The pause overlay: the game pointer through `gp-0x848`, then the
+    /// two calls (both return to their `ra`).
+    /// RAM word that arms the two fakes below (set only by this test's
+    /// fixture, so other tests' machines still run the real callees).
+    pub(crate) const OC711_FX_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC711_FX_MAGIC: u32 = 0x4f43_3711;
+
+    /// Fake for `cGame_activatePauseMenu` (0x231840): logged when armed,
+    /// otherwise the generated body.
+    pub(crate) fn oc711_fake_pause(c: &mut Cpu) {
+        if c.bus.read32(OC711_FX_CTRL) != OC711_FX_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc711_fake_pause),
+                ee::s06::f_00231840__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0023_1840);
+    }
+
+    /// Fake for `cUIState_onUpdate` (0x39e510), same gate.
+    pub(crate) fn oc711_fake_state_update(c: &mut Cpu) {
+        if c.bus.read32(OC711_FX_CTRL) != OC711_FX_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc711_fake_state_update),
+                ee::s13::f_0039e510__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0039_e510);
+    }
+
+    #[test]
+    fn ov_state_overlay_update_matches() {
+        // Both callees reach the real game code, which runs away on this
+        // fixture; the armed fakes log the calls instead (the diff still
+        // compares the arguments and the register dance).
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_00231840),
+            oc711_fake_pause,
+            fakes::prev_cell(oc711_fake_pause),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_0039E510),
+            oc711_fake_state_update,
+            fakes::prev_cell(oc711_fake_state_update),
+        );
+        check(
+            ee::s05::f_0020e900__generated,
+            ov_state_overlay_update,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0020_e900 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(OC711_FX_CTRL, OC711_FX_MAGIC);
+                c.g[GP][0] = sx(GAME_GP);
+                let world = DATA + 0x500;
+                let game = DATA + 0x600;
+                put(c, GAME_GP.wrapping_sub(0x848), world);
+                put(c, world + 0x84, game);
+                put(c, game + 4, r.next_u32());
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 2) * 0x40);
+            },
+        );
+    }
+
+    /// Gate for the fakes below: they run only when the machine holds this
+    /// word, so other tests reaching the same slots run the real bodies.
+    pub(crate) const OC715_GATE: u32 = DATA + 0x200000;
+
+    pub(crate) const OC715_MAGIC: u32 = 0x715c_0de5;
+
+    pub(crate) static OC715_PREV_RENDER: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc715_fake_ui_state_render(c: &mut Cpu) {
+        if c.bus.read32(OC715_GATE) != OC715_MAGIC {
+            return fall_back(c, &OC715_PREV_RENDER, ee::s13::f_0039e6b8__generated);
+        }
+        fake_call(c, UI_STATE_RENDER);
+    }
+
+    #[test]
+    fn cov_state_overlay_render_matches() {
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039E6B8),
+            oc715_fake_ui_state_render,
+            &OC715_PREV_RENDER,
+        );
+        check(
+            ee::s05::f_0020e8e0__generated,
+            cov_state_overlay_render,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x0020_e8e0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(OC715_GATE, OC715_MAGIC);
             },
         );
     }

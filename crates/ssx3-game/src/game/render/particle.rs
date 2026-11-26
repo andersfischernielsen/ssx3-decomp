@@ -545,6 +545,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2GraphicsMan_SetPhase2Callback",
     ),
     (0x0038_66f0, ps2_graphics_man_v109, "PS2GraphicsMan_v109"),
+    (0x0037_1548, m_emitter_alloc_data, "mEmitter_AllocData"),
 ];
 
 /// Same-shard direct callees used above.
@@ -18112,6 +18113,52 @@ pub fn ps2_graphics_man_v109(c: &mut Cpu) {
     })
 }
 
+/// `mEmitter::AllocData` (0x371548): allocates the emitter's data block
+/// through `DynamicEmitter_AllocData` (self + 0x204), then `count` slots of
+/// 4 bytes at `self + 0x178` via the pool allocator (0x317e30). Stores the
+/// block's result in the word at `self + 0x204`; returns -1 for count 0 and
+/// the allocator's result otherwise.
+pub fn m_emitter_alloc_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x204));
+        Callee {
+            addr: 0x0037_0c60,
+            f: ee::s12::f_00370c60,
+        }
+        .call(c, 0x0037_1568)?;
+        let self_ = c.g[S0][0] as u32;
+        c.g[S1][0] = Addr(self_.wrapping_add(0x178)).lw(c);
+        c.g[A1][0] = 0x490000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2690));
+        c.g[A2][0] = 0;
+        c.g[A0][0] = sx((c.g[S1][0] as u32) << 2);
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7e30, 0x0037_1584)?;
+        let t = c.g[S1][0] == 0;
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(1));
+        if !t {
+            c.cycles += 1;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 7;
+        let v0 = c.g[V0][0];
+        Addr(c.g[S2][0] as u32).sw(c, v0);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -26690,6 +26737,24 @@ pub(crate) mod tests {
             ps2_graphics_man_v109,
             96,
             setup,
+        );
+    }
+
+    #[test]
+    fn m_emitter_alloc_data_matches() {
+        check(
+            ee::s12::f_00371548__generated,
+            m_emitter_alloc_data,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0037_1548 ^ seed as u64);
+                scramble(c, &mut r);
+                crate::game::ai::computer::tests::rbc_test_allocator(c);
+                let this = DATA + 0x7000;
+                c.g[A0][0] = sx(this);
+                c.bus
+                    .write32(this + 0x178, if seed % 4 == 0 { 0 } else { seed % 9 });
+            },
         );
     }
 }

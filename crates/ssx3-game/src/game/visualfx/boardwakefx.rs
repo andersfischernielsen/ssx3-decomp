@@ -42,6 +42,7 @@ pub(crate) use crate::game::render::particle::addi;
 pub(crate) use crate::game::render::particle::at as at_2;
 pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
 pub(crate) use crate::game::scripter::ssxscriptengine::script_obj_base_dtor_forward;
+pub(crate) use crate::game::sound::soundsys::s0_addr;
 use crate::game::visualfx::boardwakefx as bw;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
@@ -279,6 +280,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_transition_man_script_dtor,
         "cTransitionMan_ScriptDtor",
     ),
+    (0x002d_cf28, cboardwakefx_reset, "cBoardWakeFX_Reset"),
+    (
+        0x002d_f4d0,
+        cdynamic_spray_fx_find_bones,
+        "cDynamicSprayFX_FindBones",
+    ),
+    (0x002e_2860, lensfx_flare_ctor_stub, "LensFX_FlareCtorStub"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14900,6 +14908,317 @@ pub fn c_transition_man_script_dtor(c: &mut Cpu) {
     script_obj_base_dtor_forward(c, 0x0028_4ab8);
 }
 
+pub(crate) const BWFX_RESET_HEAD: Callee = Callee {
+    addr: 0x002d_e368,
+    f: ee::s09::f_002de368,
+};
+
+/// The `gp` register as a guest address.
+pub(crate) fn gp_of(c: &Cpu) -> u32 {
+    c.g[GP][0] as u32
+}
+
+// ---------------------------------------------------------------------------
+// cBoardWakeFX_Reset
+
+/// `void cBoardWakeFX_reset(sWakeDCF28* self)` (0x2dcf28): the wake has 5
+/// columns when its board has a view index (else 4), a white colour, and
+/// per-column tables (heights and values) laid out again when the column
+/// count changed; the sub-params are cleared through `cWakeParams_Clear`.
+pub fn cboardwakefx_reset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x30);
+        frame.save(c, 17, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        frame.save_fpr(c, 20, 0x40);
+        let this = s0_addr(c);
+        c.g[V0][0] = Addr(this).lw(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x870)).lw(c);
+        c.g[S1][0] = Addr(this.wrapping_add(0xb4)).lw(c);
+        if (c.g[V1][0] as i64) < 0 {
+            c.cycles += 3;
+            c.f[0] = Addr(gp_of(c).wrapping_sub(0x3c44)).read_fpu(c).0;
+            c.g[V0][0] = 4;
+            c.g[V1][0] = 0x16;
+        } else {
+            c.cycles += 5;
+            c.g[AT][0] = 0x3fa0_0000;
+            c.f[0] = c.g[AT][0] as u32;
+            c.g[V0][0] = 5;
+            c.g[V1][0] = 0x20;
+        }
+
+        // The 'b_2dd0a4 block: store the count, the two factors, the white
+        // colour and the zeroed fields, then clear the sub-params.
+        c.cycles += 27;
+        c.sw(this.wrapping_add(0xb4), c.g[V0][0]);
+        c.sw(this.wrapping_add(0xb8), c.g[V1][0]);
+        let factor = FpuF32(c.f[0]);
+        Addr(this.wrapping_add(0xbc)).write_fpu(c, factor);
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[20] = c.g[AT][0] as u32;
+        c.g[A0][0] = sx(this.wrapping_add(0x60));
+        let sp0 = sp(c);
+        let one = FpuF32(c.f[20]);
+        for k in 0..4 {
+            Addr(sp0.wrapping_add(4 * k)).write_fpu(c, one);
+        }
+        c.ldl(2, sp0.wrapping_add(7));
+        c.ldr(2, sp0);
+        c.ldl(3, sp0.wrapping_add(0xf));
+        c.ldr(3, sp0.wrapping_add(8));
+        c.sdl(2, this.wrapping_add(0xa7));
+        c.sdr(2, this.wrapping_add(0xa0));
+        c.sdl(3, this.wrapping_add(0xaf));
+        c.sdr(3, this.wrapping_add(0xa8));
+        c.sw(this.wrapping_add(0x38), 0);
+        c.sw(this.wrapping_add(0x4), 0);
+        c.sw(this.wrapping_add(0x8), 0);
+        c.sw(this.wrapping_add(0x3c), 0);
+        c.sw(this.wrapping_add(0x40), 0);
+        BWFX_RESET_HEAD.call(c, 0x002d_cfd0)?;
+
+        // The callee's return may have moved `s0` only if it misbehaved; the
+        // generated code reads it from the register, so do the same.
+        let this = s0_addr(c);
+        c.g[V0][0] = Addr(this.wrapping_add(0xb4)).lw(c);
+        if c.g[S1][0] != c.g[V0][0] {
+            c.cycles += 7;
+            c.f[6] = Addr(gp_of(c).wrapping_sub(0x3c40)).read_fpu(c).0;
+            c.f[3] = c.f[20];
+            c.f[5] = Addr(gp_of(c).wrapping_sub(0x3c3c)).read_fpu(c).0;
+            c.g[A1][0] = 0;
+            c.f[4] = Addr(gp_of(c).wrapping_sub(0x3c38)).read_fpu(c).0;
+            c.g[T2][0] = sx(this.wrapping_add(0x10));
+            c.g[T1][0] = sx(this.wrapping_add(0x24));
+            loop {
+                // One column i: heightFactor = 0.99 - i * (0.98 / (count - 1)).
+                c.cycles += 16;
+                c.g[V0][0] = Addr(this.wrapping_add(0xb4)).lw(c);
+                c.f[1] = c.g[A1][0] as u32;
+                c.f[1] = FpuF32::from_i32(c.f[1] as i32).0;
+                c.g[A3][0] = sx((c.g[A1][0] as u32) << 2);
+                c.g[T0][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                c.g[A1][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                c.f[0] = c.g[V0][0] as u32;
+                c.f[0] = FpuF32::from_i32(c.f[0] as i32).0;
+                c.f[2] = c.f[1];
+                c.g[A0][0] = 0;
+                c.g[A2][0] = 0x1f;
+                c.f[0] = FpuF32(c.f[6]).div(FpuF32(c.f[0])).0;
+                c.f[1] = (FpuF32(c.f[1]) * FpuF32(c.f[0])).0;
+                c.f[0] = (FpuF32(c.f[5]) - FpuF32(c.f[1])).0;
+                // The 32 entries of the column: a = 0, b = heightFactor,
+                // c = 1.0, d = 0; the entries are 0x30 bytes apart.
+                let row_slot = c.g[A1][0] as u32;
+                loop {
+                    c.cycles += 15;
+                    let j_off = c.g[A0][0] as u32;
+                    let elem = j_off.wrapping_add(Addr(row_slot).lw(c) as u32);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+                    c.g[V1][0] = sx(elem);
+                    c.sw(elem, 0);
+                    let w0 = FpuF32(c.f[0]);
+                    let w3 = FpuF32(c.f[3]);
+                    c.g[V0][0] = sx(j_off.wrapping_add(Addr(row_slot).lw(c) as u32));
+                    Addr((c.g[V0][0] as u32).wrapping_add(4)).write_fpu(c, w0);
+                    c.g[V1][0] = sx(j_off.wrapping_add(Addr(row_slot).lw(c) as u32));
+                    Addr((c.g[V1][0] as u32).wrapping_add(8)).write_fpu(c, w3);
+                    c.g[V0][0] = sx(j_off.wrapping_add(Addr(row_slot).lw(c) as u32));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0xc), 0);
+                    let more = (c.g[A2][0] as i64) >= 0;
+                    c.g[A0][0] = sx(j_off.wrapping_add(0x30));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002d_d038);
+                    }
+                }
+                // The column's value: vals[i] = i / (count - 1) * -25.
+                c.cycles += 11;
+                c.g[V0][0] = Addr(this.wrapping_add(0xb4)).lw(c);
+                c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                c.g[A1][0] = c.g[T0][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                c.g[V1][0] = ((c.g[A1][0] as i64) < 5) as u64;
+                c.f[0] = c.g[V0][0] as u32;
+                c.f[0] = FpuF32::from_i32(c.f[0] as i32).0;
+                c.f[0] = FpuF32(c.f[2]).div(FpuF32(c.f[0])).0;
+                c.f[0] = (FpuF32(c.f[0]) * FpuF32(c.f[4])).0;
+                let more = c.g[V1][0] != 0;
+                let vals_slot = c.g[A0][0] as u32;
+                let value = FpuF32(c.f[0]);
+                Addr(vals_slot).write_fpu(c, value);
+                if !more {
+                    c.cycles += 1;
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002d_cff8);
+                }
+            }
+        }
+        frame.restore(c, 16, 0x30);
+
+        // Epilogue.
+        c.cycles += 5;
+        frame.restore(c, 17, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `LensFX_FlareCtorStub` (0x2e2860): a constructor that does nothing and
+/// returns its `this` pointer.
+pub fn lensfx_flare_ctor_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
+/// Where `cDynamicSprayFX` keeps its bone-index array pointer.
+pub(crate) const SPRAY_BONES: u32 = 0x7c;
+
+/// The second argument of a `getBoneSkelIndex` call: a bone-name string literal
+/// (`a2 = lit`) or the callee-saved register that already holds it.
+#[derive(Clone, Copy)]
+pub(crate) enum BoneA2 {
+    Lit(u32),
+    Reg(usize),
+}
+
+/// `getBoneSkelIndex(self->mRider->mAnimModel, 0, name)` calls of `FindBones`, in order:
+/// return address, the callee-saved register the original loads the name into (if
+/// any), and the name argument. 30 calls fill `mBoneIndicies[0..30]`.
+pub(crate) const SPRAY_BONE_CALLS: [(u32, Option<(usize, u32)>, BoneA2); 30] = [
+    (0x002df518, None, BoneA2::Lit(0x4879d8)),
+    (0x002df53c, Some((S7, 0x4879e8)), BoneA2::Reg(S7)),
+    (0x002df560, Some((S6, 0x4879f8)), BoneA2::Reg(S6)),
+    (0x002df584, Some((S5, 0x487a08)), BoneA2::Reg(S5)),
+    (0x002df5a8, Some((S4, 0x487a18)), BoneA2::Reg(S4)),
+    (0x002df5cc, Some((S3, 0x487a28)), BoneA2::Reg(S3)),
+    (0x002df5f0, Some((S2, 0x4a3b00)), BoneA2::Reg(S2)),
+    (0x002df614, Some((S1, 0x487a38)), BoneA2::Reg(S1)),
+    (0x002df638, Some((S0, 0x487a48)), BoneA2::Reg(S0)),
+    (0x002df658, None, BoneA2::Lit(0x487a58)),
+    (0x002df678, None, BoneA2::Lit(0x4a3b08)),
+    (0x002df698, None, BoneA2::Lit(0x487a68)),
+    (0x002df6b8, None, BoneA2::Lit(0x487a78)),
+    (0x002df6d8, None, BoneA2::Lit(0x487a88)),
+    (0x002df6f8, None, BoneA2::Lit(0x487a98)),
+    (0x002df718, None, BoneA2::Lit(0x4879d8)),
+    (0x002df734, None, BoneA2::Reg(S7)),
+    (0x002df750, None, BoneA2::Reg(S6)),
+    (0x002df76c, None, BoneA2::Reg(S5)),
+    (0x002df788, None, BoneA2::Reg(S4)),
+    (0x002df7a4, None, BoneA2::Reg(S3)),
+    (0x002df7c0, None, BoneA2::Reg(S2)),
+    (0x002df7dc, None, BoneA2::Reg(S1)),
+    (0x002df7f8, None, BoneA2::Reg(S0)),
+    (0x002df818, None, BoneA2::Lit(0x487aa8)),
+    (0x002df838, None, BoneA2::Lit(0x487ab8)),
+    (0x002df858, None, BoneA2::Lit(0x487ac8)),
+    (0x002df878, None, BoneA2::Lit(0x487ad8)),
+    (0x002df898, None, BoneA2::Lit(0x487ae8)),
+    (0x002df8b8, None, BoneA2::Lit(0x487af8)),
+];
+
+/// `void cDynamicSprayFX::FindBones()` (0x2df4d0): looks the spray's 30 bone names
+/// up on the rider's anim model (`getBoneSkelIndex`), stores the indices in
+/// `self->mBoneIndicies` (pointer at +0x7c) and sets the ready flag (+0x80).
+/// Transcribed from the generated body (registers, cycles and call order kept).
+#[allow(
+    unused_variables,
+    unused_assignments,
+    unreachable_code,
+    unused_parens,
+    unused_mut
+)]
+pub fn cdynamic_spray_fx_find_bones(c: &mut Cpu) {
+    ssx3_ee_rt::prof::enter(c, 0x002df4d0);
+    guest(c, |c| {
+        c.cycles += 254;
+        let frame = Frame::open(c, 0xa0);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        c.g[FP][0] = c.g[A0][0];
+        let this = c.g[FP][0] as u32;
+        for (i, &(ret, set_s, a2)) in SPRAY_BONE_CALLS.iter().enumerate() {
+            if i > 0 {
+                // The previous call's result goes to `mBoneIndicies[i - 1]`.
+                let out = Addr(this.wrapping_add(SPRAY_BONES)).lw(c);
+                c.g[V1][0] = out;
+                let slot = Addr((out as u32).wrapping_add(4 * (i as u32 - 1)));
+                let bone = c.g[V0][0];
+                slot.sw(c, bone);
+            }
+            if let Some((reg, val)) = set_s {
+                c.g[reg][0] = sx(val);
+            }
+            c.g[A1][0] = 0;
+            match a2 {
+                BoneA2::Lit(v) => c.g[A2][0] = sx(v),
+                BoneA2::Reg(r) => c.g[A2][0] = c.g[r][0],
+            }
+            // registers at the call: a0 = self->mRider->mAnimModel, a1 = 0
+            c.g[V0][0] = Addr(this).lw(c);
+            let model = Addr((c.g[V0][0] as u32).wrapping_add(0x780)).lw(c);
+            c.g[A0][0] = model;
+            call_ptr(c, 0x0031_0c48, ret)?;
+        }
+        let out = Addr(this.wrapping_add(SPRAY_BONES)).lw(c);
+        c.g[V1][0] = out;
+        c.g[A0][0] = 0x1d;
+        let slot = Addr((out as u32).wrapping_add(4 * 29));
+        let bone = c.g[V0][0];
+        slot.sw(c, bone);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+        // The 30-word countdown the compiler left behind.
+        loop {
+            c.cycles += 7;
+            if (c.g[A0][0] as i64) >= 0 {
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+                if event_due(c) {
+                    deliver_event_here(c, 0x002d_f8c8);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 14;
+        c.g[V0][0] = 1;
+        Addr(this.wrapping_add(0x80)).sw(c, 1);
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -19139,6 +19458,159 @@ pub(crate) mod tests {
                 }
                 c.bus.write32(fx + 0xb0, (seed % 7 != 0) as u32);
                 c.g[A0][0] = sx(fx);
+            },
+        );
+    }
+
+    #[test]
+    fn cboardwakefx_reset_matches() {
+        check(
+            ee::s09::f_002dcf28__generated,
+            cboardwakefx_reset,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x002d_cf28 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                for (off, f) in [
+                    (0x3c44u32, 0.8f32),
+                    (0x3c40, 0.98),
+                    (0x3c3c, 0.99),
+                    (0x3c38, -25.0),
+                ] {
+                    c.bus.write32(GAME_GP.wrapping_sub(off), f.to_bits());
+                }
+                let this = DATA + 0x100;
+                let obj = DATA + 0x400;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this, obj);
+                let view = if seed % 2 == 0 { 0xffff_ffff } else { seed % 7 };
+                c.bus.write32(obj + 0x870, view);
+                // The old count is 4 or 5, so both the same-count and the
+                // rebuild paths run.
+                c.bus.write32(this + 0xb4, 4 + (seed / 2) % 2);
+                for i in 0..5 {
+                    c.bus
+                        .write32(this + 0x10 + 4 * i, DATA + 0x2000 + i * 0x800);
+                }
+            },
+        );
+    }
+
+    /// The flare constructor stub returns `this`.
+    #[test]
+    fn lensfx_flare_ctor_stub_matches() {
+        check(
+            ee::s09::f_002e2860__generated,
+            lensfx_flare_ctor_stub,
+            20,
+            &|c, seed| {
+                let mut r = Rng(0x2e28_60 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
+    }
+
+    /// Control block of this module's gated callee fakes (in the machine's own
+    /// RAM, away from the pool and the fakes' call log at DATA+0x100000).
+    pub(crate) const OC750_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC750_MAGIC: u32 = 0x0750_0750;
+
+    /// Gated fakes for callees with override slots: with the magic word at
+    /// `OC750_CTRL` they log their arguments (id, a0, a1, a2, ra, cycles at
+    /// `OC750_CTRL + 0x400 + 0x20 * n`) and return the word at
+    /// `OC750_CTRL + 0x20 + 4 * id` in v0; with the gate off they run what the
+    /// slot held before.
+    macro_rules! oc750_fakes {
+        ($($fake:ident = $id:expr, $shard:ident :: $slot:ident / $gen:ident;)*) => {
+            $(
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC750_CTRL) != OC750_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($fake), ee::$shard::$gen);
+                    }
+                    oc750_fake_body(c, $id);
+                }
+            )*
+            pub(crate) fn oc750_install() {
+                $(
+                    fakes::hook(
+                        std::ptr::addr_of_mut!(ee::$shard::$slot),
+                        $fake,
+                        fakes::prev_cell($fake),
+                    );
+                )*
+            }
+        };
+    }
+
+    pub(crate) fn oc750_fake_body(c: &mut Cpu, id: u32) {
+        let n = c.bus.read32(OC750_CTRL + 8);
+        c.bus.write32(OC750_CTRL + 8, n + 1);
+        let base = OC750_CTRL + 0x400 + 0x20 * n;
+        let (a0, a1, a2) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32);
+        c.bus.write32(base, id);
+        c.bus.write32(base + 4, a0);
+        c.bus.write32(base + 8, a1);
+        c.bus.write32(base + 0xc, a2);
+        c.bus.write32(base + 0x10, c.g[RA][0] as u32);
+        c.bus.write32(base + 0x14, c.cycles as u32);
+        let mut v = c.bus.read32(OC750_CTRL + 0x20 + 4 * id);
+        match id {
+            // FindOrCreateEmitter: an emitter slot 0..14.
+            9 => v = v.wrapping_add(7 * n) % 15,
+            // getBoneSkelIndex: depends on the name argument.
+            11 => v = a2 ^ n,
+            _ => {}
+        }
+        c.g[V0][0] = sx(v);
+        ret(c);
+    }
+
+    oc750_fakes! {
+        oc750_fake_bolt_this = 0, s01::OVERRIDE_0014ABE0 / f_0014abe0__generated;
+        oc750_fake_bolt_ad50 = 1, s01::OVERRIDE_0014AD50 / f_0014ad50__generated;
+        oc750_fake_cheat_identity = 2, s00::OVERRIDE_00123168 / f_00123168__generated;
+        oc750_fake_identity = 3, s00::OVERRIDE_00123128 / f_00123128__generated;
+        oc750_fake_ui_state = 4, s13::OVERRIDE_0039FA88 / f_0039fa88__generated;
+        oc750_fake_bolt_ad28 = 5, s01::OVERRIDE_0014AD28 / f_0014ad28__generated;
+        oc750_fake_bolt_bdb8 = 6, s01::OVERRIDE_0014BDB8 / f_0014bdb8__generated;
+        oc750_fake_bolt_d988 = 7, s01::OVERRIDE_0014D988 / f_0014d988__generated;
+        oc750_fake_bolt_d998 = 8, s01::OVERRIDE_0014D998 / f_0014d998__generated;
+        oc750_fake_find_emitter = 9, s09::OVERRIDE_002ECBC0 / f_002ecbc0__generated;
+        oc750_fake_destroy_emitter = 10, s09::OVERRIDE_002F2218 / f_002f2218__generated;
+        oc750_fake_bone_index = 11, s10::OVERRIDE_00310C48 / f_00310c48__generated;
+    }
+
+    pub(crate) fn oc750_gate(c: &mut Cpu) {
+        c.bus.write32(OC750_CTRL, OC750_MAGIC);
+    }
+
+    /// `cDynamicSprayFX::FindBones`: 30 `getBoneSkelIndex` calls (a gated fake
+    /// that logs its arguments and returns a hash of the name), results stored
+    /// through the array pointer at +0x7c, and the +0x80 ready flag.
+    #[test]
+    fn cdynamic_spray_fx_find_bones_matches() {
+        oc750_install();
+        check(
+            ee::s09::f_002df4d0__generated,
+            cdynamic_spray_fx_find_bones,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2df4d0, 0);
+                oc750_gate(c);
+                let this = DATA + 0x100;
+                let rider = DATA + 0x400;
+                let out = DATA + 0x600;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this, rider);
+                c.bus.write32(this + SPRAY_BONES, out);
+                c.bus.write32(this + 0x80, r.next_u32());
+                c.bus
+                    .write32(rider + 0x780, DATA + 0x800 + r.next_u32() % 0x100);
+                for i in 0..32u32 {
+                    c.bus.write32(out + 4 * i, r.next_u32());
+                }
             },
         );
     }

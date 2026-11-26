@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -42,6 +43,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_7468, uianim_set_play_mode, "UIAnim_SetPlayMode"),
     (0x0039_74b0, ui_anim_advance, "UIAnim_Advance"),
     (0x0039_75e0, ui_anim_apply, "UIAnim_Apply"),
+    (0x0039_7298, ui_anim_set_data, "UIAnim_SetData"),
+    (0x0039_72a0, ui_anim_ctor, "UIAnim_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -904,6 +907,133 @@ fn ui_anim_apply_original(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `void UIAnim_ctor(UIAnim* self, UIAnimDesc* desc)` (0x3972a0): installs
+/// the UIAnim vtable (0x494d08) and the default fields (+0x8 = -1, +0xc =
+/// 0xffff, +0xa = 0, +0x4 = 0), keeps `desc`, and for each of the desc's
+/// `count` (+4) entries lays out a pointer array of `count` slots at +4,
+/// filling it from the desc entries (16 bytes of header, stride from each
+/// entry's halfword at +4) through `UIAnim_SetData` (0x397298).
+pub fn ui_anim_ctor(c: &mut Cpu) {
+    guest(c, ui_anim_ctor_body);
+}
+
+pub(crate) fn ui_anim_ctor_body(c: &mut Cpu) -> Flow {
+    c.cycles += 19;
+    let frame = Frame::open(c, 0x40);
+    c.g[V0][0] = 0x490000;
+    frame.save(c, S2, 0x10);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4d08));
+    c.g[S2][0] = c.g[A0][0];
+    frame.save(c, S1, 0x20);
+    frame.save(c, S0, 0x30);
+    c.g[V1][0] = u64::MAX;
+    frame.save_ra(c, 0);
+    c.g[A0][0] = 0xffff;
+    let this = c.g[S2][0] as u32;
+    c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+    c.sh(this.wrapping_add(0x8), c.g[V1][0]);
+    c.sh(this.wrapping_add(0xc), c.g[A0][0]);
+    c.sw(this, c.g[A1][0]);
+    c.sw(this.wrapping_add(0x4), 0);
+    c.sh(this.wrapping_add(0xa), 0);
+    c.g[S0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+    let t = c.g[S0][0] == 0;
+    c.g[S1][0] = sx(this.wrapping_add(0x4));
+    'b_397388: {
+        if t {
+            break 'b_397388;
+        }
+        'b_39733c: {
+            c.cycles += 12;
+            c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
+            c.g[A1][0] = 0x490000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3d60));
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7e30, 0x0039_7308)?;
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+            c.sw(c.g[V0][0] as u32, c.g[S0][0]);
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            let t = c.g[S0][0] == 0;
+            c.g[V0][0] = c.g[A0][0];
+            if t {
+                break 'b_39733c;
+            }
+            c.cycles += 1;
+            c.g[A1][0] = u64::MAX;
+            loop {
+                c.cycles += 7;
+                c.sw(c.g[V0][0] as u32, 0);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                let t = c.g[V1][0] != c.g[A1][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_7320);
+                    }
+                    continue;
+                }
+                break 'b_39733c;
+            }
+        }
+        c.cycles += 6;
+        c.sw(c.g[S1][0] as u32, c.g[A0][0]);
+        c.g[S1][0] = 0;
+        c.g[V0][0] = c.lw(this);
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        let t = c.g[V1][0] == 0;
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+        if t {
+            break 'b_397388;
+        }
+        c.cycles += 1;
+        loop {
+            c.cycles += 12;
+            c.g[V0][0] = c.lw(this.wrapping_add(0x4));
+            c.g[A0][0] = sx((c.g[S1][0] as u32) << 2);
+            c.g[A1][0] = c.g[S0][0];
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            Callee {
+                addr: 0x0039_7298,
+                f: ee::s13::f_00397298,
+            }
+            .call(c, 0x0039_7370)?;
+            c.g[V1][0] = c.lw(this);
+            c.g[A0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+            let t = c.g[V0][0] != 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0039_7358);
+                }
+                continue;
+            }
+            break 'b_397388;
+        }
+    }
+    c.cycles += 7;
+    c.g[V0][0] = c.g[S2][0];
+    frame.restore(c, S0, 0x30);
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S2, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cUIAnimationChannel::setAnimChanData` (0x397298): stores `a1` as the word
+/// at `a0`. A leaf of two cycles.
+pub fn ui_anim_set_data(c: &mut Cpu) {
+    c.cycles += 2;
+    let value = c.g[A1][0];
+    Addr(crate::abi::arg(c, 0)).sw(c, value);
+    ret(c);
 }
 
 #[cfg(test)]
@@ -1788,5 +1918,52 @@ pub(crate) mod tests {
             apply(c, anim, target, 0, f as u32);
         });
         assert_eq!(c.bus.read32(LOG_COUNT), 1, "stopped apply: setter calls");
+    }
+
+    use crate::difftest::fill;
+
+    /// `UIAnim_ctor` with a desc of 0..=3 entries: the pointer array comes
+    /// from the real `operator_new_named` (the test heap), and each entry
+    /// is handed to the real `UIAnim_SetData`.
+    #[test]
+    fn ui_anim_ctor_matches() {
+        const SELF: u32 = DATA + 0x7000;
+        const DESC: u32 = DATA + 0x7100;
+        check(
+            ee::s13::f_003972a0__generated,
+            ui_anim_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3972_a0 ^ (seed as u64) << 10);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                crate::game::ai::computer::tests::rbc_test_allocator(c);
+                c.g[RA][0] = 0x0012_3450;
+                c.pc = 0x0039_72a0;
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(DESC);
+                fill(c, &mut r, DESC, 0x40);
+                c.bus.write32(DESC + 4, seed % 4);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_anim_set_data_matches() {
+        check(
+            ee::s13::f_00397298__generated,
+            ui_anim_set_data,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0039_7298 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0039_7298;
+                c.g[A0][0] = sx(DATA + 0x100);
+                let hi = r.next_u32() as u64;
+                let lo = r.next_u32() as u64;
+                c.g[A1][0] = (hi << 32) | lo;
+                c.bus.write32(DATA + 0x100, r.next_u32());
+            },
+        );
     }
 }

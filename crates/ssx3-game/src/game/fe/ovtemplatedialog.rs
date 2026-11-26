@@ -96,6 +96,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_ui_open_screen_for_state,
         "GameUI_OpenScreenForState",
     ),
+    (
+        0x0020_cb58,
+        game_ui_is_replay_menu_open,
+        "GameUI_IsReplayMenuOpen",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1602,6 +1607,34 @@ pub fn game_ui_open_screen_for_state(c: &mut Cpu) {
     })
 }
 
+/// `bool GameUI_IsReplayMenuOpen(void)` (0x20cb58): whether the UI state stack
+/// holds the "replay" menu state. Looks up the state by the hash of the
+/// string at 0x471a40 in the stack at `world->module->+0x48 + 0x18`.
+pub fn game_ui_is_replay_menu_open(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        frame.save_ra(c, 0);
+        frame.save(c, S0, 0x10);
+        c.g[A0][0] = sx(0x0047_1a40);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x84)).lw(c);
+        c.g[S0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x48)).lw(c);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+        // GetHashValue32(str_64replay).
+        call_ptr(c, 0x0031_7670, 0x0020_cb80)?;
+        // cUIStateStack_findState(stack, hash) != 0.
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_f9d8, 0x0020_cb8c)?;
+        frame.restore(c, S0, 0x10);
+        c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2205,6 +2238,34 @@ pub(crate) mod tests {
             &|c, r, seed| {
                 c.g[A0][0] = [2u32, 7, 7, 2, 3][seed as usize % 5] as u64;
                 c.bus.write32(OC444_GM, r.next_u32() % 4);
+            },
+        );
+    }
+
+    /// `gp-0x848` -> world; `world+0x84` -> module; `module+0x48` = `state - 0x18`,
+    /// so the replay code's `S0` is `state`.
+    pub(crate) fn setup_world(c: &mut Cpu, state: u32) {
+        let world = DATA + 0x1000;
+        let module = DATA + 0x2000;
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(GAME_GP - 0x848, world);
+        c.bus.write32(world + 0x84, module);
+        c.bus.write32(module + 0x48, state.wrapping_sub(0x18));
+    }
+
+    #[test]
+    fn game_ui_is_replay_menu_open_matches() {
+        check(
+            ee::s05::f_0020cb58__generated,
+            game_ui_is_replay_menu_open,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0020_cb58 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0020_cb58;
+                setup_world(c, DATA + 0x3000);
+                // The stack is left empty: findState returns 0 on both sides.
+                let _ = seed;
             },
         );
     }

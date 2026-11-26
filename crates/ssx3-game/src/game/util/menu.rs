@@ -393,6 +393,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "WScriptMan_TryRunKillScript",
     ),
     (0x002d_1bf0, world_add_focus_object, "World_AddFocusObject"),
+    (
+        0x002d_1a78,
+        wscriptman_run_obj_script0_hook,
+        "WScriptMan_RunObjScript0Hook",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -4204,6 +4209,22 @@ pub fn world_add_focus_object(c: &mut Cpu) {
     })
 }
 
+/// `void WScriptMan_RunObjScript0Hook(void* inst)` (0x2d1a78): forwards the
+/// instance to `cWScriptMan_doOnInitScript` with the global script manager.
+pub fn wscriptman_run_obj_script0_hook(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[A1][0] = c.g[A0][0];
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_add(0xce8)).lw(c);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x0030_a610, 0x002d_1a90)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6291,6 +6312,24 @@ pub(crate) mod tests {
                 c.bus.write32(FOCUS + 0xd8, (seed % 5) as u32);
                 c.bus.write32(OBJ + 8, r.next_u32());
                 c.g[A0][0] = sx(OBJ);
+            },
+        );
+    }
+
+    #[test]
+    fn wscriptman_run_obj_script0_hook_matches() {
+        check(
+            ee::s09::f_002d1a78__generated,
+            wscriptman_run_obj_script0_hook,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x002d_1a78 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x002d_1a78;
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP + 0xce8, DATA + 0x8000);
+                c.g[A0][0] = sx(DATA + 0x9000 + (r.next_u32() & 0xf0));
+                let _ = seed;
             },
         );
     }
