@@ -10532,6 +10532,35 @@
 # Phase 2 wave: oc1120, oc1121, oc1122, oc1123
 # Phase 2 wave: oc1120, oc1121, oc1122, oc1123
 # Phase 2 wave: oc1123
+# Phase 2 wave: oc1400, oc1401, oc1402, oc1403
+0x003b03a8    AV_SubtitleSetX
+0x003b03b0    AV_SubtitleSetY
+0x003b03b8    AV_SubtitleSetWidth
+0x003b03c0    AV_SubtitleSetHeight
+0x003b03c8    AV_SubtitleSetStringId
+0x003b03d0    AV_SubtitleSetFrame
+0x003b03d8    AV_SubtitleSetJustifyX
+0x003b03e0    AV_SubtitleSetJustifyY
+0x003b03e8    AV_SubtitleSetShape
+0x003b03f0    AV_SubtitleSetColor0
+0x003b03f8    AV_SubtitleSetColor1
+0x003b0400    AV_SubtitleSetColor2
+0x003b0408    AV_SubtitleSetColor3
+0x003addc0    AV_Player_ctor
+0x003ade58    AV_Player_ctor_3
+0x003ade90    AV_Player_ctor_4
+0x003aecb8    AV_Player_GetChunkCallback
+0x003af560    AV_ParseIntField
+0x003af428    AV_ParseJustify
+0x003af670    AV_FindToken
+0x003ae780    AV_Player_IsFrameDue
+0x003ae9a0    AV_Player_GetTimeMs
+0x003af0c8    AV_CreateSubtitles
+0x003ae300    AV_Player_Shutdown
+0x003ae450    AV_Player_Start
+0x003aead0    AV_Player_OnChunk
+0x003adec8    AV_Player_Init
+0x003af7f0    AV_ParseSubtitles
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

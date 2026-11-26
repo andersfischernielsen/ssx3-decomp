@@ -114,7 +114,7 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
 }
 
 /// Compare the two runs and allow the caller to add hard differences from either machine.
-fn compare_with(
+pub(crate) fn compare_with(
     generated: GuestFn,
     hand: GuestFn,
     setup: &dyn Fn(&mut Cpu),
