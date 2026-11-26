@@ -17758,7 +17758,7 @@ pub fn ssxaudiosystem_play_wipeout_crowd_reaction(c: &mut Cpu) {
                     c.c_lt_s(12, 0);
                     let below_quarter = !c.fcc();
                     c.g[A2][0] = c.g[S1][0];
-                    if !below_quarter {
+                    if below_quarter {
                         break 'quiet;
                     }
                     c.cycles += 5;
@@ -17775,7 +17775,7 @@ pub fn ssxaudiosystem_play_wipeout_crowd_reaction(c: &mut Cpu) {
                     c.c_lt_s(12, 0);
                     let below_soft = !c.fcc();
                     c.g[A0][0] = c.g[S0][0];
-                    if !below_soft {
+                    if below_soft {
                         break 'medium;
                     }
                     c.cycles += 4;
@@ -36490,6 +36490,78 @@ pub(crate) mod tests {
                     3 => 0.65f32.to_bits(),
                     4 => 2.0f32.to_bits(),
                     5 => (-0.3f32).to_bits(),
+                    _ => r.edge_f32(),
+                };
+            },
+        );
+    }
+
+    /// SSXAudioSystem_PlayWipeoutCrowdReaction with a crowd instance and a
+    /// race manager holding the rider: the voices are idle (`+0xd4` clear,
+    /// `+0x188` above 0.25) so every `PlayFall`/`StopAnticipate` takes its
+    /// short path yet still stores, and the wipeout speed spans both sides
+    /// of 0.25. The existing test leaves the instance absent (and its
+    /// `FindRider` never answers the rider itself), so the inverted quiet
+    /// branch is unobservable there.
+    #[test]
+    fn ssxaudiosystem_play_wipeout_crowd_reaction_crowd_matches() {
+        check(
+            ee::s08::f_002961f0__generated,
+            ssxaudiosystem_play_wipeout_crowd_reaction,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_61f0, 8);
+                // The BELibrary singleton `GetRiderRatingTier` asks for.
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x3e000);
+                let sys = DATA;
+                // Four idle voices with a level above 0.25, so the instance
+                // stop-sound stores on every fall path.
+                let voices = DATA + 0x8000;
+                c.bus.write32(sys + CROWD_AUDIO_INSTANCES, voices);
+                for i in 0..4u32 {
+                    let voice = voices + 0x190 * i;
+                    c.bus.write32(voice + 0x174, 0xffff_ffff);
+                    c.bus.write32(voice + 0xd4, 0);
+                    c.bus.write32(voice + 0x188, 1.0f32.to_bits());
+                }
+                // A world whose race manager holds the rider at slot 0, so
+                // `FindRider` answers the rider itself: the game-module state
+                // stays zero (no replay), the manager lists one rider.
+                let world = DATA + 0x2_0000;
+                let parent = DATA + 0x2_1000;
+                let raceman = DATA + 0x2_2000;
+                let rider = DATA + 0x1000;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, parent);
+                c.bus.write32(parent + 0xc, raceman);
+                c.bus.write32(raceman + 0x78, 1);
+                c.bus.write32(raceman + 0x28, rider);
+                // The medium/loud split: 0.0 keeps the medium block on
+                // `PlayFall(1)`; 0.5 lets hard wipeouts reach `PlayFall(2)`.
+                c.bus.write32(
+                    GAME_GP - 0x45a0,
+                    if seed % 3 == 0 {
+                        0.5f32.to_bits()
+                    } else {
+                        0.0f32.to_bits()
+                    },
+                );
+                // A tracked rider whose voice index cycles over the voices.
+                c.bus.write32(rider + 0x874, 1);
+                c.bus.write32(rider + 0x87c, 1);
+                c.bus.write32(rider + 0x870, seed % 4);
+                c.g[A0][0] = sx(sys);
+                c.g[A1][0] = sx(rider);
+                c.f[12] = match seed % 10 {
+                    0 => 0.0f32.to_bits(),
+                    1 => 0.125f32.to_bits(),
+                    2 => 0.1f32.to_bits(),
+                    3 => 0.249f32.to_bits(),
+                    4 => 0.25f32.to_bits(),
+                    5 => 0.26f32.to_bits(),
+                    6 => 0.65f32.to_bits(),
+                    7 => 2.0f32.to_bits(),
+                    8 => (-0.3f32).to_bits(),
                     _ => r.edge_f32(),
                 };
             },
