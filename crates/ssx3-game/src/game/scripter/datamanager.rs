@@ -5839,188 +5839,132 @@ pub fn script_list_take_from(c: &mut Cpu) {
         return ee::s07::f_00276198__generated(c);
     }
     guest(c, |c| {
-        let mut pc: u32 = 0x00276198;
-        loop {
-            match pc {
-                0x00276198 => {
-                    c.cycles += 15;
-                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
-                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
-                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.g[S0][0] = c.g[A0][0];
-                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
-                    c.g[S1][0] = c.g[A1][0];
-                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
-                    c.g[RA][0] = sx(0x002761c0);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
-                    Callee {
-                        addr: 0x00283d28,
-                        f: ee::s07::ScriptCmdQueue_Count,
-                    }
-                    .call(c, 0x002761c0)?;
-                    c.g[S3][0] = c.g[V0][0];
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xa4));
-                    c.g[V0][0] = 0x3;
-                    let t = c.g[V1][0] != c.g[V0][0];
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
-                    if t {
-                        pc = 0x002761dc;
-                        continue;
-                    }
-                    pc = 0x002761d4;
-                    continue;
-                }
-                0x002761d4 => {
-                    c.cycles += 2;
-                    let t = true;
-                    c.g[V0][0] = 0u64;
-                    if t {
-                        pc = 0x00276250;
-                        continue;
-                    }
-                    pc = 0x002761dc;
-                    continue;
-                }
-                0x002761dc => {
-                    c.cycles += 4;
-                    c.g[RA][0] = sx(0x002761e4);
-                    c.g[S2][0] = c.g[A0][0];
-                    Callee {
-                        addr: 0x00283d28,
-                        f: ee::s07::ScriptCmdQueue_Count,
-                    }
-                    .call(c, 0x002761e4)?;
-                    let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = c.g[S2][0];
-                    if t {
-                        pc = 0x0027624c;
-                        continue;
-                    }
-                    pc = 0x002761ec;
-                    continue;
-                }
-                0x002761ec => {
-                    c.cycles += 2;
-                    let t = true;
-
-                    if t {
-                        pc = 0x00276204;
-                        continue;
-                    }
-                    pc = 0x002761f4;
-                    continue;
-                }
-                0x002761f4 => {
-                    c.cycles += 1;
-                    pc = 0x002761f8;
-                    continue;
-                }
-                0x002761f8 => {
-                    c.cycles += 3;
-                    c.g[RA][0] = sx(0x00276200);
-                    c.g[A1][0] = c.g[SP][0];
-                    Callee {
-                        addr: 0x00283c80,
-                        f: ee::s07::ScriptCmdQueue_Push,
-                    }
-                    .call(c, 0x00276200)?;
-                    c.g[A0][0] = c.g[S2][0];
-                    pc = 0x00276204;
-                    continue;
-                }
-                0x00276204 => {
-                    c.cycles += 4;
-                    c.g[RA][0] = sx(0x0027620c);
-                    c.g[A1][0] = c.g[SP][0];
-                    Callee {
-                        addr: 0x00283dc0,
-                        f: ee::s07::ScriptCmdQueue_Pop,
-                    }
-                    .call(c, 0x0027620c)?;
-                    let t = c.g[V0][0] != 0u64;
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
-                    if t {
-                        if back_edge_unwinds(c, 0x002761f8) {
-                            return Ok(());
-                        }
-                        pc = 0x002761f8;
-                        continue;
-                    }
-                    pc = 0x00276214;
-                    continue;
-                }
-                0x00276214 => {
-                    c.cycles += 6;
-                    c.g[A0][0] = c.g[S1][0];
-                    c.g[RA][0] = sx(0x00276220);
-                    c.g[A1][0] = 0x1;
-                    Callee {
-                        addr: 0x00276868,
-                        f: ee::s07::ScriptList_Stop,
-                    }
-                    .call(c, 0x00276220)?;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
-                    let t = c.g[V0][0] == 0u64;
-                    c.g[V0][0] = 0x1;
-                    if t {
-                        pc = 0x00276250;
-                        continue;
-                    }
-                    pc = 0x0027622c;
-                    continue;
-                }
-                0x0027622c => {
-                    c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xbc));
-                    let t = (c.g[V0][0] as i64) >= 0;
-                    c.g[V0][0] = 0x1;
-                    if t {
-                        pc = 0x00276250;
-                        continue;
-                    }
-                    pc = 0x00276238;
-                    continue;
-                }
-                0x00276238 => {
-                    c.cycles += 5;
-                    c.g[A1][0] = c.g[S3][0];
-                    c.g[A0][0] = c.g[S0][0];
-                    c.g[RA][0] = sx(0x00276248);
-                    c.g[A2][0] = 0u64;
-                    Callee {
-                        addr: 0x00277450,
-                        f: ee::s07::ScriptList_PrepareEntry,
-                    }
-                    .call(c, 0x00276248)?;
-                    c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), c.g[V0][0]);
-                    pc = 0x0027624c;
-                    continue;
-                }
-                0x0027624c => {
-                    c.cycles += 1;
-                    c.g[V0][0] = 0x1;
-                    pc = 0x00276250;
-                    continue;
-                }
-                0x00276250 => {
-                    c.cycles += 7;
-                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
-                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
-                    let t = c.g[RA][0] as u32;
-                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
-                    c.pc = t;
-                    return Ok(());
-                }
-                _ => {
-                    c.jump_out(pc, 0x00276198, 0x0027626c);
-                    return Ok(());
-                }
-            }
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S1][0] = c.g[A1][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+        c.g[RA][0] = sx(0x002761c0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+        Callee {
+            addr: 0x00283d28,
+            f: ee::s07::ScriptCmdQueue_Count,
         }
+        .call(c, 0x002761c0)?;
+        c.g[S3][0] = c.g[V0][0];
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xa4));
+        c.g[V0][0] = 0x3;
+        let t = c.g[V1][0] != c.g[V0][0];
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+        'out: {
+            if !t {
+                // 0x2761d4: the source list is in state 3: nothing to take.
+                c.cycles += 2;
+                c.g[V0][0] = 0u64;
+                break 'out;
+            }
+            // 0x2761dc
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x002761e4);
+            c.g[S2][0] = c.g[A0][0];
+            Callee {
+                addr: 0x00283d28,
+                f: ee::s07::ScriptCmdQueue_Count,
+            }
+            .call(c, 0x002761e4)?;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[S2][0];
+            if t {
+                c.cycles += 1;
+                c.g[V0][0] = 0x1;
+                break 'out;
+            }
+            // 0x2761ec (always continues at 0x276204)
+            c.cycles += 2;
+            loop {
+                // 0x276204
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x0027620c);
+                c.g[A1][0] = c.g[SP][0];
+                Callee {
+                    addr: 0x00283dc0,
+                    f: ee::s07::ScriptCmdQueue_Pop,
+                }
+                .call(c, 0x0027620c)?;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+                if !t {
+                    break;
+                }
+                if back_edge_unwinds(c, 0x002761f8) {
+                    return Ok(());
+                }
+                // 0x2761f8
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x00276200);
+                c.g[A1][0] = c.g[SP][0];
+                Callee {
+                    addr: 0x00283c80,
+                    f: ee::s07::ScriptCmdQueue_Push,
+                }
+                .call(c, 0x00276200)?;
+                c.g[A0][0] = c.g[S2][0];
+            }
+            // 0x276214
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[RA][0] = sx(0x00276220);
+            c.g[A1][0] = 0x1;
+            Callee {
+                addr: 0x00276868,
+                f: ee::s07::ScriptList_Stop,
+            }
+            .call(c, 0x00276220)?;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+            let t = c.g[V0][0] == 0u64;
+            c.g[V0][0] = 0x1;
+            if t {
+                break 'out;
+            }
+            // 0x27622c
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xbc));
+            let t = (c.g[V0][0] as i64) >= 0;
+            c.g[V0][0] = 0x1;
+            if t {
+                break 'out;
+            }
+            // 0x276238
+            c.cycles += 5;
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[RA][0] = sx(0x00276248);
+            c.g[A2][0] = 0u64;
+            Callee {
+                addr: 0x00277450,
+                f: ee::s07::ScriptList_PrepareEntry,
+            }
+            .call(c, 0x00276248)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), c.g[V0][0]);
+            // 0x27624c
+            c.cycles += 1;
+            c.g[V0][0] = 0x1;
+        }
+        // 0x276250
+        c.cycles += 7;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        Ok(())
     });
 }
 

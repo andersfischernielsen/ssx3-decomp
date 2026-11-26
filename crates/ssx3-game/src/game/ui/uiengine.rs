@@ -3186,58 +3186,34 @@ pub fn ui_ascii_to_wide(c: &mut Cpu) {
         return ee::s13::f_00397ad8__generated(c);
     }
     guest(c, |c| {
-        let mut pc: u32 = 0x00397ad8;
+        c.cycles += 2;
+        c.g[V0][0] = c.lb(c.g[A1][0] as u32);
         loop {
-            match pc {
-                0x00397ad8 => {
-                    c.cycles += 2;
-                    let t = true;
-                    c.g[V0][0] = c.lb(c.g[A1][0] as u32);
-                    if t {
-                        pc = 0x00397af8;
-                        continue;
-                    }
-                    pc = 0x00397ae0;
-                    continue;
-                }
-                0x00397ae0 => {
-                    c.cycles += 6;
-                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 24);
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
-                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
-                    c.sh(c.g[A0][0] as u32, c.g[V0][0]);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
-                    c.g[V0][0] = c.lb(c.g[A1][0] as u32);
-                    pc = 0x00397af8;
-                    continue;
-                }
-                0x00397af8 => {
-                    c.cycles += 2;
-                    let t = c.g[V0][0] != 0u64;
-                    c.g[V1][0] = c.lbu(c.g[A1][0] as u32);
-                    if t {
-                        if back_edge_unwinds(c, 0x00397ae0) {
-                            return Ok(());
-                        }
-                        pc = 0x00397ae0;
-                        continue;
-                    }
-                    pc = 0x00397b00;
-                    continue;
-                }
-                0x00397b00 => {
-                    c.cycles += 2;
-                    let t = c.g[RA][0] as u32;
-                    c.sh(c.g[A0][0] as u32, 0u64);
-                    c.pc = t;
-                    return Ok(());
-                }
-                _ => {
-                    c.jump_out(pc, 0x00397ad8, 0x00397b08);
-                    return Ok(());
-                }
+            // loop test (0x00397af8); its delay slot loads the next unsigned byte
+            c.cycles += 2;
+            let t = c.g[V0][0] != 0u64;
+            c.g[V1][0] = c.lbu(c.g[A1][0] as u32);
+            if !t {
+                break;
             }
+            if back_edge_unwinds(c, 0x00397ae0) {
+                return Ok(());
+            }
+            // body (0x00397ae0): widen the byte, advance both pointers
+            c.cycles += 6;
+            c.g[V0][0] = sx((c.g[V1][0] as u32) << 24);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+            c.sh(c.g[A0][0] as u32, c.g[V0][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+            c.g[V0][0] = c.lb(c.g[A1][0] as u32);
         }
+        // terminator (0x00397b00)
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.sh(c.g[A0][0] as u32, 0u64);
+        c.pc = t;
+        Ok(())
     });
 }
 
