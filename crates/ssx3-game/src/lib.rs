@@ -86,6 +86,80 @@ pub mod native_files;
 pub mod oc643;
 #[cfg(feature = "oc658")]
 pub mod oc658;
+#[cfg(feature = "oc867")]
+pub mod oc867;
+#[cfg(feature = "oc868")]
+pub mod oc868;
+#[cfg(feature = "oc869")]
+pub mod oc869;
+#[cfg(feature = "oc870")]
+pub mod oc870;
+#[cfg(feature = "oc871")]
+pub mod oc871;
+#[cfg(feature = "oc872")]
+pub mod oc872;
+#[cfg(feature = "oc873")]
+pub mod oc873;
+#[cfg(feature = "oc874")]
+pub mod oc874;
+#[cfg(feature = "oc875")]
+pub mod oc875;
+#[cfg(feature = "oc876")]
+pub mod oc876;
+#[cfg(feature = "oc877")]
+pub mod oc877;
+#[cfg(feature = "oc878")]
+pub mod oc878;
+#[cfg(feature = "oc879")]
+pub mod oc879;
+#[cfg(feature = "oc880")]
+pub mod oc880;
+#[cfg(feature = "oc881")]
+pub mod oc881;
+#[cfg(feature = "oc882")]
+pub mod oc882;
+#[cfg(feature = "oc883")]
+pub mod oc883;
+#[cfg(feature = "oc884")]
+pub mod oc884;
+#[cfg(feature = "oc885")]
+pub mod oc885;
+#[cfg(feature = "oc886")]
+pub mod oc886;
+#[cfg(feature = "oc887")]
+pub mod oc887;
+#[cfg(feature = "oc888")]
+pub mod oc888;
+#[cfg(feature = "oc889")]
+pub mod oc889;
+#[cfg(feature = "oc890")]
+pub mod oc890;
+#[cfg(feature = "oc891")]
+pub mod oc891;
+#[cfg(feature = "oc892")]
+pub mod oc892;
+#[cfg(feature = "oc893")]
+pub mod oc893;
+#[cfg(feature = "oc894")]
+pub mod oc894;
+#[cfg(feature = "oc895")]
+pub mod oc895;
+#[cfg(feature = "oc896")]
+pub mod oc896;
+#[cfg(feature = "oc897")]
+pub mod oc897;
+#[cfg(feature = "oc898")]
+pub mod oc898;
+#[cfg(feature = "oc899")]
+pub mod oc899;
+#[cfg(feature = "oc900")]
+pub mod oc900;
+#[cfg(feature = "oc901")]
+pub mod oc901;
+#[cfg(feature = "oc902")]
+pub mod oc902;
+#[cfg(feature = "oc903")]
+pub mod oc903;
 pub mod plugin_host;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
@@ -112,6 +186,80 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
+    #[cfg(feature = "oc892")]
+    v.extend_from_slice(oc892::OVERRIDES);
+    #[cfg(feature = "oc893")]
+    v.extend_from_slice(oc893::OVERRIDES);
+    #[cfg(feature = "oc894")]
+    v.extend_from_slice(oc894::OVERRIDES);
+    #[cfg(feature = "oc895")]
+    v.extend_from_slice(oc895::OVERRIDES);
+    #[cfg(feature = "oc896")]
+    v.extend_from_slice(oc896::OVERRIDES);
+    #[cfg(feature = "oc897")]
+    v.extend_from_slice(oc897::OVERRIDES);
+    #[cfg(feature = "oc898")]
+    v.extend_from_slice(oc898::OVERRIDES);
+    #[cfg(feature = "oc899")]
+    v.extend_from_slice(oc899::OVERRIDES);
+    #[cfg(feature = "oc900")]
+    v.extend_from_slice(oc900::OVERRIDES);
+    #[cfg(feature = "oc901")]
+    v.extend_from_slice(oc901::OVERRIDES);
+    #[cfg(feature = "oc902")]
+    v.extend_from_slice(oc902::OVERRIDES);
+    #[cfg(feature = "oc903")]
+    v.extend_from_slice(oc903::OVERRIDES);
+    #[cfg(feature = "oc880")]
+    v.extend_from_slice(oc880::OVERRIDES);
+    #[cfg(feature = "oc881")]
+    v.extend_from_slice(oc881::OVERRIDES);
+    #[cfg(feature = "oc882")]
+    v.extend_from_slice(oc882::OVERRIDES);
+    #[cfg(feature = "oc883")]
+    v.extend_from_slice(oc883::OVERRIDES);
+    #[cfg(feature = "oc884")]
+    v.extend_from_slice(oc884::OVERRIDES);
+    #[cfg(feature = "oc885")]
+    v.extend_from_slice(oc885::OVERRIDES);
+    #[cfg(feature = "oc886")]
+    v.extend_from_slice(oc886::OVERRIDES);
+    #[cfg(feature = "oc887")]
+    v.extend_from_slice(oc887::OVERRIDES);
+    #[cfg(feature = "oc888")]
+    v.extend_from_slice(oc888::OVERRIDES);
+    #[cfg(feature = "oc889")]
+    v.extend_from_slice(oc889::OVERRIDES);
+    #[cfg(feature = "oc890")]
+    v.extend_from_slice(oc890::OVERRIDES);
+    #[cfg(feature = "oc891")]
+    v.extend_from_slice(oc891::OVERRIDES);
+    #[cfg(feature = "oc867")]
+    v.extend_from_slice(oc867::OVERRIDES);
+    #[cfg(feature = "oc868")]
+    v.extend_from_slice(oc868::OVERRIDES);
+    #[cfg(feature = "oc869")]
+    v.extend_from_slice(oc869::OVERRIDES);
+    #[cfg(feature = "oc870")]
+    v.extend_from_slice(oc870::OVERRIDES);
+    #[cfg(feature = "oc871")]
+    v.extend_from_slice(oc871::OVERRIDES);
+    #[cfg(feature = "oc872")]
+    v.extend_from_slice(oc872::OVERRIDES);
+    #[cfg(feature = "oc873")]
+    v.extend_from_slice(oc873::OVERRIDES);
+    #[cfg(feature = "oc874")]
+    v.extend_from_slice(oc874::OVERRIDES);
+    #[cfg(feature = "oc875")]
+    v.extend_from_slice(oc875::OVERRIDES);
+    #[cfg(feature = "oc876")]
+    v.extend_from_slice(oc876::OVERRIDES);
+    #[cfg(feature = "oc877")]
+    v.extend_from_slice(oc877::OVERRIDES);
+    #[cfg(feature = "oc878")]
+    v.extend_from_slice(oc878::OVERRIDES);
+    #[cfg(feature = "oc879")]
+    v.extend_from_slice(oc879::OVERRIDES);
     #[cfg(feature = "oc658")]
     v.extend_from_slice(oc658::OVERRIDES);
     #[cfg(feature = "oc643")]
