@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="93" viewBox="0 0 800 93" role="img"
-     aria-label="Ported to Rust: 9116 of 11844 functions">
+     aria-label="Ported to Rust: 9326 of 11844 functions">
   <style>
     .track { fill: #8b949e; fill-opacity: 0.3; }
     .fill { fill: #1e90e0; }
@@ -12,10 +12,10 @@
   </style>
   <text x="0" y="14" class="label strong">All</text>
   <rect x="160" y="3" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="3" width="377" height="14" rx="2" class="fill"/>
-  <text x="658" y="14" class="pct">77%</text>
-  <text x="800" y="10" text-anchor="end" class="sub">9,116 / 11,844 functions</text>
-  <text x="800" y="19" text-anchor="end" class="mb">2.27 / 3.20 MB</text>
+  <rect x="160" y="3" width="386" height="14" rx="2" class="fill"/>
+  <text x="658" y="14" class="pct">79%</text>
+  <text x="800" y="10" text-anchor="end" class="sub">9,326 / 11,844 functions</text>
+  <text x="800" y="19" text-anchor="end" class="mb">2.35 / 3.20 MB</text>
   <text x="0" y="38" class="label">Game logic</text>
   <rect x="160" y="27" width="490" height="14" rx="2" class="track"/>
   <rect x="160" y="27" width="489" height="14" rx="2" class="fill"/>
@@ -24,10 +24,10 @@
   <text x="800" y="43" text-anchor="end" class="mb">1.06 / 1.06 MB</text>
   <text x="0" y="62" class="label">Front end, graphics, sound</text>
   <rect x="160" y="51" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="51" width="286" height="14" rx="2" class="fill"/>
-  <text x="658" y="62" class="pct">58%</text>
-  <text x="800" y="58" text-anchor="end" class="sub">2,670 / 4,569 functions</text>
-  <text x="800" y="67" text-anchor="end" class="mb">0.67 / 1.42 MB</text>
+  <rect x="160" y="51" width="309" height="14" rx="2" class="fill"/>
+  <text x="658" y="62" class="pct">63%</text>
+  <text x="800" y="58" text-anchor="end" class="sub">2,880 / 4,569 functions</text>
+  <text x="800" y="67" text-anchor="end" class="mb">0.75 / 1.42 MB</text>
   <text x="0" y="86" class="label">Engine, libraries, online</text>
   <rect x="160" y="75" width="490" height="14" rx="2" class="track"/>
   <rect x="160" y="75" width="368" height="14" rx="2" class="fill"/>

@@ -319,6 +319,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         lobby_menu_destroy_abort_page,
         "LobbyMenu_DestroyAbortPage",
     ),
+    (0x0017_fec0, feui_input_is_next, "FEUIInput_IsNext"),
+    (0x0018_0040, feui_input_is_up, "FEUIInput_IsUp"),
+    (0x0018_0060, feui_input_is_down, "FEUIInput_IsDown"),
+    (0x0018_0240, feui_input_is_cam_zoom, "FEUIInput_IsCamZoom"),
+    (0x0018_0260, feui_input_is_cam_pan, "FEUIInput_IsCamPan"),
+    (
+        0x0018_0280,
+        feui_input_is_cam_rotate,
+        "FEUIInput_IsCamRotate",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3690,6 +3700,90 @@ pub fn lobby_menu_destroy_abort_page(c: &mut Cpu) {
     })
 }
 
+/// `FEUIInput_IsNext(input)` (0x17fec0): asks the pad object at `*(input + 0x18)`
+/// whether button 0x7a ("next") is pressed (callee 0x320c48) and returns its answer.
+pub fn feui_input_is_next(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = 0x7a;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
+        call_ptr(c, 0x0032_0c48, 0x0017_fed4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// Offset of the input binding in a `FEUIInput` (`+0x18`).
+pub(crate) const FEUI_INPUT_BINDING: u32 = 0x18;
+
+/// `bool FEUIInput_IsDown(FEUIInput* this)` (0x180060): evaluates the
+/// binding's input 0x73 (`InputBinding_EvalBool`, 0x320c48).
+///
+/// The generated body also has a resume entry at 0x180070 (after the call's
+/// delay slot); resumes go to the generated `__entries` twin.
+pub fn feui_input_is_down(c: &mut Cpu) {
+    if c.pc != 0x0018_0060 {
+        return ee::s02::f_00180060__entries(c);
+    }
+    feui_input_eval(c, 0x73, 0x0018_0074);
+}
+
+/// `bool FEUIInput_IsUp(FEUIInput* this)` (0x180040): evaluates the
+/// binding's input 0x72 (`InputBinding_EvalBool`, 0x320c48).
+pub fn feui_input_is_up(c: &mut Cpu) {
+    feui_input_eval(c, 0x72, 0x0018_0054);
+}
+
+/// The shared body of `FEUIInput_IsUp/IsDown`: `InputBinding_EvalBool(
+/// this->binding, input)`; `ret` is the call's return address.
+pub(crate) fn feui_input_eval(c: &mut Cpu, input: u32, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = input as u64;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(FEUI_INPUT_BINDING));
+        call_ptr(c, 0x0032_0c48, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Shared body of the `FEUIInput_IsCam*` wrappers:
+/// `InputBinding_EvalBool(this->binding (+0x18), action)`.
+pub(crate) fn feui_input_eval_action(c: &mut Cpu, action: u64, ret_addr: u32) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = action;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x18)).lw(c);
+        call_ptr(c, 0x0032_0c48, ret_addr)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool FEUIInput::IsCamRotate(FEUIInput* this)` (0x180280): action 0x91.
+pub fn feui_input_is_cam_rotate(c: &mut Cpu) {
+    feui_input_eval_action(c, 0x91, 0x0018_0294);
+}
+
+/// `bool FEUIInput::IsCamPan(FEUIInput* this)` (0x180260): action 0x92.
+pub fn feui_input_is_cam_pan(c: &mut Cpu) {
+    feui_input_eval_action(c, 0x92, 0x0018_0274);
+}
+
+/// `bool FEUIInput::IsCamZoom(FEUIInput* this)` (0x180240): action 0x90.
+pub fn feui_input_is_cam_zoom(c: &mut Cpu) {
+    feui_input_eval_action(c, 0x90, 0x0018_0254);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5531,6 +5625,308 @@ pub(crate) mod tests {
                 oc508_setup(c, seed, 0x1dd4c0);
                 c.g[A1][0] = if seed % 2 == 0 { 2 } else { 0 };
             },
+        );
+    }
+
+    /// `FEUIInput_IsNext`: the button query and its unwinds.
+    #[test]
+    fn feui_input_is_next_matches() {
+        fakes::covered(
+            ee::s02::f_0017fec0__generated,
+            feui_input_is_next,
+            60,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x785a, 1);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.bus.write32(DATA + 0x1000 + 0x18, DATA + 0x2000);
+            },
+        );
+    }
+
+    /// Control word of this module's gated fakes (they only act when the
+    /// machine's RAM holds the magic here).
+    pub(crate) const OC793_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC793_MAGIC: u32 = 0x4f43_7933;
+
+    macro_rules! oc793_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC793_CTRL) != OC793_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                }
+            )*
+            fn oc793_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc793_fakes!(
+        (
+            oc793_fake_320c48,
+            OC793_PREV_320C48,
+            ee::s10::OVERRIDE_00320C48,
+            ee::s10::f_00320c48__generated,
+            0x0032_0c48
+        ),
+        (
+            oc793_fake_263660,
+            OC793_PREV_263660,
+            ee::s07::OVERRIDE_00263660,
+            ee::s07::f_00263660__generated,
+            0x0026_3660
+        ),
+        (
+            oc793_fake_263998,
+            OC793_PREV_263998,
+            ee::s07::OVERRIDE_00263998,
+            ee::s07::f_00263998__generated,
+            0x0026_3998
+        ),
+        (
+            oc793_fake_28b180,
+            OC793_PREV_28B180,
+            ee::s07::OVERRIDE_0028B180,
+            ee::s07::f_0028b180__generated,
+            0x0028_b180
+        ),
+        (
+            oc793_fake_2a1778,
+            OC793_PREV_2A1778,
+            ee::s08::OVERRIDE_002A1778,
+            ee::s08::f_002a1778__generated,
+            0x002a_1778
+        ),
+        (
+            oc793_fake_2a16b0,
+            OC793_PREV_2A16B0,
+            ee::s08::OVERRIDE_002A16B0,
+            ee::s08::f_002a16b0__generated,
+            0x002a_16b0
+        ),
+        (
+            oc793_fake_374c90,
+            OC793_PREV_374C90,
+            ee::s12::OVERRIDE_00374C90,
+            ee::s12::f_00374c90__generated,
+            0x0037_4c90
+        ),
+        (
+            oc793_fake_372b30,
+            OC793_PREV_372B30,
+            ee::s12::OVERRIDE_00372B30,
+            ee::s12::f_00372b30__generated,
+            0x0037_2b30
+        ),
+        (
+            oc793_fake_317d70,
+            OC793_PREV_317D70,
+            ee::s10::OVERRIDE_00317D70,
+            ee::s10::f_00317d70__generated,
+            0x0031_7d70
+        ),
+        (
+            oc793_fake_2db9c8,
+            OC793_PREV_2DB9C8,
+            ee::s09::OVERRIDE_002DB9C8,
+            ee::s09::f_002db9c8__generated,
+            0x002d_b9c8
+        ),
+        // Callees of the real `cFE_cFE` (0x1956f8) and `cFE_Init` helper
+        // (0x2dbd10) that `FEModule_ctor` runs.
+        (
+            oc793_fake_231cd0,
+            OC793_PREV_231CD0,
+            ee::s06::OVERRIDE_00231CD0,
+            ee::s06::f_00231cd0__generated,
+            0x0023_1cd0
+        ),
+        (
+            oc793_fake_15d698,
+            OC793_PREV_15D698,
+            ee::s01::OVERRIDE_0015D698,
+            ee::s01::f_0015d698__generated,
+            0x0015_d698
+        ),
+        (
+            oc793_fake_15d700,
+            OC793_PREV_15D700,
+            ee::s01::OVERRIDE_0015D700,
+            ee::s01::f_0015d700__generated,
+            0x0015_d700
+        ),
+        (
+            oc793_fake_19cdf0,
+            OC793_PREV_19CDF0,
+            ee::s03::OVERRIDE_0019CDF0,
+            ee::s03::f_0019cdf0__generated,
+            0x0019_cdf0
+        ),
+        (
+            oc793_fake_1a03c0,
+            OC793_PREV_1A03C0,
+            ee::s03::OVERRIDE_001A03C0,
+            ee::s03::f_001a03c0__generated,
+            0x001a_03c0
+        ),
+        (
+            oc793_fake_397b08,
+            OC793_PREV_397B08,
+            ee::s13::OVERRIDE_00397B08,
+            ee::s13::f_00397b08__generated,
+            0x0039_7b08
+        ),
+        (
+            oc793_fake_3e18c8,
+            OC793_PREV_3E18C8,
+            ee::s14::OVERRIDE_003E18C8,
+            ee::s14::f_003e18c8__generated,
+            0x003e_18c8
+        ),
+    );
+
+    /// A scrambled machine with the gated fakes on, `pc` at `entry`.
+    pub(crate) fn oc793_machine(c: &mut Cpu, seed: u32, entry: u32, calls: u32) -> Rng {
+        oc793_install_fakes();
+        let r = machine(c, seed, entry as u64, calls);
+        c.pc = entry;
+        c.bus.write32(OC793_CTRL, OC793_MAGIC);
+        r
+    }
+
+    /// `FEUIInput_IsDown`: one forwarded call, answered or unwound.
+    #[test]
+    fn feui_input_is_down_matches() {
+        covered(
+            ee::s02::f_00180060__generated,
+            feui_input_is_down,
+            60,
+            &|c, seed| {
+                let mut r = oc793_machine(c, seed, 0x0018_0060, 1);
+                let this = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + FEUI_INPUT_BINDING, r.next_u32());
+            },
+        );
+    }
+
+    /// `FEUIInput_IsUp`: one forwarded call, answered or unwound.
+    #[test]
+    fn feui_input_is_up_matches() {
+        covered(
+            ee::s02::f_00180040__generated,
+            feui_input_is_up,
+            60,
+            &|c, seed| {
+                let mut r = oc793_machine(c, seed, 0x0018_0040, 1);
+                let this = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + FEUI_INPUT_BINDING, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) const OC798_CTRL: u32 = DATA + 0x30_0000;
+
+    pub(crate) const OC798_MAGIC: u32 = 0x0798_f4ce;
+
+    pub(crate) const OC798_OBJ: u32 = DATA + 0x1000;
+
+    pub(crate) fn oc798_arm(c: &mut Cpu) {
+        c.bus.write32(OC798_CTRL, OC798_MAGIC);
+    }
+
+    macro_rules! oc798_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC798_CTRL) != OC798_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc798_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc798_fakes!(
+        (
+            oc798_fk_320c48,
+            OC798_PREV_320C48,
+            ee::s10::OVERRIDE_00320C48,
+            ee::s10::f_00320c48__generated,
+            0x0032_0c48
+        ),
+        (
+            oc798_fk_365e40,
+            OC798_PREV_365E40,
+            ee::s12::OVERRIDE_00365E40,
+            ee::s12::f_00365e40__generated,
+            0x0036_5e40
+        ),
+        (
+            oc798_fk_3b5910,
+            OC798_PREV_3B5910,
+            ee::s13::OVERRIDE_003B5910,
+            ee::s13::f_003b5910__generated,
+            0x003b_5910
+        ),
+    );
+
+    pub(crate) fn oc798_feui_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        machine(c, seed, salt, 1);
+        oc798_arm(c);
+        c.pc = entry;
+        c.g[RA][0] = sx(crate::difftest::RA);
+        c.g[A0][0] = sx(OC798_OBJ);
+        c.bus
+            .write32(OC798_OBJ + 0x18, DATA + 0x2000 + 0x10 * (seed & 7));
+    }
+
+    /// `FEUIInput_IsCamRotate`.
+    #[test]
+    fn feui_input_is_cam_rotate_matches() {
+        oc798_install_fakes();
+        fakes::covered(
+            ee::s02::f_00180280__generated,
+            feui_input_is_cam_rotate,
+            60,
+            &|c, seed| oc798_feui_setup(c, seed, 0x798d, 0x0018_0280),
+        );
+    }
+
+    /// `FEUIInput_IsCamPan`.
+    #[test]
+    fn feui_input_is_cam_pan_matches() {
+        oc798_install_fakes();
+        fakes::covered(
+            ee::s02::f_00180260__generated,
+            feui_input_is_cam_pan,
+            60,
+            &|c, seed| oc798_feui_setup(c, seed, 0x798e, 0x0018_0260),
+        );
+    }
+
+    /// `FEUIInput_IsCamZoom`.
+    #[test]
+    fn feui_input_is_cam_zoom_matches() {
+        oc798_install_fakes();
+        fakes::covered(
+            ee::s02::f_00180240__generated,
+            feui_input_is_cam_zoom,
+            60,
+            &|c, seed| oc798_feui_setup(c, seed, 0x798f, 0x0018_0240),
         );
     }
 }

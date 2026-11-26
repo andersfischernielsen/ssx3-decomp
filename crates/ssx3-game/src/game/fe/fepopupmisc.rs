@@ -503,6 +503,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         message_center_empty_trigger,
         "MessageCenter_EmptyTrigger",
     ),
+    (
+        0x001d_f418,
+        c_fe_state_rule_select_dtor,
+        "cFEStateRuleSelect_dtor",
+    ),
+    (
+        0x001e_12f0,
+        message_center_init_group_table,
+        "MessageCenter_InitGroupTable",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4989,11 +4999,139 @@ pub fn message_center_empty_trigger(c: &mut Cpu) {
     ret(c);
 }
 
+/// `void MessageCenter_InitGroupTable(void)` (0x1e12f0): fills the message
+/// group table at 0x441630 (60 entries of 0x14 bytes): the per-group counts at
+/// +8 (6, 11, 17, 7, ... 1, group 0 and the zero groups 0), the +4 word of
+/// entry 0 cleared, then a prefix-sum loop that sets each next entry's +4
+/// word to the previous entry's +4 plus its count at +8.
+pub fn message_center_init_group_table(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 78;
+        c.g[V0][0] = 0x440000;
+        c.g[V1][0] = 0x6;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1630));
+        c.g[A1][0] = 0x3b;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x18));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x30), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x44), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x58), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x6c), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x80), c.g[V1][0]);
+        c.g[V1][0] = 0xb;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x94), c.g[V1][0]);
+        c.g[V1][0] = 0x11;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xa8), c.g[V1][0]);
+        c.g[V1][0] = 0x7;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xbc), c.g[V1][0]);
+        c.g[V1][0] = 0x6;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xd0), c.g[V1][0]);
+        c.g[V1][0] = 0x8;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xe4), c.g[V1][0]);
+        c.g[V1][0] = 0x3;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xf8), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x10c), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x120), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x134), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x148), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x15c), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x170), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x184), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x198), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x1ac), c.g[V1][0]);
+        c.g[V1][0] = 0x4;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x1c0), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x1d4), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x1e8), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x210), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x224), c.g[V1][0]);
+        c.g[V1][0] = 0x10;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x238), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x24c), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x260), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x274), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x288), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x29c), c.g[V1][0]);
+        c.g[V1][0] = 0x2;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x328), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x2b0), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x2c4), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x2d8), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x2ec), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x300), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x314), c.g[V1][0]);
+        c.g[V1][0] = 0x1;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x33c), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x350), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x364), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x378), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x38c), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x3a0), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x418), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x3b4), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x42c), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x3c8), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x440), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x3dc), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x454), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x3f0), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x468), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x404), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x47c), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x490), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x4a4), c.g[V1][0]);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x4b8), c.g[V1][0]);
+        'l_1e1428: loop {
+            c.cycles += 7;
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_sub(0x14));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_sub(0x10));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[A0][0] as u32, c.g[V1][0]);
+            let t = (c.g[A1][0] as i64) >= 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x001e1428);
+                }
+                continue 'l_1e1428;
+            } else {
+                c.cycles += 2;
+                let t = c.g[RA][0] as u32;
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    });
+}
+
+/// `cFEStateRuleSelect_dtor(this)` (0x1df418): sets the vtable word at +8
+/// (0x46d0d0), then calls `UIState_dtor(this, a1)`.
+pub fn c_fe_state_rule_select_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x470000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2f30));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, 0x0039_e390, 0x001d_f434)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
+    pub(crate) use crate::game::fe::uitemplatemap::tests::oc797_install_fakes;
 
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
@@ -6902,6 +7040,308 @@ pub(crate) mod tests {
                 let mut r = Rng(0x001e_1548 ^ (seed as u64) << 8);
                 scramble(c, &mut r);
                 c.pc = 0x001e_1548;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::RA as DT_RA;
+    pub(crate) use crate::game::fe::uitemplatemap::tests::OC797_CTRL;
+    pub(crate) use crate::game::fe::uitemplatemap::tests::OC797_MAGIC;
+    pub(crate) use crate::game::sound::bankmanager::tests::OC782_CTRL;
+    pub(crate) use crate::game::sound::bankmanager::tests::OC782_MAGIC;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Gated fakes for the callees that have an override slot. `mode` 1: a
+    /// call whose bit (`log index & 15`) is set in the mask word returns 0;
+    /// mode 2: returns -1 (the fakes alone return non-zero pointers).
+    macro_rules! oc782_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr, $mode:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC782_CTRL) != OC782_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    let n = c.bus.read32(fakes::LOG_COUNT);
+                    fakes::fake_call(c, $addr);
+                    if $mode != 0
+                        && c.pc >> 16 != 0xdead
+                        && c.bus.read32(OC782_CTRL + 4) >> (n & 15) & 1 != 0
+                    {
+                        c.g[V0][0] = if $mode == 1 { 0 } else { !0u64 };
+                    }
+                }
+            )*
+            pub(crate) fn oc782_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc782_fakes!(
+        (
+            oc782_fake_0014dc80,
+            OC782_PREV_0014DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80,
+            0
+        ),
+        (
+            oc782_fake_0014dd58,
+            OC782_PREV_0014DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58,
+            0
+        ),
+        (
+            oc782_fake_00152ba8,
+            OC782_PREV_00152BA8,
+            ee::s01::OVERRIDE_00152BA8,
+            ee::s01::f_00152ba8__generated,
+            0x0015_2ba8,
+            0
+        ),
+        (
+            oc782_fake_0014ad28,
+            OC782_PREV_0014AD28,
+            ee::s01::OVERRIDE_0014AD28,
+            ee::s01::f_0014ad28__generated,
+            0x0014_ad28,
+            0
+        ),
+        (
+            oc782_fake_0014bdb8,
+            OC782_PREV_0014BDB8,
+            ee::s01::OVERRIDE_0014BDB8,
+            ee::s01::f_0014bdb8__generated,
+            0x0014_bdb8,
+            0
+        ),
+        (
+            oc782_fake_0014d988,
+            OC782_PREV_0014D988,
+            ee::s01::OVERRIDE_0014D988,
+            ee::s01::f_0014d988__generated,
+            0x0014_d988,
+            0
+        ),
+        (
+            oc782_fake_0014d998,
+            OC782_PREV_0014D998,
+            ee::s01::OVERRIDE_0014D998,
+            ee::s01::f_0014d998__generated,
+            0x0014_d998,
+            0
+        ),
+        (
+            oc782_fake_0019cce8,
+            OC782_PREV_0019CCE8,
+            ee::s03::OVERRIDE_0019CCE8,
+            ee::s03::f_0019cce8__generated,
+            0x0019_cce8,
+            2
+        ),
+        (
+            oc782_fake_0019dc20,
+            OC782_PREV_0019DC20,
+            ee::s03::OVERRIDE_0019DC20,
+            ee::s03::f_0019dc20__generated,
+            0x0019_dc20,
+            0
+        ),
+        (
+            oc782_fake_0019cd38,
+            OC782_PREV_0019CD38,
+            ee::s03::OVERRIDE_0019CD38,
+            ee::s03::f_0019cd38__generated,
+            0x0019_cd38,
+            0
+        ),
+        (
+            oc782_fake_001d9308,
+            OC782_PREV_001D9308,
+            ee::s04::OVERRIDE_001D9308,
+            ee::s04::f_001d9308__generated,
+            0x001d_9308,
+            0
+        ),
+        (
+            oc782_fake_00227f80,
+            OC782_PREV_00227F80,
+            ee::s05::OVERRIDE_00227F80,
+            ee::s05::f_00227f80__generated,
+            0x0022_7f80,
+            0
+        ),
+        (
+            oc782_fake_0023c8f0,
+            OC782_PREV_0023C8F0,
+            ee::s06::OVERRIDE_0023C8F0,
+            ee::s06::f_0023c8f0__generated,
+            0x0023_c8f0,
+            0
+        ),
+        (
+            oc782_fake_0023caa0,
+            OC782_PREV_0023CAA0,
+            ee::s06::OVERRIDE_0023CAA0,
+            ee::s06::f_0023caa0__generated,
+            0x0023_caa0,
+            0
+        ),
+        (
+            oc782_fake_00241aa0,
+            OC782_PREV_00241AA0,
+            ee::s06::OVERRIDE_00241AA0,
+            ee::s06::f_00241aa0__generated,
+            0x0024_1aa0,
+            0
+        ),
+        (
+            oc782_fake_00241d40,
+            OC782_PREV_00241D40,
+            ee::s06::OVERRIDE_00241D40,
+            ee::s06::f_00241d40__generated,
+            0x0024_1d40,
+            0
+        ),
+        (
+            oc782_fake_002c2540,
+            OC782_PREV_002C2540,
+            ee::s08::OVERRIDE_002C2540,
+            ee::s08::f_002c2540__generated,
+            0x002c_2540,
+            0
+        ),
+        (
+            oc782_fake_002c26d0,
+            OC782_PREV_002C26D0,
+            ee::s08::OVERRIDE_002C26D0,
+            ee::s08::f_002c26d0__generated,
+            0x002c_26d0,
+            0
+        ),
+        (
+            oc782_fake_002b4070,
+            OC782_PREV_002B4070,
+            ee::s08::OVERRIDE_002B4070,
+            ee::s08::f_002b4070__generated,
+            0x002b_4070,
+            0
+        ),
+        (
+            oc782_fake_002b49e0,
+            OC782_PREV_002B49E0,
+            ee::s08::OVERRIDE_002B49E0,
+            ee::s08::f_002b49e0__generated,
+            0x002b_49e0,
+            0
+        ),
+        (
+            oc782_fake_002b4af0,
+            OC782_PREV_002B4AF0,
+            ee::s08::OVERRIDE_002B4AF0,
+            ee::s08::f_002b4af0__generated,
+            0x002b_4af0,
+            0
+        ),
+        (
+            oc782_fake_002ade88,
+            OC782_PREV_002ADE88,
+            ee::s08::OVERRIDE_002ADE88,
+            ee::s08::f_002ade88__generated,
+            0x002a_de88,
+            0
+        ),
+        (
+            oc782_fake_002e4578,
+            OC782_PREV_002E4578,
+            ee::s09::OVERRIDE_002E4578,
+            ee::s09::f_002e4578__generated,
+            0x002e_4578,
+            0
+        ),
+        (
+            oc782_fake_00317670,
+            OC782_PREV_00317670,
+            ee::s10::OVERRIDE_00317670,
+            ee::s10::f_00317670__generated,
+            0x0031_7670,
+            0
+        ),
+        (
+            oc782_fake_00317e30,
+            OC782_PREV_00317E30,
+            ee::s10::OVERRIDE_00317E30,
+            ee::s10::f_00317e30__generated,
+            0x0031_7e30,
+            0
+        ),
+        (
+            oc782_fake_00397140,
+            OC782_PREV_00397140,
+            ee::s13::OVERRIDE_00397140,
+            ee::s13::f_00397140__generated,
+            0x0039_7140,
+            1
+        ),
+        (
+            oc782_fake_0039d860,
+            OC782_PREV_0039D860,
+            ee::s13::OVERRIDE_0039D860,
+            ee::s13::f_0039d860__generated,
+            0x0039_d860,
+            1
+        ),
+        (
+            oc782_fake_0039fcc8,
+            OC782_PREV_0039FCC8,
+            ee::s13::OVERRIDE_0039FCC8,
+            ee::s13::f_0039fcc8__generated,
+            0x0039_fcc8,
+            0
+        ),
+    );
+
+    /// `MessageCenter_InitGroupTable`: the table is overwritten from random
+    /// contents.
+    #[test]
+    fn message_center_init_group_table_matches() {
+        check(
+            ee::s04::f_001e12f0__generated,
+            message_center_init_group_table,
+            8,
+            &|c, seed| {
+                let mut r = Rng(0x782d_0000 ^ seed as u64);
+                for i in 0..(0x4c8u32 / 4 + 4) {
+                    c.bus.write32(0x0044_1630 + 4 * i, r.next_u32());
+                }
+                c.g[RA][0] = sx(crate::difftest::RA);
+            },
+        );
+    }
+
+    pub(crate) fn oc797_arm(c: &mut Cpu) {
+        c.bus.write32(OC797_CTRL, OC797_MAGIC);
+    }
+
+    /// `cFEStateRuleSelect_dtor`: same shape.
+    #[test]
+    fn c_fe_state_rule_select_dtor_matches() {
+        oc797_install_fakes();
+        fakes::covered(
+            ee::s04::f_001df418__generated,
+            c_fe_state_rule_select_dtor,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x797e, 1);
+                oc797_arm(c);
+                c.g[A0][0] = ptr(&mut r) as u64;
+                c.g[RA][0] = DT_RA as u64;
             },
         );
     }

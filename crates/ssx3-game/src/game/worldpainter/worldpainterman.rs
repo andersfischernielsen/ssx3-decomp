@@ -5,8 +5,10 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::camera::camera::gp_at;
@@ -34,6 +36,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002b_b6b8,
         c_world_painter_man_debug_draw,
         "cWorldPainterMan_DebugDraw",
+    ),
+    (
+        0x002c_03e8,
+        world_painter_query_reset_all,
+        "WorldPainterQuery_ResetAll",
     ),
 ];
 
@@ -332,10 +339,23 @@ pub fn c_world_painter_man_debug_draw(c: &mut Cpu) {
     })
 }
 
+/// `WorldPainterQuery_ResetList` (0x2c03a8).
+pub(crate) const OC762_QUERY_RESET_LIST: Callee = Callee {
+    addr: 0x002c_03a8,
+    f: ee::s08::f_002c03a8,
+};
+
+/// `void WorldPainterQuery_ResetAll(void)` (0x2c03e8): forwards to
+/// `WorldPainterQuery_ResetList()` (7-cycle wrapper, 0x10 frame holding `ra`).
+pub fn world_painter_query_reset_all(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(OC762_QUERY_RESET_LIST), 0x002c_03f8)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::sound::bankmanager::tests::oc762_install_fakes;
 
     use crate::difftest::scramble;
     use crate::difftest::Rng;
@@ -461,6 +481,33 @@ pub(crate) mod tests {
                 c.bus.write32(man + WPM_CURRENT, painter);
                 c.bus.write32(painter + PAINTER_NODES, r.next_u32());
                 c.bus.write32(GAME_GP + 0x13c4, 0);
+            },
+        );
+    }
+
+    /// Control word of this module's gated fakes (they only act when the
+    /// machine's RAM holds the magic here).
+    pub(crate) const OC762_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC762_MAGIC: u32 = 0x4f43_3736;
+
+    /// Start a test machine: scrambled registers, fakes armed.
+    pub(crate) fn oc762_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC762_CTRL, OC762_MAGIC);
+        r
+    }
+
+    /// `WorldPainterQuery_ResetAll`: the one forwarded call, answered or unwound.
+    #[test]
+    fn world_painter_query_reset_all_matches() {
+        oc762_install_fakes();
+        covered(
+            ssx3_ee::s08::f_002c03e8__generated,
+            world_painter_query_reset_all,
+            100,
+            &|c, seed| {
+                oc762_machine(c, seed, 0x002c_03e8, 1);
             },
         );
     }

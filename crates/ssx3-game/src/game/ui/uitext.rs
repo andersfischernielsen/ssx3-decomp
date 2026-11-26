@@ -125,6 +125,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cui_text_set_unicode_string_wrap,
         "cUIText_setUnicodeStringWrap",
     ),
+    (0x003a_0c50, ui_text_set_string, "UIText_SetString"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2317,12 +2318,36 @@ pub fn ui_text_count_lines(c: &mut Cpu) {
     ret(c);
 }
 
+/// `void UIText_SetString(UIText* text, const char* s)` (0x3a0c50): clears the
+/// text's cached-string word at +0xb0, then `UIText_SetAsciiString(text, s)`.
+pub fn ui_text_set_string(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        Addr(r32(c, V0).wrapping_add(UI_TEXT_SET_STRING_CACHE)).sw(c, 0);
+        Callee {
+            addr: 0x003a_0c70,
+            f: ee::s13::f_003a0c70,
+        }
+        .call(c, 0x003a_0c64)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The text's cached-string word cleared by `UIText_SetString`.
+pub(crate) const UI_TEXT_SET_STRING_CACHE: u32 = 0xb0;
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     use crate::game::ealib::seg_2dcae8::tests::oc445_install_fakes;
+    pub(crate) use crate::game::sound::soundsys::tests::oc756_install_fakes;
 
     use crate::difftest::fakes;
 
@@ -3258,6 +3283,31 @@ pub(crate) mod tests {
                     c.bus.write16(text + 2 * i, ch);
                 }
                 c.bus.write16(text + 2 * n, 0);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    pub(crate) use crate::game::sound::soundsys::tests::OC756_BASE;
+    pub(crate) use crate::game::sound::soundsys::tests::OC756_CTRL;
+    pub(crate) use crate::game::sound::soundsys::tests::OC756_MAGIC;
+
+    /// `UIText_SetString`: clears the +0xb0 word of the text and calls the
+    /// (faked, sometimes unwinding) `UIText_SetAsciiString`.
+    #[test]
+    fn ui_text_set_string_matches() {
+        oc756_install_fakes();
+        covered(
+            ee::s13::f_003a0c50__generated,
+            ui_text_set_string,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a0c50, 1);
+                c.pc = 0x003a_0c50;
+                c.bus.write32(OC756_CTRL, OC756_MAGIC);
+                let text = OC756_BASE + 0x1000;
+                c.bus.write32(text + UI_TEXT_SET_STRING_CACHE, r.next_u32());
+                c.g[A0][0] = text as u64;
             },
         );
     }

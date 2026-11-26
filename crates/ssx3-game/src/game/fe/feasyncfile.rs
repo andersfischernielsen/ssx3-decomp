@@ -1295,6 +1295,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001d_e7b0, net_fe_state_ctor_2_2, "NetFEState_ctor_2"),
     (0x001d_e8c8, fe_screen_blank_ctor_2, "FEScreenBlank_ctor_2"),
     (0x001d_e918, fe_screen_blank_dtor, "FEScreenBlank_dtor"),
+    (
+        0x001a_38c0,
+        fe_async_manager_cancel,
+        "FEAsyncManager_Cancel",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -19905,6 +19910,118 @@ pub fn fe_screen_blank_dtor(c: &mut Cpu) {
     });
 }
 
+/// `void FEAsyncManager_Cancel(FEAsyncManager* self, int idx)` (0x1a38c0).
+///
+/// Cancels the async file `idx` by its state: 1 (queued) just resets the state
+/// to 0; 2 (loading) releases the async handle, frees the data buffer and resets
+/// the state; 3 (loaded) records the frame count + 14 for the entry (`+0x118`)
+/// and resets the state. Other states do nothing.
+pub fn fe_async_manager_cancel(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1a39a8: {
+            'b_1a3954: {
+                'b_1a393c: {
+                    c.cycles += 11;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S1][0] = c.g[A0][0];
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[S2][0] = c.g[A1][0];
+                    call_ptr(c, 0x001a39c0, 0x001a38e0)?;
+                    c.g[V1][0] = 0x1;
+                    let t = c.g[V0][0] == c.g[V1][0];
+                    c.g[A0][0] = c.g[S1][0];
+                    if t {
+                        break 'b_1a393c;
+                    } else {
+                        c.cycles += 5;
+                        c.g[A1][0] = c.g[S2][0];
+                        call_ptr(c, 0x001a39c0, 0x001a38f4)?;
+                        c.g[V1][0] = 0x2;
+                        let t = c.g[V0][0] != c.g[V1][0];
+                        c.g[A0][0] = c.g[S1][0];
+                        if t {
+                            break 'b_1a3954;
+                        } else {
+                            c.cycles += 12;
+                            c.g[S0][0] = 0x11c;
+                            c.g[A1][0] = 0u64;
+                            c.mult(0, 16, 18, 16);
+                            c.g[A2][0] = 0u64;
+                            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x104));
+                            call_ptr(c, 0x003df9d8, 0x001a391c)?;
+                            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x100));
+                            c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                            if c.g[A0][0] == 0u64 {
+                                c.sw(c.g[S0][0] as u32, 0u64);
+                                break 'b_1a393c;
+                            } else {
+                                c.cycles += 3;
+                                call_ptr(c, 0x00317e98, 0x001a3938)?;
+                                c.sw(c.g[S0][0] as u32, 0u64);
+                                break 'b_1a393c;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A2][0] = 0u64;
+                call_ptr(c, 0x001a39d8, 0x001a394c)?;
+                let t = true;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                if t {
+                    break 'b_1a39a8;
+                } else {
+                    break 'b_1a3954;
+                }
+            }
+            c.cycles += 5;
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, 0x001a39c0, 0x001a395c)?;
+            c.g[V1][0] = 0x3;
+            let t = c.g[V0][0] != c.g[V1][0];
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            if t {
+                break 'b_1a39a8;
+            } else {
+                c.cycles += 16;
+                c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10d8));
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x390));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x394));
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x001a3980)?;
+                c.g[V1][0] = 0x11c;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe));
+                c.mult(0, 4, 18, 3);
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A2][0] = 0u64;
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[A0][0] = c.g[S1][0];
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x118), c.g[V0][0]);
+                call_ptr(c, 0x001a39d8, 0x001a39a4)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                break 'b_1a39a8;
+            }
+        }
+        c.cycles += 5;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -19916,6 +20033,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::lib::eafile::tests::ea_install_fakes;
     pub(crate) use crate::game::lib::eafile::tests::ea_set_type_rets;
     pub(crate) use crate::game::lib::eafile::tests::EAF_RET_FH;
+    pub(crate) use crate::game::sound::soundsys::tests::oc773_install_fakes;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
@@ -28153,6 +28271,46 @@ pub(crate) mod tests {
             fe_screen_blank_dtor,
             0x001d_e918,
             true,
+        );
+    }
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc773_arm;
+
+    /// `FEAsyncManager_Cancel`: all four states (queued, loading with and
+    /// without a data buffer, loaded, other), the frame-count method call, and
+    /// the unwinds of its calls.
+    #[test]
+    fn fe_async_manager_cancel_matches() {
+        oc773_install_fakes();
+        fakes::covered(
+            ee::s03::f_001a38c0__generated,
+            fe_async_manager_cancel,
+            240,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x773a, 5);
+                oc773_arm(c);
+                c.pc = 0x001a_38c0;
+                let this = DATA + 0x1000;
+                let idx = seed % 3;
+                let state = [1u32, 2, 3, 9][(seed as usize / 3) % 4];
+                for n in 0..4 {
+                    c.bus.write32(fakes::LOG_RESULTS + 4 * n, state);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(idx);
+                // The file's async handle (+0x104) and data buffer (+0x100).
+                let rec = this + 0x11c * idx;
+                c.bus.write32(rec + 0x104, 0x0012_3400 + idx);
+                c.bus
+                    .write32(rec + 0x100, if seed % 2 == 0 { 0 } else { DATA + 0x2000 });
+                // GrMan (gp-0x854) and its frame-count method.
+                let grman = DATA + 0x3000;
+                let inner = DATA + 0x4000;
+                c.bus.write32(GAME_GP - 0x854, grman);
+                c.bus.write32(grman + 0x10d8, inner);
+                c.bus.write16(inner + 0x390, (seed * 4) as u16);
+                c.bus.write32(inner + 0x394, fakes::FAKE);
+            },
         );
     }
 }

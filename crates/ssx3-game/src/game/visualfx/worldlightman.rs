@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -33,6 +34,8 @@ pub(crate) use crate::game::render::particle::ldf;
 pub(crate) use crate::game::render::particle::lt;
 pub(crate) use crate::game::render::particle::p;
 pub(crate) use crate::game::render::particle::setf;
+pub(crate) use crate::game::visualfx::boardwakefx::rider_wrapper_ctor;
+pub(crate) use crate::game::visualfx::boardwakefx::RiderWrapperCtor;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
@@ -232,6 +235,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_7ed0,
         rider_base_reset_power_up_trail_thunk,
         "RiderBase_ResetPowerUpTrailThunk",
+    ),
+    (
+        0x002f_6238,
+        rider_base_ctor_cheat_code,
+        "RiderBase_CtorCheatCode",
+    ),
+    (
+        0x002f_64e8,
+        rider_base_reset_cheat_code,
+        "RiderBase_ResetCheatCode",
+    ),
+    (
+        0x002f_64f0,
+        rider_base_clear_cheat_code,
+        "RiderBase_ClearCheatCode",
     ),
 ];
 
@@ -4442,10 +4460,52 @@ pub fn rider_base_reset_power_up_trail_thunk(c: &mut Cpu) {
     });
 }
 
+pub(crate) const CHEAT_CTOR: RiderWrapperCtor = RiderWrapperCtor {
+    rider_off: 0x10,
+    vt_a: 0x7920,
+    vt_b: 0x78d8,
+    ret_rider: 0x002f_6264,
+    loop1: 0x002f_62b0,
+    loop2: 0x002f_6314,
+    tail: 0x002f_64f0,
+    ret_tail: 0x002f_6370,
+};
+
+/// `RiderBase* RiderBase_CtorCheatCode(RiderBase* self, int inChrg)`
+/// (0x2f6238): rider wrapper at `self + 0x10`, then `RiderBase_ClearCheatCode`.
+pub fn rider_base_ctor_cheat_code(c: &mut Cpu) {
+    rider_wrapper_ctor(c, &CHEAT_CTOR);
+}
+
+/// `void RiderBase_ResetCheatCode(RiderBase* self)` (0x2f64e8): an empty
+/// function (the cheat-code state is cleared by `ClearCheatCode`).
+pub fn rider_base_reset_cheat_code(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void RiderBase_ClearCheatCode(RiderBase* self)` (0x2f64f0): zeroes the
+/// 4 bytes at `self + 4` (`memset(self + 4, 0, 4)`).
+pub fn rider_base_clear_cheat_code(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 4;
+        call_ptr(c, 0x0041_6210, 0x002f_6508)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc789_install_fakes;
 
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
@@ -5955,6 +6015,56 @@ pub(crate) mod tests {
                 c.pc = 0x002f_7ed0;
                 c.g[GP][0] = GAME_GP as u64;
                 let _ = seed;
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc789_arm;
+
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::rider_wrapper_fixture;
+
+    /// `RiderBase_CtorCheatCode` against the generated body: with and
+    /// without `inChrg` (rider ctor call; stack copies of both vtable
+    /// templates), then `RiderBase_ClearCheatCode` (a real callee over a
+    /// faked memset); unwinds in each call.
+    #[test]
+    fn rider_base_ctor_cheat_code_matches() {
+        check(
+            ee::s09::f_002f6238__generated,
+            rider_base_ctor_cheat_code,
+            80,
+            &|c, seed| rider_wrapper_fixture(c, seed, 0x2f6238, 0x002f_6238, [0x4886e0, 0x488728]),
+        );
+    }
+
+    /// `RiderBase_ResetCheatCode`: an empty function.
+    #[test]
+    fn rider_base_reset_cheat_code_matches() {
+        check(
+            ee::s09::f_002f64e8__generated,
+            rider_base_reset_cheat_code,
+            4,
+            &|c, _| {
+                c.pc = 0x002f_64e8;
+            },
+        );
+    }
+
+    /// `RiderBase_ClearCheatCode`: one `memset(self + 4, 0, 4)` call, unwinding or not.
+    #[test]
+    fn rider_base_clear_cheat_code_matches() {
+        oc789_install_fakes();
+        fakes::covered(
+            ee::s09::f_002f64f0__generated,
+            rider_base_clear_cheat_code,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x789c, 1);
+                c.pc = 0x002f_64f0;
+                oc789_arm(c);
+                c.g[A0][0] = sx(DATA + 0x1_0000 + (r.next_u32() & 0xfff0));
             },
         );
     }

@@ -75,6 +75,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cfe_state_event_select_on_widget_created,
         "cFEStateEventSelect_OnWidgetCreated",
     ),
+    (
+        0x0018_6658,
+        cfe_state_event_select_init_2,
+        "cFEStateEventSelect_Init",
+    ),
+    (
+        0x0018_6728,
+        cfe_state_event_select_transition_in,
+        "cFEStateEventSelect_TransitionIn",
+    ),
+    (0x0018_6a08, cfe_state_mem_card_ctor, "cFEStateMemCard_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -671,10 +682,166 @@ pub fn cfe_state_event_select_on_widget_created(c: &mut Cpu) {
     })
 }
 
+/// `void cFEStateEventSelect_TransitionIn(cFEStateEventSelect* self)`
+/// (0x186728): hands the event-select state (`self + 0x48`) to
+/// `EventSelect_TransitionIn`. The argument is an add, not a load.
+pub fn cfe_state_event_select_transition_in(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x48));
+        call_ptr(c, 0x0020_0a70, 0x0018_6738)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cFEStateMemCard::cFEStateMemCard(this)` (0x00186a08): run the cFEMemCard
+/// base constructor (engine 2), set the vtable (0x46b570), register the
+/// instance in `gp-0x1c38`, clear the profile file and stage globals, set the
+/// popup and "missing file" defaults, and hook the nine callbacks (and four
+/// flags) into the memory-card overlay manager.
+pub fn cfe_state_mem_card_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 67;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = 2;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x001d_53b0, 0x0018_6a24)?;
+        c.g[S1][0] = 1;
+        c.g[V0][0] = 0x47_0000;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4a90));
+        c.g[V1][0] = u64::MAX;
+        let this = c.g[S0][0] as u32;
+        let gp = c.g[GP][0] as u32;
+        c.sw(this.wrapping_add(8), c.g[V0][0]);
+        c.g[A1][0] = 0x1a;
+        c.sw(gp.wrapping_sub(0x1c38), c.g[S0][0]);
+        c.sw(gp.wrapping_sub(0x1c3c), 0);
+        c.sw(gp.wrapping_sub(0x1c34), 0);
+        c.sw(this.wrapping_add(0x204), c.g[S1][0]);
+        c.sw(this.wrapping_add(0xc), c.g[S1][0]);
+        c.sw(this.wrapping_add(0x23c), c.g[S1][0]);
+        c.sw(this.wrapping_add(0x230), 0);
+        c.sw(this.wrapping_add(0x234), 0);
+        c.sw(this.wrapping_add(0x240), 0);
+        c.sw(this.wrapping_add(0x244), 0);
+        c.sw(this.wrapping_add(0x19c), c.g[A1][0]);
+        c.sw(this.wrapping_add(0x238), c.g[V1][0]);
+        c.sw(this.wrapping_add(0x22c), c.g[V1][0]);
+        call_ptr(c, 0x0022_7f80, 0x0018_6a78)?;
+        // v1 = the memory-card overlay manager (SSXApp->getMCManager()).
+        c.g[V1][0] = c.g[V0][0];
+        c.g[A0][0] = 0x18_0000;
+        let mc = c.g[V1][0] as u32;
+        c.sw(mc.wrapping_add(0x120), c.g[S1][0]);
+        c.g[V0][0] = c.g[S0][0];
+        c.sw(mc.wrapping_add(0x12c), c.g[S1][0]);
+        c.g[A1][0] = 0x18_0000;
+        c.sw(mc.wrapping_add(0x124), c.g[S1][0]);
+        for r in [A2, A3, T0, T1, T2, T3, T4] {
+            c.g[r][0] = 0x18_0000;
+        }
+        let callbacks: [(usize, u32, u32); 9] = [
+            (A0, 0x6f90, 0xa4),
+            (A1, 0x7148, 0x38),
+            (A2, 0x7180, 0x94),
+            (A3, 0x7230, 0xac),
+            (T0, 0x71a8, 0x90),
+            (T1, 0x6c98, 0x48),
+            (T2, 0x6d60, 0x3c),
+            (T3, 0x6f40, 0xb0),
+            (T4, 0x7360, 0x5c),
+        ];
+        for (r, add, _) in callbacks {
+            c.g[r][0] = sx((c.g[r][0] as u32).wrapping_add(add));
+        }
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        for (r, _, off) in callbacks {
+            c.sw(mc.wrapping_add(off), c.g[r][0]);
+        }
+        c.sw(mc.wrapping_add(0x11c), 0);
+        c.sw(mc.wrapping_add(0x128), 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cFEStateEventSelect_Init(self)` (0x00186658): load the two event-select
+/// screen resources (`0x4a14b0` into `self+0x40` and `0x45dc50`, both from
+/// the object at `+0x10`, a non-zero result is passed to `0x39c870(r, 0, 0)`),
+/// clear the global at `gp-0xb5c` and call `0x200700(self+0x48, self[0x40], self)`.
+pub fn cfe_state_event_select_init_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save(c, S0, 0x20);
+        c.g[A0][0] = 0x4a_0000;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14b0));
+        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+        call_ptr(c, 0x0031_7670, 0x0018_667c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0039_7cc0, 0x0018_6690)?;
+        let none = c.g[V0][0] == 0;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+        if !none {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0039_c870, 0x0018_66a8)?;
+        }
+        c.cycles += 11;
+        c.g[A0][0] = 0x46_0000;
+        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x23b0));
+        call_ptr(c, 0x0031_7670, 0x0018_66b8)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0039_7cc0, 0x0018_66cc)?;
+        let none = c.g[V0][0] == 0;
+        c.g[A0][0] = c.g[V0][0];
+        if !none {
+            c.cycles += 3;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0039_c870, 0x0018_66e0)?;
+        }
+        c.cycles += 10;
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x48));
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0xb5c), 0);
+        call_ptr(c, 0x0020_0700, 0x0018_66f4)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::sound::bankmanager::tests::oc791_install_fakes;
 
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
@@ -993,6 +1160,72 @@ pub(crate) mod tests {
                 c.g[A0][0] = fakes::ptr(&mut r) as u64;
                 c.pc = 0x0018_6708;
                 c.bus.write32(EVT_CTRL, CTRL_MAGIC);
+            },
+        );
+    }
+
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    pub(crate) use crate::game::fe::feridermanager::tests::oc786_arm;
+    pub(crate) use crate::game::fe::feridermanager::tests::OC786_OBJ;
+    pub(crate) use crate::game::sound::bankmanager::tests::oc791_miss;
+
+    pub(crate) use crate::game::sound::bankmanager::tests::OC791_MASK;
+    pub(crate) use crate::game::sound::bankmanager::tests::OC791_OBJ;
+
+    /// `cFEStateEventSelect_TransitionIn`: forwards `self + 0x48` to
+    /// `EventSelect_TransitionIn`. The callee is real and has no fake slot
+    /// yet, so a1 is 0 (its short path: nothing to do, returns 0).
+    #[test]
+    fn cfe_state_event_select_transition_in_matches() {
+        check(
+            ee::s02::f_00186728__generated,
+            cfe_state_event_select_transition_in,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0018_6728 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.g[A0][0] = sx(DATA + 0x100 * (1 + seed % 7));
+                c.g[A1][0] = 0;
+                c.pc = 0x0018_6728;
+            },
+        );
+    }
+
+    /// `cFEStateMemCard_ctor`: the manager pointer is forced into the object area.
+    #[test]
+    fn cfe_state_mem_card_ctor_matches() {
+        fakes::covered(
+            ee::s02::f_00186a08__generated,
+            cfe_state_mem_card_ctor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x186a08, 3);
+                oc786_arm(c);
+                c.g[A0][0] = sx(OC786_OBJ);
+                c.bus.write32(fakes::LOG_RESULTS + 4, OC786_OBJ + 0x2000);
+                c.bus.write32(OC786_OBJ + 0x19c, r.next_u32());
+            },
+        );
+    }
+
+    /// `cFEStateEventSelect_Init`: both resource loads returning 0 or not.
+    #[test]
+    fn cfe_state_event_select_init_matches() {
+        check(
+            ee::s02::f_00186658__generated,
+            cfe_state_event_select_init_2,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x186658, 6);
+                c.hooks.miss = oc791_miss;
+                oc791_install_fakes(c);
+                c.pc = 0x0018_6658;
+                c.g[A0][0] = sx(OC791_OBJ);
+                c.bus.write32(OC791_MASK, r.next_u32() & 0x1e);
+                c.bus.write32(OC791_OBJ + 0x10, r.next_u32());
+                c.bus.write32(GAME_GP - 0xb5c, r.next_u32());
             },
         );
     }

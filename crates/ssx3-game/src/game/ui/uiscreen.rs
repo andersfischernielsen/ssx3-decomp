@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -140,6 +141,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "UIScreen_CreateObjects",
     ),
     (0x0039_c870, ui_screen_start_thread, "UIScreen_StartThread"),
+    (0x0039_c778, uiscreen_lookup_value, "UIScreen_LookupValue"),
+    (0x0039_d758, ui_screen_handle_input, "UIScreen_HandleInput"),
+    (0x0039_e288, ui_sound_base_ctor, "UISound_BaseCtor"),
+    (0x0039_e4a0, ui_state_shutdown, "UIState_Shutdown"),
+    (0x0039_e508, ui_state_post_input, "UIState_PostInput"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2863,10 +2869,124 @@ pub fn ui_screen_start_thread(c: &mut Cpu) {
     })
 }
 
+/// `cUIGroup_HandleInput` (0x398798).
+pub(crate) const OC762_UIGROUP_HANDLE_INPUT: Callee = Callee {
+    addr: 0x0039_8798,
+    f: ee::s13::f_00398798,
+};
+
+/// `void UIScreen_HandleInput(UIScreen* self)` (0x39d758):
+/// `cUIGroup_HandleInput(&self->group)`, the group sitting at `self + 0x40`
+/// (7 cycles, 0x10 frame holding `ra`).
+pub fn ui_screen_handle_input(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+        OC762_UIGROUP_HANDLE_INPUT.call(c, 0x0039_d768)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `u16 UIScreen_LookupValue(UIScreen* screen, u32 key)` (0x39c778): walks
+/// the screen's entry table (pointer at +0x34; first word is the entry count,
+/// the entries follow, each `{key, size, value, ..}` with `size` the byte
+/// stride) and returns the 16-bit value at +8 of the first entry whose key
+/// matches, or 0xffff when none does.
+pub fn uiscreen_lookup_value(c: &mut Cpu) {
+    c.cycles += 5;
+    let table = Addr(c.g[A0][0] as u32).off(0x34).lw(c);
+    c.g[V0][0] = table;
+    let count = Addr(table as u32).lw(c);
+    c.g[V1][0] = count;
+    c.g[A2][0] = 0;
+    c.g[A0][0] = sx((table as u32).wrapping_add(0x4));
+    if count != 0 {
+        c.cycles += 1;
+        c.g[A3][0] = c.g[V1][0];
+        loop {
+            c.cycles += 3;
+            let key = Addr(c.g[A0][0] as u32).lw(c);
+            c.g[V0][0] = key;
+            if key != c.g[A1][0] {
+                let size = Addr(c.g[A0][0] as u32).off(0x4).lw(c);
+                c.g[V1][0] = size;
+                c.cycles += 4;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = (c.g[A2][0] < c.g[A3][0]) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(size as u32));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_c790);
+                    }
+                    continue;
+                }
+                break;
+            } else {
+                c.cycles += 2;
+                let t = c.g[RA][0] as u32;
+                c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x8).lhu(c);
+                c.pc = t;
+                return;
+            }
+        }
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0xffff;
+    c.pc = t;
+}
+
+/// `void UIState_Shutdown(cUIState* self)` (0x39e4a0): deletes all entries of the
+/// state's UI list (`self+0x24`).
+pub fn ui_state_shutdown(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x0039e4b0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x24));
+        Callee {
+            addr: 0x00397948,
+            f: ee::s13::UIList_DeleteAll,
+        }
+        .call(c, 0x0039e4b0)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void UIState_PostInput(cUIState* self, cUIInput* input)` (0x39e508): empty
+/// (`cUIState::onInputAlways`).
+pub fn ui_state_post_input(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UISound* UISound_BaseCtor(UISound* this)` (0x39e288): stores the base
+/// vtable (0x46dd60) at +0 and returns `this`.
+pub fn ui_sound_base_ctor(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V1][0] = 0x470000;
+    c.g[V0][0] = c.g[A0][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x22a0));
+    c.sw(c.g[A0][0] as u32, c.g[V1][0]);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::fe::fereal::tests::oc787_install_fakes;
+    pub(crate) use crate::game::sound::bankmanager::tests::oc762_install_fakes;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
@@ -4681,6 +4801,112 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = r.next_u32() as u64;
                 c.g[A2][0] = if seed % 3 == 0 { 1 } else { 0 };
+            },
+        );
+    }
+
+    use crate::difftest::fakes::ptr;
+
+    use crate::difftest::RA as DT_RA;
+
+    pub(crate) use crate::game::fe::festatecharsetup::tests::oc787_arm;
+
+    pub(crate) use crate::game::fe::festatecharsetup::tests::OC787_OBJ;
+    pub(crate) use crate::game::worldpainter::worldpainterman::tests::oc762_machine;
+
+    /// `UIScreen_HandleInput`: forwards `self + 0x40` to `cUIGroup_HandleInput`.
+    #[test]
+    fn ui_screen_handle_input_matches() {
+        oc762_install_fakes();
+        covered(
+            ssx3_ee::s13::f_0039d758__generated,
+            ui_screen_handle_input,
+            100,
+            &|c, seed| {
+                oc762_machine(c, seed, 0x0039_d758, 1);
+            },
+        );
+    }
+
+    /// `UIScreen_LookupValue`: a table of 0..5 entries `{key, stride, value}`
+    /// with varying strides; the key is found at some entry or missing.
+    #[test]
+    fn uiscreen_lookup_value_matches() {
+        check(
+            ee::s13::f_0039c778__generated,
+            uiscreen_lookup_value,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x779d_0000 ^ seed as u64);
+                scramble(c, &mut r);
+                let screen = DATA + 0x100;
+                let table = DATA + 0x400;
+                let count = seed % 6;
+                c.bus.write32(screen + 0x34, table);
+                c.bus.write32(table, count);
+                let mut p = table + 4;
+                for i in 0..count {
+                    let stride = 0xc + 4 * (r.next_u32() % 4);
+                    c.bus.write32(p, 0x100 + i);
+                    c.bus.write32(p + 4, stride);
+                    c.bus.write32(p + 8, r.next_u32());
+                    p += stride;
+                }
+                c.g[A0][0] = sx(screen);
+                // Keys 0x100.. are present; 0x100 + count and a random one miss.
+                c.g[A1][0] = match seed / 6 % 3 {
+                    0 => sx(0x100 + (r.next_u32() % (count + 1))),
+                    1 => sx(r.next_u32()),
+                    _ => sx(0x100 + count.saturating_sub(1)),
+                };
+            },
+        );
+    }
+
+    /// `UIState_Shutdown`: deletes the UI list of the state (the list delete is
+    /// a fake), with and without an unwind.
+    #[test]
+    fn ui_state_shutdown_matches() {
+        oc787_install_fakes();
+        fakes::covered(
+            ee::s13::f_0039e4a0__generated,
+            ui_state_shutdown,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x787c, 1);
+                oc787_arm(c);
+                c.pc = 0x0039_e4a0;
+                c.g[A0][0] = sx(OC787_OBJ + (r.next_u32() & 0xff0));
+            },
+        );
+    }
+
+    /// `UIState_PostInput`: does nothing but return.
+    #[test]
+    fn ui_state_post_input_matches() {
+        check(
+            ee::s13::f_0039e508__generated,
+            ui_state_post_input,
+            8,
+            &|c, seed| {
+                let mut r = Rng(0x790b ^ ((seed as u64) << 8));
+                scramble(c, &mut r);
+                c.pc = 0x0039_e508;
+            },
+        );
+    }
+
+    /// `UISound_BaseCtor`.
+    #[test]
+    fn ui_sound_base_ctor_matches() {
+        check(
+            ee::s13::f_0039e288__generated,
+            ui_sound_base_ctor,
+            32,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x797b, 0);
+                c.g[A0][0] = ptr(&mut r) as u64;
+                c.g[RA][0] = DT_RA as u64;
             },
         );
     }

@@ -460,6 +460,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         loc_string_table_resolve_string,
         "LocStringTable_ResolveString",
     ),
+    (0x002c_2580, ustr_to_ascii, "UStr_ToAscii"),
+    (0x002c_6e98, loc_string_table_load, "LocStringTable_Load"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -10059,6 +10061,145 @@ pub fn loc_string_table_resolve_string(c: &mut Cpu) {
     crate::call::tail_wrapper(c, Some(0x4), Target::Table(0x003d_bb68), 0x002c_6dd0);
 }
 
+/// `void LocStringTable_Load(LocStringTable* t, const char* name, char lang)`
+/// (0x2c6e98, frame 0x40): loads the locale file (`EAFile_LoadFileEx`), stores
+/// the language (+0), file (+4), string count (`LocStringTable_GetInfo` 2,
+/// +8), header (+0xc: file + the offset at file+4, zeroed when its 4-byte
+/// magic does not match) and the table (+0x10, header + the offset at
+/// header+4), then resolves every table entry's id to its string pointer
+/// in place (`LocStringTable_ResolveString`, 8-byte entries).
+pub fn loc_string_table_load(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2c6f5c: {
+            'b_2c6f08: {
+                c.cycles += 26;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[S1][0] = c.g[A0][0];
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[A0][0] = c.g[A1][0];
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x002c6ec0);
+                c.sb(c.g[S1][0] as u32, c.g[A2][0]);
+                call_ptr(c, 0x003e18c8, 0x002c6ec0)?;
+                c.g[A1][0] = 0x2;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[RA][0] = sx(0x002c6ed0);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                call_ptr(c, 0x003db9d8, 0x002c6ed0)?;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[A1][0] = 0x4a0000;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3978));
+                c.g[A2][0] = 0x4;
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[A0][0] = c.g[V0][0];
+                c.g[RA][0] = sx(0x002c6ef8);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                call_ptr(c, 0x00416b18, 0x002c6ef8)?;
+                if c.g[V0][0] == 0u64 {
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                    break 'b_2c6f08;
+                } else {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0xc), 0u64);
+                    if t {
+                        break 'b_2c6f5c;
+                    } else {
+                        break 'b_2c6f08;
+                    }
+                }
+            }
+            c.cycles += 6;
+            c.g[S2][0] = 0u64;
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            let t = c.g[V1][0] == 0u64;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            if t {
+                break 'b_2c6f5c;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                'l_2c6f28: loop {
+                    c.cycles += 13;
+                    c.g[S0][0] = sx((c.g[S2][0] as u32) << 3);
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[RA][0] = sx(0x002c6f40);
+                    c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                    Callee {
+                        addr: 0x002c6dc0,
+                        f: ee::s08::f_002c6dc0,
+                    }
+                    .call(c, 0x002c6f40)?;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = (c.g[S2][0] < c.g[V0][0]) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002c6f28);
+                        }
+                        continue 'l_2c6f28;
+                    } else {
+                        break 'b_2c6f5c;
+                    }
+                }
+            }
+        }
+        c.cycles += 6;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `char* UStr_ToAscii(char* dst, const u16* src)` (0x2c2580): narrows a
+/// zero-terminated UTF-16 string to bytes (low byte of each unit), writes the
+/// terminator and returns `dst`.
+pub fn ustr_to_ascii(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.lhu(c.g[A1][0] as u32);
+    c.g[V1][0] = c.g[A0][0];
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = c.lbu(c.g[A1][0] as u32);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(2));
+            c.sb(c.g[A0][0] as u32, c.g[V0][0]);
+            c.g[V0][0] = c.lhu(c.g[A1][0] as u32);
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002c_2590);
+            }
+        }
+    }
+    c.cycles += 3;
+    c.sb(c.g[A0][0] as u32, 0);
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.g[V1][0];
+    c.pc = t;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15865,6 +16006,179 @@ pub(crate) mod tests {
                 c.bus.write32(LT + 4, TABLE);
                 fill(c, &mut r, TABLE, 0x40);
                 c.bus.write8(TABLE + 8, (r.next_u32() & !1) as u8);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc769_install_fakes;
+    pub(crate) use crate::game::sound::soundsys::tests::oc769_machine;
+    pub(crate) use crate::game::sound::soundsys::tests::OC769_CTRL;
+    pub(crate) use crate::game::sound::soundsys::tests::OC769_MAGIC;
+
+    pub(crate) use crate::game::sound::soundsys::tests::OC769_THIS;
+
+    /// Gated fakes for the callees that have an override slot (allocators,
+    /// file loaders, the sound and song callees). `strlen`, `strcmp`,
+    /// `strncmp`, `memset`, `UI_AsciiToWide`, `LocStringTable_GetInfo`,
+    /// `SongInstance_Create`/`_ctor` and the syscall wrapper run for real.
+    macro_rules! oc769_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC769_CTRL) != OC769_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc769_install_plain_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc769_fakes!(
+        (
+            oc769_fake_2ade88,
+            OC769_PREV_2ADE88,
+            ee::s08::OVERRIDE_002ADE88,
+            ee::s08::f_002ade88__generated,
+            0x002a_de88
+        ),
+        (
+            oc769_fake_317e30,
+            OC769_PREV_317E30,
+            ee::s10::OVERRIDE_00317E30,
+            ee::s10::f_00317e30__generated,
+            0x0031_7e30
+        ),
+        (
+            oc769_fake_317d70,
+            OC769_PREV_317D70,
+            ee::s10::OVERRIDE_00317D70,
+            ee::s10::f_00317d70__generated,
+            0x0031_7d70
+        ),
+        (
+            oc769_fake_3ba020,
+            OC769_PREV_3BA020,
+            ee::s13::OVERRIDE_003BA020,
+            ee::s13::f_003ba020__generated,
+            0x003b_a020
+        ),
+        (
+            oc769_fake_2c6dc0,
+            OC769_PREV_2C6DC0,
+            ee::s08::OVERRIDE_002C6DC0,
+            ee::s08::f_002c6dc0__generated,
+            0x002c_6dc0
+        ),
+        (
+            oc769_fake_2b3ac0,
+            OC769_PREV_2B3AC0,
+            ee::s08::OVERRIDE_002B3AC0,
+            ee::s08::f_002b3ac0__generated,
+            0x002b_3ac0
+        ),
+        (
+            oc769_fake_417828,
+            OC769_PREV_417828,
+            ee::s15::OVERRIDE_00417828,
+            ee::s15::f_00417828__generated,
+            0x0041_7828
+        ),
+        (
+            oc769_fake_2b4a20,
+            OC769_PREV_2B4A20,
+            ee::s08::OVERRIDE_002B4A20,
+            ee::s08::f_002b4a20__generated,
+            0x002b_4a20
+        ),
+        (
+            oc769_fake_2b21e0,
+            OC769_PREV_2B21E0,
+            ee::s08::OVERRIDE_002B21E0,
+            ee::s08::f_002b21e0__generated,
+            0x002b_21e0
+        ),
+        (
+            oc769_fake_2b43d8,
+            OC769_PREV_2B43D8,
+            ee::s08::OVERRIDE_002B43D8,
+            ee::s08::f_002b43d8__generated,
+            0x002b_43d8
+        ),
+        (
+            oc769_fake_2ae478,
+            OC769_PREV_2AE478,
+            ee::s08::OVERRIDE_002AE478,
+            ee::s08::f_002ae478__generated,
+            0x002a_e478
+        ),
+    );
+
+    /// `LocStringTable_Load` on a fixture file with 0..3 strings, a header
+    /// magic that matches (the table is walked and each id resolved by the
+    /// fake) or not (every third seed: header cleared), and a fake unwinding
+    /// in the file load or one of the resolves.
+    #[test]
+    fn loc_string_table_load_matches() {
+        oc769_install_fakes();
+        const FILE: u32 = DATA + 0x21_0000;
+        const MAGIC_STR: u32 = 0x004a_3978;
+        check(
+            ee::s08::f_002c6e98__generated,
+            loc_string_table_load,
+            90,
+            &|c, seed| {
+                let mut r = oc769_machine(c, seed, 4);
+                // The file loader returns FILE (forced result of fake call 0).
+                c.bus.write32(fakes::LOG_RESULTS, FILE);
+                c.bus.write32(OC769_CTRL + 8, seed % 4);
+                // `GetInfo(file, 2)`: halfword at +0xe (0), or'ed with v1.
+                c.bus.write16(FILE + 0xe, 0);
+                // header at FILE + 0x40, table at header + 0x100.
+                c.bus.write32(FILE + 4, 0x40);
+                c.bus.write32(FILE + 0x40 + 4, 0x100);
+                c.bus.write32(MAGIC_STR, u32::from_le_bytes(*b"LOCS"));
+                let magic = if seed % 3 == 1 {
+                    u32::from_le_bytes(*b"XOCS")
+                } else {
+                    u32::from_le_bytes(*b"LOCS")
+                };
+                c.bus.write32(FILE + 0x40, magic);
+                for i in 0..4 {
+                    c.bus.write32(FILE + 0x140 + 8 * i, r.next_u32());
+                    c.bus.write32(FILE + 0x140 + 8 * i + 4, r.next_u32());
+                }
+                c.g[A0][0] = sx(OC769_THIS);
+                c.g[A1][0] = sx(OC769_THIS + 0x1000);
+                c.g[A2][0] = r.next_u32() as u64;
+                c.pc = 0x002c_6e98;
+            },
+        );
+    }
+
+    /// `UStr_ToAscii`: empty and 1..=9 unit strings (high bytes arbitrary, units nonzero).
+    #[test]
+    fn ustr_to_ascii_matches() {
+        check(
+            ee::s08::f_002c2580__generated,
+            ustr_to_ascii,
+            40,
+            &|c, seed| {
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = sx(DATA + 0x2000);
+                let n = seed % 10;
+                for i in 0..n {
+                    let unit = 0x0100 * (i + 1) + 0x41 + (seed + i) % 20;
+                    c.bus.write16(DATA + 0x2000 + 2 * i, unit as u16);
+                }
+                c.bus.write16(DATA + 0x2000 + 2 * n, 0);
+                c.g[V0][0] = 0x1234;
+                c.g[V1][0] = 0x5678;
             },
         );
     }

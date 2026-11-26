@@ -102,6 +102,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cfe_state_main_menu_on_render,
         "cFEStateMainMenu_OnRender",
     ),
+    (
+        0x0019_4aa8,
+        cfe_state_main_menu_init,
+        "cFEStateMainMenu_Init",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -907,6 +912,133 @@ pub(crate) fn cfe_state_main_menu_on_render_body(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// `void cFEStateMainMenu::Init(cFEStateMainMenu* this)` (0x194aa8).
+///
+/// Front-end main menu initialisation: adds the "main menu" screen to the UI
+/// engine (`this + 0x10`; 0x397cc0, screen stored at `this + 0x40`) and
+/// plays its first frame (0x39c870), clears the `cBERules` words at 0x5308b8
+/// (0x20 bytes) and the flags `+0x48`/`+0x54`, resets the network/game
+/// systems (0x266cd8, 0x261008, 0x25b688, `cGameComm_destroy` 0x256c50,
+/// `cCommSystem_destroy` 0x255898), submits back-end interface 7 of the world
+/// (`gp - 0x848`), selects audio state 1 (0x28b180, 0x28f140), then, for the
+/// controller ports 0 and 1, calls two virtual slots of the engine's input
+/// object, counting in `this + 0x55` the ports whose second call succeeded.
+pub fn cfe_state_main_menu_init(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_194afc: {
+            c.cycles += 17;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[A0][0] = 0x460000;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x30));
+            c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+            call_ptr(c, 0x00317670, 0x00194ad0)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00397cc0, 0x00194ae4)?;
+            let t = c.g[V0][0] == 0u64;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+            if t {
+                break 'b_194afc;
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0u64;
+                c.g[A2][0] = 0u64;
+                call_ptr(c, 0x0039c870, 0x00194afc)?;
+                break 'b_194afc;
+            }
+        }
+        c.cycles += 37;
+        c.g[A0][0] = 0x530000;
+        c.g[A2][0] = 0x20;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x8b8));
+        c.g[A1][0] = 0u64;
+        call_ptr(c, 0x003e6448, 0x00194b10)?;
+        c.g[S2][0] = 0u64;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x48), 0u64);
+        c.sb((c.g[S1][0] as u32).wrapping_add(0x54), 0u64);
+        call_ptr(c, 0x00266cd8, 0x00194b20)?;
+        call_ptr(c, 0x00261008, 0x00194b28)?;
+        call_ptr(c, 0x0025b688, 0x00194b30)?;
+        call_ptr(c, 0x00256c50, 0x00194b38)?;
+        call_ptr(c, 0x00255898, 0x00194b40)?;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[A1][0] = 0x7;
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x78));
+        call_ptr(c, 0x0014dd58, 0x00194b50)?;
+        c.g[A0][0] = 0x530000;
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x4b30), 0u64);
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let t = c.g[A1][0] as u32;
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00194b6c)?;
+        call_ptr(c, 0x0028b180, 0x00194b74)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x0028f140, 0x00194b80)?;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        c.sb((c.g[S1][0] as u32).wrapping_add(0x55), 0u64);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        'l_194b90: loop {
+            'b_194bd0: {
+                c.cycles += 13;
+                c.g[A1][0] = c.g[S2][0] & 0xff;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x160));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x164));
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x00194ba8)?;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x168));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x16c));
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x00194bbc)?;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V1][0] = ((c.g[S2][0] as i64) < 2i64) as u64;
+                if t {
+                    break 'b_194bd0;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x55));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.sb((c.g[S1][0] as u32).wrapping_add(0x55), c.g[V0][0]);
+                    break 'b_194bd0;
+                }
+            }
+            c.cycles += 2;
+            if c.g[V1][0] != 0u64 {
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                if event_due(c) {
+                    deliver_event_here(c, 0x00194b90);
+                }
+                continue 'l_194b90;
+            } else {
+                c.cycles += 6;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1417,6 +1549,284 @@ pub(crate) mod tests {
                 c.bus.write8(SELF + 0x55, r.next_u32() as u8);
                 c.bus.write8(SELF + 0x1d, r.next_u32() as u8);
                 c.bus.write32(GAME_GP - 0x704, r.next_u32() & 0x3f);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use std::sync::atomic::AtomicUsize;
+
+    /// The word that arms oc783's callee fakes in a machine's RAM.
+    pub(crate) const OC783_CTRL: u32 = DATA + 0x30_0010;
+
+    pub(crate) const OC783_MAGIC: u32 = 0x0783_f4ce;
+
+    /// The mailbox word of the fake for `addr` (0: the fake's own pointer).
+    pub(crate) fn oc783_mail(addr: u32) -> u32 {
+        DATA + 0x30_2000 + (addr & 0xffc)
+    }
+
+    /// Arm the gated fakes in this machine.
+    pub(crate) fn oc783_arm(c: &mut Cpu) {
+        c.bus.write32(OC783_CTRL, OC783_MAGIC);
+    }
+
+    /// Make the fake for `addr` return `v` in `v0` (stored +3).
+    pub(crate) fn oc783_force(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(oc783_mail(addr), v.wrapping_add(3));
+    }
+
+    /// Make the fake for `addr` return 0.
+    pub(crate) fn oc783_force_zero(c: &mut Cpu, addr: u32) {
+        c.bus.write32(oc783_mail(addr), 1);
+    }
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns the
+    /// forced result of its mailbox unless it unwound.
+    pub(crate) fn oc783_fake_call(c: &mut Cpu, addr: u32) {
+        let a0 = c.g[A0][0];
+        let ra = c.g[RA][0] as u32;
+        let mail = c.bus.read32(oc783_mail(addr));
+        fakes::fake_call(c, addr);
+        if c.pc == ra && mail != 0 {
+            c.g[V0][0] = match mail {
+                1 => 0,
+                2 => a0,
+                m => (m - 3) as u64,
+            };
+        }
+    }
+
+    macro_rules! oc783_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC783_CTRL) != OC783_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    oc783_fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc783_install_fakes() {
+                use std::ptr::addr_of_mut;
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc783_fakes!(
+        (
+            oc783_fk_3e18c8,
+            OC783_PREV_3E18C8,
+            ee::s14::OVERRIDE_003E18C8,
+            ee::s14::f_003e18c8__generated,
+            0x003e_18c8
+        ),
+        (
+            oc783_fk_3b39b8,
+            OC783_PREV_3B39B8,
+            ee::s13::OVERRIDE_003B39B8,
+            ee::s13::f_003b39b8__generated,
+            0x003b_39b8
+        ),
+        (
+            oc783_fk_317670,
+            OC783_PREV_317670,
+            ee::s10::OVERRIDE_00317670,
+            ee::s10::f_00317670__generated,
+            0x0031_7670
+        ),
+        (
+            oc783_fk_397cc0,
+            OC783_PREV_397CC0,
+            ee::s13::OVERRIDE_00397CC0,
+            ee::s13::f_00397cc0__generated,
+            0x0039_7cc0
+        ),
+        (
+            oc783_fk_39c870,
+            OC783_PREV_39C870,
+            ee::s13::OVERRIDE_0039C870,
+            ee::s13::f_0039c870__generated,
+            0x0039_c870
+        ),
+        (
+            oc783_fk_3e6448,
+            OC783_PREV_3E6448,
+            ee::s14::OVERRIDE_003E6448,
+            ee::s14::f_003e6448__generated,
+            0x003e_6448
+        ),
+        (
+            oc783_fk_266cd8,
+            OC783_PREV_266CD8,
+            ee::s07::OVERRIDE_00266CD8,
+            ee::s07::f_00266cd8__generated,
+            0x0026_6cd8
+        ),
+        (
+            oc783_fk_261008,
+            OC783_PREV_261008,
+            ee::s06::OVERRIDE_00261008,
+            ee::s06::f_00261008__generated,
+            0x0026_1008
+        ),
+        (
+            oc783_fk_25b688,
+            OC783_PREV_25B688,
+            ee::s06::OVERRIDE_0025B688,
+            ee::s06::f_0025b688__generated,
+            0x0025_b688
+        ),
+        (
+            oc783_fk_14dd58,
+            OC783_PREV_14DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58
+        ),
+        (
+            oc783_fk_28b180,
+            OC783_PREV_28B180,
+            ee::s07::OVERRIDE_0028B180,
+            ee::s07::f_0028b180__generated,
+            0x0028_b180
+        ),
+        (
+            oc783_fk_2b0da0,
+            OC783_PREV_2B0DA0,
+            ee::s08::OVERRIDE_002B0DA0,
+            ee::s08::f_002b0da0__generated,
+            0x002b_0da0
+        ),
+        (
+            oc783_fk_3dedc0,
+            OC783_PREV_3DEDC0,
+            ee::s14::OVERRIDE_003DEDC0,
+            ee::s14::f_003dedc0__generated,
+            0x003d_edc0
+        ),
+        (
+            oc783_fk_317f38,
+            OC783_PREV_317F38,
+            ee::s10::OVERRIDE_00317F38,
+            ee::s10::f_00317f38__generated,
+            0x0031_7f38
+        ),
+        (
+            oc783_fk_3ded50,
+            OC783_PREV_3DED50,
+            ee::s14::OVERRIDE_003DED50,
+            ee::s14::f_003ded50__generated,
+            0x003d_ed50
+        ),
+        (
+            oc783_fk_287968,
+            OC783_PREV_287968,
+            ee::s07::OVERRIDE_00287968,
+            ee::s07::f_00287968__generated,
+            0x0028_7968
+        ),
+        (
+            oc783_fk_2b0e60,
+            OC783_PREV_2B0E60,
+            ee::s08::OVERRIDE_002B0E60,
+            ee::s08::f_002b0e60__generated,
+            0x002b_0e60
+        ),
+        (
+            oc783_fk_14dc80,
+            OC783_PREV_14DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80
+        ),
+        (
+            oc783_fk_2adf60,
+            OC783_PREV_2ADF60,
+            ee::s08::OVERRIDE_002ADF60,
+            ee::s08::f_002adf60__generated,
+            0x002a_df60
+        ),
+        (
+            oc783_fk_2b9100,
+            OC783_PREV_2B9100,
+            ee::s08::OVERRIDE_002B9100,
+            ee::s08::f_002b9100__generated,
+            0x002b_9100
+        ),
+        (
+            oc783_fk_252fa0,
+            OC783_PREV_252FA0,
+            ee::s06::OVERRIDE_00252FA0,
+            ee::s06::f_00252fa0__generated,
+            0x0025_2fa0
+        ),
+    );
+
+    pub(crate) const OC783_MENU: u32 = DATA + 0x1_0000;
+
+    pub(crate) const OC783_ENGINE: u32 = DATA + 0x2_0000;
+
+    pub(crate) const OC783_INPUT: u32 = DATA + 0x3_0000;
+
+    pub(crate) const OC783_INPUT_VT: u32 = DATA + 0x3_1000;
+
+    pub(crate) const OC783_WORLD: u32 = DATA + 0x4_0000;
+
+    pub(crate) const OC783_BE_IFACE: u32 = DATA + 0x4_1000;
+
+    pub(crate) const OC783_BE_IFACE_VT: u32 = DATA + 0x4_2000;
+
+    pub(crate) const OC783_AUDIO: u32 = DATA + 0x8_0000;
+
+    /// `cFEStateMainMenu_Init`: the screen lookup succeeding or not, the
+    /// second input call's result (0 or not) for both controller ports, and
+    /// the unwinds of every call. The real `cGameComm_destroy` and
+    /// `cCommSystem_destroy` wrappers run on empty globals and
+    /// `func_0028F140` returns at once (audio state already selected).
+    #[test]
+    fn cfe_state_main_menu_init_matches() {
+        oc783_install_fakes();
+        fakes::covered(
+            ee::s02::f_00194aa8__generated,
+            cfe_state_main_menu_init,
+            250,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x783c, 12);
+                oc783_arm(c);
+                c.g[A0][0] = sx(OC783_MENU);
+                c.bus.write32(OC783_MENU + 0x10, OC783_ENGINE);
+                // The engine's input object and its two virtual calls.
+                c.bus.write32(OC783_ENGINE + 0xc, OC783_INPUT);
+                c.bus.write32(OC783_INPUT + 8, OC783_INPUT_VT);
+                c.bus
+                    .write16(OC783_INPUT_VT + 0x160, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(OC783_INPUT_VT + 0x164, FAKE + 0x30);
+                c.bus
+                    .write16(OC783_INPUT_VT + 0x168, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(OC783_INPUT_VT + 0x16c, 0x0039_c870);
+                // The world, its back-end interface 7 and the interface's
+                // virtual submit.
+                c.bus.write32(GAME_GP - 0x848, OC783_WORLD);
+                c.bus.write32(OC783_WORLD + 0x78, r.next_u32());
+                oc783_force(c, 0x0014_dd58, OC783_BE_IFACE);
+                c.bus.write32(OC783_BE_IFACE + 0xc, OC783_BE_IFACE_VT);
+                c.bus
+                    .write16(OC783_BE_IFACE_VT + 8, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(OC783_BE_IFACE_VT + 0xc, FAKE + 0x20);
+                // `func_0028F140` returns at once when the state is the same.
+                oc783_force(c, 0x0028_b180, OC783_AUDIO);
+                c.bus.write32(OC783_AUDIO + 0x6290, 1);
+                // Screen found (non-zero) or not; the 0x39c870 result is also the
+                // second input call's result.
+                if seed % 3 == 0 {
+                    oc783_force_zero(c, 0x0039_7cc0);
+                }
+                if (seed / 3) % 2 == 0 {
+                    oc783_force_zero(c, 0x0039_c870);
+                }
             },
         );
     }

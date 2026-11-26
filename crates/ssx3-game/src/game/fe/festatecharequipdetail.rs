@@ -287,6 +287,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bolt_file_compare_model_slots_2,
         "BoltFile_CompareModelSlots",
     ),
+    (
+        0x0019_e3d0,
+        fe_module_rider_preview_ctor,
+        "FEModule_RiderPreviewCtor",
+    ),
+    (
+        0x0019_e588,
+        fe_module_rider_preview_request_char,
+        "FEModule_RiderPreviewRequestChar",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5760,6 +5770,207 @@ pub fn bolt_file_load_slot(c: &mut Cpu) {
     });
 }
 
+/// `FEModule::RiderPreviewRequestChar(self, char_id, load_all)` (0x19e588):
+/// records the requested character (`+0xc24`) and load-all flag (`+0xc28`).
+/// If the preview already shows that character with a matching load-all
+/// state (`+0x0`, `+0x10`) and its model is compiled (`+0xcb8`, `+0xcb4`),
+/// the visibility fields are updated (`+0xcd4` = -1, `+0xcc8`/`+0xcc4`);
+/// otherwise, when no render is pending (`+0xcd4` < 0), the request is queued:
+/// the graphics manager's frame count + 4 becomes `+0xcd4`, the visible flag
+/// (`+0xcc8`) is saved to `+0xcc4` and cleared.
+pub fn fe_module_rider_preview_request_char(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        c.sw(this.wrapping_add(0xc24), c.g[A1][0]);
+        c.g[V0][0] = c.lw(this);
+        let different = c.g[V0][0] != c.g[A1][0];
+        c.sw(this.wrapping_add(0xc28), c.g[A2][0]);
+        let load_all = c.g[A2][0] != 0;
+        // Which tail runs: the "same character" tail (true; `v0` = the current
+        // character id) or the pending-request tail (false; `v0` = +0xcd4).
+        let same_char;
+        if different {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(this.wrapping_add(0xcd4));
+            same_char = false;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(this.wrapping_add(0x10));
+            if c.g[V0][0] == 0 {
+                c.cycles += 2;
+                if !load_all {
+                    c.g[V0][0] = c.lw(this);
+                    same_char = true;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lw(this.wrapping_add(0xcd4));
+                    same_char = false;
+                }
+            } else {
+                // 2 + 2 + 2 (+ 1 when `load_all` is 0) cycles of the
+                // generated three-way flag test.
+                c.cycles += 2;
+                if load_all {
+                    c.g[V0][0] = c.lw(this);
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(this);
+                }
+                same_char = true;
+            }
+        }
+        if same_char {
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[V0][0] < 0xa) as u64;
+            let big_id = c.g[V0][0] == 0;
+            c.g[V1][0] = 0;
+            if !big_id {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(this.wrapping_add(0xcb8));
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lw(this.wrapping_add(0xcb4));
+                    c.g[V1][0] = (0 < c.g[V0][0]) as u64;
+                }
+            }
+            c.cycles += 2;
+            let not_ready = c.g[V1][0] == 0;
+            c.g[V0][0] = u64::MAX;
+            if !not_ready {
+                c.cycles += 5;
+                c.g[V1][0] = c.lw(this.wrapping_add(0xcc8));
+                c.sw(this.wrapping_add(0xcd4), c.g[V0][0]);
+                c.g[A0][0] = sx(this.wrapping_add(0xcc8));
+                let shown = c.g[V1][0] != 0;
+                c.g[A1][0] = 0;
+                let mut set_visible = shown;
+                if !shown {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(this.wrapping_add(0xcc4));
+                    if c.g[V0][0] == 0 {
+                        c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+                    } else {
+                        set_visible = true;
+                    }
+                }
+                if set_visible {
+                    c.cycles += 2;
+                    c.g[A1][0] = 1;
+                    c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+                }
+                c.cycles += 2;
+                c.sw(this.wrapping_add(0xcc4), 0);
+            }
+        } else {
+            c.cycles += 2;
+            if (c.g[V0][0] as i64) >= 0 {
+                frame.restore(c, S0, 0x10);
+                c.cycles += 3;
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+            c.cycles += 11;
+            c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+            c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10d8));
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x390));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x394));
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0019_e65c)?;
+            let this = c.g[S0][0] as u32;
+            c.g[V1][0] = c.lw(this.wrapping_add(0xcc8));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(4));
+            c.sw(this.wrapping_add(0xcd4), c.g[V0][0]);
+            c.sw(this.wrapping_add(0xcc4), c.g[V1][0]);
+            c.sw(this.wrapping_add(0xcc8), 0);
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `FEModule_RiderPreview* FEModule_RiderPreviewCtor(FEModule_RiderPreview* self)` (0x19e3d0).
+///
+/// Clears the rider preview module: ids set to -1, the 256-entry texture
+/// reference table (12-byte entries at `+0x1c`: flag 0, id -1), the pose and
+/// board pose copied from the identity pose at 0x4ff230, counters, flags and
+/// loading state cleared. Returns `self`.
+#[allow(unused_labels, unused_assignments, unused_parens, unreachable_code)]
+pub fn fe_module_rider_preview_ctor(c: &mut Cpu) {
+    c.cycles += 14;
+    c.g[A3][0] = c.g[A0][0];
+    c.g[V0][0] = 0xffffffffffffffff;
+    c.sw((c.g[A3][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+    c.g[A0][0] = 0xffffffffffffffff;
+    c.sw(c.g[A3][0] as u32, c.g[V0][0]);
+    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1c));
+    c.sw((c.g[A3][0] as u32).wrapping_add(0xc70), 0u64);
+    c.g[V0][0] = 0xff;
+    c.sw((c.g[A3][0] as u32).wrapping_add(0xc74), 0u64);
+    c.sw((c.g[A3][0] as u32).wrapping_add(0x8), 0u64);
+    c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+    c.sw((c.g[A3][0] as u32).wrapping_add(0x10), 0u64);
+    c.sw((c.g[A3][0] as u32).wrapping_add(0x14), 0u64);
+    c.sw((c.g[A3][0] as u32).wrapping_add(0x18), 0u64);
+    'l_19e408: loop {
+        c.cycles += 7;
+        c.sb((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+        c.sw(c.g[V1][0] as u32, c.g[A0][0]);
+        let t = (c.g[V0][0] as i64) >= 0;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc));
+        if t {
+            if event_due(c) {
+                deliver_event_here(c, 0x0019e408);
+            }
+            continue 'l_19e408;
+        } else {
+            c.cycles += 29;
+            c.g[V0][0] = 0xffffffffffff0000;
+            c.g[A2][0] = 0xffffffffffffffff;
+            c.g[V0][0] = c.g[V0][0] | 0xffff;
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc1c), 0u64);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc2c), c.g[V0][0]);
+            c.g[A1][0] = 0x500000;
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc20), 0u64);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xdd0));
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc24), c.g[A2][0]);
+            c.g[V0][0] = c.g[A3][0];
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc28), 0u64);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xccc), 0u64);
+            c.lq(3, c.g[A1][0] as u32);
+            c.sq(3, (c.g[A3][0] as u32).wrapping_add(0xc30));
+            c.lq(4, (c.g[A1][0] as u32).wrapping_add(0x10));
+            c.sq(4, (c.g[A3][0] as u32).wrapping_add(0xc40));
+            c.lq(3, c.g[A1][0] as u32);
+            c.sq(3, (c.g[A3][0] as u32).wrapping_add(0xc50));
+            c.lq(4, (c.g[A1][0] as u32).wrapping_add(0x10));
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xcd4), c.g[A2][0]);
+            c.sq(4, (c.g[A3][0] as u32).wrapping_add(0xc60));
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc78), 0u64);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xcc4), 0u64);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xcc8), 0u64);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xcb4), 0u64);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xcb8), 0u64);
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xcbc), 0u64);
+            let t = c.g[RA][0] as u32;
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xcc0), 0u64);
+            c.pc = t;
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8270,6 +8481,63 @@ pub(crate) mod tests {
                 c.g[A1][0] = bank as u64;
                 c.g[A2][0] = idx as u64;
                 c.pc = 0x0019_d8b8;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::oc770_machine;
+
+    /// `FEModule_RiderPreviewRequestChar`: every flag combination, ready and
+    /// not-ready models, queued requests through the fake frame-count call.
+    #[test]
+    fn fe_module_rider_preview_request_char_matches() {
+        const THIS: u32 = DATA + 0x2000;
+        const GRMAN: u32 = DATA + 0x6000;
+        const VT: u32 = DATA + 0x8000;
+        check(
+            ee::s03::f_0019e588__generated,
+            fe_module_rider_preview_request_char,
+            600,
+            &|c, seed| {
+                let mut r = oc770_machine(c, seed, 0x7703, 1);
+                let gp = c.g[GP][0] as u32;
+                c.pc = 0x0019_e588;
+                let req = r.next_u32() % 12;
+                c.g[A0][0] = THIS as u64;
+                c.g[A1][0] = req as u64;
+                c.g[A2][0] = (r.next_u32() % 3 == 0) as u64;
+                let cur = if r.next_u32() % 3 == 0 { req + 1 } else { req };
+                c.bus.write32(THIS, cur);
+                c.bus.write32(THIS + 0x10, r.next_u32() % 2);
+                c.bus.write32(THIS + 0xcb8, r.next_u32() % 2);
+                let pick = |r: &mut Rng, v: [u32; 3]| v[(r.next_u32() % 3) as usize];
+                c.bus
+                    .write32(THIS + 0xcb4, pick(&mut r, [0, 5, 0xffff_fffd]));
+                c.bus.write32(THIS + 0xcc8, pick(&mut r, [0, 1, 7]));
+                c.bus.write32(THIS + 0xcc4, pick(&mut r, [0, 1, 3]));
+                c.bus
+                    .write32(THIS + 0xcd4, pick(&mut r, [0xffff_ffff, 0, 5]));
+                c.bus.write32(gp - 0x854, GRMAN);
+                c.bus.write32(GRMAN + 0x10d8, VT);
+                c.bus.write16(VT + 0x390, (r.next_u32() & 0xfffc) as u16);
+                c.bus.write32(VT + 0x394, fakes::FAKE);
+            },
+        );
+    }
+
+    /// `FEModule_RiderPreviewCtor`: clears a random-filled module (a leaf:
+    /// the 256-entry texture table loop and the identity pose copies).
+    #[test]
+    fn fe_module_rider_preview_ctor_matches() {
+        check(
+            ee::s03::f_0019e3d0__generated,
+            fe_module_rider_preview_ctor,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x780b, 0);
+                let this = DATA + 0x1000;
+                fill(c, &mut r, this, 0x340);
+                c.g[A0][0] = sx(this);
             },
         );
     }

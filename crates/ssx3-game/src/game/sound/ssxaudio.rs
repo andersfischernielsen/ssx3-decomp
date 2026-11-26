@@ -280,6 +280,36 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_play_stream,
         "SSXAudioSystem_PlayStream",
     ),
+    (
+        0x0028_5fb0,
+        ssx_audio_system_load_front_end_audio,
+        "SSXAudioSystem_LoadFrontEndAudio",
+    ),
+    (
+        0x0028_67e8,
+        ssx_audio_system_enter_game,
+        "SSXAudioSystem_EnterGame",
+    ),
+    (
+        0x0028_71b0,
+        ssx_audio_system_reset_race_sounds,
+        "SSXAudioSystem_ResetRaceSounds",
+    ),
+    (
+        0x0028_8d18,
+        ssx_audio_system_setup_channel_gains,
+        "SSXAudioSystem_SetupChannelGains",
+    ),
+    (
+        0x0028_9520,
+        ssx_audio_system_load_playlist,
+        "SSXAudioSystem_LoadPlaylist",
+    ),
+    (
+        0x0028_9af0,
+        ssx_audio_system_rider_init_stub,
+        "SSXAudioSystem_RiderInitStub",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3992,11 +4022,844 @@ pub(crate) const PLAY_STREAM_REPLAY_PLAYING: Callee = Callee {
     f: ee::s07::SSXAudioSystem_IsReplayPlaying,
 };
 
+/// `void SSXAudioSystem_SetupChannelGains(AudioSystem* self, int mode)` (0x288d18):
+/// fill the per-kind volume scaling globals (gp+0x414..0x460: SFX, music,
+/// speech, board, ambient, per-character...) for the mix `mode` (0: all 1.0
+/// except the character speech 0.6; 1: the tuned in-race mix; others leave
+/// them as they are), then re-apply every one of the 11 channel volumes with
+/// `SetChannelVolume(self, ch, GetChannelVolume(self, ch))`.
+pub fn ssx_audio_system_setup_channel_gains(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x20 };
+        'b_288e1c: {
+            'b_288e18: {
+                'b_288d8c: {
+                    c.cycles += 5;
+                    Frame::open(c, 0x20);
+                    frame.save(c, S0, 0x10);
+                    frame.save_ra(c, 0);
+                    let t = c.g[A1][0] != 0u64;
+                    c.g[S0][0] = c.g[A0][0];
+                    if t {
+                        break 'b_288d8c;
+                    } else {
+                        c.cycles += 24;
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 0);
+                        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4610));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x460));
+                        c.swc1(1, (c.g[GP][0] as u32).wrapping_add(0x41c));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x414));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x418));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x420));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x424));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x428));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x42c));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x430));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x434));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x438));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x43c));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x440));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x444));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x448));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x44c));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x450));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x454));
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x458));
+                        let t = true;
+                        c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x45c));
+                        if t {
+                            break 'b_288e18;
+                        } else {
+                            break 'b_288d8c;
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[V0][0] = 0x1;
+                let t = c.g[A1][0] != c.g[V0][0];
+                c.g[A0][0] = c.g[S0][0];
+                if t {
+                    break 'b_288e1c;
+                } else {
+                    c.cycles += 32;
+                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x460c));
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x4608));
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 6);
+                    c.g[AT][0] = 0x3f400000;
+                    c.mtc1(1, 2);
+                    c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4604));
+                    c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4600));
+                    c.g[AT][0] = 0x3f000000;
+                    c.mtc1(1, 5);
+                    c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x45fc));
+                    c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x45f8));
+                    c.swc1(3, (c.g[GP][0] as u32).wrapping_add(0x420));
+                    c.swc1(4, (c.g[GP][0] as u32).wrapping_add(0x424));
+                    c.swc1(5, (c.g[GP][0] as u32).wrapping_add(0x430));
+                    c.swc1(2, (c.g[GP][0] as u32).wrapping_add(0x438));
+                    c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x44c));
+                    c.swc1(7, (c.g[GP][0] as u32).wrapping_add(0x450));
+                    c.swc1(1, (c.g[GP][0] as u32).wrapping_add(0x454));
+                    c.swc1(6, (c.g[GP][0] as u32).wrapping_add(0x45c));
+                    c.swc1(8, (c.g[GP][0] as u32).wrapping_add(0x460));
+                    c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x414));
+                    c.swc1(6, (c.g[GP][0] as u32).wrapping_add(0x418));
+                    c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x41c));
+                    c.swc1(2, (c.g[GP][0] as u32).wrapping_add(0x428));
+                    c.swc1(0, (c.g[GP][0] as u32).wrapping_add(0x42c));
+                    c.swc1(2, (c.g[GP][0] as u32).wrapping_add(0x434));
+                    c.swc1(1, (c.g[GP][0] as u32).wrapping_add(0x43c));
+                    c.swc1(1, (c.g[GP][0] as u32).wrapping_add(0x440));
+                    c.swc1(1, (c.g[GP][0] as u32).wrapping_add(0x444));
+                    c.swc1(1, (c.g[GP][0] as u32).wrapping_add(0x448));
+                    c.swc1(6, (c.g[GP][0] as u32).wrapping_add(0x458));
+                    break 'b_288e18;
+                }
+            }
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+            break 'b_288e1c;
+        }
+        c.cycles += 80;
+        // Re-apply every channel's set volume: SetChannelVolume(self, ch,
+        // GetChannelVolume(self, ch)) for the eleven channels, so the new
+        // scaling factors reach the derived per-channel gains.
+        for channel in 0..=10u32 {
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = channel as u64;
+            call_ptr(c, 0x0028_7920, 0x0028_8e24 + 0x1c * channel)?;
+            c.mov_s(12, 0);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = channel as u64;
+            call_ptr(c, 0x0028_7700, 0x0028_8e34 + 0x1c * channel)?;
+        }
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        return Ok(());
+    });
+}
+
+/// `void SSXAudioSystem_EnterGame(SSXAudioSystem* this)` (0x2867e8).
+///
+/// Starts the in-game audio: sets the radio mode and playlist from the back
+/// end's reward interface, starts a song (`SelectRandomSong` + `PlayMusic`)
+/// unless one is already playing (id 401), clears the rider air flags, fetches
+/// the five world-painter queries (music trigger x2, ambience x2, mix x2) into
+/// the system (`+0x625c`, `+0x6260`, `+0x5fa0`, `+0x5fa4`, `+0x6c80`,
+/// `+0x6c84`), resets the fade/ducking fields, fills the 23 "first time on
+/// track" flags at `+0x579c` (when the audio state byte at 0x535c11 is 0) and
+/// finally resets the music state, runs `EnterGameInit` and 0x2a4a78.
+pub fn ssx_audio_system_enter_game(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2868f4: {
+            'b_28688c: {
+                c.cycles += 36;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[S4][0] = c.g[A0][0];
+                call_ptr(c, 0x0014dc80, 0x00286810)?;
+                c.g[A1][0] = 0xd;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0014dd58, 0x0028681c)?;
+                c.g[S2][0] = c.g[V0][0];
+                call_ptr(c, 0x0028b1d8, 0x00286824)?;
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                call_ptr(c, 0x00123128, 0x0028682c)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = 0u64;
+                c.g[A2][0] = c.g[S0][0];
+                call_ptr(c, 0x00158750, 0x00286840)?;
+                c.g[A2][0] = c.g[S0][0];
+                c.g[S1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = 0u64;
+                call_ptr(c, 0x00158700, 0x00286854)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S4][0];
+                call_ptr(c, 0x0028bf78, 0x00286860)?;
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = c.g[S1][0];
+                call_ptr(c, 0x0028c2d0, 0x0028686c)?;
+                c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x530));
+                let t = c.g[V0][0] == 0u64;
+                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x118));
+                if t {
+                    break 'b_28688c;
+                } else {
+                    c.cycles += 5;
+                    c.g[S5][0] = 0x530000;
+                    call_ptr(c, 0x002b49e0, 0x00286880)?;
+                    c.g[V1][0] = 0x191;
+                    let t = c.g[V0][0] == c.g[V1][0];
+
+                    if t {
+                        break 'b_2868f4;
+                    } else {
+                        break 'b_28688c;
+                    }
+                }
+            }
+            'b_2868dc: {
+                c.cycles += 12;
+                c.g[A0][0] = c.g[S4][0];
+                call_ptr(c, 0x0028d488, 0x00286894)?;
+                call_ptr(c, 0x0014dc80, 0x0028689c)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0u64;
+                call_ptr(c, 0x0014dd58, 0x002868a8)?;
+                c.g[V1][0] = 0x530000;
+                c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5bc8));
+                c.g[V0][0] = c.lb((c.g[A0][0] as u32).wrapping_add(0x49));
+                let t = c.g[V0][0] != 0u64;
+                c.g[S5][0] = c.g[V1][0];
+                if t {
+                    break 'b_2868dc;
+                } else {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = 0u64;
+                    c.g[A2][0] = 0u64;
+                    c.g[A3][0] = 0xffffffffffffffff;
+                    c.g[T0][0] = 0u64;
+                    call_ptr(c, 0x0028cf98, 0x002868d4)?;
+                    let t = true;
+
+                    if t {
+                        break 'b_2868f4;
+                    } else {
+                        break 'b_2868dc;
+                    }
+                }
+            }
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = 0x24;
+            c.g[A2][0] = 0u64;
+            c.g[A3][0] = 0xffffffffffffffff;
+            c.g[T0][0] = 0u64;
+            call_ptr(c, 0x0028cf98, 0x002868f4)?;
+            break 'b_2868f4;
+        }
+        'b_286a44: {
+            c.cycles += 59;
+            c.g[S1][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2178));
+            c.g[A0][0] = c.g[S4][0];
+            call_ptr(c, 0x002948a0, 0x00286900)?;
+            c.g[S2][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2188));
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.g[A1][0] = c.g[S1][0];
+            c.g[S3][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2180));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x002c0a58, 0x00286924)?;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x625c), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x00286934)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x6260), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x00286944)?;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x5fa0), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x00286954)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x5fa4), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x00286964)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x6c80), c.g[V0][0]);
+            call_ptr(c, 0x002c0a58, 0x00286974)?;
+            c.g[A2][0] = 0xffffffffffffffff;
+            c.g[V1][0] = 0x32;
+            c.g[A3][0] = 0x1;
+            c.g[AT][0] = 0x3f000000;
+            c.mtc1(1, 12);
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 13);
+            c.g[A0][0] = c.g[S4][0];
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x626c), 0u64);
+            c.g[A1][0] = 0x3;
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x6274), 0u64);
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x5fc4), 0u64);
+            c.sb((c.g[S4][0] as u32).wrapping_add(0x5fc0), c.g[V1][0]);
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x6268), c.g[A2][0]);
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x6270), c.g[A3][0]);
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x6264), c.g[A2][0]);
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x6c84), c.g[V0][0]);
+            call_ptr(c, 0x00287f00, 0x002869bc)?;
+            c.sw((c.g[S4][0] as u32).wrapping_add(0x6288), 0u64);
+            call_ptr(c, 0x0014dc80, 0x002869c4)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0u64;
+            call_ptr(c, 0x0014dd58, 0x002869d0)?;
+            c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x5bc8));
+            c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x49));
+            let t = c.g[V0][0] != 0u64;
+            c.g[S2][0] = 0u64;
+            if t {
+                break 'b_286a44;
+            } else {
+                c.cycles += 2;
+                c.g[S1][0] = sx((c.g[S4][0] as u32).wrapping_add(0x579c));
+                'l_2869e8: loop {
+                    c.cycles += 23;
+                    call_ptr(c, 0x0014dc80, 0x002869f0)?;
+                    c.g[A1][0] = 0x1;
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, 0x0014dd58, 0x002869fc)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    call_ptr(c, 0x0028b1d8, 0x00286a04)?;
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                    c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+                    let t = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    call_ptr(c, t, 0x00286a20)?;
+                    c.g[A2][0] = c.g[S2][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    call_ptr(c, 0x00145d38, 0x00286a34)?;
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < 23i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002869e8);
+                        }
+                        continue 'l_2869e8;
+                    } else {
+                        break 'b_286a44;
+                    }
+                }
+            }
+        }
+        c.cycles += 15;
+        c.g[A0][0] = c.g[S4][0];
+        call_ptr(c, 0x0028df08, 0x00286a4c)?;
+        c.g[A0][0] = c.g[S4][0];
+        call_ptr(c, 0x00286e20, 0x00286a54)?;
+        c.g[A0][0] = c.g[S4][0];
+        call_ptr(c, 0x002a4a78, 0x00286a5c)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void SSXAudioSystem_LoadFrontEndAudio(SSXAudioSystem* this)` (0x285fb0,
+/// frame 0xa20; the reference's `cSSXAudio_FrontEndLoad`): sets up the channel
+/// gains and audio mode 1, opens the audio ini (`IniParser_ctor`, 0x2a77f8,
+/// path from `gp+0x464`). It scans the `GLOBAL` section for its `BASEPATH`
+/// (loop 1, `strcpy` of it), then the `FE` section: for each key equal to
+/// `MAIN` (`strcasecmp`) it formats `%s%s%s.b` and loads that bank
+/// synchronously (`SndBankMan_LoadBank`, slot 0). Then it ducks to the stream
+/// (`SetFadeMode(3, 0.5, 1.0)`), sets the channel gain through the music
+/// system's vtable entry 2 (`charsel`), sends message 301 (`0x2b49c0`), stores
+/// 10 at +0x6290 and the radio mode at +0x6090, resumes the audio and
+/// destroys the parser. Both key loops are native loops with the event check
+/// at the back edge; a resume at a block head (`c.pc != entry`) falls back to
+/// the generated dispatcher.
+pub fn ssx_audio_system_load_front_end_audio(c: &mut Cpu) {
+    if c.pc != 0x0028_5fb0 {
+        return ee::s07::f_00285fb0__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 28;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa20));
+        c.g[A1][0] = 0u64;
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x9e0));
+        c.g[S3][0] = c.g[A0][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xa10));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x9c0));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xa00));
+        c.g[S0][0] = 0x4a0000;
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x9f0));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x9d0));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x9b0), c.g[RA][0]);
+        c.g[RA][0] = sx(0x00285fe4);
+        c.g[S5][0] = 0x4a0000;
+        call_ptr(c, 0x00288d18, 0x00285fe4)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[RA][0] = sx(0x00285ff0);
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x00285be0, 0x00285ff0)?;
+        c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x464));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[RA][0] = sx(0x00286000);
+        c.g[A2][0] = 0x100;
+        call_ptr(c, 0x002a77f8, 0x00286000)?;
+        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+        c.g[A1][0] = 0x4a0000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3570));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[RA][0] = sx(0x00286018);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+        call_ptr(c, 0x002a7bf8, 0x00286018)?;
+        let t = c.g[V0][0] == 0u64;
+        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+        'b_286054: {
+            if t {
+                break 'b_286054;
+            }
+            c.cycles += 2;
+            'l_286044: loop {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x0028604c);
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x002a7f90, 0x0028604c)?;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                if !t {
+                    break 'l_286044;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x00286028);
+                }
+                c.cycles += 7;
+                c.g[RA][0] = sx(0x00286030);
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x002a7da0, 0x00286030)?;
+                c.g[A1][0] = 0x480000;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x28c0));
+                c.g[RA][0] = sx(0x00286044);
+                c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x810));
+                call_ptr(c, 0x002a7ff8, 0x00286044)?;
+            }
+        }
+        c.cycles += 7;
+        c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3578));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[S4][0] = sx((c.g[S3][0] as u32).wrapping_add(0x118));
+        c.g[RA][0] = sx(0x00286068);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, 0x002a7bf8, 0x00286068)?;
+        let t = c.g[V0][0] == 0u64;
+        'b_286120: {
+            if t {
+                break 'b_286120;
+            }
+            c.cycles += 6;
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x890));
+            c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x810));
+            c.g[RA][0] = sx(0x00286080);
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x004166f4, 0x00286080)?;
+            c.g[S2][0] = c.g[S0][0];
+            'l_286110: loop {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x00286118);
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x002a7f90, 0x00286118)?;
+                let t = c.g[V0][0] == 0u64;
+                if !t {
+                    break 'l_286110;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x00286088);
+                }
+                c.cycles += 15;
+                c.g[RA][0] = sx(0x00286090);
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x002a7da0, 0x00286090)?;
+                c.g[A1][0] = 0x480000;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x28c0));
+                c.g[A0][0] = c.g[SP][0];
+                c.g[RA][0] = sx(0x002860a8);
+                c.g[A2][0] = c.g[S2][0];
+                call_ptr(c, 0x002a7ff8, 0x002860a8)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3580));
+                c.g[RA][0] = sx(0x002860bc);
+                c.g[A1][0] = c.g[S1][0];
+                call_ptr(c, 0x0041aa88, 0x002860bc)?;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A1][0] = c.g[S1][0];
+                if !t {
+                    c.cycles += 19;
+                    c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x910));
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[RA][0] = sx(0x002860d4);
+                    c.g[A2][0] = c.g[S0][0];
+                    call_ptr(c, 0x002a7ff8, 0x002860d4)?;
+                    c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x970));
+                    c.g[A1][0] = 0x4a0000;
+                    c.g[A2][0] = 0x4a0000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3588));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3590));
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A3][0] = c.g[S2][0];
+                    c.g[RA][0] = sx(0x002860f8);
+                    c.g[T0][0] = c.g[S0][0];
+                    call_ptr(c, 0x00417828, 0x002860f8)?;
+                    c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[A1][0] = 0u64;
+                    c.g[A3][0] = 0u64;
+                    c.g[RA][0] = sx(0x00286110);
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    call_ptr(c, 0x0028bc58, 0x00286110)?;
+                }
+            }
+        }
+        c.cycles += 43;
+        c.g[AT][0] = 0x3f000000;
+        c.mtc1(1, 12);
+        c.g[A0][0] = c.g[S3][0];
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 13);
+        c.g[A1][0] = 0x3;
+        c.g[RA][0] = sx(0x00286140);
+        c.g[S2][0] = sx((c.g[S5][0] as u32).wrapping_add(0x3598));
+        call_ptr(c, 0x00287f00, 0x00286140)?;
+        c.g[S1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x5558));
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 0x1;
+        c.g[A2][0] = 0u64;
+        c.g[S0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = sx(0x0028615c);
+        c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        call_ptr(c, 0x00287968, 0x0028615c)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+        c.g[A3][0] = c.g[V0][0];
+        c.g[A2][0] = 0xc;
+        c.g[T0][0] = 0x1;
+        c.g[A0][0] = c.g[S0][0];
+        let t = c.g[V1][0] as u32;
+        c.g[RA][0] = sx(0x00286178);
+        c.g[A1][0] = c.g[S2][0];
+        call_ptr(c, t, 0x00286178)?;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[RA][0] = sx(0x00286184);
+        c.g[A1][0] = 0x12d;
+        call_ptr(c, 0x002b49c0, 0x00286184)?;
+        c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x608c));
+        c.g[V0][0] = 0xa;
+        c.g[A0][0] = c.g[S3][0];
+        c.sw((c.g[S3][0] as u32).wrapping_add(0x6290), c.g[V0][0]);
+        c.g[RA][0] = sx(0x0028619c);
+        c.sw((c.g[S3][0] as u32).wrapping_add(0x6090), c.g[V1][0]);
+        call_ptr(c, 0x00289bb8, 0x0028619c)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[RA][0] = sx(0x002861a8);
+        c.g[A1][0] = 0x2;
+        call_ptr(c, 0x002a7890, 0x002861a8)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa10));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xa00));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x9f0));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x9e0));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x9d0));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x9c0));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x9b0));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa20));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void SSXAudioSystem_LoadPlaylist(SSXAudioSystem* this, const char* name)` (0x289520).
+///
+/// Clears the music system (`this + 0x118`), parses the playlist file's
+/// section `name` and adds every `SONG` key to it (`func_002B3EE8`), then
+/// stores the playlist's index among the 20 names (`+0x60a4`, 16 bytes each;
+/// 20 when not found) at `+0x6238`, finishes the music system, copies its
+/// active map (`+0x510 -> +0x518`) and destroys the parser.
+pub fn ssx_audio_system_load_playlist(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x8b0));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x880));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x8a0));
+        c.g[S2][0] = c.g[A0][0];
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x860));
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
+        c.g[S4][0] = c.g[A1][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x890));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x870));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x850), c.g[RA][0]);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x002b3eb0, 0x00289550)?;
+        c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x46c));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = 0x100;
+        call_ptr(c, 0x002a77f8, 0x00289560)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = c.g[S4][0];
+        call_ptr(c, 0x002a7c68, 0x0028956c)?;
+        let not_found = c.g[V0][0] == 0u64;
+        c.g[V0][0] = 0x14;
+        // 0x2895d8 is the "name search" stage; the song scan runs only when
+        // the section was found.
+        if !not_found {
+            // 0x289574
+            c.cycles += 4;
+            c.g[A0][0] = c.g[SP][0];
+            call_ptr(c, 0x002a7a20, 0x0028957c)?;
+            c.g[S3][0] = c.g[S0][0];
+            // 0x2895c8: loop head; the body (0x289588) runs while !IsEOF.
+            loop {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x002a7f90, 0x002895d0)?;
+                let eof = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0x14;
+                if eof {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x00289588);
+                }
+                // 0x289588: next key name; `SONG` keys assign the song.
+                c.cycles += 9;
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x002a7da0, 0x00289590)?;
+                c.g[V1][0] = 0x4a0000;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3608));
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x0041aa88, 0x002895a4)?;
+                let not_song = c.g[V0][0] != 0u64;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x810));
+                if !not_song {
+                    // 0x2895ac
+                    c.cycles += 7;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[A2][0] = c.g[S0][0];
+                    call_ptr(c, 0x002a7ff8, 0x002895bc)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    call_ptr(c, 0x002b3ee8, 0x002895c8)?;
+                }
+            }
+        }
+        // 0x2895d8: playlist index = 20 ("not found"), then search the names.
+        c.cycles += 4;
+        c.g[S0][0] = 0u64;
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x6238), c.g[V0][0]);
+        c.g[S3][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
+        loop {
+            // 0x2895e8
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S0][0] as i64) < 20i64) as u64;
+            let done = c.g[V0][0] == 0u64;
+            c.g[A0][0] = 0x14;
+            if done {
+                break;
+            }
+            // 0x2895f4
+            c.cycles += 7;
+            c.g[A1][0] = c.g[S4][0];
+            c.mult(0, 4, 16, 4);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x60a4));
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, 0x004165a8, 0x00289608)?;
+            if c.g[V0][0] != 0u64 {
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                if event_due(c) {
+                    deliver_event_here(c, 0x002895e8);
+                }
+                continue;
+            }
+            // 0x289610: match: remember the index.
+            c.cycles += 1;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x6238), c.g[S0][0]);
+            break;
+        }
+        // 0x289614
+        c.cycles += 15;
+        c.g[A0][0] = c.g[S3][0];
+        call_ptr(c, 0x002b4060, 0x0028961c)?;
+        c.g[V0][0] = c.ld((c.g[S2][0] as u32).wrapping_add(0x510));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 0x2;
+        c.sd((c.g[S2][0] as u32).wrapping_add(0x518), c.g[V0][0]);
+        call_ptr(c, 0x002a7890, 0x00289630)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x8a0));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x890));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x880));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x870));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x860));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x850));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x8b0));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `void SSXAudioSystem_ResetRaceSounds(SSXAudioSystem* self)` (0x2871b0): clears the rider
+/// air flags, sets the fade mode, and per race-manager entry calls the two reset hooks;
+/// then fades out the monitor with the stored fade time.
+pub fn ssx_audio_system_reset_race_sounds(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_28725c: {
+            c.cycles += 26;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[RA][0] = sx(0x002871d4);
+            c.g[S2][0] = 0u64;
+            Callee {
+                addr: 0x002948a0,
+                f: ee::s07::SSXAudioSystem_ClearRiderAirFlags,
+            }
+            .call(c, 0x002871d4)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[RA][0] = sx(0x002871e0);
+            c.g[A1][0] = 0u64;
+            call_ptr(c, 0x0029b3c0, 0x002871e0)?;
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 13);
+            c.g[A1][0] = 0x3;
+            c.g[AT][0] = 0x3f000000;
+            c.mtc1(1, 12);
+            c.g[RA][0] = sx(0x002871fc);
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x00287f00,
+                f: ee::s07::SSXAudioSystem_SetFadeMode,
+            }
+            .call(c, 0x002871fc)?;
+            c.g[RA][0] = sx(0x00287204);
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x21e4));
+            call_ptr(c, 0x002b6900, 0x00287204)?;
+            c.g[RA][0] = sx(0x0028720c);
+            Callee {
+                addr: 0x0028b1d8,
+                f: ee::s07::SSXAudioSystem_GetRaceMan,
+            }
+            .call(c, 0x0028720c)?;
+            c.g[S3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x78));
+            if (c.g[S3][0] as i64) <= 0 {
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x59e4));
+                break 'b_28725c;
+            } else {
+                'l_287218: loop {
+                    c.cycles += 16;
+                    c.g[RA][0] = sx(0x00287220);
+                    c.g[S0][0] = sx((c.g[S2][0] as u32) << 2);
+                    Callee {
+                        addr: 0x0028b1d8,
+                        f: ee::s07::SSXAudioSystem_GetRaceMan,
+                    }
+                    .call(c, 0x00287220)?;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                    c.g[RA][0] = sx(0x00287234);
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    call_ptr(c, 0x00296e20, 0x00287234)?;
+                    c.g[RA][0] = sx(0x0028723c);
+                    Callee {
+                        addr: 0x0028b1d8,
+                        f: ee::s07::SSXAudioSystem_GetRaceMan,
+                    }
+                    .call(c, 0x0028723c)?;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x0028724c);
+                    c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                    call_ptr(c, 0x00297438, 0x0028724c)?;
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S3][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00287218);
+                        }
+                        continue 'l_287218;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x59e4));
+                        break 'b_28725c;
+                    }
+                }
+            }
+        }
+        'b_287288: {
+            c.cycles += 3;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x6074), 0u64);
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x6078), 0u64);
+            if t {
+                break 'b_287288;
+            } else {
+                c.cycles += 8;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x118));
+                c.g[A2][0] = 0x1;
+                c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x59e0));
+                c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                c.lwc1(12, (c.g[S1][0] as u32).wrapping_add(0x6074));
+                c.g[RA][0] = sx(0x00287284);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+                call_ptr(c, 0x002ad5f0, 0x00287284)?;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x59e4), 0u64);
+                break 'b_287288;
+            }
+        }
+        c.cycles += 7;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `void SSXAudioSystem_RiderInitStub(void)` (0x289af0): empty.
+pub fn ssx_audio_system_rider_init_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    pub(crate) use crate::game::fe::fereal::tests::oc787_install_fakes;
+    pub(crate) use crate::game::fe::uitemplatemap::tests::oc777_install_fakes;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc774_install_fakes;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::oc784_install_fakes;
 
     use crate::difftest::elf_image;
     use crate::difftest::fakes;
@@ -5494,6 +6357,238 @@ pub(crate) mod tests {
                     0x002a_cfe0,
                     if seed / 5 % 3 == 0 { 0 } else { DATA + 0x5000 },
                 );
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fereal::tests::oc787_mail;
+    pub(crate) use crate::game::fe::feridermanager::tests::oc777_pat;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::oc774_arm;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::oc774_force;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::oc787_arm;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::OC774_AUDIO;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::OC774_MOD;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::OC774_UI;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::OC774_WORLD;
+    pub(crate) use crate::game::fe::festatecharsetup::tests::OC787_AUX;
+
+    pub(crate) use crate::game::fe::festatecharsetup::tests::OC787_OBJ;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::oc784_arm;
+
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::OC784_OBJ;
+    pub(crate) use crate::game::fe::ovtemplatedialog::tests::oc784_force;
+    pub(crate) use crate::game::fe::ovtemplatedialog::tests::oc784_force_zero;
+
+    pub(crate) use crate::game::fe::ovtemplatedialog::tests::OC774_STATE;
+    pub(crate) use crate::game::fe::ovtemplatedialog::tests::OC784_FILE;
+    pub(crate) use crate::game::fe::uitemplatemap::tests::oc777_gate;
+
+    pub(crate) use crate::game::fe::uitemplatemap::tests::OC777_OBJ;
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc768_machine;
+
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::oc784_count;
+    pub(crate) use crate::game::sound::soundsys::tests::oc777_tables;
+
+    // -- SSXAudioSystem_SetupChannelGains --------------------------------
+
+    /// Modes 0, 1 and others (one seed in three each), with the game image in
+    /// RAM for the `.lit4` scaling constants and `SetChannelVolume`'s jump
+    /// table; the real Get/SetChannelVolume run, the music player update and
+    /// the master volume call they make are gated fakes (which unwind for
+    /// some seeds).
+    #[test]
+    fn ssx_audio_system_setup_channel_gains_matches() {
+        covered(
+            ee::s07::f_00288d18__generated,
+            ssx_audio_system_setup_channel_gains,
+            45,
+            &|c, seed| {
+                let mut r = oc768_machine(c, seed, 0x0028_8d18, 2);
+                elf_image(c);
+                let this = DATA + 0x100;
+                for off in (0..0x6400u32).step_by(4) {
+                    c.bus.write32(this + off, 0);
+                }
+                for k in 0..11u32 {
+                    let v = r.edge_f32();
+                    c.bus.write32(this + 0x62bc + 0x10 * k, v);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0,
+                    1 => 1,
+                    _ => 2 + (r.next_u32() % 9) as u64,
+                };
+            },
+        );
+    }
+
+    /// `SSXAudioSystem_EnterGame`: a song always playing with id 401 (see the
+    /// fixture), the audio state byte (0x535c11) zero or not (the 23 first-time
+    /// flags are filled), and the unwinds of its calls. The music functions
+    /// (0x28bf78, 0x28c2d0, 0x28d488, 0x28cf98, 0x28df08, 0x2a4a78) are the
+    /// real, unported ones, running on a zeroed audio system.
+    #[test]
+    fn ssx_audio_system_enter_game_matches() {
+        oc774_install_fakes();
+        fakes::covered(
+            ee::s07::f_002867e8__generated,
+            ssx_audio_system_enter_game,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x774f, 60);
+                oc774_arm(c);
+                c.pc = 0x0028_67e8;
+                c.g[A0][0] = sx(OC774_AUDIO);
+                // A song is always playing (id 401): the song-selection chain
+                // (0x28d488 -> MusicPlayer_SelectNextSong 0x2b42b8, unported)
+                // loops forever on a zeroed audio system, so the fixture never
+                // reaches it. The two "not playing" branches stay untested.
+                c.bus.write32(OC774_AUDIO + 0x530, 1);
+                c.bus.write32(GAME_GP - 0x848, OC774_WORLD);
+                c.bus.write32(OC774_WORLD + 0x84, OC774_MOD);
+                c.bus.write32(OC774_MOD + 0x10, OC774_UI);
+                c.bus.write32(OC774_UI + 0x8, OC774_STATE);
+                c.bus.write8(0x0053_5c11, ((seed / 4) % 2) as u8);
+                let _ = r.next_u32();
+                oc774_force(c, 0x002b_49e0, 0x191);
+            },
+        );
+    }
+
+    /// Shared fixture of the front-end audio load: the audio system object
+    /// (`this`), its music system pointer (+0x118) and stream-system chain,
+    /// the object at +0x5558 whose vtable entry 2 is a fake, and the game
+    /// tables the channel-gain setup dispatches on.
+    pub(crate) fn oc777_audio_fixture(c: &mut Cpu, r: &mut Rng) {
+        oc777_tables(c);
+        let this = OC777_OBJ;
+        let music = OC777_OBJ + 0x1000;
+        let bank_man = OC777_OBJ + 0x1100;
+        let gain_obj = OC777_OBJ + 0x1200;
+        c.bus.write32(this + 0x118, music);
+        c.bus.write32(music, bank_man);
+        c.bus.write32(bank_man + 0xacc, r.next_u32());
+        c.bus.write32(this + 0x5558, gain_obj);
+        c.bus.write16(gain_obj + 0x10, (r.next_u32() & 0x7c) as u16);
+        c.bus.write32(gain_obj + 0x14, fakes::FAKE + 0x20);
+        c.bus.write32(this + 0x608c, r.next_u32());
+        c.bus.write32(GAME_GP + 0x464, r.next_u32());
+        c.g[A0][0] = sx(this);
+    }
+
+    /// `SSXAudioSystem_LoadFrontEndAudio`: the ini parser calls are gated
+    /// fakes with scripted results (section found or not, end-of-file after
+    /// 0..4 keys, `strcasecmp` equal for some keys); the channel-gain setup,
+    /// `SetChannelVolume`, `GetName` and `SndBankMan_LoadBank` run for real
+    /// (the parser object is zeroed stack, so `GetName` ends at once).
+    #[test]
+    fn ssx_audio_system_load_front_end_audio_matches() {
+        oc777_install_fakes();
+        check(
+            ee::s07::f_00285fb0__generated,
+            ssx_audio_system_load_front_end_audio,
+            72,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x777d, 60);
+                c.pc = 0x0028_5fb0;
+                oc777_gate(c);
+                oc777_audio_fixture(c, &mut r);
+                oc777_pat(c, 0x002a_7bf8, r.next_u32() & 3, 0);
+                oc777_pat(c, 0x002a_7f90, r.next_u32() & 0xf, 0);
+                oc777_pat(c, 0x0041_aa88, r.next_u32() & 0xff, 0);
+                oc777_pat(c, 0x0028_b830, r.next_u32() & 3, 0);
+            },
+        );
+    }
+
+    /// The first `n` calls of the fake for `addr` return 1.
+    pub(crate) fn oc784_first_ones(c: &mut Cpu, addr: u32, n: u32) {
+        c.bus.write32(oc784_count(addr), n);
+    }
+
+    /// `SSXAudioSystem_LoadPlaylist`: section found or not, how many names
+    /// mismatch before the match (or none matches), and the unwinds. The song
+    /// scan loop (`IsEOF` false) needs the real `IniParser_ReadToken`
+    /// (0x2a7da0, no override slot), so `IsEOF` always reports end of file.
+    #[test]
+    fn ssx_audio_system_load_playlist_matches() {
+        oc784_install_fakes();
+        fakes::covered(
+            ee::s07::f_00289520__generated,
+            ssx_audio_system_load_playlist,
+            250,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x784d, 10);
+                oc784_arm(c);
+                c.pc = 0x0028_9520;
+                c.g[A0][0] = sx(OC784_OBJ);
+                c.g[A1][0] = sx(OC784_FILE);
+                c.bus.write32(GAME_GP + 0x46c, r.next_u32());
+                c.bus.write32(OC784_OBJ + 0x510, r.next_u32());
+                c.bus.write32(OC784_OBJ + 0x514, r.next_u32());
+                if seed % 3 == 0 {
+                    oc784_force_zero(c, 0x002a_7c68);
+                } else {
+                    oc784_force(c, 0x002a_7c68, 5);
+                }
+                oc784_force(c, 0x002a_7f90, 5);
+                oc784_first_ones(c, 0x0041_65a8, (seed / 3) % 22);
+                if (seed / 66) % 2 == 0 {
+                    oc784_force_zero(c, 0x0041_65a8);
+                }
+            },
+        );
+    }
+
+    /// Make the fake for `addr` return `v` in `v0` (stored +3).
+    pub(crate) fn oc787_force(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(oc787_mail(addr), v.wrapping_add(3));
+    }
+
+    /// `SSXAudioSystem_ResetRaceSounds`: the race manager has 0..3 entries
+    /// (or a negative count), the monitor fade count at `+0x59e4` is positive
+    /// or not, and any call may unwind.
+    #[test]
+    fn ssx_audio_system_reset_race_sounds_matches() {
+        oc787_install_fakes();
+        fakes::covered(
+            ee::s07::f_002871b0__generated,
+            ssx_audio_system_reset_race_sounds,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x787f, 12);
+                oc787_arm(c);
+                c.pc = 0x0028_71b0;
+                c.g[A0][0] = sx(OC787_OBJ);
+                let raceman = OC787_AUX;
+                oc787_force(c, 0x0028_b1d8, raceman);
+                c.bus.write32(
+                    raceman + 0x78,
+                    [0u32, 1, 2, 3, 0xffff_ffff][(seed % 5) as usize],
+                );
+                fill(c, &mut r, raceman + 0x28, 4);
+                c.bus.write32(
+                    OC787_OBJ + 0x59e4,
+                    [0u32, 1, 5, 0xffff_ffff][((seed / 5) % 4) as usize],
+                );
+                c.bus.write32(OC787_OBJ + 0x59e0, r.next_u32());
+                c.bus.write32(OC787_OBJ + 0x118, OC787_AUX + 0x400);
+                c.bus.write32(OC787_AUX + 0x400, OC787_AUX + 0x800);
+                c.bus.write32(GAME_GP + 0x21e4, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_rider_init_stub_matches() {
+        check(
+            ee::s07::f_00289af0__generated,
+            ssx_audio_system_rider_init_stub,
+            20,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x7950_0005, 0);
             },
         );
     }

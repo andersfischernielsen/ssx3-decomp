@@ -6,9 +6,11 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -40,6 +42,7 @@ pub(crate) use crate::game::ui::uitext::oc445_add;
 pub(crate) use crate::game::ui::uitext::oc445_addu;
 pub(crate) use crate::game::ui::uitext::oc445_lw;
 pub(crate) use crate::game::ui::uitext::oc445_vcall;
+pub(crate) use crate::game::visualfx::boardwakefx::at759;
 pub(crate) use crate::game::wscript::wscriptman::p;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -97,6 +100,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ui_engine_create_screen,
         "UIEngine_CreateScreen",
     ),
+    (0x0039_8618, ui_group_load, "cUIGroup_Load"),
+    (0x0039_9768, uilistbox_ctor_w244, "UIListBox_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3271,11 +3276,162 @@ pub(crate) const LIST_STRING_COPY: u32 = 0x003d_be20;
 /// `EA_MemAlloc` for the item text (0x317e30).
 pub(crate) const LIST_TEXT_ALLOC: u32 = 0x0031_7e30;
 
+/// `UIObject::Load` (0x39fe00).
+pub(crate) const OC752_UI_OBJECT_LOAD: Callee = Callee {
+    addr: 0x0039_fe00,
+    f: ee::s13::f_0039fe00,
+};
+
+/// `void cUIGroup_Load(cUIGroup* self)` (0x398618): a forwarding wrapper,
+/// `UIObject_Load(self)` (7 cycles, a 0x10 frame holding `ra`).
+pub fn ui_group_load(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(OC752_UI_OBJECT_LOAD), 0x0039_8628)
+}
+
+// ---------------------------------------------------------------------------
+// UIListBox_ctor (0x399768)
+
+/// `void UIListBox_ctor(UIListBox* self)` (0x399768): base `UIObject_ctor`,
+/// vtable, attribute bits, 32 cleared 0x14-byte rows at +0x98, entry counters
+/// cleared, the row area `memset` (0x280 bytes) and the static colour copied
+/// from the global at 0x4c66c8 to +0x88.
+pub fn uilistbox_ctor_w244(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0039_977c);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_fb30, 0x0039_977c)?;
+        c.g[V0][0] = c.lbu(at759(c.g[S0][0], 0x74));
+        c.g[V1][0] = 0x490000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4798));
+        c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+        c.g[V0][0] = c.g[V0][0] | 0x4;
+        c.sw(at759(c.g[S0][0], 0x8), c.g[V1][0]);
+        c.g[V0][0] = c.g[V0][0] & 0xc4;
+        c.g[A0][0] = sx(at759(c.g[S0][0], 0x98));
+        c.sb(at759(c.g[S0][0], 0x74), c.g[V0][0]);
+        c.g[V0][0] = 0x1f;
+        loop {
+            c.cycles += 8;
+            c.sw(c.g[A0][0] as u32, 0);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            c.sw(at759(c.g[A0][0], 0x4), 0);
+            c.sw(at759(c.g[A0][0], 0x8), 0);
+            c.sw(at759(c.g[A0][0], 0xc), 0);
+            c.sb(at759(c.g[A0][0], 0x10), 0);
+            let more = c.g[V0][0] != c.g[A1][0];
+            c.g[A0][0] = sx(at759(c.g[A0][0], 0x14));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0039_97a8);
+            }
+        }
+        c.cycles += 21;
+        c.sb(at759(c.g[S0][0], 0x318), 0);
+        c.g[A0][0] = sx(at759(c.g[S0][0], 0x98));
+        c.sb(at759(c.g[S0][0], 0x319), 0);
+        c.g[A1][0] = 0;
+        c.g[RA][0] = sx(0x0039_97e0);
+        c.g[A2][0] = 0x280;
+        call_ptr(c, 0x0041_6210, 0x0039_97e0)?;
+        c.g[V1][0] = 0x4c0000;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x66c8));
+        c.ldl(4, at759(c.g[A3][0], 0x7));
+        c.ldr(4, c.g[A3][0] as u32);
+        c.ldl(5, at759(c.g[A3][0], 0xf));
+        c.ldr(5, at759(c.g[A3][0], 0x8));
+        c.sdl(4, at759(c.g[S0][0], 0x8f));
+        c.sdr(4, at759(c.g[S0][0], 0x88));
+        c.sdl(5, at759(c.g[S0][0], 0x97));
+        c.sdr(5, at759(c.g[S0][0], 0x90));
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIFontSet_LoadFonts(self)` (0x00398568): for each of the `count` (signed
+/// byte at `+0x34`) font entries (12 bytes from `+4`, the name at `+4` of the
+/// entry) create the font resource `0x84` (`0x4a4780`), load it by name
+/// (`0x3915e8`) and store the result at `entry + 0xc`.
+#[cfg(test)] // not installed: its test runs away in unslotted callees
+#[allow(dead_code)]
+pub fn ui_font_set_load_fonts_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lb((c.g[S3][0] as u32).wrapping_add(0x34));
+        let none = (c.g[V0][0] as i64) <= 0;
+        c.g[S1][0] = 0;
+        if !none {
+            c.cycles += 4;
+            c.g[S5][0] = 0x4a_0000;
+            c.g[S4][0] = 0xc;
+            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(4));
+            c.g[S0][0] = sx((c.g[S1][0] as u32) << 24);
+            loop {
+                c.cycles += 19;
+                c.g[A0][0] = 0x84;
+                c.g[S0][0] = sx(((c.g[S0][0] as u32) as i32 >> 24) as u32);
+                c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x4780));
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0031_7d70, 0x0039_85c0)?;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(4));
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A2][0] = 0;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
+                call_ptr(c, 0x0039_15e8, 0x0039_85d8)?;
+                c.mult(0, 3, 16, 20);
+                c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                c.g[V0][0] = c.lb((c.g[S3][0] as u32).wrapping_add(0x34));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx((c.g[S1][0] as u32) << 24);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0039_85a8);
+                }
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    pub(crate) use crate::game::sound::soundsys::tests::oc752_install_fakes;
 
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
@@ -4496,6 +4652,45 @@ pub(crate) mod tests {
                 };
                 c.pc = 0x0039_7cc0;
                 c.bus.write32(CTRL, CTRL_MAGIC);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    pub(crate) use crate::game::sound::soundsys::tests::OC752_CTRL;
+    pub(crate) use crate::game::sound::soundsys::tests::OC752_MAGIC;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::oc759_machine;
+
+    /// `cUIGroup_Load`: the one forwarded call, answered or unwound.
+    #[test]
+    fn ui_group_load_matches() {
+        oc752_install_fakes();
+        covered(
+            ssx3_ee::s13::f_00398618__generated,
+            ui_group_load,
+            200,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0039_8618, 1);
+                c.bus.write32(OC752_CTRL, OC752_MAGIC);
+            },
+        );
+    }
+
+    /// `UIListBox_ctor` against the generated body: base ctor and memset are
+    /// fakes (unwinds in each); the row clear loop, flags and the colour
+    /// copy are real.
+    #[test]
+    fn uilistbox_ctor_w244_matches() {
+        check(
+            ee::s13::f_00399768__generated,
+            uilistbox_ctor_w244,
+            80,
+            &|c, seed| {
+                let mut r = oc759_machine(c, seed, 0x399768, 2, 0x0039_9768);
+                let this = DATA + 0x5000;
+                c.g[A0][0] = sx(this);
+                fill(c, &mut r, this, 0x100);
+                fill(c, &mut r, 0x004c_66c8, 4);
             },
         );
     }

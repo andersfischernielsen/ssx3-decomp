@@ -13,6 +13,12 @@ use crate::events::event_due;
 pub(crate) use crate::game::ai::control::handplantcontrol::gp_4 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
+pub(crate) use crate::game::sound::bankmonitor::oc767_addiu;
+pub(crate) use crate::game::sound::bankmonitor::oc767_addu;
+pub(crate) use crate::game::sound::bankmonitor::oc767_lw;
+pub(crate) use crate::game::sound::bankmonitor::oc767_sll;
+pub(crate) use crate::game::sound::bankmonitor::oc767_sw;
+pub(crate) use crate::game::sound::bankmonitor::oc767_swr;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2 as gp_3;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -71,6 +77,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SndLoadQueue_CancelBank",
     ),
     (0x0028_b320, snd_bank_load, "SndBank_Load"),
+    (
+        0x0028_a1e8,
+        snd_load_queue_alloc_async_buffer,
+        "SndLoadQueue_AllocAsyncBuffer",
+    ),
+    (0x0028_a558, snd_load_queue_push, "SndLoadQueue_Push"),
 ];
 
 /// The audio app / view objects: `world + 0x84` is the audio system, its
@@ -2816,10 +2828,187 @@ pub fn snd_bank_load(c: &mut Cpu) {
     return;
 }
 
+/// `SndLoadQueue_StartNext` (0x28a298).
+pub(crate) const OC767_SND_LOAD_QUEUE_START_NEXT: Callee = Callee {
+    addr: 0x0028_a298,
+    f: ee::s07::f_0028a298,
+};
+
+/// Offsets in the async load system (`sAsync28A558`): the next free name
+/// slot, four ring queues (`size`, `data`, `head`, `tail`) for bank ids,
+/// slots, memory types and memory flags, and the 64-byte name slots.
+pub(crate) const SND_LOAD_SLOT: u32 = 0x08;
+
+pub(crate) const SND_LOAD_NAMES: u32 = 0x0c;
+
+pub(crate) const SND_LOAD_Q_BANK: u32 = 0x18c;
+
+pub(crate) const SND_LOAD_Q_SLOT: u32 = 0x19c;
+
+pub(crate) const SND_LOAD_Q_TYPE: u32 = 0x1ac;
+
+pub(crate) const SND_LOAD_Q_FLAGS: u32 = 0x1bc;
+
+/// The ring-queue push of `SndLoadQueue_Push` once `hi` holds
+/// `(head + 1) % size`: when that is not the tail (room left) store `value`
+/// at `data[head]` and advance `head`, wrapping to 0 at `size`. `base` holds
+/// the queue's address; the generated code loads the tail into `tail_reg`,
+/// the remainder into `hi_reg`, and leaves `v0`/`v1` as scratch.
+pub(crate) fn oc767_ring_push(
+    c: &mut Cpu,
+    base: usize,
+    tail_reg: usize,
+    hi_reg: usize,
+    value: usize,
+) {
+    c.cycles += 4;
+    c.g[tail_reg][0] = oc767_lw(c, base, 0xc);
+    c.g[hi_reg][0] = c.hi[0];
+    if c.g[hi_reg][0] == c.g[tail_reg][0] {
+        return;
+    }
+    c.cycles += 11;
+    c.g[V0][0] = oc767_lw(c, base, 8);
+    c.g[V1][0] = oc767_lw(c, base, 4);
+    oc767_sll(c, V0, V0, 2);
+    oc767_addu(c, V0, V0, V1);
+    let v = c.g[value][0];
+    oc767_sw(c, V0, 0, v);
+    c.g[V1][0] = oc767_lw(c, base, 8);
+    c.g[V0][0] = oc767_lw(c, base, 0);
+    oc767_addiu(c, V1, V1, 1);
+    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    let more = c.g[V0][0] != 0;
+    let v = c.g[V1][0];
+    oc767_sw(c, base, 8, v);
+    if !more {
+        c.cycles += 1;
+        oc767_sw(c, base, 8, 0);
+    }
+    c.cycles += 1;
+}
+
+/// `void SndLoadQueue_Push(AsyncSys* self, int bankId, char* name, int
+/// memType, int memFlags)` (0x28a558, `cAsyncSys::ASYNCSYS_QueueLoad`): queues
+/// a bank load (bank id, memory type, memory flags and the next slot number
+/// in four ring queues that drop the entry when full), copies the name into
+/// the current 64-byte name slot, advances the slot (0..5), and starts the next
+/// load.
+pub fn snd_load_queue_push(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        oc767_addiu(c, T1, S0, SND_LOAD_Q_BANK);
+        c.g[V0][0] = oc767_lw(c, S0, SND_LOAD_Q_BANK + 8);
+        c.g[V1][0] = oc767_lw(c, S0, SND_LOAD_Q_BANK);
+        oc767_addiu(c, V0, V0, 1);
+        c.div(0, V0, V1);
+
+        // bank id
+        oc767_ring_push(c, T1, V0, A0, A1);
+        c.g[V1][0] = oc767_lw(c, S0, SND_LOAD_Q_TYPE + 8);
+
+        // memory type
+        c.cycles += 6;
+        oc767_addiu(c, T1, S0, SND_LOAD_Q_TYPE);
+        c.g[V0][0] = oc767_lw(c, S0, SND_LOAD_Q_TYPE);
+        oc767_addiu(c, V1, V1, 1);
+        c.div(0, V1, V0);
+        oc767_ring_push(c, T1, V1, A0, A3);
+        c.g[V1][0] = oc767_lw(c, S0, SND_LOAD_Q_FLAGS + 8);
+
+        // memory flags
+        c.cycles += 6;
+        oc767_addiu(c, A3, S0, SND_LOAD_Q_FLAGS);
+        c.g[V0][0] = oc767_lw(c, S0, SND_LOAD_Q_FLAGS);
+        oc767_addiu(c, V1, V1, 1);
+        c.div(0, V1, V0);
+        oc767_ring_push(c, A3, V1, A0, T0);
+        c.g[A0][0] = oc767_lw(c, S0, SND_LOAD_SLOT);
+
+        // The name goes into names[slot] (64 bytes each).
+        c.cycles += 16;
+        c.g[A1][0] = c.g[A2][0];
+        oc767_sll(c, A0, A0, 6);
+        oc767_addiu(c, A0, A0, SND_LOAD_NAMES);
+        oc767_addu(c, A0, S0, A0);
+        call_ptr(c, 0x0041_66f4, 0x0028_a694)?; // strcpy
+        c.g[V0][0] = oc767_lw(c, S0, SND_LOAD_Q_SLOT + 8);
+        oc767_addiu(c, A2, S0, SND_LOAD_Q_SLOT);
+        c.g[A0][0] = oc767_lw(c, S0, SND_LOAD_Q_SLOT);
+        oc767_addiu(c, V0, V0, 1);
+        c.g[V1][0] = oc767_lw(c, S0, SND_LOAD_SLOT);
+        c.div(0, V0, A0);
+        c.g[A3][0] = c.g[V1][0];
+        oc767_addiu(c, V1, V1, 1);
+        oc767_swr(c, S0, SND_LOAD_SLOT, V1);
+        // slot number
+        oc767_ring_push(c, A2, V0, A1, A3);
+        c.g[V0][0] = oc767_lw(c, S0, SND_LOAD_SLOT);
+
+        // Six name slots: wrap.
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[V0][0] as i64) < 6) as u64;
+        if c.g[V0][0] == 0 {
+            oc767_sw(c, S0, SND_LOAD_SLOT, 0);
+        }
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        OC767_SND_LOAD_QUEUE_START_NEXT.call(c, 0x0028_a718)?;
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `SndLoadQueue::AllocAsyncBuffer(this, size)` (0x28a1e8).
+///
+/// With a non-zero `size`, allocates the async load buffer with the named
+/// allocator (`operator_new_named`, size, "...", 0, 0); the size goes to
+/// `this+0x1d0` and the buffer to `this+0x1cc`. A zero size does nothing.
+pub fn snd_load_queue_alloc_async_buffer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = c.g[A1][0];
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let no_size = c.g[V0][0] == 0;
+        c.g[S0][0] = c.g[A0][0];
+        if !no_size {
+            c.cycles += 7;
+            c.g[A1][0] = 0x48_0000;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2988));
+            let this = r32(c, S0);
+            c.sw(this.wrapping_add(SNDLOADQUEUE_ASYNC_SIZE), c.g[V0][0]);
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7e30, 0x0028_a218)?;
+            let this = r32(c, S0);
+            c.sw(this.wrapping_add(SNDLOADQUEUE_ASYNC_BUFFER), c.g[V0][0]);
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SndLoadQueue`: the async buffer size and pointer.
+pub(crate) const SNDLOADQUEUE_ASYNC_SIZE: u32 = 0x1d0;
+
+pub(crate) const SNDLOADQUEUE_ASYNC_BUFFER: u32 = 0x1cc;
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc767_install_fakes;
     pub(crate) use crate::game::sound::soundsys::tests::oc739_install;
     pub(crate) use crate::game::sound::soundsys::tests::oc749_install;
 
@@ -3730,6 +3919,135 @@ pub(crate) mod tests {
                 oc749_res(c, 0x3b6098, [7, 8, 3][(seed as usize / 4) % 3]);
                 oc749_res(c, 0x3b6528, r.next_u32() % 0x400);
                 oc749_res(c, 0x252fa0, DATA + 0xa00);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::lib::snd::tests::OC794_THIS;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC767_CTRL;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC767_MAGIC;
+
+    pub(crate) const OC767_LOAD_OBJ: u32 = DATA + 0x1000;
+
+    pub(crate) const OC767_LOAD_RINGS: u32 = DATA + 0x3000;
+
+    /// `SndLoadQueue_Push`: four ring queues of size 1-5 with random head
+    /// and tail (full queues drop the entry, size-1 queues are always full),
+    /// the name slot 0-7 (wraps at 6); the `strcpy` and `StartNext` callees
+    /// are fakes, some of which unwind.
+    #[test]
+    fn snd_load_queue_push_matches() {
+        oc767_install_fakes();
+        covered(
+            ee::s07::f_0028a558__generated,
+            snd_load_queue_push,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_a558, 2);
+                c.bus.write32(OC767_CTRL, OC767_MAGIC);
+                fill(c, &mut r, OC767_LOAD_OBJ, 0x1e0 / 4);
+                fill(c, &mut r, OC767_LOAD_RINGS, 0x100 / 4);
+                for (k, q) in [
+                    SND_LOAD_Q_BANK,
+                    SND_LOAD_Q_SLOT,
+                    SND_LOAD_Q_TYPE,
+                    SND_LOAD_Q_FLAGS,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let size = 1 + r.next_u32() % 5;
+                    c.bus.write32(OC767_LOAD_OBJ + q, size);
+                    c.bus
+                        .write32(OC767_LOAD_OBJ + q + 4, OC767_LOAD_RINGS + 0x40 * k as u32);
+                    c.bus.write32(OC767_LOAD_OBJ + q + 8, r.next_u32() % size);
+                    c.bus.write32(OC767_LOAD_OBJ + q + 0xc, r.next_u32() % size);
+                }
+                c.bus
+                    .write32(OC767_LOAD_OBJ + SND_LOAD_SLOT, r.next_u32() % 8);
+                c.g[A0][0] = sx(OC767_LOAD_OBJ);
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(DATA + 0x800);
+                c.g[A3][0] = sx(r.next_u32());
+                c.g[T0][0] = sx(r.next_u32());
+                c.pc = 0x0028_a558;
+            },
+        );
+    }
+
+    /// The word that arms oc794's callee fakes in a machine's RAM.
+    pub(crate) const OC794_CTRL: u32 = DATA + 0x32_0000;
+
+    pub(crate) const OC794_MAGIC: u32 = 0x0794_f4ce;
+
+    pub(crate) static OC794_PREV_NEW: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC794_PREV_ALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC794_PREV_CTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc794_fk_new(c: &mut Cpu) {
+        if c.bus.read32(OC794_CTRL) != OC794_MAGIC {
+            return fakes::fall_back(c, &OC794_PREV_NEW, ee::s10::f_00317e30__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e30);
+    }
+
+    pub(crate) fn oc794_fk_alloc(c: &mut Cpu) {
+        if c.bus.read32(OC794_CTRL) != OC794_MAGIC {
+            return fakes::fall_back(c, &OC794_PREV_ALLOC, ee::s10::f_00317d70__generated);
+        }
+        fakes::fake_call(c, 0x0031_7d70);
+    }
+
+    pub(crate) fn oc794_fk_ctor(c: &mut Cpu) {
+        if c.bus.read32(OC794_CTRL) != OC794_MAGIC {
+            return fakes::fall_back(c, &OC794_PREV_CTOR, ee::s08::f_002b58d0__generated);
+        }
+        fakes::fake_call(c, 0x002b_58d0);
+    }
+
+    /// Hook the gated fakes (once per process) and arm them in this machine.
+    pub(crate) fn oc794_arm(c: &mut Cpu) {
+        use std::ptr::addr_of_mut;
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            oc794_fk_new,
+            &OC794_PREV_NEW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc794_fk_alloc,
+            &OC794_PREV_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B58D0),
+            oc794_fk_ctor,
+            &OC794_PREV_CTOR,
+        );
+        c.bus.write32(OC794_CTRL, OC794_MAGIC);
+    }
+
+    /// `SndLoadQueue_AllocAsyncBuffer`: zero and non-zero sizes and the
+    /// unwind of the allocator call.
+    #[test]
+    fn snd_load_queue_alloc_async_buffer_matches() {
+        fakes::covered(
+            ee::s07::f_0028a1e8__generated,
+            snd_load_queue_alloc_async_buffer,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x794b, 1);
+                oc794_arm(c);
+                c.pc = 0x0028_a1e8;
+                c.g[A0][0] = sx(OC794_THIS);
+                c.g[A1][0] = if seed % 3 == 0 {
+                    0
+                } else {
+                    sx(r.next_u32() & 0xf_fff0 | 0x10)
+                };
             },
         );
     }

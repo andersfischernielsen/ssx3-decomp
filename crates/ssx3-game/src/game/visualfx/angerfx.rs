@@ -10,15 +10,19 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::game::ai::rider::per_tick_60;
+#[cfg(test)]
+pub(crate) use crate::game::fe::uitemplatemap::OC758_CTRL;
+#[cfg(test)]
+pub(crate) use crate::game::fe::uitemplatemap::OC758_MAGIC;
 pub(crate) use crate::game::visualfx::boardwakefx::gp;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use crate::tick;
-#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -55,6 +59,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002d_5750, avalanche_compare_u16, "Avalanche_CompareU16"),
     (0x0037_15b0, memitter_free_data, "mEmitter_FreeData"),
     (0x002d_5048, c_anger_fx_render, "cAngerFX_Render"),
+    (0x002d_48f0, c_anger_fx_ctor, "cAngerFX_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1217,10 +1222,171 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
     })
 }
 
+/// `cAngerFX* cAngerFX_ctor(cAngerFX* self, int is_derived)` (0x2d48f0): the
+/// air-streamer constructor's twin: base constructor on `self+0x10`, hook
+/// installs, descriptor copies, a 0x58-byte `operator_new_named` buffer at
+/// `self+4`, `cAngerFX_Reset`.
+pub fn c_anger_fx_ctor(c: &mut Cpu) {
+    'b_2d4920: {
+        c.cycles += 8;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x140));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.g[S1][0] = c.g[A1][0];
+        let t = c.g[S1][0] == 0u64;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x100), c.g[RA][0]);
+        if t {
+            break 'b_2d4920;
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+            c.g[A0][0] = c.g[V0][0];
+            c.g[RA][0] = sx(0x002d4920);
+            c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+            c.pc = 0x0011b698;
+            call_indirect(c, 0x0011b698);
+            if c.pc != 0x002d4920 {
+                return;
+            }
+            break 'b_2d4920;
+        }
+    }
+    'b_2d4a28: {
+        c.cycles += 17;
+        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+        c.g[V0][0] = 0x490000;
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7540));
+        c.g[A3][0] = c.g[V0][0];
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A2][0]);
+        c.g[V0][0] = 0x460000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6470));
+        c.g[V1][0] = 0x490000;
+        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+        c.g[T3][0] = c.g[V1][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x74f8));
+        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x6d0), c.g[V0][0]);
+        c.g[A1][0] = 0x480000;
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        let t = c.g[S1][0] != 0u64;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x6c0), c.g[V1][0]);
+        if t {
+            break 'b_2d4a28;
+        } else {
+            c.cycles += 3;
+            c.g[V1][0] = c.g[SP][0];
+            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x40));
+            c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+            'l_2d4970: loop {
+                c.cycles += 11;
+                c.g[A0][0] = c.ld(c.g[A2][0] as u32);
+                c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[T2][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+                c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
+                c.sd(c.g[V1][0] as u32, c.g[A0][0]);
+                c.sd((c.g[V1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
+                c.sd((c.g[V1][0] as u32).wrapping_add(0x10), c.g[T2][0]);
+                c.sd((c.g[V1][0] as u32).wrapping_add(0x18), c.g[T4][0]);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                let t = c.g[A2][0] != c.g[V0][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002d4970);
+                    }
+                    continue 'l_2d4970;
+                } else {
+                    c.cycles += 14;
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x7540));
+                    c.g[A3][0] = c.ld(c.g[A2][0] as u32);
+                    c.sd(c.g[V1][0] as u32, c.g[A3][0]);
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
+                    c.g[A3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x74f8));
+                    c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
+                    c.g[T2][0] = sx((c.g[A3][0] as u32).wrapping_add(0xa0));
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[A2][0] = c.g[T1][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
+                    c.g[T0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                    'l_2d49d4: loop {
+                        c.cycles += 11;
+                        c.g[V0][0] = c.ld(c.g[A3][0] as u32);
+                        c.g[V1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x8));
+                        c.g[A0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x10));
+                        c.g[T4][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x18));
+                        c.sd(c.g[A2][0] as u32, c.g[V0][0]);
+                        c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                        c.sd((c.g[A2][0] as u32).wrapping_add(0x10), c.g[A0][0]);
+                        c.sd((c.g[A2][0] as u32).wrapping_add(0x18), c.g[T4][0]);
+                        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x20));
+                        let t = c.g[A3][0] != c.g[T2][0];
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002d49d4);
+                            }
+                            continue 'l_2d49d4;
+                        } else {
+                            c.cycles += 10;
+                            c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x74f8));
+                            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                            c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x8));
+                            c.g[V0][0] = c.ld(c.g[A3][0] as u32);
+                            c.g[T2][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x8));
+                            c.sd(c.g[A2][0] as u32, c.g[V0][0]);
+                            c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[T2][0]);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                            c.sw((c.g[A0][0] as u32).wrapping_add(0x6c0), c.g[T1][0]);
+                            c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V1][0]);
+                            break 'b_2d4a28;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    c.cycles += 18;
+    c.g[A0][0] = 0x58;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7518));
+    c.g[A2][0] = 0u64;
+    c.g[RA][0] = sx(0x002d4a3c);
+    c.g[A3][0] = 0u64;
+    c.pc = 0x00317e30;
+    call_indirect(c, 0x00317e30);
+    if c.pc != 0x002d4a3c {
+        return;
+    }
+    c.g[A0][0] = 0xffffffffffffffff;
+    c.g[V1][0] = 0x1;
+    c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+    c.g[RA][0] = sx(0x002d4a54);
+    c.g[A0][0] = c.g[S0][0];
+    c.pc = 0x002d4be0;
+    ee::s09::f_002d4be0(c);
+    if c.pc != 0x002d4a54 {
+        return;
+    }
+    c.g[V0][0] = c.g[S0][0];
+    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x100));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x140));
+    c.pc = t;
+    return;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::visualfx::renderstateman::tests::oc758_install_fakes;
 
     use crate::difftest::fakes::machine;
 
@@ -1712,6 +1878,37 @@ pub(crate) mod tests {
             c_anger_fx_render,
             240,
             &anger_fx_render_setup,
+        );
+    }
+
+    /// Shared fixture of the three FX constructors: `self` with a word at
+    /// +0 pointing at an owner block (its slots +0x6c0/+0x6d0/+0x6e8 get
+    /// written), `a1 == 0` (the copy loops run, no base constructor) or
+    /// non-zero (base constructor call, no copy loops), a fake unwinding at
+    /// one of the (up to three) calls.
+    pub(crate) fn oc758_ctor_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = machine(c, seed, salt, 3);
+        oc758_install_fakes();
+        c.bus.write32(OC758_CTRL, OC758_MAGIC);
+        c.pc = entry;
+        let this = DATA + 0x1000;
+        c.bus.write32(this, DATA + 0x4000);
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = if seed % 2 == 0 {
+            0
+        } else {
+            sx(r.next_u32() | 1)
+        };
+    }
+
+    /// `cAngerFX_ctor` with both `a1` modes and unwinds.
+    #[test]
+    fn c_anger_fx_ctor_matches() {
+        covered(
+            ee::s09::f_002d48f0__generated,
+            c_anger_fx_ctor,
+            120,
+            &|c, seed| oc758_ctor_setup(c, seed, 0x2d48f0, 0x002d_48f0),
         );
     }
 }
