@@ -82,14 +82,6 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
-#[cfg(feature = "oc1400")]
-pub mod oc1400;
-#[cfg(feature = "oc1401")]
-pub mod oc1401;
-#[cfg(feature = "oc1402")]
-pub mod oc1402;
-#[cfg(feature = "oc1403")]
-pub mod oc1403;
 #[cfg(feature = "oc643")]
 pub mod oc643;
 #[cfg(feature = "oc658")]
@@ -138,14 +130,6 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(oc1123::OVERRIDES);
     #[cfg(feature = "oc658")]
     v.extend_from_slice(oc658::OVERRIDES);
-    #[cfg(feature = "oc1400")]
-    v.extend_from_slice(oc1400::OVERRIDES);
-    #[cfg(feature = "oc1401")]
-    v.extend_from_slice(oc1401::OVERRIDES);
-    #[cfg(feature = "oc1402")]
-    v.extend_from_slice(oc1402::OVERRIDES);
-    #[cfg(feature = "oc1403")]
-    v.extend_from_slice(oc1403::OVERRIDES);
     #[cfg(feature = "oc643")]
     v.extend_from_slice(oc643::OVERRIDES);
     v.extend_from_slice(movie::overrides());

@@ -41,6 +41,9 @@ pub(crate) use crate::game::object::flexrailnode::spa;
 pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 pub(crate) use crate::game::sound::bankmonitor::leave;
+pub(crate) use crate::game::world::wscriptcache::callee::AV_PLAYER_INIT;
+pub(crate) use crate::game::world::wscriptcache::callee::RCMP_DECODER_RELEASE_CODEC;
+pub(crate) use crate::game::world::wscriptcache::callee::STREAM_FILE_RELEASE_CHUNK;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -371,6 +374,50 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_4690, shp_clone, "SHP_Clone"),
     (0x003b_4708, shp_is_palette_format, "SHP_IsPaletteFormat"),
     (0x003b_3e40, shp_calc_pixel_offset, "SHP_CalcPixelOffset"),
+    (0x003a_ddc0, av_player_ctor, "AV_Player_ctor"),
+    (0x003a_de58, av_player_ctor_3, "AV_Player_ctor_3"),
+    (0x003a_de90, av_player_ctor_4, "AV_Player_ctor_4"),
+    (0x003a_dec8, av_player_init, "AV_Player_Init"),
+    (0x003a_e300, av_player_shutdown, "AV_Player_Shutdown"),
+    (0x003a_e450, av_player_start, "AV_Player_Start"),
+    (0x003a_e780, av_player_is_frame_due, "AV_Player_IsFrameDue"),
+    (0x003a_e9a0, av_player_get_time_ms, "AV_Player_GetTimeMs"),
+    (0x003a_ead0, av_player_on_chunk, "AV_Player_OnChunk"),
+    (
+        0x003a_ecb8,
+        av_player_get_chunk_callback,
+        "AV_Player_GetChunkCallback",
+    ),
+    (0x003a_f0c8, av_create_subtitles, "AV_CreateSubtitles"),
+    (0x003a_f428, av_parse_justify, "AV_ParseJustify"),
+    (0x003a_f560, av_parse_int_field, "AV_ParseIntField"),
+    (0x003a_f670, av_find_token, "AV_FindToken"),
+    (0x003a_f7f0, av_parse_subtitles, "AV_ParseSubtitles"),
+    (0x003b_03a8, av_subtitle_set_x, "AV_SubtitleSetX"),
+    (0x003b_03b0, av_subtitle_set_y, "AV_SubtitleSetY"),
+    (0x003b_03b8, av_subtitle_set_width, "AV_SubtitleSetWidth"),
+    (0x003b_03c0, av_subtitle_set_height, "AV_SubtitleSetHeight"),
+    (
+        0x003b_03c8,
+        av_subtitle_set_string_id,
+        "AV_SubtitleSetStringId",
+    ),
+    (0x003b_03d0, av_subtitle_set_frame, "AV_SubtitleSetFrame"),
+    (
+        0x003b_03d8,
+        av_subtitle_set_justify_x,
+        "AV_SubtitleSetJustifyX",
+    ),
+    (
+        0x003b_03e0,
+        av_subtitle_set_justify_y,
+        "AV_SubtitleSetJustifyY",
+    ),
+    (0x003b_03e8, av_subtitle_set_shape, "AV_SubtitleSetShape"),
+    (0x003b_03f0, av_subtitle_set_color0, "AV_SubtitleSetColor0"),
+    (0x003b_03f8, av_subtitle_set_color1, "AV_SubtitleSetColor1"),
+    (0x003b_0400, av_subtitle_set_color2, "AV_SubtitleSetColor2"),
+    (0x003b_0408, av_subtitle_set_color3, "AV_SubtitleSetColor3"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -776,6 +823,61 @@ pub(crate) mod callee {
     pub const SHP_GET_BPP: Callee = Callee {
         addr: 0x003b_39d8,
         f: ee::s13::SHP_GetBpp,
+    };
+
+    pub(crate) const SND_IS_INITIALIZED: Callee = Callee {
+        addr: 0x003b_5440,
+        f: ee::s13::SND_IsInitialized,
+    };
+
+    pub(crate) const AV_FIND_TOKEN: Callee = Callee {
+        addr: 0x003a_f670,
+        f: ee::s13::AV_FindToken,
+    };
+
+    pub(crate) const AV_PARSE_INT_FIELD: Callee = Callee {
+        addr: 0x003a_f560,
+        f: ee::s13::AV_ParseIntField,
+    };
+
+    pub(crate) const AV_PARSE_JUSTIFY: Callee = Callee {
+        addr: 0x003a_f428,
+        f: ee::s13::AV_ParseJustify,
+    };
+
+    pub(crate) const AV_SUBTITLE_SET_JUSTIFY_X: Callee = Callee {
+        addr: 0x003b_03d8,
+        f: ee::s13::AV_SubtitleSetJustifyX,
+    };
+
+    pub(crate) const AV_SUBTITLE_SET_JUSTIFY_Y: Callee = Callee {
+        addr: 0x003b_03e0,
+        f: ee::s13::AV_SubtitleSetJustifyY,
+    };
+
+    pub(crate) const AV_SUBTITLE_SET_SHAPE: Callee = Callee {
+        addr: 0x003b_03e8,
+        f: ee::s13::AV_SubtitleSetShape,
+    };
+
+    pub(crate) const AV_SUBTITLE_SET_COLOR0: Callee = Callee {
+        addr: 0x003b_03f0,
+        f: ee::s13::AV_SubtitleSetColor0,
+    };
+
+    pub(crate) const AV_SUBTITLE_SET_COLOR1: Callee = Callee {
+        addr: 0x003b_03f8,
+        f: ee::s13::AV_SubtitleSetColor1,
+    };
+
+    pub(crate) const AV_SUBTITLE_SET_COLOR2: Callee = Callee {
+        addr: 0x003b_0400,
+        f: ee::s13::AV_SubtitleSetColor2,
+    };
+
+    pub(crate) const AV_SUBTITLE_SET_COLOR3: Callee = Callee {
+        addr: 0x003b_0408,
+        f: ee::s13::AV_SubtitleSetColor3,
     };
 }
 
@@ -1902,23 +2004,6 @@ pub fn av_player_set_volume(c: &mut Cpu) {
             AV_AUDIO_SET_VOLUME.call(c, 0x003a_e994)?;
         }
         c.cycles += 3;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void AV_Player_GetChunkCallback(AV_Player *this, void *user)` (0x3aecb8):
-/// `AV_Player_OnChunk(*user, this)`.
-pub fn av_player_get_chunk_callback(c: &mut Cpu) {
-    call::guest(c, |c| {
-        c.cycles += 9;
-        let frame = Frame::open(c, 0x10);
-        c.g[V0][0] = c.g[A0][0];
-        frame.save_ra(c, 0);
-        c.g[A0][0] = Addr(c.g[A1][0] as u32).lw(c);
-        c.g[A1][0] = c.g[V0][0];
-        AV_PLAYER_ON_CHUNK.call(c, 0x003a_ecd0)?;
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -9135,6 +9220,3887 @@ pub fn shp_calc_pixel_offset(c: &mut Cpu) {
     })
 }
 
+/// `void AV_SubtitleSetX(AVSubtitle* self, int x)` (0x3b03a8): store the x
+/// field at +0x0.
+pub fn av_subtitle_set_x(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetY(AVSubtitle* self, int y)` (0x3b03b0): store the y
+/// field at +0x4.
+pub fn av_subtitle_set_y(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x4).sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetWidth(AVSubtitle* self, int w)` (0x3b03b8): store the
+/// width field at +0x8.
+pub fn av_subtitle_set_width(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x8).sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetHeight(AVSubtitle* self, int h)` (0x3b03c0): store the
+/// height field at +0xc.
+pub fn av_subtitle_set_height(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0xc).sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetStringId(AVSubtitle* self, int id)` (0x3b03c8): store
+/// the string id field at +0x10.
+pub fn av_subtitle_set_string_id(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x10).sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetFrame(AVSubtitle* self, int frame)` (0x3b03d0): store
+/// the frame field at +0x14.
+pub fn av_subtitle_set_frame(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x14).sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetJustifyX(AVSubtitle* self, int jx)` (0x3b03d8): store
+/// the x-justify field at +0x18.
+pub fn av_subtitle_set_justify_x(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x18).sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetJustifyY(AVSubtitle* self, int jy)` (0x3b03e0): store
+/// the y-justify field at +0x1c.
+pub fn av_subtitle_set_justify_y(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x1c).sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetShape(AVSubtitle* self, int shape)` (0x3b03e8): store
+/// the shape field at +0x20.
+pub fn av_subtitle_set_shape(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x20).sw(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetColor0(AVSubtitle* self, int color)` (0x3b03f0):
+/// store the first color byte at +0x24.
+pub fn av_subtitle_set_color0(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x24).sb(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetColor1(AVSubtitle* self, int color)` (0x3b03f8):
+/// store the second color byte at +0x25.
+pub fn av_subtitle_set_color1(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x25).sb(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetColor2(AVSubtitle* self, int color)` (0x3b0400):
+/// store the third color byte at +0x26.
+pub fn av_subtitle_set_color2(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x26).sb(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `void AV_SubtitleSetColor3(AVSubtitle* self, int color)` (0x3b0408):
+/// store the fourth color byte at +0x27.
+pub fn av_subtitle_set_color3(c: &mut Cpu) {
+    c.cycles += 2;
+    let self_ = Addr(abi::arg(c, 0));
+    self_.off(0x27).sb(c, c.g[A1][0]);
+    abi::ret(c);
+}
+
+/// `int AV_StrICmp(const char*, const char*)` (0x3af378): case-insensitive
+/// string compare, used here to match subtitle justification names.
+pub(crate) const AV_STR_ICMP: Callee = Callee {
+    addr: 0x003a_f378,
+    f: ee::s13::f_003af378,
+};
+
+/// `void AV_SkipWhitespace(const char**, int*)` (0x3af300): advance over
+/// leading whitespace, used here before token matching.
+pub(crate) const AV_SKIP_WHITESPACE: Callee = Callee {
+    addr: 0x003a_f300,
+    f: ee::s13::f_003af300,
+};
+
+/// `float RCMP_DECODER_GetFrameRate(RCMP_DECODER*)` (0x3b05c0): the codec's
+/// frame rate (0 when it has no object yet).
+pub(crate) const RCMP_DECODER_GET_FRAME_RATE: Callee = Callee {
+    addr: 0x003b_05c0,
+    f: ee::s13::f_003b05c0,
+};
+
+/// `int AV_Player_GetTimeMs(AV_Player*)` (0x3ae9a0): the player's media
+/// clock in milliseconds (ported below; called by the frame-due test).
+pub(crate) const AV_PLAYER_GET_TIME_MS: Callee = Callee {
+    addr: 0x003a_e9a0,
+    f: ee::s13::f_003ae9a0,
+};
+
+/// `int SND_GetOutputLatency(void)` (0x3b5f60): nonzero path calls the
+/// platform latency hook, but both arms return 0.
+pub(crate) const SND_GET_OUTPUT_LATENCY: Callee = Callee {
+    addr: 0x003b_5f60,
+    f: ee::s13::f_003b5f60,
+};
+
+/// `void* AV_Player_ctor(AV_Player* self, int a1, int a2, int a3, int a4)`
+/// (0x3addc0): clear the word at +0x60, then initialise with
+/// `(a1, 0, a2, 0, 0, 0, a3, a4)` (the last word travels on the stack).
+/// Returns `self`.
+pub fn av_player_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        c.g[T3][0] = c.g[A3][0];
+        frame.save(c, S0, 0x20);
+        c.g[A3][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        let stacked = c.g[T0][0];
+        c.sw(frame.at(c, 0), stacked);
+        let this = c.g[S0][0] as u32;
+        Addr(this).off(0x60).sw(c, 0);
+        c.g[A2][0] = 0;
+        c.g[T0][0] = 0;
+        c.g[T1][0] = 0;
+        c.g[T2][0] = 0;
+        AV_PLAYER_INIT.call(c, 0x003a_ddf4)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* AV_Player_ctor_3(AV_Player* self, ...)` (0x3ade58): clear the word
+/// at +0x60 and forward all eight constructor arguments to
+/// `AV_Player_Init` (the eighth arrives on the caller's stack). Returns
+/// `self`.
+pub fn av_player_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = Addr(frame.at(c, 0x30)).lw(c);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        let this = c.g[S0][0] as u32;
+        Addr(this).off(0x60).sw(c, 0);
+        let stacked = c.g[V0][0];
+        c.sw(frame.at(c, 0), stacked);
+        AV_PLAYER_INIT.call(c, 0x003a_de78)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* AV_Player_ctor_4(AV_Player* self, ...)` (0x3ade90): clear the word
+/// at +0x60, forward the stacked seventh argument, and initialise with a
+/// constant 2 in the seventh register slot. Returns `self`.
+pub fn av_player_ctor_4(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        let stacked = c.g[T3][0];
+        c.sw(frame.at(c, 0), stacked);
+        let this = c.g[S0][0] as u32;
+        Addr(this).off(0x60).sw(c, 0);
+        c.g[T3][0] = 0x2;
+        AV_PLAYER_INIT.call(c, 0x003a_deb0)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AV_Player_GetChunkCallback(AV_Player* this, void* user)` (0x3aecb8):
+/// `AV_Player_OnChunk(*user, this)` (9 cycles, one 0x10 frame, `v0` holds
+/// the player across the load).
+pub fn av_player_get_chunk_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        AV_PLAYER_ON_CHUNK.call(c, 0x003a_ecd0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int AV_ParseIntField(char** pp, int* plen, int* out)` (0x3af560): scan
+/// `*pp` for a tab/LF within `*plen` bytes, NUL it, parse the head with
+/// `strtol` base 10, shrink `*plen` past the consumed bytes, restore the
+/// delimiter unless it landed exactly on the new end, and store the value.
+/// Returns 1 when digits parsed, 0 when the head is empty.
+pub fn av_parse_int_field(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = 0;
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x20);
+        c.g[S3][0] = 0x9;
+        frame.save_ra(c, 0x10);
+        // `i` (S0) scans `*pp` (S2) for the first tab/LF; `delim` (S3) remembers
+        // it (9 when the scan runs out). The NUL goes in the delay slot.
+        'scan: {
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+            let empty_len = c.g[V0][0] == 0;
+            // Delay slot of the length test: stash `*out` on both paths.
+            c.g[S4][0] = c.g[A2][0];
+            if empty_len {
+                break 'scan;
+            }
+            'found: {
+                'first: {
+                    c.cycles += 7;
+                    c.g[V1][0] = Addr(c.g[S2][0] as u32).lw(c);
+                    c.g[A1][0] = c.g[V1][0];
+                    c.g[V1][0] = Addr(c.g[V1][0] as u32).lbu(c);
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x9));
+                    c.g[V0][0] = (c.g[V0][0] < 0x2) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                        break 'first;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 24);
+                    Addr(c.g[A1][0] as u32).sb(c, 0);
+                    break 'found;
+                }
+                'search: loop {
+                    c.cycles += 4;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        break 'scan;
+                    }
+                    c.cycles += 5;
+                    c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x9));
+                    c.g[V0][0] = (c.g[V0][0] < 0x2) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_f5c0);
+                        }
+                        continue 'search;
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 24);
+                    Addr(c.g[A0][0] as u32).sb(c, 0);
+                    break 'found;
+                }
+            }
+            // The delimiter byte, sign-extended (0 when no delimiter was NULled,
+            // 9/0xA for tab/LF).
+            c.cycles += 1;
+            c.g[S3][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+        }
+        // Parse the (possibly NUL-shortened) head; `end` lands on the stack.
+        c.cycles += 12;
+        c.g[A0][0] = Addr(c.g[S2][0] as u32).lw(c);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0xa;
+        call_ptr(c, 0x0041_e9e0, 0x003a_f600)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V1][0] = c.lw(frame.at(c, 0));
+        c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        let new_len = c.g[A0][0];
+        Addr(c.g[S1][0] as u32).sw(c, new_len);
+        if c.g[S0][0] != c.g[A0][0] {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            let delim = c.g[S3][0];
+            Addr(c.g[V0][0] as u32).sb(c, delim);
+        }
+        // Empty head: 0, leaving `*out` alone. Otherwise store the value, 1.
+        c.cycles += 4;
+        c.g[V1][0] = Addr(c.g[S2][0] as u32).lw(c);
+        c.g[V0][0] = c.lw(frame.at(c, 0));
+        let at_end = c.g[V0][0] == c.g[V1][0];
+        c.g[V0][0] = 0x1;
+        if !at_end {
+            c.cycles += 4;
+            c.g[V1][0] = c.g[A1][0] << 32;
+            c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
+            let r = c.g[V1][0];
+            Addr(c.g[S4][0] as u32).sw(c, r);
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int AV_ParseJustify(char* s, int len)` (0x3af428): NUL the first
+/// tab/CR in `s` (remembering it), look `s` up in the five justification
+/// names (`AV_StrICmp`, values from the table beside them), restore the
+/// byte unless it sat exactly on the end, and return the value (-1 for no
+/// match).
+pub fn av_parse_justify(c: &mut Cpu) {
+    let entry = c.pc;
+    guest(c, |c| av_parse_justify_body(c, entry))
+}
+
+pub(crate) fn av_parse_justify_body(c: &mut Cpu, mut pc: u32) -> Flow {
+    let frame = Frame { size: 0xc0 };
+    loop {
+        match pc {
+            // Entry: spill registers, point at the name/value tables.
+            0x003a_f428 => {
+                c.cycles += 16;
+                c.g[SP][0] = sx(sp(c).wrapping_sub(0xc0));
+                frame.save(c, S3, 0x80);
+                frame.save(c, S4, 0x70);
+                c.g[S3][0] = 0;
+                frame.save(c, S5, 0x60);
+                c.g[S4][0] = c.g[A0][0];
+                frame.save(c, S6, 0x50);
+                c.g[S5][0] = c.g[A1][0];
+                frame.save(c, S0, 0xb0);
+                c.g[S6][0] = 0x9;
+                frame.save(c, S1, 0xa0);
+                frame.save(c, S2, 0x90);
+                frame.save_ra(c, 0x40);
+                c.g[A1][0] = 0x490000;
+                c.g[A2][0] = 0x490000;
+                pc = 0x003a_f468;
+            }
+            // Scan head: `s[i]` while `i < len`.
+            0x003a_f468 => {
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[S3][0] < c.g[S5][0]) as u64;
+                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                if c.g[V0][0] == 0 {
+                    pc = 0x003a_f494;
+                } else {
+                    pc = 0x003a_f474;
+                }
+            }
+            // Tab or CR ends the scan (its byte is remembered, NULled next).
+            0x003a_f474 => {
+                c.cycles += 4;
+                c.g[V0][0] = 0x9;
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lb(c);
+                let is_tab = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = 0xd;
+                if is_tab {
+                    pc = 0x003a_f48c;
+                } else {
+                    pc = 0x003a_f484;
+                }
+            }
+            // Any other byte keeps scanning.
+            0x003a_f484 => {
+                c.cycles += 2;
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                    if back_edge_unwinds(c, 0x003a_f468) {
+                        return Ok(());
+                    }
+                    pc = 0x003a_f468;
+                } else {
+                    pc = 0x003a_f48c;
+                }
+            }
+            // Found: NUL the delimiter, remember it.
+            0x003a_f48c => {
+                c.cycles += 2;
+                Addr(c.g[A0][0] as u32).sb(c, 0);
+                c.g[S6][0] = c.g[V1][0];
+                pc = 0x003a_f494;
+            }
+            // Copy the five name pointers and values onto the stack.
+            0x003a_f494 => {
+                c.cycles += 27;
+                c.g[A3][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5290));
+                c.ldl(2, (c.g[A3][0] as u32).wrapping_add(0x7));
+                c.ldr(2, c.g[A3][0] as u32);
+                c.ldl(3, (c.g[A3][0] as u32).wrapping_add(0xf));
+                c.ldr(3, (c.g[A3][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+                c.sdl(2, frame.at(c, 0x7));
+                c.sdr(2, frame.at(c, 0));
+                c.sdl(3, frame.at(c, 0xf));
+                c.sdr(3, frame.at(c, 0x8));
+                c.sw(frame.at(c, 0x10), c.g[A0][0]);
+                c.g[S1][0] = 0xffffffffffff0000;
+                c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x52a8));
+                c.ldl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
+                c.ldr(2, c.g[A1][0] as u32);
+                c.ldl(3, (c.g[A1][0] as u32).wrapping_add(0xf));
+                c.ldr(3, (c.g[A1][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10));
+                c.sdl(2, frame.at(c, 0x27));
+                c.sdr(2, frame.at(c, 0x20));
+                c.sdl(3, frame.at(c, 0x2f));
+                c.sdr(3, frame.at(c, 0x28));
+                c.sw(frame.at(c, 0x30), c.g[A0][0]);
+                c.g[S1][0] |= 0xffff;
+                c.g[S2][0] = 0;
+                c.g[S0][0] = c.g[SP][0];
+                pc = 0x003a_f504;
+            }
+            // Next table entry.
+            0x003a_f500 => {
+                c.cycles += 1;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                pc = 0x003a_f504;
+            }
+            // All five tried: give up with -1.
+            0x003a_f504 => {
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[S2][0] < 0x5) as u64;
+                if c.g[V0][0] == 0 {
+                    pc = 0x003a_f528;
+                } else {
+                    pc = 0x003a_f510;
+                }
+            }
+            // Compare one table name; on mismatch advance to the next.
+            0x003a_f510 => {
+                c.cycles += 5;
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                c.g[A1][0] = c.g[S4][0];
+                AV_STR_ICMP.call(c, 0x003a_f51c)?;
+                if c.g[V0][0] != 0 {
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    if back_edge_unwinds(c, 0x003a_f500) {
+                        return Ok(());
+                    }
+                    pc = 0x003a_f500;
+                } else {
+                    pc = 0x003a_f524;
+                }
+            }
+            // Match: the value beside the name.
+            0x003a_f524 => {
+                c.cycles += 1;
+                c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x20)).lw(c);
+                pc = 0x003a_f528;
+            }
+            // Restore the delimiter unless it sat on the end.
+            0x003a_f528 => {
+                c.cycles += 2;
+                let at_end = c.g[S3][0] == c.g[S5][0];
+                c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                if !at_end {
+                    c.cycles += 1;
+                    let at = c.g[V0][0];
+                    let delim = c.g[S6][0];
+                    Addr(at as u32).sb(c, delim);
+                    pc = 0x003a_f534;
+                } else {
+                    pc = 0x003a_f534;
+                }
+            }
+            // Return the value.
+            0x003a_f534 => {
+                c.cycles += 11;
+                c.g[V0][0] = c.g[S1][0];
+                frame.restore(c, S0, 0xb0);
+                frame.restore(c, S1, 0xa0);
+                frame.restore(c, S2, 0x90);
+                frame.restore(c, S3, 0x80);
+                frame.restore(c, S4, 0x70);
+                frame.restore(c, S5, 0x60);
+                frame.restore(c, S6, 0x50);
+                frame.restore_ra(c, 0x40);
+                frame.close(c);
+                return Ok(());
+            }
+            _ => {
+                c.jump_out(pc, 0x003a_f428, 0x003a_f560);
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// `void AV_FindToken(char** ps, int* plen, ...)` (0x3af670): skip leading
+/// whitespace, then match `*ps` against the `nwords` (word, length) pairs:
+/// on a full word match advance `*ps` past it, shrink `*plen`, and store the
+/// word index; otherwise clear the outputs (`*ps` = 0, `*plen` = 0,
+/// index = -1).
+pub fn av_find_token(c: &mut Cpu) {
+    let entry = c.pc;
+    guest(c, |c| av_find_token_body(c, entry))
+}
+
+pub(crate) fn av_find_token_body(c: &mut Cpu, mut pc: u32) -> Flow {
+    let frame = Frame { size: 0x80 };
+    loop {
+        match pc {
+            // Entry: spill registers; empty input clears the outputs.
+            0x003a_f670 => {
+                c.cycles += 17;
+                c.g[SP][0] = sx(sp(c).wrapping_sub(0x80));
+                frame.save(c, S0, 0x70);
+                frame.save(c, S1, 0x60);
+                c.g[S0][0] = c.g[A1][0];
+                frame.save(c, S2, 0x50);
+                c.g[S1][0] = c.g[T0][0];
+                frame.save(c, S3, 0x40);
+                c.g[S2][0] = c.g[A0][0];
+                frame.save(c, S4, 0x30);
+                c.g[S3][0] = c.g[T1][0];
+                frame.save(c, S5, 0x20);
+                c.g[S4][0] = c.g[A3][0];
+                frame.save_ra(c, 0x10);
+                c.g[S5][0] = c.g[A2][0];
+                c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+                let empty = c.g[V0][0] == 0;
+                c.sw(frame.at(c, 0), c.g[V0][0]);
+                if !empty {
+                    pc = 0x003a_f6e0;
+                } else {
+                    pc = 0x003a_f6b4;
+                }
+            }
+            // Null input: `*ps` = 0, then the shared failure exit.
+            0x003a_f6b4 => {
+                c.cycles += 2;
+                Addr(c.g[S2][0] as u32).sw(c, 0);
+                pc = 0x003a_f7b8;
+            }
+            // Match: advance `*ps` past the word, shrink `*plen`, store the
+            // word index; then the shared epilogue.
+            0x003a_f6bc => {
+                c.cycles += 9;
+                c.g[V0][0] = c.lw(frame.at(c, 0));
+                c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                let start = c.g[V0][0];
+                Addr(c.g[S2][0] as u32).sw(c, start);
+                c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                let left = c.g[V1][0];
+                Addr(c.g[S0][0] as u32).sw(c, left);
+                let word = c.g[T3][0];
+                Addr(c.g[S3][0] as u32).sw(c, word);
+                pc = 0x003a_f7c8;
+            }
+            // Skip whitespace; an empty remainder fails.
+            0x003a_f6e0 => {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = c.g[S0][0];
+                AV_SKIP_WHITESPACE.call(c, 0x003a_f6ec)?;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                let empty = c.g[V0][0] == 0;
+                c.g[A3][0] = 0;
+                if empty {
+                    pc = 0x003a_f7b4;
+                } else {
+                    pc = 0x003a_f6f8;
+                }
+            }
+            // Remember the (post-skip) length.
+            0x003a_f6f8 => {
+                c.cycles += 2;
+                c.g[T5][0] = c.g[V0][0];
+                pc = 0x003a_f700;
+            }
+            // Next start position; no words left means advance.
+            0x003a_f700 => {
+                c.cycles += 2;
+                let no_words = c.g[S1][0] == 0;
+                c.g[T3][0] = 0;
+                if no_words {
+                    pc = 0x003a_f7a4;
+                } else {
+                    pc = 0x003a_f708;
+                }
+            }
+            // Point at this position's string, word list and length list.
+            0x003a_f708 => {
+                c.cycles += 4;
+                c.g[T4][0] = c.lw(frame.at(c, 0));
+                c.g[T1][0] = c.g[S4][0];
+                c.g[T0][0] = c.g[S5][0];
+                pc = 0x003a_f718;
+            }
+            // Next word: empty words match immediately.
+            0x003a_f718 => {
+                c.cycles += 4;
+                c.g[T2][0] = Addr(c.g[T1][0] as u32).lw(c);
+                c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[T4][0] as u32));
+                let empty_word = c.g[T2][0] == 0;
+                c.g[A1][0] = 0;
+                if empty_word {
+                    pc = 0x003a_f788;
+                } else {
+                    pc = 0x003a_f728;
+                }
+            }
+            // Past the end: this word cannot match here.
+            0x003a_f728 => {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                c.g[V0][0] = (c.g[A3][0] < c.g[V0][0]) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = Addr(c.g[T1][0] as u32).lw(c);
+                    pc = 0x003a_f78c;
+                } else {
+                    pc = 0x003a_f738;
+                }
+            }
+            // First bytes differ: this word cannot match here.
+            0x003a_f738 => {
+                c.cycles += 5;
+                c.g[V0][0] = Addr(c.g[T0][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[A2][0] as u32).lb(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lb(c);
+                if c.g[V1][0] != c.g[A0][0] {
+                    c.g[V0][0] = Addr(c.g[T1][0] as u32).lw(c);
+                    pc = 0x003a_f78c;
+                } else {
+                    pc = 0x003a_f74c;
+                }
+            }
+            // One more byte matches.
+            0x003a_f74c => {
+                c.cycles += 1;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                pc = 0x003a_f750;
+            }
+            // Whole word matched when the count reaches its length.
+            0x003a_f750 => {
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[A1][0] < c.g[T2][0]) as u64;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                if c.g[V0][0] == 0 {
+                    pc = 0x003a_f788;
+                } else {
+                    pc = 0x003a_f75c;
+                }
+            }
+            // Still inside the remainder: compare the next byte pair.
+            0x003a_f75c => {
+                c.cycles += 5;
+                c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+                c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = Addr(c.g[T1][0] as u32).lw(c);
+                    pc = 0x003a_f78c;
+                } else {
+                    pc = 0x003a_f770;
+                }
+            }
+            // Equal so far: count the byte and keep matching.
+            0x003a_f770 => {
+                c.cycles += 6;
+                c.g[V0][0] = Addr(c.g[T0][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[A2][0] as u32).lb(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lb(c);
+                if c.g[V1][0] == c.g[A0][0] {
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                    if back_edge_unwinds(c, 0x003a_f750) {
+                        return Ok(());
+                    }
+                    pc = 0x003a_f750;
+                } else {
+                    pc = 0x003a_f788;
+                }
+            }
+            // Length reached: recheck the count against this word's length.
+            0x003a_f788 => {
+                c.cycles += 1;
+                c.g[V0][0] = Addr(c.g[T1][0] as u32).lw(c);
+                pc = 0x003a_f78c;
+            }
+            // Full match: consume the word. Otherwise try the next word.
+            0x003a_f78c => {
+                c.cycles += 2;
+                let matched = c.g[A1][0] == c.g[V0][0];
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x4));
+                if matched {
+                    if back_edge_unwinds(c, 0x003a_f6bc) {
+                        return Ok(());
+                    }
+                    pc = 0x003a_f6bc;
+                } else {
+                    pc = 0x003a_f794;
+                }
+            }
+            // Next word.
+            0x003a_f794 => {
+                c.cycles += 4;
+                c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = (c.g[T3][0] < c.g[S1][0]) as u64;
+                let more_words = c.g[V0][0] != 0;
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x4));
+                if more_words {
+                    if back_edge_unwinds(c, 0x003a_f718) {
+                        return Ok(());
+                    }
+                    pc = 0x003a_f718;
+                } else {
+                    pc = 0x003a_f7a4;
+                }
+            }
+            // Next start position.
+            0x003a_f7a4 => {
+                c.cycles += 4;
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = (c.g[A3][0] < c.g[T5][0]) as u64;
+                let more = c.g[V0][0] != 0;
+                if more {
+                    if back_edge_unwinds(c, 0x003a_f700) {
+                        return Ok(());
+                    }
+                    pc = 0x003a_f700;
+                } else {
+                    pc = 0x003a_f7b4;
+                }
+            }
+            // No match anywhere: `*ps` = 0, then the shared failure exit.
+            0x003a_f7b4 => {
+                c.cycles += 1;
+                Addr(c.g[S2][0] as u32).sw(c, 0);
+                pc = 0x003a_f7b8;
+            }
+            // Failure exit: `*plen` = 0, index = -1.
+            0x003a_f7b8 => {
+                c.cycles += 4;
+                c.g[V0][0] = 0xffffffffffff0000;
+                Addr(c.g[S0][0] as u32).sw(c, 0);
+                c.g[V0][0] |= 0xffff;
+                let none = c.g[V0][0];
+                Addr(c.g[S3][0] as u32).sw(c, none);
+                pc = 0x003a_f7c8;
+            }
+            // Shared epilogue.
+            0x003a_f7c8 => {
+                c.cycles += 9;
+                frame.restore(c, S0, 0x70);
+                frame.restore(c, S1, 0x60);
+                frame.restore(c, S2, 0x50);
+                frame.restore(c, S3, 0x40);
+                frame.restore(c, S4, 0x30);
+                frame.restore(c, S5, 0x20);
+                frame.restore_ra(c, 0x10);
+                frame.close(c);
+                return Ok(());
+            }
+            _ => {
+                c.jump_out(pc, 0x003a_f670, 0x003a_f7ec);
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// `int AV_Player_IsFrameDue(AV_Player* this)` (0x3ae780): the media time
+/// plus the base at +0x40, scaled by the codec frame rate: 1 while the
+/// scaled presentation time has not passed one frame, else 0. Negative
+/// intermediate values take a halving path through the float conversion.
+pub fn av_player_is_frame_due(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        AV_PLAYER_GET_TIME_MS.call(c, 0x003a_e798)?;
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x64).lw(c);
+        c.g[S0][0] = c.g[V0][0];
+        RCMP_DECODER_GET_FRAME_RATE.call(c, 0x003a_e7a4)?;
+        // Clock plus base; negative sums halve into the float conversion.
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x40).lw(c);
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let negative = (c.g[V0][0] as i64) < 0;
+        c.mov_s(2, 0);
+        if negative {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+            c.g[V0][0] &= 0x1;
+            c.g[V0][0] |= c.g[V1][0];
+            c.mtc1(2, 1);
+            c.cvt_s_w(1, 1);
+            c.add_s(1, 1, 1);
+        } else {
+            c.cycles += 4;
+            c.mtc1(2, 1);
+            c.cvt_s_w(1, 1);
+        }
+        // Scale by the rate and the second threshold word.
+        c.cycles += 8;
+        c.g[AT][0] = 0x3a830000;
+        c.g[AT][0] |= 0x126f;
+        c.mtc1(1, 0);
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x44).lw(c);
+        c.mul_s(0, 1, 0);
+        c.mul_s(0, 0, 2);
+        let negative2 = (c.g[V0][0] as i64) < 0;
+        c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x48));
+        if negative2 {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+            c.g[V0][0] &= 0x1;
+            c.g[V0][0] |= c.g[V1][0];
+            c.mtc1(2, 2);
+            c.cvt_s_w(2, 2);
+            c.add_s(2, 2, 2);
+        } else {
+            c.cycles += 4;
+            c.mtc1(2, 2);
+            c.cvt_s_w(2, 2);
+        }
+        // Due when a full frame's worth has accumulated.
+        c.cycles += 8;
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 0);
+        c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x48));
+        c.add_s(0, 2, 0);
+        c.c_lt_s(1, 0);
+        let over = c.fcc();
+        c.g[V0][0] = 0;
+        if !over {
+            c.cycles += 1;
+            c.g[V0][0] = 0x1;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int AV_Player_GetTimeMs(AV_Player* this)` (0x3ae9a0): the media clock in
+/// milliseconds (`accum * 1000 / tick_rate`, minus the drift offset). While
+/// enabled, the sound locks are held to sample the stream status, and the
+/// drift tracker folds the output-latency-corrected error back into the
+/// offset, resetting it once it grows past 264 ms.
+pub fn av_player_get_time_ms(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        frame.save(c, S0, 0x50);
+        c.g[S0][0] = Addr(c.g[S1][0] as u32).off(0x5c).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0042_e508, 0x003a_e9c4)?;
+        call_ptr(c, 0x003e_5008, 0x003a_e9cc)?;
+        // The tick rate is re-tested here; both arms fall through.
+        c.g[A0][0] = c.ld((c.g[S0][0] as u32).wrapping_add(0x8));
+        // Milliseconds from the 1000x-scaled accumulator.
+        c.cycles += 12;
+        c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x4c).lw(c);
+        c.g[V1][0] = c.g[A0][0] << 5;
+        c.g[A1][0] = Addr(c.g[S1][0] as u32).off(0x54).lw(c);
+        c.g[V1][0] = c.g[V1][0].wrapping_sub(c.g[A0][0]);
+        c.g[V1][0] = c.g[V1][0] << 2;
+        c.g[V1][0] = c.g[V1][0].wrapping_add(c.g[A0][0]);
+        c.g[V1][0] = c.g[V1][0] << 35;
+        c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
+        c.divu(0, V1, V0);
+        c.g[S2][0] = c.lo[0];
+        let sound_off = c.g[A1][0] == 0;
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+        if !sound_off {
+            c.cycles += 19;
+            SND_LOCK.call(c, 0x003a_ea10)?;
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+            c.g[A1][0] = sx(frame.at(c, 0x10));
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+            SNDSTRM_GET_STATUS.call(c, 0x003a_ea20)?;
+            c.g[A0][0] = c.lw(frame.at(c, 0x14));
+            c.g[A1][0] = c.g[SP][0];
+            SNDSTRM_GET_REQUEST_STATUS.call(c, 0x003a_ea2c)?;
+            SND_UNLOCK.call(c, 0x003a_ea34)?;
+            SND_GET_OUTPUT_LATENCY.call(c, 0x003a_ea3c)?;
+            // Behind only when the stream's last position lags the sample.
+            c.g[A0][0] = c.lw(frame.at(c, 0x4));
+            c.g[V1][0] = Addr(c.g[S1][0] as u32).off(0x50).lw(c);
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            let behind = (c.g[V1][0] as i64) < (c.g[V0][0] as i64);
+            c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+            if behind {
+                c.cycles += 15;
+                c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x58).lw(c);
+                c.g[A2][0] = u64::MAX;
+                let fresh = c.g[V0][0];
+                Addr(c.g[S1][0] as u32).off(0x50).sw(c, fresh);
+                let nonneg = (c.g[A2][0] as i64) < (c.g[A0][0] as i64);
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7));
+                if nonneg {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 3) as u32);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[V0][0] = sx(0u32.wrapping_sub(c.g[A0][0] as u32));
+                let negative = (c.g[V0][0] as i64) < (c.g[A0][0] as i64);
+                if negative {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                let settled = (c.g[V0][0] as i64) < 265;
+                let drift = c.g[A0][0];
+                Addr(c.g[S1][0] as u32).off(0x58).sw(c, drift);
+                if !settled {
+                    c.cycles += 9;
+                    let nonneg2 = (c.g[A2][0] as i64) < (c.g[A0][0] as i64);
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7));
+                    if nonneg2 {
+                        c.g[V1][0] = c.g[A0][0];
+                    }
+                    Addr(c.g[S1][0] as u32).off(0x58).sw(c, 0);
+                    c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x4c).lw(c);
+                    c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 3) as u32);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    let offset = c.g[A0][0];
+                    Addr(c.g[S1][0] as u32).off(0x4c).sw(c, offset);
+                    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                }
+            }
+        }
+        c.cycles += 7;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AV_SubtitleInit(AVSubtitle *self)` (0x3b0340).
+pub(crate) const AV_SUBTITLE_INIT: Callee = Callee {
+    addr: 0x003b_0340,
+    f: ee::s13::f_003b0340,
+};
+
+/// `void AV_SubtitleSetX(AVSubtitle *self, int x)` (0x3b03a8).
+pub(crate) const AV_SUBTITLE_SET_X: Callee = Callee {
+    addr: 0x003b_03a8,
+    f: ee::s13::f_003b03a8,
+};
+
+/// `void AV_SubtitleSetY(AVSubtitle *self, int y)` (0x3b03b0).
+pub(crate) const AV_SUBTITLE_SET_Y: Callee = Callee {
+    addr: 0x003b_03b0,
+    f: ee::s13::f_003b03b0,
+};
+
+/// `void AV_SubtitleSetWidth(AVSubtitle *self, int width)` (0x3b03b8).
+pub(crate) const AV_SUBTITLE_SET_WIDTH: Callee = Callee {
+    addr: 0x003b_03b8,
+    f: ee::s13::f_003b03b8,
+};
+
+/// `void AV_SubtitleSetHeight(AVSubtitle *self, int height)` (0x3b03c0).
+pub(crate) const AV_SUBTITLE_SET_HEIGHT: Callee = Callee {
+    addr: 0x003b_03c0,
+    f: ee::s13::f_003b03c0,
+};
+
+/// `void AV_SubtitleSetStringId(AVSubtitle *self, int id)` (0x3b03c8).
+pub(crate) const AV_SUBTITLE_SET_STRING_ID: Callee = Callee {
+    addr: 0x003b_03c8,
+    f: ee::s13::f_003b03c8,
+};
+
+/// `void AV_SubtitleSetFrame(AVSubtitle *self, int frame)` (0x3b03d0).
+pub(crate) const AV_SUBTITLE_SET_FRAME: Callee = Callee {
+    addr: 0x003b_03d0,
+    f: ee::s13::f_003b03d0,
+};
+
+/// `void AV_Audio_dtor(AV_Audio *self, int flags)` (0x3aee30).
+pub(crate) const AV_AUDIO_DTOR: Callee = Callee {
+    addr: 0x003a_ee30,
+    f: ee::s13::f_003aee30,
+};
+
+/// `void *AV_Audio_Init(AV_Audio *self, int a1, int a2)` (0x3aed40).
+pub(crate) const AV_AUDIO_INIT: Callee = Callee {
+    addr: 0x003a_ed40,
+    f: ee::s13::f_003aed40,
+};
+
+/// `int AV_Audio_Start(AV_Audio *self)` (0x3aeef8).
+pub(crate) const AV_AUDIO_START: Callee = Callee {
+    addr: 0x003a_eef8,
+    f: ee::s13::f_003aeef8,
+};
+
+/// `void RCMP_MakeCallbacks(...)` (0x3b0758).
+pub(crate) const RCMP_MAKE_CALLBACKS: Callee = Callee {
+    addr: 0x003b_0758,
+    f: ee::s13::f_003b0758,
+};
+
+/// `RCMP_DECODER *RCMP_DECODER_ctor(RCMP_DECODER *self, void *key)`
+/// (0x3b0430).
+pub(crate) const RCMP_DECODER_CTOR: Callee = Callee {
+    addr: 0x003b_0430,
+    f: ee::s13::f_003b0430,
+};
+
+/// `int RCMP_DECODER_DecodeFrame(RCMP_DECODER *d, int a1)` (0x3b0600).
+pub(crate) const RCMP_DECODER_DECODE_FRAME: Callee = Callee {
+    addr: 0x003b_0600,
+    f: ee::s13::f_003b0600,
+};
+
+/// `void *AV_ChunkInit(AV_Chunk *self)` (0x3b0720).
+pub(crate) const AV_CHUNK_INIT: Callee = Callee {
+    addr: 0x003b_0720,
+    f: ee::s13::f_003b0720,
+};
+
+/// `void PS2_SONY_CODEC_INTERNAL_Create(void)` (0x3b11a0).
+pub(crate) const PS2_SONY_CODEC_INTERNAL_CREATE: Callee = Callee {
+    addr: 0x003b_11a0,
+    f: ee::s13::f_003b11a0,
+};
+
+/// `void RCMP_DECODER_SetCodec(Decoder *d, Codec *codec, int a2)`
+/// (0x3b04f8).
+pub(crate) const RCMP_DECODER_SET_CODEC: Callee = Callee {
+    addr: 0x003b_04f8,
+    f: ee::s13::f_003b04f8,
+};
+
+/// `int RCMP_IsMpegChunkTag(uint tag)` (0x3b11f0).
+pub(crate) const RCMP_IS_MPEG_CHUNK_TAG: Callee = Callee {
+    addr: 0x003b_11f0,
+    f: ee::s13::f_003b11f0,
+};
+
+/// `void StreamFile_SetPriority(int handle, int a, int b)` (0x3e0ad8).
+pub(crate) const STREAM_FILE_SET_PRIORITY: Callee = Callee {
+    addr: 0x003e_0ad8,
+    f: ee::s14::f_003e0ad8,
+};
+
+/// `int AsyncFile_GetResult(int handle, void *out, int *size)` (0x3df9d8).
+pub(crate) const ASYNC_FILE_GET_RESULT: Callee = Callee {
+    addr: 0x003d_f9d8,
+    f: ee::s14::f_003df9d8,
+};
+
+/// `int StreamFile_QueueFile(int h, int a, int b, int c)` (0x3e0d80).
+pub(crate) const STREAM_FILE_QUEUE_FILE: Callee = Callee {
+    addr: 0x003e_0d80,
+    f: ee::s14::f_003e0d80,
+};
+
+/// `uint EATimer_GetTicks(void)` (0x3e4e98).
+pub(crate) const EA_TIMER_GET_TICKS: Callee = Callee {
+    addr: 0x003e_4e98,
+    f: ee::s14::f_003e4e98,
+};
+
+/// `void RCMP_AV_MS_TIMER_Update(void *timer)` (0x42e508).
+pub(crate) const RCMP_AV_MS_TIMER_UPDATE: Callee = Callee {
+    addr: 0x0042_e508,
+    f: ee::s15::f_0042e508,
+};
+
+/// `uint EATimer_GetTickRate(void)` (0x3e5008).
+pub(crate) const EA_TIMER_GET_TICK_RATE: Callee = Callee {
+    addr: 0x003e_5008,
+    f: ee::s14::f_003e5008,
+};
+
+/// `void StreamFile_Destroy(int handle)` (0x3e0a28).
+pub(crate) const STREAM_FILE_DESTROY: Callee = Callee {
+    addr: 0x003e_0a28,
+    f: ee::s14::f_003e0a28,
+};
+
+/// `int EAFile_GetSettings(void *stream)` (0x3de928).
+pub(crate) const EA_FILE_GET_SETTINGS: Callee = Callee {
+    addr: 0x003d_e928,
+    f: ee::s14::f_003de928,
+};
+
+/// `void *StreamFile_GetChunk(int stream)` (0x3e12e0).
+pub(crate) const STREAM_FILE_GET_CHUNK: Callee = Callee {
+    addr: 0x003e_12e0,
+    f: ee::s14::f_003e12e0,
+};
+
+/// `int EATimer_ServiceCallbacks(void *unused)` (0x3e5928).
+pub(crate) const EA_TIMER_SERVICE_CALLBACKS: Callee = Callee {
+    addr: 0x003e_5928,
+    f: ee::s14::f_003e5928,
+};
+
+/// `int StreamFile_IsIdle(int stream)` (0x3e1530).
+pub(crate) const STREAM_FILE_IS_IDLE: Callee = Callee {
+    addr: 0x003e_1530,
+    f: ee::s14::f_003e1530,
+};
+
+/// `void AV_CreateSubtitles(SubtitleList *list, int count, int x, int y,
+/// int width, int height)` (0x3af0c8): allocate `count` 0x34-byte subtitle
+/// records, run `AV_SubtitleInit` over each, then stamp every record's
+/// geometry (`x`, `y`, `width`, `height`) and its string id (its index).
+/// Record 0's frame is cleared as well. `width` arrives in `t0` (spilled to
+/// the stack on entry), `height` in `t1`.
+pub fn av_create_subtitles(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 34;
+        let frame = Frame::open(c, 0xb0);
+        c.g[V1][0] = 0x51_0000;
+        frame.save(c, 20, 0x60);
+        c.g[T2][0] = sx(r32(c, V1).wrapping_sub(0x6bd0));
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, 16, 0xa0);
+        c.g[A1][0] = 0x34;
+        frame.save(c, 17, 0x90);
+        let rec_bytes = abi::mult(c, r32(c, S4), r32(c, A1));
+        c.g[A1][0] = sx(rec_bytes);
+        frame.save(c, 18, 0x80);
+        frame.save(c, 19, 0x70);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, 22, 0x40);
+        c.g[A0][0] = 0x49_0000;
+        frame.save(c, 23, 0x30);
+        c.g[S6][0] = c.g[T1][0];
+        frame.save(c, 30, 0x20);
+        c.g[S7][0] = c.g[A3][0];
+        frame.save(c, 21, 0x50);
+        c.g[FP][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x5260));
+        c.sw(sp(c), c.g[T0][0]);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x10));
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_sub(0x6bd0)).lw(c);
+        c.g[A2][0] = 0;
+        c.g[T0][0] = Addr(r32(c, T2).wrapping_add(8)).lw(c);
+        c.g[A3][0] = 0;
+        let alloc = r32(c, V0);
+        c.g[RA][0] = sx(0x003a_f140);
+        c.g[S1][0] = sx(r32(c, S4).wrapping_sub(1));
+        call_ptr(c, alloc, 0x003a_f140)?;
+        c.g[S3][0] = sx(r32(c, V0).wrapping_add(0x10));
+        c.sw(r32(c, V0), c.g[S4][0]);
+        let no_records = c.g[S4][0] == 0;
+        c.g[S0][0] = c.g[S3][0];
+        if !no_records {
+            c.cycles += 2;
+            c.g[S5][0] = u64::MAX;
+            loop {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[RA][0] = sx(0x003a_f164);
+                c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+                AV_SUBTITLE_INIT.call(c, 0x003a_f164)?;
+                let more = c.g[S1][0] != c.g[S5][0];
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(SUBTITLE_RECORD as u32));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_f158);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 3;
+        c.sw(r32(c, S2), c.g[S3][0]);
+        let empty = c.g[S4][0] == 0;
+        c.sw(r32(c, S2).wrapping_add(4), c.g[S4][0]);
+        if !empty {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S3][0];
+            c.g[RA][0] = sx(0x003a_f184);
+            c.g[A1][0] = 0;
+            AV_SUBTITLE_SET_FRAME.call(c, 0x003a_f184)?;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(4)).lw(c);
+        let none = c.g[V0][0] == 0;
+        c.g[S0][0] = 0;
+        if !none {
+            c.cycles += 2;
+            c.g[S1][0] = 0;
+            loop {
+                c.cycles += 25;
+                c.g[A0][0] = Addr(r32(c, S2)).lw(c);
+                c.g[A1][0] = c.g[FP][0];
+                c.g[RA][0] = sx(0x003a_f1a8);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S1)));
+                AV_SUBTITLE_SET_X.call(c, 0x003a_f1a8)?;
+                c.g[A0][0] = Addr(r32(c, S2)).lw(c);
+                c.g[A1][0] = c.g[S7][0];
+                c.g[RA][0] = sx(0x003a_f1b8);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S1)));
+                AV_SUBTITLE_SET_Y.call(c, 0x003a_f1b8)?;
+                c.g[A0][0] = Addr(r32(c, S2)).lw(c);
+                c.g[A1][0] = c.lw(sp(c));
+                c.g[RA][0] = sx(0x003a_f1c8);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S1)));
+                AV_SUBTITLE_SET_WIDTH.call(c, 0x003a_f1c8)?;
+                c.g[A0][0] = Addr(r32(c, S2)).lw(c);
+                c.g[A1][0] = c.g[S6][0];
+                c.g[RA][0] = sx(0x003a_f1d8);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S1)));
+                AV_SUBTITLE_SET_HEIGHT.call(c, 0x003a_f1d8)?;
+                c.g[A0][0] = Addr(r32(c, S2)).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[RA][0] = sx(0x003a_f1ec);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S1)));
+                AV_SUBTITLE_SET_STRING_ID.call(c, 0x003a_f1ec)?;
+                c.g[V0][0] = Addr(r32(c, S2).wrapping_add(4)).lw(c);
+                c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(SUBTITLE_RECORD as u32));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_f198);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, 16, 0xa0);
+        frame.restore(c, 17, 0x90);
+        frame.restore(c, 18, 0x80);
+        frame.restore(c, 19, 0x70);
+        frame.restore(c, 20, 0x60);
+        frame.restore(c, 21, 0x50);
+        frame.restore(c, 22, 0x40);
+        frame.restore(c, 23, 0x30);
+        frame.restore(c, 30, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AV_Player_Shutdown(AV_Player *this, int flags)` (0x3ae300): tear
+/// down a player: release the decoder through its vtable, destroy the audio
+/// object, free the timer, destroy both stream handles, apply the pending
+/// chunk callbacks, and free the stream/timer slots. `flags & 1` frees the
+/// player itself through the heap free slot.
+pub fn av_player_shutdown(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S2, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0x20);
+        c.g[A2][0] = Addr(r32(c, S0).wrapping_add(0x64)).lw(c);
+        let no_decoder = c.g[A2][0] == 0;
+        c.g[S2][0] = c.g[A1][0];
+        if !no_decoder {
+            c.cycles += 7;
+            c.g[V0][0] = Addr(r32(c, A2).wrapping_add(0x18)).lw(c);
+            c.g[A1][0] = 3;
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(8)).lh(c);
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0xc)).lw(c);
+            let release = r32(c, V1);
+            c.g[RA][0] = sx(0x003a_e33c);
+            c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+            call_ptr(c, release, 0x003a_e33c)?;
+            c.sw(r32(c, S0).wrapping_add(0x64), 0);
+        }
+        c.cycles += 3;
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        if c.g[A0][0] == 0 {
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x5c)).lw(c);
+        } else {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x003a_e354);
+            c.g[A1][0] = 3;
+            AV_AUDIO_DTOR.call(c, 0x003a_e354)?;
+            c.sw(r32(c, S0), 0);
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x5c)).lw(c);
+        }
+        c.cycles += 2;
+        let no_timer = c.g[A0][0] == 0;
+        c.g[V1][0] = 0x51_0000;
+        if !no_timer {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_sub(0x6bcc)).lw(c);
+            let free = r32(c, V0);
+            c.g[RA][0] = sx(0x003a_e370);
+            call_ptr(c, free, 0x003a_e370)?;
+            c.sw(r32(c, S0).wrapping_add(0x5c), 0);
+        }
+        c.cycles += 5;
+        c.g[RA][0] = sx(0x003a_e37c);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x30)).lw(c);
+        STREAM_FILE_DESTROY.call(c, 0x003a_e37c)?;
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x14)).lw(c);
+        let one_handle = c.g[V0][0] == 0;
+        c.sw(r32(c, S0).wrapping_add(0x30), 0);
+        if !one_handle {
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x003a_e390);
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x34)).lw(c);
+            STREAM_FILE_DESTROY.call(c, 0x003a_e390)?;
+            c.sw(r32(c, S0).wrapping_add(0x34), 0);
+        }
+        c.cycles += 3;
+        c.g[S1][0] = Addr(r32(c, S0).wrapping_add(0x20)).lw(c);
+        let no_extra = c.g[S1][0] == 0;
+        c.g[V0][0] = 0x20;
+        if !no_extra {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[RA][0] = sx(0x003a_e3ac);
+            c.sw(sp(c), c.g[V0][0]);
+            EA_FILE_GET_SETTINGS.call(c, 0x003a_e3ac)?;
+            c.g[V0][0] = Addr(sp(c).wrapping_add(8)).lw(c);
+            let apply = r32(c, V0);
+            c.g[RA][0] = sx(0x003a_e3b8);
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, apply, 0x003a_e3b8)?;
+            c.sw(r32(c, S0).wrapping_add(0x20), 0);
+        }
+        c.cycles += 3;
+        c.g[S1][0] = Addr(r32(c, S0).wrapping_add(0x28)).lw(c);
+        let no_extra2 = c.g[S1][0] == 0;
+        c.g[V0][0] = 0x20;
+        if !no_extra2 {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[RA][0] = sx(0x003a_e3d4);
+            c.sw(sp(c), c.g[V0][0]);
+            EA_FILE_GET_SETTINGS.call(c, 0x003a_e3d4)?;
+            c.g[V0][0] = Addr(sp(c).wrapping_add(8)).lw(c);
+            let apply = r32(c, V0);
+            c.g[RA][0] = sx(0x003a_e3e0);
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, apply, 0x003a_e3e0)?;
+            c.sw(r32(c, S0).wrapping_add(0x28), 0);
+        }
+        c.cycles += 3;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(4)).lw(c);
+        let no_free = c.g[A0][0] == 0;
+        c.g[V1][0] = 0x51_0000;
+        if !no_free {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_sub(0x6bcc)).lw(c);
+            let free = r32(c, V0);
+            c.g[RA][0] = sx(0x003a_e3fc);
+            call_ptr(c, free, 0x003a_e3fc)?;
+            c.sw(r32(c, S0).wrapping_add(4), 0);
+        }
+        c.cycles += 3;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(8)).lw(c);
+        let no_free2 = c.g[A0][0] == 0;
+        c.g[V1][0] = 0x51_0000;
+        if !no_free2 {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_sub(0x6bcc)).lw(c);
+            let free = r32(c, V0);
+            c.g[RA][0] = sx(0x003a_e418);
+            call_ptr(c, free, 0x003a_e418)?;
+            c.sw(r32(c, S0).wrapping_add(8), 0);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S2][0] & 1;
+        let keep = c.g[V0][0] == 0;
+        c.g[V1][0] = 0x51_0000;
+        if !keep {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_sub(0x6bcc)).lw(c);
+            let free = r32(c, V0);
+            c.g[RA][0] = sx(0x003a_e434);
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, free, 0x003a_e434)?;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int AV_Player_Start(AV_Player *this, int a1, int rate)` (0x3ae450):
+/// (re)open the two stream handles, resolve the pending async reads, bring
+/// up the audio object and the decoder, start the millisecond timer and set
+/// the playback rate. Returns the first decoded frame number (`+0x74`).
+pub fn av_player_start(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S1, 0x70);
+        frame.save(c, S4, 0x40);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S5, 0x30);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S0, 0x80);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save(c, S2, 0x60);
+        c.g[A1][0] = 0x97;
+        frame.save(c, S3, 0x50);
+        c.g[A2][0] = 0x33;
+        frame.save_ra(c, 0x20);
+        c.g[RA][0] = sx(0x003a_e48c);
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x34)).lw(c);
+        STREAM_FILE_SET_PRIORITY.call(c, 0x003a_e48c)?;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x30)).lw(c);
+        c.g[A1][0] = 0x97;
+        c.g[RA][0] = sx(0x003a_e49c);
+        c.g[A2][0] = 0x33;
+        STREAM_FILE_SET_PRIORITY.call(c, 0x003a_e49c)?;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x24)).lw(c);
+        if c.g[A0][0] == 0 {
+            c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x2c)).lw(c);
+        } else {
+            c.cycles += 10;
+            c.g[A2][0] = sx(sp(c).wrapping_add(0x10));
+            c.g[RA][0] = sx(0x003a_e4b4);
+            c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x20));
+            ASYNC_FILE_GET_RESULT.call(c, 0x003a_e4b4)?;
+            c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x30)).lw(c);
+            c.g[A3][0] = 0;
+            c.g[A1][0] = Addr(r32(c, S1).wrapping_add(0x20)).lw(c);
+            c.g[RA][0] = sx(0x003a_e4c8);
+            c.g[A2][0] = Addr(sp(c).wrapping_add(0x10)).lw(c);
+            STREAM_FILE_QUEUE_FILE.call(c, 0x003a_e4c8)?;
+            c.sw(r32(c, S1).wrapping_add(0x38), c.g[V0][0]);
+            c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x2c)).lw(c);
+        }
+        c.cycles += 2;
+        if c.g[A0][0] == 0 {
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x14)).lw(c);
+        } else {
+            c.cycles += 10;
+            c.g[A2][0] = sx(sp(c).wrapping_add(0x14));
+            c.g[RA][0] = sx(0x003a_e4e4);
+            c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x28));
+            ASYNC_FILE_GET_RESULT.call(c, 0x003a_e4e4)?;
+            c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x34)).lw(c);
+            c.g[A3][0] = 0;
+            c.g[A1][0] = Addr(r32(c, S1).wrapping_add(0x28)).lw(c);
+            c.g[RA][0] = sx(0x003a_e4f8);
+            c.g[A2][0] = Addr(sp(c).wrapping_add(0x14)).lw(c);
+            STREAM_FILE_QUEUE_FILE.call(c, 0x003a_e4f8)?;
+            c.sw(r32(c, S1).wrapping_add(0x3c), c.g[V0][0]);
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x14)).lw(c);
+        }
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x1c)).lw(c);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x38)).lw(c);
+            c.sw(r32(c, S1).wrapping_add(0x3c), c.g[V0][0]);
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x1c)).lw(c);
+        }
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            c.sw(r32(c, S1).wrapping_add(0x54), 0);
+            c.cycles += 2;
+            c.g[S2][0] = 0x51_0000;
+            c.g[S3][0] = 0x49_0000;
+        } else {
+            c.cycles += 22;
+            c.g[T1][0] = 0x51_0000;
+            c.g[S0][0] = 0x49_0000;
+            c.g[V1][0] = sx(r32(c, T1).wrapping_sub(0x6bd0));
+            c.g[V0][0] = Addr(r32(c, T1).wrapping_sub(0x6bd0)).lw(c);
+            c.g[T0][0] = Addr(r32(c, V1).wrapping_add(8)).lw(c);
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(0x5210));
+            c.g[A1][0] = 0x14;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            let alloc = r32(c, V0);
+            c.g[RA][0] = sx(0x003a_e548);
+            c.g[S2][0] = c.g[T1][0];
+            call_ptr(c, alloc, 0x003a_e548)?;
+            c.g[S3][0] = c.g[S0][0];
+            c.g[A1][0] = Addr(r32(c, S1).wrapping_add(0x34)).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[RA][0] = sx(0x003a_e55c);
+            c.g[A2][0] = Addr(r32(c, S1).wrapping_add(0x3c)).lw(c);
+            AV_AUDIO_INIT.call(c, 0x003a_e55c)?;
+            c.sw(r32(c, S1), c.g[V0][0]);
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0xc)).lw(c);
+            c.g[V1][0] = !(0u64 | c.g[V1][0]);
+            c.g[V1][0] = sx((c.g[V1][0] as u32) >> 31);
+            c.sw(r32(c, S1).wrapping_add(0x54), c.g[V1][0]);
+        }
+        c.cycles += 5;
+        c.sw(r32(c, S1).wrapping_add(0x64), 0);
+        c.g[S0][0] = sx(r32(c, S2).wrapping_sub(0x6bd0));
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_sub(0x6bd0)).lw(c);
+        let no_heap = c.g[V0][0] == 0;
+        c.g[V1][0] = 0;
+        if !no_heap {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(4)).lw(c);
+            c.g[V1][0] = (0u64 < c.g[V0][0]) as u64;
+        }
+        c.cycles += 2;
+        let no_callbacks = c.g[V1][0] == 0;
+        c.g[A2][0] = 0x3b_0000;
+        if !no_callbacks {
+            c.cycles += 19;
+            c.sw(r32(c, S1).wrapping_add(0x60), c.g[S1][0]);
+            c.g[A3][0] = 0x3b_0000;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(0x1348));
+            c.g[A3][0] = sx(r32(c, A3).wrapping_sub(0x12e0));
+            c.g[T0][0] = c.g[S4][0];
+            c.g[RA][0] = sx(0x003a_e5c0);
+            c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x60));
+            RCMP_MAKE_CALLBACKS.call(c, 0x003a_e5c0)?;
+            c.g[T0][0] = Addr(r32(c, S0).wrapping_add(8)).lw(c);
+            c.g[A0][0] = sx(r32(c, S3).wrapping_add(0x5210));
+            c.g[V0][0] = Addr(r32(c, S2).wrapping_sub(0x6bd0)).lw(c);
+            c.g[A1][0] = 0x1c;
+            c.g[A2][0] = 0;
+            let alloc = r32(c, V0);
+            c.g[RA][0] = sx(0x003a_e5dc);
+            c.g[A3][0] = 0;
+            call_ptr(c, alloc, 0x003a_e5dc)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[RA][0] = sx(0x003a_e5e8);
+            c.g[A1][0] = c.g[SP][0];
+            RCMP_DECODER_CTOR.call(c, 0x003a_e5e8)?;
+            c.sw(r32(c, S1).wrapping_add(0x64), c.g[V0][0]);
+        }
+        c.cycles += 25;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x64)).lw(c);
+        c.g[RA][0] = sx(0x003a_e5f8);
+        c.g[A1][0] = 0;
+        RCMP_DECODER_DECODE_FRAME.call(c, 0x003a_e5f8)?;
+        c.sw(r32(c, S1).wrapping_add(0x74), c.g[V0][0]);
+        c.g[A1][0] = 0x18;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[T0][0] = Addr(r32(c, S0).wrapping_add(8)).lw(c);
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_sub(0x6bd0)).lw(c);
+        let timer_alloc = r32(c, V0);
+        c.g[RA][0] = sx(0x003a_e618);
+        c.g[A0][0] = sx(r32(c, S3).wrapping_add(0x5210));
+        call_ptr(c, timer_alloc, 0x003a_e618)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x003a_e624);
+        c.sd(r32(c, S0).wrapping_add(8), 0);
+        EA_TIMER_GET_TICKS.call(c, 0x003a_e624)?;
+        c.g[V1][0] = 0x1000;
+        c.sw(r32(c, S0), c.g[V0][0]);
+        c.sw(r32(c, S0).wrapping_add(0x10), c.g[V1][0]);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[RA][0] = sx(0x003a_e63c);
+        c.sw(r32(c, S1).wrapping_add(0x5c), c.g[S0][0]);
+        RCMP_AV_MS_TIMER_UPDATE.call(c, 0x003a_e63c)?;
+        c.g[RA][0] = sx(0x003a_e644);
+        EA_TIMER_GET_TICK_RATE.call(c, 0x003a_e644)?;
+        c.g[A0][0] = c.ld(r32(c, S0).wrapping_add(8));
+        // Either way the timer block ends here: the original branches to the
+        // same block exit whether the tick rate came back zero or not.
+        c.cycles += 14;
+        c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+        c.g[V1][0] = c.g[A0][0] << 5;
+        c.sw(r32(c, S1).wrapping_add(0x40), c.g[S5][0]);
+        c.g[V1][0] = c.g[V1][0].wrapping_sub(c.g[A0][0]);
+        c.sw(r32(c, S1).wrapping_add(0x50), 0);
+        c.g[V1][0] = c.g[V1][0] << 2;
+        c.sw(r32(c, S1).wrapping_add(0x58), 0);
+        c.g[V1][0] = c.g[V1][0].wrapping_add(c.g[A0][0]);
+        c.g[V1][0] = c.g[V1][0] << 35;
+        c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
+        c.divu(0, 3, 2);
+        c.g[V1][0] = c.lo[0];
+        let no_audio = c.g[A1][0] == 0;
+        c.sw(r32(c, S1).wrapping_add(0x4c), c.g[V1][0]);
+        if !no_audio {
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x003a_e690);
+            c.g[A0][0] = c.g[A1][0];
+            AV_AUDIO_START.call(c, 0x003a_e690)?;
+        }
+        c.cycles += 13;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x003a_e69c);
+        c.g[A1][0] = 0x1000;
+        AV_PLAYER_SET_RATE.call(c, 0x003a_e69c)?;
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x74)).lw(c);
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int AV_Player_OnChunk(AV_Player *this, void *decoder, void **out)`
+/// (0x3aead0): poll the stream for the next chunk and hand it to the codec:
+/// fetch a chunk, tag it (MPEG chunks get a codec object created and set),
+/// release it, and repeat while the stream is idle. Returns through the save
+/// slots; the out pointer receives the working chunk buffer.
+pub fn av_player_on_chunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        c.g[S3][0] = 0;
+        frame.save(c, S5, 0x50);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S6, 0x40);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save(c, S7, 0x30);
+        c.g[S6][0] = 0x51_0000;
+        frame.save(c, FP, 0x20);
+        c.g[S7][0] = 0x3;
+        frame.save(c, S0, 0xa0);
+        c.g[FP][0] = 0x2;
+        frame.save(c, S1, 0x90);
+        frame.save_ra(c, 0x10);
+        frame.save(c, S2, 0x80);
+        c.g[S2][0] = Addr(r32(c, A0).wrapping_add(0x30)).lw(c);
+        c.sw(r32(c, S5), 0);
+        'poll: loop {
+            'done: {
+                'check: {
+                    'chunk: {
+                        c.cycles += 7;
+                        c.g[RA][0] = sx(0x003a_eb28);
+                        c.g[A0][0] = c.g[S2][0];
+                        STREAM_FILE_GET_CHUNK.call(c, 0x003a_eb28)?;
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[RA][0] = sx(0x003a_eb34);
+                        c.g[A0][0] = 0;
+                        EA_TIMER_SERVICE_CALLBACKS.call(c, 0x003a_eb34)?;
+                        if c.g[S0][0] == 0 {
+                            break 'chunk;
+                        }
+                        'filter: {
+                            c.cycles += 15;
+                            c.g[V0][0] = Addr(r32(c, S0)).lbu(c);
+                            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(1)).lbu(c);
+                            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(2)).lbu(c);
+                            c.g[V0][0] = sx(r32(c, V0) << 24);
+                            c.g[V1][0] = sx(r32(c, V1) << 16);
+                            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(3)).lbu(c);
+                            c.g[A0][0] = sx(r32(c, A0) << 8);
+                            c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+                            c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                            c.g[S1][0] = c.g[V0][0] | c.g[A1][0];
+                            c.g[RA][0] = sx(0x003a_eb6c);
+                            c.g[A0][0] = c.g[S1][0];
+                            RCMP_IS_MPEG_CHUNK_TAG.call(c, 0x003a_eb6c)?;
+                            if c.g[V0][0] != 0 {
+                                c.g[S3][0] = c.g[S7][0];
+                            }
+                            let plain = c.g[S3][0] == 0;
+                            c.g[V0][0] = 0x51_0000;
+                            if plain {
+                                break 'filter;
+                            }
+                            'init: {
+                                c.cycles += 15;
+                                c.g[A1][0] = 0xc;
+                                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x6bd0));
+                                c.g[A2][0] = 0;
+                                c.g[T0][0] = Addr(r32(c, V0).wrapping_add(8)).lw(c);
+                                c.g[V0][0] = 0x49_0000;
+                                c.g[A0][0] = sx(r32(c, V0).wrapping_add(0x5210));
+                                c.g[V0][0] = Addr(r32(c, S6).wrapping_sub(0x6bd0)).lw(c);
+                                let alloc = r32(c, V0);
+                                c.g[RA][0] = sx(0x003a_eb9c);
+                                c.g[A3][0] = 0;
+                                call_ptr(c, alloc, 0x003a_eb9c)?;
+                                c.g[RA][0] = sx(0x003a_eba4);
+                                c.g[A0][0] = c.g[V0][0];
+                                AV_CHUNK_INIT.call(c, 0x003a_eba4)?;
+                                c.g[S1][0] = c.g[V0][0];
+                                c.sw(r32(c, S5), c.g[S1][0]);
+                                let tag_mismatch = c.g[S3][0] != c.g[FP][0];
+                                // Delay slot of the tag test: link the chunk
+                                // on both paths.
+                                c.sw(r32(c, S1), c.g[S0][0]);
+                                if tag_mismatch {
+                                    break 'init;
+                                }
+                                // Unreachable: S3 is 0 or 3 here (cleared on
+                                // entry, set to 3 on an MPEG tag) while FP is
+                                // 2, so the original's else arm never runs.
+                                c.cycles += 13;
+                                c.g[V1][0] = sx(r32(c, S0).wrapping_add(4));
+                                c.g[A2][0] = Addr(r32(c, S0).wrapping_add(4)).lbu(c);
+                                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(3)).lbu(c);
+                                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(2)).lbu(c);
+                                c.g[A1][0] = Addr(r32(c, V1).wrapping_add(1)).lbu(c);
+                                c.g[V0][0] = sx(r32(c, V0) << 24);
+                                c.g[A0][0] = sx(r32(c, A0) << 16);
+                                c.sw(r32(c, S1).wrapping_add(4), c.g[S0][0]);
+                                c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                                c.g[A1][0] = sx(r32(c, A1) << 8);
+                                c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
+                                c.g[V0][0] = c.g[V0][0] | c.g[A2][0];
+                            }
+                            c.cycles += 13;
+                            c.g[V1][0] = sx(r32(c, S0).wrapping_add(4));
+                            c.g[A3][0] = Addr(r32(c, S0).wrapping_add(4)).lbu(c);
+                            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(3)).lbu(c);
+                            c.g[A2][0] = sx(r32(c, S0).wrapping_add(8));
+                            c.g[A0][0] = Addr(r32(c, V1).wrapping_add(2)).lbu(c);
+                            c.g[A1][0] = Addr(r32(c, V1).wrapping_add(1)).lbu(c);
+                            c.g[V0][0] = sx(r32(c, V0) << 24);
+                            c.g[A0][0] = sx(r32(c, A0) << 16);
+                            c.sw(r32(c, S1).wrapping_add(4), c.g[A2][0]);
+                            c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                            c.g[A1][0] = sx(r32(c, A1) << 8);
+                            c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
+                            c.g[V0][0] = c.g[V0][0] | c.g[A3][0];
+                            c.cycles += 4;
+                            c.sw(r32(c, S1).wrapping_add(8), c.g[V0][0]);
+                            c.g[V0][0] = Addr(r32(c, S4).wrapping_add(0x14)).lw(c);
+                            let encoded = c.g[V0][0] != 0;
+                            frame.restore(c, S0, 0xa0);
+                            if encoded {
+                                break 'check;
+                            }
+                            c.cycles += 2;
+                            if c.g[S3][0] != c.g[S7][0] {
+                                frame.restore(c, S1, 0x90);
+                                break 'done;
+                            }
+                            c.cycles += 8;
+                            c.g[RA][0] = sx(0x003a_ec3c);
+                            PS2_SONY_CODEC_INTERNAL_CREATE.call(c, 0x003a_ec3c)?;
+                            c.g[A1][0] = c.g[V0][0];
+                            c.g[A2][0] = c.g[S1][0];
+                            c.g[RA][0] = sx(0x003a_ec4c);
+                            c.g[A0][0] = c.g[S4][0];
+                            RCMP_DECODER_SET_CODEC.call(c, 0x003a_ec4c)?;
+                            frame.restore(c, S0, 0xa0);
+                            if c.g[V0][0] == c.g[FP][0] {
+                                break 'check;
+                            }
+                            c.cycles += 4;
+                            c.g[RA][0] = sx(0x003a_ec5c);
+                            c.g[A0][0] = c.g[S4][0];
+                            RCMP_DECODER_RELEASE_CODEC.call(c, 0x003a_ec5c)?;
+                            frame.restore(c, S0, 0xa0);
+                            break 'check;
+                        }
+                        c.cycles += 5;
+                        c.sw(sp(c), c.g[S1][0]);
+                        c.g[A1][0] = c.g[S0][0];
+                        c.sb(sp(c).wrapping_add(4), 0);
+                        c.g[RA][0] = sx(0x003a_ec78);
+                        c.g[A0][0] = c.g[S2][0];
+                        STREAM_FILE_RELEASE_CHUNK.call(c, 0x003a_ec78)?;
+                        break 'chunk;
+                    }
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x003a_ec80);
+                    c.g[A0][0] = c.g[S2][0];
+                    STREAM_FILE_IS_IDLE.call(c, 0x003a_ec80)?;
+                    let more = c.g[V0][0] == 0;
+                    frame.restore(c, S0, 0xa0);
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_eb20);
+                        }
+                        continue 'poll;
+                    }
+                    break 'check;
+                }
+                c.cycles += 1;
+                frame.restore(c, S1, 0x90);
+            }
+            break 'poll;
+        }
+        c.cycles += 10;
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AV_Player_Init(AV_Player* self, int a1, int a2, int a3, int a4,
+/// int a5, int a6, int a7, int a8)` (0x3adec8): zero the player, record
+/// the constructor arguments, and — when the allocator object is up —
+/// build the stream pair: two allocator results, two `StreamFile_Create`
+/// streams, priorities, channel filters, then (by the `type` in `a7`) an
+/// `AsyncFile_Load` pair, a `StreamFile_QueueRange` pair or a
+/// `StreamFile_QueueFile` pair. With no audio (`a4 == 0`) only one
+/// allocator result is kept. A dead allocator reports busy and returns.
+/// The sound flag at +0x1c is `a8`, forced to 1 while SND is down.
+pub fn av_player_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 47;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        c.g[S1][0] = c.g[T3][0];
+        frame.save(c, S3, 0x70);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S5, 0x50);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S6, 0x40);
+        c.g[S5][0] = c.g[T0][0];
+        frame.save(c, S7, 0x30);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, FP, 0x20);
+        c.g[S7][0] = c.g[T2][0];
+        frame.save(c, S4, 0x60);
+        c.g[FP][0] = c.g[T1][0];
+        c.sw(frame.at(c, 0), c.g[A2][0]);
+        c.g[S0][0] = c.lw(frame.at(c, 0xb0));
+        frame.save_ra(c, 0x10);
+        'b_3adf90: {
+            c.g[S4][0] = 0x1;
+            callee::SND_IS_INITIALIZED.call(c, 0x003a_df20)?;
+            if c.g[V0][0] == 0 {
+                c.g[S0][0] = c.g[S4][0];
+            }
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = 0u64;
+            c.g[A2][0] = 0x78;
+            call_ptr(c, 0x003e6448, 0x003a_df34)?;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x18), c.g[S1][0]);
+            c.g[V1][0] = 0x510000;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x1c), c.g[S0][0]);
+            c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6bd0));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x20), 0u64);
+            c.g[S0][0] = c.g[V1][0];
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x28), 0u64);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x24), 0u64);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x2c), 0u64);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x44), 0u64);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x5c), 0u64);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x64), 0u64);
+            c.sw(c.g[S2][0] as u32, 0u64);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x70), 0u64);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x74), 0u64);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0xc), c.g[S6][0]);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x10), c.g[S5][0]);
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6bd0));
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = 0u64;
+            if t {
+                break 'b_3adf90;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = c.g[S4][0];
+                if c.g[V0][0] == 0 {
+                    c.g[A0][0] = 0u64;
+                }
+                break 'b_3adf90;
+            }
+        }
+        'b_3ae2c8: {
+            'b_3adfa8: {
+                c.cycles += 2;
+                let t = c.g[A0][0] != 0u64;
+
+                if t {
+                    break 'b_3adfa8;
+                } else {
+                    c.cycles += 4;
+                    call_ptr(c, 0x003e62b0, 0x003a_dfa0)?;
+                    let t = true;
+                    frame.restore(c, S0, 0xa0);
+                    if t {
+                        break 'b_3ae2c8;
+                    } else {
+                        break 'b_3adfa8;
+                    }
+                }
+            }
+            'b_3ae2c4: {
+                'b_3ae280: {
+                    'b_3ae270: {
+                        'b_3ae178: {
+                            c.cycles += 2;
+                            let t = c.g[S5][0] == 0u64;
+                            c.g[A0][0] = 0x490000;
+                            if t {
+                                break 'b_3ae178;
+                            } else {
+                                'b_3ae0c0: {
+                                    'b_3ae0a8: {
+                                        c.cycles += 55;
+                                        c.sw((c.g[S2][0] as u32).wrapping_add(0x14), c.g[S4][0]);
+                                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5218));
+                                        c.g[A1][0] = c.g[S3][0];
+                                        c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                        c.g[A2][0] = 0u64;
+                                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_sub(0x6bd0));
+                                        let t = c.g[V0][0] as u32;
+                                        c.g[A3][0] = 0u64;
+                                        call_ptr(c, t, 0x003a_dfd0)?;
+                                        c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                        c.g[A0][0] = 0x490000;
+                                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5230));
+                                        c.g[A1][0] = c.g[S7][0];
+                                        c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                        c.g[A2][0] = 0u64;
+                                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_sub(0x6bd0));
+                                        let t = c.g[V0][0] as u32;
+                                        c.g[A3][0] = 0u64;
+                                        call_ptr(c, t, 0x003a_dff4)?;
+                                        c.g[A3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                                        c.g[T0][0] = c.g[S3][0];
+                                        c.g[A0][0] = 0x2;
+                                        c.g[A1][0] = 0x2;
+                                        c.g[A2][0] = 0x1;
+                                        c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                                        call_ptr(c, 0x003e06d8, 0x003a_e010)?;
+                                        c.g[A3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                                        c.g[T0][0] = c.g[S7][0];
+                                        c.g[A0][0] = 0x2;
+                                        c.g[A1][0] = 0x2;
+                                        c.g[A2][0] = 0x1;
+                                        c.sw((c.g[S2][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+                                        call_ptr(c, 0x003e06d8, 0x003a_e02c)?;
+                                        c.g[A0][0] = c.g[V0][0];
+                                        c.sw((c.g[S2][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+                                        c.g[A1][0] = 0x98;
+                                        c.g[A2][0] = 0x34;
+                                        call_ptr(c, 0x003e0ad8, 0x003a_e040)?;
+                                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                        c.g[A1][0] = 0x98;
+                                        c.g[A2][0] = 0x34;
+                                        call_ptr(c, 0x003e0ad8, 0x003a_e050)?;
+                                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                        c.g[A1][0] = 0x1;
+                                        c.g[A2][0] = 0xff;
+                                        c.g[A3][0] = 0x4d;
+                                        c.g[T0][0] = 0x1;
+                                        call_ptr(c, 0x003e0948, 0x003a_e068)?;
+                                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                        c.g[A1][0] = 0x2;
+                                        c.g[A2][0] = 0u64;
+                                        c.g[A3][0] = 0u64;
+                                        c.g[T0][0] = 0xfffffffffffffffe;
+                                        call_ptr(c, 0x003e0948, 0x003a_e080)?;
+                                        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1c));
+                                        let t = c.g[V0][0] != 0u64;
+                                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x34));
+                                        if t {
+                                            break 'b_3ae0a8;
+                                        } else {
+                                            c.cycles += 7;
+                                            c.g[A1][0] = 0x1;
+                                            c.g[A2][0] = 0xffff;
+                                            c.g[A3][0] = 0x4353;
+                                            c.g[T0][0] = 0x1;
+                                            call_ptr(c, 0x003e0948, 0x003a_e0a0)?;
+                                            let t = true;
+                                            c.g[A0][0] =
+                                                c.lw((c.g[S2][0] as u32).wrapping_add(0x34));
+                                            if t {
+                                                break 'b_3ae0c0;
+                                            } else {
+                                                break 'b_3ae0a8;
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 6;
+                                    c.g[A1][0] = 0x1;
+                                    c.g[A2][0] = 0xffff;
+                                    c.g[A3][0] = 0x4353;
+                                    c.g[T0][0] = 0xffffffffffffffff;
+                                    call_ptr(c, 0x003e0948, 0x003a_e0bc)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x34));
+                                    break 'b_3ae0c0;
+                                }
+                                'b_3ae100: {
+                                    c.cycles += 9;
+                                    c.g[A1][0] = 0x2;
+                                    c.g[A2][0] = 0u64;
+                                    c.g[A3][0] = 0u64;
+                                    c.g[T0][0] = 0xfffffffffffffffe;
+                                    call_ptr(c, 0x003e0948, 0x003a_e0d4)?;
+                                    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
+                                    c.g[V0][0] = 0x1;
+                                    let t = c.g[V1][0] != c.g[V0][0];
+                                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x6bd0));
+                                    if t {
+                                        break 'b_3ae100;
+                                    } else {
+                                        c.cycles += 7;
+                                        c.g[A0][0] = c.g[S5][0];
+                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                        call_ptr(c, 0x003df690, 0x003a_e0f0)?;
+                                        c.sw((c.g[S2][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+                                        c.g[A0][0] = c.g[S6][0];
+                                        let t = true;
+                                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                        if t {
+                                            break 'b_3ae270;
+                                        } else {
+                                            break 'b_3ae100;
+                                        }
+                                    }
+                                }
+                                'b_3ae13c: {
+                                    c.cycles += 2;
+                                    let t = c.g[V1][0] != 0u64;
+                                    c.g[V0][0] = 0x2;
+                                    if t {
+                                        break 'b_3ae13c;
+                                    } else {
+                                        c.cycles += 13;
+                                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x34));
+                                        c.g[A1][0] = c.g[S5][0];
+                                        c.g[A2][0] = 0u64;
+                                        c.g[A3][0] = 0u64;
+                                        call_ptr(c, 0x003e0c88, 0x003a_e11c)?;
+                                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                        c.g[A1][0] = c.g[S6][0];
+                                        c.sw((c.g[S2][0] as u32).wrapping_add(0x3c), c.g[V0][0]);
+                                        c.g[A2][0] = 0u64;
+                                        c.g[A3][0] = 0u64;
+                                        call_ptr(c, 0x003e0c88, 0x003a_e134)?;
+                                        let t = true;
+                                        c.sw((c.g[S2][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+                                        if t {
+                                            break 'b_3ae2c4;
+                                        } else {
+                                            break 'b_3ae13c;
+                                        }
+                                    }
+                                }
+                                c.cycles += 2;
+                                let t = c.g[V1][0] != c.g[V0][0];
+                                frame.restore(c, S0, 0xa0);
+                                if t {
+                                    break 'b_3ae2c8;
+                                } else {
+                                    c.cycles += 13;
+                                    c.g[A2][0] = c.lw(c.g[SP][0] as u32);
+                                    c.g[A3][0] = 0u64;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                    c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                                    call_ptr(c, 0x003e0d80, 0x003a_e158)?;
+                                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x34));
+                                    c.g[A2][0] = c.g[FP][0];
+                                    c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
+                                    c.g[A3][0] = 0u64;
+                                    c.sw((c.g[S2][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+                                    call_ptr(c, 0x003e0d80, 0x003a_e170)?;
+                                    let t = true;
+                                    c.sw((c.g[S2][0] as u32).wrapping_add(0x3c), c.g[V0][0]);
+                                    if t {
+                                        break 'b_3ae2c4;
+                                    } else {
+                                        break 'b_3ae178;
+                                    }
+                                }
+                            }
+                        }
+                        'b_3ae25c: {
+                            'b_3ae244: {
+                                c.cycles += 44;
+                                c.sw((c.g[S2][0] as u32).wrapping_add(0x14), 0u64);
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5218));
+                                c.g[A1][0] = c.g[S3][0];
+                                c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                c.g[A2][0] = 0u64;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_sub(0x6bd0));
+                                let t = c.g[V0][0] as u32;
+                                c.g[A3][0] = 0u64;
+                                call_ptr(c, t, 0x003a_e198)?;
+                                c.sw((c.g[S2][0] as u32).wrapping_add(0x8), 0u64);
+                                c.g[A3][0] = c.g[V0][0];
+                                c.g[T0][0] = c.g[S3][0];
+                                c.g[A2][0] = 0x2;
+                                c.g[A0][0] = 0x2;
+                                c.g[A1][0] = 0x3;
+                                c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                call_ptr(c, 0x003e06d8, 0x003a_e1b8)?;
+                                c.g[A1][0] = 0x2;
+                                c.g[A0][0] = c.g[V0][0];
+                                c.sw((c.g[S2][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+                                call_ptr(c, 0x003e0bf8, 0x003a_e1c8)?;
+                                c.g[A0][0] = c.g[V0][0];
+                                c.sw((c.g[S2][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+                                c.g[A1][0] = 0x98;
+                                c.g[A2][0] = 0x34;
+                                call_ptr(c, 0x003e0ad8, 0x003a_e1dc)?;
+                                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                c.g[A1][0] = 0x98;
+                                c.g[A2][0] = 0x34;
+                                call_ptr(c, 0x003e0ad8, 0x003a_e1ec)?;
+                                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                c.g[A1][0] = 0x1;
+                                c.g[A2][0] = 0xff;
+                                c.g[A3][0] = 0x4d;
+                                c.g[T0][0] = 0x1;
+                                call_ptr(c, 0x003e0948, 0x003a_e204)?;
+                                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                c.g[A1][0] = 0x3;
+                                c.g[A2][0] = 0u64;
+                                c.g[A3][0] = 0u64;
+                                c.g[T0][0] = 0xfffffffffffffffe;
+                                call_ptr(c, 0x003e0948, 0x003a_e21c)?;
+                                c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1c));
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                                if t {
+                                    break 'b_3ae244;
+                                } else {
+                                    c.cycles += 7;
+                                    c.g[A1][0] = 0x2;
+                                    c.g[A2][0] = 0xffff;
+                                    c.g[A3][0] = 0x4353;
+                                    c.g[T0][0] = 0x2;
+                                    call_ptr(c, 0x003e0948, 0x003a_e23c)?;
+                                    let t = true;
+                                    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
+                                    if t {
+                                        break 'b_3ae25c;
+                                    } else {
+                                        break 'b_3ae244;
+                                    }
+                                }
+                            }
+                            c.cycles += 6;
+                            c.g[A1][0] = 0x2;
+                            c.g[A2][0] = 0xffff;
+                            c.g[A3][0] = 0x4353;
+                            c.g[T0][0] = 0xffffffffffffffff;
+                            call_ptr(c, 0x003e0948, 0x003a_e258)?;
+                            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
+                            break 'b_3ae25c;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x1;
+                        let t = c.g[V1][0] != c.g[V0][0];
+                        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x6bd0));
+                        if t {
+                            break 'b_3ae280;
+                        } else {
+                            c.cycles += 2;
+                            c.g[A0][0] = c.g[S6][0];
+                            c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+                            break 'b_3ae270;
+                        }
+                    }
+                    c.cycles += 4;
+                    call_ptr(c, 0x003df690, 0x003a_e278)?;
+                    let t = true;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+                    if t {
+                        break 'b_3ae2c4;
+                    } else {
+                        break 'b_3ae280;
+                    }
+                }
+                'b_3ae2a4: {
+                    c.cycles += 2;
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[V0][0] = 0x2;
+                    if t {
+                        break 'b_3ae2a4;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                        c.g[A1][0] = c.g[S6][0];
+                        c.g[A2][0] = 0u64;
+                        c.g[A3][0] = 0u64;
+                        call_ptr(c, 0x003e0c88, 0x003a_e29c)?;
+                        let t = true;
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+                        if t {
+                            break 'b_3ae2c4;
+                        } else {
+                            break 'b_3ae2a4;
+                        }
+                    }
+                }
+                c.cycles += 2;
+                let t = c.g[V1][0] != c.g[V0][0];
+                frame.restore(c, S0, 0xa0);
+                if t {
+                    break 'b_3ae2c8;
+                } else {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                    c.g[A3][0] = 0u64;
+                    c.g[A2][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x003e0d80, 0x003a_e2c0)?;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+                    break 'b_3ae2c4;
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0xa0);
+            break 'b_3ae2c8;
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int AV_ParseSubtitles(SubtitleList* list, const char* text, int len)`
+/// (0x3af7f0): copy the 13 subtitle token spellings to the stack, count
+/// the entries, allocate the record array (`0x34` bytes each), then walk
+/// the text: split lines, match `FRAME`/`STRINGID`/`X`/`Y`/`WIDTH`/
+/// `HEIGHT`/`JUSTIFY_X`/`JUSTIFY_Y`/`SHAPE`/`A`/`R`/`G`/`B` through the
+/// jump table, parse each value with `AV_ParseIntField`/`AV_ParseJustify`
+/// and store it with the matching `AV_SubtitleSet*` setter. Empty input
+/// (or no token on any line) stores count 0 and returns. `pc` is read
+/// from the machine so a resume after an unwound event or callee
+/// re-enters at its recorded arm; there is no separate resume twin.
+pub fn av_parse_subtitles(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003af7f0 => {
+                    c.cycles += 64;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x240));
+                    c.g[V0][0] = 0x490000;
+                    c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x230));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x220));
+                    c.g[S0][0] = c.g[SP][0];
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x210));
+                    c.g[S1][0] = 0u64;
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x200));
+                    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x1f0));
+                    c.g[S3][0] = c.g[A0][0];
+                    c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x1e0));
+                    c.g[A0][0] = 0xffffffffffffffff;
+                    c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x1c0));
+                    c.g[S5][0] = c.g[A1][0];
+                    c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x1b0));
+                    c.g[S4][0] = c.g[A2][0];
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x154), c.g[V1][0]);
+                    c.g[FP][0] = 0xffffffffffffffff;
+                    c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x1d0));
+                    c.g[S7][0] = 0u64;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x1a0), c.g[RA][0]);
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5340));
+                    c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
+                    c.ldr(7, c.g[V1][0] as u32);
+                    c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0xf));
+                    c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.ldl(9, (c.g[V1][0] as u32).wrapping_add(0x17));
+                    c.ldr(9, (c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.sdl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
+                    c.sdr(7, c.g[SP][0] as u32);
+                    c.sdl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
+                    c.sdr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.sdl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
+                    c.sdr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x1f));
+                    c.ldr(7, (c.g[V1][0] as u32).wrapping_add(0x18));
+                    c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0x27));
+                    c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x20));
+                    c.ldl(9, (c.g[V1][0] as u32).wrapping_add(0x2f));
+                    c.ldr(9, (c.g[V1][0] as u32).wrapping_add(0x28));
+                    c.sdl(7, (c.g[SP][0] as u32).wrapping_add(0x1f));
+                    c.sdr(7, (c.g[SP][0] as u32).wrapping_add(0x18));
+                    c.sdl(8, (c.g[SP][0] as u32).wrapping_add(0x27));
+                    c.sdr(8, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sdl(9, (c.g[SP][0] as u32).wrapping_add(0x2f));
+                    c.sdr(9, (c.g[SP][0] as u32).wrapping_add(0x28));
+                    c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x30));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[A3][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x118), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x11c), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x120), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x124), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x128), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x12c), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x130), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x134), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x138), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x13c), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x140), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x144), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x148), c.g[A0][0]);
+                    c.g[S2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x154));
+                    pc = 0x003af8f0;
+                    continue;
+                }
+                0x003af8f0 => {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    call_ptr(c, 0x00416810, 0x003a_f900)?;
+                    c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                    c.g[V0][0] = (c.g[S1][0] < 0xdu64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if back_edge_unwinds(c, 0x003a_f8f0) {
+                            return Ok(());
+                        }
+                        pc = 0x003af8f0;
+                        continue;
+                    }
+                    pc = 0x003af910;
+                    continue;
+                }
+                0x003af910 => {
+                    c.cycles += 5;
+                    c.g[A2][0] = 0x1;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x150), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14c), c.g[A2][0]);
+                    let t = c.g[S4][0] == 0u64;
+                    c.g[S1][0] = 0u64;
+                    if t {
+                        pc = 0x003af9b4;
+                        continue;
+                    }
+                    pc = 0x003af924;
+                    continue;
+                }
+                0x003af924 => {
+                    c.cycles += 3;
+                    c.g[S6][0] = 0xa;
+                    c.g[S0][0] = c.g[S5][0];
+                    pc = 0x003af930;
+                    continue;
+                }
+                0x003af930 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
+                    c.g[A3][0] = 0x9;
+                    let t = c.g[V0][0] == c.g[A3][0];
+                    c.g[S2][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x003af950;
+                        continue;
+                    }
+                    pc = 0x003af940;
+                    continue;
+                }
+                0x003af940 => {
+                    c.cycles += 4;
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14c));
+                    c.g[T1][0] = 0x1;
+
+                    if c.g[T0][0] != c.g[T1][0] {
+                        c.g[V0][0] = c.lb(c.g[S2][0] as u32);
+                        pc = 0x003af994;
+                        continue;
+                    }
+                    pc = 0x003af950;
+                    continue;
+                }
+                0x003af950 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    let t = c.g[FP][0] != c.g[V0][0];
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14c), 0u64);
+                    if t {
+                        pc = 0x003af990;
+                        continue;
+                    }
+                    pc = 0x003af95c;
+                    continue;
+                }
+                0x003af95c => {
+                    c.cycles += 13;
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x154));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x84), c.g[V0][0]);
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x80), c.g[S2][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x84));
+                    c.g[A2][0] = c.g[SP][0];
+                    c.g[T0][0] = 0xd;
+                    c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x88));
+                    callee::AV_FIND_TOKEN.call(c, 0x003a_f984)?;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x88));
+                    c.g[V0][0] = !(0u64 | c.g[V0][0]);
+                    if c.g[V0][0] != 0 {
+                        c.g[FP][0] = c.g[S7][0];
+                    }
+                    pc = 0x003af990;
+                    continue;
+                }
+                0x003af990 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lb(c.g[S2][0] as u32);
+                    pc = 0x003af994;
+                    continue;
+                }
+                0x003af994 => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] != c.g[S6][0];
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    if t {
+                        pc = 0x003af9a8;
+                        continue;
+                    }
+                    pc = 0x003af99c;
+                    continue;
+                }
+                0x003af99c => {
+                    c.cycles += 3;
+                    c.g[V1][0] = 0x1;
+                    c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(0x1));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14c), c.g[V1][0]);
+                    pc = 0x003af9a8;
+                    continue;
+                }
+                0x003af9a8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S1][0] < c.g[S4][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if back_edge_unwinds(c, 0x003a_f930) {
+                            return Ok(());
+                        }
+                        pc = 0x003af930;
+                        continue;
+                    }
+                    pc = 0x003af9b4;
+                    continue;
+                }
+                0x003af9b4 => {
+                    c.cycles += 3;
+                    c.g[S6][0] = 0xffffffffffffffff;
+                    let t = c.g[FP][0] != c.g[S6][0];
+                    c.g[T1][0] = sx((c.g[S7][0] as u32).wrapping_sub(c.g[FP][0] as u32));
+                    if t {
+                        pc = 0x003af9d8;
+                        continue;
+                    }
+                    pc = 0x003af9c0;
+                    continue;
+                }
+                0x003af9c0 => {
+                    c.cycles += 3;
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0x4), 0u64);
+                    let t = true;
+                    c.sw(c.g[S3][0] as u32, 0u64);
+                    if t {
+                        pc = 0x003b030c;
+                        continue;
+                    }
+                    pc = 0x003af9cc;
+                    continue;
+                }
+                0x003af9cc => {
+                    c.cycles += 3;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14c), c.g[A0][0]);
+                    if t {
+                        pc = 0x003afb9c;
+                        continue;
+                    }
+                    pc = 0x003af9d8;
+                    continue;
+                }
+                0x003af9d8 => {
+                    c.cycles += 18;
+                    c.g[A1][0] = 0x34;
+                    c.g[S7][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x1));
+                    c.g[V1][0] = 0x510000;
+                    c.mult(0, 5, 23, 5);
+                    c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6bd0));
+                    c.g[T0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+                    c.g[A0][0] = 0x490000;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6bd0));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5260));
+                    c.g[A2][0] = 0u64;
+                    c.g[A3][0] = 0u64;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+                    let t = c.g[V0][0] as u32;
+                    c.g[S0][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x2));
+                    call_ptr(c, t, 0x003a_fa10)?;
+                    c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+                    c.sw(c.g[V0][0] as u32, c.g[S7][0]);
+                    let t = c.g[S0][0] == c.g[S6][0];
+                    c.g[S1][0] = c.g[S2][0];
+                    if t {
+                        pc = 0x003afa3c;
+                        continue;
+                    }
+                    pc = 0x003afa20;
+                    continue;
+                }
+                0x003afa20 => {
+                    c.cycles += 2;
+                    c.g[S6][0] = 0xffffffffffffffff;
+                    pc = 0x003afa28;
+                    continue;
+                }
+                0x003afa28 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    AV_SUBTITLE_INIT.call(c, 0x003a_fa34)?;
+                    let t = c.g[S0][0] != c.g[S6][0];
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x34));
+                    if t {
+                        if back_edge_unwinds(c, 0x003a_fa28) {
+                            return Ok(());
+                        }
+                        pc = 0x003afa28;
+                        continue;
+                    }
+                    pc = 0x003afa3c;
+                    continue;
+                }
+                0x003afa3c => {
+                    c.cycles += 5;
+                    c.sw(c.g[S3][0] as u32, c.g[S2][0]);
+                    c.g[S0][0] = 0u64;
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0x4), c.g[S7][0]);
+                    let t = c.g[S4][0] == 0u64;
+                    c.g[S1][0] = 0u64;
+                    if t {
+                        pc = 0x003afa8c;
+                        continue;
+                    }
+                    pc = 0x003afa50;
+                    continue;
+                }
+                0x003afa50 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lb(c.g[S5][0] as u32);
+                    c.g[V0][0] = c.g[V0][0] ^ 0xa;
+                    c.g[S2][0] = (c.g[V0][0] < 0x1u64) as u64;
+                    let t = c.g[FP][0] == c.g[S2][0];
+                    c.g[A2][0] = 0x1;
+                    if t {
+                        pc = 0x003afa90;
+                        continue;
+                    }
+                    pc = 0x003afa64;
+                    continue;
+                }
+                0x003afa64 => {
+                    c.cycles += 1;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    pc = 0x003afa68;
+                    continue;
+                }
+                0x003afa68 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S1][0] < c.g[S4][0]) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    if t {
+                        pc = 0x003afa8c;
+                        continue;
+                    }
+                    pc = 0x003afa74;
+                    continue;
+                }
+                0x003afa74 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = c.lb(c.g[V0][0] as u32);
+                    c.g[V1][0] = c.g[V0][0] ^ 0xa;
+                    if c.g[V1][0] == 0 {
+                        c.g[S2][0] = c.g[A0][0];
+                    }
+
+                    if c.g[FP][0] != c.g[S2][0] {
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                        if back_edge_unwinds(c, 0x003a_fa68) {
+                            return Ok(());
+                        }
+                        pc = 0x003afa68;
+                        continue;
+                    }
+                    pc = 0x003afa8c;
+                    continue;
+                }
+                0x003afa8c => {
+                    c.cycles += 1;
+                    c.g[A2][0] = 0x1;
+                    pc = 0x003afa90;
+                    continue;
+                }
+                0x003afa90 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S1][0] < c.g[S4][0]) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14c), c.g[A2][0]);
+                    if t {
+                        pc = 0x003afb9c;
+                        continue;
+                    }
+                    pc = 0x003afa9c;
+                    continue;
+                }
+                0x003afa9c => {
+                    c.cycles += 1;
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    pc = 0x003afaa0;
+                    continue;
+                }
+                0x003afaa0 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = 0x9;
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+                    let t = c.g[V1][0] == c.g[A0][0];
+                    c.g[S2][0] = c.g[V0][0];
+                    if t {
+                        pc = 0x003afac0;
+                        continue;
+                    }
+                    pc = 0x003afab0;
+                    continue;
+                }
+                0x003afab0 => {
+                    c.cycles += 4;
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14c));
+                    c.g[V0][0] = 0x1;
+
+                    if c.g[A3][0] != c.g[V0][0] {
+                        c.g[V1][0] = c.lb(c.g[S2][0] as u32);
+                        pc = 0x003afb80;
+                        continue;
+                    }
+                    pc = 0x003afac0;
+                    continue;
+                }
+                0x003afac0 => {
+                    c.cycles += 15;
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x154));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x90), c.g[V0][0]);
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x8c));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x8c), c.g[S2][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+                    c.g[A2][0] = c.g[SP][0];
+                    c.g[T0][0] = 0xd;
+                    c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x88));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14c), 0u64);
+                    callee::AV_FIND_TOKEN.call(c, 0x003a_faec)?;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x88));
+                    c.g[V0][0] = (c.g[V1][0] < 0xdu64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x490000;
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afafc;
+                    continue;
+                }
+                0x003afafc => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5380));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[A0][0] as u32;
+
+                    pc = t;
+                    continue;
+                }
+                0x003afb14 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x118), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb1c;
+                    continue;
+                }
+                0x003afb1c => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x11c), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb24;
+                    continue;
+                }
+                0x003afb24 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x134), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb2c;
+                    continue;
+                }
+                0x003afb2c => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x138), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb34;
+                    continue;
+                }
+                0x003afb34 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x120), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb3c;
+                    continue;
+                }
+                0x003afb3c => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x124), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb44;
+                    continue;
+                }
+                0x003afb44 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x128), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb4c;
+                    continue;
+                }
+                0x003afb4c => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x12c), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb54;
+                    continue;
+                }
+                0x003afb54 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x130), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb5c;
+                    continue;
+                }
+                0x003afb5c => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x13c), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb64;
+                    continue;
+                }
+                0x003afb64 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x140), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb6c;
+                    continue;
+                }
+                0x003afb6c => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x144), c.g[S0][0]);
+                    if t {
+                        pc = 0x003afb78;
+                        continue;
+                    }
+                    pc = 0x003afb74;
+                    continue;
+                }
+                0x003afb74 => {
+                    c.cycles += 1;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x148), c.g[S0][0]);
+                    pc = 0x003afb78;
+                    continue;
+                }
+                0x003afb78 => {
+                    c.cycles += 2;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = c.lb(c.g[S2][0] as u32);
+                    pc = 0x003afb80;
+                    continue;
+                }
+                0x003afb80 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xa;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[A0][0] = 0x1;
+                    if t {
+                        if back_edge_unwinds(c, 0x003a_f9cc) {
+                            return Ok(());
+                        }
+                        pc = 0x003af9cc;
+                        continue;
+                    }
+                    pc = 0x003afb8c;
+                    continue;
+                }
+                0x003afb8c => {
+                    c.cycles += 4;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = (c.g[S1][0] < c.g[S4][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    if t {
+                        if back_edge_unwinds(c, 0x003a_faa0) {
+                            return Ok(());
+                        }
+                        pc = 0x003afaa0;
+                        continue;
+                    }
+                    pc = 0x003afb9c;
+                    continue;
+                }
+                0x003afb9c => {
+                    c.cycles += 4;
+                    c.g[S0][0] = 0u64;
+                    c.g[V0][0] = (c.g[S1][0] < c.g[S4][0]) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S2][0] = 0u64;
+                    if t {
+                        pc = 0x003b030c;
+                        continue;
+                    }
+                    pc = 0x003afbac;
+                    continue;
+                }
+                0x003afbac => {
+                    c.cycles += 19;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x15c), 0u64);
+                    c.g[S7][0] = 0xffffffffffffffff;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x160), 0u64);
+                    c.g[S6][0] = 0x34;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x164), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x168), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x16c), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x170), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x174), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x178), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x17c), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x180), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x184), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x188), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x18c), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x190), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x194), 0u64);
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    pc = 0x003afbf8;
+                    continue;
+                }
+                0x003afbf8 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = 0x9;
+                    c.g[A0][0] = c.lb(c.g[V0][0] as u32);
+                    let t = c.g[A0][0] == c.g[V1][0];
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14c));
+                    if t {
+                        pc = 0x003afc14;
+                        continue;
+                    }
+                    pc = 0x003afc08;
+                    continue;
+                }
+                0x003afc08 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x1;
+                    let t = c.g[T0][0] != c.g[V0][0];
+                    c.g[V0][0] = 0xa;
+                    if t {
+                        pc = 0x003b01a8;
+                        continue;
+                    }
+                    pc = 0x003afc14;
+                    continue;
+                }
+                0x003afc14 => {
+                    c.cycles += 8;
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14c));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    if c.g[T1][0] == 0 {
+                        c.g[S1][0] = c.g[V0][0];
+                    }
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x158), c.g[V0][0]);
+                    c.g[V0][0] = (c.g[S1][0] < c.g[S4][0]) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = 0u64;
+                    if t {
+                        pc = 0x003afc64;
+                        continue;
+                    }
+                    pc = 0x003afc34;
+                    continue;
+                }
+                0x003afc34 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    if t {
+                        pc = 0x003afc50;
+                        continue;
+                    }
+                    pc = 0x003afc3c;
+                    continue;
+                }
+                0x003afc3c => {
+                    c.cycles += 1;
+                    pc = 0x003afc40;
+                    continue;
+                }
+                0x003afc40 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = (c.g[V0][0] < c.g[S4][0]) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    if t {
+                        pc = 0x003afc64;
+                        continue;
+                    }
+                    pc = 0x003afc50;
+                    continue;
+                }
+                0x003afc50 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lbu(c.g[V1][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x9));
+                    c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+
+                    if c.g[V0][0] == 0u64 {
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        if back_edge_unwinds(c, 0x003a_fc40) {
+                            return Ok(());
+                        }
+                        pc = 0x003afc40;
+                        continue;
+                    }
+                    pc = 0x003afc64;
+                    continue;
+                }
+                0x003afc64 => {
+                    c.cycles += 3;
+                    c.g[FP][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    let t = c.g[FP][0] == c.g[S4][0];
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                    if t {
+                        pc = 0x003afc7c;
+                        continue;
+                    }
+                    pc = 0x003afc70;
+                    continue;
+                }
+                0x003afc70 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x150), c.g[V1][0]);
+                    c.sb(c.g[V0][0] as u32, 0u64);
+                    pc = 0x003afc7c;
+                    continue;
+                }
+                0x003afc7c => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x118));
+                    let t = c.g[S0][0] != c.g[A0][0];
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14c), 0u64);
+                    if t {
+                        pc = 0x003afce4;
+                        continue;
+                    }
+                    pc = 0x003afc88;
+                    continue;
+                }
+                0x003afc88 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x98), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x94), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x98));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x94));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x9c));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x9c), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003a_fcc8)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x194));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x9c));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    AV_SUBTITLE_SET_FRAME.call(c, 0x003a_fcdc)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003afce4;
+                    continue;
+                }
+                0x003afce4 => {
+                    c.cycles += 3;
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x11c));
+                    let t = c.g[S0][0] != c.g[A3][0];
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x120));
+                    if t {
+                        pc = 0x003afd4c;
+                        continue;
+                    }
+                    pc = 0x003afcf0;
+                    continue;
+                }
+                0x003afcf0 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xa4), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xa0), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa4));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa8));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xa8), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003a_fd30)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x190));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xa8));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    AV_SUBTITLE_SET_STRING_ID.call(c, 0x003a_fd44)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003afd4c;
+                    continue;
+                }
+                0x003afd4c => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[T1][0];
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x124));
+                    if t {
+                        pc = 0x003afdb0;
+                        continue;
+                    }
+                    pc = 0x003afd54;
+                    continue;
+                }
+                0x003afd54 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xb0), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xac), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xb0));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xac));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xb4));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xb4), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003a_fd94)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18c));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xb4));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    AV_SUBTITLE_SET_WIDTH.call(c, 0x003a_fda8)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003afdb0;
+                    continue;
+                }
+                0x003afdb0 => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[V1][0];
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x128));
+                    if t {
+                        pc = 0x003afe14;
+                        continue;
+                    }
+                    pc = 0x003afdb8;
+                    continue;
+                }
+                0x003afdb8 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xbc), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xb8), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xbc));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xb8));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc0));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xc0), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003a_fdf8)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x188));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc0));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    AV_SUBTITLE_SET_HEIGHT.call(c, 0x003a_fe0c)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003afe14;
+                    continue;
+                }
+                0x003afe14 => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[A3][0];
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x12c));
+                    if t {
+                        pc = 0x003afe78;
+                        continue;
+                    }
+                    pc = 0x003afe1c;
+                    continue;
+                }
+                0x003afe1c => {
+                    c.cycles += 5;
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    callee::AV_PARSE_JUSTIFY.call(c, 0x003a_fe28)?;
+                    let t = c.g[V0][0] == c.g[S7][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    if t {
+                        pc = 0x003afe48;
+                        continue;
+                    }
+                    pc = 0x003afe30;
+                    continue;
+                }
+                0x003afe30 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x184));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    callee::AV_SUBTITLE_SET_JUSTIFY_X.call(c, 0x003a_fe40)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003afe48;
+                    continue;
+                }
+                0x003afe48 => {
+                    c.cycles += 12;
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A1][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V1][0] = ((c.g[S7][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x180));
+                    if c.g[V1][0] == 0 {
+                        c.g[V0][0] = 0u64;
+                    }
+                    c.mult(0, 3, 2, 22);
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x18));
+                    callee::AV_SUBTITLE_SET_JUSTIFY_X.call(c, 0x003a_fe70)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003afe78;
+                    continue;
+                }
+                0x003afe78 => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[A0][0];
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x130));
+                    if t {
+                        pc = 0x003afedc;
+                        continue;
+                    }
+                    pc = 0x003afe80;
+                    continue;
+                }
+                0x003afe80 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    callee::AV_PARSE_JUSTIFY.call(c, 0x003a_fe8c)?;
+                    let t = c.g[V0][0] == c.g[S7][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    if t {
+                        pc = 0x003afeac;
+                        continue;
+                    }
+                    pc = 0x003afe94;
+                    continue;
+                }
+                0x003afe94 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x17c));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    callee::AV_SUBTITLE_SET_JUSTIFY_Y.call(c, 0x003a_fea4)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003afeac;
+                    continue;
+                }
+                0x003afeac => {
+                    c.cycles += 12;
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A1][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V1][0] = ((c.g[S7][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x178));
+                    if c.g[V1][0] == 0 {
+                        c.g[V0][0] = 0u64;
+                    }
+                    c.mult(0, 3, 2, 22);
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                    callee::AV_SUBTITLE_SET_JUSTIFY_Y.call(c, 0x003a_fed4)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003afedc;
+                    continue;
+                }
+                0x003afedc => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[A0][0];
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x134));
+                    if t {
+                        pc = 0x003aff40;
+                        continue;
+                    }
+                    pc = 0x003afee4;
+                    continue;
+                }
+                0x003afee4 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xc8), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xc4), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc8));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc4));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xcc));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x20));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xcc), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003a_ff24)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x174));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xcc));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    callee::AV_SUBTITLE_SET_SHAPE.call(c, 0x003a_ff38)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003aff40;
+                    continue;
+                }
+                0x003aff40 => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[A3][0];
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x138));
+                    if t {
+                        pc = 0x003affa4;
+                        continue;
+                    }
+                    pc = 0x003aff48;
+                    continue;
+                }
+                0x003aff48 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xd4), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xd0), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xd4));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xd0));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xd8));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xd8), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003a_ff88)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x170));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xd8));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    AV_SUBTITLE_SET_X.call(c, 0x003a_ff9c)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003affa4;
+                    continue;
+                }
+                0x003affa4 => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[T1][0];
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x13c));
+                    if t {
+                        pc = 0x003b0008;
+                        continue;
+                    }
+                    pc = 0x003affac;
+                    continue;
+                }
+                0x003affac => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xe0), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xdc), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xe0));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xdc));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xe4));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xe4), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003a_ffec)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x16c));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xe4));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    AV_SUBTITLE_SET_Y.call(c, 0x003b_0000)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003b0008;
+                    continue;
+                }
+                0x003b0008 => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[V1][0];
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x140));
+                    if t {
+                        pc = 0x003b006c;
+                        continue;
+                    }
+                    pc = 0x003b0010;
+                    continue;
+                }
+                0x003b0010 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xec), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xe8), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xec));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xe8));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf0));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x24));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xf0), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003b_0050)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x168));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    callee::AV_SUBTITLE_SET_COLOR0.call(c, 0x003b_0064)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003b006c;
+                    continue;
+                }
+                0x003b006c => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[A3][0];
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x144));
+                    if t {
+                        pc = 0x003b00d0;
+                        continue;
+                    }
+                    pc = 0x003b0074;
+                    continue;
+                }
+                0x003b0074 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xf8), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xf4), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf8));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf4));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xfc));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x25));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0xfc), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003b_00b4)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x164));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xfc));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    callee::AV_SUBTITLE_SET_COLOR1.call(c, 0x003b_00c8)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003b00d0;
+                    continue;
+                }
+                0x003b00d0 => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[T1][0];
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x148));
+                    if t {
+                        pc = 0x003b0134;
+                        continue;
+                    }
+                    pc = 0x003b00d8;
+                    continue;
+                }
+                0x003b00d8 => {
+                    c.cycles += 23;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x104), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x100), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x104));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x108));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x26));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x108), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003b_0118)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x160));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x108));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    callee::AV_SUBTITLE_SET_COLOR2.call(c, 0x003b_012c)?;
+                    let t = true;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003b0134;
+                    continue;
+                }
+                0x003b0134 => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != c.g[V1][0];
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    if t {
+                        pc = 0x003b0194;
+                        continue;
+                    }
+                    pc = 0x003b013c;
+                    continue;
+                }
+                0x003b013c => {
+                    c.cycles += 22;
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.mult(0, 3, 3, 22);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x110), c.g[A1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x10c), c.g[A0][0]);
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x110));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10c));
+                    c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x114));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x27));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x114), c.g[V0][0]);
+                    callee::AV_PARSE_INT_FIELD.call(c, 0x003b_017c)?;
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x15c));
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x114));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    callee::AV_SUBTITLE_SET_COLOR3.call(c, 0x003b_0190)?;
+                    c.g[S0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x158));
+                    pc = 0x003b0194;
+                    continue;
+                }
+                0x003b0194 => {
+                    c.cycles += 2;
+                    let t = c.g[FP][0] == c.g[S4][0];
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x150));
+                    if t {
+                        pc = 0x003b0300;
+                        continue;
+                    }
+                    pc = 0x003b019c;
+                    continue;
+                }
+                0x003b019c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                    let t = true;
+                    c.sb(c.g[V0][0] as u32, c.g[A3][0]);
+                    if t {
+                        pc = 0x003b0300;
+                        continue;
+                    }
+                    pc = 0x003b01a8;
+                    continue;
+                }
+                0x003b01a8 => {
+                    c.cycles += 2;
+                    let t = c.g[A0][0] != c.g[V0][0];
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    if t {
+                        pc = 0x003b0300;
+                        continue;
+                    }
+                    pc = 0x003b01b0;
+                    continue;
+                }
+                0x003b01b0 => {
+                    c.cycles += 84;
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x15c));
+                    c.mult(0, 6, 18, 22);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x34));
+                    c.g[V1][0] = (c.g[S2][0] < c.g[V0][0]) as u64;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x15c), c.g[T0][0]);
+                    if c.g[V1][0] != 0 {
+                        c.g[V0][0] = c.g[S2][0];
+                    }
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x160));
+                    c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x164));
+                    c.mult(0, 2, 2, 22);
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x168));
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x34));
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x16c));
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x34));
+                    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x34));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x160), c.g[A3][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x34));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x164), c.g[T0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x168), c.g[T1][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x16c), c.g[V1][0]);
+                    c.g[S0][0] = 0u64;
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x170));
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x174));
+                    c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x178));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x34));
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x17c));
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x34));
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x180));
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x34));
+                    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x34));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x170), c.g[A2][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x34));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x174), c.g[A3][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x17c), c.g[T1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x180), c.g[V1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x178), c.g[T0][0]);
+                    c.ldl(4, (c.g[A1][0] as u32).wrapping_sub(0x2d));
+                    c.ldr(4, (c.g[A1][0] as u32).wrapping_sub(0x34));
+                    c.ldl(6, (c.g[A1][0] as u32).wrapping_sub(0x25));
+                    c.ldr(6, (c.g[A1][0] as u32).wrapping_sub(0x2c));
+                    c.ldl(7, (c.g[A1][0] as u32).wrapping_sub(0x1d));
+                    c.ldr(7, (c.g[A1][0] as u32).wrapping_sub(0x24));
+                    c.ldl(8, (c.g[A1][0] as u32).wrapping_sub(0x15));
+                    c.ldr(8, (c.g[A1][0] as u32).wrapping_sub(0x1c));
+                    c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0x7));
+                    c.sdr(4, c.g[V0][0] as u32);
+                    c.sdl(6, (c.g[V0][0] as u32).wrapping_add(0xf));
+                    c.sdr(6, (c.g[V0][0] as u32).wrapping_add(0x8));
+                    c.sdl(7, (c.g[V0][0] as u32).wrapping_add(0x17));
+                    c.sdr(7, (c.g[V0][0] as u32).wrapping_add(0x10));
+                    c.sdl(8, (c.g[V0][0] as u32).wrapping_add(0x1f));
+                    c.sdr(8, (c.g[V0][0] as u32).wrapping_add(0x18));
+                    c.ldl(4, (c.g[A1][0] as u32).wrapping_sub(0xd));
+                    c.ldr(4, (c.g[A1][0] as u32).wrapping_sub(0x14));
+                    c.ldl(6, (c.g[A1][0] as u32).wrapping_sub(0x5));
+                    c.ldr(6, (c.g[A1][0] as u32).wrapping_sub(0xc));
+                    c.g[A3][0] = c.lw((c.g[A1][0] as u32).wrapping_sub(0x4));
+                    c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0x27));
+                    c.sdr(4, (c.g[V0][0] as u32).wrapping_add(0x20));
+                    c.sdl(6, (c.g[V0][0] as u32).wrapping_add(0x2f));
+                    c.sdr(6, (c.g[V0][0] as u32).wrapping_add(0x28));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x30), c.g[A3][0]);
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x188));
+                    c.g[A3][0] = 0x1;
+                    c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x184));
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x18c));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x34));
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x190));
+                    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x34));
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x194));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x34));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x34));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x184), c.g[T1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x188), c.g[V0][0]);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x34));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x18c), c.g[V1][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x190), c.g[A0][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x194), c.g[A2][0]);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14c), c.g[A3][0]);
+                    pc = 0x003b0300;
+                    continue;
+                }
+                0x003b0300 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S1][0] < c.g[S4][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    if t {
+                        if back_edge_unwinds(c, 0x003a_fbf8) {
+                            return Ok(());
+                        }
+                        pc = 0x003afbf8;
+                        continue;
+                    }
+                    pc = 0x003b030c;
+                    continue;
+                }
+                0x003b030c => {
+                    c.cycles += 12;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x230));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x220));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x210));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x200));
+                    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x1f0));
+                    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x1e0));
+                    c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x1d0));
+                    c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x1c0));
+                    c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x1b0));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x1a0));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x240));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003af7f0, 0x003b033c);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -13569,6 +17535,195 @@ pub(crate) mod tests {
         );
     }
 
+    use crate::difftest::compare;
+    use crate::difftest::require_paths;
+    use crate::game::wscript::wscriptman::tests::clear_3;
+
+    /// Base of the scratch subtitle structs. Word-aligned with a nonzero low
+    /// byte, so a wrong base or offset changes RAM; every word starts as
+    /// garbage the stored value must overwrite exactly once.
+    pub(crate) const AV_SUBTITLE_SLOTS: u32 = DATA + 0x1410;
+
+    pub(crate) fn av_subtitle_setup(c: &mut Cpu, seed: u32, slot: u32, value: u32) {
+        let mut r = Rng(0x0c40 ^ (seed as u64) ^ ((slot as u64) << 32));
+        scramble(c, &mut r);
+        for i in 0..16 {
+            c.bus
+                .write32(AV_SUBTITLE_SLOTS + slot * 0x40 + i * 4, 0xdead_beef);
+        }
+        c.g[A0][0] = (AV_SUBTITLE_SLOTS + slot * 0x40) as u64;
+        c.g[A1][0] = (value ^ r.next_u32()) as u64;
+    }
+
+    #[test]
+    fn av_subtitle_set_x_matches() {
+        check(
+            ssx3_ee::s13::f_003b03a8__generated,
+            av_subtitle_set_x,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 0, 0x1111_1111),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_y_matches() {
+        check(
+            ssx3_ee::s13::f_003b03b0__generated,
+            av_subtitle_set_y,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 1, 0x2222_2222),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_width_matches() {
+        check(
+            ssx3_ee::s13::f_003b03b8__generated,
+            av_subtitle_set_width,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 2, 0x3333_3333),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_height_matches() {
+        check(
+            ssx3_ee::s13::f_003b03c0__generated,
+            av_subtitle_set_height,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 3, 0x4444_4444),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_string_id_matches() {
+        check(
+            ssx3_ee::s13::f_003b03c8__generated,
+            av_subtitle_set_string_id,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 4, 0x5555_5555),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_frame_matches() {
+        check(
+            ssx3_ee::s13::f_003b03d0__generated,
+            av_subtitle_set_frame,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 5, 0x6666_6666),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_justify_x_matches() {
+        check(
+            ssx3_ee::s13::f_003b03d8__generated,
+            av_subtitle_set_justify_x,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 6, 0x7777_7777),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_justify_y_matches() {
+        check(
+            ssx3_ee::s13::f_003b03e0__generated,
+            av_subtitle_set_justify_y,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 7, 0x1111_8888),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_shape_matches() {
+        check(
+            ssx3_ee::s13::f_003b03e8__generated,
+            av_subtitle_set_shape,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 8, 0x2222_9999),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_color0_matches() {
+        check(
+            ssx3_ee::s13::f_003b03f0__generated,
+            av_subtitle_set_color0,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 9, 0xaa),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_color1_matches() {
+        check(
+            ssx3_ee::s13::f_003b03f8__generated,
+            av_subtitle_set_color1,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 10, 0xbb),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_color2_matches() {
+        check(
+            ssx3_ee::s13::f_003b0400__generated,
+            av_subtitle_set_color2,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 11, 0xcc),
+        );
+    }
+
+    #[test]
+    fn av_subtitle_set_color3_matches() {
+        check(
+            ssx3_ee::s13::f_003b0408__generated,
+            av_subtitle_set_color3,
+            100,
+            &|c, seed| av_subtitle_setup(c, seed, 12, 0xdd),
+        );
+    }
+
+    /// Player base for the ctor tests: 16-aligned, nonzero low byte, cleared
+    /// like the sibling ctor_2 test (`AV_Player_Init` dereferences it).
+    pub(crate) const AVPLAYER_THIS: u32 = DATA + 0x1410;
+
+    #[test]
+    fn av_player_ctor_matches() {
+        check(
+            ee::s13::f_003addc0__generated,
+            av_player_ctor,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3add_c0, 0);
+                alloc_ready(c);
+                clear_3(c, AVPLAYER_THIS, 0x100);
+                c.g[A0][0] = AVPLAYER_THIS as u64;
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[A2][0] = if seed / 2 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[A3][0] = if seed / 4 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T0][0] = if seed / 8 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+            },
+        );
+    }
+
     #[test]
     fn shp_calc_pixel_offset_events() {
         driven!(gen_calc, ee::s13::f_003b3e40__generated);
@@ -13582,5 +17737,2225 @@ pub(crate) mod tests {
                 0x003b_3e40,
             )
         });
+    }
+
+    #[test]
+    fn av_player_ctor_3_matches() {
+        check(
+            ee::s13::f_003ade58__generated,
+            av_player_ctor_3,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3ade_58, 0);
+                alloc_ready(c);
+                clear_3(c, AVPLAYER_THIS, 0x100);
+                c.g[A0][0] = AVPLAYER_THIS as u64;
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[A2][0] = if seed / 2 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[A3][0] = if seed / 4 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T0][0] = if seed / 8 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T1][0] = if seed / 16 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T2][0] = if seed / 32 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T3][0] = if seed / 64 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                // The eighth argument arrives on the caller's stack.
+                c.bus.write32(
+                    crate::difftest::SP + 0x30,
+                    if seed / 128 % 2 == 0 { 0 } else { r.next_u32() },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn av_player_ctor_4_matches() {
+        check(
+            ee::s13::f_003ade90__generated,
+            av_player_ctor_4,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3ade_90, 0);
+                alloc_ready(c);
+                clear_3(c, AVPLAYER_THIS, 0x100);
+                c.g[A0][0] = AVPLAYER_THIS as u64;
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[A2][0] = if seed / 2 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[A3][0] = if seed / 4 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T0][0] = if seed / 8 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T1][0] = if seed / 16 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T2][0] = if seed / 32 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T3][0] = if seed / 64 % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+            },
+        );
+    }
+
+    /// Gate for the stream-file fakes below: they answer only while this word
+    /// holds `AVCHUNK_CTRL_KEY` (otherwise the slot body they replaced runs).
+    pub(crate) const AVCHUNK_CTRL: u32 = DATA + 0x3000;
+
+    pub(crate) const AVCHUNK_CTRL_KEY: u32 = 0x4156_5052;
+
+    pub(crate) static AVCHUNK_PREV_GETCHUNK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static AVCHUNK_PREV_ISIDLE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn avchunk_gated(c: &mut Cpu) -> bool {
+        c.bus.read32(AVCHUNK_CTRL) == AVCHUNK_CTRL_KEY
+    }
+
+    /// `StreamFile_GetChunk`: no chunk queued.
+    pub(crate) fn avchunk_fake_getchunk(c: &mut Cpu) {
+        if !avchunk_gated(c) {
+            return fakes::fall_back(c, &AVCHUNK_PREV_GETCHUNK, ee::s14::f_003e12e0__generated);
+        }
+        fakes::fake_call(c, 0x003e_12e0);
+        c.g[V0][0] = 0;
+    }
+
+    /// `StreamFile_IsIdle`: the stream is idle, so the chunk loop exits.
+    pub(crate) fn avchunk_fake_isidle(c: &mut Cpu) {
+        if !avchunk_gated(c) {
+            return fakes::fall_back(c, &AVCHUNK_PREV_ISIDLE, ee::s14::f_003e1530__generated);
+        }
+        fakes::fake_call(c, 0x003e_1530);
+        c.g[V0][0] = 1;
+    }
+
+    pub(crate) fn avchunk_install_stream_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E12E0),
+            avchunk_fake_getchunk,
+            &AVCHUNK_PREV_GETCHUNK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E1530),
+            avchunk_fake_isidle,
+            &AVCHUNK_PREV_ISIDLE,
+        );
+    }
+
+    /// Chunk-callback fixture pieces (all 16-aligned, nonzero low byte).
+    pub(crate) const AVCHUNK_PLAYER: u32 = DATA + 0x1410;
+
+    pub(crate) const AVCHUNK_HOLDER: u32 = DATA + 0x1450;
+
+    pub(crate) const AVCHUNK_CHUNK: u32 = DATA + 0x1460;
+
+    pub(crate) const AVCHUNK_STREAM: u32 = DATA + 0x1500;
+
+    pub(crate) const AVCHUNK_MAGIC: u32 = DATA + 0x1510;
+
+    pub(crate) const AVCHUNK_SCRATCH: u32 = DATA + 0x1700;
+
+    #[test]
+    fn av_player_get_chunk_callback_matches() {
+        // A valid stream with no chunk queued: `GetChunk` returns 0 and
+        // `IsIdle` reports idle, so `OnChunk` takes its short path. (Its
+        // deeper arms belong to `OnChunk`'s own test below.)
+        check(
+            ee::s13::f_003aecb8__generated,
+            av_player_get_chunk_callback,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aec_b8, 0);
+                avchunk_install_stream_fakes();
+                c.bus.write32(AVCHUNK_CTRL, AVCHUNK_CTRL_KEY);
+                c.bus.write32(AVCHUNK_MAGIC, 0x4d52_5453);
+                c.bus.write32(AVCHUNK_MAGIC + 0x38, 1);
+                for i in 0..8 {
+                    c.bus.write32(AVCHUNK_PLAYER + 4 * i, 0xdead_beef);
+                    c.bus.write32(AVCHUNK_CHUNK + 4 * i, r.next_u32());
+                }
+                c.bus.write32(AVCHUNK_CHUNK + 0x30, AVCHUNK_STREAM);
+                c.bus.write32(AVCHUNK_HOLDER, AVCHUNK_CHUNK);
+                c.bus.write32(AVCHUNK_STREAM, AVCHUNK_MAGIC);
+                c.bus.write32(AVCHUNK_STREAM + 0x8, 0);
+                c.bus.write32(AVCHUNK_SCRATCH, 0xdead_beef);
+                c.g[A0][0] = AVCHUNK_PLAYER as u64;
+                c.g[A1][0] = AVCHUNK_HOLDER as u64;
+                c.g[A2][0] = AVCHUNK_SCRATCH as u64;
+            },
+        );
+    }
+
+    /// Int-field fixture: the pointer, length and output words plus the
+    /// 16-byte head scratch.
+    pub(crate) const AVINT_PP: u32 = DATA + 0x1410;
+
+    pub(crate) const AVINT_PLEN: u32 = DATA + 0x1414;
+
+    pub(crate) const AVINT_OUT: u32 = DATA + 0x1418;
+
+    pub(crate) const AVINT_STR: u32 = DATA + 0x1420;
+
+    pub(crate) fn av_int_setup(c: &mut Cpu, seed: u32) {
+        // `seed % 4`: 0 empty (returns 0, output untouched), 1 delimiter
+        // mid-string (restore + value), 2 delimiter first (empty head,
+        // returns 0), 3 digits-or-nothing to the end. A short length stops
+        // the scan before the delimiter.
+        machine(c, seed, 0x3af5_60, 0);
+        for i in 0..8 {
+            c.bus.write32(AVINT_STR + 4 * i, 0xdead_beef);
+        }
+        c.bus.write32(AVINT_PP, AVINT_STR);
+        c.bus.write32(AVINT_OUT, 0xdead_beef);
+        let (text, len): (&[u8], u32) = match seed % 4 {
+            0 => (b"", 0),
+            1 => (b"12\n34", 5),
+            2 => (b"\n789", 4),
+            _ => match seed / 4 % 3 {
+                0 => (b"456", 3),
+                1 => (b"-12", 3),
+                _ => (b"abc", 3),
+            },
+        };
+        for (i, &b) in text.iter().enumerate() {
+            c.bus.write8(AVINT_STR + i as u32, b);
+        }
+        c.bus.write8(AVINT_STR + text.len() as u32, 0);
+        let len = if seed % 4 == 1 && seed / 16 % 2 == 0 {
+            2
+        } else {
+            len
+        };
+        c.bus.write32(AVINT_PLEN, 0xdead_beef);
+        c.bus.write32(AVINT_PLEN, len);
+        c.g[A0][0] = AVINT_PP as u64;
+        c.g[A1][0] = AVINT_PLEN as u64;
+        c.g[A2][0] = AVINT_OUT as u64;
+    }
+
+    #[test]
+    fn av_parse_int_field_matches() {
+        check(
+            ee::s13::f_003af560__generated,
+            av_parse_int_field,
+            200,
+            &av_int_setup,
+        );
+    }
+
+    /// Vertical-tab bytes (0x0b): first-byte and mid-string VT hit the
+    /// `(byte-9) < 0x2` class boundary (V0==2) that tab/LF/digits never do.
+    pub(crate) fn av_int_vt_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x3af5_60, 0);
+        for i in 0..8 {
+            c.bus.write32(AVINT_STR + 4 * i, 0xdead_beef);
+        }
+        c.bus.write32(AVINT_PP, AVINT_STR);
+        c.bus.write32(AVINT_OUT, 0xdead_beef);
+        // VT first (empty-class hit at once), VT mid-string (scan finds
+        // it), VT only (scan to end after VT? no: VT ends the scan).
+        let (text, len): (&[u8], u32) = match seed % 3 {
+            0 => (b"\x0b789", 4),
+            1 => (b"45\x0b67", 5),
+            _ => (b"\x0b", 1),
+        };
+        for (i, &b) in text.iter().enumerate() {
+            c.bus.write8(AVINT_STR + i as u32, b);
+        }
+        c.bus.write8(AVINT_STR + text.len() as u32, 0);
+        c.bus.write32(AVINT_PLEN, 0xdead_beef);
+        c.bus.write32(AVINT_PLEN, len);
+        c.g[A0][0] = AVINT_PP as u64;
+        c.g[A1][0] = AVINT_PLEN as u64;
+        c.g[A2][0] = AVINT_OUT as u64;
+    }
+
+    #[test]
+    fn av_parse_int_field_vt_matches() {
+        check(
+            ee::s13::f_003af560__generated,
+            av_parse_int_field,
+            96,
+            &av_int_vt_setup,
+        );
+    }
+
+    /// Store-path fixture: the game image for `_strtol_r`'s ctype table at
+    /// `0x499c81` (without it no byte is ever a digit and `at_end` stays
+    /// true), then digit texts that all take the `!at_end` store in
+    /// generated block `0x3af64c` (hand wscriptcache.rs:9577-9581).
+    /// `seed % 4`: 0 "456", 1 "-7", 2 "0", 3 "12x" (stops mid-way, still
+    /// stores 12). Outputs are prefilled `0xdead_beef` so every store is
+    /// checked.
+    pub(crate) fn av_int_store_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x3af5_60, 0);
+        elf_image(c);
+        for i in 0..8 {
+            c.bus.write32(AVINT_STR + 4 * i, 0xdead_beef);
+        }
+        c.bus.write32(AVINT_PP, AVINT_STR);
+        c.bus.write32(AVINT_OUT, 0xdead_beef);
+        let (text, len): (&[u8], u32) = match seed % 4 {
+            0 => (b"456", 3),
+            1 => (b"-7", 2),
+            2 => (b"0", 1),
+            _ => (b"12x", 3),
+        };
+        for (i, &b) in text.iter().enumerate() {
+            c.bus.write8(AVINT_STR + i as u32, b);
+        }
+        c.bus.write8(AVINT_STR + text.len() as u32, 0);
+        c.bus.write32(AVINT_PLEN, 0xdead_beef);
+        c.bus.write32(AVINT_PLEN, len);
+        c.g[A0][0] = AVINT_PP as u64;
+        c.g[A1][0] = AVINT_PLEN as u64;
+        c.g[A2][0] = AVINT_OUT as u64;
+    }
+
+    #[test]
+    fn av_parse_int_field_store_matches() {
+        check(
+            ee::s13::f_003af560__generated,
+            av_parse_int_field,
+            32,
+            &av_int_store_setup,
+        );
+        // Stored-value proof that generated block `0x3af64c`'s `!at_end`
+        // store ran on the hand body: each value differs from the
+        // `0xdead_beef` prefill (including "0", which stores zero) and the
+        // return is 1.
+        for (seed, want) in [(0u32, 456u32), (1, (-7i32) as u32), (2, 0), (3, 12)] {
+            let mut c = crate::difftest::fresh();
+            av_int_store_setup(&mut c, seed);
+            av_parse_int_field(&mut c);
+            assert_eq!(c.bus.read32(AVINT_OUT), want, "seed {seed}");
+            assert_eq!(c.g[V0][0], 1, "seed {seed} return");
+        }
+    }
+
+    #[test]
+    fn av_parse_int_field_events() {
+        // The scan loop's bare event check delivers without unwinding, so
+        // both sides stay in lockstep through the driver. `strtol` runs
+        // real (leaf, no event checks) on both sides.
+        driven!(av_int_gen_driven, ee::s13::f_003af560__generated);
+        driven!(av_int_hand_driven, av_parse_int_field);
+        check_events(av_int_gen_driven, av_int_hand_driven, 96, &|c, seed| {
+            let mut r = machine(c, seed, 0x3af5_60, 0);
+            av_int_setup(c, seed);
+            c.pc = 0x003a_f560;
+            schedule(c, &mut r, seed, 0x003a_f560)
+        });
+    }
+
+    /// Justify fixture: the game-fixed name/value tables plus subject and
+    /// dictionary scratch.
+    pub(crate) const AVJUSTIFY_NAMES: u32 = 0x0049_5290;
+
+    pub(crate) const AVJUSTIFY_VALS: u32 = 0x0049_52a8;
+
+    pub(crate) const AVJUSTIFY_S: u32 = DATA + 0x1410;
+
+    pub(crate) const AVJUSTIFY_DICT: u32 = DATA + 0x1500;
+
+    pub(crate) const AVJUSTIFY_CTYPE: u32 = 0x0049_9c81;
+
+    pub(crate) fn av_justify_setup(c: &mut Cpu, seed: u32) {
+        // `seed % 6`: 0 empty (miss), 1 exact (first entry), 2 case-folded
+        // (second entry), 3 tabbed (miss + restore), 4 CR (fourth entry +
+        // restore), 5 unknown (miss, no restore).
+        machine(c, seed, 0x3af4_28, 0);
+        for ch in b'A'..=b'Z' {
+            c.bus.write8(AVJUSTIFY_CTYPE + ch as u32, 1);
+        }
+        const WORDS: [&[u8]; 5] = [b"left", b"right", b"center", b"top", b"up"];
+        const VALS: [u32; 5] = [10, 20, 30, 40, 50];
+        for (i, w) in WORDS.iter().enumerate() {
+            let at = AVJUSTIFY_DICT + i as u32 * 0x10;
+            for (j, &b) in w.iter().enumerate() {
+                c.bus.write8(at + j as u32, b);
+            }
+            c.bus.write8(at + w.len() as u32, 0);
+            c.bus.write32(AVJUSTIFY_NAMES + 4 * i as u32, at);
+            c.bus.write32(AVJUSTIFY_VALS + 4 * i as u32, VALS[i]);
+        }
+        for i in 0..8 {
+            c.bus.write32(AVJUSTIFY_S + 4 * i, 0xdead_beef);
+        }
+        let (text, len): (&[u8], u32) = match seed % 6 {
+            0 => (b"", 0),
+            1 => (b"left", 4),
+            2 => (b"RIGHT", 5),
+            3 => (b"cen\tter", 7),
+            4 => (b"top\r", 4),
+            _ => (b"zzz", 3),
+        };
+        for (i, &b) in text.iter().enumerate() {
+            c.bus.write8(AVJUSTIFY_S + i as u32, b);
+        }
+        c.bus.write8(AVJUSTIFY_S + text.len() as u32, 0);
+        c.pc = 0x003a_f428;
+        c.g[A0][0] = AVJUSTIFY_S as u64;
+        c.g[A1][0] = len as u64;
+    }
+
+    #[test]
+    fn av_parse_justify_matches() {
+        check(
+            ee::s13::f_003af428__generated,
+            av_parse_justify,
+            200,
+            &av_justify_setup,
+        );
+    }
+
+    #[test]
+    fn av_parse_justify_paths() {
+        // One total per arm (seed % 6): empty 182, exact 210, case-folded
+        // 281, tabbed 348, CR 304, unknown 284. Inputs are fixed per arm,
+        // so the `AV_StrICmp` costs are stable.
+        require_paths(
+            ee::s13::f_003af428__generated,
+            200,
+            &[182, 210, 281, 348, 304, 284],
+            &av_justify_setup,
+        );
+    }
+
+    #[test]
+    fn av_parse_justify_events() {
+        // Both back edges unwind through `drive` and resume at their heads;
+        // `AV_StrICmp` runs real (leaf, no event checks) on both sides.
+        driven!(av_justify_gen_driven, ee::s13::f_003af428__generated);
+        driven!(av_justify_hand_driven, av_parse_justify);
+        check_events(
+            av_justify_gen_driven,
+            av_justify_hand_driven,
+            96,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3af4_28, 0);
+                av_justify_setup(c, seed);
+                c.pc = 0x003a_f428;
+                schedule(c, &mut r, seed, 0x003a_f428)
+            },
+        );
+    }
+
+    /// Token fixture: subject/pointer/length/output words, the word and
+    /// length lists, and dictionary scratch.
+    pub(crate) const AVTOKEN_PS: u32 = DATA + 0x1410;
+
+    pub(crate) const AVTOKEN_PLEN: u32 = DATA + 0x1414;
+
+    pub(crate) const AVTOKEN_OUT: u32 = DATA + 0x1418;
+
+    pub(crate) const AVTOKEN_WORDS: u32 = DATA + 0x1420;
+
+    pub(crate) const AVTOKEN_LENS: u32 = DATA + 0x1430;
+
+    pub(crate) const AVTOKEN_S: u32 = DATA + 0x1440;
+
+    pub(crate) const AVTOKEN_DICT: u32 = DATA + 0x1500;
+
+    pub(crate) const AVTOKEN_CTYPE: u32 = 0x0049_9c81;
+
+    pub(crate) fn av_find_token_setup(c: &mut Cpu, seed: u32) {
+        // `seed % 7`: 0 null subject, 1 empty remainder, 2 match at (0,0),
+        // 3 empty-word match, 4 match at (3,1), 5 leading whitespace, 6 no
+        // match (with and without words).
+        machine(c, seed, 0x3af6_70, 0);
+        for ch in [0x20u32, 0x09, 0x0a, 0x0d] {
+            c.bus.write8(AVTOKEN_CTYPE + ch, 8);
+        }
+        for ch in b'A'..=b'Z' {
+            c.bus.write8(AVTOKEN_CTYPE + ch as u32, 1);
+        }
+        const WORDS: [&[u8]; 3] = [b"alpha", b"beta", b""];
+        for (i, w) in WORDS.iter().enumerate() {
+            let at = AVTOKEN_DICT + i as u32 * 0x10;
+            for (j, &b) in w.iter().enumerate() {
+                c.bus.write8(at + j as u32, b);
+            }
+            c.bus.write8(at + w.len() as u32, 0);
+            c.bus.write32(AVTOKEN_WORDS + 4 * i as u32, at);
+            c.bus.write32(AVTOKEN_LENS + 4 * i as u32, w.len() as u32);
+        }
+        for i in 0..8 {
+            c.bus.write32(AVTOKEN_S + 4 * i, 0xdead_beef);
+        }
+        let (text, len, nwords): (Option<&[u8]>, u32, u32) = match seed % 7 {
+            0 => (None, 0, 3),
+            1 => (Some(b""), 0, 2),
+            2 => (Some(b"alpha rest"), 10, 3),
+            3 => (Some(b"zz beta"), 7, 3),
+            4 => (Some(b"zz beta"), 7, 2),
+            5 => (Some(b"  alpha"), 7, 3),
+            _ => (Some(b"zzz"), 3, if seed / 7 % 2 == 0 { 2 } else { 0 }),
+        };
+        if let Some(text) = text {
+            for (i, &b) in text.iter().enumerate() {
+                c.bus.write8(AVTOKEN_S + i as u32, b);
+            }
+            c.bus.write8(AVTOKEN_S + text.len() as u32, 0);
+            c.bus.write32(AVTOKEN_PS, AVTOKEN_S);
+        } else {
+            c.bus.write32(AVTOKEN_PS, 0);
+        }
+        c.bus.write32(AVTOKEN_PLEN, 0xdead_beef);
+        c.bus.write32(AVTOKEN_PLEN, len);
+        c.bus.write32(AVTOKEN_OUT, 0xdead_beef);
+        c.pc = 0x003a_f670;
+        c.g[A0][0] = AVTOKEN_PS as u64;
+        c.g[A1][0] = AVTOKEN_PLEN as u64;
+        c.g[A2][0] = AVTOKEN_WORDS as u64;
+        c.g[A3][0] = AVTOKEN_LENS as u64;
+        c.g[T0][0] = nwords as u64;
+        c.g[T1][0] = AVTOKEN_OUT as u64;
+    }
+
+    #[test]
+    fn av_find_token_matches() {
+        check(
+            ee::s13::f_003af670__generated,
+            av_find_token,
+            200,
+            &av_find_token_setup,
+        );
+    }
+
+    #[test]
+    fn av_find_token_paths() {
+        // One total per arm (seed % 7): null 32, empty 47, match-(0,0) 143,
+        // empty-word 112, match-(3,1) 292, whitespace 163, no-match 201
+        // (two words) or 75 (no words). Inputs are fixed per arm, so the
+        // `AV_SkipWhitespace` costs are stable.
+        require_paths(
+            ee::s13::f_003af670__generated,
+            200,
+            &[32, 47, 143, 112, 292, 163, 201, 75],
+            &av_find_token_setup,
+        );
+    }
+
+    #[test]
+    fn av_find_token_events() {
+        // The three loop heads (700/718/750) unwind through `drive` and
+        // resume at their heads; 6bc is the match exit (no unwind; the
+        // bare check covers it). `AV_SkipWhitespace` runs real (bare
+        // check only, it never unwinds) on both sides.
+        driven!(av_token_gen_driven, ee::s13::f_003af670__generated);
+        driven!(av_token_hand_driven, av_find_token);
+        check_events(av_token_gen_driven, av_token_hand_driven, 96, &|c, seed| {
+            let mut r = machine(c, seed, 0x3af6_70, 0);
+            av_find_token_setup(c, seed);
+            c.pc = 0x003a_f670;
+            schedule(c, &mut r, seed, 0x003a_f670)
+        });
+    }
+
+    /// Frame-due fixture: player, timer and decoder scratch.
+    pub(crate) const AVFRAMEDUE_PLAYER: u32 = DATA + 0x1410;
+
+    pub(crate) const AVFRAMEDUE_TIMER: u32 = DATA + 0x1500;
+
+    pub(crate) const AVFRAMEDUE_DECODER: u32 = DATA + 0x1540;
+
+    /// The EATimer tick-rate word both time tests sample.
+    pub(crate) const AVTIME_TICK_RATE: u32 = 0x0045_0dc8;
+
+    #[test]
+    fn av_player_is_frame_due_matches() {
+        // The accumulator stays 0, so the sum sign comes from `base`:
+        // -5 (negative), 0 and 1 (positive, under a frame), 5 (positive,
+        // over a frame); the threshold word covers both float arms.
+        check(
+            ee::s13::f_003ae780__generated,
+            av_player_is_frame_due,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x3ae7_80, 0);
+                c.bus.write32(AVTIME_TICK_RATE, 1000);
+                for i in 0..0x20 {
+                    c.bus.write32(AVFRAMEDUE_PLAYER + 4 * i, 0xdead_beef);
+                }
+                let base: u32 = [-5i32 as u32, 0, 1, 5][seed as usize % 4];
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x40, base);
+                c.bus.write32(
+                    AVFRAMEDUE_PLAYER + 0x44,
+                    if seed / 4 % 2 == 0 { 0xffff_ffff } else { 1 },
+                );
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x4c, 0);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x54, 0);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x58, 0);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x5c, AVFRAMEDUE_TIMER);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x64, AVFRAMEDUE_DECODER);
+                for i in 0..8 {
+                    c.bus.write32(AVFRAMEDUE_TIMER + 4 * i, 0xdead_beef);
+                }
+                c.bus.write64(AVFRAMEDUE_TIMER + 0x8, 0);
+                c.bus.write32(AVFRAMEDUE_TIMER + 0x10, 0x1000);
+                c.bus.write32(AVFRAMEDUE_DECODER + 0x14, 0);
+                c.g[A0][0] = AVFRAMEDUE_PLAYER as u64;
+            },
+        );
+    }
+
+    /// Edge values: a base that zeroes the clock sum (X=0, halving
+    /// boundary), a very negative base (X<0, halving taken), a zero
+    /// threshold word (second-float boundary), and a huge accumulator
+    /// (nonzero stored product, GetTimeMs >= 0x800000 so the stale-f2 bits
+    /// are not a denormal). GetTimeMs returns 0xa92fc on the stock timer,
+    /// so base = -0xa92fc zeroes X.
+    #[test]
+    fn av_player_is_frame_due_edges_matches() {
+        check(
+            ee::s13::f_003ae780__generated,
+            av_player_is_frame_due,
+            32,
+            &|c, seed| {
+                machine(c, seed, 0x3ae7_80, 0);
+                c.bus.write32(AVTIME_TICK_RATE, 1000);
+                for i in 0..0x20 {
+                    c.bus.write32(AVFRAMEDUE_PLAYER + 4 * i, 0xdead_beef);
+                }
+                let (base, thresh, accum): (u32, u32, u64) = match seed % 4 {
+                    0 => (0xa92fc_u32.wrapping_neg(), 1, 0),
+                    1 => (0xf0000000, 0xffff_ffff, 0),
+                    2 => (5, 0, 0),
+                    _ => (5, 1, 0x900000),
+                };
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x40, base);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x44, thresh);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x4c, 0);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x54, 0);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x58, 0);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x5c, AVFRAMEDUE_TIMER);
+                c.bus.write32(AVFRAMEDUE_PLAYER + 0x64, AVFRAMEDUE_DECODER);
+                for i in 0..8 {
+                    c.bus.write32(AVFRAMEDUE_TIMER + 4 * i, 0xdead_beef);
+                }
+                c.bus.write64(AVFRAMEDUE_TIMER + 0x8, accum);
+                c.bus.write32(AVFRAMEDUE_TIMER + 0x10, 0x1000);
+                c.bus.write32(AVFRAMEDUE_DECODER + 0x14, 0);
+                c.g[A0][0] = AVFRAMEDUE_PLAYER as u64;
+            },
+        );
+    }
+
+    /// Time fixture: player, timer and owner scratch plus the SND globals
+    /// the status path samples (null stream table, latency flag byte).
+    pub(crate) const AVTIME_PLAYER: u32 = DATA + 0x1410;
+
+    pub(crate) const AVTIME_TIMER: u32 = DATA + 0x1500;
+
+    pub(crate) const AVTIME_OWNER: u32 = DATA + 0x1540;
+
+    pub(crate) const AVTIME_STREAM_COUNT: u32 = 0x0050_a92e;
+
+    pub(crate) const AVTIME_STREAM_TABLE: u32 = 0x0050_a0a0;
+
+    /// 0x510000 - 0x55a4: the flag byte `SND_GetOutputLatency` samples.
+    pub(crate) const AVTIME_LATENCY: u32 = 0x0051_0000 - 0x55a4;
+
+    #[test]
+    fn av_player_get_time_ms_matches() {
+        // `seed % 2` enables the sound block; `seed / 2 % 2` lags the
+        // stream; `seed / 4 % 3` settles the drift or pushes it past the
+        // reset; `seed / 12 % 2` drives both latency-flag arms.
+        check_lohi(
+            ee::s13::f_003ae9a0__generated,
+            av_player_get_time_ms,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x3ae9_a0, 0);
+                c.bus.write32(AVTIME_TICK_RATE, 1000);
+                c.bus.write32(AVTIME_STREAM_COUNT, 1);
+                c.bus.write32(AVTIME_STREAM_TABLE, 0);
+                c.bus.write8(AVTIME_LATENCY, (seed / 12 % 2) as u8);
+                for i in 0..0x20 {
+                    c.bus.write32(AVTIME_PLAYER + 4 * i, 0xdead_beef);
+                }
+                c.bus.write32(AVTIME_PLAYER, AVTIME_OWNER);
+                let (drift, offset) = match seed / 4 % 3 {
+                    0 => (0, 0),
+                    1 => (100, 0),
+                    _ => (0, 500),
+                };
+                c.bus.write32(AVTIME_PLAYER + 0x4c, offset);
+                c.bus.write32(
+                    AVTIME_PLAYER + 0x50,
+                    if seed / 2 % 2 == 0 { 0 } else { 0xffff_ffff },
+                );
+                c.bus.write32(AVTIME_PLAYER + 0x54, (seed % 2) as u32);
+                c.bus.write32(AVTIME_PLAYER + 0x58, drift);
+                c.bus.write32(AVTIME_PLAYER + 0x5c, AVTIME_TIMER);
+                for i in 0..8 {
+                    c.bus.write32(AVTIME_TIMER + 4 * i, 0xdead_beef);
+                }
+                c.bus.write64(AVTIME_TIMER + 0x8, 0);
+                c.bus.write32(AVTIME_TIMER + 0x10, 0x1000);
+                c.bus.write32(AVTIME_OWNER + 0xc, 0);
+                c.g[A0][0] = AVTIME_PLAYER as u64;
+            },
+        );
+    }
+
+    /// Drift-boundary values: drift -1 (the `nonneg` A2=-1 boundary),
+    /// drift 7 and 8 (the (A0+7)>>3 shift boundary), and a lagging stream
+    /// with drift that propagates past both shifts to the stored fields.
+    /// Outputs are prefilled nonzero so every store is checked.
+    #[test]
+    fn av_player_get_time_ms_drift_matches() {
+        check_lohi(
+            ee::s13::f_003ae9a0__generated,
+            av_player_get_time_ms,
+            32,
+            &|c, seed| {
+                machine(c, seed, 0x3ae9_a0, 0);
+                c.bus.write32(AVTIME_TICK_RATE, 1000);
+                c.bus.write32(AVTIME_STREAM_COUNT, 1);
+                c.bus.write32(AVTIME_STREAM_TABLE, 0);
+                c.bus.write8(AVTIME_LATENCY, (seed % 2) as u8);
+                for i in 0..0x20 {
+                    c.bus.write32(AVTIME_PLAYER + 4 * i, 0xdead_beef);
+                }
+                c.bus.write32(AVTIME_PLAYER, AVTIME_OWNER);
+                let drift: u32 = match seed % 4 {
+                    0 => 0xffff_ffff,
+                    1 => 7,
+                    2 => 8,
+                    _ => 100,
+                };
+                c.bus.write32(AVTIME_PLAYER + 0x4c, 0x1111_1111);
+                c.bus.write32(AVTIME_PLAYER + 0x50, 0xffff_ffff);
+                c.bus.write32(AVTIME_PLAYER + 0x54, 1);
+                c.bus.write32(AVTIME_PLAYER + 0x58, drift);
+                c.bus.write32(AVTIME_PLAYER + 0x5c, AVTIME_TIMER);
+                for i in 0..8 {
+                    c.bus.write32(AVTIME_TIMER + 4 * i, 0xdead_beef);
+                }
+                c.bus.write64(AVTIME_TIMER + 0x8, 0);
+                c.bus.write32(AVTIME_TIMER + 0x10, 0x1000);
+                c.bus.write32(AVTIME_OWNER + 0xc, 0);
+                c.g[A0][0] = AVTIME_PLAYER as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn av_parse_int_field_paths() {
+        // Arm totals, one per branch shape (the "456"/"abc" coincidence is
+        // real: `strtol` costs the same digits-or-nothing run; RAM differs).
+        require_paths(
+            ee::s13::f_003af560__generated,
+            200,
+            &[411, 425, 431, 442, 440, 461],
+            &av_int_setup,
+        );
+    }
+
+    /// Resume frame base for the justify tests (entry opens 0xc0).
+    pub(crate) const AVJUSTIFY_FRAME: u32 = DATA + 0x1600;
+
+    /// Resume frame base for the token tests (entry opens 0x80).
+    pub(crate) const AVTOKEN_FRAME: u32 = DATA + 0x1600;
+
+    /// Direct-entry resume for `av_parse_justify`'s two used-form heads: the
+    /// frame as the entry block leaves it, loop registers at mid-scan
+    /// values, compared head by head against the generated body.
+    #[test]
+    fn av_parse_justify_resume_matches() {
+        for head in [0x003a_f468u32, 0x003a_f500] {
+            let r = compare(ee::s13::f_003af428__generated, av_parse_justify, &|c| {
+                machine(c, 0x3af4_28, head as u64, 0);
+                // Tables and dictionary, as in the matches fixture.
+                for ch in b'A'..=b'Z' {
+                    c.bus.write8(AVJUSTIFY_CTYPE + ch as u32, 1);
+                }
+                const WORDS: [&[u8]; 5] = [b"left", b"right", b"center", b"top", b"up"];
+                for (i, w) in WORDS.iter().enumerate() {
+                    let at = AVJUSTIFY_DICT + i as u32 * 0x10;
+                    for (j, b) in w.iter().enumerate() {
+                        c.bus.write8(at + j as u32, *b);
+                    }
+                    c.bus.write8(at + w.len() as u32, 0);
+                    c.bus.write32(AVJUSTIFY_NAMES + 4 * i as u32, at);
+                    c.bus.write32(AVJUSTIFY_VALS + 4 * i as u32, 10 * i as u32);
+                }
+                // Subject "cen\tter": the tab at index 3 ends the scan.
+                for (i, b) in b"cen\tter".iter().enumerate() {
+                    c.bus.write8(AVJUSTIFY_S + i as u32, *b);
+                }
+                c.bus.write8(AVJUSTIFY_S + 7, 0);
+                // Frame as the entry block leaves it; saved slots get
+                // distinctive garbage so a missed restore changes RAM.
+                let sp = AVJUSTIFY_FRAME;
+                c.g[SP][0] = sp as u64;
+                for i in 0..0x30 {
+                    c.bus.write32(sp + 4 * i as u32, 0x5a5a_5a00 + i as u32);
+                }
+                c.bus.write32(sp + 0x40, crate::difftest::RA);
+                c.g[RA][0] = crate::difftest::RA as u64;
+                if head == 0x003a_f468 {
+                    // Mid-scan: index 2 of 7, tab remembered.
+                    c.g[S3][0] = 2;
+                    c.g[S5][0] = 7;
+                    c.g[S4][0] = AVJUSTIFY_S as u64;
+                    c.g[S6][0] = 9;
+                } else {
+                    // Mid-table: third entry; stack names/values forged as
+                    // the copy block lays them out (names at +0x0, values
+                    // at +0x20) with the dictionary's values; S1 is the
+                    // entry block's -1 (no match found yet).
+                    let names = DATA + 0x1700;
+                    for i in 0..WORDS.len() {
+                        let at = AVJUSTIFY_DICT + i as u32 * 0x10;
+                        c.bus.write32(names + 4 * i as u32, at);
+                        c.bus.write32(names + 0x20 + 4 * i as u32, 10 * i as u32);
+                    }
+                    c.g[S2][0] = 2;
+                    c.g[S0][0] = names as u64;
+                    c.g[S1][0] = u64::MAX;
+                    c.g[S4][0] = AVJUSTIFY_S as u64;
+                    c.g[S3][0] = 3;
+                    c.g[S5][0] = 7;
+                    c.g[S6][0] = 9;
+                }
+                c.pc = head;
+            });
+            assert!(r.hard.is_empty(), "head {head:#x}: {:#?}", r.hard);
+        }
+    }
+
+    /// Shared direct-entry setup for `av_find_token`'s four used-form heads:
+    /// the frame as the entry block leaves it, loop registers at mid-match
+    /// values. Every head below runs to a full "alpha" match (718 enters
+    /// with word 0 already rejected and matches word 1).
+    fn av_find_token_head_setup(c: &mut Cpu, head: u32) {
+        machine(c, 0x3af6_70, head as u64, 0);
+        for ch in [0x20u32, 0x09, 0x0a, 0x0d] {
+            c.bus.write8(AVTOKEN_CTYPE + ch, 8);
+        }
+        for ch in b'A'..=b'Z' {
+            c.bus.write8(AVTOKEN_CTYPE + ch as u32, 1);
+        }
+        // One word, "alpha" (the 718 arm below adds a rejected word 0).
+        const WORD: &[u8; 5] = b"alpha";
+        let at = AVTOKEN_DICT;
+        for (j, b) in WORD.iter().enumerate() {
+            c.bus.write8(at + j as u32, *b);
+        }
+        c.bus.write8(at + WORD.len() as u32, 0);
+        c.bus.write32(AVTOKEN_WORDS, at);
+        c.bus.write32(AVTOKEN_LENS, 5);
+        for (i, b) in b"alpha rest".iter().enumerate() {
+            c.bus.write8(AVTOKEN_S + i as u32, *b);
+        }
+        c.bus.write8(AVTOKEN_S + 10, 0);
+        c.bus.write32(AVTOKEN_PS, AVTOKEN_S);
+        c.bus.write32(AVTOKEN_PLEN, 10);
+        c.bus.write32(AVTOKEN_OUT, 0xdead_beef);
+        // Frame as the entry block leaves it (subject pointer word
+        // at +0x0, saved slots garbage).
+        let sp = AVTOKEN_FRAME;
+        c.g[SP][0] = sp as u64;
+        c.bus.write32(sp, AVTOKEN_S);
+        for i in 1..0x20 {
+            c.bus.write32(sp + 4 * i as u32, 0x5a5a_5a00 + i as u32);
+        }
+        c.bus.write32(sp + 0x10, crate::difftest::RA);
+        c.g[RA][0] = crate::difftest::RA as u64;
+        c.g[S0][0] = AVTOKEN_PLEN as u64;
+        c.g[S2][0] = AVTOKEN_PS as u64;
+        c.g[S3][0] = AVTOKEN_OUT as u64;
+        c.g[S4][0] = AVTOKEN_LENS as u64;
+        c.g[S5][0] = AVTOKEN_WORDS as u64;
+        c.g[T5][0] = 10;
+        c.g[T1][0] = AVTOKEN_LENS as u64;
+        c.g[T0][0] = AVTOKEN_WORDS as u64;
+        c.g[T4][0] = AVTOKEN_S as u64;
+        match head {
+            // Match exit: start 0, five bytes matched, word 0.
+            0x003a_f6bc => {
+                c.g[A3][0] = 0;
+                c.g[A1][0] = 5;
+                c.g[T3][0] = 0;
+                c.g[A0][0] = 0;
+                c.g[A2][0] = 0;
+            }
+            // Next start: fresh scan of the full remainder.
+            0x003a_f700 => {
+                c.g[S1][0] = 1;
+                c.g[T3][0] = 0;
+                c.g[A3][0] = 0;
+                c.g[A1][0] = 0;
+                c.g[A0][0] = 0;
+                c.g[A2][0] = 0;
+            }
+            // Next word: word 0 ("zzz") already tried and rejected,
+            // word 1 ("alpha") matches at start 0 and runs to 0x3af6bc.
+            0x003a_f718 => {
+                let w1 = AVTOKEN_DICT + 0x10;
+                for (j, b) in b"zzz\0".iter().enumerate() {
+                    c.bus.write8(AVTOKEN_DICT + j as u32, *b);
+                }
+                for (j, b) in b"alpha\0".iter().enumerate() {
+                    c.bus.write8(w1 + j as u32, *b);
+                }
+                c.bus.write32(AVTOKEN_WORDS, AVTOKEN_DICT);
+                c.bus.write32(AVTOKEN_WORDS + 4, w1);
+                c.bus.write32(AVTOKEN_LENS, 3);
+                c.bus.write32(AVTOKEN_LENS + 4, 5);
+                c.g[S1][0] = 2;
+                c.g[T3][0] = 1;
+                c.g[T1][0] = (AVTOKEN_LENS + 4) as u64;
+                c.g[T0][0] = (AVTOKEN_WORDS + 4) as u64;
+                c.g[A3][0] = 0;
+                c.g[A1][0] = 0;
+                c.g[A0][0] = 0;
+                c.g[A2][0] = 0;
+            }
+            // Whole word matched when the count reaches its length:
+            // three bytes in ("alp"), two to go ("ha").
+            _ => {
+                c.g[S1][0] = 1;
+                c.g[T3][0] = 0;
+                c.g[A3][0] = 0;
+                c.g[A1][0] = 3;
+                c.g[A2][0] = (AVTOKEN_S + 2) as u64;
+                c.g[T2][0] = 5;
+                c.g[V0][0] = 0;
+                c.g[V1][0] = 0;
+            }
+        }
+        c.pc = head;
+    }
+
+    /// Direct-entry resume for `av_find_token`'s four used-form heads,
+    /// compared head by head.
+    #[test]
+    fn av_find_token_resume_matches() {
+        for head in [0x003a_f6bcu32, 0x003a_f700, 0x003a_f718, 0x003a_f750] {
+            let r = compare(ee::s13::f_003af670__generated, av_find_token, &|c| {
+                av_find_token_head_setup(c, head)
+            });
+            assert!(r.hard.is_empty(), "head {head:#x}: {:#?}", r.hard);
+        }
+        // The 718 row must genuinely reach the match, not merely agree on
+        // the failure path: word index 1 lands in [S3] (failure writes
+        // 0xffff), remainder 5 in [S0], out pointer past "alpha" in [S2].
+        {
+            let mut c = crate::difftest::fresh();
+            av_find_token_head_setup(&mut c, 0x003a_f718);
+            av_find_token(&mut c);
+            assert_eq!(c.bus.read32(AVTOKEN_OUT), 1);
+            assert_eq!(c.bus.read32(AVTOKEN_PLEN), 5);
+            assert_eq!(c.bus.read32(AVTOKEN_PS), AVTOKEN_S + 5);
+        }
+    }
+
+    /// Fresh machine with the BELibrary/world singletons, the SND-not-ready
+    /// flag (`lb(0x50aa5c)`) and the assert-not-busy word clear, the tick
+    /// globals scribbled, and the wsAlloc/free slots (`gp - 0x6bd0/0x6bcc`)
+    /// pointed at the test fake. Returns the RNG for fixture garbage.
+    pub(crate) fn av_test_base(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let r = machine(c, seed, salt, 0);
+        c.bus.write32(GAME_GP - 0x1f04, DATA + 0x30_0000);
+        c.bus.write32(GAME_GP - 0x848, DATA + 0x31_0000);
+        c.bus.write8(0x0050_aa5c, 0);
+        c.bus.write32(0x0045_0da4, 0);
+        c.bus.write32(0x0045_0dcc, 0x1111_1111);
+        c.bus.write32(0x0045_0dc8, 0);
+        c.bus.write32(0x0050_9430, FAKE);
+        c.bus.write32(0x0050_9434, FAKE);
+        c.bus.write32(0x0050_9438, 0);
+        r
+    }
+
+    /// Fill `words` words at `addr` with nonzero garbage.
+    pub(crate) fn av_fill_words(c: &mut Cpu, r: &mut Rng, addr: u32, words: u32) {
+        for i in 0..words {
+            c.bus.write32(addr + 4 * i, r.next_u32() | 0x0101_0101);
+        }
+    }
+
+    /// Gate for the stream fakes below: they answer only while this word holds
+    /// `AVSTREAM_CTRL_KEY` (otherwise the slot body they replaced runs).
+    /// `AVSTREAM_CHUNKVAL` is what the queued-chunk fake returns: 0 for the
+    /// empty arm, the forged chunk for the chunk arms. The stream-queue
+    /// internals (`Validate`/mutex/list walk) stay on the other side of this
+    /// boundary; everything downstream (tag dispatch, codec paths, release)
+    /// runs real.
+    pub(crate) const AVSTREAM_CTRL: u32 = DATA + 0x3100;
+
+    pub(crate) const AVSTREAM_CTRL_KEY: u32 = 0x5354_5245;
+
+    pub(crate) const AVSTREAM_CHUNKVAL: u32 = DATA + 0x3104;
+
+    pub(crate) static AVSTREAM_PREV_ISIDLE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static AVSTREAM_PREV_GETCHUNK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn avstream_gated(c: &mut Cpu) -> bool {
+        c.bus.read32(AVSTREAM_CTRL) == AVSTREAM_CTRL_KEY
+    }
+
+    /// `StreamFile_IsIdle`: the stream is idle, so the chunk loop exits.
+    /// `StreamFile_GetChunk` stays real: the fixtures forge a draining
+    /// stream and the test proves it drains.
+    pub(crate) fn avstream_fake_isidle(c: &mut Cpu) {
+        if !avstream_gated(c) {
+            return fakes::fall_back(c, &AVSTREAM_PREV_ISIDLE, ee::s14::f_003e1530__generated);
+        }
+        fakes::fake_call(c, 0x003e_1530);
+        c.g[V0][0] = 1;
+    }
+
+    pub(crate) fn avstream_install_isidle_fake() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E1530),
+            avstream_fake_isidle,
+            &AVSTREAM_PREV_ISIDLE,
+        );
+    }
+
+    /// `StreamFile_GetChunk`: the fixture-forged queue head.
+    pub(crate) fn avstream_fake_getchunk(c: &mut Cpu) {
+        if !avstream_gated(c) {
+            return fakes::fall_back(c, &AVSTREAM_PREV_GETCHUNK, ee::s14::f_003e12e0__generated);
+        }
+        fakes::fake_call(c, 0x003e_12e0);
+        c.g[V0][0] = c.bus.read32(AVSTREAM_CHUNKVAL) as u64;
+    }
+
+    pub(crate) fn avstream_install_getchunk_fake() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E12E0),
+            avstream_fake_getchunk,
+            &AVSTREAM_PREV_GETCHUNK,
+        );
+    }
+
+    #[test]
+    fn av_create_subtitles_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = av_test_base(c, seed, 0xaf0c8);
+            let list = DATA + 0x1410;
+            let count = seed % 4;
+            av_fill_words(c, &mut r, list, 2);
+            c.pc = 0x003a_f0c8;
+            c.g[A0][0] = list as u64;
+            c.g[A1][0] = count as u64;
+            c.g[A2][0] = (0x111 + (seed / 4) % 5) as u64;
+            c.g[A3][0] = (0x222 + (seed / 8) % 7) as u64;
+            c.g[T0][0] = (0x333 + (seed / 16) % 9) as u64;
+            c.g[T1][0] = (0x444 + (seed / 32) % 9) as u64;
+        };
+        check_paths(
+            ee::s13::f_003af0c8__generated,
+            av_create_subtitles,
+            16,
+            &[56, 135, 199, 269],
+            &setup,
+        );
+        // The built list holds `count` records stamped with the geometry
+        // and the record index as string id (record 0's frame is cleared).
+        // The records land at the fake-alloc address, which could in theory
+        // overlap the list head; `check` above already proves those seeds
+        // equal, so only the shape asserts skip an overlapped seed.
+        for seed in 0..8u32 {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            av_create_subtitles(&mut c);
+            let list = DATA + 0x1410;
+            let count = seed % 4;
+            assert_eq!(c.bus.read32(list + 4), count, "seed {seed}");
+            let base = c.bus.read32(list);
+            if count == 0 {
+                continue;
+            }
+            if base >= list.wrapping_sub(3 * 0x34) && base < list + 8 {
+                continue;
+            }
+            let x = 0x111 + (seed / 4) % 5;
+            let y = 0x222 + (seed / 8) % 7;
+            let width = 0x333 + (seed / 16) % 9;
+            let height = 0x444 + (seed / 32) % 9;
+            for i in 0..count {
+                let rec = base + i * 0x34;
+                assert_eq!(c.bus.read32(rec), x, "seed {seed} rec {i} x");
+                assert_eq!(c.bus.read32(rec + 4), y, "seed {seed} rec {i} y");
+                assert_eq!(c.bus.read32(rec + 8), width, "seed {seed} rec {i} w");
+                assert_eq!(c.bus.read32(rec + 0xc), height, "seed {seed} rec {i} h");
+                assert_eq!(c.bus.read32(rec + 0x10), i, "seed {seed} rec {i} id");
+                assert_eq!(
+                    c.bus.read32(rec + 0x14),
+                    if i == 0 { 0 } else { 0xffff_ffff },
+                    "seed {seed} rec {i} frame"
+                );
+            }
+        }
+    }
+
+    pub(crate) fn av_shutdown_setup(c: &mut Cpu, seed: u32) {
+        let mut r = av_test_base(c, seed, 0xae300);
+        let this = DATA + 0x1410;
+        let arm = seed % 4;
+        av_fill_words(c, &mut r, this, 0x1e);
+        let decoder = DATA + 0x1510;
+        let vtab = DATA + 0x1600;
+        av_fill_words(c, &mut r, decoder, 8);
+        av_fill_words(c, &mut r, vtab, 4);
+        c.bus.write32(vtab + 8, 0);
+        c.bus.write32(vtab + 0xc, FAKE);
+        c.bus.write32(decoder + 0x18, vtab);
+        let audio = DATA + 0x1700;
+        av_fill_words(c, &mut r, audio, 4);
+        c.bus.write32(audio + 4, 0);
+        c.pc = 0x003a_e300;
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = (arm >= 2) as u64;
+        c.bus
+            .write32(this + 0x64, if arm >= 2 { decoder } else { 0 });
+        c.bus.write32(this, if arm >= 2 { audio } else { 0 });
+        c.bus.write32(this + 0x5c, if arm >= 2 { 0x77 } else { 0 });
+        c.bus.write32(this + 0x30, 0);
+        c.bus.write32(this + 0x34, 0);
+        c.bus.write32(this + 0x14, if arm >= 1 { 0x99 } else { 0 });
+        c.bus.write32(this + 0x20, if arm >= 2 { FAKE } else { 0 });
+        c.bus.write32(this + 0x28, if arm >= 3 { FAKE } else { 0 });
+        c.bus.write32(this + 0x4, if arm >= 2 { 0x55 } else { 0 });
+        c.bus.write32(this + 0x8, if arm >= 3 { 0x66 } else { 0 });
+        // No stack setup needed: each GetSettings block stores 0x20 at
+        // sp first (so the length is always 32), and the settings copy
+        // zeroes sp+8, so the chunk callback always goes through the
+        // miss-hook fake at target 0.
+    }
+
+    #[test]
+    fn av_player_shutdown_matches() {
+        check_paths(
+            ee::s13::f_003ae300__generated,
+            av_player_shutdown,
+            32,
+            &[56, 75, 241, 345],
+            &av_shutdown_setup,
+        );
+    }
+
+    pub(crate) fn av_start_setup(c: &mut Cpu, seed: u32) {
+        let mut r = av_test_base(c, seed, 0xae450);
+        avstream_install_isidle_fake();
+        c.bus.write32(AVSTREAM_CTRL, AVSTREAM_CTRL_KEY);
+        let this = DATA + 0x1410;
+        let arm = seed % 6;
+        av_fill_words(c, &mut r, this, 0x1e);
+        let stream = DATA + 0x1900;
+        av_fill_words(c, &mut r, stream, 5);
+        c.bus.write32(stream + 0x10, 0x1000);
+        let hp1 = DATA + 0x1a10;
+        let hp2 = DATA + 0x1a20;
+        c.bus.write32(hp1, hp2);
+        c.bus.write32(hp2, 0x1234_5678);
+        let bad = arm == 1;
+        c.pc = 0x003a_e450;
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = 0x700;
+        c.g[A2][0] = 0x800;
+        c.bus.write32(this + 0x34, if bad { hp1 } else { 0 });
+        c.bus.write32(this + 0x30, if bad { hp1 } else { 0 });
+        c.bus.write32(
+            this + 0x24,
+            match arm {
+                2 => 5,
+                _ => 0,
+            },
+        );
+        c.bus.write32(
+            this + 0x2c,
+            match arm {
+                3 => 9,
+                _ => 0,
+            },
+        );
+        c.bus.write32(this + 0x14, if arm == 5 { 0 } else { 1 });
+        c.bus.write32(this + 0x1c, if arm >= 4 { 0 } else { 1 });
+        c.bus.write32(this + 0x5c, stream);
+        c.bus.write32(this, 0);
+        c.bus.write32(0x0050_9430, if arm >= 4 { FAKE } else { 0 });
+    }
+
+    #[test]
+    fn av_player_start_matches() {
+        check_paths(
+            ee::s13::f_003ae450__generated,
+            av_player_start,
+            36,
+            &[236, 244, 383, 398, 760, 762],
+            &av_start_setup,
+        );
+        // The two async blocks land in different fields: arm C resolves
+        // handle 1 into +0x38, arm C2 resolves handle 2 into +0x3c. The
+        // queue call returns slot 0 for the forged handles (not -1).
+        for seed in [2u32, 8, 14, 20, 26, 32] {
+            let mut c = crate::difftest::fresh();
+            av_start_setup(&mut c, seed);
+            assert_eq!(seed % 6, 2);
+            av_player_start(&mut c);
+            assert_eq!(c.bus.read32(DATA + 0x1410 + 0x38), 0);
+        }
+        for seed in [3u32, 9, 15, 21, 27, 33] {
+            let mut c = crate::difftest::fresh();
+            av_start_setup(&mut c, seed);
+            assert_eq!(seed % 6, 3);
+            av_player_start(&mut c);
+            assert_eq!(c.bus.read32(DATA + 0x1410 + 0x3c), 0);
+        }
+        // Arms 4 and 5 take different sub-paths at the +0x14 test (arm 5
+        // stores [+0x38] into +0x3c with a +3 charge; arm 4 skips it) and
+        // the audio path downstream reads +0x3c, so their totals differ
+        // (760 vs 762) even though the +0x3c word itself is clobbered
+        // downstream on both arms.
+    }
+
+    /// Value-boundary fixtures (arm 5, which runs the audio-init path):
+    /// a heap word at the wsAlloc free slot (so `no_heap` is false and the
+    /// V0==0 boundary is hit) and a nonzero audio word (so `!(0&V1)`
+    /// differs). Outputs are prefilled nonzero and checked by the RAM
+    /// comparison. (Timer ticks stay 0: TIMER_UPDATE zeroes the fresh
+    /// timer's +8 before it is read, so the shift mutants need a
+    /// ticking timer, documented as a gap.)
+    pub(crate) fn av_start_values_setup(c: &mut Cpu, seed: u32) {
+        av_start_setup(c, seed);
+        // Heap with a zero word at +4 (V0==0 boundary for the `<` test).
+        c.bus.write32(0x0050_a430, DATA + 0x4000);
+        c.bus.write32(DATA + 0x4000 + 4, 0);
+        // Nonzero audio word with bit 31 set (arm-5 AudioInit returns a
+        // stable address; bit 31 survives the >>31 sign test below).
+        c.bus.write32(0x0083_a7d0 + 0xc, 0x8abc_def0);
+    }
+
+    #[test]
+    fn av_player_start_values_matches() {
+        check(
+            ee::s13::f_003ae450__generated,
+            av_player_start,
+            36,
+            &av_start_values_setup,
+        );
+    }
+
+    pub(crate) fn av_onchunk_setup(c: &mut Cpu, seed: u32) {
+        let mut r = av_test_base(c, seed, 0xaead0);
+        avstream_install_isidle_fake();
+        avstream_install_getchunk_fake();
+        c.bus.write32(AVSTREAM_CTRL, AVSTREAM_CTRL_KEY);
+        // A: empty stream; B1: plain chunk; B2: MPEG chunk, decoder
+        // busy; B3: MPEG chunk, codec created and set.
+        let arm = seed % 4;
+        let player = DATA + 0x1410;
+        let decoder = DATA + 0x1420;
+        let out = DATA + 0x1430;
+        let stream = DATA + 0x1440;
+        let head = DATA + 0x1450;
+        let chunk = DATA + 0x1460;
+        av_fill_words(c, &mut r, player, 0x10);
+        av_fill_words(c, &mut r, decoder, 0x10);
+        av_fill_words(c, &mut r, stream, 5);
+        av_fill_words(c, &mut r, head, 0x10);
+        av_fill_words(c, &mut r, chunk, 8);
+        c.bus.write32(player + 0x30, stream);
+        c.bus.write32(stream, head);
+        c.bus.write32(stream + 8, if arm == 0 { 0 } else { 0x10 });
+        c.bus.write32(stream + 0xc, chunk);
+        c.bus.write32(head, 0x4d52_5453);
+        c.bus.write32(head + 4, 0);
+        c.bus.write32(head + 0xc, 0);
+        c.bus.write32(head + 0x30, 0);
+        c.bus.write32(head + 0x34, 8);
+        c.bus.write32(head + 0x38, 0);
+        c.bus.write32(chunk + 4, if arm == 0 { 0 } else { 0x10 });
+        // Arms 2/3 carry the real "MPCh" tag (bytes 4D 50 43 68 assemble to
+        // 0x4D504368, the table's first word); arm 1's single nonzero byte
+        // is not a table word and stays plain.
+        const MPCH: [u8; 4] = [0x4d, 0x50, 0x43, 0x68];
+        for i in 0..4u32 {
+            c.bus.write8(
+                chunk + i,
+                if arm == 1 {
+                    (i == 0) as u8
+                } else if arm >= 2 {
+                    MPCH[i as usize]
+                } else {
+                    0
+                },
+            );
+        }
+        c.bus.write32(
+            decoder + 0x14,
+            match arm {
+                2 => 0x888,
+                3 => 0,
+                _ => 0x99,
+            },
+        );
+        let sp = crate::difftest::SP - 0xb0;
+        c.bus.write32(sp + 4, DATA + 0x1500);
+        c.bus.write32(DATA + 0x1508, 0);
+        c.bus
+            .write32(AVSTREAM_CHUNKVAL, if arm == 0 { 0 } else { chunk });
+        // The game's real MPEG tag table (orig/SLUS_207.72 at 0x495448):
+        // "MPCh"/"MPCd" as OnChunk assembles them (b0<<24|b1<<16|b2<<8|b3).
+        c.bus.write32(0x0049_5448, 0x4d50_4368);
+        c.bus.write32(0x0049_544c, 0x4d50_4364);
+        c.pc = 0x003a_ead0;
+        c.g[A0][0] = player as u64;
+        c.g[A1][0] = decoder as u64;
+        c.g[A2][0] = out as u64;
+    }
+
+    #[test]
+    fn av_player_on_chunk_matches() {
+        check_paths(
+            ee::s13::f_003aead0__generated,
+            av_player_on_chunk,
+            32,
+            &[162, 227, 224, 328],
+            &av_onchunk_setup,
+        );
+    }
+
+    /// Second-tag bytes nonzero: chunk bytes 5-7 feed the codec-path tag
+    /// assembly (`V0 = b7<<24|b6<<16|b5<<8|b4`), so the shift/operator
+    /// mutants there change the stored tag. Bytes 0-3 keep the real MPCh
+    /// tag so dispatch is unchanged (MPEG arms).
+    pub(crate) fn av_onchunk_bytes_setup(c: &mut Cpu, seed: u32) {
+        av_onchunk_setup(c, seed);
+        let chunk = DATA + 0x1460;
+        // Nonzero, seed-varying; byte 5 gets the high bit on some seeds.
+        c.bus.write8(
+            chunk + 5,
+            (0x20 + seed * 37) as u8 | if seed % 3 == 0 { 0x80 } else { 0 },
+        );
+        c.bus.write8(chunk + 6, (0x30 + seed * 53) as u8);
+        c.bus.write8(chunk + 7, (0x40 + seed * 71) as u8);
+    }
+
+    #[test]
+    fn av_player_on_chunk_bytes_matches() {
+        check(
+            ee::s13::f_003aead0__generated,
+            av_player_on_chunk,
+            32,
+            &av_onchunk_bytes_setup,
+        );
+    }
+
+    /// The chunk loop's bare event check delivers without unwinding, so both
+    /// sides stay in lockstep through the driver. `GetChunk`/`IsIdle` are
+    /// gated fakes, `EATimer` runs real (bare check only); everything
+    /// downstream of a queued chunk runs real.
+    #[test]
+    fn av_player_on_chunk_events() {
+        driven!(av_onchunk_gen_driven, ee::s13::f_003aead0__generated);
+        driven!(av_onchunk_hand_driven, av_player_on_chunk);
+        check_events(
+            av_onchunk_gen_driven,
+            av_onchunk_hand_driven,
+            96,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xaead_00, 0);
+                av_onchunk_setup(c, seed % 32);
+                c.pc = 0x003a_ead0;
+                schedule(c, &mut r, seed, 0x003a_ead0)
+            },
+        );
+    }
+
+    /// Both subtitle-list build loops deliver their bare event checks without
+    /// unwinding. The allocator and record writes run real; the list head
+    /// is prefilled nonzero.
+    #[test]
+    fn av_create_subtitles_events() {
+        driven!(av_create_gen_driven, ee::s13::f_003af0c8__generated);
+        driven!(av_create_hand_driven, av_create_subtitles);
+        check_events(
+            av_create_gen_driven,
+            av_create_hand_driven,
+            96,
+            &|c, seed| {
+                let mut r = av_test_base(c, seed, 0xaf0c_80);
+                let list = DATA + 0x1410;
+                av_fill_words(c, &mut r, list, 2);
+                c.pc = 0x003a_f0c8;
+                c.g[A0][0] = list as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = 0x111 as u64;
+                c.g[A3][0] = 0x222 as u64;
+                c.g[T0][0] = 0x333 as u64;
+                c.g[T1][0] = 0x444 as u64;
+                schedule(c, &mut r, seed, 0x003a_f0c8)
+            },
+        );
+    }
+
+    /// `AV_Player` field offsets, used by the fixture to prefill and read
+    /// back the struct the port initializes.
+    pub(crate) const AV_PLAYER_A1: u32 = 0x0c;
+
+    pub(crate) const AV_PLAYER_A4: u32 = 0x10;
+
+    pub(crate) const AV_PLAYER_ALLOC_A: u32 = 0x04;
+
+    pub(crate) const AV_PLAYER_ALLOC_B: u32 = 0x08;
+
+    pub(crate) const AV_PLAYER_HAS_AUDIO: u32 = 0x14;
+
+    pub(crate) const AV_PLAYER_TYPE: u32 = 0x18;
+
+    pub(crate) const AV_PLAYER_SND_FLAG: u32 = 0x1c;
+
+    pub(crate) const AV_PLAYER_ASYNC_A: u32 = 0x24;
+
+    pub(crate) const AV_PLAYER_ASYNC_B: u32 = 0x2c;
+
+    pub(crate) const AV_PLAYER_STREAM_A: u32 = 0x30;
+
+    pub(crate) const AV_PLAYER_STREAM_B: u32 = 0x34;
+
+    pub(crate) const AV_PLAYER_FILE_A: u32 = 0x38;
+
+    pub(crate) const AV_PLAYER_FILE_B: u32 = 0x3c;
+
+    /// Gate of the stream/async callee fakes: a magic word in the machine's
+    /// RAM turns a fake on (both sides of a diff get their own machine).
+    /// With the gate off the fake falls back to the body the hook found.
+    pub(crate) const AVTEST_MAGIC: u32 = 0x1403_1403;
+
+    pub(crate) const AVTEST_CTRL: u32 = DATA + 0x20_0000;
+
+    macro_rules! avtest_gated_fake {
+        ($fake:ident, $prev:ident, $target:expr, $generated:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(AVTEST_CTRL) != AVTEST_MAGIC {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $target, ra);
+            }
+        };
+    }
+    avtest_gated_fake!(
+        avtest_fake_stream_create,
+        AVTEST_PREV_STREAM_CREATE,
+        0x003e_06d8,
+        ee::s14::f_003e06d8
+    );
+
+    avtest_gated_fake!(
+        avtest_fake_get_channel,
+        AVTEST_PREV_GET_CHANNEL,
+        0x003e_0bf8,
+        ee::s14::f_003e0bf8
+    );
+
+    avtest_gated_fake!(
+        avtest_fake_set_priority,
+        AVTEST_PREV_SET_PRIORITY,
+        0x003e_0ad8,
+        ee::s14::f_003e0ad8
+    );
+
+    avtest_gated_fake!(
+        avtest_fake_set_channel_filter,
+        AVTEST_PREV_SET_CHANNEL_FILTER,
+        0x003e_0948,
+        ee::s14::f_003e0948
+    );
+
+    avtest_gated_fake!(
+        avtest_fake_queue_range,
+        AVTEST_PREV_QUEUE_RANGE,
+        0x003e_0c88,
+        ee::s14::f_003e0c88
+    );
+
+    avtest_gated_fake!(
+        avtest_fake_queue_file,
+        AVTEST_PREV_QUEUE_FILE,
+        0x003e_0d80,
+        ee::s14::f_003e0d80
+    );
+
+    avtest_gated_fake!(
+        avtest_fake_async_load,
+        AVTEST_PREV_ASYNC_LOAD,
+        0x003d_f690,
+        ee::s14::f_003df690
+    );
+
+    /// Install the stream/async fakes once per process (later calls no-op).
+    pub(crate) fn avplayer_hook_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E06D8),
+            avtest_fake_stream_create,
+            &AVTEST_PREV_STREAM_CREATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E0BF8),
+            avtest_fake_get_channel,
+            &AVTEST_PREV_GET_CHANNEL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E0AD8),
+            avtest_fake_set_priority,
+            &AVTEST_PREV_SET_PRIORITY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E0948),
+            avtest_fake_set_channel_filter,
+            &AVTEST_PREV_SET_CHANNEL_FILTER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E0C88),
+            avtest_fake_queue_range,
+            &AVTEST_PREV_QUEUE_RANGE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E0D80),
+            avtest_fake_queue_file,
+            &AVTEST_PREV_QUEUE_FILE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DF690),
+            avtest_fake_async_load,
+            &AVTEST_PREV_ASYNC_LOAD,
+        );
+    }
+
+    /// The player struct under test: 16-aligned (the memset cycle count
+    /// assumes it) at a nonzero test address.
+    pub(crate) const AVPLAYER_TEST: u32 = DATA + 0x100;
+
+    /// Fixture for av_player_init: the struct prefilled nonzero, every init
+    /// branch steered by an independent seed digit. EA_MemSet and
+    /// EA_AssertNotBusy stay real (short bounded paths); the allocator
+    /// vtable word points at the miss-hook fake; the stream/async callees
+    /// hit the gated fakes above; the RAM comparison checks every stored
+    /// field, and the two all-real arms pin exact cycle totals.
+    pub(crate) fn avplayer_setup(c: &mut Cpu, seed: u32) {
+        let mut r = fakes::machine(c, seed, 0x1403, 0);
+        let snd_on = seed % 2;
+        let alloc = seed / 2 % 3;
+        let has_audio = seed / 6 % 2;
+        let flag = seed / 12 % 3;
+        let ty = seed / 36 % 4;
+        for i in 0..0x78 / 4 {
+            c.bus
+                .write32(AVPLAYER_TEST + 4 * i as u32, r.next_u32() | 1);
+        }
+        for (i, off) in [
+            AV_PLAYER_A1,
+            AV_PLAYER_A4,
+            AV_PLAYER_ALLOC_A,
+            AV_PLAYER_ALLOC_B,
+            AV_PLAYER_HAS_AUDIO,
+            AV_PLAYER_TYPE,
+            AV_PLAYER_SND_FLAG,
+            AV_PLAYER_ASYNC_A,
+            AV_PLAYER_ASYNC_B,
+            AV_PLAYER_STREAM_A,
+            AV_PLAYER_STREAM_B,
+            AV_PLAYER_FILE_A,
+            AV_PLAYER_FILE_B,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            c.bus
+                .write32(AVPLAYER_TEST + off, 0x5A5A_5A00 + i as u32 + 1);
+        }
+        // SND on/off: `SND_IsInitialized` samples `lb(0x510000 - 0x55a4)`.
+        // The sound flag at +0x1c is a8, or forced to 1 while SND is down.
+        c.bus.write8(0x0050_aa5c, if snd_on == 0 { 0 } else { 1 });
+        // Allocator object absent / present-but-idle / present.
+        c.bus
+            .write32(0x0050_9430, if alloc == 0 { 0 } else { fakes::FAKE });
+        c.bus
+            .write32(0x0050_9434, if alloc == 2 { 0x1234_5678 } else { 0 });
+        c.g[A0][0] = AVPLAYER_TEST as u64;
+        c.g[A1][0] = (r.next_u32() | 1) as u64;
+        c.g[A2][0] = (r.next_u32() | 1) as u64;
+        c.g[A3][0] = (r.next_u32() | 1) as u64;
+        c.g[T0][0] = if has_audio == 0 {
+            0
+        } else {
+            (r.next_u32() | 1) as u64
+        };
+        c.g[T1][0] = (r.next_u32() | 1) as u64;
+        c.g[T2][0] = (r.next_u32() | 1) as u64;
+        c.g[T3][0] = ty as u64;
+        let a8 = match flag {
+            0 => 0,
+            1 => 1,
+            _ => 0x1A2B_3C4D,
+        };
+        // The eighth argument lives at the caller's sp (the port opens a
+        // 0xb0 frame first, then reads it back at sp+0xb0).
+        c.bus.write32(c.g[SP][0] as u32, a8);
+        c.bus.write32(AVTEST_CTRL, AVTEST_MAGIC);
+    }
+
+    /// AV_Player_Init (0x3adec8): the struct ends up identical on both sides
+    /// on every arm (checked word for word through dirty-page RAM
+    /// comparison). Arms 161 (no allocator object) and 164 (idle allocator)
+    /// stay fully real, so their totals are exact; the stream arms run
+    /// through the gated fakes (whose cost varies), so they are
+    /// equality-checked but not path-listed.
+    #[test]
+    fn av_player_init_matches() {
+        avplayer_hook_fakes();
+        // Equality on every arm (300 seeds over the five steering digits).
+        check(
+            ee::s13::f_003adec8__generated,
+            av_player_init,
+            300,
+            &avplayer_setup,
+        );
+        // The all-real early exits have exact totals: 160 (no allocator
+        // object) and 163 (idle allocator). The stream arms run through
+        // call-logging fakes whose `3 + (h & 7)` cost varies per seed, so
+        // their totals scatter and are equality-checked above instead.
+        require_paths(
+            ee::s13::f_003adec8__generated,
+            300,
+            &[160, 163],
+            &avplayer_setup,
+        );
+        // Arm-distinguishing RAM asserts on the port, seed by seed.
+        for seed in 0..300u32 {
+            let mut c = crate::difftest::fresh();
+            avplayer_setup(&mut c, seed);
+            let snd = seed % 2;
+            let alloc = seed / 2 % 3;
+            let audio = seed / 6 % 2;
+            let flag = seed / 12 % 3;
+            let ty = seed / 36 % 4;
+            let a8 = match flag {
+                0 => 0,
+                1 => 1,
+                _ => 0x1A2B_3C4D,
+            };
+            av_player_init(&mut c);
+            let p = AVPLAYER_TEST;
+            // SND down forces the flag to 1; SND up keeps a8.
+            assert_eq!(
+                c.bus.read32(p + 0x1c),
+                if snd == 0 { 1 } else { a8 },
+                "seed {seed} +0x1c"
+            );
+            // The audio flag (a4) is recorded at +0x10 and tested for the
+            // no-audio path below.
+            if audio == 0 {
+                assert_eq!(c.bus.read32(p + 0x10), 0, "seed {seed} +0x10");
+            } else {
+                assert_ne!(c.bus.read32(p + 0x10), 0, "seed {seed} +0x10");
+            }
+            if alloc == 2 {
+                // Allocator present: both stream pairs are built.
+                assert_ne!(c.bus.read32(p + 0x30), 0, "seed {seed} +0x30");
+                assert_ne!(c.bus.read32(p + 0x34), 0, "seed {seed} +0x34");
+                // The type digit selects the queue pair; the call log shows
+                // which one ran.
+                let mut targets = Vec::new();
+                let mut addr = crate::difftest::fakes::LOG_START;
+                for _ in 0..16 {
+                    let t = c.bus.read32(addr);
+                    if t == 0 {
+                        break;
+                    }
+                    targets.push(t);
+                    addr += 0x220;
+                }
+                match ty {
+                    0 => assert!(
+                        targets.contains(&0x003e_0c88),
+                        "seed {seed} queue-range {targets:x?}"
+                    ),
+                    1 => assert!(
+                        targets.contains(&0x003d_f690),
+                        "seed {seed} async-load {targets:x?}"
+                    ),
+                    2 => assert!(
+                        targets.contains(&0x003e_0d80),
+                        "seed {seed} queue-file {targets:x?}"
+                    ),
+                    _ => assert!(
+                        !targets.contains(&0x003e_0c88)
+                            && !targets.contains(&0x003d_f690)
+                            && !targets.contains(&0x003e_0d80),
+                        "seed {seed} no queue {targets:x?}"
+                    ),
+                }
+            } else {
+                // No/idle allocator: the early exit builds no streams.
+                assert_eq!(c.bus.read32(p + 0x30), 0, "seed {seed} +0x30");
+                assert_eq!(c.bus.read32(p + 0x34), 0, "seed {seed} +0x34");
+                assert_eq!(c.bus.read32(p + 0x38), 0, "seed {seed} +0x38");
+                assert_eq!(c.bus.read32(p + 0x3c), 0, "seed {seed} +0x3c");
+            }
+        }
+    }
+
+    /// The subtitle list struct, text buffer and record array for the
+    /// parser test. The record array is the forced result of the one
+    /// allocator call (first miss-hook call, index 0).
+    pub(crate) const AVPARSE_LIST: u32 = DATA + 0x200;
+
+    pub(crate) const AVPARSE_TEXT: u32 = DATA + 0x1000;
+
+    pub(crate) const AVPARSE_RECORDS: u32 = DATA + 0x6_0000;
+
+    /// Real-shaped subtitle text by shape: empty, one full entry, many
+    /// entries, overlong lines, token-free junk. Numbers vary with the seed
+    /// (frames/timings); every buffer is NUL-terminated past its length.
+    pub(crate) fn avparse_subtitle_text(shape: u32, seed: u32) -> Vec<u8> {
+        match shape {
+            0 => Vec::new(),
+            1 => format!(
+                "FRAME\t{}\nSTRINGID\t{}\nX\t{}\nY\t{}\nWIDTH\t{}\nHEIGHT\t{}\nJUSTIFY_X\t0\nJUSTIFY_Y\t0\nSHAPE\t1\nA\t255\nR\t{}\nG\t{}\nB\t{}\n",
+                seed % 100000,
+                seed % 997,
+                100 + seed % 400,
+                50 + seed % 300,
+                200 + seed % 200,
+                60,
+                (seed % 256) as u8,
+                ((seed / 7) % 256) as u8,
+                ((seed / 13) % 256) as u8,
+            )
+            .into_bytes(),
+            2 => {
+                let mut v = Vec::new();
+                for i in 0..8u32 {
+                    v.extend_from_slice(
+                        format!("FRAME\t{}\nSTRINGID\t{}\n", seed % 50000 + i, i)
+                            .as_bytes(),
+                    );
+                }
+                v
+            }
+            3 => {
+                let mut v = b"FRAME\t".to_vec();
+                v.extend(std::iter::repeat(b'9').take(200));
+                v.extend_from_slice(b"\nX\t");
+                v.extend(std::iter::repeat(b'Z').take(250));
+                v.extend_from_slice(b"\nSTRINGID\t7\n");
+                v
+            }
+            _ => b"hello world\n\t \n\x01\x02\tend\nno keywords here\n".to_vec(),
+        }
+    }
+
+    /// Fixture for av_parse_subtitles: game image for the token table, jump
+    /// table and strlen targets; bounded NUL-terminated text; a writable
+    /// record array sized for the entry counts above. Every loop in the
+    /// parser is bounded by the text length or the entry count, so every
+    /// shape terminates on both sides. The RAM comparison checks the parsed
+    /// tables (record count, per-record fields, strings), not only the
+    /// return value.
+    pub(crate) fn avparse_subtitle_setup(c: &mut Cpu, seed: u32) {
+        fakes::machine(c, seed, 0x03af, 0);
+        elf_image(c);
+        let text = avparse_subtitle_text(seed % 5, seed);
+        for (i, b) in text.iter().enumerate() {
+            c.bus.write8(AVPARSE_TEXT + i as u32, *b);
+        }
+        c.bus.write8(AVPARSE_TEXT + text.len() as u32, 0);
+        for i in 0..64 * SUBTITLE_RECORD / 4 {
+            c.bus.write32(AVPARSE_RECORDS + 4 * i as u32, 0xDEAD_BEEF);
+        }
+        c.bus.write32(fakes::LOG_RESULTS, AVPARSE_RECORDS);
+        c.bus.write32(AVPARSE_LIST, 0xA5A5_A5A5);
+        c.bus.write32(AVPARSE_LIST + 4, 0x5A5A_5A5A);
+        c.bus.write32(0x0050_9430, fakes::FAKE);
+        c.g[A0][0] = AVPARSE_LIST as u64;
+        c.g[A1][0] = AVPARSE_TEXT as u64;
+        c.g[A2][0] = text.len() as u64;
+        c.pc = 0x003a_f7f0;
+    }
+
+    #[test]
+    fn av_parse_subtitles_matches() {
+        check(
+            ee::s13::f_003af7f0__generated,
+            av_parse_subtitles,
+            300,
+            &avparse_subtitle_setup,
+        );
+    }
+
+    /// Event delivery without unwinds: a Deliver-only schedule on a running
+    /// guest thread, so every loop back edge (top-level and nested) delivers
+    /// without ever unwinding. Unwind seeds are deliberately excluded here:
+    /// an unwind inside a nested `AV_FindToken`/`AV_ParseJustify` call leaves
+    /// `drive` re-entering the top function at the nested head, which the
+    /// top-level `match pc` cannot resume (the gccrt-fix-1 precedent for
+    /// `check_eh_spec`). Live unwinds land only in the shape-0 test below;
+    /// every used-form head is also entered directly by the resume test, and
+    /// the nested functions carry their own driven Unwind tests below.
+    #[test]
+    fn av_parse_subtitles_events_matches() {
+        driven!(avparse_gen_driven, ee::s13::f_003af7f0__generated);
+        driven!(avparse_hand_driven, av_parse_subtitles);
+        check_events(avparse_gen_driven, avparse_hand_driven, 96, &|c, seed| {
+            let mut r = fakes::machine(c, seed, 0x03af_0000 + seed as u64, 0);
+            elf_image(c);
+            let text = avparse_subtitle_text(seed % 5, seed);
+            for (i, b) in text.iter().enumerate() {
+                c.bus.write8(AVPARSE_TEXT + i as u32, *b);
+            }
+            c.bus.write8(AVPARSE_TEXT + text.len() as u32, 0);
+            for i in 0..64 * SUBTITLE_RECORD / 4 {
+                c.bus.write32(AVPARSE_RECORDS + 4 * i as u32, 0xDEAD_BEEF);
+            }
+            c.bus.write32(fakes::LOG_RESULTS, AVPARSE_RECORDS);
+            c.bus.write32(AVPARSE_LIST, 0xA5A5_A5A5);
+            c.bus.write32(AVPARSE_LIST + 4, 0x5A5A_5A5A);
+            c.bus.write32(0x0050_9430, fakes::FAKE);
+            c.g[A0][0] = AVPARSE_LIST as u64;
+            c.g[A1][0] = AVPARSE_TEXT as u64;
+            c.g[A2][0] = text.len() as u64;
+            c.g[RA][0] = crate::difftest::RA as u64;
+            // Stock schedule for the running thread, then force Deliver:
+            // no VBlank, so events deliver without ever unwinding.
+            let _ = schedule(c, &mut r, seed, 0x003a_f7f0);
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 1 << 40;
+            c.next_event = c.cycles + (r.next_u32() % 48) as u64;
+            crate::difftest::events::Events::Deliver
+        });
+    }
+
+    /// The eight loop-event heads of av_parse_subtitles: the back edges the
+    /// generated body checks (`c.pc = HEAD; if c.event() { return; }`). Each
+    /// entry below is one resume head exercised by direct entry.
+    pub(crate) const AVPARSE_RESUME_HEADS: [u32; 8] = [
+        0x003a_f8f0, // token-table copy loop
+        0x003a_f930, // first token scan
+        0x003a_f9cc, // next entry
+        0x003a_fa28, // subtitle-record init loop
+        0x003a_fa68, // line token scan
+        0x003a_faa0, // per-byte token scan
+        0x003a_fbf8, // entry line scan
+        0x003a_fc40, // end-of-line scan
+    ];
+
+    /// Fixture for one direct-entry resume head: the stack frame in place
+    /// (token pointers and lengths copied, slots cleared, RA saved), the
+    /// list/text/records of the normal fixture, and the registers the arm
+    /// reads set to mid-loop values. Terminates on both sides like the
+    /// normal fixture (every loop stays bounded by the text or the count).
+    pub(crate) fn avparse_resume_setup(c: &mut Cpu, seed: u32, head: u32) {
+        let mut r = fakes::machine(c, seed, 0x03af_1000 + head as u64, 0);
+        elf_image(c);
+        let text = avparse_subtitle_text(1, seed);
+        for (i, b) in text.iter().enumerate() {
+            c.bus.write8(AVPARSE_TEXT + i as u32, *b);
+        }
+        c.bus.write8(AVPARSE_TEXT + text.len() as u32, 0);
+        for i in 0..64 * SUBTITLE_RECORD / 4 {
+            c.bus.write32(AVPARSE_RECORDS + 4 * i as u32, 0xDEAD_BEEF);
+        }
+        c.bus.write32(fakes::LOG_RESULTS, AVPARSE_RECORDS);
+        c.bus.write32(AVPARSE_LIST, AVPARSE_RECORDS + 0x10);
+        c.bus.write32(AVPARSE_LIST + 4, 5);
+        c.bus.write32(0x0050_9430, fakes::FAKE);
+        // Stack frame as the entry arm leaves it.
+        let sp = crate::difftest::SP - 0x240;
+        c.g[SP][0] = sp as u64;
+        for i in 0..0x240 / 4 {
+            c.bus.write32(sp + 4 * i as u32, r.next_u32() | 1);
+        }
+        for i in 0..13u32 {
+            let ptr = c.bus.read32(0x0049_5340 + 4 * i);
+            c.bus.write32(sp + 4 * i, ptr);
+            let mut len = 0u32;
+            while c.bus.read8(ptr + len) != 0 {
+                len += 1;
+            }
+            c.bus.write32(sp + 0x40 + 4 * i, len);
+        }
+        c.bus.write32(sp + 0x154, sp + 0x40);
+        let resume_len = c.bus.read32(0x0049_5340 + 0x30);
+        c.bus.write32(sp + 0x30, resume_len);
+        for (i, slot) in [
+            0x118u32, 0x11c, 0x120, 0x124, 0x128, 0x12c, 0x130, 0x134, 0x138, 0x13c, 0x140, 0x144,
+            0x148,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            c.bus.write32(sp + slot, i as u32);
+        }
+        for off in [
+            0x15cu32, 0x160, 0x164, 0x168, 0x16c, 0x170, 0x174, 0x178, 0x17c, 0x180, 0x184, 0x188,
+            0x18c, 0x190, 0x194,
+        ] {
+            c.bus.write32(sp + off, 0);
+        }
+        c.bus.write32(sp + 0x14c, 1);
+        c.bus.write32(sp + 0x150, 0);
+        c.bus.write32(sp + 0x158, 1);
+        c.bus.write32(sp + 0x88, 0);
+        c.bus.write32(sp + 0x1a0, crate::difftest::RA);
+        c.g[RA][0] = crate::difftest::RA as u64;
+        // Canonical mid-parse registers; each head below overrides its own.
+        c.g[S0][0] = 0;
+        c.g[S1][0] = 0;
+        c.g[S2][0] = 0;
+        c.g[S3][0] = AVPARSE_LIST as u64;
+        c.g[S4][0] = text.len() as u64;
+        c.g[S5][0] = AVPARSE_TEXT as u64;
+        c.g[S6][0] = 0xa;
+        c.g[S7][0] = 0;
+        c.g[FP][0] = u64::MAX;
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0;
+        c.g[T1][0] = 0;
+        match head {
+            0x003a_f8f0 => {
+                c.g[S0][0] = 0x0049_5340 + 0x18;
+                c.g[S1][0] = 6;
+                c.g[S2][0] = (sp + 0x40 + 0x18) as u64;
+            }
+            0x003a_f930 => {
+                c.g[S0][0] = (AVPARSE_TEXT + 2) as u64;
+                c.g[S1][0] = 2;
+            }
+            0x003a_f9cc => {
+                c.g[S1][0] = 4;
+                c.g[A0][0] = 0x003a_fb14;
+            }
+            0x003a_fa28 => {
+                c.g[S1][0] = (AVPARSE_RECORDS + 0x10) as u64;
+                c.g[S0][0] = 1;
+                c.g[S6][0] = u64::MAX;
+            }
+            0x003a_fa68 => {
+                c.g[S1][0] = 0;
+            }
+            0x003a_faa0 => {
+                c.g[S1][0] = 2;
+                c.g[V0][0] = (AVPARSE_TEXT + 2) as u64;
+                c.g[S0][0] = 0;
+                c.g[FP][0] = 0;
+            }
+            0x003a_fbf8 => {
+                c.g[S0][0] = 0;
+                c.g[S1][0] = 2;
+                c.g[V0][0] = (AVPARSE_TEXT + 2) as u64;
+            }
+            _ => {
+                // 0x3afc40: end-of-line scan from the line start.
+                c.g[S1][0] = 0;
+                c.g[A0][0] = 0;
+                c.g[V1][0] = AVPARSE_TEXT as u64;
+            }
+        }
+        c.pc = head;
+    }
+
+    /// One direct-entry resume per used-form loop head: the same frame and
+    /// register state on both sides, compared to equality (registers,
+    /// cycles, RAM). Together with the events test above this pins all
+    /// eight back edges with and without delivery.
+    #[test]
+    fn av_parse_subtitles_resume_matches() {
+        for head in AVPARSE_RESUME_HEADS {
+            let r = compare(ee::s13::f_003af7f0__generated, av_parse_subtitles, &|c| {
+                avparse_resume_setup(c, 0xC0DE, head)
+            });
+            assert!(r.hard.is_empty(), "head {head:#x}: {:#?}", r.hard);
+        }
+    }
+
+    /// Token-per-line subtitle entries: line 0 is a FRAME filler (so phase 1
+    /// matches and allocates), line 1 holds each of the 13 known tokens, so
+    /// the phase-2 forward search records its slot and phase 3 dispatches
+    /// its field handler. JUSTIFY_X/Y use real justification names (hit
+    /// path); the rest use distinctive numbers checked field by field below.
+    pub(crate) const AVPARSE_TOKENS: [&str; 13] = [
+        "FRAME",
+        "STRINGID",
+        "X",
+        "Y",
+        "WIDTH",
+        "HEIGHT",
+        "JUSTIFY_X",
+        "JUSTIFY_Y",
+        "SHAPE",
+        "A",
+        "R",
+        "G",
+        "B",
+    ];
+
+    pub(crate) fn avparse_token_first_text(which: usize, seed: u32) -> Vec<u8> {
+        let num = 100 + (seed % 400);
+        // JUSTIFY_X/Y alternate hit and miss names by seed so both the
+        // known-name and default paths run.
+        let val_of = |tok: &str| match tok {
+            "JUSTIFY_X" if seed % 2 == 0 => "left".to_string(),
+            "JUSTIFY_Y" if seed % 2 == 1 => "TOP".to_string(),
+            "JUSTIFY_X" | "JUSTIFY_Y" => "BOGUS".to_string(),
+            _ => format!("{num}"),
+        };
+        // Line 0 is FRAME (phase-1 match); line 1 is token `which`.
+        let mut v = Vec::new();
+        v.extend_from_slice(format!("FRAME\t{num}\n").as_bytes());
+        v.extend_from_slice(
+            format!(
+                "{}\t{}\n",
+                AVPARSE_TOKENS[which],
+                val_of(AVPARSE_TOKENS[which])
+            )
+            .as_bytes(),
+        );
+        v
+    }
+
+    pub(crate) fn avparse_token_first_setup(c: &mut Cpu, seed: u32) {
+        fakes::machine(c, seed, 0x03af, 0);
+        elf_image(c);
+        // which = seed % 13 rotates the line-1 token through all 13 kinds.
+        let text = avparse_token_first_text(seed as usize % 13, seed);
+        for (i, b) in text.iter().enumerate() {
+            c.bus.write8(AVPARSE_TEXT + i as u32, *b);
+        }
+        c.bus.write8(AVPARSE_TEXT + text.len() as u32, 0);
+        for i in 0..64 * SUBTITLE_RECORD / 4 {
+            c.bus.write32(AVPARSE_RECORDS + 4 * i as u32, 0xDEAD_BEEF);
+        }
+        c.bus.write32(fakes::LOG_RESULTS, AVPARSE_RECORDS);
+        c.bus.write32(AVPARSE_LIST, 0xA5A5_A5A5);
+        c.bus.write32(AVPARSE_LIST + 4, 0x5A5A_5A5A);
+        c.bus.write32(0x0050_9430, fakes::FAKE);
+        c.g[A0][0] = AVPARSE_LIST as u64;
+        c.g[A1][0] = AVPARSE_TEXT as u64;
+        c.g[A2][0] = text.len() as u64;
+        c.pc = 0x003a_f7f0;
+    }
+
+    #[test]
+    fn av_parse_subtitles_token_first_matches() {
+        check(
+            ee::s13::f_003af7f0__generated,
+            av_parse_subtitles,
+            130,
+            &avparse_token_first_setup,
+        );
+    }
+
+    /// Field-by-field proof that the token-first entries dispatch the right
+    /// handler: record 0 carries line 1's parsed value in its token's
+    /// field (INIT defaults are 32/350/600/50/-1/-1/2/2/0 with zero colors).
+    #[test]
+    fn av_parse_subtitles_token_first_fields() {
+        // (token index, record word, expected value). JUSTIFY_X hits on
+        // even seeds (left=3), JUSTIFY_Y on odd seeds (TOP=1); other seeds
+        // take the default path.
+        for k in 0..13usize {
+            let seed = match k {
+                6 => 0u32,
+                7 => 1u32,
+                _ => 1u32,
+            };
+            let mut c = crate::difftest::fresh();
+            avparse_subtitle_setup(&mut c, seed);
+            let text = avparse_token_first_text(k, seed);
+            for (i, b) in text.iter().enumerate() {
+                c.bus.write8(AVPARSE_TEXT + i as u32, *b);
+            }
+            c.bus.write8(AVPARSE_TEXT + text.len() as u32, 0);
+            c.g[A2][0] = text.len() as u64;
+            av_parse_subtitles(&mut c);
+            let rec = AVPARSE_RECORDS + 0x10;
+            let mut w = |o: u32| c.bus.read32(rec + o);
+            let num = 100 + (seed % 400);
+            match k {
+                0 => assert_eq!(w(0x14), num, "FRAME field"),
+                1 => assert_eq!(w(0x10), num, "STRINGID field"),
+                2 => assert_eq!(w(0x00), num, "X field"),
+                3 => assert_eq!(w(0x04), num, "Y field"),
+                4 => assert_eq!(w(0x08), num, "WIDTH field"),
+                5 => assert_eq!(w(0x0c), num, "HEIGHT field"),
+                6 => assert_eq!(w(0x18), 3, "JUSTIFY_X left"),
+                7 => assert_eq!(w(0x1c), 1, "JUSTIFY_Y TOP"),
+                8 => assert_eq!(w(0x20), num, "SHAPE field"),
+                9 => assert_eq!(c.bus.read8(rec + 0x24), num as u8, "A color byte"),
+                10 => assert_eq!(c.bus.read8(rec + 0x25), num as u8, "R color byte"),
+                11 => assert_eq!(c.bus.read8(rec + 0x26), num as u8, "G color byte"),
+                _ => assert_eq!(c.bus.read8(rec + 0x27), num as u8, "B color byte"),
+            }
+        }
+    }
+
+    /// Boundary shapes: no trailing LF (S1==S4 at the scan ends), a VT byte
+    /// (whitespace class 0x0b), a leading LF (entry-scan loop iterates), and
+    /// a tab-first line. Each pins a loop bound or byte class the five main
+    /// shapes never hit.
+    pub(crate) fn avparse_boundary_text(which: u32, seed: u32) -> Vec<u8> {
+        let num = 100 + (seed % 400);
+        match which % 4 {
+            0 => format!("FRAME\t{num}\nX\t{num}").into_bytes(),
+            1 => format!("FRAME\t{num}\nX\x0b{num}\n").into_bytes(),
+            2 => format!("\nFRAME\t{num}\nX\t{num}\n").into_bytes(),
+            _ => format!("\t{num}\nFRAME\t{num}\n").into_bytes(),
+        }
+    }
+
+    pub(crate) fn avparse_boundary_setup(c: &mut Cpu, seed: u32) {
+        fakes::machine(c, seed, 0x03af, 0);
+        elf_image(c);
+        let text = avparse_boundary_text(seed % 4, seed);
+        for (i, b) in text.iter().enumerate() {
+            c.bus.write8(AVPARSE_TEXT + i as u32, *b);
+        }
+        c.bus.write8(AVPARSE_TEXT + text.len() as u32, 0);
+        for i in 0..64 * SUBTITLE_RECORD / 4 {
+            c.bus.write32(AVPARSE_RECORDS + 4 * i as u32, 0xDEAD_BEEF);
+        }
+        c.bus.write32(fakes::LOG_RESULTS, AVPARSE_RECORDS);
+        c.bus.write32(AVPARSE_LIST, 0xA5A5_A5A5);
+        c.bus.write32(AVPARSE_LIST + 4, 0x5A5A_5A5A);
+        c.bus.write32(0x0050_9430, fakes::FAKE);
+        c.g[A0][0] = AVPARSE_LIST as u64;
+        c.g[A1][0] = AVPARSE_TEXT as u64;
+        c.g[A2][0] = text.len() as u64;
+        c.pc = 0x003a_f7f0;
+    }
+
+    #[test]
+    fn av_parse_subtitles_boundary_matches() {
+        check(
+            ee::s13::f_003af7f0__generated,
+            av_parse_subtitles,
+            120,
+            &avparse_boundary_setup,
+        );
+    }
+
+    /// First unwind on each of the eight loop-event heads: a tuned VBlank
+    /// time per head (calibrated: f8f0 ~200, f930 ~1500, fa28 ~2600,
+    /// fa68 ~3300 on leading-LF text, faa0 ~3100, f9cc ~3900, fc40 ~4000,
+    /// fbf8 ~4500), with the per-head resume count asserted. VBlank is
+    /// consumed by the first unwind, so each driven side resumes exactly
+    /// once at that head (combined {head: 2}).
+    #[test]
+    fn av_parse_subtitles_first_unwind_per_head() {
+        use crate::difftest::events::{compare_schedule, take_resumes};
+        driven!(avparse_gen_first, ee::s13::f_003af7f0__generated);
+        driven!(avparse_hand_first, av_parse_subtitles);
+        // (head, VBlank offset, leading-LF text?).
+        const CASES: [(u32, u64, bool); 8] = [
+            (0x003a_f8f0, 200, false),
+            (0x003a_f930, 1500, false),
+            (0x003a_f9cc, 3900, false),
+            (0x003a_fa28, 2600, false),
+            (0x003a_fa68, 3300, true),
+            (0x003a_faa0, 3100, false),
+            (0x003a_fbf8, 4500, false),
+            (0x003a_fc40, 4000, false),
+        ];
+        for (head, toff, leading_lf) in CASES {
+            let setup = |c: &mut Cpu| {
+                avparse_subtitle_setup(c, 1);
+                if leading_lf {
+                    c.bus.write8(AVPARSE_TEXT, b'\n');
+                    let text = avparse_subtitle_text(1, 1);
+                    for (i, b) in text.iter().enumerate() {
+                        c.bus.write8(AVPARSE_TEXT + 1 + i as u32, *b);
+                    }
+                    c.bus.write8(AVPARSE_TEXT + 1 + text.len() as u32, 0);
+                    c.g[A2][0] = (text.len() + 1) as u64;
+                }
+                let saved = (c.g[A0], c.g[A1], c.g[31]);
+                ssx3_ps2::kernel::start_main_thread(c, 0x003a_f7f0, 0, 0);
+                (c.g[A0], c.g[A1], c.g[31]) = saved;
+                c.pc = 0x003a_f7f0;
+                c.cycles = 10000;
+                c.next_event = 10000;
+                ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                    .sched
+                    .next_vblank = 10000 + toff;
+            };
+            take_resumes();
+            let r = crate::difftest::compare_with(
+                avparse_gen_first,
+                avparse_hand_first,
+                &setup,
+                |a, b, hard| {
+                    compare_schedule(a, b, hard);
+                },
+            );
+            assert!(r.hard.is_empty(), "head {head:#x}: {:#?}", r.hard);
+            let resumes = take_resumes();
+            let mut expected = std::collections::BTreeMap::new();
+            expected.insert(head, 2);
+            assert_eq!(resumes, expected, "head {head:#x}");
+        }
     }
 }
