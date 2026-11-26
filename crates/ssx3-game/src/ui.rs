@@ -116,6 +116,56 @@ fn lw(c: &mut Cpu, a: u32) -> u64 {
 #[derive(Clone, Copy)]
 pub struct HudElem(pub Addr);
 
+/// Whether a race is on screen (the race world at `gp` - 0x848 is non-null,
+/// its game module +0x84 holds the AI race manager at +0xc, whose first
+/// word is the race state, 2 or more).
+fn in_race(c: &Cpu) -> bool {
+    let gp = c.g[GP][0] as u32;
+    if gp == 0 {
+        return false;
+    }
+    let world = c.bus.ram_u32(gp.wrapping_sub(0x848));
+    if world == 0 {
+        return false;
+    }
+    let module = c.bus.ram_u32(world.wrapping_add(0x84));
+    if module == 0 {
+        return false;
+    }
+    let ai = c.bus.ram_u32(module.wrapping_add(0xc));
+    if ai == 0 {
+        return false;
+    }
+    c.bus.ram_u32(ai) >= 2
+}
+
+/// Whether the game is paused (`gp` - 0x6a0, bit 0; the audio system's
+/// pause flags — the word flips to `0xffffffdb` while paused).
+fn game_paused(c: &Cpu) -> bool {
+    let gp = c.g[GP][0] as u32;
+    gp != 0 && c.bus.ram_u32(gp.wrapping_sub(0x6a0)) & 1 != 0
+}
+
+/// `SSX3_HUD_EDGE`: how far the race HUD's anchored elements slide toward
+/// the frame's edges, in pixels of the HUD's virtual 640-wide screen
+/// (positions only, the elements keep their size and their spacing — one
+/// delta per side). Elements in the left third slide left, in the right
+/// third right, the middle stays; the game's own 2D transform squeezes
+/// this space into the central ~75% of the window, so a delta of 96 moves
+/// an element by ~11% of the window's width. Applied in `HUD_GetElemPos`,
+/// so every element follows — aligned or drawn raw — and mirrored
+/// elements land on their own side (the 640-x mirror inverts the delta
+/// with them). 0 / unset = as authored.
+fn hud_edge() -> f32 {
+    static EDGE: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *EDGE.get_or_init(|| {
+        ssx3_core::config::var("SSX3_HUD_EDGE")
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|d| *d > 0.0 && *d <= 160.0)
+            .unwrap_or(0.0)
+    })
+}
+
 impl HudElem {
     /// `short x, y`.
     pub fn pos(self, i: u32) -> Addr {
@@ -167,10 +217,27 @@ pub fn hud_get_elem_color(c: &mut Cpu) {
 pub fn hud_get_elem_pos(c: &mut Cpu) {
     c.cycles += 9;
     let (e, out) = (HudElem(Addr(r32(c, A0))), Addr(r32(c, A1)));
+    let edge = hud_edge();
+    let pull = edge > 0.5 && in_race(c) && !game_paused(c);
     for i in 0..2 {
         let v = e.pos(i).lh(c);
         c.g[V0][0] = v;
-        let f = FpuF32::from_i32(v as i32);
+        let mut f = FpuF32::from_i32(v as i32);
+        if pull && i == 0 {
+            // The edge slide on x: the left third slides left by `edge`
+            // pixels, the right third right (the game's transform squeezes
+            // the HUD space, so deltas reach the true edges only at ~1.3×
+            // their screen effect).
+            let xf = f32::from_bits(f.0);
+            let shifted = if xf < 213.0 {
+                xf - edge
+            } else if xf > 427.0 {
+                xf + edge
+            } else {
+                xf
+            };
+            f = FpuF32::from_i32(shifted as i32);
+        }
         c.f[0] = f.0;
         out.off(4 * i).write_fpu(c, f);
     }
