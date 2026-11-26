@@ -10244,6 +10244,34 @@
 0x001c5198    cFEStateNetNews_TransitionIn
 0x001c5368    cFEStateNetNews_OnWidgetAction
 0x001c5630    cFEPopupConfirm_CfgReset
+# Phase 2 wave: oc1340, oc1341, oc1342, oc1343
+0x00414338    execute_cfa_insn
+0x004149f0    fde_split
+0x00414230    extract_cie_info
+0x00414148    find_fde
+0x00413f80    add_fdes
+0x0041ed60    floor
+0x0040f9f8    scalbnf
+0x0040d8d0    fmodf
+0x0040f878    matherr
+0x003eb090    ds_timetosecs
+0x004244a0    _sbrk
+0x00424368    _write
+0x004243e8    _read
+0x00424460    _open
+0x00424498    _lseek
+0x00424488    _close
+0x00411310    exit
+0x004178a8    eofread
+0x00412818    set_terminate
+0x0042e200    __tf23PS2_SONY_CODEC_INTERNAL
+0x0042e4c8    __tfQ24RCMP11RCMP_SYSTEM
+0x0042e458    __tfQ24RCMP7DECODER
+0x0042e2b0    __tfQ24RCMP5CODEC
+0x00415120    bad_cast_dtor
+0x00415088    bad_typeid_dtor
+0x00415150    bad_cast_ctor
+0x004150b8    bad_typeid_ctor
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
