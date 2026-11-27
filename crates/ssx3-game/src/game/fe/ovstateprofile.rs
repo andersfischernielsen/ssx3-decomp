@@ -124,6 +124,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ov_screen_autosave_ctor_2,
         "OVScreenAutosave_ctor_2",
     ),
+    (
+        0x0021_1b10,
+        ov_screen_profile_save_pda_shutdown_2,
+        "OVScreenProfileSavePDA_Shutdown",
+    ),
+    (
+        0x0021_1b38,
+        ov_screen_profile_save_pda_on_widget_notify_2,
+        "OVScreenProfileSavePDA_OnWidgetNotify",
+    ),
+    (
+        0x0021_1bc8,
+        ov_screen_profile_save_pda_on_widget_action_2,
+        "OVScreenProfileSavePDA_OnWidgetAction",
+    ),
+    (
+        0x0021_2208,
+        ov_screen_autosave_update_2,
+        "OVScreenAutosave_Update",
+    ),
+    (
+        0x0021_2508,
+        ov_screen_autosave_shutdown_2,
+        "OVScreenAutosave_Shutdown",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -1529,12 +1554,240 @@ pub fn ov_state_profile_hide_main_button(c: &mut Cpu) {
     })
 }
 
+/// The field at `off` from the pointer held in register `reg`, read as the
+/// compiled code does (32-bit address arithmetic).
+pub(crate) fn oc997_reg_at(c: &Cpu, reg: usize, off: u32) -> Addr {
+    Addr((c.g[reg][0] as u32).wrapping_add(off))
+}
+
+/// `void OVScreenAutosave_UpdateIcon(OVScreenAutosave* self)` (0x212360):
+/// shows or hides the autosave icon and refreshes its label and animation
+/// from the card state; `self` keeps the icon widget at +0x40.
+pub fn ov_screen_autosave_update_icon(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        MC_MANAGER_GET.call(c, 0x0021_2384)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[V1][0] = oc997_reg_at(c, S1, 0x1a8).lw(c);
+        c.g[V0][0] = oc997_reg_at(c, S1, 0x230).lw(c);
+        'body: {
+            if c.g[V1][0] == c.g[V0][0] {
+                frame.restore(c, S0, 0x30);
+                break 'body;
+            }
+            c.cycles += 10;
+            let v1 = c.g[V1][0];
+            oc997_reg_at(c, S1, 0x230).sw(c, v1);
+            c.g[A0][0] = 0x004a_2770;
+            call_ptr(c, 0x0031_7670, 0x0021_23a8)?;
+            c.g[A0][0] = oc997_reg_at(c, S1, 0x40).lw(c);
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0039_d860, 0x0021_23b4)?;
+            c.g[S2][0] = c.g[V0][0];
+            if c.g[S2][0] == 0 {
+                frame.restore(c, S0, 0x30);
+                break 'body;
+            }
+            'b478: {
+                c.cycles += 3;
+                c.g[V0][0] = oc997_reg_at(c, S1, 0x1a8).lw(c);
+                if c.g[V0][0] == 0 {
+                    break 'b478;
+                }
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0023_c898, 0x0021_23d4)?;
+                let t = c.g[V0][0] != 0;
+                c.g[V0][0] = 6;
+                if t {
+                    break 'b478;
+                }
+                c.cycles += 3;
+                c.g[V1][0] = oc997_reg_at(c, S1, 0x1c0).lw(c);
+                let t = c.g[V1][0] == c.g[V0][0];
+                if t {
+                    break 'b478;
+                }
+                'b424: {
+                    c.cycles += 10;
+                    c.g[S0][0] = oc997_reg_at(c, S1, 0x10).lw(c);
+                    c.g[A0][0] = 0x0047_1e48;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
+                    call_ptr(c, 0x0031_7670, 0x0021_23fc)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x0039_7140, 0x0021_2408)?;
+                    let t = c.g[V0][0] == 0;
+                    c.g[A1][0] = c.g[V0][0];
+                    if t {
+                        break 'b424;
+                    }
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A2][0] = 9;
+                    c.g[A3][0] = 0;
+                    c.g[T0][0] = 0;
+                    call_ptr(c, 0x0039_fcc8, 0x0021_2424)?;
+                }
+                c.cycles += 21;
+                c.g[A0][0] = 0x0047_1e38;
+                call_ptr(c, 0x0031_7670, 0x0021_2430)?;
+                c.g[A0][0] = oc997_reg_at(c, S1, 0x40).lw(c);
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x0039_d860, 0x0021_243c)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = 1;
+                c.g[V0][0] = oc997_reg_at(c, S0, 0x8).lw(c);
+                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x48)).lh(c);
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x4c)).lw(c);
+                let t = c.g[V1][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x0021_2458)?;
+                c.g[A0][0] = 0x0047_1e58;
+                call_ptr(c, 0x0031_7670, 0x0021_2464)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x003a_1000, 0x0021_2470)?;
+                frame.restore(c, S0, 0x30);
+                break 'body;
+            }
+            c.cycles += 15;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0039_fd38, 0x0021_2480)?;
+            c.g[A0][0] = 0x0047_1e38;
+            call_ptr(c, 0x0031_7670, 0x0021_248c)?;
+            c.g[A0][0] = oc997_reg_at(c, S1, 0x40).lw(c);
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0039_d860, 0x0021_2498)?;
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x8)).lw(c);
+            c.g[A1][0] = 0;
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x48)).lh(c);
+            c.g[A2][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4c)).lw(c);
+            let t = c.g[A2][0] as u32;
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0021_24b0)?;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void OVScreen_DebugPrintfStub(...)` (0x212680): the variadic debug-print
+/// stub. It spills the argument registers a1..a3, t0..t3 and f12, f14, f16,
+/// f18 into its frame, returns its first argument in v0, and does nothing else.
+pub fn ov_screen_debug_printf_stub(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    let base = sp(c);
+    c.sd(base.wrapping_add(0x48), c.g[A1][0]);
+    c.sd(base.wrapping_add(0x50), c.g[A2][0]);
+    c.sd(base.wrapping_add(0x58), c.g[A3][0]);
+    c.sd(base.wrapping_add(0x60), c.g[T0][0]);
+    c.sd(base.wrapping_add(0x68), c.g[T1][0]);
+    c.sd(base.wrapping_add(0x70), c.g[T2][0]);
+    c.sd(base.wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, base.wrapping_add(0x38));
+    c.swc1(14, base.wrapping_add(0x3c));
+    c.swc1(16, base.wrapping_add(0x40));
+    c.swc1(18, base.wrapping_add(0x44));
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x80));
+    c.pc = ra;
+}
+
+/// `OVScreenProfileSavePDA_dtor` (0x221d88): vtable `0x472928`, then the
+/// `MemCardStateBase` destructor (0x1d5428).
+pub fn ov_screen_profile_save_pda_dtor(c: &mut Cpu) {
+    oc1013_screen_dtor(c, 0x2928, 0x001d_5428, 0x0022_1da4)
+}
+
+/// `OVScreenProfileSavePDA_ctor_2` (0x221db0): the `MemCardStateBase`
+/// constructor (0x1d53b0) with a0 = this and a1 = a2 = 0, then the vtable
+/// `0x472928` at this + 8. v0 ends as `this`.
+pub fn ov_screen_profile_save_pda_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x001d_53b0, 0x0022_1dcc)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0047_0000;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2928));
+        frame.restore_ra(c, 0);
+        let vt = c.g[V1][0];
+        Addr(this.wrapping_add(0x8)).sw(c, vt);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const OC1015_VT_AUTOSAVE: u32 = OC1015_DATA + 0x1f80;
+
+/// `cFEMemCard` constructor (0x1d53b0, the autosave state's base) and destructor
+/// (0x1d5428).
+pub(crate) const OC1015_FEMEM_CTOR: u32 = 0x001d_53b0;
+
+pub(crate) const OC1015_FEMEM_DTOR: u32 = 0x001d_5428;
+
+/// `OVScreenAutosave_dtor` (0x222280): the autosave overlay's destructor. Sets
+/// the autosave vtable at +0x8, then runs the memory-card state's destructor
+/// (0x1d5428).
+pub fn ov_screen_autosave_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        oc1015_dtor(c, OC1015_VT_AUTOSAVE, OC1015_FEMEM_DTOR, 0x0022_229c)
+    });
+}
+
+/// `OVScreenAutosave_ctor_2` (0x2222b8): constructs the autosave overlay state
+/// on top of the memory-card state constructor (0x1d53b0, with null `a1` and
+/// `a2`), then sets the autosave vtable at +0x8.
+pub fn ov_screen_autosave_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let f = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        f.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        f.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, OC1015_FEMEM_CTOR, 0x0022_22d4)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = OC1015_DATA as u64;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[V1][0] = OC1015_VT_AUTOSAVE as u64;
+        f.restore_ra(c, 0);
+        let vt = c.g[V1][0];
+        Addr(this.wrapping_add(0x8)).sw(c, vt);
+        f.restore(c, S0, 0x10);
+        f.close(c);
+        Ok(())
+    });
+}
+
 /// `OVScreenProfileSavePDA_OnWidgetAction` (0x00211bc8): the normal entry, converted from the generated body
 /// (a `match pc` / labelled-block body: every register, cycle and call kept).
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
-#[allow(dead_code)]
-pub fn ov_screen_profile_save_pda_on_widget_action(c: &mut Cpu) {
+pub fn ov_screen_profile_save_pda_on_widget_action_2(c: &mut Cpu) {
     if c.pc != 0x00211bc8 {
         return ee::s05::f_00211bc8__generated(c);
     }
@@ -2227,20 +2480,10 @@ pub fn ov_screen_profile_save_pda_on_widget_action(c: &mut Cpu) {
     });
 }
 
-/// The field at `off` from the pointer held in register `reg`, read as the
-/// compiled code does (32-bit address arithmetic).
-pub(crate) fn oc997_reg_at(c: &Cpu, reg: usize, off: u32) -> Addr {
-    Addr((c.g[reg][0] as u32).wrapping_add(off))
-}
-
-// ---------------------------------------------------------------------------
-// Profile save PDA and autosave overlays (`src/fe/ovstateprofile.cpp`).
-
 /// `void OVScreenProfileSavePDA_Shutdown(OVScreenProfileSavePDA* self)`
-/// (0x211b10): tears down the memory-card side of the screen and clears the
-/// pending-info field at +0x1a4.
-#[allow(dead_code)]
-pub fn ov_screen_profile_save_pda_shutdown(c: &mut Cpu) {
+/// (0x211b10): shuts the memory-card state base down and clears the
+/// field at +0x1a4.
+pub fn ov_screen_profile_save_pda_shutdown_2(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 10;
         let frame = Frame::open(c, 0x20);
@@ -2248,104 +2491,186 @@ pub fn ov_screen_profile_save_pda_shutdown(c: &mut Cpu) {
         frame.save_ra(c, 0);
         c.g[S0][0] = c.g[A0][0];
         call_ptr(c, 0x001d_58b8, 0x0021_1b24)?;
-        oc997_reg_at(c, S0, 0x1a4).sw(c, 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1a4), 0u64);
         frame.restore(c, S0, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
-    })
+    });
+}
+
+/// `int OVScreenProfileSavePDA_OnWidgetNotify(self, a1, int key)` (0x211b38):
+/// keys 6 and 8 ask the selected memory-card device (a virtual call on the
+/// manager's object, +0x434 / +0x428) whether it is actionable (0x101 when
+/// it is, else 0x100); key 9 returns 0x100, anything else 0x101.
+pub fn ov_screen_profile_save_pda_on_widget_notify_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        Callee {
+            addr: 0x0022_7f80,
+            f: ee::s05::f_00227f80,
+        }
+        .call(c, 0x0021_1b50)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = 0x8;
+        let is_8 = c.g[S0][0] == c.g[V0][0];
+        c.g[V0][0] = (c.g[S0][0] < 0x9u64) as u64;
+        let mut ask_device = is_8;
+        if !is_8 {
+            c.cycles += 2;
+            let ge_9 = c.g[V0][0] == 0u64;
+            c.g[V0][0] = 0x6;
+            if !ge_9 {
+                c.cycles += 2;
+                let is_6 = c.g[S0][0] == c.g[V0][0];
+                c.g[V0][0] = 0x101;
+                if is_6 {
+                    ask_device = true;
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S0, 0x10);
+                    ov_pda_notify_epilogue(c, frame);
+                    return Ok(());
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0x9;
+                let is_9 = c.g[S0][0] == c.g[V0][0];
+                c.g[V0][0] = 0x101;
+                if is_9 {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0x100;
+                    c.cycles += 1;
+                } else {
+                    c.cycles += 2;
+                }
+                frame.restore(c, S0, 0x10);
+                ov_pda_notify_epilogue(c, frame);
+                return Ok(());
+            }
+        }
+        debug_assert!(ask_device);
+        c.cycles += 9;
+        c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x434));
+        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x428));
+        c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x1b0));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1b4));
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0021_1ba8)?;
+        let actionable = c.g[V0][0] != 0u64;
+        c.g[V0][0] = 0x101;
+        if !actionable {
+            c.cycles += 1;
+            c.g[V0][0] = 0x100;
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x10);
+        ov_pda_notify_epilogue(c, frame);
+        Ok(())
+    });
+}
+
+/// The shared exit of `OVScreenProfileSavePDA_OnWidgetNotify`.
+pub(crate) fn ov_pda_notify_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 3;
+    frame.restore_ra(c, 0);
+    frame.close(c);
 }
 
 /// `void OVScreenAutosave_Update(OVScreenAutosave* self)` (0x212208): the
-/// autosave overlay's per-frame step. In the check phase (state 1) it starts
-/// the save (file type 1); in the save phase it gives up once the device is
-/// gone; then the memory-card screen updates. State at +0x1c0, flags at
-/// +0x1a8, +0x1dc, +0x1e4, +0x1f0.
-#[allow(dead_code)]
-pub fn ov_screen_autosave_update(c: &mut Cpu) {
+/// autosave state machine. State 1 starts the save (writeSetFileType, state
+/// 3); state 3 ends it (state 6) once the selected device is no longer
+/// plugged in / valid; then the base screen's update runs.
+pub fn ov_screen_autosave_update_2(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
         let frame = Frame::open(c, 0x30);
         frame.save(c, S0, 0x20);
         c.g[S0][0] = c.g[A0][0];
         frame.save(c, S1, 0x10);
-        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
         frame.save_ra(c, 0);
-        MC_MANAGER_GET.call(c, 0x0021_2228)?;
+        Callee {
+            addr: 0x0022_7f80,
+            f: ee::s05::f_00227f80,
+        }
+        .call(c, 0x0021_2228)?;
         c.g[A1][0] = c.g[V0][0];
-        c.g[S1][0] = oc997_reg_at(c, S0, 0x1c0).lw(c);
-        c.g[V0][0] = 1;
+        c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c0));
+        c.g[V0][0] = 0x1;
         'tail: {
-            'p: {
-                if c.g[S1][0] != c.g[V0][0] {
-                    c.g[V1][0] = oc997_reg_at(c, S0, 0x1c0).lw(c);
-                    break 'p;
-                }
+            let at_check = if c.g[S1][0] != c.g[V0][0] {
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c0));
+                true
+            } else {
                 c.cycles += 3;
-                c.g[V0][0] = oc997_reg_at(c, S0, 0x1a8).lw(c);
-                if c.g[V0][0] != 0 {
-                    c.g[V1][0] = oc997_reg_at(c, S0, 0x1c0).lw(c);
-                    break 'p;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1a8));
+                if c.g[V0][0] != 0u64 {
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c0));
+                    true
+                } else {
+                    c.cycles += 10;
+                    c.g[A0][0] = c.g[A1][0];
+                    c.g[A2][0] = 0u64;
+                    c.g[A1][0] = 0x1;
+                    call_ptr(c, 0x0023_cae8, 0x0021_2258)?;
+                    c.g[V0][0] = 0x3;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1f0), c.g[S1][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1c0), c.g[V0][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1a8), c.g[S1][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1dc), c.g[S1][0]);
+                    false
                 }
-                c.cycles += 10;
-                c.g[A0][0] = c.g[A1][0];
-                c.g[A2][0] = 0;
-                c.g[A1][0] = 1;
-                call_ptr(c, 0x0023_cae8, 0x0021_2258)?;
-                c.g[V0][0] = 3;
-                let s1 = c.g[S1][0];
-                oc997_reg_at(c, S0, 0x1f0).sw(c, s1);
-                let v0 = c.g[V0][0];
-                oc997_reg_at(c, S0, 0x1c0).sw(c, v0);
-                oc997_reg_at(c, S0, 0x1a8).sw(c, s1);
-                oc997_reg_at(c, S0, 0x1dc).sw(c, s1);
-                break 'tail;
-            }
-            c.cycles += 3;
-            c.g[V0][0] = 3;
-            let t = c.g[V1][0] != c.g[V0][0];
-            c.g[V0][0] = 0xe0;
-            if t {
-                break 'tail;
-            }
-            'q: {
-                'qa: {
-                    c.cycles += 6;
-                    c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x428)).lw(c);
-                    c.mult(0, 4, 4, 2);
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x350)).lw(c);
-                    let t = c.g[V0][0] == 0;
-                    c.g[V0][0] = c.g[V1][0];
-                    if t {
-                        break 'qa;
-                    }
-                    c.cycles += 3;
-                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x344)).lw(c);
-                    if c.g[V1][0] == 0 {
-                        c.g[V0][0] = 1;
-                        break 'q;
-                    }
-                    c.cycles += 3;
-                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x348)).lw(c);
-                    let t = c.g[V1][0] != 0;
-                    if t {
-                        break 'tail;
-                    }
-                    break 'qa;
+            };
+            if at_check {
+                c.cycles += 3;
+                c.g[V0][0] = 0x3;
+                let not_saving = c.g[V1][0] != c.g[V0][0];
+                c.g[V0][0] = 0xe0;
+                if not_saving {
+                    break 'tail;
                 }
-                c.cycles += 1;
-                c.g[V0][0] = 1;
+                'device_ok: {
+                    'device_bad: {
+                        c.cycles += 6;
+                        c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x428));
+                        c.mult(0, A0, A0, V0);
+                        c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x350));
+                        let unplugged = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = c.g[V1][0];
+                        if !unplugged {
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x344));
+                            if c.g[V1][0] == 0u64 {
+                                c.g[V0][0] = 0x1;
+                                break 'device_ok;
+                            }
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x348));
+                            if c.g[V1][0] != 0u64 {
+                                break 'tail;
+                            }
+                            break 'device_bad;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = 0x1;
+                }
+                c.cycles += 5;
+                c.g[V1][0] = 0x6;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1e4), c.g[V0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c0), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1dc), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1a8), 0u64);
             }
-            c.cycles += 5;
-            c.g[V1][0] = 6;
-            let v0 = c.g[V0][0];
-            oc997_reg_at(c, S0, 0x1e4).sw(c, v0);
-            let v1 = c.g[V1][0];
-            oc997_reg_at(c, S0, 0x1c0).sw(c, v1);
-            oc997_reg_at(c, S0, 0x1dc).sw(c, 0);
-            oc997_reg_at(c, S0, 0x1a8).sw(c, 0);
-            break 'tail;
         }
         c.cycles += 7;
         c.g[A0][0] = c.g[S0][0];
@@ -2355,139 +2680,14 @@ pub fn ov_screen_autosave_update(c: &mut Cpu) {
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
-    })
+    });
 }
 
-/// `void OVScreenAutosave_UpdateIcon(OVScreenAutosave* self)` (0x212360):
-/// shows or hides the autosave icon and refreshes its label and animation
-/// from the card state; `self` keeps the icon widget at +0x40.
-pub fn ov_screen_autosave_update_icon(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 14;
-        let frame = Frame::open(c, 0x40);
-        frame.save(c, S1, 0x20);
-        c.g[S1][0] = c.g[A0][0];
-        frame.save(c, S0, 0x30);
-        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
-        frame.save(c, S2, 0x10);
-        frame.save_ra(c, 0);
-        MC_MANAGER_GET.call(c, 0x0021_2384)?;
-        c.g[S0][0] = c.g[V0][0];
-        c.g[V1][0] = oc997_reg_at(c, S1, 0x1a8).lw(c);
-        c.g[V0][0] = oc997_reg_at(c, S1, 0x230).lw(c);
-        'body: {
-            if c.g[V1][0] == c.g[V0][0] {
-                frame.restore(c, S0, 0x30);
-                break 'body;
-            }
-            c.cycles += 10;
-            let v1 = c.g[V1][0];
-            oc997_reg_at(c, S1, 0x230).sw(c, v1);
-            c.g[A0][0] = 0x004a_2770;
-            call_ptr(c, 0x0031_7670, 0x0021_23a8)?;
-            c.g[A0][0] = oc997_reg_at(c, S1, 0x40).lw(c);
-            c.g[A1][0] = c.g[V0][0];
-            call_ptr(c, 0x0039_d860, 0x0021_23b4)?;
-            c.g[S2][0] = c.g[V0][0];
-            if c.g[S2][0] == 0 {
-                frame.restore(c, S0, 0x30);
-                break 'body;
-            }
-            'b478: {
-                c.cycles += 3;
-                c.g[V0][0] = oc997_reg_at(c, S1, 0x1a8).lw(c);
-                if c.g[V0][0] == 0 {
-                    break 'b478;
-                }
-                c.cycles += 4;
-                c.g[A0][0] = c.g[S0][0];
-                call_ptr(c, 0x0023_c898, 0x0021_23d4)?;
-                let t = c.g[V0][0] != 0;
-                c.g[V0][0] = 6;
-                if t {
-                    break 'b478;
-                }
-                c.cycles += 3;
-                c.g[V1][0] = oc997_reg_at(c, S1, 0x1c0).lw(c);
-                let t = c.g[V1][0] == c.g[V0][0];
-                if t {
-                    break 'b478;
-                }
-                'b424: {
-                    c.cycles += 10;
-                    c.g[S0][0] = oc997_reg_at(c, S1, 0x10).lw(c);
-                    c.g[A0][0] = 0x0047_1e48;
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
-                    call_ptr(c, 0x0031_7670, 0x0021_23fc)?;
-                    c.g[A0][0] = c.g[S0][0];
-                    c.g[A1][0] = c.g[V0][0];
-                    call_ptr(c, 0x0039_7140, 0x0021_2408)?;
-                    let t = c.g[V0][0] == 0;
-                    c.g[A1][0] = c.g[V0][0];
-                    if t {
-                        break 'b424;
-                    }
-                    c.cycles += 5;
-                    c.g[A0][0] = c.g[S2][0];
-                    c.g[A2][0] = 9;
-                    c.g[A3][0] = 0;
-                    c.g[T0][0] = 0;
-                    call_ptr(c, 0x0039_fcc8, 0x0021_2424)?;
-                }
-                c.cycles += 21;
-                c.g[A0][0] = 0x0047_1e38;
-                call_ptr(c, 0x0031_7670, 0x0021_2430)?;
-                c.g[A0][0] = oc997_reg_at(c, S1, 0x40).lw(c);
-                c.g[A1][0] = c.g[V0][0];
-                call_ptr(c, 0x0039_d860, 0x0021_243c)?;
-                c.g[S0][0] = c.g[V0][0];
-                c.g[A1][0] = 1;
-                c.g[V0][0] = oc997_reg_at(c, S0, 0x8).lw(c);
-                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x48)).lh(c);
-                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x4c)).lw(c);
-                let t = c.g[V1][0] as u32;
-                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                call_ptr(c, t, 0x0021_2458)?;
-                c.g[A0][0] = 0x0047_1e58;
-                call_ptr(c, 0x0031_7670, 0x0021_2464)?;
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A1][0] = c.g[V0][0];
-                call_ptr(c, 0x003a_1000, 0x0021_2470)?;
-                frame.restore(c, S0, 0x30);
-                break 'body;
-            }
-            c.cycles += 15;
-            c.g[A0][0] = c.g[S2][0];
-            call_ptr(c, 0x0039_fd38, 0x0021_2480)?;
-            c.g[A0][0] = 0x0047_1e38;
-            call_ptr(c, 0x0031_7670, 0x0021_248c)?;
-            c.g[A0][0] = oc997_reg_at(c, S1, 0x40).lw(c);
-            c.g[A1][0] = c.g[V0][0];
-            call_ptr(c, 0x0039_d860, 0x0021_2498)?;
-            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x8)).lw(c);
-            c.g[A1][0] = 0;
-            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x48)).lh(c);
-            c.g[A2][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4c)).lw(c);
-            let t = c.g[A2][0] as u32;
-            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-            call_ptr(c, t, 0x0021_24b0)?;
-            frame.restore(c, S0, 0x30);
-        }
-        c.cycles += 5;
-        frame.restore(c, S1, 0x20);
-        frame.restore(c, S2, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void OVScreenAutosave_Shutdown(OVScreenAutosave* self)` (0x212508): tears
-/// down the memory-card screen, then leaves the screen by the parent it was
-/// opened from: exit the game (1), the title (6), the lodge (7), or start a
-/// race from the hub (0).
-#[allow(dead_code)]
-pub fn ov_screen_autosave_shutdown(c: &mut Cpu) {
+/// `void OVScreenAutosave_Shutdown(OVScreenAutosave* self)` (0x212508): base
+/// shutdown, then by the state at +0x22c: 1 tells the card manager to stop,
+/// 6 and 7 open a popup (resource 0x4c / 0x58) and hand it to the popup
+/// handlers, 0 rebuilds the front-end objects and re-runs the init chain.
+pub fn ov_screen_autosave_shutdown_2(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 11;
         let frame = Frame::open(c, 0x40);
@@ -2496,114 +2696,111 @@ pub fn ov_screen_autosave_shutdown(c: &mut Cpu) {
         frame.save(c, S2, 0x10);
         frame.save(c, S1, 0x20);
         frame.save_ra(c, 0);
-        c.g[S2][0] = 1;
+        c.g[S2][0] = 0x1;
         call_ptr(c, 0x001d_58b8, 0x0021_2528)?;
-        c.g[V1][0] = oc997_reg_at(c, S0, 0x22c).lw(c);
-        let t = c.g[V1][0] != c.g[S2][0];
-        c.g[V0][0] = 6;
-        'exit: {
-            'first: {
-                if t {
-                    break 'first;
-                }
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x22c));
+        let not_1 = c.g[V1][0] != c.g[S2][0];
+        c.g[V0][0] = 0x6;
+        'out: {
+            if !not_1 {
                 c.cycles += 6;
-                c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
-                c.g[A1][0] = 0;
-                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x84)).lw(c);
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                c.g[A1][0] = 0u64;
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
                 call_ptr(c, 0x0023_0488, 0x0021_2544)?;
                 frame.restore(c, S0, 0x30);
-                break 'exit;
+                break 'out;
             }
-            'l2c0: {
-                'l2ac: {
-                    'l580: {
+            'popup_done: {
+                'popup_tail: {
+                    'not_6: {
                         c.cycles += 2;
-                        let t = c.g[V1][0] != c.g[V0][0];
-                        c.g[V0][0] = 7;
-                        if t {
-                            break 'l580;
+                        let ne = c.g[V1][0] != c.g[V0][0];
+                        c.g[V0][0] = 0x7;
+                        if ne {
+                            break 'not_6;
                         }
                         c.cycles += 11;
-                        c.g[A1][0] = 0x0047_1e70;
+                        c.g[A1][0] = 0x0047_0000;
                         c.g[A0][0] = 0x4c;
-                        c.g[A2][0] = 0;
-                        c.g[A3][0] = 0;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1e70));
+                        c.g[A2][0] = 0u64;
+                        c.g[A3][0] = 0u64;
                         call_ptr(c, 0x0031_7d70, 0x0021_256c)?;
-                        c.g[A1][0] = oc997_reg_at(c, S0, 0x10).lw(c);
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                         c.g[A0][0] = c.g[V0][0];
                         call_ptr(c, 0x0019_4738, 0x0021_2578)?;
-                        c.g[A0][0] = oc997_reg_at(c, S0, 0x10).lw(c);
-                        break 'l2ac;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                        break 'popup_tail;
                     }
                     c.cycles += 2;
-                    let t = c.g[V1][0] != c.g[V0][0];
+                    let ne = c.g[V1][0] != c.g[V0][0];
                     c.g[A1][0] = 0x0047_0000;
-                    if t {
-                        break 'l2c0;
+                    if ne {
+                        break 'popup_done;
                     }
                     c.cycles += 9;
                     c.g[A0][0] = 0x58;
-                    c.g[A1][0] = 0x0047_1e80;
-                    c.g[A2][0] = 0;
-                    c.g[A3][0] = 0;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1e80));
+                    c.g[A2][0] = 0u64;
+                    c.g[A3][0] = 0u64;
                     call_ptr(c, 0x0031_7d70, 0x0021_259c)?;
-                    c.g[A1][0] = oc997_reg_at(c, S0, 0x10).lw(c);
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x001f_3700, 0x0021_25a8)?;
-                    c.g[A0][0] = oc997_reg_at(c, S0, 0x10).lw(c);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                 }
                 c.cycles += 5;
                 c.g[A1][0] = c.g[V0][0];
                 c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
                 call_ptr(c, 0x0039_f400, 0x0021_25b8)?;
                 frame.restore(c, S0, 0x30);
-                break 'exit;
+                break 'out;
             }
             c.cycles += 2;
-            let t = c.g[V1][0] != 0;
+            let state_set = c.g[V1][0] != 0u64;
             frame.restore(c, S0, 0x30);
-            if t {
-                break 'exit;
+            if state_set {
+                break 'out;
             }
             c.cycles += 40;
             call_ptr(c, 0x0014_dc80, 0x0021_25d0)?;
             c.g[A0][0] = c.g[V0][0];
-            c.g[A1][0] = 0;
+            c.g[A1][0] = 0u64;
             call_ptr(c, 0x0014_dd58, 0x0021_25dc)?;
             c.g[S0][0] = c.g[V0][0];
             call_ptr(c, 0x0014_dc80, 0x0021_25e4)?;
             c.g[A0][0] = c.g[V0][0];
-            c.g[A1][0] = 1;
+            c.g[A1][0] = 0x1;
             call_ptr(c, 0x0014_dd58, 0x0021_25f0)?;
             c.g[S1][0] = c.g[V0][0];
             c.g[A0][0] = c.g[S0][0];
-            c.g[A1][0] = 4;
+            c.g[A1][0] = 0x4;
             call_ptr(c, 0x0014_4df0, 0x0021_2600)?;
             c.g[A0][0] = c.g[S0][0];
             c.g[A1][0] = 0xc;
             call_ptr(c, 0x0014_51e8, 0x0021_260c)?;
-            c.g[A1][0] = 0;
+            c.g[A1][0] = 0u64;
             c.g[A0][0] = c.g[S1][0];
             call_ptr(c, 0x0014_6d98, 0x0021_2618)?;
             c.g[V1][0] = 0x0053_0000;
-            let s2 = c.g[S2][0];
-            Addr((c.g[GP][0] as u32).wrapping_sub(0x1f38)).sw(c, s2);
-            let v0 = c.g[V0][0];
-            Addr((c.g[V1][0] as u32).wrapping_add(0x5c08)).sw(c, v0);
-            c.g[V0][0] = oc997_reg_at(c, S0, 0xc).lw(c);
-            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x8)).lh(c);
-            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xc)).lw(c);
-            let t = c.g[V1][0] as u32;
+            c.sw((c.g[GP][0] as u32).wrapping_sub(0x1f38), c.g[S2][0]);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x5c08), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+            let target = c.g[V1][0] as u32;
             c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-            call_ptr(c, t, 0x0021_2638)?;
-            c.g[A1][0] = 0x0047_1e90;
-            c.g[A0][0] = 8;
+            call_ptr(c, target, 0x0021_2638)?;
+            c.g[A1][0] = 0x0047_0000;
+            c.g[A0][0] = 0x8;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1e90));
             c.g[A2][0] = 0x100;
-            c.g[A3][0] = 0;
+            c.g[A3][0] = 0u64;
             call_ptr(c, 0x0031_7d70, 0x0021_2650)?;
             c.g[A0][0] = c.g[V0][0];
             call_ptr(c, 0x0023_2720, 0x0021_2658)?;
-            c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
             c.g[A1][0] = c.g[V0][0];
             call_ptr(c, 0x0031_6ef8, 0x0021_2664)?;
             frame.restore(c, S0, 0x30);
@@ -2613,105 +2810,6 @@ pub fn ov_screen_autosave_shutdown(c: &mut Cpu) {
         frame.restore(c, S2, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void OVScreen_DebugPrintfStub(...)` (0x212680): the variadic debug-print
-/// stub. It spills the argument registers a1..a3, t0..t3 and f12, f14, f16,
-/// f18 into its frame, returns its first argument in v0, and does nothing else.
-pub fn ov_screen_debug_printf_stub(c: &mut Cpu) {
-    c.cycles += 15;
-    c.g[SP][0] = sx(sp(c).wrapping_sub(0x80));
-    c.g[V0][0] = c.g[A0][0];
-    let base = sp(c);
-    c.sd(base.wrapping_add(0x48), c.g[A1][0]);
-    c.sd(base.wrapping_add(0x50), c.g[A2][0]);
-    c.sd(base.wrapping_add(0x58), c.g[A3][0]);
-    c.sd(base.wrapping_add(0x60), c.g[T0][0]);
-    c.sd(base.wrapping_add(0x68), c.g[T1][0]);
-    c.sd(base.wrapping_add(0x70), c.g[T2][0]);
-    c.sd(base.wrapping_add(0x78), c.g[T3][0]);
-    c.swc1(12, base.wrapping_add(0x38));
-    c.swc1(14, base.wrapping_add(0x3c));
-    c.swc1(16, base.wrapping_add(0x40));
-    c.swc1(18, base.wrapping_add(0x44));
-    let ra = c.g[RA][0] as u32;
-    c.g[SP][0] = sx(sp(c).wrapping_add(0x80));
-    c.pc = ra;
-}
-
-/// `OVScreenProfileSavePDA_dtor` (0x221d88): vtable `0x472928`, then the
-/// `MemCardStateBase` destructor (0x1d5428).
-pub fn ov_screen_profile_save_pda_dtor(c: &mut Cpu) {
-    oc1013_screen_dtor(c, 0x2928, 0x001d_5428, 0x0022_1da4)
-}
-
-/// `OVScreenProfileSavePDA_ctor_2` (0x221db0): the `MemCardStateBase`
-/// constructor (0x1d53b0) with a0 = this and a1 = a2 = 0, then the vtable
-/// `0x472928` at this + 8. v0 ends as `this`.
-pub fn ov_screen_profile_save_pda_ctor_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 15;
-        let frame = Frame::open(c, 0x20);
-        c.g[A1][0] = 0;
-        frame.save(c, S0, 0x10);
-        c.g[A2][0] = 0;
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        call_ptr(c, 0x001d_53b0, 0x0022_1dcc)?;
-        let this = c.g[S0][0] as u32;
-        c.g[V1][0] = 0x0047_0000;
-        c.g[V0][0] = c.g[S0][0];
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2928));
-        frame.restore_ra(c, 0);
-        let vt = c.g[V1][0];
-        Addr(this.wrapping_add(0x8)).sw(c, vt);
-        frame.restore(c, S0, 0x10);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-pub(crate) const OC1015_VT_AUTOSAVE: u32 = OC1015_DATA + 0x1f80;
-
-/// `cFEMemCard` constructor (0x1d53b0, the autosave state's base) and destructor
-/// (0x1d5428).
-pub(crate) const OC1015_FEMEM_CTOR: u32 = 0x001d_53b0;
-
-pub(crate) const OC1015_FEMEM_DTOR: u32 = 0x001d_5428;
-
-/// `OVScreenAutosave_dtor` (0x222280): the autosave overlay's destructor. Sets
-/// the autosave vtable at +0x8, then runs the memory-card state's destructor
-/// (0x1d5428).
-pub fn ov_screen_autosave_dtor(c: &mut Cpu) {
-    guest(c, |c| {
-        oc1015_dtor(c, OC1015_VT_AUTOSAVE, OC1015_FEMEM_DTOR, 0x0022_229c)
-    });
-}
-
-/// `OVScreenAutosave_ctor_2` (0x2222b8): constructs the autosave overlay state
-/// on top of the memory-card state constructor (0x1d53b0, with null `a1` and
-/// `a2`), then sets the autosave vtable at +0x8.
-pub fn ov_screen_autosave_ctor_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 15;
-        let f = Frame::open(c, 0x20);
-        c.g[A1][0] = 0;
-        f.save(c, S0, 0x10);
-        c.g[A2][0] = 0;
-        f.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        call_ptr(c, OC1015_FEMEM_CTOR, 0x0022_22d4)?;
-        let this = c.g[S0][0] as u32;
-        c.g[V1][0] = OC1015_DATA as u64;
-        c.g[V0][0] = c.g[S0][0];
-        c.g[V1][0] = OC1015_VT_AUTOSAVE as u64;
-        f.restore_ra(c, 0);
-        let vt = c.g[V1][0];
-        Addr(this.wrapping_add(0x8)).sw(c, vt);
-        f.restore(c, S0, 0x10);
-        f.close(c);
         Ok(())
     });
 }
@@ -3275,5 +3373,498 @@ pub(crate) mod tests {
                 oc1015_object_setup(c, seed)
             },
         );
+    }
+
+    use crate::difftest::check_lohi;
+    use std::ptr::addr_of_mut;
+
+    /// Gate word of this module's callee fakes (the machine's RAM, never
+    /// `DATA+0x100000`).
+    pub(crate) const OC1021_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC1021_MAGIC: u32 = 0x1021_c0de;
+
+    /// Per-callee result mailbox: 0 keeps the fake's own result, 1 returns 0,
+    /// anything else is returned as it is.
+    pub(crate) const OC1021_MAIL: u32 = DATA + 0x20_0100;
+
+    pub(crate) const OC1021_ZERO: u32 = 1;
+
+    // Fixture layout.
+    /// The state (`this`, a0).
+    pub(crate) const OC1021_SELF: u32 = DATA + 0x1000;
+
+    /// The MC manager returned by `MCManager_Get`.
+    pub(crate) const OC1021_MC: u32 = DATA + 0x2000;
+
+    pub(crate) const OC1021_WORLD: u32 = DATA + 0x3000;
+
+    pub(crate) const OC1021_WOBJ: u32 = DATA + 0x3100;
+
+    pub(crate) const OC1021_WOBJ2: u32 = DATA + 0x3200;
+
+    pub(crate) const OC1021_A2OBJ: u32 = DATA + 0x3400;
+
+    pub(crate) const OC1021_A2VT: u32 = DATA + 0x3500;
+
+    pub(crate) const OC1021_WV: u32 = DATA + 0x3600;
+
+    /// The widget event (a1).
+    pub(crate) const OC1021_EV: u32 = DATA + 0x3800;
+
+    pub(crate) const OC1021_CHAIN: u32 = DATA + 0x3900;
+
+    pub(crate) const OC1021_CHAIN2: u32 = DATA + 0x3a00;
+
+    /// Objects the faked constructor and allocator return.
+    pub(crate) const OC1021_KEYBOARD: u32 = DATA + 0x5000;
+
+    pub(crate) const OC1021_ALLOC: u32 = DATA + 0x5800;
+
+    /// A real leaf that returns 0.
+    pub(crate) const OC1021_LEAF0: u32 = 0x0014_06c0;
+
+    /// Every direct callee: index, address.
+    pub(crate) const OC1021_CALLEES: [u32; 21] = [
+        0x002c_2540,
+        0x0014_dc80,
+        0x0014_dd58,
+        0x0041_6810,
+        0x0014_7138,
+        0x002c_2580,
+        0x0041_7828,
+        0x0023_cae8,
+        0x001c_b030,
+        0x0031_7d70,
+        0x001c_d088,
+        0x001c_e3c8,
+        0x001c_e408,
+        0x001c_d0b0,
+        0x001c_cf70,
+        0x0014_7170,
+        0x001c_b418,
+        0x0039_f290,
+        0x0023_d570,
+        0x0031_7670,
+        0x0022_7f80,
+    ];
+
+    pub(crate) const OC1021_IDX_STRLEN: u32 = 3;
+
+    pub(crate) const OC1021_IDX_CTOR: u32 = 8;
+
+    pub(crate) const OC1021_IDX_ALLOC: u32 = 9;
+
+    pub(crate) const OC1021_IDX_MCGET: u32 = 20;
+
+    pub(crate) fn oc1021_apply_mail(c: &mut Cpu, idx: u32) {
+        match c.bus.read32(OC1021_MAIL + 4 * idx) {
+            0 => {}
+            OC1021_ZERO => c.g[V0][0] = 0,
+            m => c.g[V0][0] = sx(m),
+        }
+    }
+
+    /// Gated fakes in the override slots of the direct callees: each logs its
+    /// call like `fakes::fake`, then answers from its mailbox; gate off, the
+    /// slot runs the body it held.
+    macro_rules! oc1021_gated {
+        ($($fake:ident => $idx:literal, $slot:path, $generated:path;)*) => {
+            $(
+                pub(crate) fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC1021_CTRL) != OC1021_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($fake), $generated);
+                    }
+                    let ra = c.g[RA][0] as u32;
+                    fakes::fake(c, OC1021_CALLEES[$idx], ra);
+                    if c.pc == ra {
+                        oc1021_apply_mail(c, $idx);
+                    }
+                }
+            )*
+
+            pub(crate) fn oc1021_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, fakes::prev_cell($fake)); )*
+            }
+        };
+    }
+
+    oc1021_gated! {
+        oc1021_fake_2c2540 => 0, ee::s08::OVERRIDE_002C2540, ee::s08::f_002c2540__generated;
+        oc1021_fake_14dc80 => 1, ee::s01::OVERRIDE_0014DC80, ee::s01::f_0014dc80__generated;
+        oc1021_fake_14dd58 => 2, ee::s01::OVERRIDE_0014DD58, ee::s01::f_0014dd58__generated;
+        oc1021_fake_416810 => 3, ee::s15::OVERRIDE_00416810, ee::s15::f_00416810__generated;
+        oc1021_fake_147138 => 4, ee::s01::OVERRIDE_00147138, ee::s01::f_00147138__generated;
+        oc1021_fake_2c2580 => 5, ee::s08::OVERRIDE_002C2580, ee::s08::f_002c2580__generated;
+        oc1021_fake_417828 => 6, ee::s15::OVERRIDE_00417828, ee::s15::f_00417828__generated;
+        oc1021_fake_23cae8 => 7, ee::s06::OVERRIDE_0023CAE8, ee::s06::f_0023cae8__generated;
+        oc1021_fake_1cb030 => 8, ee::s04::OVERRIDE_001CB030, ee::s04::f_001cb030__generated;
+        oc1021_fake_317d70 => 9, ee::s10::OVERRIDE_00317D70, ee::s10::f_00317d70__generated;
+        oc1021_fake_1cd088 => 10, ee::s04::OVERRIDE_001CD088, ee::s04::f_001cd088__generated;
+        oc1021_fake_1ce3c8 => 11, ee::s04::OVERRIDE_001CE3C8, ee::s04::f_001ce3c8__generated;
+        oc1021_fake_1ce408 => 12, ee::s04::OVERRIDE_001CE408, ee::s04::f_001ce408__generated;
+        oc1021_fake_1cd0b0 => 13, ee::s04::OVERRIDE_001CD0B0, ee::s04::f_001cd0b0__generated;
+        oc1021_fake_1ccf70 => 14, ee::s04::OVERRIDE_001CCF70, ee::s04::f_001ccf70__generated;
+        oc1021_fake_147170 => 15, ee::s01::OVERRIDE_00147170, ee::s01::f_00147170__generated;
+        oc1021_fake_1cb418 => 16, ee::s04::OVERRIDE_001CB418, ee::s04::f_001cb418__generated;
+        oc1021_fake_39f290 => 17, ee::s13::OVERRIDE_0039F290, ee::s13::f_0039f290__generated;
+        oc1021_fake_23d570 => 18, ee::s06::OVERRIDE_0023D570, ee::s06::f_0023d570__generated;
+        oc1021_fake_317670 => 19, ee::s10::OVERRIDE_00317670, ee::s10::f_00317670__generated;
+        oc1021_fake_227f80 => 20, ee::s05::OVERRIDE_00227F80, ee::s05::f_00227f80__generated;
+    }
+
+    pub(crate) fn oc1021_w(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(addr, v);
+    }
+
+    /// `OVScreenProfileSavePDA_OnWidgetAction(this, event, action)`: the PDA
+    /// profile-save screen's widget handler. `action - 5` (0..9) picks one of
+    /// five arms through the jump table (name edit, keyboard popup, MC result
+    /// polling), anything else does nothing. The seed varies the action (also
+    /// out of range), the state machine fields (`+0x1a8`, `+0x1c0`, `+0x214`),
+    /// whether the keyboard popup exists, and what the memory-card manager's
+    /// vtable calls and `strlen` answer.
+    pub(crate) fn oc1021_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine_rt(c, seed, 0x211bc8, 16);
+        elf_image(c);
+        oc1021_install_fakes();
+        c.bus.write32(OC1021_CTRL, OC1021_MAGIC);
+        c.pc = 0x0021_1bc8;
+        let gp = GAME_GP;
+        let pick =
+            |r: &mut crate::difftest::Rng, set: &[u32]| set[(r.next_u32() as usize) % set.len()];
+
+        // Action 3..=16: the ten table entries and both out-of-range sides.
+        let action = 3 + seed % 14;
+        let event = if r.next_u32() % 5 == 0 { 0 } else { OC1021_EV };
+        oc1021_w(c, gp - 0x848, OC1021_WORLD);
+        oc1021_w(c, OC1021_WORLD + 0x8c, OC1021_WOBJ);
+        oc1021_w(c, OC1021_WOBJ + 4, OC1021_WOBJ2);
+        c.bus.write16(OC1021_WOBJ2 + 0x20, 0);
+        oc1021_w(c, OC1021_WOBJ2 + 0x24, FAKE + 0x10);
+
+        let this = OC1021_SELF;
+        oc1021_w(c, this + 0x10, DATA + 0x6000);
+        c.bus.write8(this + 0x15, r.next_u32() as u8);
+        oc1021_w(c, this + 0x19c, r.next_u32());
+        oc1021_w(c, this + 0x1a0, r.next_u32());
+        let keyboard = if r.next_u32() % 2 == 0 {
+            0
+        } else {
+            OC1021_KEYBOARD
+        };
+        oc1021_w(c, this + 0x1a4, keyboard);
+        oc1021_w(c, this + 0x1a8, pick(&mut r, &[0, 1, 1, 2]));
+        oc1021_w(c, this + 0x1c0, pick(&mut r, &[0, 1, 1, 2, 3, 6, 6]));
+        oc1021_w(c, this + 0x1c4, r.next_u32());
+        oc1021_w(c, this + 0x1cc, r.next_u32() % 16);
+        oc1021_w(c, this + 0x1dc, r.next_u32());
+        oc1021_w(c, this + 0x214, pick(&mut r, &[3, 3, 0]));
+        oc1021_w(c, this + 0x40, OC1021_CHAIN);
+        oc1021_w(c, OC1021_CHAIN + 0xd0, OC1021_CHAIN2);
+        oc1021_w(c, OC1021_KEYBOARD + 0x58, 0);
+
+        // The memory-card manager and the objects its vtable calls reach.
+        oc1021_w(c, OC1021_MC + 0x434, OC1021_A2OBJ);
+        oc1021_w(c, OC1021_MC + 0x428, r.next_u32());
+        oc1021_w(c, OC1021_MC + 0x748, OC1021_WV);
+        oc1021_w(c, OC1021_WV + 0xc, FAKE + 0x20);
+        oc1021_w(c, OC1021_A2OBJ, OC1021_A2VT);
+        oc1021_w(c, OC1021_EV + 0x18, r.next_u32() % 4);
+        for off in [0x1b4, 0x21c] {
+            let f = if r.next_u32() % 2 == 0 {
+                OC1021_LEAF0
+            } else {
+                FAKE + 0x30
+            };
+            oc1021_w(c, OC1021_A2VT + off, f);
+        }
+
+        // Callee answers.
+        let mail = |c: &mut Cpu, idx: u32, v: u32| oc1021_w(c, OC1021_MAIL + 4 * idx, v);
+        mail(c, OC1021_IDX_MCGET, OC1021_MC);
+        mail(c, OC1021_IDX_ALLOC, OC1021_ALLOC);
+        mail(c, OC1021_IDX_CTOR, OC1021_KEYBOARD);
+        mail(
+            c,
+            OC1021_IDX_STRLEN,
+            if r.next_u32() % 2 == 0 {
+                OC1021_ZERO
+            } else {
+                5
+            },
+        );
+
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = sx(event);
+        c.g[A2][0] = sx(action);
+    }
+
+    /// The port matches the generated body: every action, state, popup and
+    /// MC-manager outcome, and unwinds inside the call chains.
+    #[test]
+    fn ov_screen_profile_save_pda_on_widget_action_matches() {
+        check(
+            ee::s05::f_00211bc8__generated,
+            ov_screen_profile_save_pda_on_widget_action_2,
+            420,
+            &oc1021_setup,
+        );
+    }
+
+    /// The fixture reaches many distinct paths (total cycle costs of the
+    /// generated body over the seeds).
+    #[test]
+    fn ov_screen_profile_save_pda_on_widget_action_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..420u32 {
+            let mut c = fresh();
+            oc1021_setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s05::f_00211bc8__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert!(seen.len() >= 12, "only {} paths: {seen:?}", seen.len());
+    }
+
+    /// Gate word of this module's fakes (own address and magic in the machine's
+    /// RAM: other tests' machines run the real bodies).
+    pub(crate) const OC1024_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC1024_MAGIC: u32 = 0x1024_f00d;
+
+    /// Fixture objects (clear of the fakes' result pointers, `DATA..+0x40000`).
+    pub(crate) const OC1024_THIS: u32 = DATA + 0x5_0000;
+
+    pub(crate) const OC1024_MGR: u32 = DATA + 0x5_4000;
+
+    /// Every faked callee: a gated fake in its override slot that logs the
+    /// call (all registers) and returns the next forced result or a pointer.
+    macro_rules! oc1024_fakes {
+        ($($name:ident, $addr:expr, $slot:path, $gen:path;)*) => {
+            $(
+                fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC1024_CTRL) != OC1024_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($name), $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                    oc1024_after(c, $addr);
+                }
+            )*
+            /// Puts every fake in its override slot (once per process).
+            fn oc1024_hook() {
+                $( fakes::hook(addr_of_mut!($slot), $name, fakes::prev_cell($name)); )*
+            }
+        };
+    }
+
+    /// `SndLoadQueue_FinishCurrent` fake: each call lets the busy word (+4 of
+    /// `s0`) count down by one.
+    pub(crate) fn oc1024_after(c: &mut Cpu, target: u32) {
+        if target == 0x0028_9df0 {
+            let this = c.g[S0][0] as u32;
+            let busy = c.bus.read32(this + 4);
+            if busy != 0 {
+                c.bus.write32(this + 4, busy - 1);
+            }
+        }
+    }
+
+    oc1024_fakes! {
+        oc1024_fake_001d58b8, 0x001d_58b8, ee::s04::OVERRIDE_001D58B8, ee::s04::f_001d58b8__generated;
+        oc1024_fake_00227f80, 0x0022_7f80, ee::s05::OVERRIDE_00227F80, ee::s05::f_00227f80__generated;
+        oc1024_fake_0023cae8, 0x0023_cae8, ee::s06::OVERRIDE_0023CAE8, ee::s06::f_0023cae8__generated;
+        oc1024_fake_001d8de0, 0x001d_8de0, ee::s04::OVERRIDE_001D8DE0, ee::s04::f_001d8de0__generated;
+        oc1024_fake_00230488, 0x0023_0488, ee::s06::OVERRIDE_00230488, ee::s06::f_00230488__generated;
+        oc1024_fake_00317d70, 0x0031_7d70, ee::s10::OVERRIDE_00317D70, ee::s10::f_00317d70__generated;
+        oc1024_fake_00194738, 0x0019_4738, ee::s02::OVERRIDE_00194738, ee::s02::f_00194738__generated;
+        oc1024_fake_001f3700, 0x001f_3700, ee::s04::OVERRIDE_001F3700, ee::s04::f_001f3700__generated;
+        oc1024_fake_0039f400, 0x0039_f400, ee::s13::OVERRIDE_0039F400, ee::s13::f_0039f400__generated;
+        oc1024_fake_0014dc80, 0x0014_dc80, ee::s01::OVERRIDE_0014DC80, ee::s01::f_0014dc80__generated;
+        oc1024_fake_0014dd58, 0x0014_dd58, ee::s01::OVERRIDE_0014DD58, ee::s01::f_0014dd58__generated;
+        oc1024_fake_00144df0, 0x0014_4df0, ee::s01::OVERRIDE_00144DF0, ee::s01::f_00144df0__generated;
+        oc1024_fake_001451e8, 0x0014_51e8, ee::s01::OVERRIDE_001451E8, ee::s01::f_001451e8__generated;
+        oc1024_fake_00146d98, 0x0014_6d98, ee::s01::OVERRIDE_00146D98, ee::s01::f_00146d98__generated;
+        oc1024_fake_00232720, 0x0023_2720, ee::s06::OVERRIDE_00232720, ee::s06::f_00232720__generated;
+        oc1024_fake_00316ef8, 0x0031_6ef8, ee::s10::OVERRIDE_00316EF8, ee::s10::f_00316ef8__generated;
+        oc1024_fake_003e4fb0, 0x003e_4fb0, ee::s14::OVERRIDE_003E4FB0, ee::s14::f_003e4fb0__generated;
+        oc1024_fake_00289df0, 0x0028_9df0, ee::s07::OVERRIDE_00289DF0, ee::s07::f_00289df0__generated;
+        oc1024_fake_00317e98, 0x0031_7e98, ee::s10::OVERRIDE_00317E98, ee::s10::f_00317e98__generated;
+        oc1024_fake_0028b278, 0x0028_b278, ee::s07::OVERRIDE_0028B278, ee::s07::f_0028b278__generated;
+        oc1024_fake_002ace40, 0x002a_ce40, ee::s08::OVERRIDE_002ACE40, ee::s08::f_002ace40__generated;
+        oc1024_fake_0028a148, 0x0028_a148, ee::s07::OVERRIDE_0028A148, ee::s07::f_0028a148__generated;
+        oc1024_fake_002adee8, 0x002a_dee8, ee::s08::OVERRIDE_002ADEE8, ee::s08::f_002adee8__generated;
+        oc1024_fake_00317e50, 0x0031_7e50, ee::s10::OVERRIDE_00317E50, ee::s10::f_00317e50__generated;
+    }
+
+    /// Hooked fakes, scrambled registers, the gate on.
+    pub(crate) fn oc1024_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        oc1024_hook();
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC1024_CTRL, OC1024_MAGIC);
+        r
+    }
+
+    /// Distinct call sequences (addresses) the generated body makes over the seeds.
+    pub(crate) fn oc1024_paths(
+        generated: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) -> usize {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..seeds {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            crate::difftest::run_generated(&mut c, generated);
+            let n = c.bus.read32(fakes::LOG_COUNT);
+            let seq: Vec<u32> = (0..n)
+                .map(|i| c.bus.read32(fakes::LOG_START + i * 0x220))
+                .collect();
+            seen.insert((seq, c.cycles));
+        }
+        seen.len()
+    }
+
+    pub(crate) fn oc1024_shutdown_pda_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc1024_machine(c, seed, 0x21_1b10, 1);
+        c.bus.write32(OC1024_THIS + 0x1a4, r.next_u32());
+        c.g[A0][0] = sx(OC1024_THIS);
+        c.pc = 0x0021_1b10;
+    }
+
+    /// `OVScreenProfileSavePDA_Shutdown`: the base shutdown call, the field
+    /// clear, and a callee unwind.
+    #[test]
+    fn ov_screen_profile_save_pda_shutdown_matches() {
+        check(
+            ee::s05::f_00211b10__generated,
+            ov_screen_profile_save_pda_shutdown_2,
+            40,
+            &oc1024_shutdown_pda_setup,
+        );
+    }
+
+    pub(crate) fn oc1024_pda_notify_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc1024_machine(c, seed, 0x21_1b38, 2);
+        let key = [6u32, 8, 9, 0, 5, 7, 10, 0x101, 3, 6, 8, 9, 4, 6][(seed % 14) as usize];
+        let (obj, vt) = (DATA + 0x5_1000, DATA + 0x5_2000);
+        // MCManager_Get is fake call 0: force the manager.
+        c.bus.write32(fakes::LOG_RESULTS, OC1024_MGR);
+        c.bus.write32(OC1024_MGR + 0x434, obj);
+        c.bus.write32(OC1024_MGR + 0x428, r.next_u32());
+        c.bus.write32(obj, vt);
+        c.bus.write16(vt + 0x1b0, (r.next_u32() & 0xfffc) as u16);
+        // The device answers non-zero (a fake) or zero (a real leaf).
+        let leaf0 = 0x0014_06c0;
+        c.bus.write32(
+            vt + 0x1b4,
+            if (seed / 14) % 2 == 0 {
+                fakes::FAKE
+            } else {
+                leaf0
+            },
+        );
+        c.g[A0][0] = r.next_u32() as u64;
+        c.g[A1][0] = r.next_u32() as u64;
+        c.g[A2][0] = key as u64;
+        c.pc = 0x0021_1b38;
+    }
+
+    /// `OVScreenProfileSavePDA_OnWidgetNotify`: keys 6/8 (device actionable or
+    /// not), 9, below and above, and callee unwinds.
+    #[test]
+    fn ov_screen_profile_save_pda_on_widget_notify_matches() {
+        check(
+            ee::s05::f_00211b38__generated,
+            ov_screen_profile_save_pda_on_widget_notify_2,
+            140,
+            &oc1024_pda_notify_setup,
+        );
+        let paths = oc1024_paths(
+            ee::s05::f_00211b38__generated,
+            140,
+            &oc1024_pda_notify_setup,
+        );
+        assert!(paths >= 5, "only {paths} paths");
+    }
+
+    pub(crate) fn oc1024_autosave_update_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc1024_machine(c, seed, 0x21_2208, 3);
+        c.bus.write32(fakes::LOG_RESULTS, OC1024_MGR);
+        // (state, +0x1a8 word, device variant)
+        let k = seed % 16;
+        let (state, f1a8, variant) = match k {
+            0..=2 => (1u32, 0u32, 0u32),
+            3 => (1, 5, 0),
+            4 => (0, 0, 0),
+            5 => (6, 0, 0),
+            _ => (3, 0, k - 6),
+        };
+        let this = OC1024_THIS;
+        c.bus.write32(this + 0x1c0, state);
+        c.bus.write32(this + 0x1a8, f1a8);
+        for off in [0x1f0u32, 0x1dc, 0x1e4] {
+            c.bus.write32(this + off, r.next_u32());
+        }
+        // The selected device record (0xe0 bytes each): plugged (+0x350),
+        // valid (+0x344), formatted (+0x348).
+        let idx = (seed / 16) % 3;
+        c.bus.write32(OC1024_MGR + 0x428, idx);
+        let dev = OC1024_MGR + idx * 0xe0;
+        let (plugged, valid, formatted) =
+            [(0u32, 0u32, 0u32), (1, 0, 0), (1, 1, 1), (1, 1, 0)][(variant % 4) as usize];
+        c.bus.write32(dev + 0x350, plugged);
+        c.bus.write32(dev + 0x344, valid);
+        c.bus.write32(dev + 0x348, formatted);
+        c.g[A0][0] = sx(this);
+        c.pc = 0x0021_2208;
+    }
+
+    /// `OVScreenAutosave_Update`: state 1 (start save, or already started),
+    /// state 3 with the device unplugged / invalid / formatted / not, other
+    /// states, and callee unwinds. LO/HI too (the device index multiply).
+    #[test]
+    fn ov_screen_autosave_update_matches() {
+        check_lohi(
+            ee::s05::f_00212208__generated,
+            ov_screen_autosave_update_2,
+            192,
+            &oc1024_autosave_update_setup,
+        );
+        let paths = oc1024_paths(
+            ee::s05::f_00212208__generated,
+            192,
+            &oc1024_autosave_update_setup,
+        );
+        assert!(paths >= 5, "only {paths} paths");
+    }
+
+    pub(crate) fn oc1024_autosave_shutdown_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc1024_machine(c, seed, 0x21_2508, 14);
+        let state = [1u32, 6, 7, 0, 3, 0, 6, 7, 1, 2][(seed % 10) as usize];
+        let this = OC1024_THIS;
+        c.bus.write32(this + 0x22c, state);
+        c.bus.write32(this + 0x10, r.next_u32());
+        c.g[A0][0] = sx(this);
+        c.pc = 0x0021_2508;
+    }
+
+    /// `OVScreenAutosave_Shutdown`: state 1, 6, 7, 0 (the long rebuild chain,
+    /// ending in a virtual call through a zero vtable word) and others, with
+    /// callee unwinds at random positions.
+    #[test]
+    fn ov_screen_autosave_shutdown_matches() {
+        check(
+            ee::s05::f_00212508__generated,
+            ov_screen_autosave_shutdown_2,
+            200,
+            &oc1024_autosave_shutdown_setup,
+        );
+        let paths = oc1024_paths(
+            ee::s05::f_00212508__generated,
+            200,
+            &oc1024_autosave_shutdown_setup,
+        );
+        assert!(paths >= 5, "only {paths} paths");
     }
 }

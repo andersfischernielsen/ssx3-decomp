@@ -316,6 +316,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Font_DrawTextCenteredW",
     ),
     (0x0039_2ad0, font_draw_text_right_w, "Font_DrawTextRightW"),
+    (0x0039_2de8, fx_trail_set_flag_a4, "FXTrail_SetFlagA4"),
+    (
+        0x0039_6160,
+        vfx_component_base_dtor,
+        "VfxComponent_BaseDtor",
+    ),
 ];
 
 /// `DeferMan` layout (offsets from the `DeferMan*`).
@@ -4903,6 +4909,39 @@ pub fn font_draw_text_centered_varargs_2(c: &mut Cpu) {
     })
 }
 
+/// `void FXTrail_SetFlagA4(FXTrail* self, u32 flag)` (0x392de8): store the
+/// flag word at `+0xa4` of the trail.
+pub fn fx_trail_set_flag_a4(c: &mut Cpu) {
+    c.cycles += 2;
+    let flag = c.g[A1][0];
+    Addr(abi::arg(c, 0).wrapping_add(0xa4)).sw(c, flag);
+    abi::ret(c);
+}
+
+/// `VfxComponent` base destructor (0x396160): set the base vtable (0x488680)
+/// at the object, then free the object when bit 0 of the flags (`a1`) is set
+/// (`operator_delete`, 0x317e50).
+pub fn vfx_component_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(0x0049_0000u32.wrapping_sub(0x7980));
+        c.g[A1][0] = c.g[A1][0] & 0x1;
+        let obj = Addr(abi::arg(c, 0));
+        let vtbl = c.g[V0][0];
+        obj.sw(c, vtbl);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e50, 0x0039_6184)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7497,6 +7536,66 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA + 0x1234);
                 c.g[A1][0] = sx(DATA + 0x20_0000);
                 c.pc = 0x0022_23e8;
+            },
+        );
+    }
+
+    /// Gate word and log cell of the operator_delete fake (unique to this module).
+    pub(crate) const OC1072_GATE: u32 = DATA + 0x4000;
+
+    pub(crate) const OC1072_LOG: u32 = DATA + 0x4004;
+
+    pub(crate) const OC1072_MAGIC: u32 = 0x1072_0396;
+
+    pub(crate) static OC1072_DELETE_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gated stand-in for `operator_delete` (0x317e50): when the gate is
+    /// set it logs its argument and returns; otherwise the real body runs.
+    pub(crate) fn oc1072_delete_fake(c: &mut Cpu) {
+        if c.bus.read32(OC1072_GATE) != OC1072_MAGIC {
+            return fakes::fall_back(c, &OC1072_DELETE_PREV, ee::s10::f_00317e50__generated);
+        }
+        let p = c.g[A0][0] as u32;
+        c.bus.write32(OC1072_LOG, p);
+        abi::ret(c);
+    }
+
+    #[test]
+    fn fx_trail_set_flag_a4_matches() {
+        check(
+            ssx3_ee::s13::f_00392de8__generated,
+            fx_trail_set_flag_a4,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x392d_e800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(r.next_u32());
+                c.bus.write32(DATA + 0xa4, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn vfx_component_base_dtor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1072_delete_fake,
+            &OC1072_DELETE_PREV,
+        );
+        check(
+            ssx3_ee::s13::f_00396160__generated,
+            vfx_component_base_dtor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3961_6000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                // Bit 0 of the flags picks the delete path, the rest is junk.
+                let flags = (r.next_u32() & !1) | (seed & 1);
+                c.g[A1][0] = sx(flags);
+                c.bus.write32(OC1072_GATE, OC1072_MAGIC);
+                c.bus.write32(DATA, r.next_u32());
             },
         );
     }

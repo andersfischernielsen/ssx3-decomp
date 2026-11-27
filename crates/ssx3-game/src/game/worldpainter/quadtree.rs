@@ -462,6 +462,15 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x002c_2580, ustr_to_ascii, "UStr_ToAscii"),
     (0x002c_6e98, loc_string_table_load, "LocStringTable_Load"),
+    (0x002c_17d0, quad_tree_alloc_node, "QuadTree_AllocNode"),
+    (0x002c_1950, quad_tree_insert, "QuadTree_Insert"),
+    (0x002c_1da8, quad_tree_compact, "QuadTree_Compact"),
+    (0x002c_2178, quad_tree_count_nodes, "QuadTree_CountNodes"),
+    (
+        0x002c_3fa0,
+        game_module_unload_stub,
+        "GameModule_UnloadStub",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -10200,6 +10209,573 @@ pub fn ustr_to_ascii(c: &mut Cpu) {
     c.pc = t;
 }
 
+/// `void QuadTree_Compact(QuadTree* self, void** out, int* size, ctx)` (0x2c1da8,
+/// `cQuadTree_exportTree`): allocates the node map and the output block, flattens the
+/// tree into it, renumbers each node's children and byte-swaps the header and nodes
+/// through the context's fix functions. Transcription of the generated body (labels
+/// kept).
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_mut,
+    unreachable_code,
+    unused_variables
+)]
+pub fn quad_tree_compact(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2c1e54: {
+            c.cycles += 33;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xb0));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
+            c.g[S0][0] = c.g[A2][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.g[S1][0] = c.g[A3][0];
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S3][0] = c.g[A1][0];
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[A1][0] = 0x480000;
+            c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S5][0] = c.g[T2][0];
+            c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S6][0] = c.g[A0][0];
+            c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S7][0] = c.g[T1][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.g[FP][0] = c.g[T0][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5fb0));
+            c.g[A2][0] = 0u64;
+            c.g[A3][0] = 0u64;
+            c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0xc));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x28));
+            c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+            c.g[A0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x10));
+            c.g[RA][0] = sx(0x002c1e1c);
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+            call_ptr(c, 0x00317e30, 0x002c1e1c)?;
+            c.g[S4][0] = c.g[V0][0];
+            c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x10));
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[S2][0] = c.g[V0][0];
+            if t {
+                break 'b_2c1e54;
+            } else {
+                c.cycles += 3;
+                c.g[V1][0] = 0xffffffffffffffff;
+                c.g[V0][0] = c.g[S4][0];
+                'l_2c1e38: loop {
+                    c.cycles += 7;
+                    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[S2][0] != 0u64;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002c1e38);
+                        }
+                        continue 'l_2c1e38;
+                    } else {
+                        break 'b_2c1e54;
+                    }
+                }
+            }
+        }
+        'b_2c1ff4: {
+            c.cycles += 48;
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[A1][0] = 0x480000;
+            c.g[A3][0] = 0u64;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5fc8));
+            c.g[A2][0] = 0u64;
+            c.g[RA][0] = sx(0x002c1e70);
+            c.g[S2][0] = 0u64;
+            call_ptr(c, 0x00317e30, 0x002c1e70)?;
+            c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+            c.g[A1][0] = 0xffffffffdead0000;
+            c.g[A1][0] = c.g[A1][0] | 0xbeef;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[RA][0] = sx(0x002c1e88);
+            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+            call_ptr(c, 0x00416210, 0x002c1e88)?;
+            c.g[S3][0] = c.lw(c.g[S3][0] as u32);
+            c.g[A0][0] = c.g[S6][0];
+            c.g[A2][0] = c.g[SP][0];
+            c.g[A3][0] = c.g[S4][0];
+            c.ldl(2, (c.g[S6][0] as u32).wrapping_add(0x7));
+            c.ldr(2, c.g[S6][0] as u32);
+            c.ldl(3, (c.g[S6][0] as u32).wrapping_add(0xf));
+            c.ldr(3, (c.g[S6][0] as u32).wrapping_add(0x8));
+            c.ldl(5, (c.g[S6][0] as u32).wrapping_add(0x17));
+            c.ldr(5, (c.g[S6][0] as u32).wrapping_add(0x10));
+            c.ldl(8, (c.g[S6][0] as u32).wrapping_add(0x1f));
+            c.ldr(8, (c.g[S6][0] as u32).wrapping_add(0x18));
+            c.sdl(2, (c.g[S3][0] as u32).wrapping_add(0x7));
+            c.sdr(2, c.g[S3][0] as u32);
+            c.sdl(3, (c.g[S3][0] as u32).wrapping_add(0xf));
+            c.sdr(3, (c.g[S3][0] as u32).wrapping_add(0x8));
+            c.sdl(5, (c.g[S3][0] as u32).wrapping_add(0x17));
+            c.sdr(5, (c.g[S3][0] as u32).wrapping_add(0x10));
+            c.sdl(8, (c.g[S3][0] as u32).wrapping_add(0x1f));
+            c.sdr(8, (c.g[S3][0] as u32).wrapping_add(0x18));
+            c.ldl(2, (c.g[S6][0] as u32).wrapping_add(0x27));
+            c.ldr(2, (c.g[S6][0] as u32).wrapping_add(0x20));
+            c.sdl(2, (c.g[S3][0] as u32).wrapping_add(0x27));
+            c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x28));
+            c.sdr(2, (c.g[S3][0] as u32).wrapping_add(0x20));
+            c.sw(c.g[SP][0] as u32, 0u64);
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = c.lhu((c.g[S6][0] as u32).wrapping_add(0x14));
+            c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x20));
+            c.g[T0][0] = sx((c.g[T0][0] as u32) << 3);
+            c.g[RA][0] = sx(0x002c1f08);
+            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+            Callee {
+                addr: 0x002c2088,
+                f: ee::s08::QuadTree_FlattenNode,
+            }
+            .call(c, 0x002c1f08)?;
+            c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+            if (c.g[V0][0] as i64) <= 0 {
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x10), 0u64);
+                break 'b_2c1ff4;
+            } else {
+                c.cycles += 1;
+                'l_2c1f18: loop {
+                    'b_2c1fdc: {
+                        'b_2c1fbc: {
+                            c.cycles += 4;
+                            c.g[T1][0] = c.lhu(c.g[S0][0] as u32);
+                            c.g[V0][0] = c.g[T1][0] & 0x1;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[T1][0] = sx((c.g[T1][0] as u32) >> 1);
+                            if t {
+                                break 'b_2c1fbc;
+                            } else {
+                                c.cycles += 37;
+                                c.g[A0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x2));
+                                c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x4));
+                                c.g[T1][0] = sx((c.g[T1][0] as u32) << 2);
+                                c.g[V1][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x6));
+                                c.g[A0][0] = sx((c.g[A0][0] as u32) >> 1);
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) >> 1);
+                                c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+                                c.g[V1][0] = sx((c.g[V1][0] as u32) >> 1);
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                                c.g[T1][0] =
+                                    sx((c.g[T1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                                c.g[V1][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                                c.g[A0][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                                c.g[A2][0] = c.lhu(c.g[A0][0] as u32);
+                                c.g[A1][0] = c.lhu(c.g[T1][0] as u32);
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[A3][0] = c.lhu(c.g[V0][0] as u32);
+                                c.g[RA][0] = sx(0x002c1f78);
+                                c.g[T0][0] = c.lhu(c.g[V1][0] as u32);
+                                Callee {
+                                    addr: 0x002c16b8,
+                                    f: ee::s08::QuadTreeNode_SetChildren,
+                                }
+                                .call(c, 0x002c1f78)?;
+                                c.g[A0][0] = c.lhu(c.g[S0][0] as u32);
+                                let t = c.g[S5][0] as u32;
+                                c.g[RA][0] = sx(0x002c1f84);
+                                c.g[A1][0] = c.g[S1][0];
+                                call_ptr(c, t, 0x002c1f84)?;
+                                c.g[A0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x2));
+                                c.g[A1][0] = c.g[S1][0];
+                                let t = c.g[S5][0] as u32;
+                                c.g[RA][0] = sx(0x002c1f94);
+                                c.sh(c.g[S0][0] as u32, c.g[V0][0]);
+                                call_ptr(c, t, 0x002c1f94)?;
+                                c.g[A0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x4));
+                                c.g[A1][0] = c.g[S1][0];
+                                let t = c.g[S5][0] as u32;
+                                c.g[RA][0] = sx(0x002c1fa4);
+                                c.sh((c.g[S0][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+                                call_ptr(c, t, 0x002c1fa4)?;
+                                c.g[A0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0x6));
+                                c.g[A1][0] = c.g[S1][0];
+                                let t = c.g[S5][0] as u32;
+                                c.g[RA][0] = sx(0x002c1fb4);
+                                c.sh((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                call_ptr(c, t, 0x002c1fb4)?;
+                                let t = true;
+                                c.sh((c.g[S0][0] as u32).wrapping_add(0x6), c.g[V0][0]);
+                                if t {
+                                    break 'b_2c1fdc;
+                                } else {
+                                    break 'b_2c1fbc;
+                                }
+                            }
+                        }
+                        c.cycles += 8;
+                        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                        let t = c.g[S7][0] as u32;
+                        c.g[RA][0] = sx(0x002c1fc8);
+                        c.g[A1][0] = c.g[S1][0];
+                        call_ptr(c, t, 0x002c1fc8)?;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                        c.g[A1][0] = c.g[S1][0];
+                        let t = c.g[S7][0] as u32;
+                        c.g[RA][0] = sx(0x002c1fd8);
+                        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                        call_ptr(c, t, 0x002c1fd8)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                        break 'b_2c1fdc;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002c1f18);
+                        }
+                        continue 'l_2c1f18;
+                    } else {
+                        c.cycles += 1;
+                        c.sw((c.g[S3][0] as u32).wrapping_add(0x10), 0u64);
+                        break 'b_2c1ff4;
+                    }
+                }
+            }
+        }
+        c.cycles += 37;
+        c.g[A1][0] = c.g[S1][0];
+        c.sw((c.g[S3][0] as u32).wrapping_add(0x24), 0u64);
+        let t = c.g[S7][0] as u32;
+        c.g[RA][0] = sx(0x002c2004);
+        c.g[A0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x1c));
+        call_ptr(c, t, 0x002c2004)?;
+        c.sw((c.g[S3][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+        c.g[A1][0] = c.g[S1][0];
+        let t = c.g[S7][0] as u32;
+        c.g[RA][0] = sx(0x002c2014);
+        c.g[A0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x18));
+        call_ptr(c, t, 0x002c2014)?;
+        c.lwc1(12, c.g[S3][0] as u32);
+        c.g[A0][0] = c.g[S1][0];
+        let t = c.g[FP][0] as u32;
+        c.g[RA][0] = sx(0x002c2024);
+        c.sw((c.g[S3][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+        call_ptr(c, t, 0x002c2024)?;
+        c.lwc1(12, (c.g[S3][0] as u32).wrapping_add(0x4));
+        c.g[A0][0] = c.g[S1][0];
+        let t = c.g[FP][0] as u32;
+        c.g[RA][0] = sx(0x002c2034);
+        c.swc1(0, c.g[S3][0] as u32);
+        call_ptr(c, t, 0x002c2034)?;
+        c.lwc1(12, (c.g[S3][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.g[S1][0];
+        let t = c.g[FP][0] as u32;
+        c.g[RA][0] = sx(0x002c2044);
+        c.swc1(0, (c.g[S3][0] as u32).wrapping_add(0x4));
+        call_ptr(c, t, 0x002c2044)?;
+        c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+        c.g[A1][0] = c.g[S1][0];
+        let t = c.g[S7][0] as u32;
+        c.g[RA][0] = sx(0x002c2054);
+        c.swc1(0, (c.g[S3][0] as u32).wrapping_add(0x8));
+        call_ptr(c, t, 0x002c2054)?;
+        c.sw((c.g[S3][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `QuadTree_InsertRecursive` (0x2c1a00).
+pub(crate) const QT_INSERT_RECURSIVE: Callee = Callee {
+    addr: 0x002c_1a00,
+    f: ee::s08::QuadTree_InsertRecursive,
+};
+
+/// `QuadTree_CountNodes` (0x2c2178), called on itself for the children.
+pub(crate) const QT_COUNT_NODES: Callee = Callee {
+    addr: 0x002c_2178,
+    f: ee::s08::QuadTree_CountNodes,
+};
+
+/// The register `off` bytes above the value of `reg`, as an address.
+#[inline(always)]
+pub(crate) fn oc1052_at(c: &Cpu, reg: usize, off: u32) -> Addr {
+    Addr((c.g[reg][0] as u32).wrapping_add(off))
+}
+
+/// `QuadTree_AllocNode(tree)` (0x2c17d0): hands out the next free node slot
+/// of the tree. When the free list is empty it grows the node array (a fresh
+/// allocation, the old contents copied over, then the old array freed) and
+/// links the new nodes into the free list. Returns the node pointer.
+pub fn quad_tree_alloc_node(c: &mut Cpu) {
+    guest(c, quad_tree_alloc_node_body);
+}
+
+pub(crate) fn quad_tree_alloc_node_body(c: &mut Cpu) -> Flow {
+    c.cycles += 9;
+    let f = Frame::open(c, 0x30);
+    f.save(c, S0, 0x20);
+    f.save(c, S1, 0x10);
+    c.g[S0][0] = c.g[A0][0];
+    f.save_ra(c, 0);
+    c.g[V1][0] = oc1052_at(c, S0, 0x24).lw(c);
+    c.g[V0][0] = oc1052_at(c, S0, 0x20).lw(c);
+    if c.g[V1][0] != c.g[V0][0] {
+        c.g[V0][0] = oc1052_at(c, S0, 0x24).lw(c);
+    } else {
+        // 0x2c1830: allocate the grown array (size = count*8 + 0x400 bytes, 8-byte units).
+        c.cycles += 11;
+        c.g[A0][0] = oc1052_at(c, S0, 0x10).lw(c);
+        c.g[A1][0] = sx(0x48_0000u32.wrapping_add(0x5f98));
+        c.g[A2][0] = 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x400));
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
+        call_ptr(c, 0x0031_7e30, 0x002c_1814)?;
+        c.g[A1][0] = oc1052_at(c, S0, 0x20).lw(c);
+        let no_old = c.g[A1][0] == 0;
+        c.g[S1][0] = c.g[V0][0];
+        if !no_old {
+            // 0x2c1830 (copy the old array over).
+            c.cycles += 4;
+            c.g[A2][0] = oc1052_at(c, S0, 0x10).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 3);
+            call_ptr(c, 0x0041_605c, 0x002c_1830)?;
+        }
+        // 0x2c186c: fill the new slots of the free list.
+        c.cycles += 5;
+        c.g[V1][0] = oc1052_at(c, S0, 0x10).lw(c);
+        c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3ff));
+        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+        let grow = c.g[V0][0] != 0;
+        c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+        if grow {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[A0][0];
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                let link = c.g[V0][0];
+                Addr(c.g[A0][0] as u32).sh(c, link);
+                c.g[V1][0] = c.g[V0][0];
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(8));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_1850);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        // 0x2c189c: publish the new array and release the old one.
+        c.cycles += 10;
+        c.g[V0][0] = oc1052_at(c, S0, 0x10).lw(c);
+        c.g[A1][0] = oc1052_at(c, S0, 0x20).lw(c);
+        c.g[V1][0] = sx((c.g[V0][0] as u32) << 3);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x400));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+        Addr((c.g[V1][0] as u32).wrapping_add(0x1ff8)).sh(c, 0);
+        let first_free = c.g[A0][0];
+        oc1052_at(c, S0, 0x24).sw(c, first_free);
+        let old = c.g[A1][0];
+        let grown_count = c.g[V0][0];
+        oc1052_at(c, S0, 0x10).sw(c, grown_count);
+        if old != 0 {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[A1][0];
+            call_ptr(c, 0x0031_7e98, 0x002c_189c)?;
+        }
+        c.cycles += 2;
+        let s1 = c.g[S1][0];
+        oc1052_at(c, S0, 0x20).sw(c, s1);
+        c.g[V0][0] = oc1052_at(c, S0, 0x24).lw(c);
+    }
+    // 0x2c18a4 (epilogue of the allocation): hand out the node at the head.
+    c.cycles += 16;
+    c.g[A1][0] = oc1052_at(c, S0, 0x20).lw(c);
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).lhu(c);
+    c.g[A0][0] = oc1052_at(c, S0, 0xc).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 3);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) >> 3);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+    let used = c.g[A0][0];
+    oc1052_at(c, S0, 0xc).sw(c, used);
+    c.g[V0][0] &= 0xffff;
+    let next_free = c.g[A1][0];
+    oc1052_at(c, S0, 0x24).sw(c, next_free);
+    f.restore(c, S0, 0x20);
+    f.restore(c, S1, 0x10);
+    f.restore_ra(c, 0);
+    f.close(c);
+    Ok(())
+}
+
+/// `QuadTree_Insert(node, x, y, ...)` (0x2c1950): descends the quad tree from
+/// `node` towards the point `(x, y)` (the node's bounds are the three floats
+/// at +0, +4, +8), and inserts into the child cell that holds it. Leaves
+/// with a full cell are split through `QuadTree_InsertRecursive`.
+pub fn quad_tree_insert(c: &mut Cpu) {
+    guest(c, quad_tree_insert_body);
+}
+
+pub(crate) fn quad_tree_insert_body(c: &mut Cpu) -> Flow {
+    c.cycles += 20;
+    let f = Frame::open(c, 0x10);
+    c.g[V1][0] = c.g[A0][0];
+    f.save_ra(c, 0);
+    c.g[T2][0] = c.g[A2][0];
+    c.g[A0][0] = 0x7fff;
+    let node = c.g[V1][0] as u32;
+    c.lwc1(2, node.wrapping_add(4));
+    c.lwc1(1, node.wrapping_add(8));
+    c.sub_s(12, 12, 2);
+    c.lwc1(0, node);
+    c.sub_s(13, 13, 1);
+    c.mul_s(14, 14, 0);
+    c.mul_s(12, 12, 0);
+    c.mul_s(13, 13, 0);
+    c.cvt_w_s(0, 12);
+    c.mfc1(6, 0);
+    c.cvt_w_s(0, 13);
+    c.mfc1(7, 0);
+    c.g[V0][0] = (c.g[A0][0] < c.g[A2][0]) as u64;
+    let beyond_limit = c.g[V0][0] != 0;
+    c.g[T1][0] = c.g[A1][0];
+    if !beyond_limit {
+        c.cycles += 3;
+        c.g[V0][0] = (c.g[A0][0] < c.g[A3][0]) as u64;
+        let leaf_done = c.g[V0][0] != 0;
+        f.restore_ra(c, 0);
+        if leaf_done {
+            return quad_tree_insert_end(c, f);
+        }
+        // 0x2c19d4: the split point (a 16-bit quotient of the halved limits).
+        c.cycles += 10;
+        c.cvt_w_s(0, 14);
+        c.mfc1(2, 0);
+        c.g[T0][0] = 0x8000;
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << 1);
+        c.g[A3][0] = sx((c.g[A3][0] as u32) << 1);
+        c.g[A0][0] = c.g[V1][0];
+        c.g[A2][0] = c.g[A2][0] & 0xfffe;
+        c.div(0, T0, V0);
+        c.cycles += 7;
+        c.g[A1][0] = Addr(node.wrapping_add(0x14)).lhu(c);
+        c.g[A3][0] &= 0xfffe;
+        c.g[V0][0] = oc1052_at(c, V1, 0x20).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 3);
+        c.g[T0][0] = c.lo[0];
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        QT_INSERT_RECURSIVE.call(c, 0x002c_19f0)?;
+    }
+    // 0x2c19f0: the node is handled; leave through the epilogue.
+    c.cycles += 1;
+    f.restore_ra(c, 0);
+    quad_tree_insert_end(c, f)
+}
+
+/// 0x2c19f4 epilogue of `QuadTree_Insert`.
+pub(crate) fn quad_tree_insert_end(c: &mut Cpu, f: Frame) -> Flow {
+    c.cycles += 2;
+    f.close(c);
+    Ok(())
+}
+
+/// `int QuadTree_CountNodes(node)` (0x2c2178): the number of nodes under
+/// `node`, counting the node itself (1 for a leaf). Recurses through the four
+/// child slots of a node whose first halfword is odd.
+pub fn quad_tree_count_nodes(c: &mut Cpu) {
+    guest(c, quad_tree_count_nodes_body);
+}
+
+pub(crate) fn quad_tree_count_nodes_body(c: &mut Cpu) -> Flow {
+    c.cycles += 9;
+    let f = Frame::open(c, 0x50);
+    f.save(c, S2, 0x20);
+    f.save(c, S3, 0x10);
+    c.g[S2][0] = c.g[A0][0];
+    f.save(c, S0, 0x40);
+    c.g[S3][0] = 1;
+    f.save(c, S1, 0x30);
+    let null_node = c.g[A1][0] == 0;
+    f.save_ra(c, 0);
+    if !null_node {
+        c.cycles += 4;
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).lhu(c);
+        c.g[V0][0] &= 1;
+        let leaf = c.g[V0][0] == 0;
+        c.g[S0][0] = c.g[A1][0];
+        if !leaf {
+            c.cycles += 1;
+            c.g[S1][0] = 3;
+            loop {
+                c.cycles += 11;
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).lhu(c);
+                c.g[A0][0] = c.g[S2][0];
+                c.g[V0][0] = oc1052_at(c, S2, 0x20).lw(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(2));
+                c.g[A1][0] = sx((c.g[A1][0] as u32) >> 1);
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(1));
+                c.g[A1][0] = sx((c.g[A1][0] as u32) << 3);
+                c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                QT_COUNT_NODES.call(c, 0x002c_21d4)?;
+                let more_children = (c.g[S1][0] as i64) >= 0;
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                if more_children {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002c_21b0);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+    }
+    // 0x2c21dc: return the count.
+    c.cycles += 8;
+    c.g[V0][0] = c.g[S3][0];
+    f.restore(c, S0, 0x40);
+    f.restore(c, S1, 0x30);
+    f.restore(c, S2, 0x20);
+    f.restore(c, S3, 0x10);
+    f.restore_ra(c, 0);
+    f.close(c);
+    Ok(())
+}
+
+/// `GameModule_UnloadStub` (0x2c3fa0): an empty unload hook; returns at once.
+pub fn game_module_unload_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    c.pc = c.g[RA][0] as u32;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16179,6 +16755,361 @@ pub(crate) mod tests {
                 c.bus.write16(DATA + 0x2000 + 2 * n, 0);
                 c.g[V0][0] = 0x1234;
                 c.g[V1][0] = 0x5678;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc1043_box_r;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc1043_box_w;
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc1043_fake;
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC1043_CTRL;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC1043_MAGIC;
+
+    // ----------------------------------------------------------------------
+    // QuadTree_Compact.
+
+    oc1043_fake!(
+        oc1043_fake_qt_alloc,
+        OC1043_PREV_QT_ALLOC,
+        ee::s10::f_00317e30__generated,
+        |c, a| {
+            let p = oc1043_box_r(c, 0x30);
+            oc1043_box_w(c, 0x30, (p + a[0] + 15) & !15);
+            c.g[V0][0] = sx(p);
+        }
+    );
+
+    oc1043_fake!(
+        oc1043_fake_qt_flatten,
+        OC1043_PREV_QT_FLATTEN,
+        ee::s08::f_002c2088__generated,
+        |c, a| {
+            let n = oc1043_box_r(c, 0x40);
+            c.bus.write32(a[2], n);
+            for k in 0..n * 2 {
+                let v = oc1043_box_r(c, 0x48 + k);
+                c.bus.write32(a[1] + 4 * k, v);
+            }
+        }
+    );
+
+    oc1043_fake!(
+        oc1043_fake_qt_set_children,
+        OC1043_PREV_QT_SET_CHILDREN,
+        ee::s08::f_002c16b8__generated,
+        |_c, _a| {}
+    );
+
+    /// A tree of 0-4 nodes (leaf and inner records) exported through three
+    /// callbacks (fixInt, fixShort, fixFloat at fake addresses).
+    #[test]
+    fn quad_tree_compact_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            oc1043_fake_qt_alloc,
+            &OC1043_PREV_QT_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C2088),
+            oc1043_fake_qt_flatten,
+            &OC1043_PREV_QT_FLATTEN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C16B8),
+            oc1043_fake_qt_set_children,
+            &OC1043_PREV_QT_SET_CHILDREN,
+        );
+        covered(
+            ee::s08::f_002c1da8__generated,
+            quad_tree_compact,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2c_1da8, 12);
+                c.bus.write32(OC1043_CTRL, OC1043_MAGIC);
+                let me = DATA + 0x2f_8000;
+                fill(c, &mut r, me, 10);
+                c.bus.write32(me + 0xc, r.next_u32() % 8);
+                c.bus.write32(me + 0x10, r.next_u32() % 5);
+                c.bus.write16(me + 0x14, (r.next_u32() % 4) as u16);
+                c.bus.write32(me + 0x20, DATA + 0x2f_a000);
+                oc1043_box_w(c, 0x30, DATA + 0x30_0000);
+                let n = r.next_u32() % 5;
+                oc1043_box_w(c, 0x40, n);
+                for k in 0..8 {
+                    // nodes alternate between inner (bit 0 set) and leaf records
+                    let v = r.next_u32();
+                    oc1043_box_w(
+                        c,
+                        0x48 + k,
+                        if k % 2 == 0 && seed % 3 != 0 {
+                            v | 1
+                        } else {
+                            v
+                        },
+                    );
+                }
+                c.g[A0][0] = me as u64;
+                c.g[A1][0] = (DATA + 0x2f_9000) as u64;
+                c.g[A2][0] = (DATA + 0x2f_9010) as u64;
+                c.g[A3][0] = r.next_u32() as u64;
+                c.g[T0][0] = (FAKE + 0x100) as u64;
+                c.g[T1][0] = (FAKE + 0x110) as u64;
+                c.g[T2][0] = (FAKE + 0x120) as u64;
+            },
+        );
+    }
+
+    /// Gate word of this module's fakes (far above the fixtures' data).
+    pub(crate) const OC1052_CTRL: u32 = DATA + 0x0020_0000;
+
+    pub(crate) const OC1052_MAGIC: u32 = 0x1052_c0de;
+
+    /// Machine with scrambled registers and the fakes' gate on.
+    pub(crate) fn oc1052_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        oc1052_hooks();
+        let r = fakes::machine(c, seed, salt, 0);
+        c.bus.write32(OC1052_CTRL, OC1052_MAGIC);
+        r
+    }
+
+    /// A callee fake: logs the call and returns (gate on), or runs the callee it
+    /// replaced (gate off, another test in this binary).
+    macro_rules! oc1052_fake {
+        ($fake:ident, $prev:ident, $target:expr, $gen:path) => {
+            static $prev: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC1052_CTRL) != OC1052_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                fakes::fake_call(c, $target);
+            }
+        };
+    }
+
+    oc1052_fake!(
+        oc1052_fake_002b6cf8,
+        OC1052_PREV_002B6CF8,
+        0x002b_6cf8,
+        ee::s08::f_002b6cf8__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_002b77c0,
+        OC1052_PREV_002B77C0,
+        0x002b_77c0,
+        ee::s08::f_002b77c0__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_0028b1c8,
+        OC1052_PREV_0028B1C8,
+        0x0028_b1c8,
+        ee::s07::f_0028b1c8__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_00328f28,
+        OC1052_PREV_00328F28,
+        0x0032_8f28,
+        ee::s10::f_00328f28__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_003284b8,
+        OC1052_PREV_003284B8,
+        0x0032_84b8,
+        ee::s10::f_003284b8__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_00317e50,
+        OC1052_PREV_00317E50,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_00317e98,
+        OC1052_PREV_00317E98,
+        0x0031_7e98,
+        ee::s10::f_00317e98__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_00317e30,
+        OC1052_PREV_00317E30,
+        0x0031_7e30,
+        ee::s10::f_00317e30__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_0011b978,
+        OC1052_PREV_0011B978,
+        0x0011_b978,
+        ee::s00::f_0011b978__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_002c1a00,
+        OC1052_PREV_002C1A00,
+        0x002c_1a00,
+        ee::s08::f_002c1a00__generated
+    );
+
+    oc1052_fake!(
+        oc1052_fake_002c0b70,
+        OC1052_PREV_002C0B70,
+        0x002c_0b70,
+        ee::s08::f_002c0b70__generated
+    );
+
+    /// Installs the fakes above (once per process; each is gated).
+    pub(crate) fn oc1052_hooks() {
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B6CF8),
+            oc1052_fake_002b6cf8,
+            &OC1052_PREV_002B6CF8,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B77C0),
+            oc1052_fake_002b77c0,
+            &OC1052_PREV_002B77C0,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0028B1C8),
+            oc1052_fake_0028b1c8,
+            &OC1052_PREV_0028B1C8,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00328F28),
+            oc1052_fake_00328f28,
+            &OC1052_PREV_00328F28,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003284B8),
+            oc1052_fake_003284b8,
+            &OC1052_PREV_003284B8,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1052_fake_00317e50,
+            &OC1052_PREV_00317E50,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            oc1052_fake_00317e98,
+            &OC1052_PREV_00317E98,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            oc1052_fake_00317e30,
+            &OC1052_PREV_00317E30,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0011B978),
+            oc1052_fake_0011b978,
+            &OC1052_PREV_0011B978,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C1A00),
+            oc1052_fake_002c1a00,
+            &OC1052_PREV_002C1A00,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C0B70),
+            oc1052_fake_002c0b70,
+            &OC1052_PREV_002C0B70,
+        );
+    }
+
+    #[test]
+    fn quad_tree_alloc_node_matches() {
+        check(
+            ee::s08::f_002c17d0__generated,
+            quad_tree_alloc_node,
+            200,
+            &|c, seed| {
+                oc1052_machine(c, seed, 0x1052_0004);
+                let tree = DATA + 0x2000;
+                c.g[A0][0] = sx(tree);
+                c.bus.write32(tree + 0x10, seed % 5);
+                c.bus.write32(tree + 0xc, seed);
+                // Free list present (the first branch), or empty with an old array or none.
+                let (first, cap) = match seed % 3 {
+                    0 => (DATA + 0x3000, DATA + 0x3008),
+                    1 => (DATA + 0x3000, DATA + 0x3000),
+                    _ => (DATA + 0x3000, 0),
+                };
+                c.bus.write32(tree + 0x24, first);
+                c.bus.write32(tree + 0x20, cap);
+                Addr(DATA + 0x3000).sh(c, 0x0102);
+            },
+        );
+    }
+
+    #[test]
+    fn quad_tree_insert_matches() {
+        check(
+            ee::s08::f_002c1950__generated,
+            quad_tree_insert,
+            200,
+            &|c, seed| {
+                let mut r = oc1052_machine(c, seed, 0x1052_0005);
+                let node = DATA + 0x2000;
+                c.g[A0][0] = sx(node);
+                c.g[A1][0] = sx(DATA + 0x4000);
+                // Limits chosen so the three branches of the descent are taken.
+                let (a2, a3) = match seed % 3 {
+                    0 => (0x8000u64, 0x7000u64),
+                    1 => (0x7000, 0x8000),
+                    _ => (0x7000, 0x7000),
+                };
+                c.g[A2][0] = a2;
+                c.g[A3][0] = a3;
+                c.bus.write32(node, r.f32(1000.0));
+                c.bus.write32(node + 4, r.f32(1000.0));
+                c.bus.write32(node + 8, r.f32(1000.0));
+                c.bus.write32(node + 0x20, DATA + 0x5000);
+                Addr(node + 0x14).sh(c, seed as u64 % 0x100);
+                c.g[A3][0] = a3;
+            },
+        );
+    }
+
+    #[test]
+    fn quad_tree_count_nodes_matches() {
+        check(
+            ee::s08::f_002c2178__generated,
+            quad_tree_count_nodes,
+            200,
+            &|c, seed| {
+                oc1052_machine(c, seed, 0x1052_0006);
+                let tree = DATA + 0x1000;
+                let base = DATA + 0x20000;
+                c.g[A0][0] = sx(tree);
+                c.bus.write32(tree + 0x20, base);
+                // Node at DATA+0x30000: a leaf (even first halfword), or odd with
+                // children whose halfwords (in the zeroed pool) make them leaves.
+                let node = DATA + 0x30000;
+                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(node) };
+                let first = if seed % 4 == 1 { 0u16 } else { 1 };
+                Addr(node).sh(c, first as u64);
+                for k in 1..4u32 {
+                    Addr(node + 2 * k).sh(c, ((seed % 7 + k) * 2 + 1) as u64);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn game_module_unload_stub_matches() {
+        check(
+            ee::s08::f_002c3fa0__generated,
+            game_module_unload_stub,
+            50,
+            &|c, seed| {
+                oc1052_machine(c, seed, 0x1052_0007);
             },
         );
     }

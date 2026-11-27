@@ -40,9 +40,11 @@ pub(crate) use crate::game::visualfx::boardwakefx::copy_record;
 pub(crate) use crate::game::visualfx::boardwakefx::draw;
 pub(crate) use crate::game::visualfx::boardwakefx::gfx;
 pub(crate) use crate::game::visualfx::boardwakefx::gs_field;
+pub(crate) use crate::game::visualfx::boardwakefx::object_tables_body;
 pub(crate) use crate::game::visualfx::boardwakefx::pop_record;
 pub(crate) use crate::game::visualfx::boardwakefx::streamer_segment;
 pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
+pub(crate) use crate::game::visualfx::boardwakefx::Family;
 pub(crate) use crate::game::visualfx::boardwakefx::Streamer;
 pub(crate) use crate::game::visualfx::boardwakefx::GS_DEFAULT;
 pub(crate) use crate::game::visualfx::boardwakefx::GS_TOP;
@@ -277,6 +279,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         visual_effects_man_ctor,
         "VisualEffectsMan_ctor",
     ),
+    (
+        0x002e_f1f0,
+        world_painter_get_irradiance_name3,
+        "WorldPainter_GetIrradianceName3",
+    ),
+    (0x002e_f530, c_air_streamer_fx_dtor, "cAirStreamerFX_dtor"),
 ];
 
 /// `cAirStreamerFX` fields.
@@ -2538,6 +2546,124 @@ pub fn visual_effects_man_ctor(c: &mut Cpu) {
     c.pc = ra;
 }
 
+/// `WorldPainter_LoadViewState` (0x002ef2d8): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+#[allow(dead_code)]
+pub fn world_painter_load_view_state(c: &mut Cpu) {
+    if c.pc != 0x002ef2d8 {
+        return ee::s09::f_002ef2d8__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.g[V0][0] = 0x500000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5c90));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S1][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5a0));
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+        'l_2ef300: loop {
+            c.cycles += 19;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.lw(c.g[V1][0] as u32);
+            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x208));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20c));
+            let t = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x002ef31c);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x002ef31c)?;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = c.g[S1][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xf0));
+            c.g[A2][0] = c.lw(c.g[A0][0] as u32);
+            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x208));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20c));
+            let t = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x002ef340);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x002ef340)?;
+            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+            if c.g[V0][0] != 0u64 {
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+                if event_due(c) {
+                    deliver_event_here(c, 0x002ef300);
+                }
+                continue 'l_2ef300;
+            } else {
+                c.cycles += 6;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    });
+}
+
+/// `cAirStreamerFX` (0x2ef530).
+pub(crate) const FAMILY_AIR_STREAMER: Family = Family {
+    table_sub: 0x7730,
+    table_b_sub: 0x76e8,
+    count_sub: 0x20,
+    copy_head: 0x002ef594,
+    fill_head: 0x002ef5f8,
+    ret_y: 0x002ef678,
+    ret_z: 0x002ef68c,
+    x: Some((0x4, 0x002ef660)),
+};
+
+/// `cAirStreamerFX` finaliser (0x2ef530).
+pub fn c_air_streamer_fx_dtor(c: &mut Cpu) {
+    guest(c, |c| object_tables_body(c, &FAMILY_AIR_STREAMER))
+}
+
+/// `WorldPainter_GetIrradianceName3` (0x2ef1f0): the irradiance name of the
+/// current frame's painter, or `gp + 0x24c0` when the painter is not set up.
+pub fn world_painter_get_irradiance_name3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = c.lw(gp.wrapping_add(0xa74));
+        let ready = c.g[V0][0] != 0;
+        frame.save_ra(c, 0);
+        if ready {
+            c.cycles += 2;
+            c.g[V0][0] = sx(gp.wrapping_add(0x24c0));
+        } else {
+            c.cycles += 14;
+            c.g[V1][0] = 0xf0;
+            c.g[V0][0] = 0x00500000;
+            c.mult(0, 3, 4, 3);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5c90));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+            c.g[A1][0] = c.lw(c.g[A0][0] as u32);
+            c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x140));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x144));
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x002ef230)?;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3590,6 +3716,47 @@ pub(crate) mod tests {
                     c.bus.write32(OC786_OBJ + 0x1000 + 4 * i, r.next_u32());
                     c.bus.write32(OC786_OBJ + 4 * i, r.next_u32());
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::object_fixture;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::oc1068_install_fakes;
+
+    #[test]
+    fn c_air_streamer_fx_dtor_matches() {
+        oc1068_install_fakes();
+        check(
+            ee::s09::f_002ef530__generated,
+            c_air_streamer_fx_dtor,
+            300,
+            &|c, seed| object_fixture(c, seed, &FAMILY_AIR_STREAMER),
+        );
+    }
+
+    /// The painter's table path: `gp + 0xa74` is the "ready" word; when it is
+    /// zero the index `a0 * 0xf0 + 0x4fa370` leads through three pointers to
+    /// the callee (a fake at `FAKE`, reached through the miss hook).
+    #[test]
+    fn world_painter_get_irradiance_name3_matches() {
+        check(
+            ee::s09::f_002ef1f0__generated,
+            world_painter_get_irradiance_name3,
+            300,
+            &|c, seed| {
+                machine(c, seed, 1068, 1);
+                let k = seed % 4;
+                c.g[A0][0] = k as u64;
+                c.bus
+                    .write32(GAME_GP + 0xa74, if seed % 2 == 0 { 0 } else { 1 });
+                let base = 0x004fa370 + 0xf0 * k;
+                let entry = DATA + 0x2000;
+                c.bus.write32(base + 0x1c, entry);
+                c.bus.write32(entry, DATA + 0x2100);
+                c.bus.write32(DATA + 0x2100 + 4, DATA + 0x2200);
+                c.bus.write16(DATA + 0x2200 + 0x140, (seed * 7) as u16);
+                c.bus.write32(DATA + 0x2200 + 0x144, fakes::FAKE);
+                c.g[A0][0] = sx(k);
             },
         );
     }

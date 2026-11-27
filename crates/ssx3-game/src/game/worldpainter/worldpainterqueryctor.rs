@@ -7,6 +7,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
@@ -21,6 +22,7 @@ pub(crate) use crate::game::intersect::worldsphtree::lw;
 pub(crate) use crate::game::intersect::worldsphtree::p;
 pub(crate) use crate::game::intersect::worldsphtree::store_fpr;
 pub(crate) use crate::game::intersect::worldsphtree::virtual_call;
+pub(crate) use crate::game::worldpainter::quadtree::oc1052_at;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -45,6 +47,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002c_0408,
         world_painter_query_ctor,
         "WorldPainterQuery_ctor",
+    ),
+    (
+        0x002c_06c0,
+        world_painter_query_dtor_2,
+        "WorldPainterQuery_dtor",
     ),
 ];
 
@@ -957,6 +964,90 @@ pub fn world_painter_query_ctor(c: &mut Cpu) {
     });
 }
 
+/// `WorldPainterQuery` destructor (0x2c06c0): frees the object's first field,
+/// unlinks the object from the painter-query list at `gp+0x790` (or moves the
+/// list head), and frees the object itself when `a1 & 1` is set.
+pub fn world_painter_query_dtor_2(c: &mut Cpu) {
+    guest(c, world_painter_query_dtor_body);
+}
+
+pub(crate) fn world_painter_query_dtor_body(c: &mut Cpu) -> Flow {
+    c.cycles += 14;
+    let f = Frame::open(c, 0x30);
+    c.g[V0][0] = 0x48_0000;
+    f.save(c, S0, 0x20);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3e00));
+    f.save(c, S1, 0x10);
+    c.g[S0][0] = c.g[A0][0];
+    f.save_ra(c, 0);
+    c.g[S1][0] = c.g[A1][0];
+    let vtable = c.g[V0][0];
+    oc1052_at(c, S0, 4).sw(c, vtable);
+    c.g[A0][0] = oc1052_at(c, S0, 0).lw(c);
+    call_ptr(c, 0x0031_7e50, 0x002c_06ec)?;
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x790)).lw(c);
+    if c.g[V1][0] == c.g[S0][0] {
+        // The object is the list head: the head becomes its successor.
+        c.cycles += 5;
+        c.g[V0][0] = oc1052_at(c, S0, 0x14).lw(c);
+        c.g[A1][0] = c.g[S1][0] & 1;
+        c.g[A0][0] = 0x48_0000;
+        let successor = c.g[V0][0];
+        Addr((c.g[GP][0] as u32).wrapping_add(0x790)).sw(c, successor);
+        c.cycles += 1;
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5d30));
+    } else {
+        c.g[V0][0] = oc1052_at(c, V1, 0x14).lw(c);
+        // 0x2c073c: walk the list until the object's predecessor is found.
+        c.cycles += 3;
+        c.g[A1][0] = c.g[S1][0] & 1;
+        let at_head_next = c.g[V0][0] == c.g[S0][0];
+        c.g[A0][0] = 0x48_0000;
+        if !at_head_next {
+            c.cycles += 2;
+            c.g[V1][0] = oc1052_at(c, V1, 0x14).lw(c);
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = oc1052_at(c, V1, 0x14).lw(c);
+                if c.g[V0][0] == c.g[S0][0] {
+                    break;
+                }
+                c.g[V1][0] = oc1052_at(c, V1, 0x14).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x002c_0720);
+                }
+            }
+        }
+        c.cycles += 2;
+        let found = c.g[V1][0] != 0;
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5d30));
+        if found {
+            c.cycles += 2;
+            c.g[V0][0] = oc1052_at(c, S0, 0x14).lw(c);
+            let successor = c.g[V0][0];
+            oc1052_at(c, V1, 0x14).sw(c, successor);
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5d30));
+        }
+    }
+    // 0x2c0760: store the vtable of the base class; free the object if asked.
+    c.cycles += 2;
+    let free_self = c.g[A1][0] != 0;
+    let base_vtable = c.g[V0][0];
+    oc1052_at(c, S0, 4).sw(c, base_vtable);
+    if free_self {
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0031_7e50, 0x002c_0760)?;
+    }
+    c.cycles += 5;
+    f.restore(c, S0, 0x20);
+    f.restore(c, S1, 0x10);
+    f.restore_ra(c, 0);
+    f.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1241,5 +1332,43 @@ pub(crate) mod tests {
             c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
         });
         assert!(paths.len() >= 8, "paths {paths:?}");
+    }
+
+    pub(crate) use crate::game::worldpainter::quadtree::tests::oc1052_machine;
+
+    #[test]
+    fn world_painter_query_dtor_matches() {
+        check(
+            ee::s08::f_002c06c0__generated,
+            world_painter_query_dtor_2,
+            300,
+            &|c, seed| {
+                oc1052_machine(c, seed, 0x1052_0002);
+                let this = DATA + 0x2000;
+                c.g[A0][0] = sx(this);
+                // Bit 0 of a1 decides whether the object itself is freed.
+                c.g[A1][0] = seed as u64;
+                c.bus.write32(this, DATA + 0x2100);
+                c.bus.write32(this + 0x14, DATA + 0x2200);
+                // The list at gp+0x790: the object is the head, or one of 1..3 links deep.
+                let head = match seed % 4 {
+                    0 => this,
+                    1 => DATA + 0x3000,
+                    2 => DATA + 0x3000,
+                    _ => DATA + 0x3000,
+                };
+                c.bus.write32(GAME_GP.wrapping_add(0x790), head);
+                if seed % 4 == 1 {
+                    c.bus.write32(DATA + 0x3014, this);
+                } else if seed % 4 == 2 {
+                    c.bus.write32(DATA + 0x3014, DATA + 0x3100);
+                    c.bus.write32(DATA + 0x3114, this);
+                } else if seed % 4 == 3 {
+                    c.bus.write32(DATA + 0x3014, DATA + 0x3100);
+                    c.bus.write32(DATA + 0x3114, DATA + 0x3200);
+                    c.bus.write32(DATA + 0x3214, this);
+                }
+            },
+        );
     }
 }

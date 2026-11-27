@@ -22,6 +22,7 @@ pub(crate) use crate::game::fe::festatetrophyroom::handle_list_key;
 pub(crate) use crate::game::fe::ovstateenterlodge::oc989_at;
 pub(crate) use crate::game::fe::ovstatehud::oc1002_vtable_dtor;
 pub(crate) use crate::game::fe::ovstatepause::lw;
+pub(crate) use crate::game::fe::ovstatepause::oc1023_at;
 pub(crate) use crate::game::main::ssxappdtor::p;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
@@ -168,6 +169,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0022_0e90,
         cfe_state_career_stats_dtor,
         "cFEStateCareerStats_dtor",
+    ),
+    (
+        0x001f_52a0,
+        oc1023_buy_attrib_update_money,
+        "cFEStateBuyAttrib_UpdateMoney",
+    ),
+    (
+        0x001f_5300,
+        oc1023_buy_attrib_commit_purchase,
+        "cFEStateBuyAttrib_CommitPurchase",
+    ),
+    (
+        0x001f_5508,
+        oc1023_career_stats_init,
+        "cFEStateCareerStats_Init",
     ),
 ];
 
@@ -4335,252 +4351,6 @@ pub fn count_medals(c: &mut Cpu) {
     });
 }
 
-/// `void cFEStateBuyAttrib_UpdateMoney(cFEStateBuyAttrib* self)` (0x1f52a0):
-/// the money text (hash of the string at 0x46f0a0, found under `self+0x48`)
-/// gets the bank value `self+0xa4` as a string, if the object exists.
-#[allow(dead_code)]
-pub fn oc989_update_money(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 14;
-        let frame = Frame::open(c, 0x30);
-        frame.save(c, S1, 0x10);
-        c.g[S1][0] = c.g[A0][0];
-        frame.save(c, S0, 0x20);
-        frame.save_ra(c, 0);
-        c.g[A0][0] = sx(0x0046_f0a0);
-        call_ptr(c, 0x0031_7670, 0x001f_52c0)?;
-        c.g[A0][0] = Addr(oc989_at(c, S1, 0x48)).lw(c);
-        c.g[A1][0] = c.g[V0][0];
-        call_ptr(c, 0x0039_d860, 0x001f_52cc)?;
-        c.g[S0][0] = c.g[V0][0];
-        if c.g[S0][0] != 0 {
-            c.cycles += 6;
-            c.g[A0][0] = Addr(oc989_at(c, S1, 0xa4)).lw(c);
-            call_ptr(c, 0x0019_8af0, 0x001f_52e0)?;
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A1][0] = c.g[V0][0];
-            call_ptr(c, 0x003a_0c50, 0x001f_52ec)?;
-        }
-        frame.restore(c, S0, 0x20);
-        c.cycles += 4;
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void cFEStateBuyAttrib_CommitPurchase(cFEStateBuyAttrib* self)`
-/// (0x1f5300): spend the bank on the selected attribute. Charges the cost
-/// (`self+0xa0`) to the bank (`self+0xa4`), clears the pending purchase,
-/// then sums the purchased levels into the owned-level table (`self+0x84`,
-/// eight words, each scaled by its index) and refreshes the level, cost,
-/// bar and money texts. Calls with the generated argument and return-address
-/// sequence throughout.
-#[allow(dead_code)]
-pub fn oc989_commit_purchase(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 44;
-        let frame = Frame::open(c, 0xb0);
-        frame.save(c, S3, 0x70);
-        c.g[S3][0] = c.g[A0][0];
-        frame.save(c, S5, 0x50);
-        c.g[V0][0] = sx(oc989_at(c, S3, 0x4c));
-        frame.save(c, S6, 0x40);
-        frame.save(c, S7, 0x30);
-        frame.save(c, FP, 0x20);
-        c.g[S6][0] = sx(oc989_at(c, S3, 0x84));
-        frame.save(c, S0, 0xa0);
-        c.g[FP][0] = c.g[S6][0];
-        frame.save(c, S1, 0x90);
-        frame.save(c, S2, 0x80);
-        frame.save(c, S4, 0x60);
-        frame.save_ra(c, 0x10);
-        let spilled = c.g[V0][0];
-        let slot = frame.at(c, 0);
-        c.sw(slot, spilled);
-        c.g[V0][0] = Addr(oc989_at(c, S3, 0xa4)).lw(c);
-        c.g[V1][0] = Addr(oc989_at(c, S3, 0xa0)).lw(c);
-        Addr(oc989_at(c, S3, 0xa0)).sw(c, 0);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
-        let bank = c.g[V0][0];
-        Addr(oc989_at(c, S3, 0xa4)).sw(c, bank);
-        call_ptr(c, 0x001f_5240, 0x001f_5358)?;
-        Addr(oc989_at(c, S3, 0xa8)).sw(c, 0);
-        c.g[A0][0] = c.g[S3][0];
-        c.g[A1][0] = sx(0x0046_f060);
-        call_ptr(c, 0x0039_e8b8, 0x001f_536c)?;
-        c.g[A2][0] = Addr(oc989_at(c, S3, 0xac)).lw(c);
-        c.g[A1][0] = 1;
-        c.g[V0][0] = Addr(oc989_at(c, A2, 0x8)).lw(c);
-        c.g[A0][0] = Addr(oc989_at(c, V0, 0x38)).lh(c);
-        c.g[V1][0] = Addr(oc989_at(c, V0, 0x3c)).lw(c);
-        let target = c.g[V1][0] as u32;
-        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
-        call_ptr(c, target, 0x001f_5388)?;
-        call_ptr(c, 0x0014_dc80, 0x001f_5390)?;
-        c.g[A0][0] = c.g[V0][0];
-        c.g[A1][0] = 0xb;
-        call_ptr(c, 0x0014_dd58, 0x001f_539c)?;
-        c.g[S5][0] = c.g[V0][0];
-        c.g[V1][0] = 0;
-        c.g[V0][0] = 0x480000;
-        c.g[S7][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7f50));
-        c.g[A3][0] = sx((c.g[V1][0] as u32) << 2);
-        'l_1f53b0: loop {
-            'b_1f53fc: {
-                c.cycles += 5;
-                c.g[S4][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
-                c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_add(c.g[A3][0] as u32));
-                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
-                let none = (c.g[V0][0] as i64) <= 0;
-                c.g[S0][0] = 0;
-                if none {
-                    break 'b_1f53fc;
-                }
-                c.cycles += 3;
-                c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[A3][0] as u32));
-                c.g[S1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[S7][0] as u32));
-                c.g[A0][0] = 0;
-                'l_1f53d0: loop {
-                    c.cycles += 11;
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
-                    call_ptr(c, 0x0014_a080, 0x001f_53d8)?;
-                    c.g[A3][0] = Addr(oc989_at(c, S1, 0)).lw(c);
-                    c.g[A2][0] = c.g[V0][0];
-                    c.g[A0][0] = c.g[S5][0];
-                    c.g[A1][0] = 0;
-                    call_ptr(c, 0x0015_0c20, 0x001f_53ec)?;
-                    c.g[V1][0] = Addr(oc989_at(c, S2, 0)).lw(c);
-                    c.g[V1][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
-                    let more = c.g[V1][0] != 0;
-                    c.g[A0][0] = 0;
-                    if more {
-                        if event_due(c) {
-                            deliver_event_here(c, 0x001f_53d0);
-                        }
-                        continue 'l_1f53d0;
-                    }
-                    break 'b_1f53fc;
-                }
-            }
-            c.cycles += 4;
-            c.g[V1][0] = c.g[S4][0];
-            c.g[V0][0] = ((c.g[V1][0] as i64) < 7) as u64;
-            let more = c.g[V0][0] != 0;
-            c.g[A3][0] = sx((c.g[V1][0] as u32) << 2);
-            if more {
-                if event_due(c) {
-                    deliver_event_here(c, 0x001f_53b0);
-                }
-                continue 'l_1f53b0;
-            }
-            c.cycles += 9;
-            c.g[V0][0] = Addr(oc989_at(c, S5, 0xc)).lw(c);
-            c.g[A0][0] = Addr(oc989_at(c, V0, 0x8)).lh(c);
-            c.g[V1][0] = Addr(oc989_at(c, V0, 0xc)).lw(c);
-            let target = c.g[V1][0] as u32;
-            c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A0][0] as u32));
-            call_ptr(c, target, 0x001f_5420)?;
-            c.g[A0][0] = Addr(frame.at(c, 0)).lw(c);
-            c.g[A1][0] = c.g[S6][0];
-            c.g[A2][0] = 6;
-            'l_1f5430: loop {
-                c.cycles += 9;
-                c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
-                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
-                c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
-                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-                let sum = c.g[V1][0];
-                Addr(c.g[A0][0] as u32).sw(c, sum);
-                Addr(c.g[A1][0] as u32).sw(c, 0);
-                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
-                let more = (c.g[A2][0] as i64) >= 0;
-                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
-                if more {
-                    if event_due(c) {
-                        deliver_event_here(c, 0x001f_5430);
-                    }
-                    continue 'l_1f5430;
-                }
-                c.cycles += 20;
-                c.g[A0][0] = c.g[S3][0];
-                call_ptr(c, 0x001f_4ea8, 0x001f_545c)?;
-                c.g[A0][0] = c.g[S3][0];
-                call_ptr(c, 0x001f_4fc0, 0x001f_5464)?;
-                c.g[A0][0] = c.g[S3][0];
-                call_ptr(c, 0x001f_50b0, 0x001f_546c)?;
-                c.g[A0][0] = c.g[S3][0];
-                call_ptr(c, 0x001f_52a0, 0x001f_5474)?;
-                frame.restore(c, S0, 0xa0);
-                frame.restore(c, S1, 0x90);
-                frame.restore(c, S2, 0x80);
-                frame.restore(c, S3, 0x70);
-                frame.restore(c, S4, 0x60);
-                frame.restore(c, S5, 0x50);
-                frame.restore(c, S6, 0x40);
-                frame.restore(c, S7, 0x30);
-                frame.restore(c, FP, 0x20);
-                frame.restore_ra(c, 0x10);
-                frame.close(c);
-                return Ok(());
-            }
-        }
-    })
-}
-
-/// `void cFEStateCareerStats_Init(cFEStateCareerStats* self)` (0x1f5508):
-/// creates the career-stats screen under the engine (`self+0x10`), plays its
-/// first frame, clears the medal and page counters, counts the medals, shows
-/// the first page and finishes the screen's setup with two calls.
-#[allow(dead_code)]
-pub fn oc989_career_stats_init(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 16;
-        let frame = Frame::open(c, 0x30);
-        frame.save(c, S1, 0x10);
-        c.g[S1][0] = c.g[A0][0];
-        frame.save_ra(c, 0);
-        frame.save(c, S0, 0x20);
-        c.g[A0][0] = sx(0x0046_f168);
-        c.g[S0][0] = Addr(oc989_at(c, S1, 0x10)).lw(c);
-        call_ptr(c, 0x0031_7670, 0x001f_552c)?;
-        c.g[A0][0] = c.g[S0][0];
-        c.g[A2][0] = c.g[V0][0];
-        c.g[A1][0] = c.g[S1][0];
-        c.g[A3][0] = 0;
-        call_ptr(c, 0x0039_7cc0, 0x001f_5540)?;
-        let screen = c.g[V0][0];
-        Addr(oc989_at(c, S1, 0x40)).sw(c, screen);
-        if screen != 0 {
-            c.cycles += 4;
-            c.g[A0][0] = c.g[V0][0];
-            c.g[A1][0] = 0;
-            c.g[A2][0] = 0;
-            call_ptr(c, 0x0039_c870, 0x001f_5558)?;
-        }
-        c.cycles += 26;
-        Addr(oc989_at(c, S1, 0x4c)).sw(c, 0);
-        c.g[A0][0] = c.g[S1][0];
-        for off in [0x50, 0x54, 0x58, 0x5c, 0x64, 0x60, 0x68, 0x70, 0x6c, 0x74] {
-            Addr(oc989_at(c, S1, off)).sw(c, 0);
-        }
-        Addr(oc989_at(c, S1, 0x48)).sw(c, 0);
-        call_ptr(c, 0x001f_6f30, 0x001f_5590)?;
-        c.g[A0][0] = c.g[S1][0];
-        call_ptr(c, 0x001f_5a38, 0x001f_5598)?;
-        call_ptr(c, 0x0028_b180, 0x001f_55a0)?;
-        c.g[A0][0] = c.g[V0][0];
-        c.g[A1][0] = 8;
-        call_ptr(c, 0x0028_f140, 0x001f_55ac)?;
-        frame.restore(c, S0, 0x20);
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// One visibility update in the show-page tail: the object named by `name`
 /// (hashed) under the screen (`self+0x40`) gets a vtable call with the show
 /// flag (`S4`). The caller has set `A0` to the generated base (0x470000),
@@ -4765,6 +4535,252 @@ pub(crate) mod cfe_state_career_stats_field {
     pub const TOTAL_FREESTYLE: u32 = 0x68;
     pub const FREESTYLE_MEDALS: u32 = 0x6c;
     pub const FREESTYLE_DONE: u32 = 0x70;
+}
+
+/// `void cFEStateBuyAttrib_UpdateMoney(cFEStateBuyAttrib* self)` (0x1f52a0):
+/// looks the money text object (hash of the string at 0x46f0a0) up under the
+/// screen at `self+0x48`; if it exists, sets its text to the bank value
+/// `self+0xa4` formatted as money.
+pub fn oc1023_buy_attrib_update_money(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(0x0046_f0a0);
+        call_ptr(c, 0x0031_7670, 0x001f_52c0)?;
+        c.g[A0][0] = Addr(oc1023_at(c, S1, 0x48)).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_d860, 0x001f_52cc)?;
+        c.g[S0][0] = c.g[V0][0];
+        if c.g[S0][0] != 0 {
+            c.cycles += 6;
+            c.g[A0][0] = Addr(oc1023_at(c, S1, 0xa4)).lw(c);
+            call_ptr(c, 0x0019_8af0, 0x001f_52e0)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x003a_0c50, 0x001f_52ec)?;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cFEStateBuyAttrib_CommitPurchase(cFEStateBuyAttrib* self)`
+/// (0x1f5300): spend the bank on the pending purchase. Charges the cost
+/// (`self+0xa0`) to the bank (`self+0xa4`), clears the cost, refreshes the
+/// total, plays a message on the screen object (`self+0xac`), then for each
+/// of the seven attributes bought (`self+0x84+4i` > 0) calls the BE
+/// interface once per level; finally adds the bought levels into the owned
+/// levels (`self+0x4c`, 7 words) while clearing them, and refreshes the
+/// level, cost, bar and money texts.
+pub fn oc1023_buy_attrib_commit_purchase(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 44;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S3, 0x70);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S5, 0x50);
+        c.g[V0][0] = sx(oc1023_at(c, S3, 0x4c));
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        c.g[S6][0] = sx(oc1023_at(c, S3, 0x84));
+        frame.save(c, S0, 0xa0);
+        c.g[FP][0] = c.g[S6][0];
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S4, 0x60);
+        frame.save_ra(c, 0x10);
+        let owned = c.g[V0][0];
+        let slot = frame.at(c, 0);
+        c.sw(slot, owned);
+        c.g[V0][0] = Addr(oc1023_at(c, S3, 0xa4)).lw(c);
+        c.g[V1][0] = Addr(oc1023_at(c, S3, 0xa0)).lw(c);
+        Addr(oc1023_at(c, S3, 0xa0)).sw(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        let bank = c.g[V0][0];
+        Addr(oc1023_at(c, S3, 0xa4)).sw(c, bank);
+        call_ptr(c, 0x001f_5240, 0x001f_5358)?;
+        Addr(oc1023_at(c, S3, 0xa8)).sw(c, 0);
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = sx(0x0046_f060);
+        call_ptr(c, 0x0039_e8b8, 0x001f_536c)?;
+        c.g[A2][0] = Addr(oc1023_at(c, S3, 0xac)).lw(c);
+        c.g[A1][0] = 1;
+        c.g[V0][0] = Addr(oc1023_at(c, A2, 0x8)).lw(c);
+        c.g[A0][0] = Addr(oc1023_at(c, V0, 0x38)).lh(c);
+        c.g[V1][0] = Addr(oc1023_at(c, V0, 0x3c)).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x001f_5388)?;
+        call_ptr(c, 0x0014_dc80, 0x001f_5390)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xb;
+        call_ptr(c, 0x0014_dd58, 0x001f_539c)?;
+        c.g[S5][0] = c.g[V0][0];
+        c.g[V1][0] = 0;
+        c.g[V0][0] = 0x480000;
+        c.g[S7][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7f50));
+        c.g[A3][0] = sx((c.g[V1][0] as u32) << 2);
+        'l_1f53b0: loop {
+            'b_1f53fc: {
+                c.cycles += 5;
+                c.g[S4][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                let none = (c.g[V0][0] as i64) <= 0;
+                c.g[S0][0] = 0;
+                if none {
+                    break 'b_1f53fc;
+                }
+                c.cycles += 3;
+                c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                c.g[S1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                c.g[A0][0] = 0;
+                'l_1f53d0: loop {
+                    c.cycles += 11;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                    call_ptr(c, 0x0014_a080, 0x001f_53d8)?;
+                    c.g[A3][0] = Addr(oc1023_at(c, S1, 0)).lw(c);
+                    c.g[A2][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S5][0];
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x0015_0c20, 0x001f_53ec)?;
+                    c.g[V1][0] = Addr(oc1023_at(c, S2, 0)).lw(c);
+                    c.g[V1][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let more = c.g[V1][0] != 0;
+                    c.g[A0][0] = 0;
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x001f_53d0);
+                        }
+                        continue 'l_1f53d0;
+                    }
+                    break 'b_1f53fc;
+                }
+            }
+            c.cycles += 4;
+            c.g[V1][0] = c.g[S4][0];
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 7) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A3][0] = sx((c.g[V1][0] as u32) << 2);
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x001f_53b0);
+                }
+                continue 'l_1f53b0;
+            }
+            c.cycles += 9;
+            c.g[V0][0] = Addr(oc1023_at(c, S5, 0xc)).lw(c);
+            c.g[A0][0] = Addr(oc1023_at(c, V0, 0x8)).lh(c);
+            c.g[V1][0] = Addr(oc1023_at(c, V0, 0xc)).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x001f_5420)?;
+            c.g[A0][0] = Addr(frame.at(c, 0)).lw(c);
+            c.g[A1][0] = c.g[S6][0];
+            c.g[A2][0] = 6;
+            'l_1f5430: loop {
+                c.cycles += 9;
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+                c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                let sum = c.g[V1][0];
+                Addr(c.g[A0][0] as u32).sw(c, sum);
+                Addr(c.g[A1][0] as u32).sw(c, 0);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+                let more = (c.g[A2][0] as i64) >= 0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x001f_5430);
+                    }
+                    continue 'l_1f5430;
+                }
+                c.cycles += 20;
+                c.g[A0][0] = c.g[S3][0];
+                call_ptr(c, 0x001f_4ea8, 0x001f_545c)?;
+                c.g[A0][0] = c.g[S3][0];
+                call_ptr(c, 0x001f_4fc0, 0x001f_5464)?;
+                c.g[A0][0] = c.g[S3][0];
+                call_ptr(c, 0x001f_50b0, 0x001f_546c)?;
+                c.g[A0][0] = c.g[S3][0];
+                call_ptr(c, 0x001f_52a0, 0x001f_5474)?;
+                frame.restore(c, S0, 0xa0);
+                frame.restore(c, S1, 0x90);
+                frame.restore(c, S2, 0x80);
+                frame.restore(c, S3, 0x70);
+                frame.restore(c, S4, 0x60);
+                frame.restore(c, S5, 0x50);
+                frame.restore(c, S6, 0x40);
+                frame.restore(c, S7, 0x30);
+                frame.restore(c, FP, 0x20);
+                frame.restore_ra(c, 0x10);
+                frame.close(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `void cFEStateCareerStats_Init(cFEStateCareerStats* self)` (0x1f5508):
+/// creates the career-stats screen under the engine (`self+0x10`) and plays
+/// its first frame when it exists (`self+0x40`), clears the medal and page
+/// counters (`self+0x48..0x74`), counts the medals, shows the first page
+/// and finishes the setup with two engine calls.
+pub fn oc1023_career_stats_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save(c, S0, 0x20);
+        c.g[A0][0] = sx(0x0046_f168);
+        c.g[S0][0] = Addr(oc1023_at(c, S1, 0x10)).lw(c);
+        call_ptr(c, 0x0031_7670, 0x001f_552c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0039_7cc0, 0x001f_5540)?;
+        let screen = c.g[V0][0];
+        Addr(oc1023_at(c, S1, 0x40)).sw(c, screen);
+        if screen != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0039_c870, 0x001f_5558)?;
+        }
+        c.cycles += 26;
+        Addr(oc1023_at(c, S1, 0x4c)).sw(c, 0);
+        c.g[A0][0] = c.g[S1][0];
+        for off in [0x50, 0x54, 0x58, 0x5c, 0x64, 0x60, 0x68, 0x70, 0x6c, 0x74] {
+            Addr(oc1023_at(c, S1, off)).sw(c, 0);
+        }
+        Addr(oc1023_at(c, S1, 0x48)).sw(c, 0);
+        call_ptr(c, 0x001f_6f30, 0x001f_5590)?;
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x001f_5a38, 0x001f_5598)?;
+        call_ptr(c, 0x0028_b180, 0x001f_55a0)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 8;
+        call_ptr(c, 0x0028_f140, 0x001f_55ac)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -6104,6 +6120,92 @@ pub(crate) mod tests {
             200,
             &|c, seed| {
                 object_fixture(c, seed, 0x0022_0e90);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc1023_force;
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc1023_machine;
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::OC1023_OBJ;
+
+    #[test]
+    fn oc1023_buy_attrib_update_money_matches() {
+        fakes::covered(
+            ee::s04::f_001f52a0__generated,
+            oc1023_buy_attrib_update_money,
+            40,
+            &|c, seed| {
+                oc1023_machine(c, seed, 0x001f_52a0, 4);
+                let this = DATA + 0x100;
+                c.bus.write32(this + 0x48, DATA + 0x1000);
+                c.bus.write32(this + 0xa4, seed * 1000 + 5);
+                // The money text object: found (seed % 3 != 0) or not.
+                oc1023_force(c, 1, if seed % 3 == 0 { 0 } else { OC1023_OBJ });
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    #[test]
+    fn oc1023_buy_attrib_commit_purchase_matches() {
+        fakes::covered(
+            ee::s04::f_001f5300__generated,
+            oc1023_buy_attrib_commit_purchase,
+            60,
+            &|c, seed| {
+                let mut r = oc1023_machine(c, seed, 0x001f_5300, 14);
+                let this = DATA + 0x100;
+                c.bus.write32(this + 0xa0, seed % 5 * 3);
+                c.bus.write32(this + 0xa4, seed * 7);
+                for i in 0..7u32 {
+                    c.bus.write32(this + 0x4c + 4 * i, r.next_u32() % 20);
+                    // Levels bought: none, one, two, or (rarely) negative.
+                    let bought = match r.next_u32() % 6 {
+                        0 | 1 => 0,
+                        2 | 3 => 1,
+                        4 => 2,
+                        _ => u32::MAX,
+                    };
+                    c.bus.write32(this + 0x84 + 4 * i, bought);
+                    c.bus.write32(0x0047_80b0 + 4 * i, r.next_u32() % 9);
+                }
+                // The message screen object (vtable 0x38 / 0x3c).
+                let screen = DATA + 0x400;
+                c.bus.write32(this + 0xac, screen);
+                let vt = DATA + 0x500;
+                c.bus.write32(screen + 8, vt);
+                c.bus.write16(vt + 0x38, 0x20);
+                c.bus.write32(vt + 0x3c, fakes::FAKE + 0x80);
+                // The BE interface (call 4): vtable 8 / 0xc at +0xc.
+                let iface = DATA + 0x600;
+                let iface_vt = DATA + 0x700;
+                c.bus.write32(iface + 0xc, iface_vt);
+                c.bus.write16(iface_vt + 8, 0x10);
+                c.bus.write32(iface_vt + 0xc, fakes::FAKE + 0xa0);
+                oc1023_force(c, 4, iface);
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    #[test]
+    fn oc1023_career_stats_init_matches() {
+        fakes::covered(
+            ee::s04::f_001f5508__generated,
+            oc1023_career_stats_init,
+            40,
+            &|c, seed| {
+                oc1023_machine(c, seed, 0x001f_5508, 7);
+                let this = DATA + 0x100;
+                c.bus.write32(this + 0x10, DATA + 0x300);
+                for off in (0x40..0x78).step_by(4) {
+                    c.bus.write32(this + off, 0x5555_0000 + off);
+                }
+                // The new screen: created (non-zero) or not.
+                oc1023_force(c, 1, if seed % 3 == 0 { 0 } else { OC1023_OBJ });
+                c.g[A0][0] = sx(this);
             },
         );
     }

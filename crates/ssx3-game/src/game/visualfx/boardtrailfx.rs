@@ -35,8 +35,10 @@ pub(crate) use crate::game::visualfx::boardwakefx::fconst;
 pub(crate) use crate::game::visualfx::boardwakefx::gfx;
 pub(crate) use crate::game::visualfx::boardwakefx::gp;
 pub(crate) use crate::game::visualfx::boardwakefx::gs_field;
+pub(crate) use crate::game::visualfx::boardwakefx::object_tables_body;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
 pub(crate) use crate::game::visualfx::boardwakefx::pop_record;
+pub(crate) use crate::game::visualfx::boardwakefx::Family;
 pub(crate) use crate::game::visualfx::boardwakefx::GS_DEFAULT;
 pub(crate) use crate::game::visualfx::boardwakefx::GS_TOP;
 pub(crate) use crate::game::visualfx::boardwakefx::RECORD;
@@ -155,6 +157,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002e_aae0,
         rider_base_ctor_power_up_trail,
         "RiderBase_CtorPowerUpTrail",
+    ),
+    (0x002e_83f0, c_board_trail_fx_dtor, "cBoardTrailFX_dtor"),
+    (
+        0x002e_ac60,
+        rider_base_dtor_power_up_trail,
+        "RiderBase_DtorPowerUpTrail",
     ),
 ];
 
@@ -5554,6 +5562,40 @@ pub fn rider_base_ctor_power_up_trail(c: &mut Cpu) {
     }
 }
 
+/// `cBoardTrailFX` (0x2e83f0).
+pub(crate) const FAMILY_BOARD_TRAIL: Family = Family {
+    table_sub: 0x7448,
+    table_b_sub: 0x7400,
+    count_sub: 0xf0,
+    copy_head: 0x002e8454,
+    fill_head: 0x002e84b8,
+    ret_y: 0x002e8538,
+    ret_z: 0x002e854c,
+    x: Some((0x10, 0x002e8520)),
+};
+
+/// `RiderBase` power-up trail (0x2eac60).
+pub(crate) const FAMILY_POWER_UP_TRAIL: Family = Family {
+    table_sub: 0x7ba8,
+    table_b_sub: 0x7b60,
+    count_sub: 0x110,
+    copy_head: 0x002eacc4,
+    fill_head: 0x002ead28,
+    ret_y: 0x002ead94,
+    ret_z: 0x002eada8,
+    x: None,
+};
+
+/// `cBoardTrailFX` finaliser (0x2e83f0).
+pub fn c_board_trail_fx_dtor(c: &mut Cpu) {
+    guest(c, |c| object_tables_body(c, &FAMILY_BOARD_TRAIL))
+}
+
+/// `RiderBase_DtorPowerUpTrail` (0x2eac60).
+pub fn rider_base_dtor_power_up_trail(c: &mut Cpu) {
+    guest(c, |c| object_tables_body(c, &FAMILY_POWER_UP_TRAIL))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6707,6 +6749,31 @@ pub(crate) mod tests {
             rider_base_ctor_power_up_trail,
             120,
             &|c, seed| oc758_ctor_setup(c, seed, 0x2eaae0, 0x002e_aae0),
+        );
+    }
+
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::object_fixture;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::oc1068_install_fakes;
+
+    #[test]
+    fn c_board_trail_fx_dtor_matches() {
+        oc1068_install_fakes();
+        check(
+            ee::s09::f_002e83f0__generated,
+            c_board_trail_fx_dtor,
+            300,
+            &|c, seed| object_fixture(c, seed, &FAMILY_BOARD_TRAIL),
+        );
+    }
+
+    #[test]
+    fn rider_base_dtor_power_up_trail_matches() {
+        oc1068_install_fakes();
+        check(
+            ee::s09::f_002eac60__generated,
+            rider_base_dtor_power_up_trail,
+            300,
+            &|c, seed| object_fixture(c, seed, &FAMILY_POWER_UP_TRAIL),
         );
     }
 }
