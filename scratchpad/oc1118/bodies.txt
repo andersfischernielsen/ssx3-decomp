@@ -1,0 +1,472 @@
+=== 00403500
+pub fn f_00403500__generated(c: &mut Cpu) {
+'b_40359c: {
+c.cycles += 10;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x88f));
+c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+c.g[A0][0] = sx((c.g[A0][0] as u32) >> 4);
+c.g[S0][0] = sx((c.g[A0][0] as u32) << 4);
+c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+c.g[T3][0] = c.g[A1][0];
+c.g[T0][0] = c.g[A2][0];
+let t = (c.g[T0][0] as i64) <= 0;
+c.g[T2][0] = c.g[S0][0];
+if t {
+break 'b_40359c;
+} else {
+c.cycles += 6;
+c.g[T1][0] = 0xf0000;
+c.g[T4][0] = 0xfff0000;
+c.g[T1][0] = c.g[T1][0] | 0xff40;
+c.g[T4][0] = c.g[T4][0] | 0xffff;
+c.g[T6][0] = 0x3;
+c.g[T5][0] = 0xffffffffffffffff;
+'l_403540: loop {
+c.cycles += 23;
+c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[T0][0] as i64)) as u64;
+c.g[A3][0] = c.g[T1][0];
+if c.g[V0][0] == 0 { c.g[A3][0] = c.g[T0][0]; }
+c.g[V1][0] = 0u64;
+c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0xf));
+c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1e));
+c.g[A1][0] = ((c.g[T5][0] as i64) < (c.g[A2][0] as i64)) as u64;
+c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub((c.g[A3][0] as u32)));
+if c.g[A1][0] != 0 { c.g[V0][0] = c.g[A2][0]; }
+c.g[A0][0] = c.g[T3][0] & c.g[T4][0];
+if c.g[T0][0] != 0 { c.g[V1][0] = c.g[T6][0]; }
+c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 4) as u32);
+c.g[A0][0] = c.g[A0][0] << 32;
+c.g[V1][0] = c.g[V1][0] << 28;
+c.g[V0][0] = c.g[V0][0] << 32;
+c.g[A0][0] = c.g[A0][0] | c.g[V1][0];
+c.g[V0][0] = c.g[V0][0] >> 32;
+c.g[A0][0] = c.g[A0][0] | c.g[V0][0];
+c.sd((c.g[T2][0] as u32), c.g[A0][0]);
+c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+let t = (c.g[T0][0] as i64) > 0;
+c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x10));
+if t {
+if c.cycles >= c.next_event { c.pc = 0x00403540; c.event(); } continue 'l_403540;
+} else {
+break 'b_40359c;
+}
+}
+}
+}
+c.cycles += 19;
+c.g[RA][0] = sx(0x004035a4);
+c.g[A0][0] = 0u64;
+c.pc = 0x00424020; FlushCache(c);
+if c.pc != 0x004035a4 { return; }
+c.g[RA][0] = sx(0x004035ac);
+c.pc = 0x0042c078; DIntr(c);
+if c.pc != 0x004035ac { return; }
+c.g[V1][0] = 0xfff0000;
+c.g[A1][0] = 0x10000000;
+c.g[V1][0] = c.g[V1][0] | 0xffff;
+c.g[A1][0] = c.g[A1][0] | 0xb430;
+c.g[V1][0] = c.g[S0][0] & c.g[V1][0];
+c.g[A0][0] = 0x10000000;
+c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+c.g[A0][0] = c.g[A0][0] | 0xb420;
+c.sw((c.g[A0][0] as u32), 0u64);
+c.g[V1][0] = 0x10000000;
+c.g[V1][0] = c.g[V1][0] | 0xb400;
+c.g[A0][0] = 0x105;
+c.sw((c.g[V1][0] as u32), c.g[A0][0]);
+let t = c.g[V0][0] == 0u64;
+c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+if t {
+c.cycles += 3;
+c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+let t = c.g[RA][0] as u32;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+c.pc = t; return;
+} else {
+c.cycles += 3;
+c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+c.pc = 0x0042c0c0; EIntr(c); return;
+}
+}
+
+=== 00403600
+pub fn f_00403600__generated(c: &mut Cpu) {
+c.cycles += 8;
+c.g[V0][0] = sx(((c.g[A1][0] as u32) as i32 >> 4) as u32);
+c.g[V1][0] = sx(((c.g[A2][0] as u32) as i32 >> 4) as u32);
+c.sw((c.g[A0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+c.sw((c.g[A0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+c.g[V0][0] = 0x1;
+c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+let t = c.g[RA][0] as u32;
+c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+c.pc = t; return;
+}
+
+=== 004039f0
+pub fn f_004039f0__generated(c: &mut Cpu) {
+c.cycles += 56;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+c.g[T6][0] = 0xfff0000;
+c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x78));
+c.g[T6][0] = c.g[T6][0] | 0xffff;
+c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x70));
+c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+c.mult(0, 3, 3, 2);
+c.g[S0][0] = 0xffffffffffffffff;
+c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+c.g[S2][0] = 0x180;
+c.g[T4][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x58));
+c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+c.g[S0][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1ff));
+if c.g[S0][0] != 0 { c.g[V0][0] = c.g[V1][0]; }
+c.g[S1][0] = c.g[T4][0] & c.g[T6][0];
+c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 9) as u32);
+c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+c.mult(0, 3, 2, 18);
+c.g[T5][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x60));
+c.g[S3][0] = 0x20000000;
+c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+c.g[S4][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x68));
+c.g[S1][0] = c.g[S1][0] | c.g[S3][0];
+c.g[T7][0] = c.g[T5][0] & c.g[T6][0];
+c.sw((c.g[A0][0] as u32), c.g[S1][0]);
+c.g[T4][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T4][0] as u32)));
+c.g[T7][0] = c.g[T7][0] | c.g[S3][0];
+c.mult(0, 3, 2, 18);
+c.mult(0, 4, 2, 18);
+c.sw((c.g[A1][0] as u32), c.g[T7][0]);
+c.g[T4][0] = c.g[T4][0] & c.g[T6][0];
+c.g[T4][0] = c.g[T4][0] | c.g[S3][0];
+c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+c.g[T5][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T5][0] as u32)));
+c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S4][0] as u32)));
+c.g[V1][0] = c.g[S4][0] & c.g[T6][0];
+c.g[T5][0] = c.g[T5][0] & c.g[T6][0];
+c.g[V1][0] = c.g[V1][0] | c.g[S3][0];
+c.g[V0][0] = c.g[V0][0] & c.g[T6][0];
+c.sw((c.g[A2][0] as u32), c.g[V1][0]);
+c.g[T5][0] = c.g[T5][0] | c.g[S3][0];
+c.sw((c.g[A3][0] as u32), c.g[S1][0]);
+c.g[V0][0] = c.g[V0][0] | c.g[S3][0];
+c.sw((c.g[T0][0] as u32), c.g[T7][0]);
+c.sw((c.g[T1][0] as u32), c.g[V1][0]);
+c.sw((c.g[T2][0] as u32), c.g[T4][0]);
+c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x50));
+c.sw((c.g[T3][0] as u32), c.g[T5][0]);
+c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+let t = c.g[RA][0] as u32;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+c.pc = t; return;
+}
+
+=== 00403ad0
+pub fn f_00403ad0__generated(c: &mut Cpu) {
+'b_403b74: {
+c.cycles += 38;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+c.g[V0][0] = 0x2;
+c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+c.g[S2][0] = c.g[A1][0];
+c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+c.g[S1][0] = c.g[A0][0];
+c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[RA][0]);
+c.g[S0][0] = c.g[A2][0];
+c.g[A1][0] = c.g[SP][0];
+c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x858));
+c.g[RA][0] = sx(0x00403b04);
+c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+c.pc = 0x00402c30; libmpeg_DispatchCallback(c);
+if c.pc != 0x00403b04 { return; }
+c.g[RA][0] = sx(0x00403b0c);
+c.g[A0][0] = c.g[S1][0];
+c.pc = 0x00406e20; libmpeg_IpuWaitBusy(c);
+if c.pc != 0x00403b0c { return; }
+c.g[V0][0] = 0x10000000;
+c.g[A0][0] = c.g[S1][0];
+c.g[V0][0] = c.g[V0][0] | 0x2000;
+c.g[RA][0] = sx(0x00403b20);
+c.sw((c.g[V0][0] as u32), 0u64);
+c.pc = 0x00406e20; libmpeg_IpuWaitBusy(c);
+if c.pc != 0x00403b20 { return; }
+c.g[RA][0] = sx(0x00403b28);
+c.pc = 0x0042c078; DIntr(c);
+if c.pc != 0x00403b28 { return; }
+c.g[V1][0] = 0xfff0000;
+c.g[A0][0] = 0x10000000;
+c.g[V1][0] = c.g[V1][0] | 0xffff;
+c.g[A0][0] = c.g[A0][0] | 0xb410;
+c.g[S0][0] = c.g[S0][0] & c.g[V1][0];
+c.g[A1][0] = 0x10000000;
+c.sw((c.g[A0][0] as u32), c.g[S0][0]);
+c.g[A1][0] = c.g[A1][0] | 0xb420;
+c.g[A0][0] = 0x4;
+c.g[V1][0] = 0x10000000;
+c.sw((c.g[A1][0] as u32), c.g[A0][0]);
+c.g[V1][0] = c.g[V1][0] | 0xb400;
+c.g[A0][0] = 0x101;
+c.sw((c.g[V1][0] as u32), c.g[A0][0]);
+if c.g[V0][0] == 0u64 {
+c.g[A1][0] = c.g[S2][0];
+break 'b_403b74;
+} else {
+c.cycles += 3;
+c.g[RA][0] = sx(0x00403b70);
+c.pc = 0x0042c0c0; EIntr(c);
+if c.pc != 0x00403b70 { return; }
+c.g[A1][0] = c.g[S2][0];
+break 'b_403b74;
+}
+}
+c.cycles += 15;
+c.g[RA][0] = sx(0x00403b7c);
+c.g[A0][0] = c.g[S1][0];
+c.pc = 0x00406df0; libmpeg_IpuCommand(c);
+if c.pc != 0x00403b7c { return; }
+c.g[RA][0] = sx(0x00403b84);
+c.g[A0][0] = c.g[S1][0];
+c.pc = 0x00406e20; libmpeg_IpuWaitBusy(c);
+if c.pc != 0x00403b84 { return; }
+c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x858));
+c.g[V0][0] = 0x3;
+c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+c.g[RA][0] = sx(0x00403b98);
+c.g[A1][0] = c.g[SP][0];
+c.pc = 0x00402c30; libmpeg_DispatchCallback(c);
+if c.pc != 0x00403b98 { return; }
+c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+let t = c.g[RA][0] as u32;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+c.pc = t; return;
+}
+
+=== 00403bb0
+pub fn f_00403bb0__generated(c: &mut Cpu) {
+'b_403c2c: {
+c.cycles += 27;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+c.g[S1][0] = c.g[A0][0];
+c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S5][0]);
+c.g[S0][0] = 0x1;
+c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+c.g[A0][0] = 0u64;
+c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[RA][0]);
+c.g[RA][0] = sx(0x00403be4);
+c.sw((c.g[S1][0] as u32).wrapping_add(0x848), c.g[S0][0]);
+c.pc = 0x00405b48; libmpeg_SetIpuMpeg1Bit(c);
+if c.pc != 0x00403be4 { return; }
+c.g[A0][0] = c.g[S1][0];
+c.g[RA][0] = sx(0x00403bf0);
+c.g[A1][0] = 0x1c;
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403bf0 { return; }
+c.g[S2][0] = c.g[V0][0];
+c.g[V1][0] = sx((c.g[S2][0] as u32) >> 1);
+c.g[V0][0] = sx((c.g[S2][0] as u32) >> 17);
+c.g[S5][0] = c.g[V1][0] & 0xfff;
+c.g[V0][0] = c.g[V0][0] & 0x3;
+c.g[A0][0] = sx((c.g[S2][0] as u32) >> 13);
+c.g[V1][0] = sx((c.g[S2][0] as u32) >> 15);
+c.g[S4][0] = c.g[A0][0] & 0x3;
+c.g[S3][0] = c.g[V1][0] & 0x3;
+let t = c.g[V0][0] == c.g[S0][0];
+c.sw((c.g[S1][0] as u32).wrapping_add(0x140), c.g[V0][0]);
+if t {
+break 'b_403c2c;
+} else {
+c.cycles += 4;
+c.g[A1][0] = 0x490000;
+c.g[A0][0] = c.g[S1][0];
+c.g[RA][0] = sx(0x00403c2c);
+c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7d10));
+c.pc = 0x004034a8; libmpeg_Error(c);
+if c.pc != 0x00403c2c { return; }
+break 'b_403c2c;
+}
+}
+'b_403c74: {
+c.cycles += 11;
+c.g[V0][0] = sx((c.g[S2][0] as u32) >> 19);
+c.g[A0][0] = c.g[S1][0];
+c.g[V0][0] = c.g[V0][0] & 0x1;
+c.g[A1][0] = 0x10;
+c.sw((c.g[S1][0] as u32).wrapping_add(0x13c), c.g[V0][0]);
+c.g[RA][0] = sx(0x00403c48);
+c.g[S0][0] = sx((c.g[S2][0] as u32) >> 20);
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403c48 { return; }
+c.g[S2][0] = sx((c.g[V0][0] as u32) >> 8);
+c.g[V0][0] = 0x48;
+let t = c.g[S0][0] == c.g[V0][0];
+c.g[V0][0] = 0x58;
+if t {
+break 'b_403c74;
+} else {
+c.cycles += 2;
+let t = c.g[S0][0] == c.g[V0][0];
+c.g[V0][0] = 0x44;
+if t {
+break 'b_403c74;
+} else {
+c.cycles += 2;
+let t = c.g[S0][0] == c.g[V0][0];
+c.g[A1][0] = 0x490000;
+if t {
+break 'b_403c74;
+} else {
+c.cycles += 3;
+c.g[A0][0] = c.g[S1][0];
+c.g[RA][0] = sx(0x00403c74);
+c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7d38));
+c.pc = 0x004034a8; libmpeg_Error(c);
+if c.pc != 0x00403c74 { return; }
+break 'b_403c74;
+}
+}
+}
+}
+c.cycles += 27;
+c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x124));
+c.g[T0][0] = sx((c.g[S5][0] as u32) << 18);
+c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x128));
+c.g[T1][0] = sx((c.g[S2][0] as u32) << 10);
+c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x134));
+c.g[A3][0] = sx((c.g[S3][0] as u32) << 12);
+c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x138));
+c.g[A1][0] = sx((c.g[S4][0] as u32) << 12);
+c.g[A0][0] = c.g[A0][0] & 0xfff;
+c.g[V1][0] = c.g[V1][0] & 0xfff;
+c.g[A3][0] = c.g[A3][0] | c.g[A0][0];
+c.g[A1][0] = c.g[A1][0] | c.g[V1][0];
+c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[T0][0] as u32)));
+c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T1][0] as u32)));
+c.sw((c.g[S1][0] as u32).wrapping_add(0x138), c.g[V0][0]);
+c.sw((c.g[S1][0] as u32).wrapping_add(0x124), c.g[A3][0]);
+c.sw((c.g[S1][0] as u32).wrapping_add(0x128), c.g[A1][0]);
+c.sw((c.g[S1][0] as u32).wrapping_add(0x134), c.g[A2][0]);
+c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+c.g[S5][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+let t = c.g[RA][0] as u32;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+c.pc = t; return;
+}
+
+=== 00403ce0
+pub fn f_00403ce0__generated(c: &mut Cpu) {
+'b_403d30: {
+c.cycles += 11;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+c.g[A1][0] = 0x3;
+c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+c.g[RA][0] = sx(0x00403cf8);
+c.g[S0][0] = c.g[A0][0];
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403cf8 { return; }
+c.g[A0][0] = c.g[S0][0];
+c.g[RA][0] = sx(0x00403d04);
+c.g[A1][0] = 0x1;
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403d04 { return; }
+let t = c.g[V0][0] == 0u64;
+c.g[A0][0] = c.g[S0][0];
+if t {
+break 'b_403d30;
+} else {
+c.cycles += 9;
+c.g[RA][0] = sx(0x00403d14);
+c.g[A1][0] = 0x8;
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403d14 { return; }
+c.g[A0][0] = c.g[S0][0];
+c.g[RA][0] = sx(0x00403d20);
+c.g[A1][0] = 0x8;
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403d20 { return; }
+c.g[A0][0] = c.g[S0][0];
+c.g[RA][0] = sx(0x00403d2c);
+c.g[A1][0] = 0x8;
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403d2c { return; }
+c.sw((c.g[S0][0] as u32).wrapping_add(0x144), c.g[V0][0]);
+break 'b_403d30;
+}
+}
+c.cycles += 15;
+c.g[A0][0] = c.g[S0][0];
+c.g[RA][0] = sx(0x00403d3c);
+c.g[A1][0] = 0xe;
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403d3c { return; }
+c.sw((c.g[S0][0] as u32).wrapping_add(0x148), c.g[V0][0]);
+c.g[A0][0] = c.g[S0][0];
+c.g[RA][0] = sx(0x00403d4c);
+c.g[A1][0] = 0x1;
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403d4c { return; }
+c.g[A0][0] = c.g[S0][0];
+c.g[RA][0] = sx(0x00403d58);
+c.g[A1][0] = 0xe;
+c.pc = 0x004072e8; libmpeg_GetBits(c);
+if c.pc != 0x00403d58 { return; }
+c.sw((c.g[S0][0] as u32).wrapping_add(0x14c), c.g[V0][0]);
+c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+let t = c.g[RA][0] as u32;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+c.pc = t; return;
+}
+
+=== 00403dd8
+pub fn f_00403dd8__generated(c: &mut Cpu) {
+c.cycles += 9;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x40));
+c.g[RA][0] = sx(0x00403dec);
+c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4c));
+c.pc = 0x004094e8; sceIpuRestartDMA(c);
+if c.pc != 0x00403dec { return; }
+c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+c.g[V0][0] = 0x1;
+let t = c.g[RA][0] as u32;
+c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+c.pc = t; return;
+}
+
+=== 00405b48
+pub fn f_00405b48__generated(c: &mut Cpu) {
+c.cycles += 10;
+c.g[A1][0] = 0x10000000;
+c.g[V1][0] = 0xffffffffff7f0000;
+c.g[A1][0] = c.g[A1][0] | 0x2010;
+c.g[V1][0] = c.g[V1][0] | 0xffff;
+c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+c.g[A0][0] = sx((c.g[A0][0] as u32) << 23);
+c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+let t = c.g[RA][0] as u32;
+c.sw((c.g[A1][0] as u32), c.g[V0][0]);
+c.pc = t; return;
+}
+

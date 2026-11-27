@@ -1,0 +1,165 @@
+pub fn f_00405fb8__generated(c: &mut Cpu) {
+  c.cycles += 18;
+  c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+  c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[S7][0]);
+  c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S6][0]);
+  c.g[S7][0] = 0x1;
+  c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S5][0]);
+  c.g[S6][0] = 0x22;
+  c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+  c.g[S5][0] = 0x23;
+  c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+  c.g[S4][0] = 0x490000;
+  c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+  c.g[S3][0] = 0xf;
+  c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+  c.g[S2][0] = 0u64;
+  c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[RA][0]);
+  c.g[S1][0] = c.g[A0][0];
+  c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+  c.g[A0][0] = c.g[S1][0];
+  'l_406000: loop {
+    'b_40609c: {
+      'b_406090: {
+        'b_40608c: {
+          'b_406078: {
+            'b_406074: {
+              'b_40606c: {
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x00406008);
+                c.g[A1][0] = 0u64;
+                c.pc = 0x00406f78; libmpeg_IpuVdec(c);
+                if c.pc != 0x00406008 { return; }
+                c.g[S0][0] = c.g[V0][0];
+                let t = c.g[S0][0] == c.g[S6][0];
+                c.g[V0][0] = (c.g[S0][0] < 0x23u64) as u64;
+                if t {
+                  break 'b_40606c;
+                } else {
+                  'b_406040: {
+                    'b_40602c: {
+                      c.cycles += 2;
+                      let t = c.g[V0][0] == 0u64;
+                      
+                      if t {
+                        break 'b_40602c;
+                      } else {
+                        c.cycles += 2;
+                        let t = c.g[S0][0] == 0u64;
+                        c.g[A0][0] = c.g[S1][0];
+                        if t {
+                          break 'b_406040;
+                        } else {
+                          c.cycles += 2;
+                          let t = true;
+                          c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                          if t {
+                            break 'b_40608c;
+                          } else {
+                            break 'b_40602c;
+                          }
+                        }
+                      }
+                    }
+                    c.cycles += 2;
+                    if c.g[S0][0] != c.g[S5][0] {
+                      c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                      break 'b_40608c;
+                    } else {
+                      c.cycles += 3;
+                      c.g[V0][0] = 0x1;
+                      let t = true;
+                      c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x21));
+                      if t {
+                        break 'b_406090;
+                      } else {
+                        break 'b_406040;
+                      }
+                    }
+                  }
+                  c.cycles += 6;
+                  c.g[RA][0] = sx(0x00406048);
+                  c.g[A1][0] = 0xb;
+                  c.pc = 0x004070f0; libmpeg_ShowBits(c);
+                  if c.pc != 0x00406048 { return; }
+                  c.g[V1][0] = c.g[V0][0];
+                  c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x848));
+                  let t = c.g[V0][0] == 0u64;
+                  c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_add(0x7ed0));
+                  if t {
+                    break 'b_406074;
+                  } else {
+                    c.cycles += 2;
+                    let t = c.g[V1][0] != c.g[S3][0];
+                    c.g[A2][0] = c.g[S0][0];
+                    if t {
+                      break 'b_406078;
+                    } else {
+                      c.cycles += 3;
+                      c.g[A0][0] = c.g[S1][0];
+                      c.g[RA][0] = sx(0x0040606c);
+                      c.g[A1][0] = 0xb;
+                      c.pc = 0x004071f8; libmpeg_FlushBits(c);
+                      if c.pc != 0x0040606c { return; }
+                      break 'b_40606c;
+                    }
+                  }
+                }
+              }
+              c.cycles += 2;
+              let t = true;
+              c.g[V0][0] = 0x1;
+              if t {
+                break 'b_406090;
+              } else {
+                break 'b_406074;
+              }
+            }
+            c.cycles += 1;
+            c.g[A2][0] = c.g[S0][0];
+            break 'b_406078;
+          }
+          c.cycles += 5;
+          c.g[RA][0] = sx(0x00406080);
+          c.g[A0][0] = c.g[S1][0];
+          c.pc = 0x00403470; libmpeg_Errorf(c);
+          if c.pc != 0x00406080 { return; }
+          c.sw((c.g[S1][0] as u32).wrapping_add(0x11c), c.g[S7][0]);
+          let t = true;
+          c.g[V0][0] = 0x1;
+          if t {
+            break 'b_40609c;
+          } else {
+            break 'b_40608c;
+          }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = 0u64;
+        break 'b_406090;
+      }
+      c.cycles += 2;
+      let t = c.g[V0][0] != 0u64;
+      c.g[A0][0] = c.g[S1][0];
+      if t {
+        if c.cycles >= c.next_event { c.pc = 0x00406000; c.event(); } continue 'l_406000;
+      } else {
+        c.cycles += 1;
+        c.g[V0][0] = c.g[S2][0];
+        break 'b_40609c;
+      }
+    }
+    c.cycles += 11;
+    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x80));
+    c.g[S7][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+    c.g[S6][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+    c.g[S5][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+    c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+    c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+    c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+    c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+    c.pc = t; return;
+  }
+}

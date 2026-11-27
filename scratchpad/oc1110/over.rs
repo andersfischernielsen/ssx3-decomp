@@ -1,0 +1,5 @@
+    (0x003d_93c0, spch_assign_variations, "SPCH_AssignVariations"),
+    (0x0040_3620, lib_mpeg_sequence_header, "libmpeg_SequenceHeader"),
+    (0x0040_3e00, lib_mpeg_setup_macroblock, "libmpeg_SetupMacroblock"),
+    (0x0040_4758, lib_mpeg_setup_pred_block, "libmpeg_SetupPredBlock"),
+    (0x0040_5b70, lib_mpeg_wait_bdec, "libmpeg_WaitBdec"),
