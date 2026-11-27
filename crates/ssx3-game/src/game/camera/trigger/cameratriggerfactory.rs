@@ -18397,7 +18397,126 @@ pub(crate) mod tests {
         );
     }
     use crate::difftest::fakes::LOG_UNWIND_AT;
-    pub(crate) use crate::game::util::menu::tests::world_list_fixture;
+
+    /// World-list file fakes: the read returns our buffer; the free is a
+    /// no-op (the buffer is test RAM, not heap); `AddWorldIfMissing` only
+    /// records its token and returns a steered found flag (its list
+    /// mutation is that function's own unit, and its file/path callees
+    /// need filesystem state).
+    pub(crate) const WORLD_GATE: u32 = DATA + 0x750;
+
+    pub(crate) const WORLD_MAGIC: u32 = 0xA901_D00D;
+
+    pub(crate) const WORLD_RET: u32 = DATA + 0x764;
+
+    pub(crate) static WORLD_PREV_READ: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) static WORLD_PREV_FREE: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) static WORLD_PREV_ADD: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) fn world_list_read_fake(c: &mut Cpu) {
+        if c.bus.read32(WORLD_GATE) != WORLD_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &WORLD_PREV_READ,
+                ee::s14::f_003e1a70__generated,
+            );
+        }
+        let buf = DATA + 0x3000;
+        let len = c.bus.read32(DATA + 0x760);
+        c.bus.write32(c.g[A1][0] as u32, len);
+        c.g[V0][0] = sx(buf);
+        let t = c.g[RA][0] as u32;
+        c.pc = t;
+    }
+
+    pub(crate) fn world_list_free_fake(c: &mut Cpu) {
+        if c.bus.read32(WORLD_GATE) != WORLD_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &WORLD_PREV_FREE,
+                ee::s06::f_002523a8__generated,
+            );
+        }
+        let t = c.g[RA][0] as u32;
+        c.pc = t;
+    }
+
+    pub(crate) fn world_list_add_fake(c: &mut Cpu) {
+        if c.bus.read32(WORLD_GATE) != WORLD_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &WORLD_PREV_ADD,
+                ee::s02::f_0017a830__generated,
+            );
+        }
+        c.bus.write32(DATA + 0x768, c.g[A1][0] as u32);
+        c.g[V0][0] = sx(c.bus.read32(WORLD_RET));
+        let t = c.g[RA][0] as u32;
+        c.pc = t;
+    }
+
+    pub(crate) fn install_world_list_fakes() {
+        crate::difftest::fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E1A70),
+            world_list_read_fake,
+            &WORLD_PREV_READ,
+        );
+        crate::difftest::fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_002523A8),
+            world_list_free_fake,
+            &WORLD_PREV_FREE,
+        );
+        crate::difftest::fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0017A830),
+            world_list_add_fake,
+            &WORLD_PREV_ADD,
+        );
+    }
+
+    /// World fixture: the list struct plus a text buffer the gated
+    /// file-read fake returns. Entries steer quotes/whitespace/endings.
+    pub(crate) fn world_list_fixture(c: &mut Cpu, seed: u32, style: u32) -> u32 {
+        // The allocator runtime: `AddWorldIfMissing` allocates through it.
+        let mut r = crate::difftest::fakes::machine_rt(c, seed, 0x0017_a378, 0);
+        let _ = &mut r;
+        install_world_list_fakes();
+        let list = DATA + 0x100;
+        for w in 0..0x20u32 {
+            c.bus.write32(list + 4 * w, 0);
+        }
+        c.bus.write32(list, seed % 3);
+        let buf = DATA + 0x3000;
+        // Name chars of every class the scan accepts (lower, upper, digit,
+        // `_`, `.`, `-`, `/`), backslash and colon, and a name the buffer
+        // end cuts off.
+        let text: &[u8] = match style % 7 {
+            0 => b"  \"alpine\"  'megaplex'  ",
+            1 => b"\n\t\"antoine\"\n\"garibaldi\"\n",
+            2 => b"\"snow:jam\" 'see\\nmore'  ",
+            3 => b"  peak3  ",
+            4 => b"\"Big_Air.v2\" 'tri-pipe/X'\n",
+            5 => b"'a..b' \"..\\x\" C:/w  ",
+            _ => b"  \"open_End",
+        };
+        for (i, b) in text.iter().enumerate() {
+            c.bus.write8(buf + i as u32, *b);
+        }
+        c.bus.write8(buf + text.len() as u32, 0);
+        // Length excludes the NUL: the scan ends at `buf + len`, and a
+        // trailing NUL inside the bound reprocesses forever.
+        c.bus.write32(DATA + 0x760, text.len() as u32);
+        // Steer the faked `AddWorldIfMissing` found flag (both arms).
+        c.bus.write32(WORLD_RET, seed % 2);
+        c.bus.write32(WORLD_GATE, WORLD_MAGIC);
+        c.g[A0][0] = sx(list);
+        c.g[A1][0] = sx(DATA + 0x2000);
+        list
+    }
 
     driven!(parse_world_generated, ee::s02::f_0017a378__generated);
     driven!(parse_world_hand, debug_menu_parse_world_list_file);
@@ -18407,19 +18526,19 @@ pub(crate) mod tests {
         check(
             ee::s02::f_0017a378__generated,
             debug_menu_parse_world_list_file,
-            40,
+            70,
             &|c, seed| {
-                world_list_fixture(c, seed, seed % 4);
+                world_list_fixture(c, seed, seed % 7);
             },
         );
     }
 
     #[test]
     fn debug_menu_parse_world_list_file_events() {
-        check_events(parse_world_generated, parse_world_hand, 40, &|c, seed| {
+        check_events(parse_world_generated, parse_world_hand, 70, &|c, seed| {
             let mut r = machine(c, seed, 0x0017_a378, 0);
             let _ = &mut r;
-            world_list_fixture(c, seed, seed % 4);
+            world_list_fixture(c, seed, seed % 7);
             c.bus.write32(LOG_UNWIND_AT, u32::MAX);
             schedule(c, &mut r, seed, 0x0017_a378)
         });

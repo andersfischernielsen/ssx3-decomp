@@ -48335,6 +48335,8 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::util::menu::tests::menu_sys_composite_fixture;
     pub(crate) use crate::game::util::menu::tests::menu_sys_dtor_fixture;
+    use crate::game::util::menu::tests::menu_sys_group_fixture;
+    use crate::game::util::menu::tests::menu_sys_method_fixture;
 
     /// Item with a vtable whose entry at `off`/`off + 4` is a delta and a
     /// fake method; the fake's call-`n` result is forced to `code`.
@@ -48352,7 +48354,7 @@ pub(crate) mod tests {
     /// Vector-item fixture: the item doubles as the group the input handler
     /// runs (embedded page at `+0x18`), with the vector fields past `+0x5b8`.
     /// `long` selects the `+0x670` arm; `equal` steers the `c_eq_s` arm.
-    pub(crate) fn vector_input_fixture(c: &mut Cpu, seed: u32, long: bool, equal: bool) -> u32 {
+    pub(crate) fn vector_input_fixture(c: &mut Cpu, seed: u32, long: bool, zero: bool) -> u32 {
         let item = DATA + 0x8000;
         for w in 0..0x200u32 {
             c.bus.write32(item + 4 * w, 0xC000_0000 ^ seed ^ w);
@@ -48386,18 +48388,33 @@ pub(crate) mod tests {
         c.bus.write32(item + 0x5ec + 0x18, p2);
         let p3 = DATA + 0xa200;
         c.bus.write32(item + 0x620 + 0x18, p3);
-        let f1v = if equal { 0x3F80_0000 } else { r.edge_f32() };
-        c.bus.write32(p1, f1v);
-        // `f3` matches `f1` on `equal` seeds (the `c_eq_s` taken arm).
-        c.bus
-            .write32(item + 0x610, if equal { f1v } else { r.edge_f32() });
-        c.bus.write32(item + 0x5dc, r.edge_f32());
-        c.bus.write32(item + 0x5e0, r.edge_f32());
-        c.bus.write32(item + 0x614, r.edge_f32());
-        c.bus.write32(item + 0x644, r.edge_f32());
-        c.bus.write32(item + 0x648, r.edge_f32());
-        c.bus.write32(p2, r.edge_f32());
-        c.bus.write32(p3, r.edge_f32());
+        // Each component is `scale * *p + offset` (scales at `+0x5dc`,
+        // `+0x610`, `+0x644`, offsets at `+0x5e0`, `+0x614`, `+0x648`). On
+        // `zero` seeds every input and offset is zero (one offset -0.0) and
+        // the scales are finite, so the length is 0.0 and the `c_eq_s` arm
+        // keeps the vector unnormalised.
+        if zero {
+            for (off, v) in [
+                (0x5dcu32, 2.0f32),
+                (0x610, -1.5),
+                (0x644, 0.5),
+                (0x5e0, 0.0),
+                (0x614, -0.0),
+                (0x648, 0.0),
+            ] {
+                c.bus.write32(item + off, v.to_bits());
+            }
+            for p in [p1, p2, p3] {
+                c.bus.write32(p, 0);
+            }
+        } else {
+            for off in [0x5dcu32, 0x610, 0x644, 0x5e0, 0x614, 0x648] {
+                c.bus.write32(item + off, r.edge_f32());
+            }
+            for p in [p1, p2, p3] {
+                c.bus.write32(p, r.edge_f32());
+            }
+        }
         c.g[A0][0] = sx(item);
         c.pc = 0x002d_06e8;
         item
@@ -48764,8 +48781,8 @@ pub(crate) mod tests {
         );
     }
 
-    /// Output-table fixture: planted function slots (`FAKE`) or null,
-    /// crossed with flag bits.
+    /// Output-table fixture: planted function slots (`FAKE`) or null (bit
+    /// `i` of `seed`), crossed with the enable bits (bit `i` of `seed / 3`).
     pub(crate) fn menu_sys_output_table_fixture(c: &mut Cpu, seed: u32) {
         for i in 0..8u32 {
             let entry = DEBUG_OUTPUT_TABLE + 12 * i;
@@ -48774,7 +48791,7 @@ pub(crate) mod tests {
                 entry + 4,
                 if (seed >> i) & 1 == 0 { 0 } else { FAKE + 0x10 },
             );
-            c.bus.write32(entry + 8, (seed >> (i + 8)) & 1);
+            c.bus.write32(entry + 8, (seed / 3 >> i) & 1);
         }
     }
 
@@ -48834,12 +48851,14 @@ pub(crate) mod tests {
         check(
             ee::s14::f_003e5c78__generated,
             debug_vprintf,
-            50,
+            80,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x3e5c_78, 2);
                 c.bus.write32(DATA + 0x1000, 0x6E69_616C);
                 c.bus.write32(DATA + 0x1004, 0x0000_0074);
-                menu_sys_debug_fixture(c, seed, 1);
+                // Channels not set up yet on one seed in five (the lazy
+                // `Debug_InitChannels` call).
+                menu_sys_debug_fixture(c, seed, (seed % 5 != 0) as u64);
                 menu_sys_output_table_fixture(c, seed);
                 // Channel and its state bit, both steered.
                 let channel = seed % 8;
@@ -48995,6 +49014,27 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2d05_a8, 8);
                 menu_sys_composite_fixture(c, &mut r, DATA + 0x2000, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_color_item_handle_input_matches() {
+        check(
+            ee::s09::f_002d03d0__generated,
+            menu_sys_color_item_handle_input,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d03_d0, 2);
+                let _ = &mut r;
+                let group = menu_sys_group_fixture(c, seed, seed % 3);
+                let page = group + 0x18;
+                let item = DATA + 0x2000;
+                menu_sys_method_fixture(c, item, 0x10, [3, 4, 0x11][(seed % 3) as usize]);
+                c.bus.write32(page + 4, 0);
+                c.bus.write32(page + 0xc, item);
+                c.bus.write32(item, page);
+                c.bus.write32(item + 4, 0);
             },
         );
     }

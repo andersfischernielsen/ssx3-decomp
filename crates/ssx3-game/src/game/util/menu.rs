@@ -13159,7 +13159,7 @@ pub fn menu_sys_color_channel_item_handle_input(c: &mut Cpu) {
         // 'b_2ceed0/'b_2ceed4: the handler's code, unless disabled.
         'handle_item: {
             if t {
-                // Disabled: converge below.
+                // Disabled: straight to the shared exit below.
             } else {
                 c.cycles += 2;
                 if c.g[S1][0] != 0 {
@@ -13287,11 +13287,10 @@ pub fn menu_sys_color_channel_item_handle_input(c: &mut Cpu) {
                     c.cycles += 1;
                     c.g[V0][0] = c.g[S1][0];
                 }
-                // Convergence 2 (disabled and axis).
-                c.cycles += 1;
-                frame.restore(c, S0, 0x20);
-                break 'handle_item;
             }
+            // Convergence 2 (disabled and axis): the shared exit.
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
         }
         c.cycles += 5;
         frame.restore(c, S1, 0x10);
@@ -13322,7 +13321,7 @@ pub fn menu_sys_float_range_item_handle_input(c: &mut Cpu) {
         // 'b_2ce34c/'b_2ce350: the handler's code, unless disabled.
         'handle_range: {
             if t {
-                // Disabled: converge below.
+                // Disabled: straight to the shared exit below.
             } else {
                 c.cycles += 2;
                 if c.g[S1][0] != 0 {
@@ -13376,6 +13375,8 @@ pub fn menu_sys_float_range_item_handle_input(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
                     if c.g[V1][0] != c.g[V0][0] {
                         c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0);
+                        c.cycles += 1;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[V1][0]);
                     } else {
                         c.cycles += 4;
                         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
@@ -13385,65 +13386,65 @@ pub fn menu_sys_float_range_item_handle_input(c: &mut Cpu) {
                     c.cycles += 2;
                     let t = c.g[V1][0] == 0;
                     c.g[V0][0] = c.g[S1][0];
-                    if t {
-                        break 'handle_range;
+                    'step: {
+                        if t {
+                            // No step: the shared exit.
+                            break 'step;
+                        }
+                        // 'b_2ce310: scale the step and move the value.
+                        c.cycles += 27;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+                        c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x3fbc));
+                        c.mult(0, 2, 2, 2);
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 5);
+                        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x3fb8));
+                        c.lwc1(3, (c.g[S0][0] as u32).wrapping_add(0x20));
+                        c.lwc1(4, (c.g[S0][0] as u32).wrapping_add(0x1c));
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                        c.sub_s(3, 3, 4);
+                        c.lwc1(2, c.g[V1][0] as u32);
+                        c.mul_s(0, 0, 6);
+                        c.max_s(0, 0, 5);
+                        c.mul_s(1, 0, 1);
+                        c.mul_s(1, 20, 1);
+                        c.mul_s(1, 1, 3);
+                        c.add_s(2, 2, 1);
+                        c.swc1(2, c.g[V1][0] as u32);
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x1c));
+                        c.lwc1(0, c.g[V0][0] as u32);
+                        c.c_lt_s(0, 1);
+                        if c.fcc() {
+                            c.swc1(1, c.g[V0][0] as u32);
+                        }
+                        // 'b_2ce32c: clamp the other end from below.
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x20));
+                        c.lwc1(0, c.g[V0][0] as u32);
+                        c.c_lt_s(1, 0);
+                        if c.fcc() {
+                            c.swc1(1, c.g[V0][0] as u32);
+                        }
+                        c.cycles += 8;
+                        c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x12c));
+                        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
+                        let target = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x002c_e348)?;
+                        c.g[V0][0] = c.g[S1][0];
                     }
-                    // 'b_2ce310: scale the step and move the value.
-                    c.cycles += 27;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
-                    c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x3fbc));
-                    c.mult(0, 2, 2, 2);
-                    c.g[AT][0] = 0x3f800000;
-                    c.mtc1(1, 5);
-                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x3fb8));
-                    c.lwc1(3, (c.g[S0][0] as u32).wrapping_add(0x20));
-                    c.lwc1(4, (c.g[S0][0] as u32).wrapping_add(0x1c));
-                    c.mtc1(2, 0);
-                    c.cvt_s_w(0, 0);
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
-                    c.sub_s(3, 3, 4);
-                    c.lwc1(2, c.g[V1][0] as u32);
-                    c.mul_s(0, 0, 6);
-                    c.max_s(0, 0, 5);
-                    c.mul_s(1, 0, 1);
-                    c.mul_s(1, 20, 1);
-                    c.mul_s(1, 1, 3);
-                    c.add_s(2, 2, 1);
-                    c.swc1(2, c.g[V1][0] as u32);
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
-                    c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x1c));
-                    c.lwc1(0, c.g[V0][0] as u32);
-                    c.c_lt_s(0, 1);
-                    if c.fcc() {
-                        c.swc1(1, c.g[V0][0] as u32);
-                    }
-                    // 'b_2ce32c: clamp the other end from below.
-                    c.cycles += 7;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
-                    c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x20));
-                    c.lwc1(0, c.g[V0][0] as u32);
-                    c.c_lt_s(1, 0);
-                    if c.fcc() {
-                        c.swc1(1, c.g[V0][0] as u32);
-                    }
-                    c.cycles += 8;
-                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
-                    c.g[A1][0] = c.g[S0][0];
-                    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x12c));
-                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
-                    let target = c.g[V1][0] as u32;
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                    call_ptr(c, target, 0x002c_e348)?;
-                    // Convergence 1 (axis only).
-                    c.cycles += 1;
-                    c.g[V0][0] = c.g[S1][0];
                 }
-                // Convergence 2 (disabled and axis).
-                c.cycles += 1;
-                frame.restore(c, S0, 0x20);
-                break 'handle_range;
             }
+            // Convergence 2 (disabled and axis): the shared exit.
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
         }
         c.cycles += 5;
         frame.restore(c, S1, 0x10);
@@ -15711,34 +15712,120 @@ pub(crate) mod tests {
 
     driven!(point2d_draw_hand, menu_sys_point2d_item_draw);
 
-    /// `gp - 0x854` chain + colour-table reads need the game image and a
-    /// planted table.
-    pub(crate) fn item_draw_globals(c: &mut Cpu, seed: u32) {
+    /// The render state the draws read, after the game image: the render
+    /// context at `gp - 0x854` (also `gp + 0x2a90`, which the point-2D draw
+    /// and `Font_DrawText` use) with its draw state at `+0xe84` and its
+    /// renderer at `+0x10d8`, whose `{delta, method}` pairs at
+    /// `+0x238`, `+0x248` and `+0x280` go to the fake; the scale floats the
+    /// point-2D draw reads around `renderer + delta`; and the row colour
+    /// table at 0x4d5380 (zero-filled `.bss` in the image).
+    pub(crate) fn menu_draw_globals(c: &mut Cpu, seed: u32) {
         elf_image(c);
-        let g = DATA + 0xb000;
-        let h = DATA + 0xb100;
-        c.bus.write32(GAME_GP.wrapping_sub(0x854), g);
-        c.bus.write32(g + 0xe84, h);
-        c.bus.write32(h + 4, 0x1000_1000 ^ seed);
-        c.bus.write32(h + 8, 0x2000_2000 ^ seed);
-        let u = DATA + 0xb200;
-        c.bus.write32(g + 0x10d8, u);
-        c.bus.write16(u + 0x238, 0x0020);
-        let vt = DATA + 0x7100;
-        c.bus.write16(vt + 0x20, 0x0010);
-        c.bus.write32(vt + 0x24, FAKE + 0x10);
-        c.bus.write32(u + 0x23c, vt);
+        let ctx = DATA + 0xb000;
+        let state = DATA + 0xb100;
+        let renderer = DATA + 0xb200;
+        c.bus.write32(GAME_GP.wrapping_sub(0x854), ctx);
+        c.bus.write32(GAME_GP + 0x2a90, ctx);
+        c.bus.write32(ctx + 0xe84, state);
+        for w in 0..8u32 {
+            c.bus.write32(state + 4 * w, 0x1000_1000 ^ seed ^ w << 20);
+        }
+        c.bus.write32(ctx + 0x10d8, renderer);
+        for (slot, delta, method) in [
+            (0x238u32, 0x0020u16, FAKE + 0x10),
+            (0x248, 0x0300, FAKE + 0x20),
+            (0x280, 0x0040, FAKE + 0x30),
+        ] {
+            c.bus.write16(renderer + slot, delta);
+            c.bus.write32(renderer + slot + 4, method);
+        }
+        for (i, v) in [0.75f32, 1.5, 2.0, -0.5].iter().enumerate() {
+            c.bus.write32(renderer + 0x2f8 + 4 * i as u32, v.to_bits());
+        }
+        menu_row_colour_table(c, seed);
         for n in 0..8u32 {
             c.bus.write32(LOG_RESULTS + 4 * n, seed * 3 + 1);
         }
     }
 
-    /// Point2D-draw fixture: item on a real page with the point fields, a
-    /// row buffer, and the draw globals.
+    /// The row colour table at 0x4d5380 (zero-filled `.bss` in the game
+    /// image, so it has to be planted): distinct non-zero floats per word.
+    pub(crate) fn menu_row_colour_table(c: &mut Cpu, seed: u32) {
+        for i in 0..28u32 {
+            let v = (i + 1 + seed % 3) as f32 / 32.0;
+            c.bus.write32(0x004d_5380 + 4 * i, v.to_bits());
+        }
+    }
+
+    /// The page's vtable at `page + 0x12c`: every `{delta, method}` pair
+    /// from `+0x20` to `+0x58` goes to the fake (the row colour at `+0x40`,
+    /// the item-row draw at `+0x48`).
+    pub(crate) fn menu_page_vtable(c: &mut Cpu, page: u32) {
+        let vt = DATA + 0x7800;
+        for off in (0x20..0x60u32).step_by(8) {
+            c.bus.write16(vt + off, 0x0010);
+            c.bus.write32(vt + off + 4, FAKE + off);
+        }
+        c.bus.write32(page + 0x12c, vt);
+    }
+
+    /// The page's style at `page + 0x124` (the frame height at `+0x60`) and
+    /// its font at `+0x58`: line height, offsets and scales, and a glyph
+    /// table for `' '..='~'` whose widths (6..=14) and advances depend on
+    /// the character and `seed`, so strings measure and draw at real
+    /// widths (a few letters pass the rows' 100-unit minimum).
+    pub(crate) fn menu_font_fixture(c: &mut Cpu, page: u32, seed: u32) {
+        let style = DATA + 0x8800;
+        let font = DATA + 0x8000;
+        let glyphs = DATA + 0x9000;
+        c.bus.write32(page + 0x124, style);
+        c.bus.write32(style + 0x58, font);
+        c.bus.write32(style + 0x60, 0x30 + seed % 8);
+        c.bus.write32(font + 0x4, glyphs);
+        c.bus.write32(font + 0xc, 0x20);
+        c.bus.write32(font + 0x10, 0x7e);
+        c.bus.write32(font + 0x14, 12 + seed % 4);
+        for (off, v) in [
+            (0x18u32, 1.0f32),
+            (0x1c, 2.0),
+            (0x20, 0.5),
+            (0x24, 0.25),
+            (0x28, if seed / 7 % 2 == 0 { 0.0 } else { 1.5 }),
+            (0x2c, 0.0),
+            (0x30, 2.0),
+            (0x34, 3.0),
+            (0x38, 2.0),
+            (0x3c, 1.25),
+        ] {
+            c.bus.write32(font + off, v.to_bits());
+        }
+        c.bus.write32(font + 0x60, 0x20 + seed % 16);
+        for ch in 0x20..=0x7eu32 {
+            let g = glyphs + 12 * (ch - 0x20);
+            let width = 6 + (ch * 7 + seed) % 9;
+            c.bus.write32(g, (8 + ch % 3) << 24 | width << 16);
+            c.bus.write32(g + 8, (ch % 3) << 16 | (width + 1));
+        }
+    }
+
+    /// A NUL-terminated string of `len` letters at `at` (which letters
+    /// depends on `salt`); returns `at`.
+    pub(crate) fn menu_text(c: &mut Cpu, at: u32, len: u32, salt: u32) -> u32 {
+        for i in 0..len {
+            c.bus.write8(at + i, b'a' + ((i * 5 + salt) % 26) as u8);
+        }
+        c.bus.write8(at + len, 0);
+        at
+    }
+
+    /// Point2D-draw fixture: item on a real page with its font, the point
+    /// fields, a row buffer, and the draw globals. Digits: selected
+    /// `seed % 2`, point count `seed / 2 % 3`, `+0x3c` `seed / 6 % 2`,
+    /// `+0x40` `seed / 12 % 2`, `+0x24` `seed / 24 % 3`.
     pub(crate) fn point2d_draw_fixture(c: &mut Cpu, seed: u32, selected: bool) {
         let mut r = machine(c, seed, 0x2d0e_f8, 2);
         let _ = &mut r;
-        item_draw_globals(c, seed);
+        menu_draw_globals(c, seed);
         let item = DATA + 0x3000;
         for w in 0..0x20u32 {
             c.bus.write32(item + 4 * w, 0xC000_0000 ^ seed ^ w);
@@ -15750,18 +15837,16 @@ pub(crate) mod tests {
         c.bus.write32(page + 0x10, DATA + 0x2000);
         c.bus.write32(item, page);
         c.bus.write32(item + 4, 0);
-        let vt = DATA + 0x7000;
-        c.bus.write16(vt + 0x48, 0x0010);
-        c.bus.write32(vt + 0x4c, FAKE + 0x10);
-        c.bus.write32(page + 0x12c, vt);
+        menu_page_vtable(c, page);
         for n in 0..8u32 {
             c.bus.write32(LOG_RESULTS + 4 * n, seed * 3 + 1);
         }
+        menu_font_fixture(c, page, seed);
         c.bus.write32(item + 0x14, DATA + 0x4000);
-        c.bus.write32(item + 0x18, 2 + seed % 2);
+        c.bus.write32(item + 0x18, 1 + seed / 2 % 3);
         c.bus.write32(item + 0x1c, 0xFFFF_FFFF);
         c.bus.write32(item + 0x20, 0);
-        c.bus.write32(item + 0x24, seed % 3);
+        c.bus.write32(item + 0x24, seed / 24 % 3);
         let base = DATA + 0x2000;
         c.bus.write32(item + 0x28, base);
         for w in 0..0x20u32 {
@@ -15771,8 +15856,8 @@ pub(crate) mod tests {
         c.bus.write32(item + 0x30, r.edge_f32());
         c.bus.write32(item + 0x34, r.edge_f32());
         c.bus.write32(item + 0x38, r.edge_f32());
-        c.bus.write32(item + 0x3c, seed % 2);
-        c.bus.write32(item + 0x40, seed / 2 % 2);
+        c.bus.write32(item + 0x3c, seed / 6 % 2);
+        c.bus.write32(item + 0x40, seed / 12 % 2);
         c.g[A0][0] = sx(item);
         let buf = DATA + 0x5000;
         for w in 0..4u32 {
@@ -15786,7 +15871,7 @@ pub(crate) mod tests {
         check(
             ee::s09::f_002d0ef8__generated,
             menu_sys_point2d_item_draw,
-            40,
+            72,
             &|c, seed| {
                 point2d_draw_fixture(c, seed, seed % 2 == 0);
             },
@@ -15795,7 +15880,7 @@ pub(crate) mod tests {
 
     #[test]
     fn menu_sys_point2d_item_draw_events() {
-        check_events(point2d_draw_generated, point2d_draw_hand, 40, &|c, seed| {
+        check_events(point2d_draw_generated, point2d_draw_hand, 72, &|c, seed| {
             let mut r = machine(c, seed, 0x2d0e_f8, 0);
             let _ = &mut r;
             point2d_draw_fixture(c, seed, seed % 2 == 0);
@@ -15813,12 +15898,14 @@ pub(crate) mod tests {
 
     driven!(colorchannel_draw_hand, menu_sys_color_channel_item_draw);
 
-    /// Colour-channel draw fixture: item on a real page with the channel
-    /// fields and a row buffer.
+    /// Colour-channel draw fixture: item on a real page (selected or not,
+    /// with its font and vtable), the channel index, the colour it edits,
+    /// and a row buffer. Digits: selected `seed % 2`, channel `seed / 2 % 3`
+    /// (`+0x18` is 1..3), colour set `seed / 6 % 4`.
     pub(crate) fn color_channel_draw_fixture(c: &mut Cpu, seed: u32, selected: bool) {
         let mut r = machine(c, seed, 0x2cf1_c8, 2);
         let _ = &mut r;
-        item_draw_globals(c, seed);
+        menu_draw_globals(c, seed);
         let item = DATA + 0x3000;
         for w in 0..0x20u32 {
             c.bus.write32(item + 4 * w, 0xC000_0000 ^ seed ^ w);
@@ -15828,18 +15915,28 @@ pub(crate) mod tests {
         c.bus.write32(page + 4, if selected { 0 } else { 1 });
         c.bus.write32(page + 0xc, item);
         c.bus.write32(page + 0x10, DATA + 0x2000);
-        let parent = DATA + 0x1100;
-        c.bus.write32(item, parent);
+        c.bus.write32(item, page);
         c.bus.write32(item + 4, 0);
-        let vt = DATA + 0x7000;
-        c.bus.write16(vt + 0x48, 0x0010);
-        c.bus.write32(vt + 0x4c, FAKE + 0x10);
-        c.bus.write32(parent + 0x12c, vt);
+        menu_page_vtable(c, page);
+        menu_font_fixture(c, page, seed);
         for n in 0..8u32 {
             c.bus.write32(LOG_RESULTS + 4 * n, seed * 3 + 1);
         }
-        c.bus.write32(item + 0x14, DATA + 0x4000);
-        c.bus.write32(item + 0x18, 1 + seed % 3);
+        // The colour: `[0]` is 0.0 or not (the swatch's two arms), the
+        // channel values differ so a wrong index reads another value.
+        let colour = DATA + 0x4000;
+        let first = [0.0f32, 1.0, 0.5, 0.0][(seed / 6 % 4) as usize];
+        let rest = if seed / 6 % 4 < 2 {
+            [0.25f32, 0.5, 0.75]
+        } else {
+            [1.0, 0.125, 0.625]
+        };
+        c.bus.write32(colour, first.to_bits());
+        for (i, v) in rest.iter().enumerate() {
+            c.bus.write32(colour + 4 + 4 * i as u32, v.to_bits());
+        }
+        c.bus.write32(item + 0x14, colour);
+        c.bus.write32(item + 0x18, 1 + seed / 2 % 3);
         c.g[A0][0] = sx(item);
         let buf = DATA + 0x5000;
         for w in 0..4u32 {
@@ -15853,7 +15950,7 @@ pub(crate) mod tests {
         check(
             ee::s09::f_002cf1c8__generated,
             menu_sys_color_channel_item_draw,
-            40,
+            48,
             &|c, seed| {
                 color_channel_draw_fixture(c, seed, seed % 2 == 0);
             },
@@ -15865,7 +15962,7 @@ pub(crate) mod tests {
         check_events(
             colorchannel_draw_generated,
             colorchannel_draw_hand,
-            40,
+            48,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2cf1_c8, 0);
                 let _ = &mut r;
@@ -15911,10 +16008,23 @@ pub(crate) mod tests {
 
     /// Gated fake for `InputBinding_EvalFloat` (0x320bf0): ids 0x3e-0x41
     /// return the steered axis floats; slow (0x42) and fine (0x43) return
-    /// `f1` (not held) or a value that cannot equal `f1` (held).
+    /// 1.0 (held) or 0.0 (not held): `MenuSys_IsSlowModHeld` and
+    /// `MenuSys_IsFineModHeld` compare the result with 0.0.
     pub(crate) const AXIS_GATE: u32 = DATA + 0x720;
 
     pub(crate) const AXIS_MAGIC: u32 = 0xA715_0001;
+
+    pub(crate) const AXIS_RIGHT: u32 = DATA + 0x724;
+
+    pub(crate) const AXIS_LEFT: u32 = DATA + 0x728;
+
+    pub(crate) const SLOW_WORD: u32 = DATA + 0x72c;
+
+    pub(crate) const FINE_WORD: u32 = DATA + 0x730;
+
+    pub(crate) const AXIS_UP: u32 = DATA + 0x73c;
+
+    pub(crate) const AXIS_DOWN: u32 = DATA + 0x740;
 
     pub(crate) static AXIS_PREV: std::sync::atomic::AtomicUsize =
         std::sync::atomic::AtomicUsize::new(0);
@@ -15928,30 +16038,22 @@ pub(crate) mod tests {
             );
         }
         c.f[0] = match c.g[A1][0] as u32 {
-            0x3e => c.bus.read32(DATA + 0x728),
-            0x3f => c.bus.read32(DATA + 0x724),
-            0x40 => c.bus.read32(DATA + 0x73c),
-            0x41 => c.bus.read32(DATA + 0x740),
+            0x3e => c.bus.read32(AXIS_LEFT),
+            0x3f => c.bus.read32(AXIS_RIGHT),
+            0x40 => c.bus.read32(AXIS_UP),
+            0x41 => c.bus.read32(AXIS_DOWN),
             0x42 => {
-                if c.bus.read32(DATA + 0x72c) != 0 {
-                    if c.f[1] == 0 {
-                        1.0f32.to_bits()
-                    } else {
-                        0
-                    }
+                if c.bus.read32(SLOW_WORD) != 0 {
+                    1.0f32.to_bits()
                 } else {
-                    c.f[1]
+                    0
                 }
             }
             0x43 => {
-                if c.bus.read32(DATA + 0x730) != 0 {
-                    if c.f[1] == 0 {
-                        1.0f32.to_bits()
-                    } else {
-                        0
-                    }
+                if c.bus.read32(FINE_WORD) != 0 {
+                    1.0f32.to_bits()
                 } else {
-                    c.f[1]
+                    0
                 }
             }
             _ => 0x7FC0_0002,
@@ -16000,12 +16102,12 @@ pub(crate) mod tests {
         c.bus.write32(item + 0x5c, DATA + 0x1200);
         c.g[A0][0] = sx(item);
         c.bus.write32(AXIS_GATE, AXIS_MAGIC);
-        c.bus.write32(DATA + 0x724, right);
-        c.bus.write32(DATA + 0x728, left);
-        c.bus.write32(DATA + 0x73c, up);
-        c.bus.write32(DATA + 0x740, down);
-        c.bus.write32(DATA + 0x72c, if slow_held { 1 } else { 0 });
-        c.bus.write32(DATA + 0x730, if fine_held { 1 } else { 0 });
+        c.bus.write32(AXIS_RIGHT, right);
+        c.bus.write32(AXIS_LEFT, left);
+        c.bus.write32(AXIS_UP, up);
+        c.bus.write32(AXIS_DOWN, down);
+        c.bus.write32(SLOW_WORD, if slow_held { 1 } else { 0 });
+        c.bus.write32(FINE_WORD, if fine_held { 1 } else { 0 });
         c.bus.write32(item + 4, if disabled { 8 } else { 0 });
         for (off, v) in [
             (0x3ff0u32, 0x3FC0_0000u32),
@@ -16050,33 +16152,12 @@ pub(crate) mod tests {
         }
     }
 
-    /// `gp - 0x854` chain + colour-table reads need the game image and a
-    /// planted table: shared by the draw tests.
-    pub(crate) fn page_draw_globals(c: &mut Cpu, seed: u32) {
-        elf_image(c);
-        let g = DATA + 0xb000;
-        let h = DATA + 0xb100;
-        c.bus.write32(GAME_GP.wrapping_sub(0x854), g);
-        c.bus.write32(g + 0xe84, h);
-        c.bus.write32(h + 4, 0x1000_1000 ^ seed);
-        let u = DATA + 0xb200;
-        c.bus.write32(g + 0x10d8, u);
-        c.bus.write16(u + 0x238, 0x0020);
-        let vt = DATA + 0x7100;
-        c.bus.write16(vt + 0x20, 0x0010);
-        c.bus.write32(vt + 0x24, FAKE + 0x10);
-        c.bus.write32(u + 0x23c, vt);
-        for n in 0..8u32 {
-            c.bus.write32(LOG_RESULTS + 4 * n, seed * 3 + 1);
-        }
-    }
-
     #[test]
     fn menu_sys_point2d_item_handle_input_matches() {
         check(
             ee::s09::f_002d0908__generated,
             menu_sys_point2d_item_handle_input,
-            60,
+            1536,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2d09_08, 2);
                 let _ = &mut r;
@@ -16101,8 +16182,19 @@ pub(crate) mod tests {
                 // Axis (0) or button-step (1) mode.
                 c.bus.write32(item + 0x40, seed / 96 % 2);
                 c.bus.write32(item + 0x18, 2 + seed % 2);
-                c.bus.write32(item + 0x1c, 0xFFFF_FFFF);
-                c.bus.write32(item + 0x20, 0);
+                // Per-index lock masks (x at +0x1c, y at +0x20): x locked in
+                // the first half, free in the second, where y is locked on
+                // every fifth seed.
+                c.bus
+                    .write32(item + 0x1c, if seed < 768 { 0xFFFF_FFFF } else { 0 });
+                c.bus.write32(
+                    item + 0x20,
+                    if seed >= 768 && seed % 5 == 0 {
+                        0xFFFF_FFFF
+                    } else {
+                        0
+                    },
+                );
                 c.bus.write32(item + 0x24, seed / 192 % 3);
                 let base = DATA + 0x2000;
                 c.bus.write32(item + 0x28, base);
@@ -16113,7 +16205,11 @@ pub(crate) mod tests {
                 c.bus.write32(item + 0x30, r.edge_f32());
                 c.bus.write32(item + 0x34, r.edge_f32());
                 c.bus.write32(item + 0x38, r.edge_f32());
-                c.bus.write32(item + 0x3c, seed / 384 % 2);
+                // y-ordering sign: 0, 1, negative (the ordered-neighbour clamps), 1.
+                c.bus.write32(
+                    item + 0x3c,
+                    [0u32, 1, 0xFFFF_FFFF, 1][(seed / 384 % 4) as usize],
+                );
                 let parent = DATA + 0x1000;
                 redraw_fixture(c, parent, seed);
                 c.bus.write32(item, parent);
@@ -16150,7 +16246,7 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2cad_58, 2);
                 let _ = &mut r;
-                page_draw_globals(c, seed);
+                menu_draw_globals(c, seed);
                 page_draw_fixture(c, seed, 1 + seed % 3);
             },
         );
@@ -16161,7 +16257,7 @@ pub(crate) mod tests {
         check_events(page_draw_generated, page_draw_hand, 60, &|c, seed| {
             let mut r = machine(c, seed, 0x2cad_58, 0);
             let _ = &mut r;
-            page_draw_globals(c, seed);
+            menu_draw_globals(c, seed);
             page_draw_fixture(c, seed, 1 + seed % 3);
             c.bus.write32(LOG_UNWIND_AT, u32::MAX);
             schedule(c, &mut r, seed, 0x002c_ad58)
@@ -16177,7 +16273,10 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2cb4_98, 1);
                 let _ = &mut r;
+                menu_draw_globals(c, seed);
                 let page = page_fixture(c, seed, 2);
+                menu_font_fixture(c, page, seed);
+                menu_page_vtable(c, page);
                 c.g[A0][0] = sx(page);
                 let extra = DATA + 0x3000;
                 for w in 0..4u32 {
@@ -16198,7 +16297,10 @@ pub(crate) mod tests {
         check_events(draw_frame_generated, draw_frame_hand, 60, &|c, seed| {
             let mut r = machine(c, seed, 0x2cb4_98, 0);
             let _ = &mut r;
+            menu_draw_globals(c, seed);
             let page = page_fixture(c, seed, 2);
+            menu_font_fixture(c, page, seed);
+            menu_page_vtable(c, page);
             c.g[A0][0] = sx(page);
             let extra = DATA + 0x3000;
             for w in 0..4u32 {
@@ -16255,28 +16357,44 @@ pub(crate) mod tests {
         check(
             ee::s09::f_002ce488__generated,
             menu_sys_text_edit_item_handle_input,
-            60,
+            1152,
             &|c, seed| {
-                // Nav keys, edit keys, and typing (backspace vs insert).
-                let (code, keycode, keychar) = match seed % 8 {
+                // Every raw code the body compares (2, 3, 4, 5, 6, 9, 10; 8
+                // makes the base handler return 1, the early exit) and
+                // typing: backspace, a letter, a symbol, an out-of-range char.
+                let (code, keycode, keychar) = match seed % 12 {
                     0 => (2, 0, 0),
-                    1 => (4, 0, 0),
-                    2 => (6, 0, 0),
-                    3 => (8, 0, 0),
-                    4 => (0x11, 8, 0),
-                    5 => (0x11, 0x29, b'a' as u32),
-                    6 => (0x11, 0x29, b'!' as u32),
+                    1 => (3, 0, 0),
+                    2 => (4, 0, 0),
+                    3 => (5, 0, 0),
+                    4 => (6, 0, 0),
+                    5 => (9, 0, 0),
+                    6 => (10, 0, 0),
+                    7 => (8, 0, 0),
+                    8 => (0x11, 8, 0),
+                    9 => (0x11, 0x29, b'a' as u32),
+                    10 => (0x11, 0x29, b'!' as u32),
                     _ => (0x11, 0x29, 0x7FC0_0002),
                 };
                 // Lengths around the 14/15/16 bounds; cursor around the end.
-                let len = [0u32, 5, 13, 14, 15, 20][(seed / 8 % 6) as usize];
-                let cursor = match seed / 48 % 4 {
+                let len = [0u32, 5, 13, 14, 15, 20][(seed / 12 % 6) as usize];
+                let cursor = match seed / 72 % 4 {
                     0 => 0,
                     1 => len,
                     2 => len + 1,
                     _ => len.saturating_sub(1),
                 };
-                text_edit_fixture(c, seed, 2, code, keycode, keychar, len, cursor);
+                let item = text_edit_fixture(c, seed, 2, code, keycode, keychar, len, cursor);
+                // Text alphabet: the fixture's lowercase run, or every char
+                // 'a', 'B' or '"', so the char-cycling loops take their
+                // lowercase, uppercase, '_' and '!' exits.
+                let fill = [0u8, b'a', b'B', b'"'][(seed / 288 % 4) as usize];
+                if fill != 0 {
+                    // The buffer is 16 bytes: `+0x28` (the cursor) follows it.
+                    for k in 0..len.min(16) {
+                        c.bus.write8(item + 0x18 + k, fill);
+                    }
+                }
             },
         );
     }
@@ -16299,12 +16417,13 @@ pub(crate) mod tests {
         });
     }
 
-    /// Text-draw fixture: like the handle fixture plus a real page, the
-    /// selected bit, and the row buffer; `long` steers the >= 15 path.
+    /// Text-draw fixture: like the handle fixture plus a real page (font,
+    /// vtable), the selected bit, the draw globals and the row buffer;
+    /// `long` steers the >= 15 path.
     pub(crate) fn text_edit_draw_fixture(c: &mut Cpu, seed: u32, long: bool, selected: bool) {
-        elf_image(c);
         let mut r = machine(c, seed, 0x2ce9_10, 2);
         let _ = &mut r;
+        menu_draw_globals(c, seed);
         let item = DATA + 0x100;
         for w in 0..0x20u32 {
             c.bus.write32(item + 4 * w, 0xD000_0000 ^ seed ^ w);
@@ -16329,6 +16448,8 @@ pub(crate) mod tests {
         c.bus.write32(page + 0x10, DATA + 0x2000);
         c.bus.write32(item, page);
         c.bus.write32(item + 4, 0);
+        menu_font_fixture(c, page, seed);
+        menu_page_vtable(c, page);
         c.g[A0][0] = sx(item);
         let buf = DATA + 0x5000;
         for w in 0..4u32 {
@@ -16344,7 +16465,6 @@ pub(crate) mod tests {
             menu_sys_text_edit_item_draw,
             60,
             &|c, seed| {
-                page_draw_globals(c, seed);
                 text_edit_draw_fixture(c, seed, seed % 2 == 0, seed / 2 % 2 == 0);
             },
         );
@@ -16355,59 +16475,44 @@ pub(crate) mod tests {
         check_events(text_draw_generated, text_draw_hand, 60, &|c, seed| {
             let mut r = machine(c, seed, 0x2ce9_10, 0);
             let _ = &mut r;
-            page_draw_globals(c, seed);
             text_edit_draw_fixture(c, seed, seed % 2 == 0, seed / 2 % 2 == 0);
             c.bus.write32(LOG_UNWIND_AT, u32::MAX);
             schedule(c, &mut r, seed, 0x002c_e910)
         });
     }
 
-    /// Measure-row fixture: row buffer out, item with a page, a descriptor
-    /// table (`[0]` = page), and the font chain; `desc`/`extra`/`text`
-    /// steer the three skip arms.
-    pub(crate) fn measure_row_fixture(c: &mut Cpu, seed: u32, desc: bool, extra: bool, text: bool) {
-        elf_image(c);
+    /// Measure-row fixture: row buffer out, item on a page with its font,
+    /// and the three strings (`a2`, `a3`, `t0`), each present or null.
+    /// Present strings get lengths from their own digits (`a2` `seed / 8 %
+    /// 3`, `a3` `seed / 24 % 3`, `t0` `seed / 72 % 3`), so the third string is
+    /// sometimes the widest.
+    pub(crate) fn measure_row_fixture(c: &mut Cpu, seed: u32, a2: bool, a3: bool, t0: bool) {
         let mut r = machine(c, seed, 0x2ca4_c8, 1);
         let _ = &mut r;
+        menu_draw_globals(c, seed);
         let row = DATA + 0x6000;
         for w in 0..8u32 {
             c.bus.write32(row + 4 * w, 0xBEEF_0000 ^ seed ^ w);
         }
-        c.bus.write32(row + 8, DATA + 0x6100);
-        c.bus.write32(DATA + 0x6100, 0x4E4E_4E4E);
         let page = DATA + 0x100;
         c.bus.write32(page, 2);
         c.bus.write32(page + 4, seed % 3);
         c.bus.write32(page + 0xc, DATA + 0x2000);
         c.bus.write32(page + 0x10, DATA + 0x2040);
-        let font = DATA + 0x8000;
-        c.bus.write32(font + 0x14, 0x3F80_0000);
-        c.bus.write32(font + 0x30, 0x4000_0000);
-        c.bus.write32(font + 0x34, 0x4040_0000);
-        c.bus.write32(font + 0x38, r.edge_f32());
-        c.bus.write32(font + 0x3c, r.edge_f32());
-        c.bus.write32(page + 0x124, font);
+        menu_font_fixture(c, page, seed);
         let item = DATA + 0x3000;
         for w in 0..0x10u32 {
             c.bus.write32(item + 4 * w, 0xF000_0000 ^ seed ^ w);
         }
         c.bus.write32(item, page);
-        let table = DATA + 0x4000;
-        let count = seed % 4;
-        c.bus.write32(item + 0x18, count);
-        c.bus.write32(item + 0x14, table);
-        for i in 0..=count {
-            c.bus.write32(table + 4 * i, r.edge_f32());
-        }
-        let buf = DATA + 0x7000;
-        for w in 0..8u32 {
-            c.bus.write32(buf + 4 * w, 0x5151_5100 ^ seed ^ w);
-        }
+        let text_a2 = menu_text(c, DATA + 0x7000, 1 + seed / 8 % 3, seed);
+        let text_a3 = menu_text(c, DATA + 0x7100, 1 + seed / 24 % 3, seed + 7);
+        let text_t0 = menu_text(c, DATA + 0x7200, 1 + seed / 72 % 3, seed + 13);
         c.g[A0][0] = sx(row);
         c.g[A1][0] = sx(item);
-        c.g[A2][0] = sx(if desc { table } else { 0 });
-        c.g[A3][0] = sx(if extra { 1 } else { 0 });
-        c.g[T0][0] = sx(if text { buf } else { 0 });
+        c.g[A2][0] = sx(if a2 { text_a2 } else { 0 });
+        c.g[A3][0] = sx(if a3 { text_a3 } else { 0 });
+        c.g[T0][0] = sx(if t0 { text_t0 } else { 0 });
     }
 
     #[test]
@@ -16415,7 +16520,7 @@ pub(crate) mod tests {
         check(
             ee::s09::f_002ca4c8__generated,
             menu_sys_item_measure_row,
-            60,
+            216,
             &|c, seed| {
                 measure_row_fixture(c, seed, seed % 2 == 0, seed / 2 % 2 == 0, seed / 4 % 2 == 0);
             },
@@ -16441,7 +16546,32 @@ pub(crate) mod tests {
         c.bus.write32(font + 0x34, 0x4040_0000);
         c.bus.write32(font + 0x38, r.edge_f32());
         c.bus.write32(font + 0x3c, r.edge_f32());
-        c.bus.write32(page + 0x124, font);
+        // The font is `page -> +0x124 -> +0x58`. Its glyph table covers
+        // 'A'..='z' with zero records except the capitals of the three
+        // labels ("Alpha", "Red", "Green"), whose advances pick which label
+        // is widest: group 0 ties, the others take each max-width path.
+        let style = DATA + 0x8800;
+        c.bus.write32(page + 0x124, style);
+        c.bus.write32(style + 0x58, font);
+        let glyphs = DATA + 0x9000;
+        c.bus.write32(font + 0x4, glyphs);
+        c.bus.write32(font + 0xc, 0x41);
+        c.bus.write32(font + 0x10, 0x7a);
+        let group = seed / 4 % 6;
+        let (g, a, red) = [
+            (2u32, 2, 2),
+            (3, 1, 2),
+            (1, 2, 3),
+            (1, 3, 2),
+            (3, 2, 1),
+            (1, 2, 2),
+        ][group as usize];
+        for (ch, adv) in [(b'G', g), (b'A', a), (b'R', red)] {
+            c.bus.write32(glyphs + 12 * (ch as u32 - 0x41), adv << 16);
+        }
+        if group != 0 {
+            c.bus.write32(font + 0x38, 0x3F80_0000);
+        }
         let item = DATA + 0x3000;
         for w in 0..0x10u32 {
             c.bus.write32(item + 4 * w, 0xF000_0000 ^ seed ^ w);
@@ -16462,125 +16592,11 @@ pub(crate) mod tests {
         check(
             ee::s09::f_002ceee8__generated,
             menu_sys_color_channel_item_measure,
-            60,
+            120,
             &|c, seed| {
                 color_channel_measure_fixture(c, seed, seed % 4);
             },
         );
-    }
-
-    /// World-list file fakes: the read returns our buffer; the free is a
-    /// no-op (the buffer is test RAM, not heap); `AddWorldIfMissing` only
-    /// records its token and returns a steered found flag (its list
-    /// mutation is that function's own unit, and its file/path callees
-    /// need filesystem state).
-    pub(crate) const WORLD_GATE: u32 = DATA + 0x750;
-
-    pub(crate) const WORLD_MAGIC: u32 = 0xA901_D00D;
-
-    pub(crate) const WORLD_RET: u32 = DATA + 0x764;
-
-    pub(crate) static WORLD_PREV_READ: std::sync::atomic::AtomicUsize =
-        std::sync::atomic::AtomicUsize::new(0);
-
-    pub(crate) static WORLD_PREV_FREE: std::sync::atomic::AtomicUsize =
-        std::sync::atomic::AtomicUsize::new(0);
-
-    pub(crate) static WORLD_PREV_ADD: std::sync::atomic::AtomicUsize =
-        std::sync::atomic::AtomicUsize::new(0);
-
-    pub(crate) fn world_list_read_fake(c: &mut Cpu) {
-        if c.bus.read32(WORLD_GATE) != WORLD_MAGIC {
-            return crate::difftest::fakes::fall_back(
-                c,
-                &WORLD_PREV_READ,
-                ee::s14::f_003e1a70__generated,
-            );
-        }
-        let buf = DATA + 0x3000;
-        let len = c.bus.read32(DATA + 0x760);
-        c.bus.write32(c.g[A1][0] as u32, len);
-        c.g[V0][0] = sx(buf);
-        let t = c.g[RA][0] as u32;
-        c.pc = t;
-    }
-
-    pub(crate) fn world_list_free_fake(c: &mut Cpu) {
-        if c.bus.read32(WORLD_GATE) != WORLD_MAGIC {
-            return crate::difftest::fakes::fall_back(
-                c,
-                &WORLD_PREV_FREE,
-                ee::s06::f_002523a8__generated,
-            );
-        }
-        let t = c.g[RA][0] as u32;
-        c.pc = t;
-    }
-
-    pub(crate) fn world_list_add_fake(c: &mut Cpu) {
-        if c.bus.read32(WORLD_GATE) != WORLD_MAGIC {
-            return crate::difftest::fakes::fall_back(
-                c,
-                &WORLD_PREV_ADD,
-                ee::s02::f_0017a830__generated,
-            );
-        }
-        c.bus.write32(DATA + 0x768, c.g[A1][0] as u32);
-        c.g[V0][0] = sx(c.bus.read32(WORLD_RET));
-        let t = c.g[RA][0] as u32;
-        c.pc = t;
-    }
-
-    pub(crate) fn install_world_list_fakes() {
-        crate::difftest::fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003E1A70),
-            world_list_read_fake,
-            &WORLD_PREV_READ,
-        );
-        crate::difftest::fakes::hook(
-            addr_of_mut!(ee::s06::OVERRIDE_002523A8),
-            world_list_free_fake,
-            &WORLD_PREV_FREE,
-        );
-        crate::difftest::fakes::hook(
-            addr_of_mut!(ee::s02::OVERRIDE_0017A830),
-            world_list_add_fake,
-            &WORLD_PREV_ADD,
-        );
-    }
-
-    /// World fixture: the list struct plus a text buffer the gated
-    /// file-read fake returns. Entries steer quotes/whitespace/endings.
-    pub(crate) fn world_list_fixture(c: &mut Cpu, seed: u32, style: u32) -> u32 {
-        // The allocator runtime: `AddWorldIfMissing` allocates through it.
-        let mut r = crate::difftest::fakes::machine_rt(c, seed, 0x0017_a378, 0);
-        let _ = &mut r;
-        install_world_list_fakes();
-        let list = DATA + 0x100;
-        for w in 0..0x20u32 {
-            c.bus.write32(list + 4 * w, 0);
-        }
-        c.bus.write32(list, seed % 3);
-        let buf = DATA + 0x3000;
-        let text: &[u8] = match style % 4 {
-            0 => b"  \"alpine\"  'megaplex'  ",
-            1 => b"\n\t\"antoine\"\n\"garibaldi\"\n",
-            2 => b"\"snow:jam\" 'see\\nmore'  ",
-            _ => b"  peak3  ",
-        };
-        for (i, b) in text.iter().enumerate() {
-            c.bus.write8(buf + i as u32, *b);
-        }
-        c.bus.write8(buf + text.len() as u32, 0);
-        // Length excludes the NUL: the scan ends at `buf + len`, and a
-        // trailing NUL inside the bound reprocesses forever.
-        c.bus.write32(DATA + 0x760, text.len() as u32);
-        // Steer the faked `AddWorldIfMissing` found flag (both arms).
-        c.bus.write32(WORLD_RET, seed % 2);
-        c.bus.write32(WORLD_GATE, WORLD_MAGIC);
-        c.g[A0][0] = sx(list);
-        c.g[A1][0] = sx(DATA + 0x2000);
-        list
     }
 
     driven!(enum_handle_generated, ee::s09::f_002cc8f0__generated);
@@ -16595,66 +16611,8 @@ pub(crate) mod tests {
 
     driven!(arrow_up_hand, menu_sys_page_draw_scroll_arrow_up);
 
-    pub(crate) const AXIS_RIGHT: u32 = DATA + 0x724;
-
-    pub(crate) const AXIS_LEFT: u32 = DATA + 0x728;
-
-    pub(crate) const SLOW_WORD: u32 = DATA + 0x72c;
-
-    pub(crate) const FINE_WORD: u32 = DATA + 0x730;
-
-    pub(crate) fn lr_axis_fake(c: &mut Cpu) {
-        if c.bus.read32(AXIS_GATE) != AXIS_MAGIC {
-            return crate::difftest::fakes::fall_back(
-                c,
-                &AXIS_PREV,
-                ee::s10::f_00320bf0__generated,
-            );
-        }
-        c.f[0] = match c.g[A1][0] as u32 {
-            0x3f => c.bus.read32(AXIS_RIGHT),
-            0x3e => c.bus.read32(AXIS_LEFT),
-            0x42 => {
-                let held = c.bus.read32(SLOW_WORD) != 0;
-                if held {
-                    if c.f[1] == 0 {
-                        1.0f32.to_bits()
-                    } else {
-                        0
-                    }
-                } else {
-                    c.f[1]
-                }
-            }
-            0x43 => {
-                let held = c.bus.read32(FINE_WORD) != 0;
-                if held {
-                    if c.f[1] == 0 {
-                        1.0f32.to_bits()
-                    } else {
-                        0
-                    }
-                } else {
-                    c.f[1]
-                }
-            }
-            _ => 0x7FC0_0002,
-        };
-        let t = c.g[RA][0] as u32;
-        c.pc = t;
-    }
-
-    pub(crate) fn install_lr_axis_fake() {
-        crate::difftest::fakes::hook(
-            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00320BF0),
-            lr_axis_fake,
-            &AXIS_PREV,
-        );
-    }
-
-    /// Shared input fixture: item with a menu chain (`item -> parent ->
-    /// input`, the input code at `input + 0x48`), the axis fake, and the
-    /// `gp`-relative thresholds. Returns the item.
+    /// The left/right handlers' fixture: [`four_way_input_fixture`] with no
+    /// key code or character and both vertical axes at rest.
     pub(crate) fn lr_input_fixture(
         c: &mut Cpu,
         seed: u32,
@@ -16665,39 +16623,9 @@ pub(crate) mod tests {
         fine_held: bool,
         disabled: bool,
     ) -> u32 {
-        install_lr_axis_fake();
-        let item = DATA + 0x100;
-        for w in 0..0x20u32 {
-            c.bus.write32(item + 4 * w, 0xE000_0000 ^ seed ^ w);
-        }
-        let parent = DATA + 0x1000;
-        c.bus.write32(item, parent);
-        let input = DATA + 0x1100;
-        c.bus.write32(parent + 0x124, input);
-        c.bus.write32(input + 0x48, code);
-        c.bus.write32(item + 0x5c, DATA + 0x1200);
-        c.g[A0][0] = sx(item);
-        c.bus.write32(AXIS_GATE, AXIS_MAGIC);
-        c.bus.write32(AXIS_RIGHT, right);
-        c.bus.write32(AXIS_LEFT, left);
-        c.bus.write32(SLOW_WORD, if slow_held { 1 } else { 0 });
-        c.bus.write32(FINE_WORD, if fine_held { 1 } else { 0 });
-        c.bus.write32(item + 4, if disabled { 8 } else { 0 });
-        for (off, v) in [
-            (0x3ff0u32, 0x3FC0_0000u32),
-            (0x3fec, 0x4000_0000),
-            (0x3fe8, 0x3F80_0000),
-            (0x3fe4, 0x3FC0_0000),
-            (0x3fe0, 0x4000_0000),
-            (0x3fdc, 0x3F80_0000),
-            (0x3fd8, 0x3FC0_0000),
-            (0x3fd4, 0x4000_0000),
-            (0x3fd0, 0x3F80_0000),
-            (0x3fcc, 0x4000_0000),
-        ] {
-            c.bus.write32(GAME_GP.wrapping_sub(off), v);
-        }
-        item
+        four_way_input_fixture(
+            c, seed, code, 0, 0, right, left, 0, 0, slow_held, fine_held, disabled,
+        )
     }
 
     #[test]
@@ -16705,7 +16633,7 @@ pub(crate) mod tests {
         check(
             ee::s09::f_002cd5a0__generated,
             menu_sys_int8_item_handle_input,
-            60,
+            384,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2cd5_a0, 2);
                 let _ = &mut r;
@@ -16743,7 +16671,7 @@ pub(crate) mod tests {
         check(
             ee::s09::f_002cd9d8__generated,
             menu_sys_int_item_handle_input,
-            60,
+            384,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2cd9_d8, 2);
                 let _ = &mut r;
@@ -16781,7 +16709,7 @@ pub(crate) mod tests {
         check(
             ee::s09::f_002cdd78__generated,
             menu_sys_float_item_handle_input,
-            60,
+            384,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2cdd_78, 2);
                 let _ = &mut r;
@@ -16815,12 +16743,13 @@ pub(crate) mod tests {
         );
     }
 
-    /// Draw-text fixture: item on a real page, three float params, the text
-    /// slots steered (`s4`, `s3`, `s5` zero or not), T2's 16 bytes.
+    /// Draw-text fixture: item on a real page (font, vtable), the draw
+    /// globals, three float params, the three texts steered (`s4`, `s3`,
+    /// `s5` null or a short string), T2's 16 bytes.
     pub(crate) fn draw_row_text_fixture(c: &mut Cpu, seed: u32, s4: u32, s3: u32, s5: u32) {
-        elf_image(c);
         let mut r = machine(c, seed, 0x2ca7_68, 3);
         let _ = &mut r;
+        menu_draw_globals(c, seed);
         let page = DATA + 0x100;
         c.bus.write32(page, 2);
         c.bus.write32(page + 4, seed % 3);
@@ -16831,10 +16760,18 @@ pub(crate) mod tests {
                 c.bus.write32(sub + 4 * w, 0xA100_0000 ^ seed ^ (i * 8 + w));
             }
         }
+        menu_font_fixture(c, page, seed);
+        menu_page_vtable(c, page);
         let item = DATA + 0x2000;
         c.bus.write32(item, page);
         c.bus.write32(item + 4, seed % 3);
         c.g[A0][0] = sx(item);
+        // The three texts, each 1..=4 characters from its own digit.
+        for (n, at) in [s4, s3, s5].into_iter().enumerate() {
+            if at != 0 {
+                menu_text(c, at, 1 + seed / (8 << n) % 4, seed + n as u32);
+            }
+        }
         let p1 = DATA + 0x3000;
         c.bus.write32(p1, r.edge_f32());
         c.bus.write32(p1 + 4, r.edge_f32());
@@ -16869,16 +16806,19 @@ pub(crate) mod tests {
         );
     }
 
-    /// Enum fixture: `+0x18` count, `+0x1c` entries (`{name, value}` pairs),
-    /// `+0x20` the current-value holder (holds 0). The scan reads
-    /// `entries - 4` then `entries + 8k - 4` per iteration and compares
-    /// against the holder:
-    /// - `want == 0`: `entries - 4` points at a zero word → match at `S1=0`.
-    /// - `want == 1`: a miss at `S1=0`, entry 0's value slot points so the
-    ///   `S1=1` read hits the zero holder → match at `S1=1`.
-    /// `code == 0` re-selects entry 0 first, so it only pairs with `want=0`
-    /// and a zero entry-0 value.
-    pub(crate) fn enum_scan_fixture(c: &mut Cpu, seed: u32, code: u32, want: u32) -> u32 {
+    /// Enum fixture: `+0x18` count (2-4), `+0x1c` entries (`{name, value}`
+    /// pairs, values `0x100 + i`), `+0x20` the current-value holder. The scan
+    /// compares `*holder` with each entry's value word: `pick` 0 plants a
+    /// value no entry has (the scan runs off the end), 1/2/3 plant entry 0,
+    /// entry 1 or the last entry's value (the match path and its prev/next
+    /// wraps). `disabled` sets the `+4 & 8` bit.
+    pub(crate) fn enum_scan_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        code: u32,
+        pick: u32,
+        disabled: bool,
+    ) -> u32 {
         let mut r = machine(c, seed, 0x2cc8_f0, 2);
         let _ = &mut r;
         let item = DATA + 0x100;
@@ -16894,21 +16834,17 @@ pub(crate) mod tests {
             c.bus.write32(entries + 8 * i + 4, 0x100 + i);
             c.bus.write32(DATA + 0x5000 + i * 8, 0x4E4E_4E00 + i);
         }
+        // The word before the table: the no-match "last" path reads it.
+        c.bus.write32(entries - 4, 0xDEAD_0000 ^ seed);
         let holder = DATA + 0x6500;
         c.bus.write32(item + 0x20, holder);
-        c.bus.write32(holder, 0);
-        if want == 0 {
-            c.bus.write32(entries - 4, DATA + 0x6000);
-            c.bus.write32(DATA + 0x6004, 0);
-            if code == 0 {
-                c.bus.write32(entries + 4, 0);
-            }
-        } else {
-            c.bus.write32(entries - 4, DATA + 0x6000);
-            c.bus.write32(DATA + 0x6004, 0xDEAD_0000 ^ seed);
-            c.bus.write32(entries + 4, DATA + 0x60F4);
-            c.bus.write32(DATA + 0x6100, 0);
-        }
+        let value = match pick {
+            0 => 0,
+            1 => 0x100,
+            2 => 0x101,
+            _ => 0x100 + count - 1,
+        };
+        c.bus.write32(holder, value);
         let parent = DATA + 0x1000;
         c.bus.write32(item, parent);
         let input = DATA + 0x1100;
@@ -16916,22 +16852,20 @@ pub(crate) mod tests {
         c.bus.write32(input + 0x48, code);
         c.bus.write32(item + 0x5c, DATA + 0x1200);
         redraw_fixture(c, parent, seed);
-        c.bus.write32(item + 4, 0);
+        c.bus.write32(item + 4, if disabled { 8 } else { 0 });
         c.g[A0][0] = sx(item);
         item
     }
 
     #[test]
     fn menu_sys_enum_item_handle_input_matches() {
-        check(
+        check_lohi(
             ee::s09::f_002cc8f0__generated,
             menu_sys_enum_item_handle_input,
-            60,
+            168,
             &|c, seed| {
                 let code = [0u32, 1, 2, 3, 4, 6, 0x11][(seed % 7) as usize];
-                // `code == 0` re-selects entry 0: only with `want = 0`.
-                let want = if code == 0 { 0 } else { seed / 7 % 2 };
-                enum_scan_fixture(c, seed, code, want);
+                enum_scan_fixture(c, seed, code, seed / 7 % 4, seed % 13 == 12);
             },
         );
     }
@@ -16939,11 +16873,18 @@ pub(crate) mod tests {
     #[test]
     fn menu_sys_enum_item_handle_input_events() {
         check_events(enum_handle_generated, enum_handle_hand, 60, &|c, seed| {
-            // No fake unwinds: re-entry goes through `drive`. Miss at
-            // `S1=0`, match at `S1=1`: the back edge always runs.
+            // Match at entry 1 or the last entry, or no match: the back edge
+            // always runs at least once.
             let mut r = machine(c, seed, 0x2cc8_f0, 0);
             let _ = &mut r;
-            enum_scan_fixture(c, seed, [1u32, 2, 3, 4, 6, 0x11][(seed % 6) as usize], 1);
+            let pick = [2u32, 3, 0][(seed / 6 % 3) as usize];
+            enum_scan_fixture(
+                c,
+                seed,
+                [1u32, 2, 3, 4, 6, 0x11][(seed % 6) as usize],
+                pick,
+                false,
+            );
             // No fake unwinds: re-entry goes through `drive`.
             c.bus.write32(LOG_UNWIND_AT, u32::MAX);
             schedule(c, &mut r, seed, 0x002c_c8f0)
@@ -16952,9 +16893,11 @@ pub(crate) mod tests {
 
     /// Scroll-arrow fixture: item with a row page, four floats, the
     /// `+0x12c` vtable (delta `+0x40`, slot `+0x44`) and the `gp - 0x854`
-    /// chain the tails walk. `elf_image` for the colour table.
+    /// chain the tails walk, over the game image plus the planted row colour
+    /// table (its quad colour).
     pub(crate) fn scroll_arrow_fixture(c: &mut Cpu, seed: u32) -> u32 {
         elf_image(c);
+        menu_row_colour_table(c, seed);
         let mut r = machine(c, seed, 0x2cb8_c8, 2);
         let _ = &mut r;
         let item = DATA + 0x3000;
@@ -17630,8 +17573,35 @@ pub(crate) mod tests {
         );
     }
 
+    /// Gate and log of the register-logging fake on `MenuSysItem_ctor`
+    /// (0x2ca258): with the gate set it writes `s0..s7` (both halves) to the
+    /// log, then runs the real body. A delay-slot write moved past the call
+    /// changes the logged registers.
+    const ITEM_CTOR_GATE: u32 = DATA + 0x7c0;
+
+    const ITEM_CTOR_MAGIC: u32 = 0x17C7_0001;
+
+    const ITEM_CTOR_LOG: u32 = DATA + 0x800;
+
+    static ITEM_CTOR_PREV: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    fn item_ctor_logging_fake(c: &mut Cpu) {
+        if c.bus.read32(ITEM_CTOR_GATE) == ITEM_CTOR_MAGIC {
+            for (i, r) in (S0..=S7).enumerate() {
+                c.bus.write64(ITEM_CTOR_LOG + 16 * i as u32, c.g[r][0]);
+                c.bus.write64(ITEM_CTOR_LOG + 16 * i as u32 + 8, c.g[r][1]);
+            }
+        }
+        crate::difftest::fakes::fall_back(c, &ITEM_CTOR_PREV, ee::s09::f_002ca258__generated);
+    }
+
     #[test]
     fn menu_sys_int8_item_ctor_3_matches() {
+        crate::difftest::fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002CA258),
+            item_ctor_logging_fake,
+            &ITEM_CTOR_PREV,
+        );
         check(
             ee::s09::f_002cd4a0__generated,
             menu_sys_int8_item_ctor_3,
@@ -17639,6 +17609,7 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2cd4_a0, 1);
                 menu_sys_ctor_fixture(c, &mut r, DATA + 0x100, seed);
+                c.bus.write32(ITEM_CTOR_GATE, ITEM_CTOR_MAGIC);
             },
         );
     }
@@ -18182,6 +18153,773 @@ pub(crate) mod tests {
                 c.bus.write32(slot_item + 0x10, vt);
                 c.bus.write16(vt + 0x38, 0x0010);
                 c.bus.write32(vt + 0x3c, fakes::FAKE + 0x10);
+            },
+        );
+    }
+
+    /// Page fixture: count `n`, a selected index, and `n` items.
+    pub(crate) fn menu_sys_page_fixture(c: &mut Cpu, seed: u32, n: u32) -> u32 {
+        let page = DATA + 0x100;
+        c.bus.write32(page, n);
+        c.bus.write32(page + 4, seed % (n + 1));
+        for i in 0..n {
+            let item = DATA + 0x2000 + i * 0x40;
+            c.bus.write32(page + 0xc + 4 * i, item);
+            for w in 0..8u32 {
+                c.bus
+                    .write32(item + 4 * w, 0xA100_0000 ^ seed ^ (i * 8 + w));
+            }
+        }
+        page
+    }
+
+    /// Group fixture: a group whose EMBEDDED page at `+0x18` holds `n`
+    /// items (`count` at `+0x18`, selected at `+0x1c`, slots at `+0x24`).
+    /// Wrappers pass `group + 0x18` as the page, so the struct must live
+    /// there, not a pointer to it.
+    pub(crate) fn menu_sys_group_fixture(c: &mut Cpu, seed: u32, n: u32) -> u32 {
+        let group = DATA + 0x5000 + (seed % 4) * 0x400;
+        for w in 0..0x60u32 {
+            c.bus.write32(group + 4 * w, 0xB000_0000 ^ seed ^ w);
+        }
+        c.bus.write32(group + 0x18, n);
+        c.bus
+            .write32(group + 0x1c, if n == 0 { 0 } else { seed % (n + 1) });
+        for i in 0..n {
+            let item = DATA + 0x2000 + i * 0x40;
+            c.bus.write32(group + 0x24 + 4 * i, item);
+            for w in 0..8u32 {
+                c.bus
+                    .write32(item + 4 * w, 0xA100_0000 ^ seed ^ (i * 8 + w));
+            }
+        }
+        c.bus.write32(group + 0x14, 0);
+        c.g[A0][0] = sx(group);
+        group
+    }
+
+    /// Item with a vtable whose entry at `off`/`off + 4` is a delta and a
+    /// fake method; the fake's call-`n` result is forced to `code`.
+    pub(crate) fn menu_sys_method_fixture(c: &mut Cpu, item: u32, off: u32, code: u32) {
+        let vt = DATA + 0x7000;
+        c.bus.write16(vt + off, 0x0020);
+        c.bus.write32(vt + off + 4, FAKE + 0x10);
+        c.bus.write32(item + 0x10, vt);
+        for n in 0..8u32 {
+            c.bus.write32(LOG_RESULTS + 4 * n, code);
+        }
+    }
+
+    #[test]
+    fn menu_sys_spacer_item_draw_matches() {
+        check(
+            ee::s09::f_002cd3f0__generated,
+            menu_sys_spacer_item_draw,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cd3_f0, 1);
+                let _ = &mut r;
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 8);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_group_item_add_item_matches() {
+        check(
+            ee::s09::f_002cf908__generated,
+            menu_sys_group_item_add_item,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cf9_08, 1);
+                let _ = &mut r;
+                let count = 2;
+                menu_sys_group_fixture(c, seed, count);
+                // Insert args: the item and a steered index (append, count,
+                // or inside).
+                c.g[A1][0] = sx(DATA + 0x6000 + (seed % 4) * 0x40);
+                c.g[A2][0] = sx(match seed % 3 {
+                    0 => 0xFFFF_FFFF,
+                    1 => count,
+                    _ => (seed / 3 % (count + 1)) as u32,
+                });
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_group_item_remove_item_matches() {
+        check(
+            ee::s09::f_002cf928__generated,
+            menu_sys_group_item_remove_item,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cf9_28, 1);
+                let _ = &mut r;
+                let count = 3;
+                menu_sys_group_fixture(c, seed, count);
+                // In range, at the end, out of range, or before the start.
+                c.g[A1][0] = sx(match seed % 4 {
+                    0 => 0,
+                    1 => 1 + seed % count,
+                    2 => count + seed % 2,
+                    _ => 0xFFFF_FFFF,
+                });
+            },
+        );
+    }
+
+    /// Draw-row fixture: item on a page with a selected index, over the game
+    /// image plus the planted row colour table.
+    pub(crate) fn menu_sys_draw_row_fixture(c: &mut Cpu, seed: u32) -> u32 {
+        elf_image(c);
+        menu_row_colour_table(c, seed);
+        let page = menu_sys_page_fixture(c, seed, 2);
+        let item = DATA + 0x2000;
+        c.bus.write32(item, page);
+        c.bus.write32(item + 4, seed % 3);
+        c.bus.write32(item + 0x14, 0x1313_1313 ^ seed);
+        c.g[A0][0] = sx(item);
+        c.g[A1][0] = sx(DATA + 0x3000);
+        c.g[A2][0] = sx(0x2222_2222 ^ seed);
+        c.g[A3][0] = sx(0x3333_3333 ^ seed);
+        c.g[T0][0] = sx(0x4444_4444 ^ seed);
+        item
+    }
+
+    #[test]
+    fn menu_sys_submenu_item_draw_matches() {
+        check(
+            ee::s09::f_002ccdc8__generated,
+            menu_sys_submenu_item_draw,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ccd_c8, 2);
+                let _ = &mut r;
+                menu_sys_draw_row_fixture(c, seed);
+                c.bus.write32(DATA + 0x2000 + 4, seed % 3);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_back_item_draw_matches() {
+        check(
+            ee::s09::f_002ccee0__generated,
+            menu_sys_back_item_draw,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cce_e0, 2);
+                let _ = &mut r;
+                menu_sys_draw_row_fixture(c, seed);
+                c.bus.write32(DATA + 0x2000 + 4, seed % 3);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_label_item_draw_matches() {
+        check(
+            ee::s09::f_002cd328__generated,
+            menu_sys_label_item_draw,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cd3_28, 2);
+                let _ = &mut r;
+                menu_sys_draw_row_fixture(c, seed);
+                c.bus.write32(DATA + 0x2000 + 4, seed % 3);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_page_sort_compare_matches() {
+        check(
+            ee::s09::f_002d4008__generated,
+            menu_sys_page_sort_compare,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d40_08, 1);
+                let _ = &mut r;
+                let a = DATA + 0x100;
+                let b = DATA + 0x200;
+                c.bus.write32(a, 0xA1A2_A3A4 ^ seed);
+                c.bus.write32(b, 0xB1B2_B3B4 ^ seed);
+                c.g[A0][0] = sx(a);
+                c.g[A1][0] = sx(b);
+                c.bus
+                    .write32(crate::difftest::GAME_GP + 0x23cc, FAKE + 0x10);
+                c.bus.write32(LOG_RESULTS, seed & 1);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_callback_item_draw_matches() {
+        check(
+            ee::s09::f_002cd278__generated,
+            menu_sys_callback_item_draw,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cd2_78, 2);
+                let _ = &mut r;
+                menu_sys_draw_row_fixture(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_text_edit_item_set_text_matches() {
+        check(
+            ee::s09::f_002d3d48__generated,
+            menu_sys_text_edit_item_set_text,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d3d_48, 1);
+                let _ = &mut r;
+                let item = DATA + 0x100;
+                for w in 0..8u32 {
+                    c.bus.write32(item + 4 * w, 0xC000_0000 ^ seed ^ w);
+                }
+                let text = DATA + 0x200;
+                let len = 5 + seed % 20;
+                for i in 0..len {
+                    c.bus.write8(text + i, b'a' + (i % 26) as u8);
+                }
+                c.bus.write8(text + len, 0);
+                c.g[A0][0] = sx(item);
+                c.g[A1][0] = sx(text);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_group_item_page_forward_v03_matches() {
+        check(
+            ee::s09::f_002cf788__generated,
+            menu_sys_group_item_page_forward_v03,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cf7_88, 1);
+                let _ = &mut r;
+                let item = DATA + 0x100;
+                c.bus.write32(item + 0x130, DATA + 0x200);
+                let vt = DATA + 0x7000;
+                c.bus.write16(vt + 0x48, 0x0020);
+                c.bus.write32(vt + 0x4c, FAKE + 0x10);
+                c.bus.write32(DATA + 0x200 + 0x10, vt);
+                c.g[A0][0] = sx(item);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_group_item_page_forward_v04_matches() {
+        check(
+            ee::s09::f_002cf7b8__generated,
+            menu_sys_group_item_page_forward_v04,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cf7_b8, 1);
+                let _ = &mut r;
+                let item = DATA + 0x100;
+                c.bus.write32(item + 0x130, DATA + 0x200);
+                let vt = DATA + 0x7000;
+                c.bus.write16(vt + 0x50, 0x0020);
+                c.bus.write32(vt + 0x54, FAKE + 0x10);
+                c.bus.write32(DATA + 0x200 + 0x10, vt);
+                c.g[A0][0] = sx(item);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_group_item_reset_matches() {
+        check(
+            ee::s09::f_002cf948__generated,
+            menu_sys_group_item_reset,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cf9_48, 2);
+                let _ = &mut r;
+                let group = menu_sys_group_fixture(c, seed, 2);
+                if seed % 2 == 0 {
+                    c.bus.write32(group + 0x14, 0);
+                } else {
+                    c.bus.write32(group + 0x14, DATA + 0x6000);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_debug_printf_4080_matches() {
+        check(
+            ee::s09::f_002d4080__generated,
+            menu_sys_debug_printf_4080,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d40_80, 1);
+                let _ = &mut r;
+                c.g[A0][0] = sx(DATA + 0x1000 + (seed % 4) * 0x40);
+                c.g[A1][0] = sx(0xB000_0000 ^ seed * 3);
+                c.g[A2][0] = sx(0xC000_0000 ^ seed * 5);
+                c.g[A3][0] = sx(0xD000_0000 ^ seed * 7);
+                c.f[12] = r.edge_f32();
+                c.f[13] = r.edge_f32();
+                c.bus.write32(DATA + 0x1000, 0x2525_2525);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_page_sort_items_matches() {
+        check(
+            ee::s09::f_002cbe20__generated,
+            menu_sys_page_sort_items,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cbe_20, 2);
+                let _ = &mut r;
+                let page = menu_sys_page_fixture(c, seed, 2 + seed % 2);
+                c.g[A0][0] = sx(page);
+                c.g[A1][0] = sx(FAKE + 0x10);
+                for n in 0..8u32 {
+                    c.bus.write32(LOG_RESULTS + 4 * n, 0);
+                }
+            },
+        );
+    }
+
+    driven!(set_header_generated, ee::s09::f_002cf988__generated);
+    driven!(set_header_hand, menu_sys_group_item_set_header_item);
+    driven!(remove_item_generated, ee::s09::f_002cbd50__generated);
+    driven!(remove_item_hand, menu_sys_page_remove_item);
+
+    /// Header fixture: group with `n` embedded items; the old header is
+    /// absent (0) or one of the entries, the new head absent or an entry.
+    /// `pc` is the entry: this is a converted dispatcher (entry-only guard).
+    fn set_header_fixture(c: &mut Cpu, seed: u32, n: u32) {
+        let group = menu_sys_group_fixture(c, seed, n);
+        let old = if seed % 2 == 0 || n == 0 {
+            0
+        } else {
+            DATA + 0x2000 + (seed % n) * 0x40
+        };
+        let head = if seed / 2 % 2 == 0 || n == 0 {
+            0
+        } else {
+            DATA + 0x2000 + (seed / 2 % n) * 0x40
+        };
+        c.g[A0][0] = sx(group);
+        c.g[A1][0] = sx(head);
+        c.bus.write32(group + 0x14, old);
+        c.pc = 0x002c_f988;
+    }
+
+    #[test]
+    fn menu_sys_group_item_set_header_item_matches() {
+        check(
+            ee::s09::f_002cf988__generated,
+            menu_sys_group_item_set_header_item,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cf9_88, 2);
+                let _ = &mut r;
+                set_header_fixture(c, seed, seed % 4);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_group_item_set_header_item_events() {
+        check_events(set_header_generated, set_header_hand, 60, &|c, seed| {
+            // No fake unwinds: re-entry goes through `drive`, which only
+            // understands event unwinds.
+            let mut r = machine(c, seed, 0x2cf9_88, 0);
+            set_header_fixture(c, seed, 2 + seed % 3);
+            schedule(c, &mut r, seed, 0x002c_f988)
+        });
+    }
+
+    #[test]
+    fn menu_sys_group_item_set_header_item_resumes() {
+        // Direct entry at the loop head, over table-driven loop states.
+        for a1 in [0u32, 1, 2, 5] {
+            for count in [1u32, 3] {
+                let mut c = crate::difftest::fresh();
+                machine(&mut c, a1 + count, 0x2cf9_88, 2);
+                set_header_fixture(&mut c, a1 + count, count);
+                c.pc = 0x002c_f9b0;
+                c.g[A1][0] = sx(a1);
+                let mut d = crate::difftest::fresh();
+                machine(&mut d, a1 + count, 0x2cf9_88, 2);
+                set_header_fixture(&mut d, a1 + count, count);
+                d.pc = 0x002c_f9b0;
+                d.g[A1][0] = sx(a1);
+                ee::s09::f_002cf988__generated(&mut c);
+                menu_sys_group_item_set_header_item(&mut d);
+                assert_eq!(c.g[V0][0], d.g[V0][0], "a1={a1} count={count}");
+                assert_eq!(c.pc, d.pc, "a1={a1} count={count}");
+            }
+        }
+    }
+
+    #[test]
+    fn menu_sys_page_remove_item_matches() {
+        check(
+            ee::s09::f_002cbd50__generated,
+            menu_sys_page_remove_item,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cbd_50, 1);
+                let _ = &mut r;
+                let page = menu_sys_page_fixture(c, seed, 1 + seed % 3);
+                c.g[A0][0] = sx(page);
+                // In range, at the end, or out of range.
+                c.g[A1][0] = sx(match seed % 4 {
+                    0 => 0,
+                    1 => 1 + seed % 3,
+                    2 => 3 + seed % 2,
+                    _ => 0xFFFF_FFFF,
+                });
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_page_remove_item_events() {
+        check_events(remove_item_generated, remove_item_hand, 60, &|c, seed| {
+            // No fake unwinds: `ValidateSelection` indirect-calls the
+            // items' vtable slots (miss-hook fakes).
+            let mut r = machine(c, seed, 0x2cbd_50, 0);
+            let page = menu_sys_page_fixture(c, seed, 4 + seed % 4);
+            c.g[A0][0] = sx(page);
+            c.g[A1][0] = sx(0);
+            schedule(c, &mut r, seed, 0x002c_bd50)
+        });
+    }
+
+    driven!(enum_measure_generated, ee::s09::f_002ccb18__generated);
+    driven!(enum_measure_hand, menu_sys_enum_item_measure);
+
+    #[test]
+    fn menu_sys_item_draw_row_matches() {
+        check(
+            ee::s09::f_002ca988__generated,
+            menu_sys_item_draw_row,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ca9_88, 2);
+                let _ = &mut r;
+                menu_sys_draw_row_fixture(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_text_edit_item_measure_matches() {
+        check(
+            ee::s09::f_002ce820__generated,
+            menu_sys_text_edit_item_measure,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ce8_20, 3);
+                let _ = &mut r;
+                elf_image(c);
+                // A0 is the output row, A1 the item.
+                let row = DATA + 0x6000;
+                for w in 0..8u32 {
+                    c.bus.write32(row + 4 * w, 0xBEEF_0000 ^ seed ^ w);
+                }
+                let item = DATA + 0x3000;
+                for w in 0..0x20u32 {
+                    c.bus.write32(item + 4 * w, 0xD000_0000 ^ seed ^ w);
+                }
+                let text = item + 0x18;
+                let len = 3 + seed % 20;
+                for i in 0..len {
+                    c.bus.write8(text + i, b'k' + (i % 10) as u8);
+                }
+                c.bus.write8(text + len, 0);
+                c.bus.write32(item + 0x28, 10 + seed % 3);
+                c.g[A0][0] = sx(row);
+                c.g[A1][0] = sx(item);
+                let page = menu_sys_page_fixture(c, seed ^ 0x7777, 2);
+                c.bus.write32(item, page);
+                // Selected or not: point the selected slot at our item on
+                // even seeds so `S0 == 0` (selected) is reached too.
+                let sel = seed % 2;
+                c.bus.write32(page + 4, sel);
+                if seed / 2 % 2 == 0 {
+                    c.bus.write32(page + 0xc + 4 * sel, item);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_group_item_handle_input_matches() {
+        check(
+            ee::s09::f_002cfa08__generated,
+            menu_sys_group_item_handle_input,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cfa_08, 3);
+                let _ = &mut r;
+                let group = menu_sys_group_fixture(c, seed, 2);
+                let page = group + 0x18;
+                // Steer the selected slot and put the vtable on that item,
+                // so the handler code (next/prev/other) is really reached.
+                let sel = (seed / 3 % 2) as u32;
+                c.bus.write32(page + 4, sel);
+                let item = DATA + 0x2000 + sel * 0x40;
+                menu_sys_method_fixture(c, item, 0x10, [3, 4, 0x11][(seed % 3) as usize]);
+                c.bus.write32(item, page);
+                c.bus.write32(item + 4, 1);
+                c.g[A0][0] = sx(group);
+            },
+        );
+    }
+
+    /// The measured item's page (`item + 0`, with its font) and its label
+    /// at `+0x14`.
+    pub(crate) fn measure_item_page(c: &mut Cpu, item: u32, seed: u32) {
+        let page = DATA + 0x6000;
+        c.bus.write32(page, 1);
+        c.bus.write32(page + 0xc, item);
+        menu_font_fixture(c, page, seed);
+        c.bus.write32(item, page);
+        let label = menu_text(c, DATA + 0x6800, 2 + seed % 3, seed + 11);
+        c.bus.write32(item + 0x14, label);
+    }
+
+    /// Enum-measure item: page and label, then `count` entries of
+    /// `{name, value}`; entry `i`'s name is `1 + (2 i + seed / 5) % 4`
+    /// letters, so later entries are sometimes wider and sometimes not.
+    pub(crate) fn enum_measure_items(c: &mut Cpu, item: u32, seed: u32, count: u32) {
+        measure_item_page(c, item, seed);
+        c.bus.write32(item + 0x18, count);
+        let table = DATA + 0x4000;
+        c.bus.write32(item + 0x1c, table);
+        for i in 0..count {
+            let name = menu_text(
+                c,
+                DATA + 0x5000 + i * 8,
+                1 + (2 * i + seed / 5) % 4,
+                seed + i,
+            );
+            c.bus.write32(table + 8 * i, name);
+            c.bus.write32(table + 8 * i + 4, 0x100 + i);
+        }
+    }
+
+    #[test]
+    fn menu_sys_bool_item_measure_matches() {
+        check(
+            ee::s09::f_002cc648__generated,
+            menu_sys_bool_item_measure,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cc6_48, 3);
+                let _ = &mut r;
+                // A0 is the output row, A1 the item.
+                let row = DATA + 0x2000;
+                for w in 0..8u32 {
+                    c.bus.write32(row + 4 * w, 0xBEEF_0000 ^ seed ^ w);
+                }
+                let item = DATA + 0x100;
+                for w in 0..0x10u32 {
+                    c.bus.write32(item + 4 * w, 0xE000_0000 ^ seed ^ w);
+                }
+                measure_item_page(c, item, seed);
+                // Bool strings present or not, independently, with their
+                // own lengths (either one is wider, or they tie).
+                if seed % 2 == 0 {
+                    c.bus.write32(item + 0x18, 0);
+                } else {
+                    let on = menu_text(c, DATA + 0x3000, 1 + seed / 4 % 4, seed);
+                    c.bus.write32(item + 0x18, on);
+                }
+                if seed / 2 % 2 == 0 {
+                    c.bus.write32(item + 0x1c, 0);
+                } else {
+                    let off = menu_text(c, DATA + 0x3100, 1 + seed / 16 % 4, seed + 3);
+                    c.bus.write32(item + 0x1c, off);
+                }
+                c.g[A0][0] = sx(row);
+                c.g[A1][0] = sx(item);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_enum_item_measure_matches() {
+        check(
+            ee::s09::f_002ccb18__generated,
+            menu_sys_enum_item_measure,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ccb_18, 3);
+                let _ = &mut r;
+                // A0 is the output row, A1 the item.
+                let row = DATA + 0x2000;
+                for w in 0..8u32 {
+                    c.bus.write32(row + 4 * w, 0xBEEF_0000 ^ seed ^ w);
+                }
+                let item = DATA + 0x100;
+                for w in 0..0x10u32 {
+                    c.bus.write32(item + 4 * w, 0xF000_0000 ^ seed ^ w);
+                }
+                enum_measure_items(c, item, seed, seed % 5);
+                c.g[A0][0] = sx(row);
+                c.g[A1][0] = sx(item);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_enum_item_measure_events() {
+        check_events(enum_measure_generated, enum_measure_hand, 60, &|c, seed| {
+            // No fake unwinds: re-entry goes through `drive`.
+            let mut r = machine(c, seed, 0x2ccb_18, 0);
+            let row = DATA + 0x2000;
+            for w in 0..8u32 {
+                c.bus.write32(row + 4 * w, 0xBEEF_0000 ^ seed ^ w);
+            }
+            let item = DATA + 0x100;
+            for w in 0..0x10u32 {
+                c.bus.write32(item + 4 * w, 0xF000_0000 ^ seed ^ w);
+            }
+            enum_measure_items(c, item, seed, 2 + seed % 3);
+            c.g[A0][0] = sx(row);
+            c.g[A1][0] = sx(item);
+            let _ = &mut r;
+            schedule(c, &mut r, seed, 0x002c_cb18)
+        });
+    }
+
+    #[test]
+    fn menu_sys_format_float_matches() {
+        check(
+            ee::s09::f_002cdfd8__generated,
+            menu_sys_format_float,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2cdf_d8, 1);
+                elf_image(c);
+                c.bus
+                    .write32(crate::difftest::GAME_GP + 0xda0, 0x1111_1111 ^ seed);
+                c.bus.write32(
+                    crate::difftest::GAME_GP.wrapping_sub(0x3fc8),
+                    0x3F80_0000 ^ (seed * 0x0100_0001),
+                );
+                c.g[A0][0] = sx(DATA + 0x1000);
+                // Magnitudes across the ladder, both signs.
+                c.f[12] = match seed % 7 {
+                    0 => 0x0000_0000,
+                    1 => 0x8000_0000,
+                    2 => 0x3F80_0000 ^ (seed * 0x100),
+                    3 => 0xBF80_0000 ^ (seed * 0x100),
+                    4 => 0x4120_0000 ^ (seed * 0x100),
+                    5 => 0xC120_0000 ^ (seed * 0x100),
+                    _ => r.edge_f32(),
+                };
+                let _ = &mut r;
+            },
+        );
+    }
+
+    /// Axis-step fixture shared by the float-range and colour-channel
+    /// handlers: the real `item -> parent (+0x124) -> input (+0x48)` chain, the
+    /// disabled bit (`+4 & 8`), the dead-zone thresholds at `gp - lo`/`gp - hi`,
+    /// the last direction and repeat counter, and the redraw vtable. Seeds:
+    /// `% 6` shape (disabled, base 1, base 4, three axis seeds), `/ 6 % 6`
+    /// deflection (none, +1, -1, +0.25 and -0.25 inside the dead zone, +10),
+    /// `/ 36 % 3` last direction (0, 1, -1: same or new direction), `/ 108 % 3`
+    /// counter (0, 2, 40).
+    pub(crate) fn axis_step_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        lo: u32,
+        hi: u32,
+        dir_off: u32,
+        counter_off: u32,
+    ) -> u32 {
+        let (code, disabled) = match seed % 6 {
+            0 => (2, true),
+            1 => (8, false),
+            2 => (0, false),
+            _ => (2, false),
+        };
+        let (right, left) = match seed / 6 % 6 {
+            0 => (0x0000_0000, 0x0000_0000),
+            1 => (0x3F80_0000, 0x0000_0000),
+            2 => (0x0000_0000, 0x3F80_0000),
+            3 => (0x3E80_0000, 0x0000_0000),
+            4 => (0x0000_0000, 0x3E80_0000),
+            _ => (0x4120_0000, 0x0000_0000),
+        };
+        let item = lr_input_fixture(c, seed, code, right, left, false, false, disabled);
+        c.bus.write32(GAME_GP.wrapping_sub(lo), 0xBF00_0000);
+        c.bus.write32(GAME_GP.wrapping_sub(hi), 0x3F00_0000);
+        c.bus.write32(
+            item + dir_off,
+            [0u32, 1, 0xFFFF_FFFF][(seed / 36 % 3) as usize],
+        );
+        c.bus
+            .write32(item + counter_off, [0u32, 2, 40][(seed / 108 % 3) as usize]);
+        redraw_fixture(c, DATA + 0x1000, seed);
+        item
+    }
+
+    #[test]
+    fn menu_sys_color_channel_item_handle_input_matches() {
+        check_lohi(
+            ee::s09::f_002ced78__generated,
+            menu_sys_color_channel_item_handle_input,
+            972,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ced_78, 2);
+                let _ = &mut r;
+                let item = axis_step_fixture(c, seed, 0x3fb0, 0x3fac, 0x20, 0x1c);
+                // Step scale; channel values mid-range, near 1 and near 0, so
+                // a step lands inside or is clamped at either end.
+                c.bus.write32(GAME_GP.wrapping_sub(0x3fa8), 0x3DCC_CCCD);
+                c.bus.write32(item + 0x14, DATA + 0x3000);
+                c.bus.write32(item + 0x18, seed / 324 % 3);
+                for (i, v) in [0x3F00_0000u32, 0x3F78_51EC, 0x3CF5_C28F]
+                    .into_iter()
+                    .enumerate()
+                {
+                    c.bus.write32(DATA + 0x3000 + 4 * i as u32, v);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_float_range_item_handle_input_matches() {
+        check_lohi(
+            ee::s09::f_002ce1f0__generated,
+            menu_sys_float_range_item_handle_input,
+            972,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ce1_f0, 2);
+                let _ = &mut r;
+                let item = axis_step_fixture(c, seed, 0x3fc4, 0x3fc0, 0x28, 0x24);
+                // Counter weight and step scale; the range [-2, 4] with the
+                // value mid-range, near the max or near the min.
+                c.bus.write32(GAME_GP.wrapping_sub(0x3fbc), 0x3F00_0000);
+                c.bus.write32(GAME_GP.wrapping_sub(0x3fb8), 0x3DCC_CCCD);
+                let value = DATA + 0x3000;
+                c.bus.write32(item + 0x18, value);
+                c.bus.write32(item + 0x1c, 0xC000_0000);
+                c.bus.write32(item + 0x20, 0x4080_0000);
+                c.bus.write32(
+                    value,
+                    [0x3F80_0000u32, 0x4079_999A, 0xBFF3_3333][(seed / 324 % 3) as usize],
+                );
             },
         );
     }
