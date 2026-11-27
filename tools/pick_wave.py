@@ -95,6 +95,15 @@ def main(argv):
             continue
         size[a] = max(e - a, 4)
         name[a] = p[2].strip() if len(p) > 2 else ''
+    # The symbol table also holds the small functions the Ghidra list leaves out.
+    for l in open('generated/ee-symbols.tsv'):
+        p = l.rstrip('\n').split('\t')
+        if l.startswith('#') or len(p) < 3:
+            continue
+        a, e = int(p[1], 16), int(p[2], 16)
+        if a not in size:
+            size[a] = max(e - a, 4)
+            name[a] = ''
     syms = load_symbols()
     keep = focus_filter(name)
     if keep:

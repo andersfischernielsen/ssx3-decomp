@@ -72,6 +72,12 @@ def sizes():
         except (ValueError, IndexError):
             continue
         out[a] = max(e - a, 4)
+    for l in open(os.path.join(R, "generated/ee-symbols.tsv")):
+        p = l.rstrip("\n").split("\t")
+        if l.startswith("#") or len(p) < 3:
+            continue
+        a, e = int(p[1], 16), int(p[2], 16)
+        out.setdefault(a, max(e - a, 4))
     return out
 
 
