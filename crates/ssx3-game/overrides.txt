@@ -10529,6 +10529,9 @@
 # Phase 2 wave: oc1075, oc1080, oc1082, oc1083, oc1084, oc1087, oc1094, oc1096, oc1098, oc1099, oc1100, oc1101, oc1102, oc1103, oc1104, oc1106, oc1107, oc1108, oc1109
 # Phase 2 wave: oc1075, oc1080, oc1099, oc1103, oc1104, oc1109, oc1097, oc1105, oc1110, oc1111, oc1112, oc1113, oc1116, oc1117, oc1119
 # Phase 2 wave: oc1105, oc1117, oc1114, oc1115, oc1118
+# Phase 2 wave: oc1120, oc1121, oc1122, oc1123
+# Phase 2 wave: oc1120, oc1121, oc1122, oc1123
+# Phase 2 wave: oc1123
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
@@ -11810,3 +11813,28 @@
 0x00406f78    libmpeg_IpuVdec
 0x004070f0    libmpeg_ShowBits
 0x004071f8    libmpeg_FlushBits
+0x004060c8    libmpeg_DecodeSlices
+0x00406318    libmpeg_DecodeSlice
+0x00406510    libmpeg_SkippedMacroblock
+0x004065d0    libmpeg_DecodeMacroblock
+0x00406a78    libmpeg_DecodeMotionVector
+0x00406b00    libmpeg_MotionVectors
+0x00406ca0    libmpeg_MotionVector
+0x00406ec8    libmpeg_IpuWaitCmd
+0x004074b8    libmpeg_SliceHeaderTail
+0x00407630    libmpeg_PictureHeader
+0x00407820    libmpeg_PictureCodingExtension
+0x00407a10    libmpeg_ExtraBitInformation
+0x00407a58    libmpeg_UpdateTemporalRef
+0x00407ad0    libmpeg_GroupOfPicturesHeader
+0x00407b70    libmpeg_QuantMatrixExtension
+0x00407c38    libmpeg_PictureDisplayExtension
+0x00407d30    libmpeg_CopyrightExtension
+0x004081d8    libmpeg_CheckOutputBuffer
+0x00408278    libmpeg_CopyOutputRaw
+0x00408530    libmpeg_ComputePts
+0x00408af8    libmpeg_IpuFromDmaStart
+0x00408b80    libmpeg_IpuCsc
+0x00408df0    libmpeg_IpuCscDma
+0x00409088    libmpeg_ConvertPictureCsc
+0x004061e8    libmpeg_SliceHeader
