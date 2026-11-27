@@ -43,6 +43,8 @@ pub(crate) use crate::game::render::particle::at as at_2;
 pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
 pub(crate) use crate::game::scripter::ssxscriptengine::script_obj_base_dtor_forward;
 pub(crate) use crate::game::sound::soundsys::s0_addr;
+pub(crate) use crate::game::visualfx::boardsparkfx::board_fx_dtor_head;
+pub(crate) use crate::game::visualfx::boardsparkfx::board_fx_dtor_tail;
 use crate::game::visualfx::boardwakefx as bw;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
@@ -319,6 +321,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_speed_boost_streamer_fx_dtor,
         "cSpeedBoostStreamerFX_dtor",
     ),
+    (0x002d_cda0, board_wake_fx_dtor, "cBoardWakeFX_dtor"),
+    (0x002d_f1c8, cdynamic_spray_fx_dtor, "cDynamicSprayFX_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -17968,6 +17972,288 @@ pub fn c_transition_man_start_2(c: &mut Cpu) {
     })
 }
 
+/// `void cBoardWakeFX_dtor(cBoardWakeFX* self, int flags)` (0x2dcda0): the
+/// vtable head (wake vtables), frees the buffers at `+0xc` and `+0x10`
+/// (`EA_MemFree`, when set), per flag bit 1 destroys the rider, per bit 0
+/// frees `self`.
+pub fn board_wake_fx_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x130 };
+        board_fx_dtor_head(c, 0x0048_8da8, 0x0048_8df0, 0xc0);
+        c.cycles += 3;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+        if c.g[A0][0] == 0 {
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        } else {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x002d_ced0)?;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        }
+        c.cycles += 2;
+        let no_second = c.g[A0][0] == 0;
+        c.g[V0][0] = c.g[S1][0] & 0x2;
+        if !no_second {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x002d_cee4)?;
+            c.g[V0][0] = c.g[S1][0] & 0x2;
+        }
+        c.cycles += 2;
+        let no_rider = c.g[V0][0] == 0;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+        if !no_rider {
+            c.cycles += 4;
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0011_b978, 0x002d_cefc)?;
+            c.g[V0][0] = c.g[S1][0] & 0x1;
+        }
+        board_fx_dtor_tail(c, frame, 0x002d_cf10)
+    })
+}
+
+/// `cDynamicSprayFX::~cDynamicSprayFX(int flags)` (0x2df1c8): destructor of the
+/// board spray effect. `a0` this, `a1` flags (bit 0: delete this, bit 1: also run
+/// the owning rider's destructor). Points the rider's three table pointers
+/// (`+0x6e8`, `+0x6d0`, `+0x6c0`) at the effect's static tables first; with flags
+/// 0 it also builds stack copies of the two tables patched with this object's
+/// offset (the compiler's inlined base-class unwinding) and points the rider at
+/// those. Then it destroys the 0x210-byte emitters of the array at `this+0x28`
+/// (count at `-0x10`, back to front, through their vtable slot `+0x20/+0x24`),
+/// frees that array, the buffer at `this+0x2c` and the one at `this+0x7c`
+/// (`EA_MemFree`), calls `Rider_dtor(*this, 0)` for flag 2 and
+/// `__builtin_delete(this)` for flag 1. Kept as the generated block structure
+/// (labels are the generated block addresses) so every register and cycle
+/// matches.
+#[allow(unreachable_code, unused_assignments, unused_variables)]
+pub fn cdynamic_spray_fx_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2df2ec: {
+            c.cycles += 23;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x150));
+            c.g[V0][0] = 0x490000;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x130));
+            c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7ca0));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x140));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x120));
+            c.g[T0][0] = c.g[A1][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x110));
+            c.g[A0][0] = 0x460000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x100), c.g[RA][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x6470));
+            c.g[A3][0] = c.g[V0][0];
+            c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A2][0]);
+            c.g[V1][0] = 0x490000;
+            c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+            c.g[T3][0] = c.g[V1][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7c58));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x6d0), c.g[A0][0]);
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            let t = c.g[T0][0] != 0u64;
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x6c0), c.g[V1][0]);
+            if t {
+                break 'b_2df2ec;
+            } else {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[A2][0];
+                c.g[V1][0] = c.g[SP][0];
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+                c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                'l_2df234: loop {
+                    c.cycles += 11;
+                    c.g[A0][0] = c.ld(c.g[A1][0] as u32);
+                    c.g[A2][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x8));
+                    c.g[T2][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x10));
+                    c.g[T4][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x18));
+                    c.sd(c.g[V1][0] as u32, c.g[A0][0]);
+                    c.sd((c.g[V1][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+                    c.sd((c.g[V1][0] as u32).wrapping_add(0x10), c.g[T2][0]);
+                    c.sd((c.g[V1][0] as u32).wrapping_add(0x18), c.g[T4][0]);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+                    let t = c.g[A1][0] != c.g[V0][0];
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002df234);
+                        }
+                        continue 'l_2df234;
+                    } else {
+                        c.cycles += 14;
+                        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x7ca0));
+                        c.g[A2][0] = c.ld(c.g[A1][0] as u32);
+                        c.sd(c.g[V1][0] as u32, c.g[A2][0]);
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
+                        c.g[A2][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x7c58));
+                        c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
+                        c.g[T2][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
+                        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                        c.g[A1][0] = c.g[T1][0];
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x130));
+                        c.g[A3][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                        c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                        'l_2df298: loop {
+                            c.cycles += 11;
+                            c.g[V0][0] = c.ld(c.g[A2][0] as u32);
+                            c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+                            c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+                            c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
+                            c.sd(c.g[A1][0] as u32, c.g[V0][0]);
+                            c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                            c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[A0][0]);
+                            c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T4][0]);
+                            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                            let t = c.g[A2][0] != c.g[T2][0];
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002df298);
+                                }
+                                continue 'l_2df298;
+                            } else {
+                                c.cycles += 10;
+                                c.g[V0][0] = c.ld(c.g[A2][0] as u32);
+                                c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+                                c.sd(c.g[A1][0] as u32, c.g[V0][0]);
+                                c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                                c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x7c58));
+                                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x8));
+                                c.sw((c.g[A0][0] as u32).wrapping_add(0x6c0), c.g[T1][0]);
+                                c.g[V1][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                                c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V1][0]);
+                                break 'b_2df2ec;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        'b_2df348: {
+            c.cycles += 4;
+            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+            c.g[S3][0] = c.g[T0][0] & 0x1;
+            let t = c.g[A1][0] == 0u64;
+            c.g[S2][0] = c.g[T0][0] & 0x2;
+            if t {
+                break 'b_2df348;
+            } else {
+                'b_2df340: {
+                    c.cycles += 6;
+                    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_sub(0x10));
+                    c.g[V0][0] = 0x210;
+                    c.mult(0, 4, 3, 2);
+                    c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    if c.g[A1][0] == c.g[S0][0] {
+                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                        break 'b_2df340;
+                    } else {
+                        c.cycles += 1;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x210));
+                        'l_2df318: loop {
+                            c.cycles += 9;
+                            c.g[A1][0] = 0u64;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f8));
+                            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
+                            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
+                            let t = c.g[V1][0] as u32;
+                            c.g[RA][0] = sx(0x002df330);
+                            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            call_ptr(c, t, 0x002df330)?;
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                            if c.g[V0][0] != c.g[S0][0] {
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x210));
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002df318);
+                                }
+                                continue 'l_2df318;
+                            } else {
+                                c.cycles += 1;
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                break 'b_2df340;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x002df348);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x10));
+                call_ptr(c, 0x00317e98, 0x002df348)?;
+                break 'b_2df348;
+            }
+        }
+        'b_2df360: {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2c));
+            if c.g[A0][0] == 0u64 {
+                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
+                break 'b_2df360;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x002df35c);
+                call_ptr(c, 0x00317e98, 0x002df35c)?;
+                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
+                break 'b_2df360;
+            }
+        }
+        'b_2df370: {
+            c.cycles += 2;
+            let t = c.g[A0][0] == 0u64;
+
+            if t {
+                break 'b_2df370;
+            } else {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x002df370);
+                call_ptr(c, 0x00317e98, 0x002df370)?;
+                break 'b_2df370;
+            }
+        }
+        'b_2df384: {
+            c.cycles += 2;
+            let t = c.g[S2][0] == 0u64;
+
+            if t {
+                break 'b_2df384;
+            } else {
+                c.cycles += 3;
+                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                c.g[RA][0] = sx(0x002df384);
+                c.g[A1][0] = 0u64;
+                call_ptr(c, 0x0011b978, 0x002df384)?;
+                break 'b_2df384;
+            }
+        }
+        'b_2df398: {
+            c.cycles += 2;
+            let t = c.g[S3][0] == 0u64;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x140));
+            if t {
+                break 'b_2df398;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x002df394);
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x00317e50, 0x002df394)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x140));
+                break 'b_2df398;
+            }
+        }
+        c.cycles += 6;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x100));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x150));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -22983,6 +23269,119 @@ pub(crate) mod tests {
                 c.bus.write32(GATE, GATE_MAGIC);
                 c.g[A0][0] = sx(DATA + 0x1000);
                 c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::check_reaching;
+
+    pub(crate) use crate::game::visualfx::boardsparkfx::tests::oc1075_board_setup;
+
+    /// `cBoardWakeFX_dtor`: flags 0..7, with and without the two buffers.
+    #[test]
+    fn board_wake_fx_dtor_matches() {
+        check_reaching(
+            ee::s09::f_002dcda0__generated,
+            board_wake_fx_dtor,
+            160,
+            &[0x002d_ced0, 0x002d_cee4, 0x002d_cefc, 0x002d_cf10],
+            &|c, seed| oc1075_board_setup(c, seed, 0x002d_cda0, true),
+        );
+    }
+
+    /// Gate word of the oc1076 callee fakes (in the machine's RAM).
+    pub(crate) const OC1076_CTRL: u32 = DATA + 0xf_8000;
+
+    pub(crate) const OC1076_MAGIC: u32 = 0x1076_c0de;
+
+    pub(crate) static OC1076_PREV_FREE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1076_PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1076_PREV_RIDER_DTOR: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemFree` (0x317e98), gated: logs the call (all registers) and returns.
+    pub(crate) fn oc1076_fake_free(c: &mut Cpu) {
+        if c.bus.read32(OC1076_CTRL) != OC1076_MAGIC {
+            return fakes::fall_back(c, &OC1076_PREV_FREE, ee::s10::f_00317e98__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e98)
+    }
+
+    /// `__builtin_delete` (0x317e50), gated.
+    pub(crate) fn oc1076_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(OC1076_CTRL) != OC1076_MAGIC {
+            return fakes::fall_back(c, &OC1076_PREV_DELETE, ee::s10::f_00317e50__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e50)
+    }
+
+    /// `Rider_dtor` (0x11b978), gated.
+    pub(crate) fn oc1076_fake_rider_dtor(c: &mut Cpu) {
+        if c.bus.read32(OC1076_CTRL) != OC1076_MAGIC {
+            return fakes::fall_back(c, &OC1076_PREV_RIDER_DTOR, ee::s00::f_0011b978__generated);
+        }
+        fakes::fake_call(c, 0x0011_b978)
+    }
+
+    pub(crate) fn oc1076_hook_callees() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            oc1076_fake_free,
+            &OC1076_PREV_FREE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1076_fake_delete,
+            &OC1076_PREV_DELETE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0011B978),
+            oc1076_fake_rider_dtor,
+            &OC1076_PREV_RIDER_DTOR,
+        );
+    }
+
+    /// `cDynamicSprayFX::~cDynamicSprayFX`: flags 0 (stack table copies), 1
+    /// (delete), 2 (rider dtor), 3, and ones with other bits; the emitter array
+    /// absent or with 0..3 elements (virtual dtor through a fake vtable slot);
+    /// the two buffers present or absent. `EA_MemFree`, `Rider_dtor` and
+    /// `__builtin_delete` are gated fakes that log their registers; fakes
+    /// unwind at a random call.
+    #[test]
+    fn cdynamic_spray_fx_dtor_matches() {
+        const THIS: u32 = DATA + 0x100;
+        const RIDER: u32 = DATA + 0x1000;
+        const ARR: u32 = DATA + 0x2010;
+        const VT: u32 = DATA + 0x4000;
+        oc1076_hook_callees();
+        check(
+            ee::s09::f_002df1c8__generated,
+            cdynamic_spray_fx_dtor,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2df1c8, 9);
+                elf_image(c);
+                c.bus.write32(OC1076_CTRL, OC1076_MAGIC);
+                let flags = [0u32, 1, 2, 3, 4, 7][(seed % 6) as usize];
+                fill(c, &mut r, THIS, 0x20);
+                c.bus.write32(THIS, RIDER);
+                // Emitter array: count at -0x10, elements of 0x210 bytes.
+                let n = r.next_u32() % 4;
+                let has_arr = seed % 5 != 3;
+                c.bus.write32(THIS + 0x28, if has_arr { ARR } else { 0 });
+                c.bus.write32(ARR - 0x10, n);
+                c.bus.write16(VT + 0x20, (r.next_u32() % 0x40 * 4) as u16);
+                c.bus.write32(VT + 0x24, FAKE);
+                for i in 0..n {
+                    c.bus.write32(ARR + 0x210 * i + 0x1f8, VT);
+                }
+                c.bus
+                    .write32(THIS + 0x2c, if seed % 3 == 1 { 0 } else { DATA + 0x6000 });
+                c.bus
+                    .write32(THIS + 0x7c, if seed % 4 == 2 { 0 } else { DATA + 0x7000 });
+                c.g[A0][0] = THIS as u64;
+                c.g[A1][0] = flags as u64;
             },
         );
     }

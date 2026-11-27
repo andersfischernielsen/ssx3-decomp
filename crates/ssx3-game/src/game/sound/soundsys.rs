@@ -1279,6 +1279,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_sound_manager_alloc_spu_block,
         "PS2SoundManager_AllocSpuBlock",
     ),
+    (0x002a_6b50, crowd_audio_dtor, "CrowdAudio_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -39040,6 +39041,329 @@ pub fn ps2_sound_manager_alloc_spu_block(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// `CrowdAudio_dtor` (0x2a6b50), a.k.a. `cCrowdSys::~cCrowdSys`.
+
+/// `void CrowdAudio_dtor(CrowdAudio* self, int flags)` (0x2a6b50): resets the
+/// vtables (flags 0: also a stack copy of the sound system's and the bank
+/// manager's vtables with the this-adjust of entry 1 fixed up), unloads the
+/// crowd audio, clears the global crowd system (`gp+0x608`), deletes the three
+/// sample lists of each of the three crowd entries (back to front), runs the
+/// MIDI banks destructor, and per flag bit 1 (`& 2`) destroys the bank manager
+/// and the sound manager reference, per bit 0 frees `self`.
+pub fn crowd_audio_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0xc0);
+        c.g[V0][0] = 0x0048_0000;
+        frame.save(c, S0, 0xb0);
+        c.g[V0][0] = sx(0x0048_37f8);
+        frame.save(c, S1, 0xa0);
+        c.g[A3][0] = 0x0048_0000;
+        frame.save(c, S2, 0x90);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x80);
+        c.g[A2][0] = sx(0x0048_3818);
+        frame.save(c, S4, 0x70);
+        c.g[A0][0] = 0x0048_0000;
+        frame.save_ra(c, 0x60);
+        c.g[A0][0] = sx(0x0048_3b48);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        c.g[T0][0] = 0x0048_0000;
+        c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+        c.g[T5][0] = sx(0x0048_3838);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1d8));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xab0), c.g[A0][0]);
+        c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+        let flags_set = c.g[S0][0] != 0;
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x1d4), c.g[T5][0]);
+        if !flags_set {
+            // The sound system's vtable (0x483818) and the bank manager's
+            // (0x483838), copied to the stack with entry 1's this-adjust
+            // fixed up; the objects' vtable pointers then point at the copies.
+            c.cycles += 40;
+            c.g[A1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x3818));
+            c.g[T4][0] = sx(sp(c).wrapping_add(0x20));
+            c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+            c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
+            c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+            c.sd(sp(c), c.g[A1][0]);
+            c.sd(sp(c).wrapping_add(0x18), c.g[A0][0]);
+            c.sd(sp(c).wrapping_add(0x10), c.g[V1][0]);
+            c.sd(sp(c).wrapping_add(0x8), c.g[V0][0]);
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A0][0] = c.lhu((c.g[A2][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
+            c.g[T3][0] = c.ld((c.g[T0][0] as u32).wrapping_add(0x3838));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[SP][0]);
+            c.g[V1][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x28));
+            c.g[T1][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A3][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x1d8));
+            c.g[T2][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x118));
+            c.g[T0][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x18));
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[A2][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x30));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sd(sp(c).wrapping_add(0x28), c.g[A3][0]);
+            c.sd(sp(c).wrapping_add(0x48), c.g[V1][0]);
+            c.sh(sp(c).wrapping_add(0x8), c.g[A0][0]);
+            c.sd(sp(c).wrapping_add(0x20), c.g[T3][0]);
+            c.sd(sp(c).wrapping_add(0x30), c.g[T2][0]);
+            c.sd(sp(c).wrapping_add(0x38), c.g[T0][0]);
+            c.sd(sp(c).wrapping_add(0x40), c.g[A2][0]);
+            c.sd(sp(c).wrapping_add(0x50), c.g[A1][0]);
+            c.sw((c.g[T1][0] as u32).wrapping_add(0x1d4), c.g[T4][0]);
+            c.g[V1][0] = c.lhu((c.g[T5][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x120));
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sh(sp(c).wrapping_add(0x28), c.g[V1][0]);
+        }
+        // Unload the crowd audio; clear the global crowd system.
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[S4][0] = c.g[S0][0] & 0x1;
+        Callee {
+            addr: 0x002a_6f38,
+            f: ee::s08::CrowdAudio_Unload,
+        }
+        .call(c, 0x002a_6c64)?;
+        c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.sw((c.g[GP][0] as u32).wrapping_add(0x608), 0);
+        let no_entries = c.g[S2][0] == 0;
+        c.g[S3][0] = c.g[S0][0] & 0x2;
+        if no_entries {
+            // 'b_2a6cb4: skip the entries.
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S1][0];
+        } else {
+            c.cycles += 3;
+            c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x118));
+            let none = c.g[S2][0] == c.g[S0][0];
+            c.g[A0][0] = c.g[S1][0];
+            if !none {
+                // The three crowd entries (0x54 bytes each), back to front:
+                // delete their anticipate, fall and trick sample lists.
+                c.cycles += 2;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x54));
+                loop {
+                    c.cycles += 11;
+                    c.g[A1][0] = 0x2;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x30));
+                    Callee {
+                        addr: 0x002a_4be0,
+                        f: ee::s08::CrowdAudio_DeleteSampleList,
+                    }
+                    .call(c, 0x002a_6c94)?;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+                    c.g[A1][0] = 0x2;
+                    Callee {
+                        addr: 0x002a_4be0,
+                        f: ee::s08::CrowdAudio_DeleteSampleList,
+                    }
+                    .call(c, 0x002a_6ca0)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0x2;
+                    Callee {
+                        addr: 0x002a_4be0,
+                        f: ee::s08::CrowdAudio_DeleteSampleList,
+                    }
+                    .call(c, 0x002a_6cac)?;
+                    if c.g[S2][0] != c.g[S0][0] {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x54));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002a_6c88);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                // The loop exit joins 'b_2a6cb4 (one more block cycle).
+                c.cycles += 1;
+                c.g[A0][0] = c.g[S1][0];
+            }
+            // `none` (self+0x1c == self+0x118: impossible for a real object)
+            // jumps straight to the MIDI banks destructor, skipping that cycle.
+        }
+        // The MIDI banks destructor, then the optional owners.
+        c.cycles += 4;
+        c.g[A1][0] = 0;
+        Callee {
+            addr: 0x002a_82d8,
+            f: ee::s08::MIDIBanks_dtor,
+        }
+        .call(c, 0x002a_6cc0)?;
+        if c.g[S3][0] != 0 {
+            c.cycles += 7;
+            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0028_bb10, 0x002a_6cd4)?;
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
+            Callee {
+                addr: 0x002a_dee8,
+                f: ee::s08::SoundManagerRef_dtor,
+            }
+            .call(c, 0x002a_6ce4)?;
+        }
+        c.cycles += 2;
+        let no_free = c.g[S4][0] == 0;
+        frame.restore(c, S0, 0xb0);
+        if !no_free {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e50, 0x002a_6cf4)?;
+            frame.restore(c, S0, 0xb0);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `MIDIBanks_dtor` (0x2a82d8), a.k.a. `cMidiSys::~cMidiSys`.
+
+/// `void MIDIBanks_dtor(MIDIBanks* self, int flags)` (0x2a82d8): resets the
+/// vtables (flags 0: also the stack copies with the this-adjust fixed up),
+/// frees the MIDI banks block at `+0x10`, clears the global (`gp+0x654`), shuts
+/// the MIDI player down, runs the base destructor and, per flag bit 1
+/// (`& 2`), destroys the bank manager and the sound manager reference, per
+/// bit 0 frees `self`.
+#[allow(dead_code)]
+pub fn midi_banks_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = 0x0048_0000;
+        frame.save(c, S0, 0x80);
+        c.g[V0][0] = sx(0x0048_3a48);
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x60);
+        c.g[A3][0] = 0x0048_0000;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        c.g[A2][0] = sx(0x0048_39f0);
+        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+        c.g[A0][0] = 0x0048_0000;
+        c.g[A0][0] = sx(0x0048_3b48);
+        c.g[T0][0] = 0x0048_0000;
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1d8));
+        c.g[T5][0] = sx(0x0048_3a10);
+        c.g[S1][0] = c.g[A1][0];
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xab0), c.g[A0][0]);
+        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+        let flags_set = c.g[S1][0] != 0;
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x1d4), c.g[T5][0]);
+        if !flags_set {
+            // Stack copies of the vtables at 0x4839f0 and 0x483a10 with
+            // entry 1's this-adjust fixed up (the sound system sits 0x14
+            // below the MIDI system, the bank manager 0x1c below).
+            c.cycles += 40;
+            c.g[A1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x39f0));
+            c.g[T4][0] = sx(sp(c).wrapping_add(0x20));
+            c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+            c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
+            c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+            c.sd(sp(c), c.g[A1][0]);
+            c.sd(sp(c).wrapping_add(0x18), c.g[A0][0]);
+            c.sd(sp(c).wrapping_add(0x10), c.g[V1][0]);
+            c.sd(sp(c).wrapping_add(0x8), c.g[V0][0]);
+            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[A0][0] = c.lhu((c.g[A2][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
+            c.g[T3][0] = c.ld((c.g[T0][0] as u32).wrapping_add(0x3a10));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[SP][0]);
+            c.g[V1][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x28));
+            c.g[T1][0] = c.lw(c.g[S0][0] as u32);
+            c.g[A3][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x1d8));
+            c.g[T2][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x14));
+            c.g[T0][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x18));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[A2][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x30));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sd(sp(c).wrapping_add(0x28), c.g[A3][0]);
+            c.sd(sp(c).wrapping_add(0x48), c.g[V1][0]);
+            c.sh(sp(c).wrapping_add(0x8), c.g[A0][0]);
+            c.sd(sp(c).wrapping_add(0x20), c.g[T3][0]);
+            c.sd(sp(c).wrapping_add(0x30), c.g[T2][0]);
+            c.sd(sp(c).wrapping_add(0x38), c.g[T0][0]);
+            c.sd(sp(c).wrapping_add(0x40), c.g[A2][0]);
+            c.sd(sp(c).wrapping_add(0x50), c.g[A1][0]);
+            c.sw((c.g[T1][0] as u32).wrapping_add(0x1d4), c.g[T4][0]);
+            c.g[V1][0] = c.lhu((c.g[T5][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1c));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sh(sp(c).wrapping_add(0x28), c.g[V1][0]);
+        }
+        // Free the MIDI banks block, if any.
+        c.cycles += 3;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e98, 0x002a_83e8)?;
+        }
+        c.cycles += 8;
+        c.sw((c.g[GP][0] as u32).wrapping_add(0x654), 0);
+        call_ptr(c, 0x003b_9880, 0x002a_83f0)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0028_fea0, 0x002a_83fc)?;
+        c.g[V0][0] = c.g[S1][0] & 0x2;
+        let no_owners = c.g[V0][0] == 0;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+        if !no_owners {
+            c.cycles += 8;
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0028_bb10, 0x002a_8414)?;
+            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
+            Callee {
+                addr: 0x002a_dee8,
+                f: ee::s08::SoundManagerRef_dtor,
+            }
+            .call(c, 0x002a_8424)?;
+            c.g[V0][0] = c.g[S1][0] & 0x1;
+        }
+        c.cycles += 2;
+        let no_free = c.g[V0][0] == 0;
+        frame.restore(c, S0, 0x80);
+        if !no_free {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0031_7e50, 0x002a_8438)?;
+            frame.restore(c, S0, 0x80);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -52817,6 +53141,55 @@ pub(crate) mod tests {
                     c.bus.write32(block + 0x14, next);
                 }
             },
+        );
+    }
+
+    pub(crate) use crate::game::visualfx::avalanche::tests::oc1075_machine;
+
+    pub(crate) const OC1075_THIS: u32 = DATA + 0x1000;
+
+    pub(crate) const OC1075_BASE: u32 = DATA + 0x2000;
+
+    pub(crate) const OC1075_SUB: u32 = DATA + 0x4000;
+
+    /// The object layout `CrowdAudio_dtor` / `MIDIBanks_dtor` touch: `*self`
+    /// (+0x1d8 the sound sub-object, +0xab0, +0x1d4 written) and `self+0x10`.
+    pub(crate) fn oc1075_midi_like_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        let mut r = oc1075_machine(c, seed, entry as u64, 8);
+        c.bus.write32(OC1075_THIS, OC1075_BASE);
+        c.bus.write32(OC1075_BASE + 0x1d8, OC1075_SUB);
+        c.bus.write32(
+            OC1075_THIS + 0x10,
+            if seed % 5 == 0 { 0 } else { DATA + 0x5000 },
+        );
+        c.bus.write32(OC1075_SUB + 4, r.next_u32());
+        c.bus.write32(OC1075_BASE + 0xab0, r.next_u32());
+        c.bus.write32(OC1075_BASE + 0x1d4, r.next_u32());
+        c.g[A0][0] = sx(OC1075_THIS);
+        c.g[A1][0] = (seed % 8) as u64;
+        c.pc = entry;
+    }
+
+    /// `CrowdAudio_dtor`: flags 0..7 (stack vtable copies only for 0; the
+    /// bank manager and sound reference for bit 1; the free for bit 0), the
+    /// three crowd entries' sample lists, callees that unwind.
+    #[test]
+    fn crowd_audio_dtor_matches() {
+        check_reaching(
+            ee::s08::f_002a6b50__generated,
+            crowd_audio_dtor,
+            160,
+            &[
+                0x002a_6c64,
+                0x002a_6c94,
+                0x002a_6ca0,
+                0x002a_6cac,
+                0x002a_6cc0,
+                0x002a_6cd4,
+                0x002a_6ce4,
+                0x002a_6cf4,
+            ],
+            &|c, seed| oc1075_midi_like_setup(c, seed, 0x002a_6b50),
         );
     }
 }

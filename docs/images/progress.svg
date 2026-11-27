@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="93" viewBox="0 0 800 93" role="img"
-     aria-label="Ported to Rust: 10837 of 11844 functions">
+     aria-label="Ported to Rust: 11086 of 11844 functions">
   <style>
     .track { fill: #8b949e; fill-opacity: 0.3; }
     .fill { fill: #1e90e0; }
@@ -12,10 +12,10 @@
   </style>
   <text x="0" y="14" class="label strong">All</text>
   <rect x="160" y="3" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="3" width="448" height="14" rx="2" class="fill"/>
-  <text x="658" y="14" class="pct">91%</text>
-  <text x="800" y="10" text-anchor="end" class="sub">10,837 / 11,844 functions</text>
-  <text x="800" y="19" text-anchor="end" class="mb">2.97 / 3.20 MB</text>
+  <rect x="160" y="3" width="459" height="14" rx="2" class="fill"/>
+  <text x="658" y="14" class="pct">94%</text>
+  <text x="800" y="10" text-anchor="end" class="sub">11,086 / 11,844 functions</text>
+  <text x="800" y="19" text-anchor="end" class="mb">3.03 / 3.20 MB</text>
   <text x="0" y="38" class="label">Game logic</text>
   <rect x="160" y="27" width="490" height="14" rx="2" class="track"/>
   <rect x="160" y="27" width="490" height="14" rx="2" class="fill"/>
@@ -24,14 +24,14 @@
   <text x="800" y="43" text-anchor="end" class="mb">1.06 / 1.06 MB</text>
   <text x="0" y="62" class="label">Front end, graphics, sound</text>
   <rect x="160" y="51" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="51" width="440" height="14" rx="2" class="fill"/>
-  <text x="658" y="62" class="pct">90%</text>
-  <text x="800" y="58" text-anchor="end" class="sub">4,105 / 4,569 functions</text>
-  <text x="800" y="67" text-anchor="end" class="mb">1.30 / 1.42 MB</text>
+  <rect x="160" y="51" width="465" height="14" rx="2" class="fill"/>
+  <text x="658" y="62" class="pct">95%</text>
+  <text x="800" y="58" text-anchor="end" class="sub">4,335 / 4,569 functions</text>
+  <text x="800" y="67" text-anchor="end" class="mb">1.36 / 1.42 MB</text>
   <text x="0" y="86" class="label">Engine, libraries, online</text>
   <rect x="160" y="75" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="75" width="410" height="14" rx="2" class="fill"/>
+  <rect x="160" y="75" width="413" height="14" rx="2" class="fill"/>
   <text x="658" y="86" class="pct">84%</text>
-  <text x="800" y="82" text-anchor="end" class="sub">2,774 / 3,317 functions</text>
+  <text x="800" y="82" text-anchor="end" class="sub">2,793 / 3,317 functions</text>
   <text x="800" y="91" text-anchor="end" class="mb">0.61 / 0.73 MB</text>
 </svg>

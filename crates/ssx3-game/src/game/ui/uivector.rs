@@ -3,8 +3,10 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -23,6 +25,7 @@ pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
 pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::ui::uitext::spch_ea;
+pub(crate) use crate::game::ui::uitext::ui_text_field;
 pub(crate) use crate::game::ui::uithing::ui_anim_update;
 pub(crate) use crate::game::wscript::wscriptman::p;
 use crate::guest::Addr;
@@ -86,6 +89,103 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x003a_34c0, cui_vector_set_ui_data, "cUIVector_setUIData"),
     (0x003a_4e80, uiicon_dtor, "UIIcon_dtor"),
+    (0x003a_3f08, ui_vector_return_self, "UIVector_ReturnSelf"),
+    (
+        0x003a_3f48,
+        oc1079_ui_engine_static_init_destroy,
+        "UIEngine_StaticInitDestroy",
+    ),
+    (0x003a_4900, ui_object_ctor_2, "UIObject_ctor_2"),
+    (0x003a_4da8, ui_sound_base_dtor, "UISound_BaseDtor"),
+    (0x003a_4df0, uiicon_ctor_2, "UIIcon_ctor_2"),
+    (0x003a_4e38, uiicon_ctor, "UIIcon_ctor"),
+    (0x003a_4fb8, c_ui_group_set_offset, "cUIGroup_SetOffset"),
+    (0x003a_4fe0, c_ui_group_ctor_2, "cUIGroup_ctor_2"),
+    (0x003a_5028, c_ui_group_ctor, "cUIGroup_ctor"),
+    (0x003a_5100, c_ui_group_first_child, "cUIGroup_FirstChild"),
+    (0x003a_5120, c_ui_group_last_child, "cUIGroup_LastChild"),
+    (0x003a_5140, ui_group_get_child_at, "cUIGroup_GetChildAt"),
+    (
+        0x003a_5160,
+        ui_group_push_front_child,
+        "cUIGroup_PushFrontChild",
+    ),
+    (
+        0x003a_5180,
+        ui_group_push_back_child,
+        "cUIGroup_PushBackChild",
+    ),
+    (0x003a_5230, ui_menu_ctor, "UIMenu_ctor"),
+    (0x003a_5420, ui_pair_ctor_2, "UIPair_ctor_2"),
+    (0x003a_5468, ui_pair_ctor, "UIPair_ctor"),
+    (0x003a_5530, ui_pair_set_first, "UIPair_SetFirst"),
+    (0x003a_5588, ui_pair_set_second, "UIPair_SetSecond"),
+    (0x003a_55d8, ui_list_box_ctor_2, "UIListBox_ctor_2"),
+    (0x003a_57b8, ui_state_ctor_3, "UIState_ctor_3"),
+    (0x003a_5b98, ui_screen_ctor, "UIScreen_ctor"),
+    (0x003a_5c08, ui_screen_ctor_2, "UIScreen_ctor_2"),
+    (
+        0x003a_5cf0,
+        ui_screen_add_root_child,
+        "UIScreen_AddRootChild",
+    ),
+    (0x003a_5d60, ui_text_ctor_2, "UIText_ctor_2"),
+    (0x003a_5f60, cui_scroll_ctor_2, "cUIScroll_ctor_2"),
+    (0x003a_5fa0, cui_scroll_ctor, "cUIScroll_ctor"),
+    (
+        0x003a_6038,
+        ui_scroll_set_up_thread_name,
+        "cUIScroll_SetUpThreadName",
+    ),
+    (
+        0x003a_6088,
+        ui_scroll_set_down_thread_name,
+        "cUIScroll_SetDownThreadName",
+    ),
+    (0x003a_60e0, ui_progress_ctor_2, "cUIProgress_ctor_2"),
+    (0x003a_6120, ui_progress_ctor, "cUIProgress_ctor"),
+    (0x003a_6190, ui_slider_ctor_2, "cUISlider_ctor_2"),
+    (0x003a_61d0, ui_slider_ctor, "cUISlider_ctor"),
+    (0x003a_6250, ui_text_scroll_ctor_2, "cUITextScroll_ctor_2"),
+    (
+        0x003a_63e0,
+        ui_text_scroll_list_first,
+        "cUITextScroll_ListFirst",
+    ),
+    (
+        0x003a_6400,
+        cui_text_scroll_list_last,
+        "cUITextScroll_ListLast",
+    ),
+    (
+        0x003a_6420,
+        cui_text_scroll_list_get_at,
+        "cUITextScroll_ListGetAt",
+    ),
+    (
+        0x003a_6440,
+        cui_text_scroll_list_push_front,
+        "cUITextScroll_ListPushFront",
+    ),
+    (
+        0x003a_6460,
+        cui_text_scroll_list_push_back,
+        "cUITextScroll_ListPushBack",
+    ),
+    (0x003a_64f8, ui_vector_ctor_2, "UIVector_ctor_2"),
+    (0x003a_6548, ui_object_flags_ctor, "UIObjectFlags_ctor"),
+    (0x003a_65a0, ui_list_box_flags_ctor, "UIListBoxFlags_ctor"),
+    (0x003a_65b8, ui_list_box_scroll_ctor, "UIListBoxScroll_ctor"),
+    (0x003a_65d8, ui_state_flags_ctor, "UIStateFlags_ctor"),
+    (0x003a_65e8, ui_text_flags_ctor, "UITextFlags_ctor"),
+    (
+        0x003a_6600,
+        c_ui_text_scroll_flags_ctor,
+        "cUITextScrollFlags_ctor",
+    ),
+    (0x003a_6618, ui_vector_flags_ctor, "UIVectorFlags_ctor"),
+    (0x003a_6648, ui_engine_global_ctors, "UIEngine_GlobalCtors"),
+    (0x003a_6668, ui_engine_global_dtors, "UIEngine_GlobalDtors"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1549,6 +1649,1681 @@ pub fn uiicon_dtor(c: &mut Cpu) {
     })
 }
 
+/// Where a static-init store takes its word from.
+#[derive(Clone, Copy)]
+pub(crate) enum Oc1079Src {
+    /// The float literal at `gp - offset` (a `.lit4` pool entry).
+    Lit(u32),
+    /// A literal bit pattern (0.0 or a constant the compiler built in a register).
+    Bits(u32),
+}
+
+/// The sColor/t2Vector words stored into the UI colour table
+/// (0x5083d0..0x508750), in the generated body's store order.
+pub(crate) const OC1079_STORES: &[(u32, Oc1079Src)] = &[
+    (0x005083e0, Oc1079Src::Lit(0x24d8)),
+    (0x005083f0, Oc1079Src::Lit(0x24d4)),
+    (0x00508400, Oc1079Src::Lit(0x24d0)),
+    (0x0050840c, Oc1079Src::Lit(0x24cc)),
+    (0x00508410, Oc1079Src::Lit(0x24c8)),
+    (0x00508420, Oc1079Src::Lit(0x24c4)),
+    (0x00508430, Oc1079Src::Lit(0x24c0)),
+    (0x0050843c, Oc1079Src::Lit(0x24bc)),
+    (0x00508440, Oc1079Src::Lit(0x24b8)),
+    (0x00508450, Oc1079Src::Lit(0x24b4)),
+    (0x005083d0, Oc1079Src::Bits(0x3f800000)),
+    (0x005083dc, Oc1079Src::Bits(0x3f000000)),
+    (0x005083ec, Oc1079Src::Bits(0x0)),
+    (0x005083fc, Oc1079Src::Bits(0x0)),
+    (0x00508404, Oc1079Src::Lit(0x24b0)),
+    (0x00508408, Oc1079Src::Lit(0x24ac)),
+    (0x00508414, Oc1079Src::Lit(0x24a8)),
+    (0x00508418, Oc1079Src::Lit(0x24a4)),
+    (0x0050841c, Oc1079Src::Bits(0x0)),
+    (0x0050842c, Oc1079Src::Bits(0x0)),
+    (0x00508434, Oc1079Src::Lit(0x24a0)),
+    (0x00508438, Oc1079Src::Lit(0x249c)),
+    (0x00508444, Oc1079Src::Lit(0x2498)),
+    (0x0050844c, Oc1079Src::Bits(0x3f800000)),
+    (0x005083d4, Oc1079Src::Bits(0x3f800000)),
+    (0x005083d8, Oc1079Src::Bits(0x3f800000)),
+    (0x005083e4, Oc1079Src::Bits(0x3f800000)),
+    (0x005083e8, Oc1079Src::Bits(0x3f800000)),
+    (0x005083f4, Oc1079Src::Bits(0x3f800000)),
+    (0x005083f8, Oc1079Src::Bits(0x3f800000)),
+    (0x00508424, Oc1079Src::Bits(0x3f800000)),
+    (0x00508428, Oc1079Src::Bits(0x3f800000)),
+    (0x00508448, Oc1079Src::Bits(0x3f800000)),
+    (0x00508454, Oc1079Src::Lit(0x2494)),
+    (0x00508460, Oc1079Src::Lit(0x2490)),
+    (0x0050846c, Oc1079Src::Lit(0x248c)),
+    (0x0050849c, Oc1079Src::Lit(0x2488)),
+    (0x00508458, Oc1079Src::Lit(0x2484)),
+    (0x0050845c, Oc1079Src::Bits(0x0)),
+    (0x00508464, Oc1079Src::Lit(0x2480)),
+    (0x00508468, Oc1079Src::Lit(0x247c)),
+    (0x00508470, Oc1079Src::Bits(0x3f800000)),
+    (0x0050847c, Oc1079Src::Bits(0x3f800000)),
+    (0x00508480, Oc1079Src::Bits(0x3f800000)),
+    (0x0050848c, Oc1079Src::Bits(0x0)),
+    (0x00508490, Oc1079Src::Bits(0x3f800000)),
+    (0x00508498, Oc1079Src::Lit(0x2478)),
+    (0x005084a0, Oc1079Src::Bits(0x3f800000)),
+    (0x005084ac, Oc1079Src::Bits(0x3f800000)),
+    (0x005084b0, Oc1079Src::Bits(0x3f800000)),
+    (0x005084bc, Oc1079Src::Bits(0x3f800000)),
+    (0x005084c0, Oc1079Src::Bits(0x3f800000)),
+    (0x005084cc, Oc1079Src::Bits(0x0)),
+    (0x005084d0, Oc1079Src::Bits(0x3f800000)),
+    (0x00508474, Oc1079Src::Bits(0x3f800000)),
+    (0x00508478, Oc1079Src::Bits(0x3f800000)),
+    (0x00508484, Oc1079Src::Bits(0x0)),
+    (0x00508488, Oc1079Src::Bits(0x0)),
+    (0x00508494, Oc1079Src::Lit(0x2488)),
+    (0x005084a4, Oc1079Src::Bits(0x3f800000)),
+    (0x005084a8, Oc1079Src::Bits(0x3f800000)),
+    (0x005084b4, Oc1079Src::Bits(0x3f800000)),
+    (0x005084b8, Oc1079Src::Bits(0x3f800000)),
+    (0x005084c4, Oc1079Src::Bits(0x0)),
+    (0x005084c8, Oc1079Src::Bits(0x0)),
+    (0x005084d4, Oc1079Src::Bits(0x0)),
+    (0x005084d8, Oc1079Src::Bits(0x0)),
+    (0x005084dc, Oc1079Src::Bits(0x0)),
+    (0x0050851c, Oc1079Src::Bits(0x3f000000)),
+    (0x0050852c, Oc1079Src::Lit(0x2474)),
+    (0x00508540, Oc1079Src::Lit(0x2470)),
+    (0x005084e0, Oc1079Src::Bits(0x3f800000)),
+    (0x005084ec, Oc1079Src::Bits(0x3f800000)),
+    (0x005084f0, Oc1079Src::Bits(0x3f800000)),
+    (0x005084fc, Oc1079Src::Bits(0x3f000000)),
+    (0x00508500, Oc1079Src::Bits(0x3f800000)),
+    (0x0050850c, Oc1079Src::Bits(0x3f000000)),
+    (0x00508510, Oc1079Src::Bits(0x3f800000)),
+    (0x00508520, Oc1079Src::Bits(0x3f800000)),
+    (0x00508524, Oc1079Src::Lit(0x246c)),
+    (0x00508528, Oc1079Src::Lit(0x2468)),
+    (0x00508530, Oc1079Src::Bits(0x3f800000)),
+    (0x00508538, Oc1079Src::Lit(0x2464)),
+    (0x0050853c, Oc1079Src::Bits(0x0)),
+    (0x00508544, Oc1079Src::Lit(0x2460)),
+    (0x00508548, Oc1079Src::Lit(0x245c)),
+    (0x0050854c, Oc1079Src::Bits(0x0)),
+    (0x00508550, Oc1079Src::Bits(0x3f800000)),
+    (0x0050855c, Oc1079Src::Bits(0x3f800000)),
+    (0x00508560, Oc1079Src::Bits(0x3f800000)),
+    (0x005084e4, Oc1079Src::Bits(0x3f800000)),
+    (0x005084e8, Oc1079Src::Bits(0x3f800000)),
+    (0x005084f4, Oc1079Src::Bits(0x3f000000)),
+    (0x005084f8, Oc1079Src::Bits(0x3f800000)),
+    (0x00508504, Oc1079Src::Bits(0x3f000000)),
+    (0x00508508, Oc1079Src::Bits(0x3f800000)),
+    (0x00508514, Oc1079Src::Bits(0x3f000000)),
+    (0x00508518, Oc1079Src::Bits(0x3f800000)),
+    (0x00508534, Oc1079Src::Bits(0x3f800000)),
+    (0x00508554, Oc1079Src::Bits(0x3f800000)),
+    (0x00508558, Oc1079Src::Bits(0x3f800000)),
+    (0x00508564, Oc1079Src::Bits(0x3f800000)),
+    (0x0050858c, Oc1079Src::Lit(0x2458)),
+    (0x005085ac, Oc1079Src::Lit(0x2454)),
+    (0x00508568, Oc1079Src::Lit(0x2450)),
+    (0x0050856c, Oc1079Src::Bits(0x0)),
+    (0x00508570, Oc1079Src::Bits(0x3f800000)),
+    (0x00508574, Oc1079Src::Lit(0x244c)),
+    (0x00508578, Oc1079Src::Lit(0x2448)),
+    (0x0050857c, Oc1079Src::Bits(0x0)),
+    (0x00508580, Oc1079Src::Bits(0x3f800000)),
+    (0x00508584, Oc1079Src::Lit(0x2444)),
+    (0x00508588, Oc1079Src::Lit(0x2440)),
+    (0x00508590, Oc1079Src::Bits(0x3f800000)),
+    (0x00508598, Oc1079Src::Lit(0x243c)),
+    (0x0050859c, Oc1079Src::Bits(0x3f800000)),
+    (0x005085a0, Oc1079Src::Bits(0x3f800000)),
+    (0x005085a4, Oc1079Src::Lit(0x2438)),
+    (0x005085b0, Oc1079Src::Bits(0x3f800000)),
+    (0x005085bc, Oc1079Src::Bits(0x3f800000)),
+    (0x005085c0, Oc1079Src::Bits(0x3f800000)),
+    (0x005085cc, Oc1079Src::Bits(0x3f800000)),
+    (0x005085d0, Oc1079Src::Bits(0x3f800000)),
+    (0x005085d4, Oc1079Src::Lit(0x2434)),
+    (0x005085d8, Oc1079Src::Lit(0x2430)),
+    (0x005085dc, Oc1079Src::Bits(0x0)),
+    (0x005085e0, Oc1079Src::Bits(0x3f800000)),
+    (0x00508594, Oc1079Src::Lit(0x242c)),
+    (0x005085a8, Oc1079Src::Bits(0x3f800000)),
+    (0x005085b4, Oc1079Src::Bits(0x3f800000)),
+    (0x005085b8, Oc1079Src::Bits(0x3f800000)),
+    (0x005085c4, Oc1079Src::Bits(0x3f800000)),
+    (0x005085c8, Oc1079Src::Bits(0x3f800000)),
+    (0x005085e4, Oc1079Src::Bits(0x3f800000)),
+    (0x005085e8, Oc1079Src::Bits(0x3f800000)),
+    (0x005085ec, Oc1079Src::Bits(0x3f800000)),
+    (0x00508620, Oc1079Src::Lit(0x2428)),
+    (0x0050863c, Oc1079Src::Lit(0x2424)),
+    (0x0050864c, Oc1079Src::Lit(0x2420)),
+    (0x0050866c, Oc1079Src::Lit(0x241c)),
+    (0x005085f0, Oc1079Src::Bits(0x3f800000)),
+    (0x005085f4, Oc1079Src::Lit(0x2418)),
+    (0x005085fc, Oc1079Src::Bits(0x0)),
+    (0x00508600, Oc1079Src::Bits(0x3f800000)),
+    (0x0050860c, Oc1079Src::Bits(0x3f800000)),
+    (0x00508610, Oc1079Src::Bits(0x3f800000)),
+    (0x0050861c, Oc1079Src::Bits(0x0)),
+    (0x0050862c, Oc1079Src::Bits(0x0)),
+    (0x00508630, Oc1079Src::Bits(0x3f800000)),
+    (0x00508634, Oc1079Src::Lit(0x2414)),
+    (0x00508638, Oc1079Src::Lit(0x2410)),
+    (0x00508640, Oc1079Src::Bits(0x3f800000)),
+    (0x00508644, Oc1079Src::Lit(0x240c)),
+    (0x00508650, Oc1079Src::Bits(0x3f800000)),
+    (0x00508658, Oc1079Src::Lit(0x2408)),
+    (0x0050865c, Oc1079Src::Bits(0x0)),
+    (0x00508660, Oc1079Src::Bits(0x3f800000)),
+    (0x00508664, Oc1079Src::Lit(0x2404)),
+    (0x00508670, Oc1079Src::Bits(0x3f800000)),
+    (0x005085f8, Oc1079Src::Bits(0x3f800000)),
+    (0x00508604, Oc1079Src::Bits(0x3f800000)),
+    (0x00508608, Oc1079Src::Bits(0x3f800000)),
+    (0x00508614, Oc1079Src::Bits(0x3f800000)),
+    (0x00508618, Oc1079Src::Bits(0x0)),
+    (0x00508624, Oc1079Src::Bits(0x0)),
+    (0x00508628, Oc1079Src::Bits(0x0)),
+    (0x00508648, Oc1079Src::Bits(0x3f800000)),
+    (0x00508654, Oc1079Src::Bits(0x3f800000)),
+    (0x00508668, Oc1079Src::Bits(0x3f800000)),
+    (0x00508674, Oc1079Src::Bits(0x3f800000)),
+    (0x0050868c, Oc1079Src::Lit(0x242c)),
+    (0x005086cc, Oc1079Src::Lit(0x2400)),
+    (0x005086dc, Oc1079Src::Lit(0x23fc)),
+    (0x0050867c, Oc1079Src::Bits(0x3f800000)),
+    (0x00508680, Oc1079Src::Bits(0x3f800000)),
+    (0x00508690, Oc1079Src::Bits(0x3f800000)),
+    (0x0050869c, Oc1079Src::Bits(0x0)),
+    (0x005086a0, Oc1079Src::Bits(0x3f800000)),
+    (0x005086ac, Oc1079Src::Bits(0x0)),
+    (0x005086b0, Oc1079Src::Bits(0x3f800000)),
+    (0x005086bc, Oc1079Src::Bits(0x0)),
+    (0x005086c0, Oc1079Src::Bits(0x3f800000)),
+    (0x005086c4, Oc1079Src::Lit(0x23f8)),
+    (0x005086d0, Oc1079Src::Bits(0x3f800000)),
+    (0x005086d8, Oc1079Src::Lit(0x23f4)),
+    (0x005086e0, Oc1079Src::Bits(0x3f800000)),
+    (0x005086e8, Oc1079Src::Lit(0x23f0)),
+    (0x005086ec, Oc1079Src::Bits(0x0)),
+    (0x005086f0, Oc1079Src::Bits(0x3f800000)),
+    (0x005086f4, Oc1079Src::Lit(0x23ec)),
+    (0x005086f8, Oc1079Src::Lit(0x23e8)),
+    (0x00508678, Oc1079Src::Bits(0x3f800000)),
+    (0x00508688, Oc1079Src::Bits(0x3f800000)),
+    (0x00508684, Oc1079Src::Lit(0x242c)),
+    (0x00508694, Oc1079Src::Bits(0x3f800000)),
+    (0x00508698, Oc1079Src::Bits(0x0)),
+    (0x005086a4, Oc1079Src::Bits(0x3f800000)),
+    (0x005086a8, Oc1079Src::Bits(0x0)),
+    (0x005086b4, Oc1079Src::Bits(0x3f800000)),
+    (0x005086b8, Oc1079Src::Bits(0x0)),
+    (0x005086c8, Oc1079Src::Bits(0x3f800000)),
+    (0x005086d4, Oc1079Src::Bits(0x3f800000)),
+    (0x005086e4, Oc1079Src::Bits(0x3f800000)),
+    (0x005086fc, Oc1079Src::Bits(0x0)),
+    (0x0050871c, Oc1079Src::Lit(0x23e4)),
+    (0x0050872c, Oc1079Src::Lit(0x23e0)),
+    (0x00508700, Oc1079Src::Bits(0x3f800000)),
+    (0x00508704, Oc1079Src::Lit(0x23dc)),
+    (0x00508708, Oc1079Src::Lit(0x23d8)),
+    (0x0050870c, Oc1079Src::Bits(0x0)),
+    (0x00508710, Oc1079Src::Bits(0x3f800000)),
+    (0x00508714, Oc1079Src::Lit(0x23d4)),
+    (0x00508718, Oc1079Src::Lit(0x23d0)),
+    (0x00508720, Oc1079Src::Bits(0x3f800000)),
+    (0x00508724, Oc1079Src::Lit(0x23cc)),
+    (0x00508728, Oc1079Src::Lit(0x23c8)),
+    (0x00508730, Oc1079Src::Bits(0x3f800000)),
+    (0x0050873c, Oc1079Src::Bits(0x0)),
+    (0x00508740, Oc1079Src::Bits(0x3f800000)),
+    (0x00508744, Oc1079Src::Bits(0x3f800000)),
+    (0x0050874c, Oc1079Src::Bits(0x0)),
+    (0x00508738, Oc1079Src::Bits(0x3f800000)),
+    (0x00508734, Oc1079Src::Bits(0x0)),
+    (0x00508748, Oc1079Src::Bits(0x0)),
+];
+
+/// `void UIEngine_StaticInitDestroy(int initialize, int priority)`
+/// (0x3a3f48): the UI engine's static constructor/destructor. With priority
+/// 0xffff and `initialize != 0` it fills the UI colour table
+/// (`D_005083D0..D_00508740`, sColor RGBA floats; the pool literals sit at
+/// `gp - 0x24d8..`), runs `UISound_BaseCtor(&gUISoundNull)` (`gp + 0x2968`)
+/// and sets the `t2Vector` at `gp + 0x2970` to (2.0, 2.0). With
+/// `initialize == 0` it only stores the base sound vtable (0x46dd60) into
+/// `gUISoundNull`. Any other priority does nothing. Scratch registers and
+/// `f0..f19` end as the compiled body leaves them.
+pub fn oc1079_ui_engine_static_init_destroy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0xffff;
+        for (reg, off) in [
+            (S0, 0x90),
+            (S1, 0x80),
+            (S2, 0x70),
+            (S3, 0x60),
+            (S4, 0x50),
+            (S5, 0x40),
+            (S6, 0x30),
+            (S7, 0x20),
+            (FP, 0x10),
+        ] {
+            frame.save(c, reg, off);
+        }
+        let priority_ok = c.g[A1][0] == c.g[V0][0];
+        frame.save_ra(c, 0);
+        if priority_ok {
+            c.cycles += 2;
+            let initialize = c.g[A0][0] != 0;
+            c.g[T5][0] = 0x0051_0000;
+            let gp = c.g[GP][0] as u32;
+            if initialize {
+                c.cycles += 493;
+                for &(addr, s) in OC1079_STORES {
+                    let word = match s {
+                        Oc1079Src::Lit(off) => c.bus.read32(gp.wrapping_sub(off)),
+                        Oc1079Src::Bits(b) => b,
+                    };
+                    c.bus.write32(addr, word);
+                }
+                c.g[T5][0] = 0x005086e0;
+                c.g[T6][0] = 0x005086d0;
+                c.g[T7][0] = 0x00508700;
+                c.g[V0][0] = 0x00510000;
+                c.g[S1][0] = 0x00508710;
+                c.g[S2][0] = 0x00510000;
+                c.g[S3][0] = 0x00508740;
+                c.g[S5][0] = 0x005084e0;
+                c.g[S4][0] = 0x00508530;
+                c.g[T3][0] = 0x00508550;
+                c.g[A1][0] = 0x00508570;
+                c.g[A3][0] = 0x005085d0;
+                c.g[T1][0] = 0x005085a0;
+                c.g[V1][0] = 0x00510000;
+                c.g[T0][0] = 0x00508630;
+                c.g[A2][0] = 0x00508580;
+                c.g[T4][0] = 0x00508650;
+                c.g[T9][0] = 0x00510000;
+                c.g[T2][0] = 0x00508660;
+                c.g[S6][0] = 0x00510000;
+                c.g[FP][0] = 0x00510000;
+                c.g[T8][0] = 0x00510000;
+                c.g[S7][0] = 0x00510000;
+                c.g[S0][0] = 0x00508730;
+                c.g[A0][0] = sx(gp.wrapping_add(0x2968));
+                c.f[0] = 0x3f800000;
+                c.lwc1(1, gp.wrapping_sub(0x23e0));
+                c.lwc1(2, gp.wrapping_sub(0x23e4));
+                c.lwc1(3, gp.wrapping_sub(0x23dc));
+                c.lwc1(4, gp.wrapping_sub(0x23d8));
+                c.lwc1(5, gp.wrapping_sub(0x23d4));
+                c.lwc1(6, gp.wrapping_sub(0x23d0));
+                c.lwc1(7, gp.wrapping_sub(0x23cc));
+                c.lwc1(8, gp.wrapping_sub(0x23c8));
+                c.lwc1(9, gp.wrapping_sub(0x2408));
+                c.lwc1(10, gp.wrapping_sub(0x2404));
+                c.lwc1(11, gp.wrapping_sub(0x2430));
+                c.lwc1(12, gp.wrapping_sub(0x242c));
+                c.lwc1(13, gp.wrapping_sub(0x24a8));
+                c.lwc1(14, gp.wrapping_sub(0x24a4));
+                c.lwc1(15, gp.wrapping_sub(0x24a0));
+                c.lwc1(16, gp.wrapping_sub(0x249c));
+                c.lwc1(17, gp.wrapping_sub(0x24b0));
+                c.lwc1(18, gp.wrapping_sub(0x24ac));
+                c.lwc1(19, gp.wrapping_sub(0x2494));
+                Callee {
+                    addr: 0x0039_e288,
+                    f: ee::s13::f_0039e288,
+                }
+                .call(c, 0x003a_4724)?;
+                c.g[AT][0] = 0x4000_0000;
+                c.f[0] = 0x4000_0000;
+                c.swc1(0, gp.wrapping_add(0x2974));
+                c.swc1(0, gp.wrapping_add(0x2970));
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0x0047_0000;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x22a0));
+                let v = c.g[V0][0];
+                c.sw(gp.wrapping_add(0x2968), v);
+            }
+        }
+        c.cycles += 12;
+        for (reg, off) in [
+            (S0, 0x90),
+            (S1, 0x80),
+            (S2, 0x70),
+            (S3, 0x60),
+            (S4, 0x50),
+            (S5, 0x40),
+            (S6, 0x30),
+            (S7, 0x20),
+            (FP, 0x10),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIVector* UIVector_ReturnSelf(UIVector* self, ...)` (0x3a3f08): spills
+/// the argument registers and the f12..f18 arguments to the caller's frame
+/// and returns `self` in v0.
+pub fn ui_vector_return_self(c: &mut Cpu) {
+    c.cycles += 15;
+    let frame = Frame::open(c, 0x80);
+    c.g[V0][0] = c.g[A0][0];
+    for (reg, off) in [
+        (A1, 0x48),
+        (A2, 0x50),
+        (A3, 0x58),
+        (T0, 0x60),
+        (T1, 0x68),
+        (T2, 0x70),
+        (T3, 0x78),
+    ] {
+        let slot = frame.at(c, off);
+        let value = c.g[reg][0];
+        c.sd(slot, value);
+    }
+    for (fpr, off) in [(12, 0x38), (14, 0x3c), (16, 0x40), (18, 0x44)] {
+        let slot = frame.at(c, off);
+        c.swc1(fpr, slot);
+    }
+    frame.close(c);
+}
+
+/// `void UIObject_ctor_2(UIObject* self)` (0x3a4900): stores the object's
+/// vtable word and two self pointers, then runs the flags constructor.
+/// Returns `self` in v0.
+pub fn ui_object_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = sx(0x0049_0000u32.wrapping_add(0x4bd8));
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0];
+        ui_text_field(this, 4).sw(c, this);
+        c.g[A0][0] = sx((this as u32).wrapping_add(0x14));
+        ui_text_field(this, 0).sw(c, this);
+        let vtable = c.g[V0][0];
+        ui_text_field(this, 8).sw(c, vtable);
+        let flags_ctor = Callee {
+            addr: 0x003a_6548,
+            f: ee::s13::f_003a6548,
+        };
+        flags_ctor.call(c, 0x003a_492c)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, 16, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIObject_ctor` (0x39fb30): the base constructor of every UI object.
+pub(crate) const UIOBJ_BASE_CTOR: Callee = Callee {
+    addr: 0x0039_fb30,
+    f: ee::s13::f_0039fb30,
+};
+
+/// `cList_cList` (0x3977e8): the group's child list, at object +0x74.
+pub(crate) const UILIST_BASE_CTOR: Callee = Callee {
+    addr: 0x0039_77e8,
+    f: ee::s13::f_003977e8,
+};
+
+/// `UIList_First` (0x397840) on the group's child list.
+pub(crate) const UILIST_FIRST_CALL: Callee = Callee {
+    addr: 0x0039_7840,
+    f: ee::s13::f_00397840,
+};
+
+/// `UIList_Last` (0x397858) on the group's child list.
+pub(crate) const UILIST_LAST_CALL: Callee = Callee {
+    addr: 0x0039_7858,
+    f: ee::s13::f_00397858,
+};
+
+/// `UISound_BaseDtor(self, flags)` (0x3a4da8): publish the sound base
+/// vtable (`0x46dd60`) in word 0 and free the object when bit 0 of `flags`
+/// is set.
+pub fn ui_sound_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x003a_4dcc, 0x0046_dd60, 0)
+    });
+}
+
+/// `UIIcon* UIIcon_ctor_2(UIIcon* self)` (0x3a4df0): `UIObject_ctor(self, 0,
+/// 0)`, then the icon vtable (`0x494aa8`) at +8 and the `0x21ccc8` setup of
+/// the sub-object at +0x74. Returns `self`.
+pub fn uiicon_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UIOBJ_BASE_CTOR.call(c, 0x003a_4e0c)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(this.wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4aa8));
+        let vtable = c.g[V1][0];
+        Addr(this.wrapping_add(0x8)).sw(c, vtable);
+        call_ptr(c, 0x0021_ccc8, 0x003a_4e20)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIIcon* UIIcon_ctor(UIIcon* self)` (0x3a4e38): as [`uiicon_ctor_2`]
+/// (the caller's a1/a2 reach `UIObject_ctor` unchanged), then the
+/// `-1`/`0` pair at +0x78/+0x7c. Returns `self`.
+pub fn uiicon_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UIOBJ_BASE_CTOR.call(c, 0x003a_4e4c)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(this.wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4aa8));
+        let vtable = c.g[V1][0];
+        Addr(this.wrapping_add(0x8)).sw(c, vtable);
+        call_ptr(c, 0x0021_ccc8, 0x003a_4e60)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = c.g[S0][0];
+        let minus_one = c.g[V1][0];
+        Addr(this.wrapping_add(0x78)).sw(c, minus_one);
+        Addr(this.wrapping_add(0x7c)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cUIGroup_SetOffset(cUIGroup* self, float x, float y)` (0x3a4fb8):
+/// the two float arguments (f12, f13) go through the stack and are copied
+/// as one unaligned 8-byte word to the group's offset at +0x80.
+pub fn c_ui_group_set_offset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_fpr(c, 12, 0);
+        frame.save_fpr(c, 13, 4);
+        let slot = sp(c);
+        c.ldl(2, slot.wrapping_add(7));
+        c.ldr(2, slot);
+        let group = c.g[A0][0] as u32;
+        c.sdl(2, group.wrapping_add(0x87));
+        c.sdr(2, group.wrapping_add(0x80));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIGroup* cUIGroup_ctor_2(cUIGroup* self)` (0x3a4fe0): `UIObject_ctor`
+/// with a1 = a2 = 0, then the group vtable (`0x4949e8`) at +8 and
+/// `cList_cList` on the child list at +0x74. Returns `self`.
+pub fn c_ui_group_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UIOBJ_BASE_CTOR.call(c, 0x003a_4ffc)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(this.wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x49e8));
+        let vtable = c.g[V1][0];
+        Addr(this.wrapping_add(0x8)).sw(c, vtable);
+        UILIST_BASE_CTOR.call(c, 0x003a_5010)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIGroup* cUIGroup_ctor(cUIGroup* self)` (0x3a5028): as
+/// [`c_ui_group_ctor_2`] with the caller's a1/a2 passed on to
+/// `UIObject_ctor`. Returns `self`.
+pub fn c_ui_group_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UIOBJ_BASE_CTOR.call(c, 0x003a_503c)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(this.wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x49e8));
+        let vtable = c.g[V1][0];
+        Addr(this.wrapping_add(0x8)).sw(c, vtable);
+        UILIST_BASE_CTOR.call(c, 0x003a_5050)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIObject* cUIGroup_FirstChild(cUIGroup* self)` (0x3a5100):
+/// `UIList_First(&self->children)`, the child list at +0x74.
+pub fn c_ui_group_first_child(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x74));
+        UILIST_FIRST_CALL.call(c, 0x003a_5110)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIObject* cUIGroup_LastChild(cUIGroup* self)` (0x3a5120):
+/// `UIList_Last(&self->children)`, the child list at +0x74.
+pub fn c_ui_group_last_child(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x74));
+        UILIST_LAST_CALL.call(c, 0x003a_5130)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIGroup_getByIndex(group)` (0x3a5140): `UIList_GetAt(&group->children,
+/// index)`. The group's child list sits at +0x74; the index is in a1.
+pub fn ui_group_get_child_at(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x74));
+        Callee {
+            addr: 0x0039_7870,
+            f: ee::s13::UIList_GetAt,
+        }
+        .call(c, 0x003a_5150)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIGroup_addToFront(group, item)` (0x3a5160): `UIList_PushFront` on the
+/// group's child list (+0x74). The item is in a1.
+pub fn ui_group_push_front_child(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x74));
+        Callee {
+            addr: 0x0039_78f0,
+            f: ee::s13::UIList_PushFront,
+        }
+        .call(c, 0x003a_5170)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIGroup_addToEnd(group, item)` (0x3a5180): `UIList_PushBack` on the
+/// group's child list (+0x74). The item is in a1.
+pub fn ui_group_push_back_child(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x74));
+        Callee {
+            addr: 0x0039_7910,
+            f: ee::s13::UIList_PushBack,
+        }
+        .call(c, 0x003a_5190)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIMenu::UIMenu(this)` (0x3a5230): the object base constructor, the menu's
+/// child list at +0x74 (vtable word +0x8 set to the list's), then the menu
+/// vtable at +0x8 again, `UIMenuFlags` constructor on the menu, and the
+/// menu's own fields (+0x95..+0xa0) cleared.
+pub fn ui_menu_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0039_fb30,
+            f: ee::s13::UIObject_ctor,
+        }
+        .call(c, 0x003a_5244)?;
+        let menu = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(menu.wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x49e8));
+        let vt = c.g[V1][0];
+        Addr(menu.wrapping_add(0x8)).sw(c, vt);
+        Callee {
+            addr: 0x0039_77e8,
+            f: ee::s13::UIList_ctor,
+        }
+        .call(c, 0x003a_5258)?;
+        let menu = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(menu.wrapping_add(0x90));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4928));
+        let vt = c.g[V1][0];
+        Addr(menu.wrapping_add(0x8)).sw(c, vt);
+        Callee {
+            addr: 0x003a_5338,
+            f: ee::s13::UIMenuFlags_ctor,
+        }
+        .call(c, 0x003a_526c)?;
+        let menu = c.g[S0][0] as u32;
+        c.g[V1][0] = 0xff;
+        c.g[V0][0] = c.g[S0][0];
+        let flag = c.g[V1][0];
+        Addr(menu.wrapping_add(0xa4)).sb(c, flag);
+        Addr(menu.wrapping_add(0x95)).sb(c, 0);
+        Addr(menu.wrapping_add(0x96)).sb(c, 0);
+        Addr(menu.wrapping_add(0x97)).sb(c, 0);
+        Addr(menu.wrapping_add(0x98)).sb(c, 0);
+        Addr(menu.wrapping_add(0x9c)).sw(c, 0);
+        Addr(menu.wrapping_add(0xa0)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIPair::UIPair(this)` without flags (0x3a5420, the first constructor
+/// variant): the object base constructor, then the pair flags constructor
+/// with a1 = a2 = 0 and the pair vtable at +0x8. Returns `this` in v0.
+pub fn ui_pair_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0039_fb30,
+            f: ee::s13::UIObject_ctor,
+        }
+        .call(c, 0x003a_543c)?;
+        let pair = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(pair.wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4868));
+        let vt = c.g[V1][0];
+        Addr(pair.wrapping_add(0x8)).sw(c, vt);
+        Callee {
+            addr: 0x003a_5508,
+            f: ee::s13::UIPairFlags_ctor,
+        }
+        .call(c, 0x003a_5450)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIPair::UIPair(this)` (0x3a5468): the object base constructor, the pair
+/// vtable at +0x8 and the pair flags constructor, then the first and second
+/// widget slots (+0x78, +0x7c) cleared and bit 1 set in the flags word +0x14.
+pub fn ui_pair_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0039_fb30,
+            f: ee::s13::UIObject_ctor,
+        }
+        .call(c, 0x003a_547c)?;
+        let pair = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(pair.wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4868));
+        let vt = c.g[V1][0];
+        Addr(pair.wrapping_add(0x8)).sw(c, vt);
+        Callee {
+            addr: 0x003a_5508,
+            f: ee::s13::UIPairFlags_ctor,
+        }
+        .call(c, 0x003a_5490)?;
+        let pair = c.g[S0][0] as u32;
+        c.g[V1][0] = Addr(pair.wrapping_add(0x14)).lw(c);
+        c.g[V0][0] = c.g[S0][0];
+        Addr(pair.wrapping_add(0x78)).sw(c, 0);
+        c.g[V1][0] = c.g[V1][0] | 0x2;
+        Addr(pair.wrapping_add(0x7c)).sw(c, 0);
+        let flags = c.g[V1][0];
+        Addr(pair.wrapping_add(0x14)).sw(c, flags);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Shared body of `UIPair_SetFirst` (0x3a5530, `field` 0x78) and
+/// `UIPair_SetSecond` (0x3a5588, `field` 0x7c): if the old widget in the
+/// slot is set, call its vtable slot 3 with (old + delta, 3) returning to
+/// `call_ret`; then store the new widget (a1) in the slot. The two differ only
+/// in the slot offset and the return address of that call.
+pub(crate) fn ui_pair_set_entry(c: &mut Cpu, field: u32, call_ret: u32) -> Flow {
+    c.cycles += 8;
+    let frame = Frame::open(c, 0x30);
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save_ra(c, 0);
+    c.g[A2][0] = Addr(c.g[S0][0] as u32).off(field).lw(c);
+    c.g[S1][0] = c.g[A1][0];
+    if c.g[A2][0] != 0 {
+        c.cycles += 6;
+        let old = c.g[A2][0] as u32;
+        c.g[V0][0] = Addr(old).off(0x8).lw(c);
+        c.g[A1][0] = 0x3;
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x8).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx(old.wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, call_ret)?;
+    }
+    c.cycles += 6;
+    let value = c.g[S1][0];
+    Addr(c.g[S0][0] as u32).off(field).sw(c, value);
+    frame.restore(c, S0, 0x20);
+    frame.restore(c, S1, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `UIPair::setEntry`: store the first widget (+0x78) (0x3a5530).
+pub fn ui_pair_set_first(c: &mut Cpu) {
+    guest(c, |c| ui_pair_set_entry(c, 0x78, 0x003a_5568))
+}
+
+/// `UIPair::setWidget`: store the second widget (+0x7c) (0x3a5588).
+pub fn ui_pair_set_second(c: &mut Cpu) {
+    guest(c, |c| ui_pair_set_entry(c, 0x7c, 0x003a_55c0))
+}
+
+/// Callees of the UI constructors, as the generated bodies call them.
+pub(crate) const CT_OBJECT: Callee = Callee {
+    addr: 0x0039_fb30,
+    f: ee::s13::UIObject_ctor,
+};
+
+pub(crate) const CT_LIST: Callee = Callee {
+    addr: 0x0039_77e8,
+    f: ee::s13::UIList_ctor,
+};
+
+pub(crate) const CT_LIST_PUSH_BACK: Callee = Callee {
+    addr: 0x0039_7910,
+    f: ee::s13::UIList_PushBack,
+};
+
+pub(crate) const CT_LISTBOX_FLAGS: Callee = Callee {
+    addr: 0x003a_65a0,
+    f: ee::s13::UIListBoxFlags_ctor,
+};
+
+pub(crate) const CT_LISTBOX_SCROLL: Callee = Callee {
+    addr: 0x003a_65b8,
+    f: ee::s13::UIListBoxScroll_ctor,
+};
+
+pub(crate) const CT_STATE_FLAGS: Callee = Callee {
+    addr: 0x003a_65d8,
+    f: ee::s13::UIStateFlags_ctor,
+};
+
+pub(crate) const CT_TEXT_FLAGS: Callee = Callee {
+    addr: 0x003a_65e8,
+    f: ee::s13::UITextFlags_ctor,
+};
+
+/// `UIScreenFlags_ctor`, called through the function table (`jalr`).
+pub(crate) const CT_SCREEN_FLAGS: u32 = 0x001d_d580;
+
+/// Vtables the constructors store at +8 (or +0x48 for the list links), as
+/// `0x490000 + the immediate` in the generated bodies.
+#[allow(dead_code)]
+pub(crate) const CT_VT_LISTBOX: u32 = 0x0049_4798;
+
+#[allow(dead_code)]
+pub(crate) const CT_VT_STATE: u32 = 0x0049_46c8;
+
+#[allow(dead_code)]
+pub(crate) const CT_VT_SCREEN: u32 = 0x0049_4670;
+
+#[allow(dead_code)]
+pub(crate) const CT_VT_TEXT: u32 = 0x0049_4588;
+
+#[allow(dead_code)]
+pub(crate) const CT_VT_SCROLL: u32 = 0x0049_44c8;
+
+/// The vtable a screen's child lists point at (`+0x48`, `+0xb4` list).
+#[allow(dead_code)]
+pub(crate) const CT_VT_SCREEN_LIST: u32 = 0x0049_49e8;
+
+/// `cUIListBox_cUIListBox1(self)` (0x3a55d8, `UIListBox_ctor_2`): the list box
+/// constructor. Calls `UIObject_ctor(self, 0, 0)`, sets the vtable at +8,
+/// builds the list box flags at +0x74, then initialises the 32 scroll records
+/// of 0x14 bytes from +0x98 (the loop counts `s1` from 0x1f down to -1, one
+/// `UIListBoxScroll_ctor` per record). The loop's back edge carries an event
+/// check. Returns with `s2` (the object) still in place.
+pub fn ui_list_box_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x50);
+        c.g[A1][0] = 0;
+        frame.save(c, S2, 0x20);
+        c.g[A2][0] = 0;
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x98));
+        frame.save_ra(c, 0);
+        c.g[S1][0] = 0x1f;
+        CT_OBJECT.call(c, 0x003a_5608)?;
+        c.g[S3][0] = u64::MAX;
+        c.g[V0][0] = 0x0049_0000;
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x74));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4798));
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        CT_LISTBOX_FLAGS.call(c, 0x003a_5620)?;
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+            CT_LISTBOX_SCROLL.call(c, 0x003a_562c)?;
+            let more = c.g[S1][0] != c.g[S3][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003a_5620);
+            }
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cUIState_cUIState2(self)` (0x3a57b8, `UIState_ctor_3`): the UI state
+/// constructor. Both list links (+0 and +4) point at the state itself, the
+/// vtable (0x4946c8) is stored at +8, the state flags are built at +0x1c and
+/// the child list at +0x24. Returns `self`.
+pub fn ui_state_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x46c8));
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1c));
+        c.sw(c.g[S0][0] as u32, c.g[S0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        CT_STATE_FLAGS.call(c, 0x003a_57e4)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
+        CT_LIST.call(c, 0x003a_57ec)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cUIScreen_cUIScreen1(self)` (0x3a5b98, `UIScreen_ctor`): the screen
+/// constructor, the variant with the screen flags built through the function
+/// table. Both list links point at the screen, the vtable (0x494670) is at
+/// +8, the screen flags at +0x14, the root child list at +0x18, the root
+/// object at +0x40 (`UIObject_ctor(root, 0, 0)`), and the child list at +0xb4
+/// with the 0x4949e8 vtable at +0x48. Returns `self`.
+pub fn ui_screen_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4670));
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14));
+        c.sw(c.g[S0][0] as u32, c.g[S0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, CT_SCREEN_FLAGS, 0x003a_5bc4)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+        CT_LIST.call(c, 0x003a_5bcc)?;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
+        CT_OBJECT.call(c, 0x003a_5bdc)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xb4));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x49e8));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x48), c.g[V1][0]);
+        CT_LIST.call(c, 0x003a_5bf0)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cUIScreen_cUIScreen(self, state)` (0x3a5c08, `UIScreen_ctor_2`): the
+/// screen constructor that takes the owning UI state (`a1`, stored at +0xd0).
+/// Same links and vtable as `UIScreen_ctor`, but the child list (+0x18) and
+/// the root object (+0x40) are followed by zeroed fields: +0xc and +0x10
+/// (before the flags call), +0x34, +0x38 and +0x3c (after the child list).
+/// Returns `self`.
+pub fn ui_screen_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 36;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4670));
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14));
+        c.sw(c.g[S0][0] as u32, c.g[S0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, CT_SCREEN_FLAGS, 0x003a_5c44)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+        CT_LIST.call(c, 0x003a_5c4c)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x34), 0);
+        c.g[A1][0] = 0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x38), 0);
+        c.g[A2][0] = 0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x3c), 0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
+        CT_OBJECT.call(c, 0x003a_5c68)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xb4));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x49e8));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x48), c.g[V1][0]);
+        CT_LIST.call(c, 0x003a_5c7c)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xd0), c.g[S1][0]);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cUIScreen_rootGroupPushBack(screen, obj)` (0x3a5cf0): appends `obj` to the
+/// screen's child list at +0xb4 (`UIList_PushBack(&list, obj)`, the object in
+/// `a1`, which the caller sets). Returns what `UIList_PushBack` returns.
+pub fn ui_screen_add_root_child(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xb4));
+        CT_LIST_PUSH_BACK.call(c, 0x003a_5d00)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cUIText_cUIText1(self)` (0x3a5d60, `UIText_ctor_2`): the text object
+/// constructor. Calls `UIObject_ctor(self, 0, 0)`, sets the vtable (0x494588)
+/// at +8 and builds the text flags at +0x74. Returns `self`.
+pub fn ui_text_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        CT_OBJECT.call(c, 0x003a_5d7c)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4588));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+        CT_TEXT_FLAGS.call(c, 0x003a_5d90)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cUIScrollBar_cUIScrollBar1(self)` (0x3a5f60, `cUIScroll_ctor_2`): the scroll
+/// bar constructor that only sets the scroll vtable (0x4944c8) at +8 after
+/// `UIObject_ctor(self, 0, 0)`. Returns `self`.
+pub fn cui_scroll_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        CT_OBJECT.call(c, 0x003a_5f7c)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x44c8));
+        frame.restore_ra(c, 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cUIScrollBar_cUIScrollBar(self)` (0x3a5fa0, `cUIScroll_ctor`): the scroll bar
+/// constructor with its own fields. After `UIObject_ctor(self, a1, a2)` (the
+/// caller's `a1` and `a2` pass through unchanged, as the generated body leaves
+/// them), it sets the scroll vtable (0x4944c8) at +8 and clears the knob and
+/// arrow pointers, the value and page words, the animation names and the hide
+/// flags. Returns `self` in v0.
+pub fn cui_scroll_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        CT_OBJECT.call(c, 0x003a_5fb4)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x44c8));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x74), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x78), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x7c), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x80), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x84), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x88), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc0), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc8), 0);
+        c.sb((c.g[S0][0] as u32).wrapping_add(0x8c), 0);
+        c.sb((c.g[S0][0] as u32).wrapping_add(0xa5), 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cUIThing_cUIThing` (0x39fb30): the base constructor the widget
+/// constructors below run first.
+pub(crate) const UI_THING_CTOR_OC1088: Callee = Callee {
+    addr: 0x0039_fb30,
+    f: ee::s13::f_0039fb30,
+};
+
+/// `UIList_ctor` (0x3977e8): the scroll's name list.
+pub(crate) const UI_LIST_CTOR_OC1088: Callee = Callee {
+    addr: 0x0039_77e8,
+    f: ee::s13::f_003977e8,
+};
+
+/// `cUITextScrollFlags_ctor` (0x3a6600): one flag byte at its argument.
+pub(crate) const TEXT_FLAGS_CTOR_OC1088: Callee = Callee {
+    addr: 0x003a_6600,
+    f: ee::s13::f_003a6600,
+};
+
+/// `UIList_First` (0x397840): the first node of a list whose head is at +4.
+pub(crate) const UI_LIST_FIRST_OC1088: Callee = Callee {
+    addr: 0x0039_7840,
+    f: ee::s13::f_00397840,
+};
+
+/// Shared body of the two thread-name setters (`cUIScrollBar_setUpAnimationName`
+/// and `setDownAnimationName` in the reference): when `strlen(name) < 25` the
+/// name is copied with `strcpy` into `self+name_off`, otherwise the field's
+/// first byte is cleared. The setters differ only in the field offset and in
+/// their call return addresses.
+pub(crate) fn set_scroll_thread_name(
+    c: &mut Cpu,
+    name_off: u32,
+    strlen_ret: u32,
+    strcpy_ret: u32,
+) -> Flow {
+    c.cycles += 11;
+    let frame = Frame::open(c, 0x30);
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    c.g[S0][0] = c.g[A0][0];
+    c.g[S1][0] = c.g[A1][0];
+    frame.save_ra(c, 0);
+    c.g[A0][0] = c.g[S1][0];
+    call_ptr(c, 0x0041_6810, strlen_ret)?;
+    c.g[V0][0] = (c.g[V0][0] < 0x19) as u64;
+    let short_name = c.g[V0][0] != 0;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(name_off));
+    c.cycles += 2;
+    if short_name {
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0041_66f4, strcpy_ret)?;
+    } else {
+        let field = (c.g[S0][0] as u32).wrapping_add(name_off);
+        Addr(field).sb(c, 0);
+    }
+    c.cycles += 5;
+    frame.restore(c, S0, 0x20);
+    frame.restore(c, S1, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void cUIScroll_SetUpThreadName(cUIScroll* self, const char* name)`
+/// (0x3a6038): copy the name into `self+0x8c`, or clear it when it is 25
+/// bytes or longer.
+pub fn ui_scroll_set_up_thread_name(c: &mut Cpu) {
+    guest(c, |c| {
+        set_scroll_thread_name(c, 0x8c, 0x003a_6058, 0x003a_6074)
+    });
+}
+
+/// `void cUIScroll_SetDownThreadName(cUIScroll* self, const char* name)`
+/// (0x3a6088): the same as the up-name setter, for the field at `self+0xa5`.
+pub fn ui_scroll_set_down_thread_name(c: &mut Cpu) {
+    guest(c, |c| {
+        set_scroll_thread_name(c, 0xa5, 0x003a_60a8, 0x003a_60c4)
+    });
+}
+
+/// `cUIProgress* cUIProgress_ctor_2(cUIProgress* self)` (0x3a60e0): the UI
+/// thing constructor with zero flags, then the progress vtable at `+8`.
+pub fn ui_progress_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UI_THING_CTOR_OC1088.call(c, 0x003a_60fc)?;
+        c.g[V1][0] = sx(0x0049_4408);
+        c.g[V0][0] = c.g[S0][0];
+        let vtable = c.g[V1][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8)).sw(c, vtable);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIProgress* cUIProgress_ctor(cUIProgress* self)` (0x3a6120): the UI
+/// thing constructor, the progress vtable at `+8`, and the four knob and
+/// background fields (`+0x74..+0x84`) cleared.
+pub fn ui_progress_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UI_THING_CTOR_OC1088.call(c, 0x003a_6134)?;
+        c.g[V1][0] = sx(0x0049_4408);
+        c.g[V0][0] = c.g[S0][0];
+        let vtable = c.g[V1][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x74)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8)).sw(c, vtable);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x78)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x7c)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x80)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x84)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUISlider* cUISlider_ctor_2(cUISlider* self)` (0x3a6190): the UI thing
+/// constructor with zero flags, then the slider vtable at `+8`.
+pub fn ui_slider_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UI_THING_CTOR_OC1088.call(c, 0x003a_61ac)?;
+        c.g[V1][0] = sx(0x0049_4348);
+        c.g[V0][0] = c.g[S0][0];
+        let vtable = c.g[V1][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8)).sw(c, vtable);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUISlider* cUISlider_ctor(cUISlider* self)` (0x3a61d0): the UI thing
+/// constructor, the slider vtable at `+8`, and the slider's value and range
+/// fields (`+0x74..+0x8c`) cleared.
+pub fn ui_slider_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UI_THING_CTOR_OC1088.call(c, 0x003a_61e4)?;
+        c.g[V1][0] = sx(0x0049_4348);
+        c.g[V0][0] = c.g[S0][0];
+        let vtable = c.g[V1][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x74)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8)).sw(c, vtable);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x78)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x7c)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x80)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x88)).sw(c, 0);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8c)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUITextScroll* cUITextScroll_ctor_2(cUITextScroll* self)` (0x3a6250):
+/// the UI thing constructor, the text-scroll vtable at `+8`, the flag byte
+/// at `+0x74` (`cUITextScrollFlags_ctor`), and the name list at `+0x8c`.
+pub fn ui_text_scroll_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        UI_THING_CTOR_OC1088.call(c, 0x003a_626c)?;
+        c.g[V1][0] = sx(0x0049_4278);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x74));
+        let vtable = c.g[V1][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8)).sw(c, vtable);
+        TEXT_FLAGS_CTOR_OC1088.call(c, 0x003a_6280)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8c));
+        UI_LIST_CTOR_OC1088.call(c, 0x003a_6288)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* cUITextScroll_ListFirst(cUITextScroll* self)` (0x3a63e0): the
+/// first node of the name list at `self+0x8c`.
+pub fn ui_text_scroll_list_first(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x8c));
+        UI_LIST_FIRST_OC1088.call(c, 0x003a_63f0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The `cList` member of a `cUITextScroll`, at +0x8c.
+pub(crate) const TEXT_SCROLL_LIST_OFFSET: u32 = 0x8c;
+
+/// `cUITextScroll_ListLast/GetAt/PushFront/PushBack(textScroll, ...)`: the
+/// generated forwarder. A 0x10 frame holds `ra`, `a0` becomes
+/// `textScroll + 0x8c` (the list), the list callee runs with the caller's other
+/// arguments, and its result is returned.
+pub(crate) fn text_scroll_list_forward(c: &mut Cpu, list_fn: Callee, ret_addr: u32) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(TEXT_SCROLL_LIST_OFFSET));
+        list_fn.call(c, ret_addr)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUITextScroll_ListLast(textScroll)` (0x3a6400): `UIList_Last(&list)`.
+pub fn cui_text_scroll_list_last(c: &mut Cpu) {
+    text_scroll_list_forward(
+        c,
+        Callee {
+            addr: 0x0039_7858,
+            f: ssx3_ee::s13::f_00397858,
+        },
+        0x003a_6410,
+    )
+}
+
+/// `cUITextScroll_ListGetAt(textScroll, index)` (0x3a6420): `UIList_GetAt(&list, index)`.
+pub fn cui_text_scroll_list_get_at(c: &mut Cpu) {
+    text_scroll_list_forward(
+        c,
+        Callee {
+            addr: 0x0039_7870,
+            f: ssx3_ee::s13::f_00397870,
+        },
+        0x003a_6430,
+    )
+}
+
+/// `cUITextScroll_ListPushFront(textScroll, node)` (0x3a6440): `UIList_PushFront(&list, node)`.
+pub fn cui_text_scroll_list_push_front(c: &mut Cpu) {
+    text_scroll_list_forward(
+        c,
+        Callee {
+            addr: 0x0039_78f0,
+            f: ssx3_ee::s13::f_003978f0,
+        },
+        0x003a_6450,
+    )
+}
+
+/// `cUITextScroll_ListPushBack(textScroll, node)` (0x3a6460): `UIList_PushBack(&list, node)`.
+pub fn cui_text_scroll_list_push_back(c: &mut Cpu) {
+    text_scroll_list_forward(
+        c,
+        Callee {
+            addr: 0x0039_7910,
+            f: ssx3_ee::s13::f_00397910,
+        },
+        0x003a_6470,
+    )
+}
+
+/// `UIVector* UIVector_ctor_2(UIVector* self)` (0x3a64f8): `UIObject_ctor(self, 0, 0)`,
+/// the vtable pointer at +8 (0x4941b8), `UIVectorFlags_ctor(&self->flags)` at +0x74,
+/// returns `self`.
+pub fn ui_vector_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0039_fb30,
+            f: ssx3_ee::s13::f_0039fb30,
+        }
+        .call(c, 0x003a_6514)?;
+        c.g[V1][0] = sx(0x0049_0000u32.wrapping_add(0x41b8));
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x74));
+        let vtable = c.g[V1][0];
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8)).sw(c, vtable);
+        Callee {
+            addr: 0x003a_6618,
+            f: ssx3_ee::s13::f_003a6618,
+        }
+        .call(c, 0x003a_6528)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIObjectFlags_ctor(UIObject* o)` (0x3a6548): sets the flags word at +0 of an
+/// object: bits 0, 1, 3 and 6 on; 2, 4, 5, 7 and bits 8..12 off; bits 13 and 16
+/// on, bits 13..18 cleared first; the rest kept. Leaves the same scratch registers
+/// the generated code does.
+pub fn ui_object_flags_ctor(c: &mut Cpu) {
+    c.cycles += 22;
+    let obj = Addr(c.g[A0][0] as u32);
+    c.g[V1][0] = obj.lw(c);
+    c.g[V0][0] = 0xffff_ffff_ffff_ff7f;
+    c.g[A1][0] = 0xffff_ffff_ffff_e0ff;
+    c.g[A3][0] = 0xffff_ffff_ffff_ffdf;
+    c.g[V1][0] |= 0x1;
+    c.g[T0][0] = 0xffff_ffff_ffff_ffef;
+    c.g[V1][0] &= c.g[V0][0];
+    c.g[T1][0] = 0xffff_ffff_ffff_fffb;
+    c.g[V1][0] &= c.g[A1][0];
+    c.g[A2][0] = 0xffff_ffff_fff8_0000;
+    c.g[V1][0] &= c.g[A3][0];
+    c.g[A2][0] |= 0x1fff;
+    c.g[V1][0] &= c.g[T0][0];
+    c.g[A1][0] = 0x10000;
+    c.g[V1][0] &= c.g[T1][0];
+    c.g[A1][0] |= 0x2000;
+    c.g[V1][0] |= 0x4a;
+    c.g[V0][0] = c.g[A0][0];
+    c.g[V1][0] &= c.g[A2][0];
+    c.g[V1][0] |= c.g[A1][0];
+    let flags = c.g[V1][0];
+    obj.sw(c, flags);
+    ret(c);
+}
+
+/// `UIListBoxFlags_ctor(attr)` (0x3a65a0): the byte at +0 becomes
+/// `(byte | 4) & 0xc4`; returns `attr`.
+pub fn ui_list_box_flags_ctor(c: &mut Cpu) {
+    c.cycles += 6;
+    let obj = Addr(c.g[A0][0] as u32);
+    c.g[V1][0] = obj.lbu(c);
+    c.g[V0][0] = c.g[A0][0];
+    c.g[V1][0] = (c.g[V1][0] | 0x4) & 0xc4;
+    let flags = c.g[V1][0];
+    obj.sb(c, flags);
+    ret(c);
+}
+
+/// `UIListBoxScroll_ctor(entry)` (0x3a65b8): zeroes the words at +0, +4, +8,
+/// +0xc and the byte at +0x10; returns `entry`.
+pub fn ui_list_box_scroll_ctor(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[V0][0] = c.g[A0][0];
+    let obj = Addr(c.g[A0][0] as u32);
+    obj.sw(c, 0);
+    obj.off(0x4).sw(c, 0);
+    obj.off(0x8).sw(c, 0);
+    obj.off(0xc).sw(c, 0);
+    obj.off(0x10).sb(c, 0);
+    ret(c);
+}
+
+/// Direct call targets of this module.
+pub(crate) const UIENGINE_STATIC_INIT_DESTROY_CALLEE: Callee = Callee {
+    addr: 0x003a_3f48,
+    f: ee::s13::UIEngine_StaticInitDestroy,
+};
+
+/// Initial flag halfword of a `tAttrState` (stored at +0 by its ctor).
+pub(crate) const UI_STATE_FLAGS_INIT: u64 = 0x218;
+
+/// `tAttrText` flags: bit 2 set, then bits 0-2 and 7 kept.
+pub(crate) const UI_TEXT_FLAGS_SET: u64 = 0x4;
+
+pub(crate) const UI_TEXT_FLAGS_KEEP: u64 = 0x87;
+
+/// `tAttrTextScroll` flags: bits 1, 2, 6 and 7 kept.
+pub(crate) const UI_TEXT_SCROLL_FLAGS_KEEP: u64 = 0xc6;
+
+/// `tAttrVector` flags word: bits 0 and 1 cleared, bits 17 and up cleared.
+pub(crate) const UI_VECTOR_FLAGS_CLEAR_LOW: u64 = !1;
+
+pub(crate) const UI_VECTOR_FLAGS_CLEAR_HIGH: u64 = !2;
+
+pub(crate) const UI_VECTOR_FLAGS_LIMIT: u64 = 0x1_ffff;
+
+/// `tAttrState::tAttrState(this)` (0x3a65d8): stores the halfword 0x218 at
+/// +0 and returns `this`.
+pub fn ui_state_flags_ctor(c: &mut Cpu) {
+    c.cycles += 4;
+    let this = c.g[A0][0];
+    c.g[V0][0] = this;
+    c.g[V1][0] = UI_STATE_FLAGS_INIT;
+    let init = c.g[V1][0];
+    Addr(this as u32).sh(c, init);
+    ret(c);
+}
+
+/// `tAttrText::tAttrText(attr)` (0x3a65e8): the flag byte at +0 becomes
+/// `(flags | 4) & 0x87`; returns `attr`.
+pub fn ui_text_flags_ctor(c: &mut Cpu) {
+    c.cycles += 6;
+    let attr = c.g[A0][0];
+    let flags = Addr(attr as u32).lbu(c);
+    c.g[V1][0] = (flags | UI_TEXT_FLAGS_SET) & UI_TEXT_FLAGS_KEEP;
+    c.g[V0][0] = attr;
+    let v = c.g[V1][0];
+    Addr(attr as u32).sb(c, v);
+    ret(c);
+}
+
+/// `tAttrTextScroll::tAttrTextScroll(attr)` (0x3a6600): the flag byte at +0
+/// becomes `flags & 0xc6`; returns `attr`.
+pub fn c_ui_text_scroll_flags_ctor(c: &mut Cpu) {
+    c.cycles += 5;
+    let attr = c.g[A0][0];
+    let flags = Addr(attr as u32).lbu(c);
+    c.g[V1][0] = flags & UI_TEXT_SCROLL_FLAGS_KEEP;
+    c.g[V0][0] = attr;
+    let v = c.g[V1][0];
+    Addr(attr as u32).sb(c, v);
+    ret(c);
+}
+
+/// `tAttrVector::tAttrVector(this)` (0x3a6618): the flag word at +0 keeps
+/// only bits 2-16 (`word & 0x1fffc`), stored as a word; returns `this`.
+pub fn ui_vector_flags_ctor(c: &mut Cpu) {
+    c.cycles += 11;
+    let this = c.g[A0][0];
+    let word = Addr(this as u32).lw(c);
+    c.g[A2][0] = UI_VECTOR_FLAGS_CLEAR_LOW;
+    c.g[A3][0] = UI_VECTOR_FLAGS_CLEAR_HIGH;
+    c.g[A1][0] = UI_VECTOR_FLAGS_LIMIT;
+    let kept = word & c.g[A2][0] & c.g[A3][0] & c.g[A1][0];
+    c.g[V1][0] = kept;
+    c.g[V0][0] = this;
+    Addr(this as u32).sw(c, kept);
+    ret(c);
+}
+
+/// `UIEngine_GlobalCtors` (0x3a6648): `UIEngine_StaticInitDestroy(1, 0xffff)`.
+pub fn ui_engine_global_ctors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 1;
+        c.g[A1][0] = 0xffff;
+        UIENGINE_STATIC_INIT_DESTROY_CALLEE.call(c, 0x003a_665c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `UIEngine_GlobalDtors` (0x3a6668): `UIEngine_StaticInitDestroy(0, 0xffff)`.
+pub fn ui_engine_global_dtors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0xffff;
+        UIENGINE_STATIC_INIT_DESTROY_CALLEE.call(c, 0x003a_667c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2357,6 +4132,914 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 c.bus.write32(OC715_GATE, OC715_MAGIC);
                 c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 0x40);
+            },
+        );
+    }
+
+    use crate::difftest::RA as DT_RA;
+
+    use crate::difftest::fakes;
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine_rt;
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+
+    use crate::game::fe::feasyncfile::tests::base_13 as base_m2;
+
+    pub(crate) use crate::game::ui::uitext::tests::gates_on;
+
+    pub(crate) use crate::game::ui::uitext::tests::install;
+
+    /// `UIEngine_StaticInitDestroy` against the generated body: the init
+    /// path (colour table, `UISound_BaseCtor` real), the destroy path
+    /// (vtable store) and the wrong-priority exit.
+    #[test]
+    fn oc1079_ui_engine_static_init_destroy_matches() {
+        check(
+            ee::s13::f_003a3f48__generated,
+            oc1079_ui_engine_static_init_destroy,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1079, 0);
+                let lit = GAME_GP.wrapping_sub(0x2500);
+                for i in 0..0x80u32 {
+                    c.bus.write32(lit + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = if seed % 3 == 1 {
+                    0
+                } else {
+                    1 + (seed as u64 % 5)
+                };
+                c.g[A1][0] = if seed % 5 == 4 { 0xfffe } else { 0xffff };
+                c.g[RA][0] = DT_RA as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn ui_vector_return_self_matches() {
+        check(
+            ee::s13::f_003a3f08__generated,
+            ui_vector_return_self,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3a3f_0800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn ui_object_ctor_2_matches() {
+        install();
+        check(
+            ee::s13::f_003a4900__generated,
+            ui_object_ctor_2,
+            200,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x3a49_00, 2);
+                gates_on(c);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    /// Object for the constructor tests: random words at `DATA + 0x400`
+    /// (the group or icon), random a1/a2 for the pass-through callers.
+    pub(crate) fn oc1085_ctor_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        fill(c, &mut r, DATA + 0x400, 0x40);
+        c.g[A0][0] = sx(DATA + 0x400);
+        c.g[A1][0] = sx(r.next_u32());
+        c.g[A2][0] = sx(r.next_u32());
+    }
+
+    /// Group whose child list (object +0x74) has a head and a tail node at
+    /// `DATA + 0x800`; the node's link word is the zero/non-zero switch for
+    /// `UIList_First` and `UIList_Last`.
+    pub(crate) fn oc1085_list_fixture(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = machine(c, seed, salt, 0);
+        fill(c, &mut r, DATA + 0x400, 0x40);
+        c.g[A0][0] = sx(DATA + 0x400);
+        r
+    }
+
+    #[test]
+    fn ui_sound_base_dtor_matches() {
+        check(
+            ee::s13::f_003a4da8__generated,
+            ui_sound_base_dtor,
+            200,
+            &|c, seed| destructor_setup(c, seed, 0x003a_4da8),
+        );
+    }
+
+    #[test]
+    fn uiicon_ctor_2_matches() {
+        check(
+            ee::s13::f_003a4df0__generated,
+            uiicon_ctor_2,
+            200,
+            &|c, seed| oc1085_ctor_fixture(c, seed, 0x003a_4df0),
+        );
+    }
+
+    #[test]
+    fn uiicon_ctor_matches() {
+        check(
+            ee::s13::f_003a4e38__generated,
+            uiicon_ctor,
+            200,
+            &|c, seed| oc1085_ctor_fixture(c, seed, 0x003a_4e38),
+        );
+    }
+
+    #[test]
+    fn c_ui_group_set_offset_matches() {
+        check(
+            ee::s13::f_003a4fb8__generated,
+            c_ui_group_set_offset,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003a_4fb8, 0);
+                fill(c, &mut r, DATA + 0x400, 0x40);
+                c.g[A0][0] = sx(DATA + 0x400);
+                c.f[12] = r.edge_f32();
+                c.f[13] = r.edge_f32();
+            },
+        );
+    }
+
+    #[test]
+    fn c_ui_group_ctor_2_matches() {
+        check(
+            ee::s13::f_003a4fe0__generated,
+            c_ui_group_ctor_2,
+            200,
+            &|c, seed| oc1085_ctor_fixture(c, seed, 0x003a_4fe0),
+        );
+    }
+
+    #[test]
+    fn c_ui_group_ctor_matches() {
+        check(
+            ee::s13::f_003a5028__generated,
+            c_ui_group_ctor,
+            200,
+            &|c, seed| oc1085_ctor_fixture(c, seed, 0x003a_5028),
+        );
+    }
+
+    #[test]
+    fn c_ui_group_first_child_matches() {
+        check(
+            ee::s13::f_003a5100__generated,
+            c_ui_group_first_child,
+            200,
+            &|c, seed| {
+                let mut r = oc1085_list_fixture(c, seed, 0x003a_5100);
+                let node = DATA + 0x800;
+                let head_link = if seed % 2 == 0 { node } else { r.next_u32() };
+                c.bus.write32(node + 0x4, head_link);
+                c.bus.write32(DATA + 0x400 + 0x74 + 0x4, node);
+            },
+        );
+    }
+
+    #[test]
+    fn c_ui_group_last_child_matches() {
+        check(
+            ee::s13::f_003a5120__generated,
+            c_ui_group_last_child,
+            200,
+            &|c, seed| {
+                let mut r = oc1085_list_fixture(c, seed, 0x003a_5120);
+                let node = DATA + 0x800;
+                let tail_link = if seed % 2 == 0 { node } else { r.next_u32() };
+                c.bus.write32(node, tail_link);
+                c.bus.write32(DATA + 0x400 + 0x74 + 0xc, node);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_group_get_child_at_matches() {
+        check(
+            ssx3_ee::s13::f_003a5140__generated,
+            ui_group_get_child_at,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x003a_5140, 0);
+                let group = DATA + 0x1000;
+                let list = group + 0x74;
+                c.g[A0][0] = sx(group);
+                c.g[A1][0] = (seed % 5) as u64;
+                let s = DATA + 0x2000;
+                if seed % 4 == 0 {
+                    c.bus.write32(list + 4, s);
+                    c.bus.write32(s + 4, s);
+                    c.bus.write32(s, s);
+                } else {
+                    // head -> a -> b -> sentinel
+                    let a = DATA + 0x2100;
+                    let b = DATA + 0x2200;
+                    c.bus.write32(list + 4, a);
+                    c.bus.write32(a + 4, b);
+                    c.bus.write32(a, 0);
+                    c.bus.write32(b + 4, s);
+                    c.bus.write32(b, 0);
+                    c.bus.write32(s + 4, s);
+                    c.bus.write32(s, 0);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn ui_group_push_front_child_matches() {
+        check(
+            ssx3_ee::s13::f_003a5160__generated,
+            ui_group_push_front_child,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x003a_5160, 0);
+                let mut r = Rng(0x003a_5160 ^ seed as u64);
+                let group = DATA + 0x1000;
+                let list = group + 0x74;
+                let item = DATA + 0x1100;
+                let node = DATA + 0x1200;
+                c.g[A0][0] = sx(group);
+                c.g[A1][0] = sx(item);
+                // An empty list (head = itself) or one node in front.
+                c.bus
+                    .write32(list + 4, if seed % 2 == 0 { node } else { list });
+                c.bus.write32(node, r.next_u32());
+                c.bus.write32(item, r.next_u32());
+                c.bus.write32(item + 4, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn ui_group_push_back_child_matches() {
+        check(
+            ssx3_ee::s13::f_003a5180__generated,
+            ui_group_push_back_child,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x003a_5180, 0);
+                let mut r = Rng(0x003a_5180 ^ seed as u64);
+                let group = DATA + 0x1000;
+                let list = group + 0x74;
+                let item = DATA + 0x1100;
+                let node = DATA + 0x1200;
+                c.g[A0][0] = sx(group);
+                c.g[A1][0] = sx(item);
+                // An empty list (tail = itself) or one node at the back.
+                c.bus
+                    .write32(list + 0xc, if seed % 2 == 0 { node } else { list });
+                c.bus.write32(node + 4, r.next_u32());
+                c.bus.write32(item, r.next_u32());
+                c.bus.write32(item + 4, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn ui_menu_ctor_matches() {
+        check(
+            ssx3_ee::s13::f_003a5230__generated,
+            ui_menu_ctor,
+            200,
+            &|c, seed| {
+                let _r = machine_rt(c, seed, 0x003a_5230, 0);
+                let menu = DATA + 0x1000;
+                c.g[A0][0] = sx(menu);
+                c.pc = 0x003a_5230;
+            },
+        );
+    }
+
+    #[test]
+    fn ui_pair_ctor_2_matches() {
+        check(
+            ssx3_ee::s13::f_003a5420__generated,
+            ui_pair_ctor_2,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x003a_5420, 0);
+                let pair = DATA + 0x1000;
+                c.bus.write32(pair + 0x14, r.next_u32());
+                c.g[A0][0] = sx(pair);
+                c.pc = 0x003a_5420;
+            },
+        );
+    }
+
+    #[test]
+    fn ui_pair_ctor_matches() {
+        check(
+            ssx3_ee::s13::f_003a5468__generated,
+            ui_pair_ctor,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x003a_5468, 0);
+                let pair = DATA + 0x1000;
+                // Flags word with and without bit 1 already set.
+                c.bus.write32(pair + 0x14, r.next_u32());
+                c.bus.write32(pair + 0x78, r.next_u32());
+                c.bus.write32(pair + 0x7c, r.next_u32());
+                c.g[A0][0] = sx(pair);
+                c.pc = 0x003a_5468;
+            },
+        );
+    }
+
+    /// The pair and its old widget (whose vtable slot 3 is a fake), with the
+    /// new widget in a1. A third of the seeds leave the slot empty, and
+    /// `machine(.., 2)` makes some fake calls unwind.
+    pub(crate) fn pair_set_setup(c: &mut Cpu, seed: u32, field: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 2);
+        let pair = DATA + 0x1000;
+        let old = DATA + 0x1400;
+        let vt = DATA + 0x1800;
+        let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+        c.bus.write16(vt + 0x8, delta as u16);
+        c.bus.write32(vt + 0xc, FAKE + 0x10 * (seed % 2));
+        c.bus.write32(old + 0x8, vt);
+        c.bus
+            .write32(pair + field, if seed % 4 == 0 { 0 } else { old });
+        c.g[A0][0] = sx(pair);
+        c.g[A1][0] = sx(DATA + 0x1200);
+    }
+
+    #[test]
+    fn ui_pair_set_first_matches() {
+        covered(
+            ssx3_ee::s13::f_003a5530__generated,
+            ui_pair_set_first,
+            200,
+            &|c, seed| pair_set_setup(c, seed, 0x78, 0x003a_5530),
+        );
+    }
+
+    #[test]
+    fn ui_pair_set_second_matches() {
+        covered(
+            ssx3_ee::s13::f_003a5588__generated,
+            ui_pair_set_second,
+            200,
+            &|c, seed| pair_set_setup(c, seed, 0x7c, 0x003a_5588),
+        );
+    }
+
+    /// Common constructor fixture: scrambled registers, a random object at
+    /// `DATA` (its first words), and `a0` pointing at it.
+    pub(crate) fn ui_ctor_fixture(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = machine(c, seed, salt, 0);
+        fill(c, &mut r, DATA, 0x80);
+        c.g[A0][0] = sx(DATA);
+        r
+    }
+
+    driven!(gen_ui_list_box_ctor_2, ee::s13::f_003a55d8__generated);
+
+    driven!(hand_ui_list_box_ctor_2, ui_list_box_ctor_2);
+
+    #[test]
+    fn ui_list_box_ctor_2_matches() {
+        check(
+            ee::s13::f_003a55d8__generated,
+            ui_list_box_ctor_2,
+            200,
+            &|c, seed| {
+                ui_ctor_fixture(c, seed, 0x003a_55d8);
+            },
+        );
+        // The scroll loop's back edge carries an event check: make the
+        // first one due so both bodies deliver it at the same place.
+        check_events(
+            gen_ui_list_box_ctor_2,
+            hand_ui_list_box_ctor_2,
+            96,
+            &|c, seed| {
+                let mut r = ui_ctor_fixture(c, seed, 0x003a_55d9);
+                c.g[RA][0] = crate::difftest::RA as u64;
+                let mode = schedule(c, &mut r, seed, 0x003a_55d8);
+                c.next_event = c.cycles + 4;
+                mode
+            },
+        );
+    }
+
+    #[test]
+    fn ui_state_ctor_3_matches() {
+        check(
+            ee::s13::f_003a57b8__generated,
+            ui_state_ctor_3,
+            200,
+            &|c, seed| {
+                ui_ctor_fixture(c, seed, 0x003a_57b8);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_screen_ctor_matches() {
+        check(
+            ee::s13::f_003a5b98__generated,
+            ui_screen_ctor,
+            200,
+            &|c, seed| {
+                ui_ctor_fixture(c, seed, 0x003a_5b98);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_screen_ctor_2_matches() {
+        check(
+            ee::s13::f_003a5c08__generated,
+            ui_screen_ctor_2,
+            200,
+            &|c, seed| {
+                let mut r = ui_ctor_fixture(c, seed, 0x003a_5c08);
+                c.g[A1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn ui_screen_add_root_child_matches() {
+        check(
+            ee::s13::f_003a5cf0__generated,
+            ui_screen_add_root_child,
+            200,
+            &|c, seed| {
+                let mut r = ui_ctor_fixture(c, seed, 0x003a_5cf0);
+                // The child list at +0xb4 must hold a valid tail node: the
+                // generated push reads and writes through it.
+                c.bus.write32(DATA + 0xb4 + 0xc, DATA + 0x100);
+                c.bus.write32(DATA + 0x104, r.next_u32());
+                c.g[A1][0] = sx(DATA + 0x200);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_text_ctor_2_matches() {
+        check(
+            ee::s13::f_003a5d60__generated,
+            ui_text_ctor_2,
+            200,
+            &|c, seed| {
+                ui_ctor_fixture(c, seed, 0x003a_5d60);
+            },
+        );
+    }
+
+    #[test]
+    fn cui_scroll_ctor_2_matches() {
+        check(
+            ee::s13::f_003a5f60__generated,
+            cui_scroll_ctor_2,
+            200,
+            &|c, seed| {
+                ui_ctor_fixture(c, seed, 0x003a_5f60);
+            },
+        );
+    }
+
+    #[test]
+    fn cui_scroll_ctor_matches() {
+        check(
+            ee::s13::f_003a5fa0__generated,
+            cui_scroll_ctor,
+            200,
+            &|c, seed| {
+                // The generated body passes a1/a2 through to UIObject_ctor
+                // unchanged, so they stay scrambled here.
+                ui_ctor_fixture(c, seed, 0x003a_5fa0);
+            },
+        );
+    }
+
+    /// A scroll at `DATA+0x1000` with junk around its name field (`+0x8c` and
+    /// `+0xa5`), and a NUL-terminated thread name at `DATA+0x2000` of
+    /// `seed % 41` bytes: names of 25 bytes or more take the clearing path.
+    pub(crate) fn scroll_thread_name_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        let scroll = DATA + 0x1000;
+        let name = DATA + 0x2000;
+        fill(c, &mut r, scroll + 0x80, 0x20);
+        let len = seed % 41;
+        for k in 0..len {
+            c.bus.write8(name + k, b'a' + (k % 26) as u8);
+        }
+        c.bus.write8(name + len, 0);
+        c.g[A0][0] = sx(scroll);
+        c.g[A1][0] = sx(name);
+    }
+
+    /// A widget at `DATA+0x1000` filled with junk, for the constructors that
+    /// only write their own fields and call the base constructor.
+    pub(crate) fn widget_ctor_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        let obj = DATA + 0x1000;
+        fill(c, &mut r, obj, 0x40);
+        c.g[A0][0] = sx(obj);
+    }
+
+    #[test]
+    fn ui_scroll_set_up_thread_name_matches() {
+        check(
+            ee::s13::f_003a6038__generated,
+            ui_scroll_set_up_thread_name,
+            200,
+            &|c, seed| scroll_thread_name_setup(c, seed, 0x3a_6038),
+        );
+    }
+
+    #[test]
+    fn ui_scroll_set_down_thread_name_matches() {
+        check(
+            ee::s13::f_003a6088__generated,
+            ui_scroll_set_down_thread_name,
+            200,
+            &|c, seed| scroll_thread_name_setup(c, seed, 0x3a_6088),
+        );
+    }
+
+    #[test]
+    fn ui_progress_ctor_2_matches() {
+        check(
+            ee::s13::f_003a60e0__generated,
+            ui_progress_ctor_2,
+            200,
+            &|c, seed| widget_ctor_setup(c, seed, 0x3a_60e0),
+        );
+    }
+
+    #[test]
+    fn ui_progress_ctor_matches() {
+        check(
+            ee::s13::f_003a6120__generated,
+            ui_progress_ctor,
+            200,
+            &|c, seed| widget_ctor_setup(c, seed, 0x3a_6120),
+        );
+    }
+
+    #[test]
+    fn ui_slider_ctor_2_matches() {
+        check(
+            ee::s13::f_003a6190__generated,
+            ui_slider_ctor_2,
+            200,
+            &|c, seed| widget_ctor_setup(c, seed, 0x3a_6190),
+        );
+    }
+
+    #[test]
+    fn ui_slider_ctor_matches() {
+        check(
+            ee::s13::f_003a61d0__generated,
+            ui_slider_ctor,
+            200,
+            &|c, seed| widget_ctor_setup(c, seed, 0x3a_61d0),
+        );
+    }
+
+    #[test]
+    fn ui_text_scroll_ctor_2_matches() {
+        check(
+            ee::s13::f_003a6250__generated,
+            ui_text_scroll_ctor_2,
+            200,
+            &|c, seed| {
+                let mut r = base_m2(c, seed, 0x3a_6250, 4);
+                let obj = DATA + 0x8000;
+                fill(c, &mut r, obj, 0x40);
+                c.g[A0][0] = sx(obj);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_text_scroll_list_first_matches() {
+        check(
+            ee::s13::f_003a63e0__generated,
+            ui_text_scroll_list_first,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a_63e0, 0);
+                let obj = DATA + 0x1000;
+                let node = DATA + 0x1200;
+                fill(c, &mut r, obj, 0x40);
+                // The list head at `obj+0x8c` points at `node`; `node+4` is
+                // the node itself (empty) on even seeds, junk otherwise.
+                c.bus.write32(obj + 0x8c + 4, node);
+                let next = if seed % 2 == 0 { node } else { r.next_u32() };
+                c.bus.write32(node + 4, next);
+                c.g[A0][0] = sx(obj);
+            },
+        );
+    }
+
+    /// The textScroll object of the list tests; its list is at +0x8c.
+    pub(crate) const LIST_TEST_TEXT_SCROLL: u32 = DATA + 0x1000;
+
+    /// The list sentinel: self-linked, so a list of only this node is empty.
+    pub(crate) const LIST_TEST_SENTINEL: u32 = DATA + 0x2080;
+
+    /// The first of up to three list nodes (0x20 bytes apart).
+    pub(crate) const LIST_TEST_NODES: u32 = DATA + 0x2100;
+
+    /// A node that is not in the list yet (the push tests add it).
+    pub(crate) const LIST_TEST_NEW_NODE: u32 = DATA + 0x2200;
+
+    /// The object the flag and scroll constructors write.
+    pub(crate) const LIST_TEST_OBJECT: u32 = DATA + 0x4000;
+
+    /// A text scroll whose list holds `seed % 4` nodes between the sentinel and
+    /// the head/last pointers. Every few seeds the last node is self-prev (the
+    /// `UIList_Last` zero branch).
+    pub(crate) fn list_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x1089_0000 ^ seed as u64);
+        scramble(c, &mut r);
+        let list = LIST_TEST_TEXT_SCROLL + TEXT_SCROLL_LIST_OFFSET;
+        let k = seed % 4;
+        c.bus.write32(LIST_TEST_SENTINEL, LIST_TEST_SENTINEL);
+        c.bus.write32(LIST_TEST_SENTINEL + 4, LIST_TEST_SENTINEL);
+        for i in 0..k {
+            let node = LIST_TEST_NODES + 0x20 * i;
+            let next = if i + 1 < k {
+                LIST_TEST_NODES + 0x20 * (i + 1)
+            } else {
+                LIST_TEST_SENTINEL
+            };
+            c.bus.write32(node, LIST_TEST_SENTINEL);
+            c.bus.write32(node + 4, next);
+        }
+        let (first, last) = if k > 0 {
+            (LIST_TEST_NODES, LIST_TEST_NODES + 0x20 * (k - 1))
+        } else {
+            (LIST_TEST_SENTINEL, LIST_TEST_SENTINEL)
+        };
+        c.bus.write32(list + 4, first);
+        c.bus.write32(list + 0xc, last);
+        if k > 0 && seed % 6 == 5 {
+            c.bus.write32(last, last);
+        }
+    }
+
+    /// [`list_fixture`] plus the forwarder's arguments: `a0` = textScroll, `a1` = `a1`.
+    pub(crate) fn list_setup(c: &mut Cpu, seed: u32, a1: u64) {
+        list_fixture(c, seed);
+        c.g[A0][0] = sx(LIST_TEST_TEXT_SCROLL);
+        c.g[A1][0] = a1;
+    }
+
+    #[test]
+    fn cui_text_scroll_list_last_matches() {
+        check(
+            ssx3_ee::s13::f_003a6400__generated,
+            cui_text_scroll_list_last,
+            300,
+            &|c, seed| list_setup(c, seed, sx(seed)),
+        );
+    }
+
+    #[test]
+    fn cui_text_scroll_list_get_at_matches() {
+        check(
+            ssx3_ee::s13::f_003a6420__generated,
+            cui_text_scroll_list_get_at,
+            300,
+            &|c, seed| {
+                // 0 and a negative index take the first-node path; others walk.
+                let index = match seed % 7 {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    _ => seed % 5,
+                };
+                list_setup(c, seed, sx(index));
+            },
+        );
+    }
+
+    #[test]
+    fn cui_text_scroll_list_push_front_matches() {
+        check(
+            ssx3_ee::s13::f_003a6440__generated,
+            cui_text_scroll_list_push_front,
+            300,
+            &|c, seed| list_setup(c, seed, sx(LIST_TEST_NEW_NODE)),
+        );
+    }
+
+    #[test]
+    fn cui_text_scroll_list_push_back_matches() {
+        check(
+            ssx3_ee::s13::f_003a6460__generated,
+            cui_text_scroll_list_push_back,
+            300,
+            &|c, seed| list_setup(c, seed, sx(LIST_TEST_NEW_NODE)),
+        );
+    }
+
+    #[test]
+    fn ui_vector_ctor_2_matches() {
+        check(
+            ssx3_ee::s13::f_003a64f8__generated,
+            ui_vector_ctor_2,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x1089_1000 ^ seed as u64);
+                scramble(c, &mut r);
+                fill(c, &mut r, LIST_TEST_OBJECT, 32);
+                c.g[A0][0] = sx(LIST_TEST_OBJECT);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_object_flags_ctor_matches() {
+        check(
+            ssx3_ee::s13::f_003a6548__generated,
+            ui_object_flags_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1089_2000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(LIST_TEST_OBJECT, r.next_u32());
+                c.g[A0][0] = sx(LIST_TEST_OBJECT);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_list_box_flags_ctor_matches() {
+        check(
+            ssx3_ee::s13::f_003a65a0__generated,
+            ui_list_box_flags_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1089_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(LIST_TEST_OBJECT, r.next_u32());
+                c.g[A0][0] = sx(LIST_TEST_OBJECT);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_list_box_scroll_ctor_matches() {
+        check(
+            ssx3_ee::s13::f_003a65b8__generated,
+            ui_list_box_scroll_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1089_4000 ^ seed as u64);
+                scramble(c, &mut r);
+                fill(c, &mut r, LIST_TEST_OBJECT, 8);
+                c.g[A0][0] = sx(LIST_TEST_OBJECT);
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_7: u32 = 200;
+
+    /// Gates of the callee fakes: each answers only while its own word holds
+    /// `OC1090_MAGIC` (otherwise the body it replaced runs). Placed above the
+    /// pointer area so random fixture pointers never hit them.
+    pub(crate) const OC1090_STATIC_CTRL: u32 = DATA + 0x0020_0000;
+
+    pub(crate) const OC1090_SNDSTRM_CTRL: u32 = DATA + 0x0020_0010;
+
+    pub(crate) const OC1090_MAGIC: u32 = 0x1090_c0de;
+
+    pub(crate) static OC1090_PREV_STATIC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1090_PREV_SNDSTRM: AtomicUsize = AtomicUsize::new(0);
+
+    /// `UIEngine_StaticInitDestroy`: logs the call and returns.
+    pub(crate) fn oc1090_fake_static_init(c: &mut Cpu) {
+        if c.bus.read32(OC1090_STATIC_CTRL) != OC1090_MAGIC {
+            return fakes::fall_back(c, &OC1090_PREV_STATIC, ee::s13::f_003a3f48__generated);
+        }
+        fakes::fake_call(c, 0x003a_3f48);
+    }
+
+    /// `SNDSTRM_QueueRequest`: logs the call and returns.
+    pub(crate) fn oc1090_fake_sndstrm_queue(c: &mut Cpu) {
+        if c.bus.read32(OC1090_SNDSTRM_CTRL) != OC1090_MAGIC {
+            return fakes::fall_back(c, &OC1090_PREV_SNDSTRM, ee::s13::f_003b76e8__generated);
+        }
+        fakes::fake_call(c, 0x003b_76e8);
+    }
+
+    pub(crate) fn oc1090_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A3F48),
+            oc1090_fake_static_init,
+            &OC1090_PREV_STATIC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B76E8),
+            oc1090_fake_sndstrm_queue,
+            &OC1090_PREV_SNDSTRM,
+        );
+    }
+
+    #[test]
+    fn ui_state_flags_ctor_matches() {
+        check(
+            ee::s13::f_003a65d8__generated,
+            ui_state_flags_ctor,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1090_0001, 0);
+                let this = fakes::ptr(&mut r);
+                c.g[A0][0] = this as u64;
+                c.bus.write32(this, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn ui_text_flags_ctor_matches() {
+        check(
+            ee::s13::f_003a65e8__generated,
+            ui_text_flags_ctor,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1090_0002, 0);
+                let attr = fakes::ptr(&mut r);
+                c.g[A0][0] = attr as u64;
+                c.bus.write8(attr, r.next_u32() as u8);
+            },
+        );
+    }
+
+    #[test]
+    fn c_ui_text_scroll_flags_ctor_matches() {
+        check(
+            ee::s13::f_003a6600__generated,
+            c_ui_text_scroll_flags_ctor,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1090_0003, 0);
+                let attr = fakes::ptr(&mut r);
+                c.g[A0][0] = attr as u64;
+                c.bus.write8(attr, r.next_u32() as u8);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_vector_flags_ctor_matches() {
+        check(
+            ee::s13::f_003a6618__generated,
+            ui_vector_flags_ctor,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1090_0004, 0);
+                let this = fakes::ptr(&mut r);
+                c.g[A0][0] = this as u64;
+                c.bus.write32(this, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn ui_engine_global_ctors_matches() {
+        oc1090_install_fakes();
+        check(
+            ee::s13::f_003a6648__generated,
+            ui_engine_global_ctors,
+            SEEDS_7,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x1090_0005, 1);
+                c.bus.write32(OC1090_STATIC_CTRL, OC1090_MAGIC);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_engine_global_dtors_matches() {
+        oc1090_install_fakes();
+        check(
+            ee::s13::f_003a6668__generated,
+            ui_engine_global_dtors,
+            SEEDS_7,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x1090_0006, 1);
+                c.bus.write32(OC1090_STATIC_CTRL, OC1090_MAGIC);
             },
         );
     }

@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
@@ -43,6 +44,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003a_0048,
         ui_object_set_anim_param,
         "UIObject_SetAnimParam",
+    ),
+    (
+        0x0039_ffa0,
+        ui_object_start_event_thread,
+        "UIObject_StartEventThread",
     ),
 ];
 
@@ -547,6 +553,57 @@ pub fn ui_object_set_anim_param(c: &mut Cpu) {
     abi::ret(c);
 }
 
+pub(crate) const OC1083_UISCREEN_START_THREAD: Callee = Callee {
+    addr: 0x0039_c870,
+    f: ee::s13::f_0039c870,
+};
+
+/// `int UIObject_StartEventThread(UIObject* self, signed char idx)`
+/// (0x39ffa0): when the object has an event table (`+0x3c`) whose entry
+/// `idx` is not `0xffff` and it has a screen (`+0x5c`), start that screen's
+/// frame event. Returns 1 when it started, 0 otherwise.
+pub fn ui_object_start_event_thread(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 24);
+        let this = c.g[A2][0] as u32;
+        c.g[V1][0] = Addr(this).off(0x3c).lw(c);
+        c.g[V0][0] = sx(((c.g[A1][0] as u32) as i32 >> 24) as u32);
+        let events = c.g[V1][0];
+        if events == 0 {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 6;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+            c.g[A0][0] = 0xffff;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(events as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lhu(c);
+            let no_entry = c.g[V1][0] == c.g[A0][0];
+            c.g[V0][0] = 0;
+            if !no_entry {
+                c.cycles += 3;
+                c.g[A0][0] = Addr(this).off(0x5c).lw(c);
+                let no_screen = c.g[A0][0] == 0;
+                c.g[A1][0] = c.g[V1][0];
+                if !no_screen {
+                    c.cycles += 4;
+                    c.g[A2][0] = 1;
+                    OC1083_UISCREEN_START_THREAD.call(c, 0x0039_ffe8)?;
+                    c.g[V0][0] = 1;
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -779,6 +836,44 @@ pub(crate) mod tests {
                 } else {
                     r.f32(300.0)
                 };
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ui::uiscreen::tests::SEEDS_9 as SEEDS_3;
+
+    pub(crate) use crate::game::ui::uitext::tests::OC1083_MAGIC;
+    pub(crate) use crate::game::ui::uitext::tests::OC1083_START_CTRL;
+
+    pub(crate) use crate::game::ui::uitext::tests::oc1083_install_fakes;
+
+    #[test]
+    fn ui_object_start_event_thread_matches() {
+        oc1083_install_fakes();
+        check(
+            ssx3_ee::s13::f_0039ffa0__generated,
+            ui_object_start_event_thread,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x39ff_a000, 2);
+                oc1083_install_fakes();
+                c.bus.write32(OC1083_START_CTRL, OC1083_MAGIC);
+                let this = DATA + 0x1000;
+                let events = DATA + 0x2000;
+                let screen = DATA + 0x2400;
+                c.bus
+                    .write32(this + 0x3c, if seed % 4 == 0 { 0 } else { events });
+                c.bus
+                    .write32(this + 0x5c, if seed % 3 == 0 { 0 } else { screen });
+                for i in 0..8u32 {
+                    let v = if i % 3 == 0 { 0xffff } else { (i + 1) as u16 };
+                    c.bus.write16(events + 2 * i, v);
+                }
+                let idx = (seed % 5) as u64;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (r.next_u32() as u64 & !0xff) | idx;
             },
         );
     }

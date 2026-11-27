@@ -853,6 +853,70 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         music_player_get_sed_value,
         "MusicPlayer_GetSedValue",
     ),
+    (
+        0x002a_f838,
+        oc1075_path_plat_stop_track_sound,
+        "PATH_PlatStopTrackSound",
+    ),
+    (0x003d_0b78, path_skip_cond_block, "PATH_SkipCondBlock"),
+    (0x003d_0ca0, path_get_track_status, "PATH_GetTrackStatus"),
+    (0x003d_0cc8, path_track_get_status, "PATH_TrackGetStatus"),
+    (0x003d_0ed0, path_broadcast_event, "PATH_BroadcastEvent"),
+    (0x003d_1658, path_debug_printf, "PATH_DebugPrintf"),
+    (0x003d_1690, path_debug_stub, "PATH_DebugStub"),
+    (0x003d_16c8, path_nop_stub, "PATH_NopStub"),
+    (0x003d_16d0, path_get_time_value, "PATH_GetTimeValue"),
+    (0x003d_1a88, path_count_events, "PATH_CountEvents"),
+    (0x003d_1f80, path_add_event_to_maps, "PATH_AddEventToMaps"),
+    (0x003d_21c0, path_set_event_mark_bit, "PATH_SetEventMarkBit"),
+    (
+        0x003d_2218,
+        path_clear_event_mark_bits,
+        "PATH_ClearEventMarkBits",
+    ),
+    (0x003d_2fa0, path_nop_stub_wrapper, "PATH_NopStub_Wrapper"),
+    (
+        0x003d_2fc0,
+        path_get_time_value_wrapper,
+        "PATH_GetTimeValue_Wrapper",
+    ),
+    (0x003d_2fe0, path_shutdown, "PATH_Shutdown"),
+    (0x003d_30a8, path_track_call_stream, "PATH_TrackCallStream"),
+    (0x003d_3140, path_track_unload_bank, "PATH_TrackUnloadBank"),
+    (0x003d_31e8, path_set_map_callbacks, "PATH_SetMapCallbacks"),
+    (0x003d_32b8, path_track_get_beat_pos, "PATH_TrackGetBeatPos"),
+    (
+        0x003d_3658,
+        path_calc_node_repeat_count,
+        "PATH_CalcNodeRepeatCount",
+    ),
+    (0x003d_4050, path_post_node_events, "PATH_PostNodeEvents"),
+    (0x003d_4900, path_track_get_beat, "PATH_TrackGetBeat"),
+    (0x003d_4a50, path_find_track_info, "PATH_FindTrackInfo"),
+    (
+        0x003d_53b8,
+        path_find_playing_track_id,
+        "PATH_FindPlayingTrackId",
+    ),
+    (0x003d_6108, path_set_fade_time, "PATH_SetFadeTime"),
+    (0x003d_61e8, path_set_fade_curve, "PATH_SetFadeCurve"),
+    (0x003d_6318, path_track_fade_volume, "PATH_TrackFadeVolume"),
+    (
+        0x003d_6360,
+        path_track_set_aux_send_fade,
+        "PATH_TrackSetAuxSendFade",
+    ),
+    (
+        0x003d_6378,
+        path_track_start_volume_fade,
+        "PATH_TrackStartVolumeFade",
+    ),
+    (
+        0x003d_63f8,
+        path_track_start_aux_send_fade,
+        "PATH_TrackStartAuxSendFade",
+    ),
+    (0x003d_6448, path_track_start_fade3, "PATH_TrackStartFade3"),
 ];
 
 /// Same-shard direct callees used above.
@@ -24237,6 +24301,2991 @@ pub fn music_player_get_sed_value(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// `PATH_PlatStopTrackSound` (0x2af838).
+
+/// `int PATH_PlatStopTrackSound(int idx)` (0x2af838): stop the platform
+/// track's sound. Slot `idx` of the track table at 0x4d3e98 gives the track;
+/// with the sound lock held, a track with the "playing" flag (`+0x64`) stops
+/// its sound handle (`track+0x6c -> +4`), otherwise its stream (`*track`);
+/// then the track is marked stopped (`+0x65 = 1`). Returns 0.
+pub fn oc1075_path_plat_stop_track_sound(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x004d_0000;
+        c.g[V0][0] = sx(0x004d_3e98);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+        frame.save(c, S0, 0x10);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = Addr(r32(c, A0)).lw(c);
+        call_ptr(c, 0x003b_58a0, 0x002a_f85c)?; // SND_Lock
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x64)).lb(c);
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x6c)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x4)).lw(c);
+            call_ptr(c, 0x003b_89e0, 0x002a_f874)?; // SND_Stop
+        } else {
+            c.cycles += 2;
+            c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+            call_ptr(c, 0x003b_78f8, 0x002a_f884)?; // SNDSTRM_Stop
+        }
+        c.cycles += 9;
+        call_ptr(c, 0x003b_58d8, 0x002a_f88c)?; // SND_Unlock
+        c.g[V1][0] = 0x1;
+        c.g[RA][0] = Addr(sp(c)).ld(c);
+        let flag = c.g[V1][0];
+        Addr(r32(c, S0).wrapping_add(0x65)).sb(c, flag);
+        c.g[V0][0] = 0;
+        frame.restore(c, S0, 0x10);
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+        c.pc = ra;
+        Ok(())
+    });
+}
+
+/// `void PATH_SkipCondBlock(PATHAction *a, int n, PATHAction *end)`
+/// (0x3d0b78): walks action records (16 bytes, type byte at +9, flags at +8)
+/// from `a + 0x10` up to `end`, skipping conditional blocks until their
+/// matching end, and sets the done bit on the way out.
+pub fn path_skip_cond_block(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A0][0] = abi::addu(c.g[A0][0], 0x10);
+    c.g[V0][0] = abi::sltu(c.g[A2][0], c.g[A0][0]);
+    c.g[A3][0] = 0;
+    if c.g[V0][0] == 0 {
+        c.cycles += 2;
+        let negative = (c.g[A1][0] as i64) < 0;
+        c.g[T4][0] = 0x1;
+        if !negative {
+            c.cycles += 6;
+            c.g[T3][0] = 0x10_0000;
+            c.g[T0][0] = 0;
+            c.g[T2][0] = 0x20_0000;
+            c.g[T1][0] = 0x400_0000;
+            c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x9)).lbu(c);
+            loop {
+                'record: {
+                    c.cycles += 2;
+                    let not_cond = c.g[V0][0] != c.g[T4][0];
+                    c.g[V1][0] = 0x30_0000;
+                    if not_cond {
+                        break 'record;
+                    }
+                    'masked: {
+                        c.cycles += 4;
+                        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x8)).lw(c);
+                        c.g[V0][0] &= c.g[V1][0];
+                        if c.g[V0][0] != c.g[T3][0] {
+                            break 'masked;
+                        }
+                        c.cycles += 2;
+                        c.g[A3][0] = abi::addu(c.g[A3][0], 1);
+                        break 'record;
+                    }
+                    'end_test: {
+                        c.cycles += 2;
+                        if c.g[V0][0] == c.g[V1][0] {
+                            c.g[V0][0] = c.g[A3][0];
+                            break 'end_test;
+                        }
+                        c.cycles += 2;
+                        let not_t2 = c.g[V0][0] != c.g[T2][0];
+                        c.g[V0][0] = c.g[A3][0];
+                        if not_t2 {
+                            break 'record;
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = abi::subu(c.g[A1][0], 1);
+                    c.g[V0][0] = abi::slt(c.g[T0][0], c.g[V0][0]);
+                    c.g[A3][0] = abi::subu(c.g[A3][0], 1);
+                    if c.g[V0][0] == 0 {
+                        c.g[A1][0] = c.g[V1][0];
+                    }
+                }
+                c.cycles += 2;
+                if (c.g[A1][0] as i64) > 0 {
+                    c.g[A0][0] = abi::addu(c.g[A0][0], 0x10);
+                } else {
+                    c.cycles += 4;
+                    let flags = Addr(r32(c, A0).wrapping_add(0x8)).lw(c);
+                    let set = flags | c.g[T1][0];
+                    c.g[V0][0] = set;
+                    Addr(r32(c, A0).wrapping_add(0x8)).sw(c, set);
+                    c.g[A0][0] = abi::addu(c.g[A0][0], 0x10);
+                }
+                c.cycles += 3;
+                c.g[V0][0] = abi::sltu(c.g[A2][0], c.g[A0][0]);
+                if c.g[V0][0] != 0 {
+                    break;
+                }
+                c.cycles += 2;
+                if (c.g[A1][0] as i64) < 0 {
+                    break;
+                }
+                c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x9)).lbu(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_0ba8);
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void PATH_SkipRemainingActions(PATHAction *a, PATHAction *end)`
+/// (0x3d0c20): sets the done bit (0x4000000) of each action record from
+/// `a + 0x10` up to `end`, stopping at the first record of another type.
+#[allow(dead_code)]
+pub fn path_skip_remaining_actions(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A0][0] = abi::addu(c.g[A0][0], 0x10);
+    c.g[V0][0] = abi::sltu(c.g[A1][0], c.g[A0][0]);
+    let past_end = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x1;
+    if !past_end {
+        c.cycles += 3;
+        c.g[V1][0] = Addr(r32(c, A0).wrapping_add(0x9)).lbu(c);
+        let first_is_one = c.g[V1][0] == c.g[V0][0];
+        c.g[A2][0] = 0x400_0000;
+        if !first_is_one {
+            c.cycles += 3;
+            c.g[V1][0] = 0x1;
+            c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x8)).lw(c);
+            loop {
+                c.cycles += 6;
+                c.g[V0][0] |= c.g[A2][0];
+                let done = c.g[V0][0];
+                Addr(r32(c, A0).wrapping_add(0x8)).sw(c, done);
+                c.g[A0][0] = abi::addu(c.g[A0][0], 0x10);
+                if abi::sltu(c.g[A1][0], c.g[A0][0]) != 0 {
+                    break;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x9)).lbu(c);
+                if c.g[V0][0] == c.g[V1][0] {
+                    break;
+                }
+                c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x8)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_0c48);
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `int PATH_GetTrackStatus(int id)` (0x3d0ca0): the status of the track
+/// `PATH_FindTrack(id)` finds.
+pub fn path_get_track_status(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Callee {
+            addr: 0x003d_5290,
+            f: ee::s14::PATH_FindTrack,
+        }
+        .call(c, 0x003d_0cb0)?;
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x003d_0cc8,
+            f: ee::s14::PATH_TrackGetStatus,
+        }
+        .call(c, 0x003d_0cb8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `D_0044F42C`: the byte that says the path system is set up.
+pub(crate) const PATH_FLAG_OC1104: u32 = 0x0044_f42c;
+
+/// `D_0044F430`: the selected map id (0 unset, -1 none).
+pub(crate) const CURRENT_ID_OC1104: u32 = 0x0044_f430;
+
+/// `D_0044F420`: the selected path map.
+pub(crate) const CURRENT_MAP_OC1104: u32 = 0x0044_f420;
+
+/// `D_0044F438`: the current tick the track start ticks are compared with.
+pub(crate) const TICK_NOW_OC1104: u32 = 0x0044_f438;
+
+/// `D_0044F43C`: the time value `PATH_GetTimeValue` returns.
+pub(crate) const TIME_VALUE_OC1104: u32 = 0x0044_f43c;
+
+/// `PATH_TrackGetBeatPos` (0x3d32b8).
+pub(crate) const TRACK_BEAT_POS_OC1104: Callee = Callee {
+    addr: 0x003d_32b8,
+    f: ee::s14::f_003d32b8,
+};
+
+/// `PATH_QueueAppend` (0x3d0b18).
+pub(crate) const QUEUE_APPEND_OC1104: Callee = Callee {
+    addr: 0x003d_0b18,
+    f: ee::s14::f_003d0b18,
+};
+
+/// `PATH_SelectMap` (0x3d5450).
+pub(crate) const SELECT_MAP_OC1104: Callee = Callee {
+    addr: 0x003d_5450,
+    f: ee::s14::f_003d5450,
+};
+
+/// `PATHI_copyevent` (0x3d2068).
+pub(crate) const COPY_EVENT_OC1104: Callee = Callee {
+    addr: 0x003d_2068,
+    f: ee::s14::f_003d2068,
+};
+
+/// `PATH_AddEventToMaps` (0x3d1f80).
+pub(crate) const ADD_EVENT_OC1104: Callee = Callee {
+    addr: 0x003d_1f80,
+    f: ee::s14::f_003d1f80,
+};
+
+/// Spill one general register into the frame with `sd`.
+pub(crate) fn spill_gpr_oc1104(c: &mut Cpu, frame: Frame, off: u32, reg: usize) {
+    let v = c.g[reg][0];
+    let a = frame.at(c, off);
+    c.sd(a, v);
+}
+
+/// `int PATH_TrackGetStatus` state machine for a non-null voice (the body of
+/// 0x3d0cc8 after its null check). Leaves the state in `+0x100` and in v0.
+pub(crate) fn track_status_states(c: &mut Cpu, s0: u64) -> Flow {
+    let voice = s0 as u32;
+    c.cycles += 4;
+    c.g[V0][0] = 2;
+    c.g[A0][0] = Addr(voice.wrapping_add(0x4c)).lw(c);
+    let two = c.g[V0][0];
+    Addr(voice.wrapping_add(0x100)).sw(c, two);
+    if c.g[A0][0] == 0 {
+        return track_status_short(c, s0);
+    }
+    c.cycles += 5;
+    c.g[V1][0] = 0x0045_0000;
+    c.g[V0][0] = Addr(TICK_NOW_OC1104).lw(c);
+    let before_start = c.g[V0][0] < c.g[A0][0];
+    if before_start {
+        c.g[V0][0] = 3;
+    } else {
+        c.cycles += 2;
+        c.g[V0][0] = 4;
+    }
+    track_status_store_tail(c, s0)
+}
+
+/// Store the state in v0 to `+0x100`, then the load tail.
+pub(crate) fn track_status_store_tail(c: &mut Cpu, s0: u64) -> Flow {
+    let voice = s0 as u32;
+    c.cycles += 1;
+    let v = c.g[V0][0];
+    Addr(voice.wrapping_add(0x100)).sw(c, v);
+    track_status_load_tail(c, s0)
+}
+
+/// Return the state stored at `+0x100`.
+pub(crate) fn track_status_load_tail(c: &mut Cpu, s0: u64) -> Flow {
+    let voice = s0 as u32;
+    c.cycles += 1;
+    c.g[V0][0] = Addr(voice.wrapping_add(0x100)).lw(c);
+    Ok(())
+}
+
+/// The path of the status function for a zero start tick: the voice's
+/// short-path check, then the track's beat position against the map's
+/// window.
+pub(crate) fn track_status_short(c: &mut Cpu, s0: u64) -> Flow {
+    let voice = s0 as u32;
+    c.cycles += 3;
+    c.g[V0][0] = Addr(voice.wrapping_add(0x36)).lh(c);
+    let negative = (c.g[V0][0] as i64) < 0;
+    c.g[V0][0] = 7;
+    if negative {
+        return track_status_load_tail(c, s0);
+    }
+    c.cycles += 6;
+    c.g[A0][0] = s0;
+    let seven = c.g[V0][0];
+    Addr(voice.wrapping_add(0x100)).sw(c, seven);
+    c.g[A1][0] = c.g[SP][0];
+    TRACK_BEAT_POS_OC1104.call(c, 0x003d_0d28)?;
+    let beat_negative = (c.g[V0][0] as i64) < 0;
+    c.g[V1][0] = 0x0045_0000;
+    if beat_negative {
+        return track_status_load_tail(c, s0);
+    }
+    c.cycles += 8;
+    c.g[V0][0] = Addr(voice.wrapping_add(0x24)).lw(c);
+    c.g[A0][0] = Addr(CURRENT_MAP_OC1104).lw(c);
+    c.g[A1][0] = Addr(sp(c).wrapping_add(0x18)).lw(c);
+    c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0xc)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    let below_window = c.g[V0][0] < c.g[A1][0];
+    c.g[V0][0] = below_window as u64;
+    if below_window {
+        // The state stays what the call path stored (7).
+        c.g[V0][0] = Addr(voice.wrapping_add(0x100)).lw(c);
+        return Ok(());
+    }
+    c.cycles += 1;
+    c.g[V0][0] = 5;
+    track_status_store_tail(c, s0)
+}
+
+/// `int PATH_TrackGetStatus(PathVoice* voice)` (0x3d0cc8): the state of a
+/// path voice (0 when null, 3..5 for a pending or running track, 7 when the
+/// track's beat position is not yet reached, 2 when no start tick is set).
+/// The state is kept at `+0x100`.
+pub fn path_track_get_status(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = 1;
+        if c.g[S0][0] != 0 {
+            let s0 = c.g[S0][0];
+            track_status_states(c, s0)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The gate of `PATH_BroadcastEvent`: the path system must be set up, no map
+/// selected, and the query for map -1 must answer. Leaves the header address
+/// in `S0` terms (the caller computes it from the frame). True to insert.
+pub(crate) fn broadcast_gate(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.g[V0][0] = 0x0045_0000;
+    c.g[V1][0] = Addr(PATH_FLAG_OC1104).lbu(c);
+    if c.g[V1][0] == 0 {
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = 0x0045_0000;
+    c.g[V0][0] = Addr(CURRENT_ID_OC1104).lw(c);
+    if c.g[V0][0] != 0 {
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = u64::MAX;
+    SELECT_MAP_OC1104.call(c, 0x003d_0f24)?;
+    Ok(c.g[V0][0] != 0)
+}
+
+/// The insertion body of `PATH_BroadcastEvent` (after the gate): clears the
+/// event header and the item, fills the item, queues it, then adds the
+/// event to every map whose player mask fits (4 slots, 0x928 bytes each).
+pub(crate) fn broadcast_insert(c: &mut Cpu, frame: Frame, mask: u64, val: u64) -> Flow {
+    let header = frame.at(c, 0x10);
+    let item = frame.at(c, 0);
+    c.cycles += 25;
+    c.g[A1][0] = 0;
+    c.g[A0][0] = sx(header);
+    c.g[A2][0] = 0x10;
+    call_ptr(c, 0x0041_6210, 0x003d_0f44)?;
+    c.g[A0][0] = c.g[SP][0];
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0x10;
+    call_ptr(c, 0x0041_6210, 0x003d_0f5c)?;
+    c.g[V1][0] = u64::MAX;
+    c.g[V0][0] = 4;
+    let four = c.g[V0][0];
+    Addr(item.wrapping_add(9)).sb(c, four);
+    c.g[A0][0] = sx(header);
+    let minus_one = c.g[V1][0];
+    Addr(item.wrapping_add(0xe)).sb(c, minus_one);
+    c.g[A1][0] = c.g[SP][0];
+    Addr(item.wrapping_add(0xc)).sh(c, val);
+    Addr(item).sw(c, mask);
+    let minus_one = c.g[V1][0];
+    Addr(item.wrapping_add(8)).sb(c, minus_one);
+    QUEUE_APPEND_OC1104.call(c, 0x003d_0f8c)?;
+
+    c.g[V0][0] = 0x0051_7610;
+    // The map slots: the player mask at +0x30 and the loaded flag at +0x34
+    // of each 0x928-byte map, starting at the first map's +0x30.
+    let mut slot: u32 = 0x0051_7640;
+    let mut i: u64 = 0;
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(slot.wrapping_add(4)).lw(c);
+        if c.g[V0][0] == 0 {
+            i += 1;
+        } else {
+            c.cycles += 5;
+            c.g[V1][0] = Addr(slot).lw(c);
+            let player = c.g[V1][0];
+            c.g[V0][0] = player & !0x0fff_ffffu64;
+            c.g[V0][0] &= mask;
+            let high_hit = c.g[V0][0] != 0;
+            c.g[V0][0] = player & 0x0f00_0000;
+            if !high_hit {
+                c.cycles += 1;
+                i += 1;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] &= mask;
+                if c.g[V0][0] == 0 {
+                    i += 1;
+                } else {
+                    c.cycles += 4;
+                    c.g[A0][0] = i & 0xff;
+                    SELECT_MAP_OC1104.call(c, 0x003d_0fcc)?;
+                    if c.g[V0][0] == 0 {
+                        i += 1;
+                    } else {
+                        c.cycles += 5;
+                        c.g[A0][0] = sx(header);
+                        COPY_EVENT_OC1104.call(c, 0x003d_0fdc)?;
+                        c.g[A1][0] = c.g[V0][0];
+                        c.g[A0][0] = mask;
+                        ADD_EVENT_OC1104.call(c, 0x003d_0fe8)?;
+                        c.cycles += 1;
+                        i += 1;
+                    }
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = (i < 4) as u64;
+        let more = c.g[V0][0] != 0;
+        slot = slot.wrapping_add(0x928);
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_0f98);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 4;
+    c.g[V1][0] = 0x0045_0000;
+    Addr(CURRENT_ID_OC1104).sw(c, 0);
+    Addr(CURRENT_MAP_OC1104).sw(c, 0);
+    c.g[V0][0] = 0;
+    Ok(())
+}
+
+/// `int PATH_BroadcastEvent(uint mask, int val)` (0x3d0ed0): queues an event
+/// with player mask `mask` and value `val` and adds it to the matching maps.
+/// Returns 0, or -18 when the path system is not ready (no map selected
+/// afterwards, or the flag is clear).
+pub fn path_broadcast_event(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xb0);
+        c.g[V0][0] = 0x0045_0000;
+        frame.save(c, S1, 0x90);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save_ra(c, 0x20);
+        let mask = c.g[A0][0];
+        let val = c.g[A1][0];
+        if broadcast_gate(c)? {
+            broadcast_insert(c, frame, mask, val)?;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = (-18i64) as u64;
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One row of `PATH_StopAllTracks`: for the map `i` (the 0x928-byte slot at
+/// `i`), when its player mask and loaded flag fit and the map is selected,
+/// stops every track on its list. Ends with the 1578 tail (+1 cycle) unless
+/// it returns early (the caller's 157c tail follows either way).
+pub(crate) fn stop_tracks_row(c: &mut Cpu, mask: u64, i: u64) -> Flow {
+    c.cycles += 5;
+    c.mult(0, 5, 4, 2);
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x0051_7644));
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+    if c.g[V1][0] == 0 {
+        c.cycles += 1;
+        return Ok(());
+    }
+    c.cycles += 8;
+    c.g[V0][0] = 0x0051_7640;
+    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V1][0] = Addr(c.g[V1][0] as u32).lw(c);
+    let player = c.g[V1][0];
+    c.g[V0][0] = player & !0x0fff_ffffu64;
+    c.g[V0][0] &= mask;
+    if c.g[V0][0] == 0 {
+        c.cycles += 1;
+        return Ok(());
+    }
+    c.g[V0][0] = player & 0x0f00_0000;
+    c.cycles += 3;
+    c.g[V0][0] &= mask;
+    if c.g[V0][0] == 0 {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[A0][0] = i;
+    SELECT_MAP_OC1104.call(c, 0x003d_1530)?;
+    if c.g[V0][0] == 0 {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[V0][0] = Addr(CURRENT_MAP_OC1104).lw(c);
+    let mut j: u64 = 0;
+    loop {
+        c.cycles += 5;
+        c.g[V1][0] = sx((j as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        let voice = Addr((c.g[V0][0] as u32).wrapping_add(0x58)).lw(c);
+        if voice == 0 {
+            j += 1;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = Addr((voice as u32).wrapping_add(0x54)).lw(c);
+            call_ptr(c, 0x002a_f838, 0x003d_1564)?;
+            Addr((voice as u32).wrapping_add(0x36)).sh(c, u64::MAX);
+            j += 1;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = (j < 24) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V0][0] = Addr(CURRENT_MAP_OC1104).lw(c);
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_1548);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 1;
+    Ok(())
+}
+
+/// The map loop of `PATH_StopAllTracks`: rows 0..4, then the exit that clears
+/// the selection.
+pub(crate) fn stop_tracks_loop(c: &mut Cpu, mask: u64) -> Flow {
+    c.g[V0][0] = 0x0928;
+    let mut i: u64 = 0;
+    loop {
+        c.g[A0][0] = i;
+        stop_tracks_row(c, mask, i)?;
+        i += 1;
+        c.g[A0][0] = i;
+        c.cycles += 3;
+        c.g[V0][0] = ((i as i64) < 4) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x0928;
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_14e8);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0x0045_0000;
+    Addr(CURRENT_MAP_OC1104).sw(c, 0);
+    Addr(CURRENT_ID_OC1104).sw(c, 0);
+    Ok(())
+}
+
+/// `void PATH_StopAllTracks(uint mask)` (0x3d1470): stops every track on the
+/// selected path maps whose player mask fits, then clears the selection.
+/// Does nothing when the path system is not set up or no map is selected.
+#[allow(dead_code)]
+pub fn path_stop_all_tracks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V1][0] = 0x0045_0000;
+        frame.save(c, S4, 0x50);
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        c.g[V0][0] = Addr(PATH_FLAG_OC1104).lbu(c);
+        let mask = c.g[A0][0];
+        frame.save_ra(c, 0);
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+        } else {
+            c.cycles += 4;
+            c.g[V1][0] = 0x0045_0000;
+            c.g[V0][0] = Addr(CURRENT_ID_OC1104).lw(c);
+            if c.g[V0][0] == 0 {
+                c.cycles += 4;
+                c.g[A0][0] = u64::MAX;
+                SELECT_MAP_OC1104.call(c, 0x003d_14c4)?;
+                let found = c.g[V0][0] != 0;
+                c.g[V0][0] = 0x0051_0000;
+                if found {
+                    c.cycles += 7;
+                    stop_tracks_loop(c, mask)?;
+                }
+                c.cycles += 1;
+            }
+        }
+        c.cycles += 11;
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PATH_FatalExit` (0x3d1608): sets the path result to -1, calls `exit(0)`
+/// and falls into `PATH_DebugPrintf`. Not registered: the callee is the real
+/// `exit` (no override slot to gate a fake on), so it has no differential
+/// test. Kept as the port for when `exit` is replaced.
+#[allow(dead_code)]
+pub fn path_fatal_exit(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        c.g[V0][0] = u64::MAX;
+        let frame = Frame::open(c, 0x90);
+        c.g[V1][0] = 0x0045_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0;
+        spill_gpr_oc1104(c, frame, 0x58, A1);
+        Addr(CURRENT_ID_OC1104).sw(c, u64::MAX);
+        spill_gpr_oc1104(c, frame, 0x60, A2);
+        spill_gpr_oc1104(c, frame, 0x68, A3);
+        spill_gpr_oc1104(c, frame, 0x70, T0);
+        spill_gpr_oc1104(c, frame, 0x78, T1);
+        spill_gpr_oc1104(c, frame, 0x80, T2);
+        spill_gpr_oc1104(c, frame, 0x88, T3);
+        frame.save_fpr(c, 12, 0x48);
+        frame.save_fpr(c, 14, 0x4c);
+        frame.save_fpr(c, 16, 0x50);
+        frame.save_fpr(c, 18, 0x54);
+        call_ptr(c, 0x0041_1310, 0x003d_1654)?;
+        c.pc = 0x003d_1658;
+        path_debug_printf(c);
+        Ok(())
+    })
+}
+
+/// The argument spill of `PATH_DebugPrintf` and `PATH_DebugStub`: the
+/// variadic registers (a1..t3) and the float arguments (f12..f18) go to the
+/// frame, then the frame is popped and it returns to `ra`. 14 cycles.
+pub(crate) fn debug_spill_oc1104(c: &mut Cpu) {
+    c.cycles += 14;
+    let frame = Frame::open(c, 0x80);
+    spill_gpr_oc1104(c, frame, 0x48, A1);
+    spill_gpr_oc1104(c, frame, 0x50, A2);
+    spill_gpr_oc1104(c, frame, 0x58, A3);
+    spill_gpr_oc1104(c, frame, 0x60, T0);
+    spill_gpr_oc1104(c, frame, 0x68, T1);
+    spill_gpr_oc1104(c, frame, 0x70, T2);
+    spill_gpr_oc1104(c, frame, 0x78, T3);
+    frame.save_fpr(c, 12, 0x38);
+    frame.save_fpr(c, 14, 0x3c);
+    frame.save_fpr(c, 16, 0x40);
+    frame.save_fpr(c, 18, 0x44);
+    frame.close(c);
+}
+
+/// `PATH_DebugPrintf` (0x3d1658): the debug printf's argument spill.
+pub fn path_debug_printf(c: &mut Cpu) {
+    debug_spill_oc1104(c);
+}
+
+/// `PATH_DebugStub` (0x3d1690): the same argument spill as `PATH_DebugPrintf`.
+pub fn path_debug_stub(c: &mut Cpu) {
+    debug_spill_oc1104(c);
+}
+
+/// `PATH_NopStub` (0x3d16c8): returns at once. 2 cycles.
+pub fn path_nop_stub(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `PATH_GetTimeValue` (0x3d16d0): the time value global. 3 cycles.
+pub fn path_get_time_value(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V1][0] = 0x0045_0000;
+    c.g[V0][0] = Addr(TIME_VALUE_OC1104).lw(c);
+    ret(c);
+}
+
+/// `D_0044F420`: the current path map (`PathMap*`).
+pub(crate) const CUR_MAP: u32 = 0x0044_f420;
+
+/// `D_0044F42C`: byte set once the path system is initialised.
+pub(crate) const INIT_FLAG: u32 = 0x0044_f42c;
+
+/// `D_0044F430`: id of the selected map (0 unset, -1 none).
+pub(crate) const CUR_ID: u32 = 0x0044_f430;
+
+/// The path-map table `D_00517610` (four maps, 0x928 bytes each).
+#[allow(dead_code)]
+pub(crate) const MAPS: u32 = 0x0051_7610;
+
+/// `PATH_SelectMap(idx)` (0x3d5450).
+pub(crate) const SELECT_MAP: Callee = Callee {
+    addr: 0x003d_5450,
+    f: ee::s14::f_003d5450,
+};
+
+/// `PATH_RemoveEvent(ev, flags)` (0x3d1ba8).
+pub(crate) const REMOVE_EVENT: Callee = Callee {
+    addr: 0x003d_1ba8,
+    f: ee::s14::f_003d1ba8,
+};
+
+/// `PATH_NopStub` (0x3d16c8).
+pub(crate) const NOP_STUB: Callee = Callee {
+    addr: 0x003d_16c8,
+    f: ee::s14::f_003d16c8,
+};
+
+/// `PATH_GetTimeValue` (0x3d16d0).
+pub(crate) const GET_TIME_VALUE: Callee = Callee {
+    addr: 0x003d_16d0,
+    f: ee::s14::f_003d16d0,
+};
+
+/// `void PATH_FlushEvents(int mask)` (0x3d1940): for each map that is loaded
+/// and whose group bits match `mask`, clears the event slots of the current
+/// player path (`PATH_RemoveEvent(slot, 2)`), then forgets the selection.
+#[allow(dead_code)]
+pub fn path_flush_events(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V1][0] = 0x0045_0000;
+        c.g[V0][0] = Addr(INIT_FLAG).lbu(c);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        let t = c.g[V0][0] == 0;
+        frame.save_ra(c, 0);
+        'a5c: {
+            'a58: {
+                if t {
+                    break 'a58;
+                }
+                c.cycles += 4;
+                c.g[V1][0] = 0x0045_0000;
+                c.g[V0][0] = Addr(CUR_ID).lw(c);
+                let t = c.g[V0][0] != 0;
+                frame.restore(c, S0, 0x90);
+                if t {
+                    break 'a5c;
+                }
+                c.cycles += 4;
+                c.g[A0][0] = u64::MAX;
+                SELECT_MAP.call(c, 0x003d_1994)?;
+                let t = c.g[V0][0] == 0;
+                c.g[V0][0] = 0x0051_0000;
+                if t {
+                    break 'a58;
+                }
+                c.cycles += 9;
+                c.g[A0][0] = 0;
+                c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7644));
+                c.g[S3][0] = 0x0045_0000;
+                c.g[FP][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x4));
+                c.g[S7][0] = 0x928;
+                c.g[S6][0] = sx(0xf000_0000);
+                c.g[S5][0] = 0x0f00_0000;
+                c.mult(0, 5, 4, 23);
+                'l19c0: loop {
+                    'b1a40: {
+                        'b1a3c: {
+                            c.cycles += 4;
+                            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                            let t = c.g[V1][0] == 0;
+                            c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                            if t {
+                                break 'b1a3c;
+                            }
+                            c.cycles += 6;
+                            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                            c.g[V1][0] = Addr(c.g[V1][0] as u32).lw(c);
+                            c.g[V0][0] = c.g[V1][0] & c.g[S6][0];
+                            c.g[V0][0] = c.g[V0][0] & c.g[S2][0];
+                            let t = c.g[V0][0] == 0;
+                            c.g[V0][0] = c.g[V1][0] & c.g[S5][0];
+                            if t {
+                                break 'b1a3c;
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = c.g[V0][0] & c.g[S2][0];
+                            if c.g[V0][0] == 0 {
+                                c.g[A0][0] = c.g[S1][0];
+                                break 'b1a40;
+                            }
+                            c.cycles += 4;
+                            c.g[A0][0] = c.g[A0][0] & 0xff;
+                            SELECT_MAP.call(c, 0x003d_19fc)?;
+                            let t = c.g[V0][0] == 0;
+                            c.g[A0][0] = c.g[S1][0];
+                            if t {
+                                break 'b1a40;
+                            }
+                            c.cycles += 3;
+                            c.g[S0][0] = 0;
+                            c.g[V0][0] = Addr((c.g[S3][0] as u32).wrapping_sub(0xbe0)).lw(c);
+                            'l1a10: loop {
+                                'b1a2c: {
+                                    c.cycles += 5;
+                                    c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
+                                    c.g[V0][0] =
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                    c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xdc)).lw(c);
+                                    let t = c.g[A0][0] == 0;
+                                    c.g[A0][0] = c.g[S0][0];
+                                    if t {
+                                        break 'b1a2c;
+                                    }
+                                    c.cycles += 2;
+                                    c.g[A1][0] = 0x2;
+                                    REMOVE_EVENT.call(c, 0x003d_1a2c)?;
+                                }
+                                c.cycles += 4;
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                                c.g[V0][0] = ((c.g[S0][0] as i64) < 16i64) as u64;
+                                let t = c.g[V0][0] != 0;
+                                c.g[V0][0] = Addr((c.g[S3][0] as u32).wrapping_sub(0xbe0)).lw(c);
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x003d_1a10);
+                                    }
+                                    continue 'l1a10;
+                                } else {
+                                    break 'b1a3c;
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[A0][0] = c.g[S1][0];
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < 4i64) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.mult(0, 5, 4, 23);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_19c0);
+                        }
+                        continue 'l19c0;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x0045_0000;
+                        Addr((c.g[S3][0] as u32).wrapping_sub(0xbe0)).sw(c, 0);
+                        Addr((c.g[V0][0] as u32).wrapping_sub(0xbd0)).sw(c, 0);
+                        break 'a58;
+                    }
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x90);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `int PATH_CountEvents(int mask)` (0x3d1a88): -18 if the path system is not
+/// ready or no map is selected; otherwise the number of live event slots of
+/// the selected player path in the maps whose group bits match `mask`, after
+/// clearing the selection. Unlike `PATH_FlushEvents` this does not remove
+/// anything: it only counts the slots of the first matching loaded map.
+pub fn path_count_events(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        'b1b80: {
+            'b1ae8: {
+                'b1ae0: {
+                    c.g[V0][0] = 0x0045_0000;
+                    c.g[V1][0] = Addr(INIT_FLAG).lbu(c);
+                    frame.save(c, S2, 0x50);
+                    frame.save(c, S3, 0x40);
+                    c.g[S2][0] = 0;
+                    c.g[S3][0] = c.g[A0][0];
+                    frame.save(c, S0, 0x70);
+                    frame.save(c, S1, 0x60);
+                    frame.save(c, S4, 0x30);
+                    frame.save(c, S5, 0x20);
+                    frame.save(c, S6, 0x10);
+                    let t = c.g[V1][0] == 0;
+                    frame.save_ra(c, 0);
+                    if t {
+                        break 'b1ae0;
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = 0x0045_0000;
+                    c.g[V0][0] = Addr(CUR_ID).lw(c);
+                    let t = c.g[V0][0] != 0;
+                    c.g[S6][0] = c.g[V1][0];
+                    if t {
+                        break 'b1ae0;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = u64::MAX;
+                    SELECT_MAP.call(c, 0x003d_1ad8)?;
+                    let t = c.g[V0][0] != 0;
+                    c.g[V0][0] = 0x0051_0000;
+                    if t {
+                        break 'b1ae8;
+                    }
+                }
+                c.cycles += 2;
+                c.g[V0][0] = u64::MAX - 17;
+                break 'b1b80;
+            }
+            c.cycles += 8;
+            c.g[V1][0] = 0x0f00_0000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7610));
+            c.g[S5][0] = 0x0045_0000;
+            c.g[S4][0] = c.g[S5][0];
+            c.g[S3][0] = c.g[S3][0] & c.g[V1][0];
+            c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x30));
+            c.g[S0][0] = 0;
+            'l1b08: loop {
+                'b1b78: {
+                    'b1b68: {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x4).lw(c);
+                        if c.g[V0][0] == 0 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                            break 'b1b68;
+                        }
+                        c.cycles += 4;
+                        c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                        c.g[V0][0] &= c.g[S3][0];
+                        if c.g[V0][0] == 0 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                            break 'b1b68;
+                        }
+                        'b1b64: {
+                            c.cycles += 4;
+                            c.g[RA][0] = sx(0x003d_1b2c);
+                            c.g[A0][0] = c.g[S0][0] & 0xff;
+                            SELECT_MAP.call(c, 0x003d_1b2c)?;
+                            let t = c.g[V0][0] == 0;
+                            c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_sub(0xbe0)).lw(c);
+                            if t {
+                                break 'b1b64;
+                            }
+                            c.cycles += 3;
+                            c.g[A1][0] = 0xf;
+                            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xdc));
+                            'l1b40: loop {
+                                c.cycles += 7;
+                                c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+                                c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+                                let t = (c.g[A1][0] as i64) >= 0;
+                                if c.g[V1][0] != 0 {
+                                    c.g[S2][0] = c.g[V0][0];
+                                }
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x003d_1b40);
+                                    }
+                                    continue 'l1b40;
+                                } else {
+                                    c.cycles += 2;
+                                    Addr((c.g[S6][0] as u32).wrapping_sub(0xbd0)).sw(c, 0);
+                                    break 'b1b78;
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < 4i64) as u64;
+                    let t = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x928));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_1b08);
+                        }
+                        continue 'l1b08;
+                    } else {
+                        c.cycles += 1;
+                        Addr((c.g[S6][0] as u32).wrapping_sub(0xbd0)).sw(c, 0);
+                    }
+                }
+                c.cycles += 2;
+                c.g[V0][0] = c.g[S2][0];
+                Addr((c.g[S5][0] as u32).wrapping_sub(0xbe0)).sw(c, 0);
+                break 'b1b80;
+            }
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void PATH_AddEventToMaps(int mask, PathEvent* ev)` (0x3d1f80): for each
+/// loaded map whose group bits contain `mask`'s group, appends `ev` to that
+/// map's slot list (up to 16) with the current time stamped into its first two
+/// words. Returns 0, -8 if no map matched, or -13 when a map's list is full.
+pub fn path_add_event_to_maps(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x90);
+        c.g[V1][0] = 0x0051_0000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x7610));
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save(c, S0, 0x80);
+        c.g[V0][0] = 0xffff_ffff_ff00_0000;
+        c.g[S2][0] = c.g[A1][0];
+        c.g[S3][0] = c.g[A0][0] & c.g[V0][0];
+        c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x91c));
+        c.g[S5][0] = 0;
+        c.g[S6][0] = u64::MAX - 7;
+        c.g[S7][0] = sx((c.g[V1][0] as u32).wrapping_add(0xdc));
+        frame.save_ra(c, 0);
+        c.g[S4][0] = 0;
+        'l1fd0: loop {
+            'b203c: {
+                'b2028: {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x8e8)).lw(c);
+                    if c.g[V0][0] == 0 {
+                        c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(0x1));
+                        break 'b2028;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x8ec)).lw(c);
+                    c.g[V0][0] &= c.g[S3][0];
+                    if c.g[V0][0] != c.g[S3][0] {
+                        c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(0x1));
+                        break 'b2028;
+                    }
+                    c.cycles += 4;
+                    c.g[S0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < 16i64) as u64;
+                    let t = c.g[V0][0] == 0;
+                    c.g[V0][0] = u64::MAX - 12;
+                    if t {
+                        break 'b203c;
+                    }
+                    c.cycles += 11;
+                    c.g[S6][0] = 0;
+                    call_ptr(c, 0x002a_f370, 0x003d_2004)?;
+                    c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
+                    let now = c.g[V0][0];
+                    Addr(c.g[S2][0] as u32).sw(c, now);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                    Addr((c.g[S2][0] as u32).wrapping_add(0x8)).sw(c, now);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    let entry = c.g[S2][0];
+                    Addr(c.g[V1][0] as u32).sw(c, entry);
+                    let count = c.g[S0][0];
+                    Addr(c.g[S1][0] as u32).sw(c, count);
+                    c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(0x1));
+                }
+                c.cycles += 4;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x928));
+                c.g[V0][0] = ((c.g[S5][0] as i64) < 4i64) as u64;
+                let t = c.g[V0][0] != 0;
+                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x928));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_1fd0);
+                    }
+                    continue 'l1fd0;
+                } else {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S6][0];
+                    break 'b203c;
+                }
+            }
+            break;
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void PATH_SetEventMarkBit(PathEvent* ev, int disable)` (0x3d21c0): sets
+/// bit 29 of the current path's event definition word (`eventDef+0xc`) to
+/// `disable & 1`. The definition is the map's table at `+0x34` plus the
+/// halfword at `+0x40 + ev->index * 2`, scaled by 4.
+pub fn path_set_event_mark_bit(c: &mut Cpu) {
+    'b2210: {
+        c.cycles += 13;
+        c.g[V0][0] = 0x0045_0000;
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0xc)).lbu(c);
+        c.g[A2][0] = Addr(CUR_MAP).lw(c);
+        c.g[A3][0] = c.g[A1][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+        c.g[A0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x40)).lw(c);
+        c.g[A1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x34)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).lh(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let t = c.g[A1][0] == 0;
+        c.g[A0][0] = c.g[A3][0] & 0x1;
+        if t {
+            break 'b2210;
+        }
+        c.cycles += 7;
+        let def = Addr(c.g[A1][0] as u32).off(0xc);
+        c.g[V0][0] = def.lw(c);
+        c.g[V1][0] = !0x2000_0000u64;
+        c.g[V0][0] &= c.g[V1][0];
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 29);
+        c.g[V0][0] |= c.g[A0][0];
+        let v = c.g[V0][0];
+        def.sw(c, v);
+    }
+    c.cycles += 2;
+    abi::ret(c);
+}
+
+/// `void PATH_ClearEventMarkBits(u32 mask)` (0x3d2218): clears bit 29 of
+/// the event definition word of every slot in the current path's list.
+pub fn path_clear_event_mark_bits(c: &mut Cpu) {
+    'b2284: {
+        c.cycles += 6;
+        c.g[V0][0] = 0x0045_0000;
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_sub(0xbe0)).lw(c);
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x34)).lw(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xf)).lbu(c);
+        let t = c.g[V0][0] == 0;
+        c.g[A2][0] = 0;
+        if t {
+            break 'b2284;
+        }
+        c.cycles += 4;
+        c.g[T0][0] = !0x2000_0000u64;
+        c.g[A3][0] = c.g[A0][0];
+        c.g[A0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x40)).lw(c);
+        'l2240: loop {
+            'b2270: {
+                c.cycles += 8;
+                c.g[V1][0] = sx((c.g[A2][0] as u32) << 1);
+                c.g[A1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x34)).lw(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lh(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                if c.g[A1][0] == 0 {
+                    c.g[V1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x34)).lw(c);
+                    break 'b2270;
+                }
+                c.cycles += 4;
+                let def = Addr(c.g[A1][0] as u32).off(0xc);
+                c.g[V0][0] = def.lw(c);
+                c.g[V0][0] &= c.g[T0][0];
+                let v = c.g[V0][0];
+                def.sw(c, v);
+                c.g[V1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x34)).lw(c);
+            }
+            c.cycles += 5;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xf)).lbu(c);
+            c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V0][0] != 0 {
+                c.g[A0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x40)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_2240);
+                }
+                continue 'l2240;
+            } else {
+                break 'b2284;
+            }
+        }
+    }
+    c.cycles += 2;
+    abi::ret(c);
+}
+
+/// `PATH_NopStub_Wrapper` (0x3d2fa0): `PATH_NopStub()`.
+pub fn path_nop_stub_wrapper(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(NOP_STUB), 0x003d_2fb0)
+}
+
+/// `PATH_GetTimeValue_Wrapper` (0x3d2fc0): `PATH_GetTimeValue()`.
+pub fn path_get_time_value_wrapper(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Direct(GET_TIME_VALUE), 0x003d_2fd0)
+}
+
+/// `PATH_Started` byte (0x44f42c, `gp`-relative `-0xbd4` from 0x450000): set while the
+/// path layer is started; `PATH_Shutdown` clears it.
+pub(crate) const PATH_STARTED_FLAG: Addr = Addr(0x0044_f42c);
+
+/// The selected map id word (0x44f430): 0 = unset, -1 = none.
+pub(crate) const PATH_SELECTED_ID: Addr = Addr(0x0044_f430);
+
+/// The selected map pointer word (0x44f420).
+pub(crate) const PATH_SELECTED_MAP: Addr = Addr(0x0044_f420);
+
+/// `PATH_StopTracks(int mask)` (0x3d2a68), ported elsewhere.
+pub(crate) const PATH_STOP_TRACKS_CALLEE: Callee = Callee {
+    addr: 0x003d_2a68,
+    f: ee::s14::f_003d2a68,
+};
+
+/// `PATH_SelectMap(uint idx)` (0x3d5450).
+pub(crate) const PATH_SELECT_MAP_CALLEE: Callee = Callee {
+    addr: 0x003d_5450,
+    f: ee::s14::f_003d5450,
+};
+
+/// `PATH_FindTrack(int id)` (0x3d5290).
+pub(crate) const PATH_FIND_TRACK_CALLEE: Callee = Callee {
+    addr: 0x003d_5290,
+    f: ee::s14::f_003d5290,
+};
+
+/// `void PATH_Shutdown(void)` (0x3d2fe0): stops every track
+/// (`PATH_StopTracks(-1)`), then clears the started flag and the selected
+/// map id.
+pub fn path_shutdown(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(0xffff_ffff);
+        PATH_STOP_TRACKS_CALLEE.call(c, 0x003d_2ff0)?;
+        c.g[V1][0] = 0x0045_0000;
+        c.g[A0][0] = 0x0045_0000;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 0;
+        PATH_STARTED_FLAG.sb(c, 0);
+        PATH_SELECTED_ID.sw(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PATH_TrackCallStream(int track, int a1, int a2)` (0x3d30a8): when the
+/// path layer is started, select a map if none is, find the track and hand
+/// its stream to the platform layer (`PATH_PlatSetTrackFile`), then clear
+/// the selected id and map.
+pub fn path_track_call_stream(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 18, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V0][0] = 0x0045_0000;
+        c.g[V1][0] = PATH_STARTED_FLAG.lbu(c);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, 19, 0x10);
+        frame.save_ra(c, 0);
+        let mut reached_bank = true;
+        if c.g[V1][0] != 0 {
+            c.cycles += 4;
+            c.g[S3][0] = 0x0045_0000;
+            c.g[V0][0] = PATH_SELECTED_ID.lw(c);
+            if c.g[V0][0] != 0 {
+                reached_bank = false;
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = sx(0xffff_ffff);
+                PATH_SELECT_MAP_CALLEE.call(c, 0x003d_30f0)?;
+                if c.g[V0][0] == 0 {
+                    reached_bank = false;
+                } else {
+                    path_track_call_stream_load(c)?;
+                }
+            }
+        }
+        if reached_bank {
+            c.cycles += 1;
+        }
+        frame.restore(c, 16, 0x40);
+        c.cycles += 6;
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 19, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The bank part of `PATH_TrackCallStream`: find the track (`-8` when it is
+/// missing), then `PATH_PlatSetTrackFile(stream, a1, a2)`, then clear the
+/// selected id and map.
+pub(crate) fn path_track_call_stream_load(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S0][0];
+    PATH_FIND_TRACK_CALLEE.call(c, 0x003d_3100)?;
+    let found = c.g[V0][0] != 0;
+    c.g[A0][0] = sx(0xffff_fff8);
+    if found {
+        c.cycles += 1;
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x54)).lw(c);
+    }
+    c.cycles += 6;
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = c.g[S2][0];
+    call_ptr(c, 0x002a_e768, 0x003d_3118)?;
+    c.g[V0][0] = 0x0045_0000;
+    PATH_SELECTED_ID.sw(c, 0);
+    PATH_SELECTED_MAP.sw(c, 0);
+    Ok(())
+}
+
+/// `int PATH_TrackUnloadBank(int track, int bank)` (0x3d3140): unloads the
+/// bank of a track through `PATH_PlatRemoveBank`, returns its result, or -18
+/// when the layer is not started, has a selected map already, or no map can
+/// be selected.
+pub fn path_track_unload_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 19, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V0][0] = 0x0045_0000;
+        c.g[V1][0] = PATH_STARTED_FLAG.lbu(c);
+        c.g[S3][0] = 0;
+        frame.save(c, 18, 0x20);
+        frame.save_ra(c, 0);
+        path_track_unload_bank_flow(c)?;
+        c.cycles += 7;
+        frame.restore(c, 16, 0x40);
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 19, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The body of `PATH_TrackUnloadBank` between the prologue and the epilogue.
+pub(crate) fn path_track_unload_bank_flow(c: &mut Cpu) -> Flow {
+    if c.g[V1][0] == 0 {
+        return path_track_unload_bank_none(c);
+    }
+    c.cycles += 4;
+    c.g[S2][0] = 0x0045_0000;
+    c.g[V0][0] = PATH_SELECTED_ID.lw(c);
+    let selected = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(0xffff_ffee);
+    if selected {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[A0][0] = sx(0xffff_ffff);
+    PATH_SELECT_MAP_CALLEE.call(c, 0x003d_3188)?;
+    if c.g[V0][0] == 0 {
+        return path_track_unload_bank_none(c);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S0][0];
+    PATH_FIND_TRACK_CALLEE.call(c, 0x003d_31a0)?;
+    if c.g[V0][0] == 0 {
+        c.g[V0][0] = 0x0045_0000;
+    } else {
+        c.cycles += 5;
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x54)).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x002a_e328, 0x003d_31b4)?;
+        c.g[S3][0] = c.g[V0][0];
+        c.g[V0][0] = 0x0045_0000;
+    }
+    c.cycles += 3;
+    PATH_SELECTED_ID.sw(c, 0);
+    PATH_SELECTED_MAP.sw(c, 0);
+    c.g[V0][0] = c.g[S3][0];
+    Ok(())
+}
+
+/// The -18 exit of `PATH_TrackUnloadBank`.
+pub(crate) fn path_track_unload_bank_none(c: &mut Cpu) -> Flow {
+    c.cycles += 2;
+    c.g[V0][0] = sx(0xffff_ffee);
+    Ok(())
+}
+
+/// `void PATH_SetMapCallbacks(int mask, int a1, int a2)` (0x3d31e8): when the
+/// layer is started and no map is selected, select one and give every map
+/// whose mask matches `mask` the two callback words (`+0x1c`, `+0x10`).
+pub fn path_set_map_callbacks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x0045_0000;
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 18, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        c.g[V1][0] = PATH_STARTED_FLAG.lbu(c);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, 19, 0x10);
+        frame.save_ra(c, 0);
+        path_set_map_callbacks_flow(c)?;
+        c.cycles += 7;
+        frame.restore(c, 16, 0x40);
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 19, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The body of `PATH_SetMapCallbacks` between the prologue and the epilogue.
+pub(crate) fn path_set_map_callbacks_flow(c: &mut Cpu) -> Flow {
+    if c.g[V1][0] == 0 {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[V1][0] = 0x0045_0000;
+    c.g[V0][0] = PATH_SELECTED_ID.lw(c);
+    c.g[S3][0] = c.g[V1][0];
+    if c.g[V0][0] != 0 {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[A0][0] = sx(0xffff_ffff);
+    PATH_SELECT_MAP_CALLEE.call(c, 0x003d_3230)?;
+    let selected = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x0051_0000;
+    if !selected {
+        return Ok(());
+    }
+    c.cycles += 6;
+    c.g[V1][0] = 0x0f00_0000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7610));
+    c.g[S0][0] = c.g[S0][0] & c.g[V1][0];
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+    c.g[A0][0] = 3;
+    loop {
+        c.cycles += 3;
+        let map = c.g[V1][0] as u32;
+        c.g[V0][0] = Addr(map.wrapping_add(0x24)).lw(c);
+        let empty = c.g[V0][0] == 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+        if !empty {
+            c.cycles += 4;
+            let masked = Addr(map.wrapping_add(0x20)).lw(c) & c.g[S0][0];
+            c.g[V0][0] = masked;
+            if masked != 0 {
+                c.cycles += 2;
+                let s2 = c.g[S2][0];
+                Addr(map.wrapping_sub(4)).sw(c, s2);
+                let s1 = c.g[S1][0];
+                Addr(map).sw(c, s1);
+            }
+        }
+        c.cycles += 2;
+        let more = (c.g[A0][0] as i64) >= 0;
+        c.g[V1][0] = sx(map.wrapping_add(0x928));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_3250);
+            }
+            continue;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = 0x0045_0000;
+        PATH_SELECTED_ID.sw(c, 0);
+        PATH_SELECTED_MAP.sw(c, 0);
+        return Ok(());
+    }
+}
+
+/// Layout of one of the three track fade updaters (volume, aux send, fade3).
+pub(crate) struct Oc1109FadeLayout {
+    /// Fade start time word (`start`), `cur` byte, `tgt` byte at `cur + 2`.
+    start: u32,
+    cur: u32,
+    /// Config word / halfword in the track table (duration = halfword).
+    cfg_w: u32,
+    cfg_h: u32,
+    /// Platform setter and its return addresses (fade done / mid-fade).
+    setter: u32,
+    ret_done: u32,
+    ret_set: u32,
+    /// Volume fade only: extra byte at +0x34 holding the final value.
+    volume: bool,
+}
+
+/// Shared body of the fade updaters: interpolate a byte from `cur` to `tgt`
+/// over `duration` ticks along a curve (linear, square, inverse), call the
+/// platform setter, and reset the fade when finished.
+pub(crate) fn oc1109_fade(c: &mut Cpu, p: &Oc1109FadeLayout) -> crate::call::Flow {
+    let tgt = p.cur + 2;
+    c.cycles += 29;
+    let frame = Frame::open(c, 0x20);
+    c.g[A1][0] = 0x450000;
+    frame.save(c, S0, 0x10);
+    c.g[A3][0] &= 0xffff;
+    frame.save_ra(c, 0);
+    c.g[S0][0] = c.g[A0][0];
+    c.g[A0][0] = c.lw(0x450000u32.wrapping_sub(0xbe0));
+    c.g[A2][0] = 0xffff_ffff_ffff_ff80;
+    let s0 = c.g[S0][0] as u32;
+    c.g[V0][0] = c.lb(s0.wrapping_add(tgt));
+    c.g[T0][0] = 1;
+    c.g[V1][0] = c.lb(s0.wrapping_add(p.cur));
+    c.mtc1(V0, 2);
+    c.cvt_s_w(2, 2);
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 3);
+    c.mtc1(V1, 0);
+    c.cvt_s_w(0, 0);
+    let a0 = c.g[A0][0] as u32;
+    c.g[V0][0] = c.lw(a0.wrapping_add(p.cfg_w));
+    c.g[V1][0] = c.lhu(a0.wrapping_add(p.cfg_h));
+    c.mtc1(0, 1);
+    c.g[V0][0] &= 0x7f;
+    c.sub_s(2, 2, 0);
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 16);
+    c.g[A3][0] |= c.g[V1][0];
+    c.g[A3][0] &= c.g[A2][0];
+    c.c_lt_s(2, 1);
+    let ge = !c.fcc();
+    c.g[A3][0] |= c.g[V0][0];
+    if !ge {
+        c.cycles += 1;
+        c.g[T0][0] = 0;
+    }
+    // elapsed = now - start, as an unsigned 32-bit value in f1
+    c.cycles += 9;
+    c.g[V0][0] = 0x450000;
+    c.g[A0][0] = 0xffff_ffff_ffff_ff7f;
+    c.g[A1][0] = c.lw(0x450000u32.wrapping_sub(0xbc8));
+    c.g[V1][0] = sx((c.g[T0][0] as u32) << 7);
+    c.g[V0][0] = c.lw(s0.wrapping_add(p.start));
+    c.g[A3][0] &= c.g[A0][0];
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+    let neg = (c.g[V0][0] as i64) < 0;
+    c.g[A3][0] |= c.g[V1][0];
+    if !neg {
+        c.cycles += 4;
+        c.mtc1(V0, 1);
+        c.cvt_s_w(1, 1);
+        c.g[V0][0] = sx((c.g[A3][0] as u32) >> 16);
+    } else {
+        c.cycles += 7;
+        c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+        c.g[V0][0] &= 1;
+        c.g[V0][0] |= c.g[V1][0];
+        c.mtc1(V0, 1);
+        c.cvt_s_w(1, 1);
+        c.add_s(1, 1, 1);
+        c.g[V0][0] = sx((c.g[A3][0] as u32) >> 16);
+    }
+    // duration (unsigned 16-bit) in f0
+    c.cycles += 2;
+    if (c.g[V0][0] as i64) < 0 {
+        c.g[V0][0] &= 1;
+        c.cycles += 5;
+        c.g[V1][0] = sx((c.g[A3][0] as u32) >> 17);
+        c.g[V0][0] |= c.g[V1][0];
+        c.mtc1(V0, 0);
+        c.cvt_s_w(0, 0);
+        c.add_s(0, 0, 0);
+    } else {
+        c.cycles += 4;
+        c.mtc1(V0, 0);
+        c.cvt_s_w(0, 0);
+    }
+    c.cycles += 7;
+    c.div_s(0, 1, 0);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 1);
+    c.c_le_s(1, 0);
+    let running = !c.fcc();
+    if p.volume {
+        c.g[V0][0] = c.g[A3][0] & 0x80;
+    } else {
+        c.g[A1][0] = 0;
+    }
+    let s0 = c.g[S0][0] as u32;
+    if !running {
+        // fade finished: set the final value, clear the fade state
+        if p.volume {
+            c.cycles += 11;
+            c.g[A0][0] = c.lw(s0.wrapping_add(0x54));
+            c.g[A1][0] = c.lb(s0.wrapping_add(0x34));
+        } else {
+            c.cycles += 10;
+            c.g[A0][0] = c.lw(s0.wrapping_add(0x54));
+            c.g[A2][0] = c.lb(s0.wrapping_add(tgt));
+        }
+        call_ptr(c, p.setter, p.ret_done)?;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = u64::MAX;
+        let s0 = c.g[S0][0] as u32;
+        let (v0, v1) = (c.g[V0][0], c.g[V1][0]);
+        if p.volume {
+            c.sb(s0.wrapping_add(0x34), v1);
+            c.sb(s0.wrapping_add(p.cur), v0);
+            c.sb(s0.wrapping_add(tgt), v1);
+            c.sb(s0.wrapping_add(p.cur + 1), v1);
+            c.sw(s0.wrapping_add(p.start), 0);
+        } else {
+            c.sb(s0.wrapping_add(p.cur), v0);
+            c.sb(s0.wrapping_add(p.cur + 1), v1);
+            c.sw(s0.wrapping_add(p.start), 0);
+            c.sb(s0.wrapping_add(tgt), v1);
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x10);
+        return oc1109_fade_exit(c, frame);
+    }
+    if p.volume {
+        c.cycles += 2;
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[A3][0] & 0x80;
+    }
+    if c.g[V0][0] != 0 {
+        c.sub_s(0, 1, 0);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = c.g[A3][0] & 0x7f;
+    c.g[V0][0] = 2;
+    let is2 = c.g[V1][0] == c.g[V0][0];
+    c.g[V0][0] = (c.g[V1][0] < 3) as u64;
+    if is2 {
+        c.cycles += 3;
+        c.mul_s(0, 0, 0);
+        c.sub_s(3, 1, 0);
+        c.cycles += 1;
+        c.g[V0][0] = c.lb(s0.wrapping_add(p.cur));
+    } else {
+        c.cycles += 2;
+        let ge3 = c.g[V0][0] == 0;
+        c.g[V0][0] = 1;
+        if !ge3 {
+            c.cycles += 2;
+            if c.g[V1][0] == c.g[V0][0] {
+                c.sub_s(3, 1, 0);
+                c.cycles += 1;
+                c.g[V0][0] = c.lb(s0.wrapping_add(p.cur));
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = c.lb(s0.wrapping_add(p.cur));
+            }
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 3;
+            if c.g[V1][0] == c.g[V0][0] {
+                c.cycles += 4;
+                c.div_s(1, 1, 0);
+                c.g[AT][0] = 0x41c8_0000;
+                c.mtc1(AT, 0);
+                c.div_s(3, 1, 0);
+                c.cycles += 1;
+                c.g[V0][0] = c.lb(s0.wrapping_add(p.cur));
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = c.lb(s0.wrapping_add(p.cur));
+            }
+        }
+    }
+    // f1 = min(cur, tgt), f2 = |tgt - cur|
+    c.cycles += 6;
+    c.g[V1][0] = c.lb(s0.wrapping_add(tgt));
+    c.mtc1(V0, 1);
+    c.cvt_s_w(1, 1);
+    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.mtc1(V1, 1);
+        c.cvt_s_w(1, 1);
+    }
+    c.cycles += 5;
+    c.mtc1(0, 0);
+    c.c_lt_s(2, 0);
+    if c.fcc() {
+        c.neg_s(2, 2);
+    }
+    c.cycles += 4;
+    c.c_le_s(0, 3);
+    if !c.fcc() {
+        frame.restore(c, S0, 0x10);
+        return oc1109_fade_exit(c, frame);
+    }
+    c.cycles += 6;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 0);
+    c.c_le_s(3, 0);
+    if !c.fcc() {
+        frame.restore(c, S0, 0x10);
+        return oc1109_fade_exit(c, frame);
+    }
+    if p.volume {
+        c.mul_s(0, 2, 3);
+        c.add_s(3, 1, 0);
+        c.cvt_w_s(0, 3);
+        c.mfc1(A1, 0);
+        c.g[A0][0] = c.lw(s0.wrapping_add(0x54));
+    } else {
+        c.cycles += 1;
+        c.mul_s(0, 2, 3);
+        c.g[A0][0] = c.lw(s0.wrapping_add(0x54));
+        c.add_s(3, 1, 0);
+        c.cvt_w_s(0, 3);
+        c.mfc1(A2, 0);
+        c.g[A1][0] = 0;
+    }
+    call_ptr(c, p.setter, p.ret_set)?;
+    c.cycles += 1;
+    frame.restore(c, S0, 0x10);
+    oc1109_fade_exit(c, frame)
+}
+
+pub(crate) fn oc1109_fade_exit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 3;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void PATH_TrackUpdateVolumeFade(Track* t)` (0x3d5a98): fade the track
+/// volume byte (`+0xc` to `+0xe`, start time `+8`, final `+0x34`).
+#[allow(dead_code)]
+pub fn path_track_update_volume_fade(c: &mut Cpu) {
+    guest(c, |c| {
+        oc1109_fade(
+            c,
+            &Oc1109FadeLayout {
+                start: 0x8,
+                cur: 0xc,
+                cfg_w: 0x18,
+                cfg_h: 0x14,
+                setter: 0x002a_f6c0,
+                ret_done: 0x003d_5bb4,
+                ret_set: 0x003d_5cac,
+                volume: true,
+            },
+        )
+    })
+}
+
+/// `void PATH_TrackUpdateAuxSendFade(Track* t)` (0x3d5cc0): aux send fade
+/// (`+0x14` to `+0x16`, start `+0x10`).
+#[allow(dead_code)]
+pub fn path_track_update_aux_send_fade(c: &mut Cpu) {
+    guest(c, |c| {
+        oc1109_fade(
+            c,
+            &Oc1109FadeLayout {
+                start: 0x10,
+                cur: 0x14,
+                cfg_w: 0x20,
+                cfg_h: 0x1c,
+                setter: 0x002a_f4e0,
+                ret_done: 0x003d_5ddc,
+                ret_set: 0x003d_5ed8,
+                volume: false,
+            },
+        )
+    })
+}
+
+/// `void PATH_TrackUpdateFade3(Track* t)` (0x3d5ee8): third fade
+/// (`+0x1c` to `+0x1e`, start `+0x18`).
+#[allow(dead_code)]
+pub fn path_track_update_fade3(c: &mut Cpu) {
+    guest(c, |c| {
+        oc1109_fade(
+            c,
+            &Oc1109FadeLayout {
+                start: 0x18,
+                cur: 0x1c,
+                cfg_w: 0x28,
+                cfg_h: 0x24,
+                setter: 0x002a_f580,
+                ret_done: 0x003d_6004,
+                ret_set: 0x003d_60f8,
+                volume: false,
+            },
+        )
+    })
+}
+
+/// `fd = (float)(uint32)V0` the way gcc emits it: `V1 = V0 >> 1` always, then
+/// the plain convert, or (top bit set) halve with the low bit kept, convert
+/// and double. `pos`/`neg` are the cycles of the two arms.
+pub(crate) fn oc1109_u2f(c: &mut Cpu, fd: usize, pos: u64, neg: u64) {
+    let negative = (c.g[V0][0] as i64) < 0;
+    c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+    if !negative {
+        c.cycles += pos;
+        c.mtc1(V0, fd);
+        c.cvt_s_w(fd, fd);
+    } else {
+        c.cycles += neg;
+        c.g[V0][0] &= 1;
+        c.g[V0][0] |= c.g[V1][0];
+        c.mtc1(V0, fd);
+        c.cvt_s_w(fd, fd);
+        c.add_s(fd, fd, fd);
+    }
+}
+
+/// `int PATH_TrackGetBeatPos(Track* t, BeatPos* out)` (0x3d32b8): look up
+/// the track's pattern entry, read the platform play position, compute the
+/// beat index (returned) and, if `out` is non-null, fill it with beat
+/// length, remaining ticks etc.
+pub fn path_track_get_beat_pos(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = 0x450000;
+        frame.save(c, S1, 0x40);
+        frame.save(c, S0, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0x20);
+        let a = frame.at(c, 0x68);
+        c.swc1(21, a);
+        let a = frame.at(c, 0x60);
+        c.swc1(20, a);
+        let s1 = c.g[S1][0] as u32;
+        let spp = sp(c);
+        c.g[A0][0] = c.lw(0x450000u32.wrapping_sub(0xbe0));
+        c.g[V1][0] = c.lh(s1.wrapping_add(0x36));
+        let p = c.g[A0][0] as u32;
+        c.g[V0][0] = c.lw(p.wrapping_add(0x38));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+        c.g[A1][0] = c.lw(p.wrapping_add(0x34));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A2][0] = c.lw(p.wrapping_add(0x50));
+        c.g[V0][0] = c.lh(c.g[V1][0] as u32);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[S2][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let s2 = c.g[S2][0] as u32;
+        c.g[V1][0] = c.lh(s2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 3);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        let v1 = c.g[V1][0] as u32;
+        c.ldl(2, v1.wrapping_sub(1));
+        c.ldr(2, v1.wrapping_sub(8));
+        c.sdl(2, spp.wrapping_add(7));
+        c.sdr(2, spp);
+        // beat count (sp+4) -> f20
+        c.g[V0][0] = c.lw(spp.wrapping_add(4));
+        oc1109_u2f(c, 20, 4, 6);
+        c.g[V0][0] = c.lw(s2.wrapping_add(4));
+        // f0 = beats * subdivisions, f20 /= f0 when the time-signature bits are set
+        c.cycles += 5;
+        c.g[V1][0] = 0x0f00_0000;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V0][0] &= c.g[V1][0];
+        let none = c.g[V0][0] == 0;
+        c.g[V1][0] = sx((c.g[A0][0] as u32) >> 24);
+        if !none {
+            c.cycles += 6;
+            c.g[V0][0] = sx((c.g[A0][0] as u32) >> 20);
+            c.g[V1][0] &= 0xf;
+            c.g[V0][0] &= 0xf;
+            c.mult(0, 2, 3, 2);
+            oc1109_u2f(c, 0, 4, 5);
+            c.cycles += 1;
+            c.div_s(20, 20, 0);
+        }
+        // f1 = float(sp+4)
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(spp.wrapping_add(4));
+        oc1109_u2f(c, 1, 4, 6);
+        c.g[V0][0] = sx((c.g[A0][0] as u32) >> 20);
+        // f0 = float((word >> 20) & 0xf)
+        c.cycles += 3;
+        c.g[V1][0] = c.g[V0][0] & 0xf;
+        let t = (c.g[V1][0] as i64) < 0;
+        c.g[V0][0] &= 1;
+        if !t {
+            c.cycles += 4;
+            c.mtc1(V1, 0);
+            c.cvt_s_w(0, 0);
+        } else {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) >> 1);
+            c.g[V0][0] |= c.g[V1][0];
+            c.mtc1(V0, 0);
+            c.cvt_s_w(0, 0);
+            c.add_s(0, 0, 0);
+        }
+        c.g[A0][0] = c.lw(s1.wrapping_add(0x54));
+        c.cycles += 9;
+        c.div_s(21, 1, 0);
+        c.g[A1][0] = sx(spp.wrapping_add(0x10));
+        c.g[A2][0] = sx(spp.wrapping_add(0x14));
+        call_ptr(c, 0x002a_ec58, 0x003d_3424)?;
+        c.g[V1][0] = c.lw(s1.wrapping_add(0x20));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 23);
+        c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 27) as u32);
+        let t = (c.g[V1][0] as i64) <= 0;
+        c.g[V0][0] = c.lw(spp.wrapping_add(0x14));
+        let mut looped = false;
+        if !t {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(s2.wrapping_add(0xc));
+            c.g[V0][0] &= 2;
+            let t = c.g[V0][0] == 0;
+            c.g[V0][0] = c.lw(spp.wrapping_add(0x14));
+            looped = !t;
+        }
+        if looped {
+            c.cycles += 2;
+            oc1109_u2f(c, 2, 4, 6);
+            c.g[V0][0] = c.lw(s1.wrapping_add(0x40));
+            c.cycles += 2;
+            oc1109_u2f(c, 1, 4, 6);
+            c.g[V0][0] = c.lw(s2.wrapping_add(4));
+            c.cycles += 12;
+            c.g[A0][0] = c.lw(s1.wrapping_add(0x20));
+            c.g[V1][0] = sx((c.g[V0][0] as u32) >> 20);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) >> 24);
+            c.g[V1][0] &= 0xf;
+            c.g[V0][0] &= 0xf;
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 23);
+            c.mult(0, 2, 2, 3);
+            c.g[A0][0] = sx(((c.g[A0][0] as u32) as i32 >> 27) as u32);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+            oc1109_u2f(c, 0, 4, 6);
+            c.mul_s(0, 1, 0);
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(spp.wrapping_add(4));
+            c.add_s(2, 2, 0);
+            oc1109_u2f(c, 1, 4, 8);
+            c.sub_s(1, 1, 2);
+        } else {
+            c.cycles += 2;
+            oc1109_u2f(c, 2, 4, 6);
+            c.g[V0][0] = c.lw(spp.wrapping_add(0x10));
+            c.cycles += 2;
+            oc1109_u2f(c, 1, 4, 5);
+        }
+        c.cycles += 11;
+        c.div_s(1, 1, 20);
+        c.cvt_w_s(0, 1);
+        c.mfc1(A3, 0);
+        c.mul_s(1, 1, 20);
+        c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+        c.mtc1(V0, 0);
+        c.cvt_s_w(0, 0);
+        c.sub_s(3, 21, 1);
+        c.mul_s(0, 0, 20);
+        let out_null = c.g[S0][0] == 0;
+        c.sub_s(0, 0, 1);
+        if !out_null {
+            c.cycles += 27;
+            let s0 = c.g[S0][0] as u32;
+            c.g[V1][0] = c.lbu(s2.wrapping_add(7));
+            c.g[A0][0] = 0xffff_ffff_ffff_fff0;
+            c.g[V0][0] = c.lw(s0);
+            c.g[A1][0] = 0xffff_ffff_ffff_ff0f;
+            c.g[V1][0] &= 0xf;
+            c.g[A2][0] = c.lw(spp.wrapping_add(4));
+            c.g[V0][0] &= c.g[A0][0];
+            c.g[V0][0] |= c.g[V1][0];
+            c.sw(s0, c.g[V0][0]);
+            c.g[V0][0] &= c.g[A1][0];
+            c.g[V1][0] = c.lbu(s2.wrapping_add(8));
+            c.cvt_w_s(1, 2);
+            c.swc1(1, s0.wrapping_add(0x18));
+            c.sw(s0.wrapping_add(0xc), c.g[A2][0]);
+            c.g[V1][0] >>= 4;
+            c.cvt_w_s(1, 20);
+            c.swc1(1, s0.wrapping_add(4));
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
+            c.cvt_w_s(1, 21);
+            c.swc1(1, s0.wrapping_add(8));
+            c.g[V0][0] |= c.g[V1][0];
+            c.sw(s0, c.g[V0][0]);
+            c.cvt_w_s(1, 3);
+            c.swc1(1, s0.wrapping_add(0x14));
+            c.cvt_w_s(1, 0);
+            c.swc1(1, s0.wrapping_add(0x10));
+            c.sb(s0.wrapping_add(1), c.g[A3][0]);
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x50);
+        c.g[V0][0] = c.g[A3][0];
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        let a = frame.at(c, 0x68);
+        c.lwc1(21, a);
+        let a = frame.at(c, 0x60);
+        c.lwc1(20, a);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The path data pointer (`DAT_0044f420`, loaded as `gp - 0xbe0`): its word
+/// points at the path node table (+0x34, +0x38 and +0x50 are its fields).
+pub(crate) const PATH_DATA_PTR: u32 = 0x0044_f420;
+
+/// The high half of the `gp` the generated bodies keep in `s3`/`s4`.
+pub(crate) const PATH_GP: u32 = 0x0045_0000;
+
+/// `PATH_TrackGetBeatPos(track, out)` (0x3d32b8): the beat position of a track.
+pub(crate) fn track_get_beat_pos() -> Callee {
+    Callee {
+        addr: 0x003d_32b8,
+        f: ssx3_ee::s14::f_003d32b8,
+    }
+}
+
+/// `PATH_QueueAppend(list, node)` (0x3d0b18).
+pub(crate) fn queue_append() -> Callee {
+    Callee {
+        addr: 0x003d_0b18,
+        f: ssx3_ee::s14::f_003d0b18,
+    }
+}
+
+/// `PATHI_copyevent(event)` (0x3d2068): returns the copy in `v0`.
+pub(crate) fn copy_event() -> Callee {
+    Callee {
+        addr: 0x003d_2068,
+        f: ssx3_ee::s14::f_003d2068,
+    }
+}
+
+/// `PATH_AddEventToMaps(map, event)` (0x3d1f80).
+pub(crate) fn add_event_to_maps() -> Callee {
+    Callee {
+        addr: 0x003d_1f80,
+        f: ssx3_ee::s14::f_003d1f80,
+    }
+}
+
+/// `PATH_GetTrackStream(id)` (0x3d3030): the stream of a track id (`< 0`: none).
+pub(crate) fn get_track_stream() -> Callee {
+    Callee {
+        addr: 0x003d_3030,
+        f: ssx3_ee::s14::f_003d3030,
+    }
+}
+
+/// `PATH_status(id, out)` (0x3d11b8): writes a status word to `out`.
+pub(crate) fn path_status() -> Callee {
+    Callee {
+        addr: 0x003d_11b8,
+        f: ssx3_ee::s14::f_003d11b8,
+    }
+}
+
+/// The beat-position branch of [`path_calc_node_repeat_count`] (the generated
+/// block at 0x3d3780): asks the track for its beat, then works out the node's
+/// count from the node's mode bits (0x300 of its info word). Leaves the count
+/// in `v1`; the caller adds the common tail.
+pub(crate) fn repeat_count_beat_path(c: &mut Cpu) -> Flow {
+    c.cycles += 18;
+    c.g[A1][0] = c.g[S1][0];
+    track_get_beat_pos().call(c, 0x003d_36d0)?;
+    c.g[A1][0] = Addr(PATH_DATA_PTR).lw(c);
+    c.g[A3][0] = c.g[V0][0];
+    c.g[V0][0] = Addr(c.g[S0][0] as u32).lh(c);
+    c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x50)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+    c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x4)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    // An 8-byte copy of the record at v0 - 8 to the stack (the generated
+    // `ldl`/`ldr`/`sdl`/`sdr` run through a0).
+    c.ldl(A0, (c.g[V0][0] as u32).wrapping_sub(0x1));
+    c.ldr(A0, (c.g[V0][0] as u32).wrapping_sub(0x8));
+    let stack = sp(c);
+    c.sdl(A0, stack.wrapping_add(0x7));
+    c.sdr(A0, stack);
+    c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x8)).lw(c);
+    c.g[V1][0] = 0x200;
+    c.g[A1][0] = c.g[V0][0] & 0x300;
+    let not_fraction = c.g[A1][0] != c.g[V1][0];
+    c.g[V0][0] = 0x100;
+    if not_fraction {
+        c.cycles += 2;
+        let not_repeat = c.g[A1][0] != c.g[V0][0];
+        c.g[V0][0] = c.g[A1][0] ^ 0x300;
+        if not_repeat {
+            c.cycles += 1;
+            c.g[V1][0] = (c.g[V0][0] < 0x1) as u64;
+        } else {
+            // Mode 0x100: `(beat + 1) % count + 1`, `count` when that wraps to 0.
+            c.cycles += 6;
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] &= 0xf;
+            c.divu(0, 3, 2);
+            c.cycles += 4;
+            c.g[A0][0] = c.hi[0];
+            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+            if c.g[V1][0] == 0 {
+                c.g[V1][0] = c.g[V0][0];
+            }
+        }
+    } else {
+        // Mode 0x200: a fraction of the track, `(w * h) - (puVar4[6] / puVar4[1]) + 1`.
+        c.cycles += 9;
+        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4)).lw(c);
+        c.g[V1][0] = sx((c.g[A2][0] as u32) >> 24);
+        c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x18)).lw(c);
+        c.g[V0][0] = sx((c.g[A2][0] as u32) >> 20);
+        c.g[V0][0] &= 0xf;
+        c.g[V1][0] &= 0xf;
+        c.divu(0, 5, 4);
+        c.cycles += 6;
+        c.g[A1][0] = c.lo[0];
+        c.mult(0, 3, 2, 3);
+        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+    }
+    Ok(())
+}
+
+/// `PATH_CalcNodeRepeatCount(node, track, count)` (0x3d3658): how many times a
+/// node repeats. The node's word at +8 (bits 20 and up) picks a record of the
+/// path node table; its mode bits (0x300) decide the count:
+/// - no track (or the track's word at +0x30 is 0): 1 when the mode is 0, else 0;
+/// - 0x100: `(beat + 1) % n + 1`, with `n` (the count's low nibble) when that is 0;
+/// - 0x200: a fraction of the track, `w * h - count[6] / count[1] + 1`;
+/// - 0x300: 1; anything else: 0.
+pub fn path_calc_node_repeat_count(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x60);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[S3][0] = PATH_GP as u64;
+        c.g[V0][0] = Addr(PATH_DATA_PTR).lw(c);
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x8)).lw(c);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x38)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) >> 20);
+        c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x34)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).lh(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[S2][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+
+        let track = c.g[A3][0];
+        let has_track = if track == 0 {
+            false
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((track as u32).wrapping_add(0x30)).lw(c);
+            c.g[A0][0] = track;
+            c.g[V0][0] != 0
+        };
+        if has_track {
+            repeat_count_beat_path(c)?;
+            c.cycles += 1;
+            c.g[V0][0] = c.g[V1][0];
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x8)).lw(c);
+            c.g[V0][0] &= 0x300;
+            c.g[V0][0] = (c.g[V0][0] < 0x1) as u64;
+        }
+
+        c.cycles += 7;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The memset-like clear the event code runs on its two 16-byte buffers
+/// (`call_indirect 0x416210(buf, 0, 16)`), returning to `ret`.
+pub(crate) fn clear_16(c: &mut Cpu, buf: u64, ret: u32) -> Flow {
+    c.g[A0][0] = buf;
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0x10;
+    call_ptr(c, 0x0041_6210, ret)
+}
+
+/// The event block of [`path_post_node_events`] (0x3d4134..0x3d4180): clears
+/// two buffers, and, unless the track's first word is negative, asks the track
+/// for its beat and queues a node; then copies the event, adds it to the maps.
+pub(crate) fn post_node_events_body(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 18;
+    c.g[V1][0] = 0x1100_0000;
+    c.g[V0][0] = c.g[V0][0] << (c.g[A0][0] & 63);
+    c.g[S0][0] = sx(sp(c).wrapping_add(0x10));
+    c.g[V0][0] |= c.g[V1][0];
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = 0;
+    c.g[S1][0] = c.g[V0][0] << 32;
+    c.g[S1][0] = ((c.g[S1][0] as i64) >> 32) as u64;
+    let buf = c.g[S0][0];
+    clear_16(c, buf, 0x003d_40e0)?;
+    let stack = c.g[SP][0];
+    clear_16(c, stack, 0x003d_40f0)?;
+
+    c.g[V1][0] = Addr(PATH_DATA_PTR).lw(c);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+    let negative = (c.g[V0][0] as i64) < 0;
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    if !negative {
+        c.cycles += 13;
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x20));
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x58)).lw(c);
+        track_get_beat_pos().call(c, 0x003d_4110)?;
+        c.g[V1][0] = Addr(sp(c).wrapping_add(0x38)).lw(c);
+        c.g[V0][0] = 0x2;
+        let kind = c.g[V0][0];
+        Addr(sp(c).wrapping_add(0x9)).sb(c, kind);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xa));
+        let link = c.g[S1][0];
+        Addr(sp(c)).sw(c, link);
+        let slot = c.g[V1][0];
+        Addr(sp(c).wrapping_add(0xc)).sw(c, slot);
+        c.g[A1][0] = c.g[SP][0];
+        queue_append().call(c, 0x003d_4134)?;
+    }
+
+    // The 19-cycle tail, reached on both paths.
+    c.cycles += 19;
+    c.g[V0][0] = 0x4;
+    let event_list = c.g[S1][0];
+    Addr(sp(c)).sw(c, event_list);
+    let kind = c.g[V0][0];
+    Addr(sp(c).wrapping_add(0x9)).sb(c, kind);
+    c.g[V1][0] = u64::MAX;
+    c.g[A1][0] = c.g[SP][0];
+    c.g[A0][0] = c.g[S0][0];
+    c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+    let node = c.g[S3][0];
+    Addr(sp(c).wrapping_add(0xc)).sh(c, node);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) >> 21);
+    let neg = c.g[V1][0];
+    Addr(sp(c).wrapping_add(0xe)).sb(c, neg);
+    c.g[V0][0] &= 0x3f;
+    let key = c.g[V0][0];
+    Addr(sp(c).wrapping_add(0x8)).sb(c, key);
+    queue_append().call(c, 0x003d_4168)?;
+    c.g[A0][0] = c.g[S0][0];
+    copy_event().call(c, 0x003d_4170)?;
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S0][0];
+    add_event_to_maps().call(c, 0x003d_4180)?;
+    let _ = frame;
+    Ok(())
+}
+
+/// `PATH_PostNodeEvents(node)` (0x3d4050): posts a node's events to the track's
+/// queue. Returns the event copy in `v0` (0 when the node has none).
+pub fn path_post_node_events(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S4, 0x50);
+        c.g[S4][0] = PATH_GP as u64;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S1, 0x80);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x40);
+        c.g[V1][0] = sx((c.g[S3][0] as u32) << 1);
+        c.g[A2][0] = Addr(PATH_DATA_PTR).lw(c);
+        c.g[A0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x38)).lw(c);
+        c.g[A1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x34)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).lh(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[S2][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = 0;
+        if c.g[S2][0] != 0 {
+            c.cycles += 7;
+            c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x2)).lhu(c);
+            c.g[A0][0] = c.g[V0][0] & 0x1f;
+            c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x58)).lw(c);
+            let has_events = c.g[V0][0] != 0;
+            c.g[V0][0] = 0x1;
+            if has_events {
+                post_node_events_body(c, frame)?;
+            }
+        }
+
+        c.cycles += 9;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PATH_TrackGetBeat(track, out)` (0x3d4900): the track's beat position. A
+/// negative position stores 0 to `*out` (when `out` is not null) and returns -1.
+pub fn path_track_get_beat(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0x20);
+        c.g[A1][0] = c.g[SP][0];
+        track_get_beat_pos().call(c, 0x003d_4918)?;
+        if (c.g[V0][0] as i64) < 0 {
+            c.cycles += 4;
+            Addr(sp(c).wrapping_add(0x4)).sw(c, 0);
+            c.g[V0][0] = u64::MAX;
+            let minus_one = c.g[V0][0];
+            Addr(sp(c).wrapping_add(0x10)).sw(c, minus_one);
+        }
+        c.cycles += 2;
+        let store = c.g[S0][0] != 0;
+        c.g[V0][0] = Addr(sp(c).wrapping_add(0x4)).lw(c);
+        if store {
+            c.cycles += 1;
+            let value = c.g[V0][0];
+            Addr(c.g[S0][0] as u32).sw(c, value);
+        }
+        c.cycles += 5;
+        c.g[V0][0] = Addr(sp(c).wrapping_add(0x10)).lw(c);
+        frame.restore(c, S0, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PATH_FindTrackInfo(key)` (0x3d4a50): searches the four 0x928-byte track
+/// records (from 0x517644) for the first one whose mask word (at -4) matches
+/// `key`'s high nibbles, then returns the entry of the table at +0x8f0 for the
+/// lowest set bit of `key` (bit 0..23). Returns 0 when nothing matches.
+pub fn path_find_track_info(c: &mut Cpu) {
+    c.cycles += 12;
+    c.g[A1][0] = sx(0x0051_0000u32.wrapping_add(0x7610));
+    c.g[A2][0] = 0x00ff_0000;
+    c.g[V0][0] = 0xffff_ffff_f000_0000;
+    c.g[V1][0] = 0x0f00_0000;
+    c.g[T2][0] = c.g[A0][0] & c.g[V0][0];
+    c.g[T1][0] = c.g[A0][0] & c.g[V1][0];
+    c.g[A2][0] |= 0xffff;
+    c.g[T0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x924));
+    c.g[A0][0] &= c.g[A2][0];
+    c.g[A3][0] = 0;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x34));
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x8f0)).lw(c);
+        let no_table = c.g[V0][0] == 0;
+        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_sub(0x4)).lw(c);
+        // `skip_count`: the record was rejected before any cycle of the
+        // "next record" step, so the counter moves without its extra cycle.
+        let mut skip_count = false;
+        'record: {
+            if no_table {
+                break 'record;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+            let no_base = c.g[V0][0] == 0;
+            c.g[V0][0] = c.g[V1][0] & c.g[T2][0];
+            if no_base {
+                break 'record;
+            }
+            c.cycles += 2;
+            let no_high = c.g[V0][0] == 0;
+            c.g[V0][0] = c.g[V1][0] & c.g[T1][0];
+            if no_high {
+                break 'record;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                skip_count = true;
+                break 'record;
+            }
+            // The low-bit search: `key >> i` for i = 0.., up to 24 bits.
+            c.cycles += 4;
+            c.g[V1][0] = 0;
+            c.g[A2][0] = c.g[T0][0];
+            c.g[V0][0] = sx((c.g[A0][0] as u32) >> ((c.g[V1][0] as u32) & 31));
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] &= 0x1;
+                if c.g[V0][0] == 0 {
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    c.cycles += 3;
+                    let more = c.g[V1][0] < 0x18;
+                    c.g[V0][0] = more as u64;
+                    let t = c.g[V0][0] != 0;
+                    c.g[V0][0] = sx((c.g[A0][0] as u32) >> ((c.g[V1][0] as u32) & 31));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_4ab8);
+                        }
+                        continue;
+                    }
+                    break 'record;
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                    ret(c);
+                    return;
+                }
+            }
+        }
+        if !skip_count {
+            c.cycles += 1;
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+        }
+        c.cycles += 4;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x928));
+        c.g[V0][0] = (c.g[A3][0] < 0x4) as u64;
+        let again = c.g[V0][0] != 0;
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x928));
+        if again {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_4a80);
+            }
+            continue;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        ret(c);
+        return;
+    }
+}
+
+/// `PATH_FindPlayingTrackId(track, bit)` (0x3d53b8): looks for a playing track
+/// among the stream ids `(0x10000000 << k) | (0x1000000 << track) + bit` for
+/// k = 1, 0. Returns the first id whose status word is non-negative, else 0.
+pub fn path_find_playing_track_id(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = 0x0100_0000;
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        c.g[S1][0] = 1;
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = sx((c.g[S1][0] as u32) << ((c.g[A1][0] as u32) & 31));
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = sx((c.g[V0][0] as u32) << ((c.g[A0][0] as u32) & 31));
+        frame.save(c, S0, 0x80);
+        c.g[S4][0] = 0x1000_0000;
+        frame.save_ra(c, 0x30);
+        c.g[V0][0] = sx((c.g[S4][0] as u32) << ((c.g[S1][0] as u32) & 31));
+        loop {
+            c.cycles += 6;
+            c.g[V0][0] |= c.g[S3][0];
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+            c.g[A0][0] = c.g[S0][0];
+            get_track_stream().call(c, 0x003d_5400)?;
+            let negative = (c.g[V0][0] as i64) < 0;
+            c.g[A0][0] = c.g[S0][0];
+            if !negative {
+                c.cycles += 5;
+                c.g[A1][0] = c.g[SP][0];
+                path_status().call(c, 0x003d_5410)?;
+                c.g[V1][0] = Addr(sp(c)).lw(c);
+                c.g[V0][0] = c.g[S0][0];
+                if (c.g[V1][0] as i64) >= 0 {
+                    break;
+                }
+            }
+            c.cycles += 3;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(1));
+            let more = (c.g[S1][0] as i64) >= 0;
+            c.g[V0][0] = sx((c.g[S4][0] as u32) << ((c.g[S1][0] as u32) & 31));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_53f0);
+                }
+                continue;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+            break;
+        }
+        c.cycles += 8;
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S0, 0x80);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `D_0044F42C`: the byte that says the path system is set up.
+pub(crate) const PATH_FLAG_OC1112: u32 = 0x0044_f42c;
+
+/// `D_0044F430`: the selected map id (0 unset, -1 none).
+pub(crate) const CURRENT_ID_OC1112: u32 = 0x0044_f430;
+
+/// `D_0044F420`: the selected path map.
+pub(crate) const CURRENT_MAP_OC1112: u32 = 0x0044_f420;
+
+/// `D_0044F438`: the tick the track start ticks are stamped with.
+pub(crate) const TICK_NOW_OC1112: u32 = 0x0044_f438;
+
+/// `PATH_SelectMap` (0x3d5450).
+pub(crate) const SELECT_MAP_OC1112: Callee = Callee {
+    addr: 0x003d_5450,
+    f: ee::s14::f_003d5450,
+};
+
+/// `PATH_PlatFadeVolume` (0x2af608).
+pub(crate) const PLAT_FADE_VOLUME_OC1112: u32 = 0x002a_f608;
+
+/// `PATH_PlatGetTrackVolume` (0x2af428).
+pub(crate) const PLAT_GET_TRACK_VOLUME_OC1112: u32 = 0x002a_f428;
+
+/// What a map fade pass writes and where its generated body resumes.
+#[derive(Clone, Copy)]
+pub(crate) struct MapFadeOc1112 {
+    /// Offset of the map field the value goes to (0x14 for the time, 0x18
+    /// for the curve).
+    field: u32,
+    /// Return address of the first `PATH_SelectMap(-1)`.
+    top_ret: u32,
+    /// Return address of the per-map `PATH_SelectMap(i)`.
+    row_ret: u32,
+    /// The loop head, where a due event resumes.
+    head: u32,
+}
+
+/// `PATH_SetFadeTime` (0x3d6108).
+pub(crate) const FADE_TIME_OC1112: MapFadeOc1112 = MapFadeOc1112 {
+    field: 0x14,
+    top_ret: 0x003d_6154,
+    row_ret: 0x003d_619c,
+    head: 0x003d_6178,
+};
+
+/// `PATH_SetFadeCurve` (0x3d61e8).
+pub(crate) const FADE_CURVE_OC1112: MapFadeOc1112 = MapFadeOc1112 {
+    field: 0x18,
+    top_ret: 0x003d_6234,
+    row_ret: 0x003d_627c,
+    head: 0x003d_6258,
+};
+
+/// The map loop shared by `PATH_SetFadeTime` and `PATH_SetFadeCurve`. Reads
+/// the mask in s2 and the value in s4 (both set by the caller). When no map
+/// is selected yet, a path is set up, the first selection succeeds, every
+/// map whose player mask meets the mask gets the value stored in its field,
+/// and the selection is cleared at the end. Returns `Ok` on the generated
+/// body's early exits, `Err` when a callee unwinds.
+pub(crate) fn set_map_fades_oc1112(c: &mut Cpu, m: MapFadeOc1112) -> Flow {
+    c.cycles += 4;
+    c.g[V1][0] = 0x0045_0000;
+    c.g[V0][0] = Addr(CURRENT_ID_OC1112).lw(c);
+    let already_selected = c.g[V0][0] != 0;
+    c.g[S5][0] = c.g[V1][0];
+    if already_selected {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[RA][0] = sx(m.top_ret);
+    c.g[A0][0] = u64::MAX;
+    SELECT_MAP_OC1112.call(c, m.top_ret)?;
+    let chosen = c.g[V0][0];
+    c.g[V0][0] = 0x0051_0000;
+    if chosen == 0 {
+        return Ok(());
+    }
+    // The map table starts at 0x517610, rows of 0x928 bytes.
+    c.cycles += 7;
+    c.g[V1][0] = 0x0f00_0000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7610));
+    c.g[S2][0] &= c.g[V1][0];
+    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x30));
+    c.g[S0][0] = 0;
+    c.g[S3][0] = 0x0045_0000;
+    loop {
+        // Row i: m_a at +0x30 (player mask), m_b at +0x34 (loaded flag).
+        c.cycles += 3;
+        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(4)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+            c.g[V0][0] &= c.g[S2][0];
+            if c.g[V0][0] == 0 {
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            } else {
+                c.cycles += 4;
+                c.g[RA][0] = sx(m.row_ret);
+                c.g[A0][0] = c.g[S0][0] & 0xff;
+                SELECT_MAP_OC1112.call(c, m.row_ret)?;
+                let row_chosen = c.g[V0][0];
+                c.g[V0][0] = Addr(CURRENT_MAP_OC1112).lw(c);
+                if row_chosen != 0 {
+                    c.cycles += 1;
+                    let v = c.g[S4][0];
+                    Addr((c.g[V0][0] as u32).wrapping_add(m.field)).sw(c, v);
+                }
+                c.cycles += 1;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 4) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x928));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, m.head);
+            }
+            continue;
+        }
+        c.cycles += 2;
+        Addr(CURRENT_ID_OC1112).sw(c, 0);
+        Addr(CURRENT_MAP_OC1112).sw(c, 0);
+        return Ok(());
+    }
+}
+
+/// The frame and arguments of the two fade-time passes: `mask` in a0 and
+/// `value` in a1 (kept in s2 and s4 for the map loop).
+pub(crate) fn set_map_fades_frame_oc1112(c: &mut Cpu, m: MapFadeOc1112) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = 0x0045_0000;
+        frame.save(c, S2, 0x40);
+        frame.save(c, S4, 0x20);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[V1][0] = Addr(PATH_FLAG_OC1112).lbu(c);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        if c.g[V1][0] != 0 {
+            set_map_fades_oc1112(c, m)?;
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PATH_SetFadeTime(uint mask, int time)` (0x3d6108): when the path
+/// system is set up and no map is selected, stores `time` into the fade-time
+/// field of every map whose player mask meets `mask`.
+pub fn path_set_fade_time(c: &mut Cpu) {
+    set_map_fades_frame_oc1112(c, FADE_TIME_OC1112)
+}
+
+/// `void PATH_SetFadeCurve(uint mask, int curve)` (0x3d61e8): the same pass as
+/// [`path_set_fade_time`], storing into the fade-curve field.
+pub fn path_set_fade_curve(c: &mut Cpu) {
+    set_map_fades_frame_oc1112(c, FADE_CURVE_OC1112)
+}
+
+/// `void PATH_TrackFadeVolume(PathTrack* self, int level, int w)` (0x3d6318):
+/// stores the level in byte +0xe, clears the ramp byte +0xd, and starts the
+/// platform fade `PATH_PlatFadeVolume(handle, level * self[4] / 100, w, 1)`.
+pub fn path_track_fade_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = 0x64;
+        let this = c.g[V0][0] as u32;
+        let v = c.g[A1][0];
+        Addr(this.wrapping_add(0xe)).sb(c, v);
+        c.g[A3][0] = 1;
+        c.g[A0][0] = Addr(this.wrapping_add(4)).lb(c);
+        c.cycles += 9;
+        Addr(this.wrapping_add(0xd)).sb(c, 0);
+        // a1 = a1 * a0 / v1 (100), as the generated mult/div leave it.
+        c.mult(0, 5, 5, 4);
+        c.div(0, 5, 3);
+        c.g[A1][0] = c.lo[0];
+        c.g[A0][0] = Addr(this.wrapping_add(0x54)).lw(c);
+        call_ptr(c, PLAT_FADE_VOLUME_OC1112, 0x003d_6354)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PATH_TrackSetAuxSendFade(PathTrack* ch, int target, int ramp)`
+/// (0x3d6360): stores the target into byte +0x16, and the ramp into +0x15
+/// when it is not negative. A leaf.
+pub fn path_track_set_aux_send_fade(c: &mut Cpu) {
+    c.cycles += 2;
+    let channel = c.g[A0][0] as u32;
+    let ramp_negative = (c.g[A3][0] as i64) < 0;
+    let v = c.g[A1][0];
+    Addr(channel.wrapping_add(0x16)).sb(c, v);
+    if !ramp_negative {
+        c.cycles += 1;
+        let v = c.g[A3][0];
+        Addr(channel.wrapping_add(0x15)).sb(c, v);
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void PATH_TrackStartVolumeFade(PathTrack* self, int target, int ramp)`
+/// (0x3d6378): stamps the tick, sets the ramp byte, reads the platform volume
+/// and stores the old and target levels as truncated integers (the bytes
+/// +0xc and +0x34), with the target in +0xe.
+pub fn path_track_start_volume_fade(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x0045_0000;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V1][0] = Addr(TICK_NOW_OC1112).lw(c);
+        let this = c.g[S0][0] as u32;
+        c.g[A0][0] = Addr(this.wrapping_add(0x54)).lw(c);
+        let v = c.g[V1][0];
+        Addr(this.wrapping_add(8)).sw(c, v);
+        let v = c.g[A2][0];
+        Addr(this.wrapping_add(0xd)).sb(c, v);
+        call_ptr(c, PLAT_GET_TRACK_VOLUME_OC1112, 0x003d_63a8)?;
+        // The callee's volume (v0) as a float: the level before the fade.
+        let level = FpuF32::from_i32(c.g[V0][0] as u32 as i32);
+        abi::set_fpr(c, 1, level);
+        let v = c.g[S1][0];
+        Addr(this.wrapping_add(0xe)).sb(c, v);
+        // The target as a float (mtc1 s1, cvt.s.w).
+        let target = FpuF32::from_i32(c.g[S1][0] as u32 as i32);
+        abi::set_fpr(c, 0, target);
+        c.g[A0][0] = 0x7f;
+        // cvt.w.s and mfc1: the old level, truncated, into v0.
+        let level_int = FpuF32(level.to_i32() as u32);
+        abi::set_fpr(c, 2, level_int);
+        c.g[V0][0] = abi::mfc1(level_int);
+        // cvt.w.s and mfc1: the target, truncated, into v1.
+        let target_int = FpuF32(target.to_i32() as u32);
+        abi::set_fpr(c, 1, target_int);
+        c.g[V1][0] = abi::mfc1(target_int);
+        let v = c.g[V0][0];
+        Addr(this.wrapping_add(0xc)).sb(c, v);
+        let v = c.g[V1][0];
+        Addr(this.wrapping_add(0x34)).sb(c, v);
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The field layout and platform query of a track-start helper.
+#[derive(Clone, Copy)]
+pub(crate) struct TrackStartOc1112 {
+    /// Word: the tick the fade started at.
+    tick: u32,
+    /// Byte: the ramp flag (a2).
+    ramp: u32,
+    /// Byte: the target level (a1).
+    target: u32,
+    /// Byte: the current level the query returned (v0).
+    cur: u32,
+    /// The platform query called with the track's handle.
+    query: u32,
+    /// Its return address.
+    ret: u32,
+}
+
+/// `PATH_TrackStartAuxSendFade` (0x3d63f8), querying the aux send.
+pub(crate) const START_AUX_SEND_OC1112: TrackStartOc1112 = TrackStartOc1112 {
+    tick: 0x10,
+    ramp: 0x15,
+    target: 0x16,
+    cur: 0x14,
+    query: 0x002a_f4b0,
+    ret: 0x003d_6428,
+};
+
+/// `PATH_TrackStartFade3` (0x3d6448), querying the handle.
+pub(crate) const START_FADE3_OC1112: TrackStartOc1112 = TrackStartOc1112 {
+    tick: 0x18,
+    ramp: 0x1d,
+    target: 0x1e,
+    cur: 0x1c,
+    query: 0x002a_f480,
+    ret: 0x003d_6478,
+};
+
+/// The shape shared by the two track-start helpers: stamp the tick, set the
+/// ramp, query the platform value, store the target and that value.
+pub(crate) fn track_start_fade_oc1112(c: &mut Cpu, t: TrackStartOc1112) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x0045_0000;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V1][0] = Addr(TICK_NOW_OC1112).lw(c);
+        let this = c.g[S0][0] as u32;
+        c.g[A0][0] = Addr(this.wrapping_add(0x54)).lw(c);
+        let v = c.g[V1][0];
+        Addr(this.wrapping_add(t.tick)).sw(c, v);
+        let v = c.g[A2][0];
+        Addr(this.wrapping_add(t.ramp)).sb(c, v);
+        call_ptr(c, t.query, t.ret)?;
+        let v = c.g[S1][0];
+        Addr(this.wrapping_add(t.target)).sb(c, v);
+        let v = c.g[V0][0];
+        Addr(this.wrapping_add(t.cur)).sb(c, v);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PATH_TrackStartAuxSendFade(PathTrack* ch, int target, int ramp)`
+/// (0x3d63f8).
+pub fn path_track_start_aux_send_fade(c: &mut Cpu) {
+    track_start_fade_oc1112(c, START_AUX_SEND_OC1112)
+}
+
+/// `void PATH_TrackStartFade3(PathTrack* ch, int target, int ramp)` (0x3d6448).
+pub fn path_track_start_fade3(c: &mut Cpu) {
+    track_start_fade_oc1112(c, START_FADE3_OC1112)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -34138,6 +37187,1015 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x5098, r.next_u32());
                 c.g[A0][0] = sx(object);
             },
+        );
+    }
+
+    use crate::difftest::fakes::check_reaching;
+    use crate::difftest::fakes::machine_rt;
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::visualfx::avalanche::tests::oc1075_machine;
+
+    /// `PATH_PlatStopTrackSound`: all four track slots, the "playing" flag
+    /// clear (stream stop) or set (sound stop), callees that unwind.
+    #[test]
+    fn oc1075_path_plat_stop_track_sound_matches() {
+        check_reaching(
+            ee::s08::f_002af838__generated,
+            oc1075_path_plat_stop_track_sound,
+            200,
+            &[0x002a_f85c, 0x002a_f874, 0x002a_f884, 0x002a_f88c],
+            &|c, seed| {
+                let mut r = oc1075_machine(c, seed, 0x2a_f838, 3);
+                let i = seed % 4;
+                let obj = DATA + 0x1_0000 + i * 0x100;
+                c.bus.write32(0x004d_3e98 + 4 * i, obj);
+                let flag = if seed % 3 == 0 {
+                    0
+                } else {
+                    1 + (seed % 100) as u8
+                };
+                c.bus.write8(obj + 0x64, flag);
+                c.bus.write32(obj + 0x6c, DATA + 0x2_0000);
+                c.bus.write32(DATA + 0x2_0004, r.next_u32());
+                c.bus.write32(obj, r.next_u32());
+                c.g[A0][0] = sx(i);
+                c.pc = 0x002a_f838;
+            },
+        );
+    }
+
+    /// Action records for the path walkers: 16 bytes each, a flag word at +8
+    /// (one of the conditional masks or random) and a type byte at +9 that is
+    /// often 1 (the conditional type).
+    pub(crate) fn path_records(c: &mut Cpu, r: &mut Rng, base: u32, count: u32) {
+        for k in 0..count {
+            let rec = base + 0x10 * k;
+            let flags = match r.next_u32() % 5 {
+                0 => 0x10_0000,
+                1 => 0x20_0000,
+                2 => 0x30_0000,
+                3 => 0,
+                _ => r.next_u32(),
+            };
+            c.bus.write32(rec + 8, flags);
+            let kind = if r.next_u32() % 3 == 0 {
+                1
+            } else {
+                (r.next_u32() % 4) as u8
+            };
+            c.bus.write8(rec + 9, kind);
+        }
+    }
+
+    #[test]
+    fn path_skip_cond_block_matches() {
+        check(
+            ee::s14::f_003d0b78__generated,
+            path_skip_cond_block,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d0b78, 0);
+                let count = seed % 9;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(match seed % 4 {
+                    0 => 0xffff_ffff,
+                    1 => 0,
+                    2 => 3,
+                    _ => r.next_u32() % 6,
+                });
+                c.g[A2][0] = sx(DATA + 0x10 * count);
+                path_records(c, &mut r, DATA, 10);
+            },
+        );
+    }
+
+    #[test]
+    fn path_get_track_status_matches() {
+        // Real callees (FindTrack, TrackGetStatus) on a machine with empty
+        // track slots: the null-track path, plus the call protocol.
+        check(
+            ee::s14::f_003d0ca0__generated,
+            path_get_track_status,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d0ca0, 0);
+                c.g[A0][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// A path voice at `DATA+0x1000` with junk around its fields, a map at
+    /// `DATA+0x3000` selected as the current map, and a start tick that is
+    /// zero for a third of the seeds. The voice pointer is zero for every
+    /// eleventh seed (the null return).
+    pub(crate) fn track_status_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        let voice = DATA + 0x1000;
+        let map = DATA + 0x3000;
+        fill(c, &mut r, voice, 0x44);
+        fill(c, &mut r, map, 0x10);
+        c.bus.write32(TICK_NOW_OC1104, r.next_u32() % 0x2000);
+        c.bus.write32(CURRENT_MAP_OC1104, map);
+        c.bus.write32(map + 0xc, r.next_u32() % 0x400);
+        c.bus.write32(
+            voice + 0x4c,
+            if seed % 3 == 0 {
+                0
+            } else {
+                r.next_u32() % 0x2000
+            },
+        );
+        c.bus.write32(voice + 0x24, r.next_u32() % 0x400);
+        let h = if seed % 5 == 0 { 0x8000u32 } else { 0x0100 };
+        c.bus.write8(voice + 0x36, h as u8);
+        c.bus.write8(voice + 0x37, (h >> 8) as u8);
+        c.g[A0][0] = if seed % 11 == 0 { 0 } else { sx(voice) };
+    }
+
+    #[test]
+    fn path_track_get_status_matches() {
+        check(
+            ee::s14::f_003d0cc8__generated,
+            path_track_get_status,
+            300,
+            &|c, seed| track_status_setup(c, seed, 0x3d_0cc8),
+        );
+    }
+
+    /// The map rows and the event arguments: the four maps have player masks
+    /// that fit the mask argument for some seeds, and loaded flags on some.
+    pub(crate) fn broadcast_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine_rt(c, seed, salt, 0);
+        let flags = [0x1000_0000u32, 0x0100_0000, 0x1100_0000, 0xf000_0000];
+        c.g[A0][0] = sx(flags[(seed % 4) as usize]);
+        c.g[A1][0] = sx(r.next_u32() & 0xffff);
+        for m in 0..4u32 {
+            let base = 0x0051_7610 + m * 0x928;
+            let player = if seed % 2 == 0 {
+                flags[((seed + m) % 4) as usize]
+            } else {
+                r.next_u32()
+            };
+            c.bus.write32(base + 0x30, player);
+            c.bus.write32(base + 0x34, (seed >> m) & 1);
+        }
+        c.bus
+            .write8(PATH_FLAG_OC1104, if seed % 7 == 0 { 0 } else { 1 });
+        c.bus.write32(
+            CURRENT_ID_OC1104,
+            if seed % 5 == 0 { 0 } else { r.next_u32() },
+        );
+        c.bus.write32(CURRENT_MAP_OC1104, 0x0051_7610);
+    }
+
+    #[test]
+    fn path_broadcast_event_matches() {
+        check(
+            ee::s14::f_003d0ed0__generated,
+            path_broadcast_event,
+            200,
+            &|c, seed| broadcast_setup(c, seed, 0x3d_0ed0),
+        );
+    }
+
+    /// The map rows with loaded maps and player masks that fit, lists with
+    /// empty and filled slots, and the selection set or clear.
+    #[allow(dead_code)]
+    pub(crate) fn stop_tracks_setup_2(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine_rt(c, seed, salt, 0);
+        let flags = [0x1000_0000u32, 0x0100_0000, 0x1100_0000, 0xf000_0000];
+        c.g[A0][0] = sx(flags[(seed % 4) as usize]);
+        for m in 0..4u32 {
+            let base = 0x0051_7610 + m * 0x928;
+            let player = if seed % 2 == 0 {
+                flags[((seed + m) % 4) as usize]
+            } else {
+                r.next_u32()
+            };
+            c.bus.write32(base + 0x30, player);
+            c.bus
+                .write32(base + 0x34, if (seed >> m) & 3 == 0 { 0 } else { 1 });
+            for j in 0..24u32 {
+                let voice = DATA + 0x8000 + (m * 24 + j) * 0x40;
+                let slot = if (seed + j + m) % 3 == 0 { 0 } else { voice };
+                c.bus.write32(base + 0x58 + 4 * j, slot);
+                c.bus.write32(voice + 0x54, 0);
+                c.bus.write8(voice + 0x36, 0);
+                c.bus.write8(voice + 0x37, 0);
+            }
+        }
+        c.bus
+            .write8(PATH_FLAG_OC1104, if seed % 6 == 0 { 0 } else { 1 });
+        c.bus.write32(
+            CURRENT_ID_OC1104,
+            if seed % 4 == 0 { r.next_u32() | 1 } else { 0 },
+        );
+        c.bus.write32(CURRENT_MAP_OC1104, 0x0051_7610);
+    }
+
+    #[test]
+    fn path_debug_printf_matches() {
+        check(
+            ee::s14::f_003d1658__generated,
+            path_debug_printf,
+            200,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x3d_1658, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn path_debug_stub_matches() {
+        check(
+            ee::s14::f_003d1690__generated,
+            path_debug_stub,
+            200,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x3d_1690, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn path_nop_stub_matches() {
+        check(
+            ee::s14::f_003d16c8__generated,
+            path_nop_stub,
+            50,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x3d_16c8, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn path_get_time_value_matches() {
+        check(
+            ee::s14::f_003d16d0__generated,
+            path_get_time_value,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_16d0, 0);
+                c.bus.write32(TIME_VALUE_OC1104, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_9: u32 = 200;
+
+    pub(crate) fn rng_2(seed: u32, salt: u64) -> Rng {
+        Rng(0x9e37_79b9_7f4a_7c15 ^ ((seed as u64) << 20) ^ salt)
+    }
+
+    /// Build a path player at `DATA + 0x10000` with random event pointers
+    /// and four maps at MAPS. Map flags and loaded flags vary by seed.
+    pub(crate) fn path_setup(c: &mut Cpu, seed: u32, r: &mut Rng) {
+        scramble(c, r);
+        c.bus.write8(INIT_FLAG, if seed % 4 == 0 { 0 } else { 1 });
+        c.bus
+            .write32(CUR_ID, if seed % 5 == 0 { 0 } else { r.next_u32() | 1 });
+        let player = DATA + 0x1_0000;
+        c.bus.write32(CUR_MAP, player);
+        for k in 0..16 {
+            let ev = if seed % 2 == 0 {
+                0
+            } else {
+                DATA + 0x2_0000 + k * 0x100
+            };
+            c.bus.write32(player + 0xdc + 4 * k, ev);
+        }
+        for i in 0..4 {
+            let m = MAPS + i * 0x928;
+            c.bus.write32(m + 0x30, r.next_u32());
+            c.bus
+                .write32(m + 0x34, if seed % 3 == 0 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(m + 0x91c, r.next_u32() % 16);
+        }
+    }
+
+    #[test]
+    fn path_count_events_matches() {
+        check(
+            ee::s14::f_003d1a88__generated,
+            path_count_events,
+            SEEDS_9,
+            &|c, seed| {
+                let mut r = rng_2(seed, 2);
+                path_setup(c, seed, &mut r);
+                c.g[A0][0] = match seed % 4 {
+                    0 => 0xf000_0000,
+                    1 => 0x0f00_0000,
+                    2 => 0,
+                    _ => r.next_u32() as u64,
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn path_add_event_to_maps_matches() {
+        check(
+            ee::s14::f_003d1f80__generated,
+            path_add_event_to_maps,
+            SEEDS_9,
+            &|c, seed| {
+                let mut r = rng_2(seed, 3);
+                scramble(c, &mut r);
+                for i in 0..4 {
+                    let m = MAPS + i * 0x928;
+                    c.bus.write32(m + 0x34, if seed % 3 == 0 { 0 } else { 1 });
+                    c.bus.write32(m + 0x30, r.next_u32() | 0xf000_0000);
+                    c.bus.write32(m + 0x91c, r.next_u32() % 18);
+                }
+                c.g[A0][0] = match seed % 3 {
+                    0 => 0xf000_0000,
+                    1 => 0x0f00_0000,
+                    _ => r.next_u32() as u64,
+                };
+                c.g[A1][0] = sx(DATA + 0x4_0000);
+            },
+        );
+    }
+
+    #[test]
+    fn path_set_event_mark_bit_matches() {
+        check(
+            ee::s14::f_003d21c0__generated,
+            path_set_event_mark_bit,
+            SEEDS_9,
+            &|c, seed| {
+                let mut r = rng_2(seed, 4);
+                scramble(c, &mut r);
+                let player = if seed % 5 == 0 {
+                    0x0001_0000
+                } else {
+                    DATA + 0x1_0000
+                };
+                c.bus.write32(CUR_MAP, player);
+                c.bus.write32(player + 0x40, DATA + 0x2_0000);
+                let base = if seed % 5 == 0 {
+                    0x0001_0000
+                } else {
+                    DATA + 0x3_0000
+                };
+                c.bus.write32(player + 0x34, base);
+                let idx = (r.next_u32() % 16) as u32;
+                // Halfword for event `idx`: a negative value that lands on
+                // a null definition for the base 0x10000.
+                let hw = if seed % 5 == 0 {
+                    0xc000u16
+                } else {
+                    (r.next_u32() & 0xff) as u16
+                };
+                c.bus.write16(DATA + 0x2_0000 + idx * 2, hw);
+                c.bus.write8(DATA + 0x5_0000 + 0xc, idx as u8);
+                let def = base
+                    .wrapping_add(((hw as i16 as i32) * 4) as u32)
+                    .wrapping_add(0xc);
+                c.bus.write32(def, r.next_u32());
+                c.g[A0][0] = sx(DATA + 0x5_0000);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn path_clear_event_mark_bits_matches() {
+        check(
+            ee::s14::f_003d2218__generated,
+            path_clear_event_mark_bits,
+            SEEDS_9,
+            &|c, seed| {
+                let mut r = rng_2(seed, 5);
+                scramble(c, &mut r);
+                let base = if seed % 5 == 0 {
+                    0x0001_0000
+                } else {
+                    DATA + 0x3_0000
+                };
+                let player = DATA + 0x1_0000;
+                c.bus.write32(CUR_MAP, player);
+                c.bus.write32(player + 0x34, base);
+                c.bus.write32(player + 0x40, DATA + 0x2_0000);
+                c.bus.write8(base + 0xf, (seed % 17) as u8);
+                for k in 0..16 {
+                    // Slot 3 of the null-base seeds lands on address 0.
+                    let hw = if seed % 5 == 0 && k == 3 {
+                        0xc000u16
+                    } else {
+                        (k as u16) % 24
+                    };
+                    c.bus.write16(DATA + 0x2_0000 + 2 * k, hw);
+                    c.bus.write32(base + 4 * k + 0xc, r.next_u32());
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn path_nop_stub_wrapper_matches() {
+        check(
+            ee::s14::f_003d2fa0__generated,
+            path_nop_stub_wrapper,
+            SEEDS_9,
+            &|c, seed| {
+                let mut r = rng_2(seed, 6);
+                scramble(c, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn path_get_time_value_wrapper_matches() {
+        check(
+            ee::s14::f_003d2fc0__generated,
+            path_get_time_value_wrapper,
+            SEEDS_9,
+            &|c, seed| {
+                let mut r = rng_2(seed, 7);
+                scramble(c, &mut r);
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_16: u32 = 120;
+
+    /// Gate words (magic in this machine's RAM) of the fakes below.
+    pub(crate) const GATE_STOP: u32 = DATA + 0x0f_f000;
+
+    pub(crate) const GATE_BANK: u32 = DATA + 0x0f_f100;
+
+    pub(crate) const GATE_TRACK: u32 = DATA + 0x0f_f200;
+
+    pub(crate) const MAGIC_2: u32 = 0x1106_c0de;
+
+    /// The selected path map's id and loaded flag (map 0 of `MAPS`).
+    pub(crate) const MAPS: u32 = 0x0051_7610;
+
+    pub(crate) const MAP_SIZE: u32 = 0x928;
+
+    pub(crate) static PREV_STOP: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_BANK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_TRACK: AtomicUsize = AtomicUsize::new(0);
+
+    /// `PATH_StopTracks` fake: returns 0 without touching the player.
+    pub(crate) fn oc1106_fake_stop(c: &mut Cpu) {
+        if c.bus.read32(GATE_STOP) != MAGIC_2 {
+            return fall_back(c, &PREV_STOP, ee::s14::f_003d2a68__generated);
+        }
+        c.g[V0][0] = 0;
+        ret(c);
+    }
+
+    /// `PATH_PlatRemoveBank` fake: returns the forced result in its mailbox.
+    pub(crate) fn oc1106_fake_bank(c: &mut Cpu) {
+        if c.bus.read32(GATE_BANK) != MAGIC_2 {
+            return fall_back(c, &PREV_BANK, ee::s08::f_002ae328__generated);
+        }
+        c.g[V0][0] = sx(c.bus.read32(GATE_BANK + 4));
+        ret(c);
+    }
+
+    /// `PATH_PlatSetTrackFile` fake: returns 0 without touching the platform.
+    pub(crate) fn oc1106_fake_track(c: &mut Cpu) {
+        if c.bus.read32(GATE_TRACK) != MAGIC_2 {
+            return fall_back(c, &PREV_TRACK, ee::s08::f_002ae768__generated);
+        }
+        c.g[V0][0] = 0;
+        ret(c);
+    }
+
+    /// Starts the path layer (or not) and selects no map (0) or a map id.
+    pub(crate) fn path_state(c: &mut Cpu, seed: u32, r: &mut crate::difftest::Rng) {
+        c.bus
+            .write8(PATH_STARTED_FLAG.0, if seed % 4 == 0 { 0 } else { 1 });
+        let selected = if seed % 3 == 0 { 0 } else { r.next_u32() | 1 };
+        c.bus.write32(PATH_SELECTED_ID.0, selected);
+        c.bus.write32(PATH_SELECTED_MAP.0, r.next_u32());
+    }
+
+    #[test]
+    fn path_shutdown_matches() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003D2A68),
+            oc1106_fake_stop,
+            &PREV_STOP,
+        );
+        check(
+            ee::s14::f_003d2fe0__generated,
+            path_shutdown,
+            SEEDS_16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1106_0001, 0);
+                c.bus.write32(GATE_STOP, MAGIC_2);
+                path_state(c, seed, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn path_track_call_stream_matches() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s08::OVERRIDE_002AE768),
+            oc1106_fake_track,
+            &PREV_TRACK,
+        );
+        check(
+            ee::s14::f_003d30a8__generated,
+            path_track_call_stream,
+            SEEDS_16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1106_0002, 0);
+                c.bus.write32(GATE_TRACK, MAGIC_2);
+                path_state(c, seed, &mut r);
+                c.g[A0][0] = (r.next_u32() % 8) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                // A loaded first map, so the track search can find something.
+                c.bus
+                    .write32(MAPS + 0x34, if seed % 2 == 0 { 0 } else { 1 });
+            },
+        );
+    }
+
+    #[test]
+    fn path_track_unload_bank_matches() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s08::OVERRIDE_002AE328),
+            oc1106_fake_bank,
+            &PREV_BANK,
+        );
+        check(
+            ee::s14::f_003d3140__generated,
+            path_track_unload_bank,
+            SEEDS_16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1106_0003, 0);
+                c.bus.write32(GATE_BANK, MAGIC_2);
+                c.bus.write32(GATE_BANK + 4, r.next_u32());
+                path_state(c, seed, &mut r);
+                c.g[A0][0] = (r.next_u32() % 8) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.bus
+                    .write32(MAPS + 0x34, if seed % 2 == 0 { 0 } else { 1 });
+            },
+        );
+    }
+
+    #[test]
+    fn path_set_map_callbacks_matches() {
+        check(
+            ee::s14::f_003d31e8__generated,
+            path_set_map_callbacks,
+            SEEDS_16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1106_0004, 0);
+                path_state(c, seed, &mut r);
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                // Four maps: a loaded count and a mask word each.
+                for m in 0..4u32 {
+                    let map = MAPS + MAP_SIZE * m;
+                    c.bus.write32(map + 0x24, r.next_u32() % 3);
+                    c.bus.write32(map + 0x20, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// Fixture for the three fade updaters: a track at DATA, the track
+    /// table at DATA+0x1000, the clock at 0x44f438.
+    #[allow(dead_code)]
+    pub(crate) fn fade_setup(c: &mut Cpu, seed: u32, salt: u64, l: &Oc1109FadeLayout) {
+        let mut r = fakes::machine(c, seed, salt, 1);
+        let table = DATA + 0x1000;
+        c.bus.write32(0x44f420, table);
+        let mode = seed % 5;
+        let dur = [0u32, 1, 100, 60000, 7][(seed / 5 % 5) as usize];
+        c.bus.write32(table + l.cfg_w, mode | (r.next_u32() & 0x80));
+        c.bus.write16(table + l.cfg_h, dur as u16);
+        let now = r.next_u32() >> (seed % 3 * 8);
+        c.bus.write32(0x44f438, now);
+        let start = match seed % 4 {
+            0 => now.wrapping_sub(r.next_u32() % (dur + 1)),
+            1 => now.wrapping_sub(dur + 5),
+            2 => now.wrapping_add(r.next_u32() % 100 + 1), // clock before start: huge elapsed
+            _ => now.wrapping_sub(r.next_u32() % 200),
+        };
+        c.bus.write32(DATA + l.start, start);
+        let cur = (r.next_u32() % 200) as u8;
+        let tgt = if seed % 7 == 0 {
+            cur
+        } else {
+            (r.next_u32() % 200) as u8
+        };
+        c.bus.write8(DATA + l.cur, cur);
+        c.bus.write8(DATA + l.cur + 2, tgt);
+        c.bus.write8(DATA + 0x34, (r.next_u32() & 0xff) as u8);
+        c.bus.write32(DATA + 0x54, r.next_u32());
+        c.g[A0][0] = DATA as u64;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const OC1109_VOL: Oc1109FadeLayout = Oc1109FadeLayout {
+        start: 0x8,
+        cur: 0xc,
+        cfg_w: 0x18,
+        cfg_h: 0x14,
+        setter: 0,
+        ret_done: 0,
+        ret_set: 0,
+        volume: true,
+    };
+
+    #[allow(dead_code)]
+    pub(crate) const OC1109_AUX: Oc1109FadeLayout = Oc1109FadeLayout {
+        start: 0x10,
+        cur: 0x14,
+        cfg_w: 0x20,
+        cfg_h: 0x1c,
+        setter: 0,
+        ret_done: 0,
+        ret_set: 0,
+        volume: false,
+    };
+
+    #[allow(dead_code)]
+    pub(crate) const OC1109_F3: Oc1109FadeLayout = Oc1109FadeLayout {
+        start: 0x18,
+        cur: 0x1c,
+        cfg_w: 0x28,
+        cfg_h: 0x24,
+        setter: 0,
+        ret_done: 0,
+        ret_set: 0,
+        volume: false,
+    };
+
+    /// Beat position: pattern table lookup, loop-adjusted and plain arms, null and
+    /// non-null `out`.
+    #[test]
+    fn path_track_get_beat_pos_matches() {
+        check(
+            ee::s14::f_003d32b8__generated,
+            path_track_get_beat_pos,
+            400,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3d32b8, 1);
+                let table = DATA + 0x1000;
+                c.bus.write32(0x44f420, table);
+                // +0x38: u16 index table, +0x34: entries (4 bytes), +0x50: u64 table
+                c.bus.write32(table + 0x38, DATA + 0x2000);
+                c.bus.write32(table + 0x34, DATA + 0x2100);
+                c.bus.write32(table + 0x50, DATA + 0x2200);
+                c.bus.write16(DATA + 0x36, 1);
+                c.bus.write16(DATA + 0x2000 + 2, 3); // index -> entry 3
+                c.bus.write16(DATA + 0x2100 + 12, 2); // entry -> u64 slot 2
+                let beats = match seed % 4 {
+                    0 => 0,
+                    1 => 7,
+                    2 => 0x8000_0001,
+                    _ => r.next_u32(),
+                };
+                c.bus.write64(
+                    DATA + 0x2200 + 8,
+                    (beats as u64) << 32 | r.next_u32() as u64,
+                );
+                let sig = [0u32, 0x0400_0000, 0x0440_0000, 0x0f10_0000, 0x0220_0000]
+                    [(seed / 4 % 5) as usize];
+                c.bus
+                    .write32(DATA + 0x2100 + 12 + 4, sig | (r.next_u32() & 0xf0f0_00ff));
+                c.bus
+                    .write32(DATA + 0x2100 + 12 + 12, if seed % 3 == 0 { 0 } else { 2 });
+                c.bus
+                    .write32(DATA + 0x20, [0u32, 3 << 4, 1 << 8][(seed % 3) as usize]);
+                let spp = c.g[ssx3_ee_rt::cpu::reg::SP as usize][0] as u32 - 0x70;
+                c.bus.write32(
+                    spp + 0x10,
+                    if seed % 7 == 0 {
+                        0x8000_0005
+                    } else {
+                        r.next_u32() % 90
+                    },
+                );
+                c.bus.write32(
+                    spp + 0x14,
+                    if seed % 5 == 0 {
+                        0x8000_0009
+                    } else {
+                        r.next_u32() % 90
+                    },
+                );
+                c.bus.write32(
+                    DATA + 0x40,
+                    if seed % 5 == 0 {
+                        0x8000_0003
+                    } else {
+                        r.next_u32() % 50
+                    },
+                );
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = if seed % 6 == 0 {
+                    0
+                } else {
+                    (DATA + 0x3000) as u64
+                };
+            },
+        );
+    }
+
+    /// The path node table the lookups read through [`PATH_DATA_PTR`].
+    pub(crate) const PATH_TEST_TBL: u32 = DATA + 0x2000;
+
+    /// Lays out the path table: its fields (+0x34, +0x38, +0x50), the 32
+    /// record words at +0x58, and the head word (`*tbl`, sign picks a branch).
+    pub(crate) fn path_test_tables(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let tbl = PATH_TEST_TBL;
+        c.bus.write32(PATH_DATA_PTR, tbl);
+        let base1 = if seed % 5 == 0 { 0 } else { DATA + 0x3000 };
+        c.bus.write32(tbl + 0x34, base1);
+        c.bus.write32(tbl + 0x38, DATA + 0x4000);
+        c.bus.write32(tbl + 0x50, DATA + 0x5000);
+        for i in 0..32 {
+            let word = if seed % 4 == 0 { 0 } else { r.next_u32() };
+            c.bus.write32(tbl + 0x58 + 4 * i, word);
+        }
+        let head = r.next_u32() & 0x1f;
+        c.bus.write32(
+            tbl,
+            if seed % 2 == 0 {
+                0x8000_0000 | head
+            } else {
+                head
+            },
+        );
+    }
+
+    /// Argument-side fixture of the node tests: the node at `DATA+0x6000`
+    /// with its selector word, the track at `DATA+0x7000`, the count words at
+    /// `DATA+0x8000`.
+    pub(crate) fn path_test_node(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        fill(c, r, DATA + 0x7000, 16);
+        let idx = seed % 16;
+        c.bus
+            .write32(DATA + 0x6008, (idx << 20) | (r.next_u32() & 0xf_ffff));
+        c.bus.write32(DATA + 0x6004, r.next_u32());
+        c.bus.write16(DATA + 0x4000 + 2 * idx, (seed % 6) as u16);
+        let base1 = if seed % 5 == 0 { 0 } else { DATA + 0x3000 };
+        let info = base1.wrapping_add(4 * (seed % 6));
+        c.bus.write32(info, r.next_u32());
+        c.bus
+            .write16(info.wrapping_add(2), (r.next_u32() & 0x1f) as u16);
+        c.bus.write32(
+            info.wrapping_add(8),
+            ((seed % 4) << 8) | (r.next_u32() & !0x300),
+        );
+        c.bus
+            .write32(DATA + 0x7030, if seed % 3 == 2 { 1 } else { 0 });
+        c.bus.write32(DATA + 0x8000, 1 + (seed % 15));
+        c.bus.write32(DATA + 0x8004, 1 + (seed % 7));
+        c.bus.write32(DATA + 0x8018, r.next_u32());
+        c.g[A0][0] = sx(DATA + 0x6000);
+        c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x7000) };
+        c.g[A2][0] = sx(DATA + 0x8000);
+    }
+
+    #[test]
+    fn path_calc_node_repeat_count_matches() {
+        check(
+            ssx3_ee::s14::f_003d3658__generated,
+            path_calc_node_repeat_count,
+            300,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x3658, 6);
+                path_test_tables(c, &mut r, seed);
+                path_test_node(c, &mut r, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn path_post_node_events_matches() {
+        check(
+            ssx3_ee::s14::f_003d4050__generated,
+            path_post_node_events,
+            300,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x4050, 8);
+                path_test_tables(c, &mut r, seed);
+                let k = seed % 8;
+                c.g[A0][0] = sx(k);
+                c.bus.write16(DATA + 0x4000 + 2 * k, (seed % 6) as u16);
+                let base1 = if seed % 5 == 0 { 0 } else { DATA + 0x3000 };
+                let info = base1.wrapping_add(4 * (seed % 6));
+                c.bus.write32(info, r.next_u32());
+                c.bus
+                    .write16(info.wrapping_add(2), (r.next_u32() & 0x1f) as u16);
+                c.bus.write32(DATA + 0x7030, 1);
+                c.bus.write32(DATA + 0x7000, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn path_track_get_beat_matches() {
+        check(
+            ssx3_ee::s14::f_003d4900__generated,
+            path_track_get_beat,
+            300,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x4900, 2);
+                fill(c, &mut r, DATA + 0x7000, 16);
+                c.g[A0][0] = sx(DATA + 0x7000);
+                c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x2000) };
+            },
+        );
+    }
+
+    #[test]
+    fn path_find_track_info_matches() {
+        check(
+            ssx3_ee::s14::f_003d4a50__generated,
+            path_find_track_info,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x4a50, 0);
+                let key = r.next_u32();
+                c.g[A0][0] = sx(key);
+                let ptr = DATA + 0x1000;
+                for i in 0..4u32 {
+                    let base = 0x0051_7644 + i * 0x928;
+                    let mask = if (seed + i) % 4 == 0 {
+                        r.next_u32()
+                    } else {
+                        key ^ (r.next_u32() & 0x0f0f_0f0f)
+                    };
+                    c.bus.write32(base - 4, mask);
+                    c.bus.write32(base, if seed % 7 == 0 { 0 } else { 1 });
+                    c.bus
+                        .write32(base + 0x8f0, if (seed + i) % 9 == 0 { 0 } else { ptr });
+                }
+                for k in 0..24 {
+                    c.bus.write32(ptr + 4 * k, r.next_u32());
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn path_find_playing_track_id_matches() {
+        check(
+            ssx3_ee::s14::f_003d53b8__generated,
+            path_find_playing_track_id,
+            300,
+            &|c, seed| {
+                machine_rt(c, seed, 0x53b8, 4);
+                c.g[A0][0] = (seed % 32) as u64;
+                c.g[A1][0] = ((seed / 3) % 32) as u64;
+            },
+        );
+    }
+
+    /// The path system set up or not, no map selected or one, the map table
+    /// with masks and loaded flags, and the mask and value arguments (a zero
+    /// mask for every sixth seed).
+    pub(crate) fn map_fade_setup_oc1112(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        c.bus
+            .write8(PATH_FLAG_OC1112, if seed % 5 == 0 { 0 } else { 1 });
+        c.bus.write32(
+            CURRENT_ID_OC1112,
+            if seed % 4 == 0 { r.next_u32() | 1 } else { 0 },
+        );
+        c.bus.write32(CURRENT_MAP_OC1112, 0);
+        for m in 0..4u32 {
+            let base = 0x0051_7610 + m * 0x928;
+            let mask_word = if (seed + m) % 3 == 0 { 0 } else { r.next_u32() };
+            c.bus.write32(base + 0x30, mask_word);
+            c.bus
+                .write32(base + 0x34, if (seed >> m) & 1 == 0 { 0 } else { 1 });
+        }
+        c.g[A0][0] = sx(if seed % 6 == 0 { 0 } else { r.next_u32() });
+        c.g[A1][0] = sx(r.next_u32());
+    }
+
+    #[test]
+    fn path_set_fade_time_matches() {
+        check(
+            ee::s14::f_003d6108__generated,
+            path_set_fade_time,
+            300,
+            &|c, seed| map_fade_setup_oc1112(c, seed, 0x3d_6108),
+        );
+    }
+
+    #[test]
+    fn path_set_fade_curve_matches() {
+        check(
+            ee::s14::f_003d61e8__generated,
+            path_set_fade_curve,
+            300,
+            &|c, seed| map_fade_setup_oc1112(c, seed, 0x3d_61e8),
+        );
+    }
+
+    /// A platform entry for the track's index (the object the fade reads),
+    /// the track at `DATA+0x400`, and the level and ramp arguments.
+    pub(crate) fn track_fade_setup_oc1112(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine_rt(c, seed, salt, 0);
+        let idx = seed % 3;
+        let obj = DATA + 0x1_000;
+        c.bus.write32(0x004d_3e98 + 4 * idx, obj);
+        c.bus.write32(obj, DATA + 0x900);
+        c.bus.write32(obj + 8, r.next_u32());
+        c.bus.write32(obj + 0x6c, r.next_u32());
+        c.bus.write8(obj + 0x64, (seed % 3) as u8);
+        let track = DATA + 0x400;
+        c.bus.write32(track + 0x54, idx);
+        c.bus.write8(track + 4, r.next_u32() as u8);
+        c.g[A0][0] = sx(track);
+        c.g[A1][0] = sx(r.next_u32() % 0x200);
+        c.g[A2][0] = sx(r.next_u32());
+    }
+
+    #[test]
+    fn path_track_fade_volume_matches() {
+        check_lohi(
+            ee::s14::f_003d6318__generated,
+            path_track_fade_volume,
+            120,
+            &|c, seed| track_fade_setup_oc1112(c, seed, 0x3d_6318),
+        );
+    }
+
+    #[test]
+    fn path_track_set_aux_send_fade_matches() {
+        check(
+            ee::s14::f_003d6360__generated,
+            path_track_set_aux_send_fade,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_6360, 0);
+                let channel = DATA + 0x600;
+                c.g[A0][0] = sx(channel);
+                c.g[A1][0] = sx(r.next_u32());
+                let ramp = r.next_u32();
+                c.g[A3][0] = if seed % 2 == 0 {
+                    sx(ramp | 0x8000_0000)
+                } else {
+                    sx(ramp & 0x7fff_ffff)
+                };
+                c.bus.write8(channel + 0x15, r.next_u32() as u8);
+                c.bus.write8(channel + 0x16, r.next_u32() as u8);
+            },
+        );
+    }
+
+    /// A track at `DATA+0x400` whose platform index is small (the table
+    /// is empty, so the query answers -8), with the target and ramp.
+    pub(crate) fn track_start_setup_oc1112(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        let track = DATA + 0x400;
+        c.bus.write32(track + 0x54, seed % 8);
+        c.g[A0][0] = sx(track);
+        c.g[A1][0] = sx(r.next_u32() % 0x200);
+        c.g[A2][0] = sx(r.next_u32());
+    }
+
+    #[test]
+    fn path_track_start_volume_fade_matches() {
+        check(
+            ee::s14::f_003d6378__generated,
+            path_track_start_volume_fade,
+            200,
+            &|c, seed| track_start_setup_oc1112(c, seed, 0x3d_6378),
+        );
+    }
+
+    #[test]
+    fn path_track_start_aux_send_fade_matches() {
+        check(
+            ee::s14::f_003d63f8__generated,
+            path_track_start_aux_send_fade,
+            200,
+            &|c, seed| track_start_setup_oc1112(c, seed, 0x3d_63f8),
+        );
+    }
+
+    #[test]
+    fn path_track_start_fade3_matches() {
+        check(
+            ee::s14::f_003d6448__generated,
+            path_track_start_fade3,
+            200,
+            &|c, seed| track_start_setup_oc1112(c, seed, 0x3d_6448),
         );
     }
 }

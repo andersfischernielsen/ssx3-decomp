@@ -34,6 +34,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002d_abc8, c_board_spark_fx_update, "cBoardSparkFX_Update"),
     (0x002d_b478, board_spark_fx_render, "cBoardSparkFX_Render"),
     (0x002d_a390, board_spark_fx_ctor, "cBoardSparkFX_ctor"),
+    (0x002d_a8e8, board_spark_fx_dtor, "cBoardSparkFX_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1435,6 +1436,192 @@ pub fn board_spark_fx_ctor(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// `cBoardSparkFX_dtor` (0x2da8e8) and `cBoardWakeFX_dtor` (0x2dcda0).
+
+/// The common head of the two board effect destructors: points the rider's
+/// vtable-ish fields (`+0x6e8`, `+0x6d0`, `+0x6c0` of the object at `*self`)
+/// at the base vtables (`vt_a` / `vt_b` are the two game-image vtables) and,
+/// for flags 0, copies both to the stack (0x48 and 0xa8 bytes) with entry 1's
+/// this-adjust (`adj` = `self - (*self - delta)`) fixed up, pointing the rider
+/// at the copies. Returns whether `flags != 0` (the copies were skipped).
+/// Register results match the generated head, including the stale `T2`/`A3`.
+pub(crate) fn board_fx_dtor_head(c: &mut Cpu, vt_a: u32, vt_b: u32, delta: u32) {
+    c.cycles += 21;
+    let frame = Frame { size: 0x130 };
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x130));
+    c.g[V0][0] = 0x0049_0000;
+    frame.save(c, S0, 0x120);
+    c.g[A2][0] = sx(vt_a);
+    frame.save(c, S1, 0x110);
+    c.g[S0][0] = c.g[A0][0];
+    frame.save_ra(c, 0x100);
+    c.g[S1][0] = c.g[A1][0];
+    c.g[A0][0] = 0x0046_0000;
+    c.g[A3][0] = c.g[V0][0];
+    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+    c.g[A0][0] = sx(0x0045_9b90);
+    c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A2][0]);
+    c.g[V1][0] = 0x0049_0000;
+    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+    c.g[T2][0] = c.g[V1][0];
+    c.g[V1][0] = sx(vt_b);
+    c.sw((c.g[A1][0] as u32).wrapping_add(0x6d0), c.g[A0][0]);
+    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+    let flags_set = c.g[S1][0] != 0;
+    c.sw((c.g[V0][0] as u32).wrapping_add(0x6c0), c.g[V1][0]);
+    if flags_set {
+        return;
+    }
+    // First vtable: 0x40 bytes in 0x20-byte steps, then one more doubleword.
+    c.cycles += 4;
+    c.g[A1][0] = c.g[A2][0];
+    c.g[V1][0] = c.g[SP][0];
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+    c.g[T0][0] = sx(sp(c).wrapping_add(0x50));
+    loop {
+        c.cycles += 11;
+        c.g[A0][0] = c.ld(c.g[A1][0] as u32);
+        c.g[A2][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x8));
+        c.g[T1][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x10));
+        c.g[T3][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x18));
+        c.sd(c.g[V1][0] as u32, c.g[A0][0]);
+        c.sd((c.g[V1][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+        c.sd((c.g[V1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
+        c.sd((c.g[V1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+        let more = c.g[A1][0] != c.g[V0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, board_head_pc(vt_a, 0));
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 14;
+    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+    c.g[A0][0] = sx(vt_a);
+    c.g[A2][0] = c.ld(c.g[A1][0] as u32);
+    c.sd(c.g[V1][0] as u32, c.g[A2][0]);
+    c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
+    c.g[A2][0] = sx(vt_b);
+    c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
+    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+    c.g[A1][0] = c.g[T0][0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(delta));
+    c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    c.sh(sp(c).wrapping_add(0x8), c.g[V1][0]);
+    // Second vtable: 0xa0 bytes in 0x20-byte steps, then 16 more bytes.
+    loop {
+        c.cycles += 11;
+        c.g[V0][0] = c.ld(c.g[A2][0] as u32);
+        c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+        c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
+        c.sd(c.g[A1][0] as u32, c.g[V0][0]);
+        c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+        c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[A0][0]);
+        c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+        let more = c.g[A2][0] != c.g[T1][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, board_head_pc(vt_a, 1));
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 10;
+    c.g[V0][0] = c.ld(c.g[A2][0] as u32);
+    c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+    c.sd(c.g[A1][0] as u32, c.g[V0][0]);
+    c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+    c.g[V0][0] = sx(vt_b);
+    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+    c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x8));
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x6c0), c.g[T0][0]);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    c.sh(sp(c).wrapping_add(0x58), c.g[V1][0]);
+}
+
+/// The loop-head pcs of the two copy loops of the destructor heads (the
+/// event pc), selected by which vtable base the head was given.
+pub(crate) fn board_head_pc(vt_a: u32, second: u32) -> u32 {
+    match (vt_a == 0x0048_8cb0, second) {
+        (true, 0) => 0x002d_a94c,
+        (true, _) => 0x002d_a9b0,
+        (false, 0) => 0x002d_ce04,
+        (false, _) => 0x002d_ce68,
+    }
+}
+
+/// `void cBoardSparkFX_dtor(cBoardSparkFX* self, int flags)` (0x2da8e8): the
+/// vtable head, then (`self+0x20` effect, if any) its destroy method through
+/// its vtable (`+0x1f8` -> `+0x20` delta, `+0x24` method) with arg 3, deletes
+/// the buffers at `+0x24` and `+0x28`, per flag bit 1 destroys the rider
+/// (`Rider_dtor(*self, 0)`), per bit 0 frees `self`.
+pub fn board_spark_fx_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x130 };
+        board_fx_dtor_head(c, 0x0048_8cb0, 0x0048_8cf8, 0xb0);
+        c.cycles += 3;
+        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+        let no_effect = c.g[A2][0] == 0;
+        c.g[A1][0] = 0x3;
+        if !no_effect {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x1f8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x002d_aa24)?;
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        call_ptr(c, 0x0031_7e50, 0x002d_aa2c)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+        call_ptr(c, 0x0031_7e50, 0x002d_aa34)?;
+        c.g[V0][0] = c.g[S1][0] & 0x2;
+        let no_rider = c.g[V0][0] == 0;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+        if !no_rider {
+            c.cycles += 4;
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0011_b978, 0x002d_aa4c)?;
+            c.g[V0][0] = c.g[S1][0] & 0x1;
+        }
+        board_fx_dtor_tail(c, frame, 0x002d_aa60)
+    })
+}
+
+/// The shared tail: `v0` holds `flags & 1`; free `self` when set, then the
+/// epilogue.
+pub(crate) fn board_fx_dtor_tail(c: &mut Cpu, frame: Frame, free_ret: u32) -> Flow {
+    c.cycles += 2;
+    let no_free = c.g[V0][0] == 0;
+    if no_free {
+        frame.restore(c, S0, 0x120);
+    } else {
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0031_7e50, free_ret)?;
+        frame.restore(c, S0, 0x120);
+    }
+    c.cycles += 4;
+    frame.restore(c, S1, 0x110);
+    frame.restore_ra(c, 0x100);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1681,5 +1868,62 @@ pub(crate) mod tests {
             oc809_fx_setup(c, seed, 0x2da390, 0x002d_a390, 0);
         });
         assert!(paths.len() >= 2, "paths {paths:?}");
+    }
+
+    use crate::difftest::fakes::check_reaching;
+
+    pub(crate) use crate::game::sound::soundsys::tests::OC1075_BASE;
+    pub(crate) use crate::game::sound::soundsys::tests::OC1075_THIS;
+    pub(crate) use crate::game::visualfx::avalanche::tests::oc1075_machine;
+
+    /// The board effect destructors' fixture: the rider object at `*self`
+    /// (vtable fields written), flags 0..7, buffers (and for the spark effect
+    /// an effect object whose destroy method is a fake vtable slot).
+    pub(crate) fn oc1075_board_setup(c: &mut Cpu, seed: u32, entry: u32, wake: bool) {
+        let mut r = oc1075_machine(c, seed, entry as u64, 6);
+        c.bus.write32(OC1075_THIS, OC1075_BASE);
+        if wake {
+            for off in [0xc, 0x10] {
+                let v = if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    DATA + 0x5000
+                };
+                c.bus.write32(OC1075_THIS + off, v);
+            }
+        } else {
+            let effect = DATA + 0x3000;
+            let vt = DATA + 0x6000;
+            let has = r.next_u32() % 3 != 0;
+            c.bus
+                .write32(OC1075_THIS + 0x20, if has { effect } else { 0 });
+            c.bus.write32(effect + 0x1f8, vt);
+            c.bus.write16(vt + 0x20, (r.next_u32() & 0xfc) as u16);
+            c.bus.write32(vt + 0x24, FAKE);
+            c.bus.write32(OC1075_THIS + 0x24, DATA + 0x5000);
+            c.bus.write32(OC1075_THIS + 0x28, DATA + 0x5100);
+        }
+        c.g[A0][0] = sx(OC1075_THIS);
+        c.g[A1][0] = (seed % 8) as u64;
+        c.pc = entry;
+    }
+
+    /// `cBoardSparkFX_dtor`: flags 0..7 (vtable copies only for 0, the rider
+    /// destroy for bit 1, the free for bit 0), with and without the effect.
+    #[test]
+    fn board_spark_fx_dtor_matches() {
+        check_reaching(
+            ee::s09::f_002da8e8__generated,
+            board_spark_fx_dtor,
+            160,
+            &[
+                0x002d_aa24,
+                0x002d_aa2c,
+                0x002d_aa34,
+                0x002d_aa4c,
+                0x002d_aa60,
+            ],
+            &|c, seed| oc1075_board_setup(c, seed, 0x002d_a8e8, false),
+        );
     }
 }

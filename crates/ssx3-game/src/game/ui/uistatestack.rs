@@ -85,6 +85,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ui_state_mgr_destroy_all,
         "UIStateMgr_DestroyAll",
     ),
+    (
+        0x0039_fd80,
+        ui_object_set_anim_progress,
+        "UIObject_SetAnimProgress",
+    ),
+    (0x0039_fdd8, ui_object_is_anim_done, "UIObject_IsAnimDone"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1078,6 +1084,75 @@ pub fn ui_state_mgr_destroy_all(c: &mut Cpu) {
     });
 }
 
+// Callees (each is the generated function's readable alias, so a replaced
+// callee is reached through its override slot).
+pub(crate) const OC1083_UIANIM_FRAME_COUNT: Callee = Callee {
+    addr: 0x0039_7458,
+    f: ee::s13::f_00397458,
+};
+
+pub(crate) const OC1083_UIANIM_IS_DONE: Callee = Callee {
+    addr: 0x0039_7440,
+    f: ee::s13::f_00397440,
+};
+
+/// `void UIObject_SetAnimProgress(UIObject* self, float f)` (0x39fd80): when
+/// the object has an animation (`+0xc`), set the animation's short at `+0xa`
+/// to its frame count times `f`, truncated.
+pub fn ui_object_set_anim_progress(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x10);
+        frame.save_fpr(c, 20, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let this = c.g[S0][0] as u32;
+        c.g[A0][0] = Addr(this).off(0xc).lw(c);
+        c.mov_s(20, 12);
+        if c.g[A0][0] != 0 {
+            c.cycles += 9;
+            OC1083_UIANIM_FRAME_COUNT.call(c, 0x0039_fda8)?;
+            c.mtc1(2, 0);
+            c.cvt_s_w(0, 0);
+            c.g[V1][0] = Addr(this).off(0xc).lw(c);
+            c.mul_s(0, 0, 20);
+            c.cvt_w_s(1, 0);
+            c.mfc1(2, 1);
+            let v0 = c.g[V0][0];
+            let anim = c.g[V1][0] as u32;
+            Addr(anim).off(0xa).sh(c, v0);
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool UIObject_IsAnimDone(UIObject* self)` (0x39fdd8): false without an
+/// animation, otherwise the animation's done test.
+pub fn ui_object_is_anim_done(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let obj = Addr(c.g[A0][0] as u32).off(0xc).lw(c);
+        c.g[A0][0] = obj;
+        c.g[V0][0] = 0;
+        if obj != 0 {
+            c.cycles += 2;
+            OC1083_UIANIM_IS_DONE.call(c, 0x0039_fdf4)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1488,5 +1563,51 @@ pub(crate) mod tests {
             c.g[RA][0] = crate::difftest::RA as u64;
             schedule(c, &mut r, seed, 0x0039_f8c8)
         });
+    }
+
+    pub(crate) use crate::game::ui::uiscreen::tests::SEEDS_9 as SEEDS_3;
+
+    #[test]
+    fn ui_object_set_anim_progress_matches() {
+        check(
+            ssx3_ee::s13::f_0039fd80__generated,
+            ui_object_set_anim_progress,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x39fd_8000, 0);
+                let this = DATA + 0x1000;
+                let anim = DATA + 0x2000;
+                let frames_obj = DATA + 0x2100;
+                c.bus
+                    .write32(this + 0xc, if seed % 4 == 0 { 0 } else { anim });
+                c.bus.write32(anim, frames_obj);
+                c.bus.write16(frames_obj + 2, r.next_u32() as u16);
+                c.bus.write32(anim + 0xa, r.next_u32());
+                c.g[S0][0] = 0;
+                c.g[A0][0] = this as u64;
+                c.f[12] = r.edge_f32();
+            },
+        );
+    }
+
+    #[test]
+    fn ui_object_is_anim_done_matches() {
+        check(
+            ssx3_ee::s13::f_0039fdd8__generated,
+            ui_object_is_anim_done,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x39fd_d800, 0);
+                let this = DATA + 0x1000;
+                let anim = DATA + 0x2000;
+                let p = DATA + 0x2100;
+                c.bus
+                    .write32(this + 0xc, if seed % 3 == 0 { 0 } else { anim });
+                c.bus.write32(anim, p);
+                c.bus.write16(anim + 0xa, r.next_u32() as u16);
+                c.bus.write16(p + 2, r.next_u32() as u16);
+                c.g[A0][0] = this as u64;
+            },
+        );
     }
 }
