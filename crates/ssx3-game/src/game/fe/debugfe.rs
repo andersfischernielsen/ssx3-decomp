@@ -21,6 +21,8 @@ pub(crate) use crate::game::bx::execman::oc821_feui_eval;
 pub(crate) use crate::game::bx::execman::oc822_feui_eval;
 pub(crate) use crate::game::bx::execman::oc823_feui_eval;
 pub(crate) use crate::game::bx::execman::oc824_feui_eval;
+use crate::game::dirtysock::tagsunk::gp_8;
+use crate::game::dirtysock::tagsunk::LOBBY_INSTANCE_GP;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_3;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_6;
@@ -462,6 +464,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         keyboard_screen_type_key,
         "KeyboardScreen_TypeKey",
     ),
+    (
+        0x0017_d6f0,
+        lobby_menu_on_lobby_event,
+        "LobbyMenu_OnLobbyEvent",
+    ),
+    (
+        0x001d_a540,
+        lobby_menu_debug_printf_stub,
+        "LobbyMenu_DebugPrintfStub",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -483,6 +495,22 @@ pub(crate) mod callee {
     pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
 
     pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
+
+    pub(crate) use crate::game::fe::feasyncfile::callee::C_BX_STRING_ASSIGN;
+    pub(crate) use crate::game::fe::feasyncfile::callee::C_BX_STRING_ASSIGN_CSTR_2 as C_BX_STRING_ASSIGN_CSTR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_GET_ROOM_COUNT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_GET_ROOM_NAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_IS_IN_ROOM;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_LOGIN;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_MOVE_TO_ROOM_INDEX;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SELECT_PERSONA_INDEX;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_DECLINE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_SHOW_ERROR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_START_NET_RACE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_POP_PAGE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_PUSH_PAGE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::STRCMP_2 as STRCMP;
 }
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -8319,6 +8347,474 @@ pub fn keyboard_screen_type_key(c: &mut Cpu) {
         return Ok(());
     });
 }
+/// The `0x0017da10` exit shared by terminating `LobbyMenu_OnLobbyEvent`
+/// arms: restore the remaining callee-saved registers and return.
+/// (Dispatch table at `0x45d070`, verified against the ELF: 12 targets;
+/// read from the image by the test fixture.)
+pub(crate) fn lobby_menu_event_exit(c: &mut Cpu, frame: &Frame) -> Flow {
+    c.cycles += 8;
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore(c, S3, 0x30);
+    frame.restore(c, S4, 0x20);
+    frame.restore(c, S5, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+/// `void LobbyMenu_OnLobbyEvent(LobbyMenu* self, uint* event)` (0x17d6f0):
+/// handle one lobby event: pop the menu page and run the per-event arm
+/// (login, persona select, room list, challenge, error popup, net-race
+/// start), pushing the next page and recording the new `self + 4` state.
+/// 14 + per-arm cycles; out-of-range indices and unknown
+/// table targets return with `self + 4` untouched.
+pub fn lobby_menu_on_lobby_event(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        // The frame stays allocated across an event unwind: only its size
+        // travels in this local, so resume rebuilds it without touching sp.
+        let frame = Frame { size: 0x70 };
+        loop {
+            match pc {
+                0x0017_d6f0 => {
+                    c.cycles += 14;
+                    c.g[SP][0] = sx(sp(c).wrapping_sub(0x70));
+                    frame.save(c, S1, 0x50);
+                    frame.save(c, S0, 0x60);
+                    c.g[S1][0] = c.g[A0][0];
+                    frame.save(c, S2, 0x40);
+                    frame.save(c, S3, 0x30);
+                    frame.save(c, S4, 0x20);
+                    frame.save(c, S5, 0x10);
+                    frame.save_ra(c, 0);
+                    c.g[V0][0] = c.lw(r32(c, A1));
+                    c.g[A0][0] = sx(r32(c, V0).wrapping_sub(0xc9));
+                    c.g[V1][0] = (r32(c, A0) < 0x4d) as u64;
+                    c.g[V0][0] = 0x460000;
+                    if c.g[V1][0] == 0 {
+                        c.cycles += 1;
+                        frame.restore(c, S0, 0x60);
+                        return lobby_menu_event_exit(c, &frame);
+                    }
+                    pc = 0x0017_d728;
+                    continue;
+                }
+                0x0017_d728 => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx(r32(c, A0) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x2f90));
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                    c.g[A0][0] = c.lw(r32(c, V1));
+                    pc = c.g[A0][0] as u32;
+                    continue;
+                }
+                0x0017_d740 => {
+                    c.cycles += 4;
+                    c.g[S0][0] = sx(r32(c, S1).wrapping_add(8));
+                    c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(8));
+                    c.g[S2][0] = c.g[S0][0];
+                    if c.g[V0][0] == 0 {
+                        pc = 0x0017_d764;
+                        continue;
+                    }
+                    pc = 0x0017_d750;
+                    continue;
+                }
+                0x0017_d750 => {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x0017_d758);
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::MENU_SYS_POP_PAGE.call(c, 0x0017_d758)?;
+                    c.g[V0][0] = c.lw(r32(c, S0));
+                    if c.g[V0][0] != 0 {
+                        if back_edge_unwinds(c, 0x0017_d750) {
+                            return Ok(());
+                        }
+                        pc = 0x0017_d750;
+                        continue;
+                    }
+                    pc = 0x0017_d764;
+                    continue;
+                }
+                0x0017_d764 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(gp_8(c, -0x848));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x74));
+                    c.g[V0][0] = 0x13;
+                    if c.g[V1][0] == 0 {
+                        pc = 0x0017_d77c;
+                        continue;
+                    }
+                    pc = 0x0017_d774;
+                    continue;
+                }
+                0x0017_d774 => {
+                    c.cycles += 2;
+                    c.sw(r32(c, S1).wrapping_add(4), 0);
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d77c => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x604));
+                    callee::MENU_SYS_PUSH_PAGE.call(c, 0x0017_d78c)?;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d794 => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(8));
+                    c.g[A0][0] = c.g[S1][0];
+                    callee::LOBBY_MENU_SHOW_ERROR.call(c, 0x0017_d7a0)?;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d7a8 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(gp_8(c, -0x848));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x74));
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    if c.g[V0][0] == 0 {
+                        pc = 0x0017_d7ec;
+                        continue;
+                    }
+                    pc = 0x0017_d7b8;
+                    continue;
+                }
+                0x0017_d7b8 => {
+                    c.cycles += 13;
+                    c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x48));
+                    callee::C_BX_STRING_ASSIGN_CSTR.call(c, 0x0017_d7c4)?;
+                    c.g[V1][0] = c.lw(gp_8(c, -0x848));
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc8));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x4c));
+                    callee::C_BX_STRING_ASSIGN_CSTR.call(c, 0x0017_d7d8)?;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    callee::LOBBY_MAN_LOGIN.call(c, 0x0017_d7e0)?;
+                    c.g[V0][0] = 5;
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d7ec => {
+                    c.cycles += 7;
+                    c.g[V0][0] = 3;
+                    c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x70));
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    c.g[A0][0] = sx(r32(c, S1).wrapping_add(8));
+                    callee::MENU_SYS_PUSH_PAGE.call(c, 0x0017_d800)?;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d808 => {
+                    c.cycles += 14;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    c.g[V0][0] = 5;
+                    c.g[A1][0] = c.lw(r32(c, S1).wrapping_add(0x1c04));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x48));
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    callee::C_BX_STRING_ASSIGN_CSTR.call(c, 0x0017_d820)?;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    c.g[A1][0] = c.lw(r32(c, S1).wrapping_add(0x1c08));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x4c));
+                    callee::C_BX_STRING_ASSIGN_CSTR.call(c, 0x0017_d830)?;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    callee::LOBBY_MAN_LOGIN.call(c, 0x0017_d838)?;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d840 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(gp_8(c, -0x848));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x74));
+                    c.g[V0][0] = 7;
+                    if c.g[V1][0] == 0 {
+                        pc = 0x0017_d8d8;
+                        continue;
+                    }
+                    pc = 0x0017_d850;
+                    continue;
+                }
+                0x0017_d850 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    c.g[A1][0] = 0;
+                    callee::LOBBY_MAN_SELECT_PERSONA_INDEX.call(c, 0x0017_d860)?;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d868 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(gp_8(c, -0x848));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x74));
+                    c.g[S0][0] = 0;
+                    if c.g[V1][0] == 0 {
+                        pc = 0x0017_d924;
+                        continue;
+                    }
+                    pc = 0x0017_d878;
+                    continue;
+                }
+                0x0017_d878 => {
+                    c.cycles += 3;
+                    c.g[S3][0] = 0x4a0000;
+                    c.g[S2][0] = 0xb;
+                    pc = 0x0017_d8bc;
+                    continue;
+                }
+                0x0017_d884 => {
+                    c.cycles += 1;
+                    pc = 0x0017_d888;
+                    continue;
+                }
+                0x0017_d888 => {
+                    c.cycles += 7;
+                    c.g[A1][0] = c.g[S0][0];
+                    callee::LOBBY_MAN_GET_ROOM_NAME.call(c, 0x0017_d890)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = sx(r32(c, S3).wrapping_add(0x1320));
+                    callee::STRCMP.call(c, 0x0017_d89c)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                        pc = 0x0017_d8bc;
+                        continue;
+                    }
+                    pc = 0x0017_d8a4;
+                    continue;
+                }
+                0x0017_d8a4 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A2][0] = 0;
+                    callee::LOBBY_MAN_MOVE_TO_ROOM_INDEX.call(c, 0x0017_d8b4)?;
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[S2][0]);
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    pc = 0x0017_d8bc;
+                    continue;
+                }
+                0x0017_d8bc => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    callee::LOBBY_MAN_GET_ROOM_COUNT.call(c, 0x0017_d8c4)?;
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                        if back_edge_unwinds(c, 0x0017_d888) {
+                            return Ok(());
+                        }
+                        pc = 0x0017_d888;
+                        continue;
+                    }
+                    pc = 0x0017_d8d0;
+                    continue;
+                }
+                0x0017_d8d0 => {
+                    c.cycles += 2;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d8d8 => {
+                    c.cycles += 10;
+                    c.g[S0][0] = sx(r32(c, S1).wrapping_add(0x74c));
+                    c.g[A1][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x001d_b418, 0x0017_d8e8)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = sx(r32(c, S1).wrapping_add(8));
+                    callee::MENU_SYS_PUSH_PAGE.call(c, 0x0017_d8f4)?;
+                    c.g[V0][0] = 6;
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    pc = 0x0017_da0c;
+                    continue;
+                }
+                0x0017_d900 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    callee::LOBBY_MAN_IS_IN_ROOM.call(c, 0x0017_d908)?;
+                    c.g[A0][0] = sx(r32(c, S1).wrapping_add(8));
+                    if c.g[V0][0] == 0 {
+                        pc = 0x0017_d924;
+                        continue;
+                    }
+                    pc = 0x0017_d910;
+                    continue;
+                }
+                0x0017_d910 => {
+                    c.cycles += 5;
+                    c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x1044));
+                    callee::MENU_SYS_PUSH_PAGE.call(c, 0x0017_d918)?;
+                    c.g[V0][0] = 0xc;
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    pc = 0x0017_da0c;
+                    continue;
+                }
+                0x0017_d924 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = sx(r32(c, S1).wrapping_add(8));
+                    c.g[A1][0] = sx(r32(c, S1).wrapping_add(0xd2c));
+                    callee::MENU_SYS_PUSH_PAGE.call(c, 0x0017_d930)?;
+                    c.g[V0][0] = 0xa;
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    pc = 0x0017_da0c;
+                    continue;
+                }
+                0x0017_d93c => {
+                    c.cycles += 7;
+                    c.g[V0][0] = 0x11;
+                    c.g[S0][0] = sx(r32(c, S1).wrapping_add(8));
+                    c.g[V1][0] = c.lw(r32(c, S1).wrapping_add(8));
+                    c.g[S3][0] = sx(r32(c, S1).wrapping_add(0x604));
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    c.g[S2][0] = c.g[S0][0];
+                    if c.g[V1][0] == 0 {
+                        pc = 0x0017_d96c;
+                        continue;
+                    }
+                    pc = 0x0017_d958;
+                    continue;
+                }
+                0x0017_d958 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::MENU_SYS_POP_PAGE.call(c, 0x0017_d960)?;
+                    c.g[V0][0] = c.lw(r32(c, S0));
+                    if c.g[V0][0] != 0 {
+                        if back_edge_unwinds(c, 0x0017_d958) {
+                            return Ok(());
+                        }
+                        pc = 0x0017_d958;
+                        continue;
+                    }
+                    pc = 0x0017_d96c;
+                    continue;
+                }
+                0x0017_d96c => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S3][0];
+                    callee::MENU_SYS_PUSH_PAGE.call(c, 0x0017_d978)?;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_d980 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S1][0];
+                    callee::LOBBY_MENU_START_NET_RACE.call(c, 0x0017_d988)?;
+                    c.g[V0][0] = 0x10;
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    pc = 0x0017_da0c;
+                    continue;
+                }
+                0x0017_d994 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(r32(c, S1).wrapping_add(4));
+                    c.g[V0][0] = 0xc;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(8));
+                        pc = 0x0017_da04;
+                        continue;
+                    }
+                    pc = 0x0017_d9a4;
+                    continue;
+                }
+                0x0017_d9a4 => {
+                    c.cycles += 7;
+                    c.g[S0][0] = sx(r32(c, S1).wrapping_add(8));
+                    c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(8));
+                    c.g[S4][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+                    c.g[S2][0] = c.g[S0][0];
+                    c.g[S3][0] = sx(r32(c, S1).wrapping_add(0x1c0c));
+                    c.g[S5][0] = sx(r32(c, S1).wrapping_add(0x18c0));
+                    if c.g[V0][0] == 0 {
+                        pc = 0x0017_d9d4;
+                        continue;
+                    }
+                    pc = 0x0017_d9c0;
+                    continue;
+                }
+                0x0017_d9c0 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::MENU_SYS_POP_PAGE.call(c, 0x0017_d9c8)?;
+                    c.g[V0][0] = c.lw(r32(c, S0));
+                    if c.g[V0][0] != 0 {
+                        if back_edge_unwinds(c, 0x0017_d9c0) {
+                            return Ok(());
+                        }
+                        pc = 0x0017_d9c0;
+                        continue;
+                    }
+                    pc = 0x0017_d9d4;
+                    continue;
+                }
+                0x0017_d9d4 => {
+                    c.cycles += 12;
+                    c.g[V0][0] = 0xf;
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[A1][0] = c.g[S4][0];
+                    c.sw(r32(c, S1).wrapping_add(4), c.g[V0][0]);
+                    callee::C_BX_STRING_ASSIGN.call(c, 0x0017_d9e8)?;
+                    c.g[V1][0] = c.lw(r32(c, S1).wrapping_add(0x1c0c));
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S5][0];
+                    c.sw(r32(c, S1).wrapping_add(0x1a44), c.g[V1][0]);
+                    callee::MENU_SYS_PUSH_PAGE.call(c, 0x0017_d9fc)?;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                0x0017_da04 => {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                    callee::LOBBY_MAN_SEND_DECLINE.call(c, 0x0017_da0c)?;
+                    pc = 0x0017_da0c;
+                    continue;
+                }
+                0x0017_da0c => {
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x60);
+                    return lobby_menu_event_exit(c, &frame);
+                }
+                _ => {
+                    c.jump_out(pc, 0x0017_d6f0, 0x0017_da30);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+/// void LobbyMenu_DebugPrintfStub(...)
+/// (0x1da540): no-op debug stub: save, restore and return.
+/// Cycles only.
+pub fn lobby_menu_debug_printf_stub(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        return Ok(());
+    })
+}
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -12258,5 +12754,971 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(OC826_SELF);
             },
         );
+    }
+
+    use crate::difftest::put_words;
+
+    pub(crate) use crate::game::fe::feasyncfile::tests::vtable_slot;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_ACTIVE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_CONN;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_CONN_GATE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_EV_GATE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_IS_IN_ROOM;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_MAGIC;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_MAGIC_E6;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_MAGIC_U4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_ROOM_COUNT;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_ROOM_NAME;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_19;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_21;
+    pub(crate) use crate::game::fe::feasyncfile::tests::VT_3;
+
+    driven!(lobby_menu_dtor_generated, ee::s02::f_0017d3b0__generated);
+
+    driven!(lobby_menu_dtor_hand, lobby_menu_dtor);
+
+    #[test]
+    fn lobby_menu_dtor_matches_r2() {
+        check_events(
+            lobby_menu_dtor_generated,
+            lobby_menu_dtor_hand,
+            SEEDS_19,
+            &|c, seed| {
+                let mut r = base_machine_unwind(c, seed, 0x0017_d3b0, 0);
+                // An arena object, so the final `__builtin_delete` frees a
+                // real chunk when the flag word is nonzero.
+                let this = alloc(c, 0x1c40);
+                clear_words(c, this, 0x710);
+                c.bus.write32(GAME_GP + 0x1da0, FIX + 0x2400);
+                // Shared-empty strings: no buffer free, `flags & 1` decides.
+                put_words(c, this + 0x1c04, &[0x0046_dcd4, 0x0046_dcd4, 0x0046_dcd4]);
+                // Message-list drain: `*(self + 0x6cc)` is the head word;
+                // `*head` walks N1..Nk and returns to N1, freeing N2..Nk.
+                let n1 = alloc(c, 0x20);
+                c.bus.write32(this + 0x6cc, n1);
+                let mut prev = n1;
+                // The drain loop only terminates on an empty list (it never
+                // updates the head word), so all seeds keep it empty.
+                let nodes = 0;
+                for _ in 0..nodes {
+                    let n = alloc(c, 0x20);
+                    c.bus.write32(prev, n);
+                    // `*(node + 8)`: null skips the vtable call, `VT`
+                    // routes it to the `FAKE` slot.
+                    c.bus.write32(n + 8, if seed % 2 == 0 { 0 } else { VT_3 });
+                    c.bus.write32(n + 4, VT_3);
+                    prev = n;
+                }
+                c.bus.write32(prev, n1);
+                // The vtable object at `VT`: `*(VT + 4)` is its table, with
+                // the destroy slot at `+0x8`/`+0xc` routed to `FAKE`.
+                c.bus.write32(VT_3 + 4, VT_3);
+                vtable_slot(c, VT_3 + 8, 0, FAKE);
+                // `+0x6b8` free arm and the deleting flag word.
+                let freeme = if seed % 4 == 0 { alloc(c, 0x20) } else { 0 };
+                c.bus.write32(this + 0x6b8, freeme);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = match seed / 3 % 3 {
+                    0 => 0,
+                    1 => (this + 0x1044) as u64,
+                    _ => 3,
+                };
+                c.g[RA][0] = SENTINEL_RA as u64;
+                schedule(c, &mut r, seed, 0x0017_d3b0)
+            },
+        );
+    }
+
+    driven!(
+        lobby_menu_on_lobby_event_generated,
+        ee::s02::f_0017d6f0__generated
+    );
+
+    driven!(lobby_menu_on_lobby_event_hand, lobby_menu_on_lobby_event);
+
+    pub(crate) const FAKE_MAGIC_EF: u32 = 0x0c11_85ef;
+
+    /// `StartNetRace` stub for the 0xef arm: the real backend build runs
+    /// away on this fixture (its EA alloc loop never terminates here,
+    /// while the direct `StartNetRace` test terminates on its own
+    /// fixture); the backend itself is covered by
+    /// `lobby_menu_start_net_race_matches_r2`. The arm's call, state store
+    /// and exit are what this test compares.
+    pub(crate) fn start_net_race_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC_EF {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(start_net_race_fake),
+                ee::s02::f_0017de70__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0017_de70, ra);
+    }
+
+    // ---------------------------------------------------------- lobby login
+
+    #[test]
+    fn lobby_menu_on_lobby_event_matches() {
+        let resumes = check_events(
+            lobby_menu_on_lobby_event_generated,
+            lobby_menu_on_lobby_event_hand,
+            SEEDS_19,
+            &|c, seed| {
+                // Event id: one per table target (the pop loops at 0x115,
+                // 0xed and 0xec, the room loop at 0xda, the net-race
+                // start at 0xef) plus out-of-range.
+                let ev = match seed / 3 % 14 {
+                    0 => 0x115,
+                    1 => 0x102,
+                    2 => 0xc9,
+                    3 => 0xcb,
+                    4 => 0xd4,
+                    5 => 0xda,
+                    6 => 0xd6,
+                    7 => 0xdc,
+                    8 => 0xed,
+                    9 => 0xf0,
+                    10 => 0xec,
+                    11 => 0xca,
+                    12 => 0xef,
+                    _ => 0xc9 + 0x4d + (seed % 3),
+                };
+                let mut r = base_machine_unwind(c, seed, 0x0017_d6f0, 0);
+                elf_image(c);
+                clear_words(c, SELF, 0x710);
+                comms(c);
+                clear_words(c, COMMS_A, 0x100);
+                clear_words(c, COMMS_B, 0x100);
+                clear_words(c, LOBBY, 0x100);
+                let this = SELF;
+                fakes::hook(
+                    std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017DE70),
+                    start_net_race_fake,
+                    fakes::prev_cell(start_net_race_fake),
+                );
+                // World-pointer sources for the ctor-published words.
+                put_words(
+                    c,
+                    COMMS_A + 0x80,
+                    &[FIX + 0x2000, FIX + 0x2100, FIX + 0x2200],
+                );
+                c.bus.write32(COMMS_A + 0xb0, FIX + 0x2300);
+                // Login strings (the config holds pointers to them) and
+                // the room names the scan compares with the selected
+                // room's name at 0x4a1320 ("A.West"): a mismatch on even
+                // seeds, a match on odd ones.
+                str(c, STR + 0x40, b"user");
+                str(c, STR + 0x60, b"pass");
+                put_words(c, COMMS_A + 0xc4, &[STR + 0x40, STR + 0x60]);
+                str(c, STR, b"room");
+                str(c, STR + 0x80, b"A.West");
+                // Menu flag (forced on for the room-loop id), lobby
+                // instance, `is_in_room` answer.
+                c.bus
+                    .write32(COMMS_A + 0x74, if ev == 0xda { 1 } else { seed % 2 });
+                c.bus.write32(LOBBY + 0xb4, FIX + 0x2400);
+                // The net-race arm stubs `StartNetRace` (gated below).
+                c.bus.write32(
+                    FAKE_CTRL,
+                    if ev == 0xef {
+                        FAKE_MAGIC_EF
+                    } else {
+                        FAKE_MAGIC
+                    },
+                );
+                c.bus.write32(FAKE_IS_IN_ROOM, seed / 2 % 2);
+                // Room-loop answers: two rooms, named so the name loop
+                // iterates (even seeds) or stops at the first (odd).
+                c.bus.write32(FAKE_EV_GATE, FAKE_MAGIC_E6);
+                c.bus.write32(FAKE_ROOM_COUNT, 2);
+                c.bus
+                    .write32(FAKE_ROOM_NAME, if seed % 2 == 0 { STR } else { STR + 0x80 });
+                // Pop-loop ids get a two-deep page count (the real
+                // pop decrements the slot, so the back edge runs
+                // and exits), or an empty stack on seeds 4 mod 5.
+                c.bus.write32(
+                    this + 8,
+                    if ev == 0x115 || ev == 0xed || ev == 0xf0 || ev == 0xec {
+                        if seed % 5 == 4 {
+                            0
+                        } else {
+                            2
+                        }
+                    } else if seed % 3 == 0 {
+                        0
+                    } else {
+                        FIX + 0x2500
+                    },
+                );
+                // The 0xec arm reads the state: 0xc takes the
+                // room-page tail, anything else declines the invite.
+                c.bus.write32(
+                    this + 4,
+                    if ev == 0xec {
+                        if seed / 5 % 2 == 0 {
+                            0xc
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    },
+                );
+                c.bus.write32(FIX + 0x2400, ev);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (FIX + 0x2400) as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                schedule(c, &mut r, seed, 0x0017_d6f0)
+            },
+        );
+        for head in [0x0017_d750, 0x0017_d888, 0x0017_d958, 0x0017_d9c0] {
+            assert!(
+                resumes.get(&head).copied().unwrap_or(0) > 0,
+                "no unwind at head {head:#x}",
+            );
+        }
+    }
+
+    driven!(
+        lobby_menu_update_state_generated,
+        ee::s02::f_0017db18__generated
+    );
+
+    driven!(lobby_menu_update_state_hand, lobby_menu_update_state);
+
+    #[test]
+    fn lobby_menu_update_state_matches_r2() {
+        check_events(
+            lobby_menu_update_state_generated,
+            lobby_menu_update_state_hand,
+            // 28 states times the 8 steering-answer combos above the
+            // state digit, so every state sees every combo.
+            224,
+            &|c, seed| {
+                let mut r = base_machine_unwind(c, seed, 0x0017_db18, 0);
+                elf_image(c);
+                clear_words(c, SELF, 0x710);
+                comms(c);
+                clear_words(c, COMMS_A, 0x100);
+                clear_words(c, COMMS_B, 0x100);
+                clear_words(c, LOBBY, 0x100);
+                c.bus.write32(GAME_GP + 0x304, FIX + 0x2600);
+                let this = SELF;
+                put_words(
+                    c,
+                    COMMS_A + 0x80,
+                    &[FIX + 0x2000, FIX + 0x2100, FIX + 0x2200],
+                );
+                c.bus.write32(COMMS_A + 0xb0, FIX + 0x2300);
+                c.bus.write32(FAKE_CTRL, FAKE_MAGIC);
+                // Steering answers come from digits above the state
+                // (`seed % 28`), so every state sees both sides of each
+                // answer across the seeds.
+                c.bus.write32(FAKE_ACTIVE, seed / 28 % 2);
+                c.bus.write32(FAKE_IS_IN_ROOM, seed / 56 % 2);
+                // Channel-connected answer for the state-16 arm: down on
+                // half the seeds (the live lobby word disagrees, entering
+                // the arm), up on the rest (both sides create the comm).
+                c.bus.write32(FAKE_CONN_GATE, FAKE_MAGIC_U4);
+                c.bus.write32(FAKE_CONN, seed / 112 % 2);
+                // Connect flag and the page slot (empty skips the live
+                // checks, live reuses the page).
+                c.bus.write32(COMMS_B + 0x20, seed / 4 % 3);
+                c.bus
+                    .write32(this + 8, if seed % 3 == 0 { 0 } else { FIX + 0x2500 });
+                // States 0..24 run the table; 25+ return at once.
+                c.bus.write32(this + 4, seed % 28);
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                schedule(c, &mut r, seed, 0x0017_db18)
+            },
+        );
+    }
+
+    driven!(
+        lobby_menu_start_net_race_generated,
+        ee::s02::f_0017de70__generated
+    );
+
+    driven!(lobby_menu_start_net_race_hand, lobby_menu_start_net_race);
+
+    /// `LobbyMenu_StartNetRace`: the backend race/player interfaces are
+    /// built through the BELibrary dummy (vtable calls land on `FAKE`),
+    /// pads and characters are assigned to the six slots, and the room's
+    /// channel is opened. The fixed `0x530000` table and the room block
+    /// are fixture memory.
+
+    // --------------------------------------------------------------- lobby
+
+    #[test]
+    fn lobby_menu_start_net_race_matches_r2() {
+        check_events(
+            lobby_menu_start_net_race_generated,
+            lobby_menu_start_net_race_hand,
+            SEEDS_19,
+            &|c, seed| {
+                let mut r = base_machine_unwind(c, seed, 0x0017_de70, 0);
+                clear_words(c, SELF, 0x710);
+                comms(c);
+                clear_words(c, COMMS_A, 0x100);
+                clear_words(c, COMMS_B, 0x100);
+                clear_words(c, LOBBY, 0x100);
+                c.bus.write32(GAME_GP + 0x304, FIX + 0x2600);
+                // The room slot and flag word in the fixed table.
+                c.bus.write32(0x0053_0000 + 0x4b30, FIX + 0x2400);
+                c.bus.write32(0x0053_0000 + 0x5c08, 0);
+                c.bus.write32(FIX + 0x2400 + 8, FIX + 0x2500);
+                c.bus.write32(FIX + 0x2400 + 0xc, 0x0400 + seed % 2);
+                c.bus.write32(FIX + 0x2600, seed % 2);
+                c.g[A0][0] = SELF as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                schedule(c, &mut r, seed, 0x0017_de70)
+            },
+        );
+    }
+
+    driven!(
+        lobby_menu_init_delete_persona_page_generated,
+        ee::s04::f_001dabd0__generated
+    );
+
+    driven!(
+        lobby_menu_init_delete_persona_page_hand,
+        crate::game::fe::festatenethelppopup::lobby_menu_init_delete_persona_page_2
+    );
+
+    driven!(
+        lobby_menu_init_select_persona_page_generated,
+        ee::s04::f_001dacb8__generated
+    );
+
+    driven!(
+        lobby_menu_init_select_persona_page_hand,
+        crate::game::fe::festatenethelppopup::lobby_menu_init_select_persona_page
+    );
+
+    driven!(
+        lobby_menu_init_select_room_page_generated,
+        ee::s04::f_001dae20__generated
+    );
+
+    driven!(
+        lobby_menu_init_select_room_page_hand,
+        crate::game::fe::festatenethelppopup::lobby_menu_init_select_room_page_2
+    );
+
+    /// The delete/select pages run fixed-count drain loops (loop
+    /// bounds are constants: 4 + 4 iterations); `check_events` drives
+    /// real events through both heads. Same shared fixture.
+    pub(crate) fn init_loop_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        entry: u32,
+    ) -> crate::difftest::events::Events {
+        let mut r = base_machine_ctrl(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_3();
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        clear_words(c, SELF, 0x710);
+        let data = FIX + 0x3000;
+        clear_words(c, data, 0x10);
+        c.bus.write32(FAKE_CTRL, FAKE_MAGIC3);
+        c.g[A0][0] = SELF as u64;
+        c.g[A1][0] = if seed / 2 % 2 == 0 { 0 } else { data } as u64;
+        c.g[A2][0] = 0;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        schedule(c, &mut r, seed, entry)
+    }
+
+    #[test]
+    fn lobby_menu_init_delete_persona_page_matches_r2() {
+        check_events(
+            lobby_menu_init_delete_persona_page_generated,
+            lobby_menu_init_delete_persona_page_hand,
+            SEEDS_21,
+            &|c, seed| init_loop_fixture(c, seed, 0x001d_abd0),
+        );
+    }
+
+    #[test]
+    fn lobby_menu_init_select_persona_page_matches_r2() {
+        check_events(
+            lobby_menu_init_select_persona_page_generated,
+            lobby_menu_init_select_persona_page_hand,
+            SEEDS_21,
+            &|c, seed| init_loop_fixture(c, seed, 0x001d_acb8),
+        );
+    }
+
+    #[test]
+    fn lobby_menu_init_select_room_page_matches_r2() {
+        check_events(
+            lobby_menu_init_select_room_page_generated,
+            lobby_menu_init_select_room_page_hand,
+            SEEDS_21,
+            &|c, seed| init_loop_fixture(c, seed, 0x001d_ae20),
+        );
+    }
+    use crate::difftest::check_paths;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
+    use crate::difftest::RA as SENTINEL_RA;
+    use crate::game::bx::bxstringctor::tests::alloc_base as alloc_base_bx;
+    use crate::game::bx::bxstringctor::tests::be_library as be_library_bx;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_machine_ctrl;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_machine_unwind;
+    pub(crate) use crate::game::fe::feasyncfile::tests::install_fakes_3 as install_fakes_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::str;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_CTRL;
+    pub(crate) use crate::game::fe::feasyncfile::tests::FAKE_MAGIC3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_19 as SEEDS_6;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_21 as SEEDS_7;
+
+    pub(crate) const SEEDS_5: u32 = 200;
+
+    pub(crate) const FIX: u32 = DATA + 0x1010;
+
+    pub(crate) const SELF: u32 = DATA + 0x8010;
+
+    pub(crate) const COMMS_A: u32 = FIX;
+
+    pub(crate) const COMMS_B: u32 = FIX + 0x400;
+
+    pub(crate) const LOBBY: u32 = FIX + 0x800;
+
+    pub(crate) fn base_machine_calls(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let mut r = alloc_base_bx(c, seed, salt);
+        be_library_bx(c);
+        if calls > 0 {
+            c.bus.write32(
+                crate::difftest::fakes::LOG_UNWIND_AT,
+                if seed % 3 == 0 {
+                    (seed / 3) % calls
+                } else {
+                    u32::MAX
+                },
+            );
+        }
+        fill(c, &mut r, SELF, 0x2000);
+        fill(c, &mut r, FIX, 0x1000);
+        r
+    }
+
+    pub(crate) fn comms(c: &mut Cpu) {
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), COMMS_A);
+        c.bus.write32(GAME_GP.wrapping_sub(0x238), COMMS_B);
+        c.bus.write32(GAME_GP.wrapping_sub(0xc8), LOBBY);
+    }
+
+    pub(crate) fn clear_words(c: &mut Cpu, base: u32, words: u32) {
+        for i in 0..words {
+            c.bus.write32(base + 4 * i, 0);
+        }
+    }
+
+    /// `LobbyMenu_Render` fixture: every real `0x45d450` table state (plus
+    /// out-of-range states) with a font fixture, rank counts and lobby
+    /// presence steered; the `0x17e5c8` self-loop and `0x17f0a4` blocks are
+    /// unreachable from the real table and not taken.
+    pub(crate) fn fixture(c: &mut Cpu, seed: u32) {
+        let _r = base_machine_calls(c, seed, 0x0017_e5c8, 0);
+        elf_image(c);
+        clear_words(c, SELF, 0x710);
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        let this = SELF;
+        // Font behind `gp - 0x848`: block, string pointer, object.
+        let font = FIX + 0x2000;
+        let fontobj = FIX + 0x2100;
+        c.bus.write32(COMMS_A + 0x80, font);
+        c.bus.write32(font + 0x18, fontobj);
+        clear_words(c, fontobj, 0x20);
+        // State: all 25 real states plus out-of-range.
+        let states = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 0x19, 0xff,
+        ];
+        c.bus.write32(this + 4, states[(seed % 27) as usize]);
+        // Rank icons: count and the first entries.
+        c.bus.write32(this + 8, (seed / 3 % 3) as u32);
+        c.bus
+            .write32(this + 0xc, if seed / 5 % 2 == 0 { 0 } else { fontobj });
+        c.bus
+            .write32(this + 0x10, if seed / 7 % 2 == 0 { 0 } else { fontobj });
+        // Lobby presence for the `0x17f0a4` word check.
+        c.bus
+            .write32(LOBBY + 0xb4, if seed / 11 % 2 == 0 { 0 } else { 1 });
+        // Buddy/comm state and the auth word.
+        c.bus
+            .write32(COMMS_B + 0x20, if seed / 13 % 2 == 0 { 0 } else { 5 });
+        c.bus.write32(this + 0x1c14, FIX + 0x2200);
+        c.g[A0][0] = this as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0017_e5c8;
+    }
+    #[test]
+    fn lobby_menu_render_matches_r2() {
+        const PATHS: &[u64] = &[
+            47, 51, 54, 84, 92, 657, 720, 723, 750, 760, 788, 811, 873, 907, 944, 5774, 5780, 5810,
+            5813, 7412, 7485, 7506, 7572, 7618, 7640, 7695, 7699, 7783, 7828, 7838, 7907, 7917,
+            7993, 8025, 8047, 8121, 8152, 8210, 8249, 10158, 10193, 10348, 10381, 10413, 10487,
+            10519, 10613, 10652, 14974, 15020, 15051, 15173, 15195, 15243, 15301, 15328, 15438,
+            15469, 19708, 19739, 19766, 19881,
+        ];
+        check_paths(
+            ee::s02::f_0017e5c8__generated,
+            lobby_menu_render,
+            SEEDS_5,
+            PATHS,
+            &fixture,
+        );
+    }
+
+    /// `LobbyMenu_ShowError` by state: every table entry pushes its page
+    /// (or logs in through the live persona page), with the menu flag
+    /// steering the login arm; out-of-range states push nothing.
+    /// Arm totals (port charges plus the state-dependent callee costs):
+    /// 12 out-of-range, 18 bare epilogue, 62 the state-13 push, 65 the
+    /// state-11 push, 67 the abort push, 74 the login-skipped push,
+    /// 5865 the login-taken arm. The state-11/13 page-init costs are
+    /// fixture-address-sensitive (they coincided at 66 before the
+    /// nonzero-low-byte fixture shift); both are stable across the
+    /// login flag and the fill garbage.
+    #[test]
+    fn lobby_menu_show_error_matches_r2() {
+        const PATHS: &[u64] = &[12, 18, 62, 65, 67, 74, 5865];
+        check_paths(
+            ee::s02::f_0017da30__generated,
+            lobby_menu_show_error,
+            SEEDS_6,
+            PATHS,
+            &|c, seed| {
+                let _r = base_machine_unwind(c, seed, 0x0017_da30, 0);
+                elf_image(c);
+                clear_words(c, SELF, 0x710);
+                comms(c);
+                // Cleared: the login callees read these blocks beyond the
+                // steered words, and fill-garbage would wobble the totals.
+                clear_words(c, COMMS_A, 0x100);
+                clear_words(c, COMMS_B, 0x100);
+                clear_words(c, LOBBY, 0x100);
+                let this = SELF;
+                str(c, COMMS_A + 0xc4, b"user");
+                str(c, COMMS_A + 0xc8, b"pass");
+                c.bus.write32(COMMS_A + 0x74, seed / 16 % 2);
+                // States 2..13 hit all 12 table entries; 0, 1, 14, 15
+                // take the out-of-range epilogue. The flag crosses all
+                // states (it steers the login arm).
+                // States 2..13 hit all 12 table entries; 0, 1, 14, 15
+                // take the out-of-range epilogue. The flag crosses all
+                // states (it steers the login arm). `a1` is fixed: it is
+                // only stored, but the login callees read the word back
+                // and would wobble the totals per seed.
+                let states = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 1, 14, 15];
+                c.bus.write32(this + 4, states[(seed % 16) as usize]);
+                c.bus.write32(COMMS_A + 0x74, seed / 16 % 2);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = 0;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0017_da30;
+            },
+        );
+    }
+
+    /// Shared fixture for the `LobbyMenu_Init*Page` builders: the menu
+    /// (`A0`, cleared), the data block (`A1`: null or a cleared
+    /// fixture block, `seed / 2 % 2`) and a null callback (`A2`).
+    /// Everything runs for real on fixture blocks; the game ROM
+    /// provides the label strings (`elf_image`).
+    pub(crate) fn init_page_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        let _r = base_machine_ctrl(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        clear_words(c, SELF, 0x710);
+        let data = FIX + 0x3000;
+        clear_words(c, data, 0x10);
+        c.bus.write32(FAKE_CTRL, FAKE_MAGIC3);
+        c.g[A0][0] = SELF as u64;
+        c.g[A1][0] = if seed / 2 % 2 == 0 { 0 } else { data } as u64;
+        c.g[A2][0] = 0;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn lobby_menu_debug_printf_stub_matches() {
+        check(
+            ee::s04::f_001da540__generated,
+            lobby_menu_debug_printf_stub,
+            SEEDS_7,
+            &|c, seed| init_page_fixture(c, seed, 0x001d_a540),
+        );
+    }
+
+    pub(crate) const SEEDS_8: u32 = 256;
+
+    pub(crate) const FAKE_MAGIC3_2: u32 = 0x0c11_8501;
+
+    pub(crate) const FAKE_COUNT: u32 = FIX + 0xC04;
+
+    pub(crate) const FAKE_STR: u32 = FIX + 0xC08;
+
+    pub(crate) const FAKE_DATA: u32 = FIX + 0x3000;
+
+    /// Gate helper: fall back to the real body unless the fixture magic
+    /// word is set, then log the call and return to the caller.
+    pub(crate) fn gate(
+        c: &mut Cpu,
+        slot: u32,
+        prev: &'static std::sync::atomic::AtomicUsize,
+        generated: fn(&mut Cpu),
+    ) -> bool {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3_2 {
+            fakes::fall_back(c, prev, generated);
+            return false;
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, slot, ra);
+        true
+    }
+
+    /// `LobbyMan_GetRoomCount` with a seed-steered count: the real body
+    /// counts visible rooms in the lobby list, which the test leaves
+    /// cleared (always 0). The count drives the fill loop directly.
+    pub(crate) fn room_count_fake(c: &mut Cpu) {
+        if !gate(
+            c,
+            0x0025_f120,
+            fakes::prev_cell(room_count_fake),
+            ee::s06::f_0025f120__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = c.bus.read32(FAKE_COUNT) as u64;
+        }
+    }
+
+    /// `LobbyMan_GetRoomName` returning the fixture string: the real
+    /// body walks the lobby list, which the test leaves cleared.
+    pub(crate) fn room_name_fake(c: &mut Cpu) {
+        if !gate(
+            c,
+            0x0025_f150,
+            fakes::prev_cell(room_name_fake),
+            ee::s06::f_0025f150__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = c.bus.read32(FAKE_STR) as u64;
+        }
+    }
+
+    /// `LobbyMan_GetRoomUserCount` (0x25f1b0) with a seed-steered count:
+    /// same shape as the room-count fake. (The fellow map misnamed this
+    /// `IS_ROOM_FLAGGED`; the port uses the `functions.tsv` name.)
+    pub(crate) fn room_user_count_fake(c: &mut Cpu) {
+        if !gate(
+            c,
+            0x0025_f1b0,
+            fakes::prev_cell(room_user_count_fake),
+            ee::s06::f_0025f1b0__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = c.bus.read32(FAKE_COUNT) as u64;
+        }
+    }
+
+    /// `LobbyMan_GetRoomUserName` returning the fixture string: same
+    /// shape as the room-name fake.
+    pub(crate) fn room_user_name_fake(c: &mut Cpu) {
+        if !gate(
+            c,
+            0x0025_f1e0,
+            fakes::prev_cell(room_user_name_fake),
+            ee::s06::f_0025f1e0__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = c.bus.read32(FAKE_STR) as u64;
+        }
+    }
+
+    /// Fellow `LobbyMenu_*` action callees: each runs a whole login /
+    /// persona / room / challenge flow over UI state the test does not
+    /// build, so every fixture logs the call and returns. One fake per
+    /// address, all with the same shape.
+    macro_rules! action_fake {
+        ($name:ident, $slot:expr, $gen:path) => {
+            fn $name(c: &mut Cpu) {
+                gate(c, $slot, fakes::prev_cell($name), $gen);
+            }
+        };
+    }
+
+    action_fake!(
+        cancel_challenge_fake,
+        0x0017_e558,
+        ee::s02::f_0017e558__generated
+    );
+
+    action_fake!(
+        accept_challenge_fake,
+        0x0017_e490,
+        ee::s02::f_0017e490__generated
+    );
+
+    action_fake!(
+        decline_challenge_fake,
+        0x0017_e4f0,
+        ee::s02::f_0017e4f0__generated
+    );
+
+    action_fake!(send_chat_fake, 0x0017_e418, ee::s02::f_0017e418__generated);
+
+    action_fake!(
+        leave_occupants_fake,
+        0x0017_e368,
+        ee::s02::f_0017e368__generated
+    );
+
+    action_fake!(
+        show_occupant_detail_fake,
+        0x0017_e3b8,
+        ee::s02::f_0017e3b8__generated
+    );
+
+    action_fake!(enter_room_fake, 0x0017_e2f8, ee::s02::f_0017e2f8__generated);
+
+    action_fake!(
+        delete_persona_fake,
+        0x0017_e228,
+        ee::s02::f_0017e228__generated
+    );
+
+    action_fake!(
+        create_account_fake,
+        0x0017_e030,
+        ee::s02::f_0017e030__generated
+    );
+
+    action_fake!(login_fake, 0x0017_e118, ee::s02::f_0017e118__generated);
+
+    action_fake!(
+        select_persona_fake,
+        0x0017_e290,
+        ee::s02::f_0017e290__generated
+    );
+
+    action_fake!(
+        create_persona_fake,
+        0x0017_e1c0,
+        ee::s02::f_0017e1c0__generated
+    );
+
+    pub(crate) fn install_fakes_3() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025F120),
+            room_count_fake,
+            fakes::prev_cell(room_count_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025F150),
+            room_name_fake,
+            fakes::prev_cell(room_name_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025F1B0),
+            room_user_count_fake,
+            fakes::prev_cell(room_user_count_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025F1E0),
+            room_user_name_fake,
+            fakes::prev_cell(room_user_name_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E558),
+            cancel_challenge_fake,
+            fakes::prev_cell(cancel_challenge_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E490),
+            accept_challenge_fake,
+            fakes::prev_cell(accept_challenge_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E4F0),
+            decline_challenge_fake,
+            fakes::prev_cell(decline_challenge_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E418),
+            send_chat_fake,
+            fakes::prev_cell(send_chat_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E368),
+            leave_occupants_fake,
+            fakes::prev_cell(leave_occupants_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E3B8),
+            show_occupant_detail_fake,
+            fakes::prev_cell(show_occupant_detail_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E2F8),
+            enter_room_fake,
+            fakes::prev_cell(enter_room_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E228),
+            delete_persona_fake,
+            fakes::prev_cell(delete_persona_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E030),
+            create_account_fake,
+            fakes::prev_cell(create_account_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E118),
+            login_fake,
+            fakes::prev_cell(login_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E290),
+            select_persona_fake,
+            fakes::prev_cell(select_persona_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s02::OVERRIDE_0017E1C0),
+            create_persona_fake,
+            fakes::prev_cell(create_persona_fake),
+        );
+    }
+
+    driven!(
+        lobby_menu_init_room_occupants_page_generated,
+        ee::s04::f_001daf08__generated
+    );
+
+    driven!(
+        lobby_menu_init_room_occupants_page_hand,
+        crate::game::fe::festatenethelppopup::lobby_menu_init_room_occupants_page
+    );
+
+    driven!(
+        lobby_menu_init_chat_page_generated,
+        ee::s04::f_001db028__generated
+    );
+
+    driven!(
+        lobby_menu_init_chat_page_hand,
+        crate::game::fe::festatenethelppopup::lobby_menu_init_chat_page
+    );
+
+    /// `InitRoomOccupantsPage` fixture: the cleared page, a data block
+    /// whose words are stored onto the page, and the second-loop trip
+    /// count in `A2` (`seed % 3`). Both loops run every seed (24 fixed
+    /// iterations, then `A2 + 1`).
+    pub(crate) fn init_occupants_fixture(c: &mut Cpu, seed: u32, entry: u32) -> Events {
+        let mut r = base_machine_cleared(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_3();
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        clear_words(c, FAKE_DATA, 0x10);
+        c.bus.write32(FAKE_DATA, 0x1111_0000 + seed);
+        c.bus.write32(FAKE_DATA + 4, 0x2222_0000 + seed);
+        c.g[A0][0] = SELF as u64;
+        c.g[A1][0] = FAKE_DATA as u64;
+        c.g[A2][0] = (seed % 3) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        schedule(c, &mut r, seed, entry)
+    }
+    #[test]
+    fn lobby_menu_init_room_occupants_page_matches_r2() {
+        check_events(
+            lobby_menu_init_room_occupants_page_generated,
+            lobby_menu_init_room_occupants_page_hand,
+            SEEDS_8,
+            &|c, seed| init_occupants_fixture(c, seed, 0x001d_af08),
+        );
+    }
+
+    /// `InitChatPage` fixture: same shape as the occupants page; both
+    /// loops run a fixed 14 iterations every seed.
+    pub(crate) fn init_chat_fixture(c: &mut Cpu, seed: u32, entry: u32) -> Events {
+        let mut r = base_machine_cleared(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_3();
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        clear_words(c, FAKE_DATA, 0x10);
+        c.bus.write32(FAKE_DATA, 0x3333_0000 + seed);
+        c.g[A0][0] = SELF as u64;
+        c.g[A1][0] = FAKE_DATA as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        schedule(c, &mut r, seed, entry)
+    }
+
+    #[test]
+    fn lobby_menu_init_chat_page_matches_r2() {
+        check_events(
+            lobby_menu_init_chat_page_generated,
+            lobby_menu_init_chat_page_hand,
+            SEEDS_8,
+            &|c, seed| init_chat_fixture(c, seed, 0x001d_b028),
+        );
+    }
+
+    pub(crate) const FAKE_FLAG_ID: u32 = FIX + 0xC04;
+
+    pub(crate) const FAKE_CHAR: u32 = FIX + 0xC0C;
+
+    pub(crate) const FAKE_INBOX: u32 = FIX + 0x3400;
+
+    pub(crate) const STR: u32 = FIX + 0x1000;
+
+    pub(crate) fn base_machine_cleared(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = alloc_base_bx(c, seed, salt);
+        be_library_bx(c);
+        fill(c, &mut r, SELF, 0x2000);
+        fill(c, &mut r, FIX, 0x1000);
+        clear_words(c, SELF, 0x710);
+        clear_words(c, FAKE_CTRL, 0x10);
+        r
+    }
+
+    pub(crate) fn alloc(c: &mut Cpu, size: u32) -> u32 {
+        str(c, STR, b"oc");
+        c.g[A0][0] = size as u64;
+        c.g[A1][0] = STR as u64;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        ee::s10::f_00317d70(c);
+        c.g[V0][0] as u32
     }
 }

@@ -3676,6 +3676,7 @@ pub fn mem_card_ui_write_replay_save_block(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::check_paths;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
@@ -5237,6 +5238,137 @@ pub(crate) mod tests {
                 c.bus.write32(OC946_OBJ + 0x3800 + 0x28, OC946_OBJ + 0x3c00);
                 c.bus
                     .write32(OC946_MBX + 4, if seed % 3 == 0 { 0 } else { 1 });
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Kept tests for main's three save-flow drivers (`_r2`): the branch's
+    // path-pin and unwind tests, pointed at main's bodies (all pass, so
+    // main's ports match generated on these fixtures).
+
+    use crate::game::fe::fememcardcallbacks::tests::memcardui_install_fakes as probe_install_fakes;
+    use crate::game::fe::fememcardcallbacks::tests::memcardui_read_save_chunk_setup as probe_read_setup;
+    use crate::game::fe::fememcardcallbacks::tests::memcardui_write_save_data_setup as probe_write_setup;
+
+    #[test]
+    fn mem_card_ui_write_save_data_r2_matches() {
+        check_paths(
+            ee::s04::f_001d59a0__generated,
+            mem_card_ui_write_save_data,
+            64,
+            &[
+                43, 45, 47, 49, 51, 53, 91, 103, 104, 114, 127, 129, 135, 145, 147, 151, 153, 156,
+                157, 163, 165, 181, 195, 196, 206, 211, 225,
+            ],
+            &|c, seed| {
+                probe_install_fakes();
+                probe_write_setup(c, seed, u32::MAX);
+            },
+        );
+    }
+
+    #[test]
+    fn mem_card_ui_write_save_data_r2_unwind_matches() {
+        probe_install_fakes();
+        crate::difftest::fakes::covered(
+            ee::s04::f_001d59a0__generated,
+            mem_card_ui_write_save_data,
+            64,
+            &|c, seed| probe_write_setup(c, seed, 0),
+        );
+        // Both sides return early with the frame still open: seed 0 (mode 2)
+        // and seed 7 (profile arm) both unwind at the first fake call.
+        for seed in [0u32, 7] {
+            let mut a = crate::difftest::fresh();
+            let mut b = crate::difftest::fresh();
+            probe_write_setup(&mut a, seed, 0);
+            probe_write_setup(&mut b, seed, 0);
+            ee::s04::f_001d59a0__generated(&mut a);
+            mem_card_ui_write_save_data(&mut b);
+            for (side, c) in [("generated", &a), ("hand", &b)] {
+                assert_eq!(c.pc, 0xdead_0000, "{side} seed {seed}");
+                assert_eq!(
+                    c.g[SP][0],
+                    (crate::difftest::SP - 0x7a0) as u64,
+                    "{side} seed {seed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mem_card_ui_read_save_chunk_r2_matches() {
+        check_paths(
+            ee::s04::f_001d5c28__generated,
+            mem_card_ui_read_save_chunk,
+            64,
+            &[
+                18, 24, 46, 54, 104, 105, 107, 118, 120, 122, 126, 133, 135, 201, 207, 209, 217,
+                220,
+            ],
+            &|c, seed| {
+                probe_install_fakes();
+                probe_read_setup(c, seed, u32::MAX);
+            },
+        );
+    }
+
+    #[test]
+    fn mem_card_ui_read_save_chunk_r2_unwind_matches() {
+        probe_install_fakes();
+        crate::difftest::fakes::covered(
+            ee::s04::f_001d5c28__generated,
+            mem_card_ui_read_save_chunk,
+            64,
+            &|c, seed| probe_read_setup(c, seed, 0),
+        );
+        // Both sides return early with the frame still open: seeds 0 and 1
+        // run mode 1 with a pending read, unwinding at the first fake call.
+        for seed in [0u32, 1] {
+            let mut a = crate::difftest::fresh();
+            let mut b = crate::difftest::fresh();
+            probe_read_setup(&mut a, seed, 0);
+            probe_read_setup(&mut b, seed, 0);
+            ee::s04::f_001d5c28__generated(&mut a);
+            mem_card_ui_read_save_chunk(&mut b);
+            for (side, c) in [("generated", &a), ("hand", &b)] {
+                assert_eq!(c.pc, 0xdead_0000, "{side} seed {seed}");
+                assert_eq!(
+                    c.g[SP][0],
+                    (crate::difftest::SP - 0x60) as u64,
+                    "{side} seed {seed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mem_card_ui_write_replay_save_block_r2_matches() {
+        use crate::game::fe::fememcardcallbacks::tests::memcardui_fe_world as probe_fe_world;
+        use crate::game::fe::fememcardcallbacks::tests::MEMCARDUI_APP as PROBE_APP;
+        use crate::game::fe::fememcardcallbacks::tests::MEMCARDUI_FE as PROBE_FE;
+        use crate::game::fe::fememcardcallbacks::tests::MEMCARDUI_GATE as PROBE_GATE;
+        use crate::game::fe::fememcardcallbacks::tests::MEMCARDUI_MAGIC as PROBE_MAGIC;
+        use crate::game::fe::fememcardcallbacks::tests::MEMCARDUI_WORLD as PROBE_WORLD;
+        use crate::game::fe::fememcardcallbacks::tests::MEMCARD_UI_SAVE_OP as PROBE_SAVE_OP;
+        use crate::game::fe::fememcardcallbacks::tests::R_MC_MANAGER_GET as PROBE_MGR;
+        use crate::game::fe::fememcardcallbacks::tests::R_REPLAY_WRITE_SAVE_BLOCK as PROBE_BLOCK;
+        check_paths(
+            ee::s04::f_001d5d78__generated,
+            mem_card_ui_write_replay_save_block,
+            24,
+            &[13, 32, 39, 40, 41, 42],
+            &|c, seed| {
+                probe_install_fakes();
+                let mut r = machine(c, seed, 0x1d5d_78, 0);
+                let mode = [1u64, 0, 2][seed as usize % 3];
+                probe_fe_world(c, &mut r, PROBE_FE, PROBE_WORLD);
+                c.bus.write32(PROBE_FE + PROBE_SAVE_OP, mode as u32);
+                c.bus.write32(PROBE_GATE, PROBE_MAGIC);
+                c.bus.write32(PROBE_MGR, PROBE_APP);
+                c.bus
+                    .write32(PROBE_BLOCK, if seed / 4 % 2 == 0 { 0 } else { 0x77 });
             },
         );
     }

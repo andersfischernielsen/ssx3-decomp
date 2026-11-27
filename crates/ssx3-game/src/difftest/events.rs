@@ -141,12 +141,15 @@ fn compare_schedule(a: &Cpu, b: &Cpu, hard: &mut Vec<String>) {
 
 /// Like `difftest::check` with equal temporaries and, in the default form,
 /// equal event schedules. Also checks that enough seeds delivered an event.
+/// Returns the resume map: every re-entry `pc` `drive` made, with its count.
+/// Returns the resume map [`drive`] recorded, so a test can prove an unwind
+/// really happened at a given head.
 pub fn check_events(
     generated: GuestFn,
     hand: GuestFn,
     seeds: u32,
     setup: &dyn Fn(&mut Cpu, u32) -> Events,
-) {
+) -> std::collections::BTreeMap<u32, u32> {
     let (mut evented, mut event_seeds) = (0, 0);
     let (gen_fn, hand_fn) = (generated, hand);
     for seed in 0..super::seed_count(seeds) {
@@ -188,4 +191,5 @@ pub fn check_events(
     );
     let resumes = RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()));
     eprintln!("{evented} of {event_seeds} event seeds delivered an event; resumes (pc: count): {resumes:x?}");
+    resumes
 }

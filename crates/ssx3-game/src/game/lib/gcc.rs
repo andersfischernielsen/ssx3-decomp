@@ -255,6 +255,25 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_51d8, type_info_name, "type_info_name"),
     (0x0041_51e0, type_info_ctor, "type_info_ctor"),
     (0x0041_5238, type_info_before, "type_info_before"),
+    (0x0041_2818, set_terminate, "set_terminate"),
+    (0x0041_4148, find_fde, "find_fde"),
+    (0x0041_49f0, fde_split, "fde_split"),
+    (0x0041_5088, bad_typeid_dtor, "bad_typeid_dtor"),
+    (0x0041_50b8, bad_typeid_ctor, "bad_typeid_ctor"),
+    (0x0041_5120, bad_cast_dtor, "bad_cast_dtor"),
+    (0x0041_5150, bad_cast_ctor, "bad_cast_ctor"),
+    (
+        0x0042_e200,
+        tf23ps2_sony_codec_internal,
+        "__tf23PS2_SONY_CODEC_INTERNAL",
+    ),
+    (0x0042_e2b0, tfq24rcmp5codec, "__tfQ24RCMP5CODEC"),
+    (0x0042_e458, tfq24rcmp7decoder, "__tfQ24RCMP7DECODER"),
+    (
+        0x0042_e4c8,
+        tfq24rcmp11rcmp_system,
+        "__tfQ24RCMP11RCMP_SYSTEM",
+    ),
     (0x0040_fcb0, divdi3, "__divdi3"),
     (0x0041_f3a8, ieee754_log_2, "__ieee754_log_2"),
     (0x0042_d470, moddi3, "__moddi3"),
@@ -5489,8 +5508,8 @@ pub(crate) mod callee {
     pub(crate) use super::IEEE_LOG_DIVDF3;
     pub(crate) use super::MALLOC;
     pub(crate) use super::TERMINATE;
+    pub(crate) use super::TERMINATE_CPP;
     pub(crate) use super::TYPE_INFO_EQ;
-    use super::*;
     pub(crate) use crate::game::lib::libc::callee::MEMCPY;
     pub(crate) use crate::game::misc::MEMSET;
 
@@ -5697,6 +5716,11 @@ pub(crate) mod callee {
         addr: 0x0041_f3a8,
         f: ee::s15::f_0041f3a8,
     };
+    use super::ee;
+    use super::Callee;
+    pub(crate) use crate::game::lib::gcc::RTTI_SI;
+    pub(crate) use crate::game::lib::gcc::RTTI_USER;
+    pub(crate) use crate::game::misc::callee::FRAME_INIT;
 }
 
 pub(crate) mod fmodf {
@@ -14441,6 +14465,581 @@ pub(crate) mod throw_save {
 }
 
 // ---------------------------------------------------------------------------
+// fde_split
+
+/// `void fde_split(void *fdes, void *out)` (0x4149f0): split the frame's
+/// FDE table at each overlapping row, compacting the pieces into `out`
+/// (the inner loops walk the sorted rows; the outer one steps the table).
+pub fn fde_split(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 18;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.g[T7][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[FP][0]);
+        c.g[A0][0] = 0xffff_ffff_ffff_0000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+        c.g[FP][0] = c.g[SP][0];
+        c.g[T4][0] = c.g[A1][0];
+        c.g[A0][0] |= 0xffff;
+        c.g[T8][0] = c.lw((c.g[T7][0] as u32).wrapping_add(0x4));
+        c.g[T1][0] = 0;
+        c.g[V0][0] = sx((c.g[T8][0] as u32) << 5);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 3);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 4);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        c.g[S0][0] = c.g[SP][0];
+        if c.g[T8][0] == 0 {
+            c.g[T0][0] = 0;
+        } else {
+            c.cycles += 2;
+            c.g[T5][0] = 0xffff_ffff_ffff_0000;
+            c.g[T5][0] |= 0xffff;
+            'outer: loop {
+                c.cycles += 3;
+                c.g[T0][0] = c.g[A0][0];
+                c.g[T3][0] = sx((c.g[T1][0] as u32) << 2);
+                if c.g[T0][0] != c.g[T5][0] {
+                    c.cycles += 11;
+                    c.g[A3][0] = c.lw(c.g[T7][0] as u32);
+                    c.g[A2][0] = sx((c.g[T0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[A1][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+                    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    c.g[T9][0] = c.g[T3][0];
+                    if (c.g[V0][0] as i64) < 0 {
+                        c.cycles += 2;
+                        c.g[T6][0] = c.lw(c.g[T4][0] as u32);
+                        c.g[T2][0] = sx((c.g[T1][0] as u32).wrapping_add(0x1));
+                        'inner: loop {
+                            c.cycles += 14;
+                            c.g[A0][0] = c.lw((c.g[T4][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                            c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                            c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+                            c.g[T0][0] = c.lw(c.g[V1][0] as u32);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T6][0] as u32));
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                            c.sw(c.g[V0][0] as u32, c.g[A1][0]);
+                            c.sw((c.g[T4][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                            c.g[A3][0] = c.lw(c.g[T7][0] as u32);
+                            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                            c.sw(c.g[V0][0] as u32, 0);
+                            if c.g[T0][0] == c.g[T5][0] {
+                                // Table end: rejoin past the inner latch.
+                                c.cycles += 2;
+                                c.g[A0][0] = c.g[T1][0];
+                                c.g[V1][0] =
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[T3][0] as u32));
+                                break;
+                            }
+                            c.cycles += 11;
+                            c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
+                            c.g[V1][0] = sx((c.g[T9][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                            c.g[A2][0] = c.g[V0][0];
+                            c.g[A1][0] = c.lw(c.g[V1][0] as u32);
+                            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                            c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                            c.g[A0][0] = c.g[T1][0];
+                            if (c.g[V1][0] as i64) < 0 {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0041_4a80);
+                                }
+                                continue 'inner;
+                            }
+                            c.cycles += 2;
+                            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[T3][0] as u32));
+                            break;
+                        }
+                    } else {
+                        // Overlap check passed: rejoin past the inner latch.
+                        c.cycles += 1;
+                        c.g[T2][0] = sx((c.g[T1][0] as u32).wrapping_add(0x1));
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[T1][0];
+                        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[T3][0] as u32));
+                    }
+                } else {
+                    // Head sentinel: rejoin past the inner latch.
+                    c.cycles += 1;
+                    c.g[T2][0] = sx((c.g[T1][0] as u32).wrapping_add(0x1));
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[T1][0];
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[T3][0] as u32));
+                }
+                c.cycles += 4;
+                c.g[T1][0] = c.g[T2][0];
+                c.g[V0][0] = (c.g[T1][0] < c.g[T8][0]) as u64;
+                c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+                if c.g[V0][0] != 0 {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0041_4a40);
+                    }
+                    continue 'outer;
+                }
+                c.cycles += 1;
+                c.g[T1][0] = 0;
+                break;
+            }
+        }
+        if c.g[T8][0] != 0 {
+            // (generated `'b_414b4c` zeroes T0 under a +2 on both arms).
+            c.cycles += 2;
+            c.g[T0][0] = 0;
+            c.cycles += 3;
+            c.g[A3][0] = c.lw(c.g[T7][0] as u32);
+            c.g[V0][0] = sx((c.g[T1][0] as u32) << 2);
+            'pack: loop {
+                c.cycles += 4;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
+                if c.g[V1][0] == 0 {
+                    // Slot empty: latch and keep packing.
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                }
+                c.cycles += 4;
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = (c.g[T1][0] < c.g[T8][0]) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = sx((c.g[T1][0] as u32) << 2);
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0041_4b20);
+                    }
+                    continue 'pack;
+                }
+                break;
+            }
+        } else {
+            // T8 == 0: the +2 and the T0 zero still happen.
+            c.cycles += 2;
+            c.g[T0][0] = 0;
+        }
+        c.cycles += 6;
+        c.sw((c.g[T7][0] as u32).wrapping_add(0x4), c.g[T0][0]);
+        c.g[SP][0] = c.g[FP][0];
+        c.g[FP][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// find_fde
+
+/// `void *find_fde(void *pc)` (0x414148): the FDE covering `pc`, or null.
+/// Walks the frame registry (initializing each table through `frame_init`
+/// once); the scan and the binary search both check events, so an unwind
+/// resumes at their heads.
+pub fn find_fde(c: &mut Cpu) {
+    call::guest(c, |c| {
+        if c.pc != 0x0041_4148 && c.pc != 0x0041_4168 && c.pc != 0x0041_41d0 && c.pc != 0x0041_41b4
+        {
+            c.jump_out(c.pc, 0x0041_4148, 0x0041_422c);
+            return Ok(());
+        }
+        if c.pc == 0x0041_4148 {
+            c.cycles += 8;
+            let frame = Frame::open(c, 0x30);
+            c.g[V0][0] = 0x530000;
+            frame_sd(c, frame, 0, c.g[S0][0]);
+            frame_sd(c, frame, 0x10, c.g[S1][0]);
+            c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_sub(0x5218));
+            c.g[S1][0] = c.g[A0][0];
+            frame.save_ra(c, 0x20);
+            c.pc = 0x0041_4168;
+        }
+        loop {
+            match c.pc {
+                0x0041_4168 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    c.pc = if c.g[S0][0] == 0 {
+                        0x0041_4218
+                    } else {
+                        0x0041_4170
+                    };
+                }
+                0x0041_4170 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                    let t = c.g[V0][0] != 0;
+                    c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                    c.pc = if t { 0x0041_418c } else { 0x0041_417c };
+                }
+                0x0041_417c => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::FRAME_INIT.call(c, 0x0041_4184)?;
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                    c.pc = 0x0041_418c;
+                }
+                0x0041_418c => {
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        if back_edge_unwinds(c, 0x0041_4168) {
+                            return Ok(());
+                        }
+                        c.pc = 0x0041_4168;
+                    } else {
+                        c.pc = 0x0041_4194;
+                    }
+                }
+                0x0041_4194 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        if back_edge_unwinds(c, 0x0041_4168) {
+                            return Ok(());
+                        }
+                        c.pc = 0x0041_4168;
+                    } else {
+                        c.pc = 0x0041_41a4;
+                    }
+                }
+                0x0041_41a4 => {
+                    c.cycles += 2;
+                    if c.g[S0][0] != 0 {
+                        c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                        c.pc = 0x0041_41bc;
+                    } else {
+                        c.pc = 0x0041_41ac;
+                    }
+                }
+                0x0041_41ac => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    c.pc = 0x0041_4218;
+                }
+                0x0041_41b4 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[V1][0];
+                    c.pc = 0x0041_4218;
+                }
+                0x0041_41bc => {
+                    c.cycles += 2;
+                    c.g[T0][0] = 0;
+                    if c.g[A3][0] == 0 {
+                        c.pc = 0x0041_4214;
+                    } else {
+                        c.pc = 0x0041_41c4;
+                    }
+                }
+                0x0041_41c4 => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.pc = 0x0041_41d0;
+                }
+                0x0041_41d0 => {
+                    c.cycles += 8;
+                    c.g[A2][0] = sx((c.g[V0][0] as u32) >> 1);
+                    c.g[V1][0] = sx((c.g[A2][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = (c.g[S1][0] < c.g[A1][0]) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                        c.pc = 0x0041_41f8;
+                    } else {
+                        c.pc = 0x0041_41f0;
+                    }
+                }
+                0x0041_41f0 => {
+                    c.cycles += 2;
+                    c.g[A3][0] = c.g[A2][0];
+                    c.pc = 0x0041_4208;
+                }
+                0x0041_41f8 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                    c.g[T0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    if c.g[V0][0] != 0 {
+                        if back_edge_unwinds(c, 0x0041_41b4) {
+                            return Ok(());
+                        }
+                        c.pc = 0x0041_41b4;
+                    } else {
+                        c.pc = 0x0041_4208;
+                    }
+                }
+                0x0041_4208 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[T0][0] < c.g[A3][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    if t {
+                        if back_edge_unwinds(c, 0x0041_41d0) {
+                            return Ok(());
+                        }
+                        c.pc = 0x0041_41d0;
+                    } else {
+                        c.pc = 0x0041_4214;
+                    }
+                }
+                0x0041_4214 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                    c.pc = 0x0041_4218;
+                }
+                0x0041_4218 => {
+                    c.cycles += 5;
+                    let frame = Frame { size: 0x30 };
+                    frame.restore_ra(c, 0x20);
+                    c.g[S1][0] = frame_ld(c, frame, 0x10);
+                    c.g[S0][0] = frame_ld(c, frame, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => break,
+            }
+        }
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// set_terminate
+
+/// The terminate-handler slot `set_terminate` installs into.
+pub(crate) const TERMINATE_SLOT_OFF: u32 = 0x3440;
+
+/// `void set_terminate(void (*fn)(void))` (0x412818): install `a0` as the
+/// terminate handler (`*(0x450000 + 0x3440)`). The resume entry re-runs the
+/// store after `terminate` returns (it only returns on the test machine).
+pub fn set_terminate(c: &mut Cpu) {
+    call::guest(c, |c| {
+        let resumed = match c.pc {
+            0x0041_2818 => false,
+            0x0041_2828 => true,
+            pc => {
+                c.jump_out(pc, 0x0041_2818, 0x0041_2838);
+                return Ok(());
+            }
+        };
+        if !resumed {
+            c.cycles += 8;
+            let frame = Frame::open(c, 0x10);
+            frame.save_ra(c, 0);
+            // The C++ `terminate()` (0x412800), not the local `TERMINATE`
+            // (0x4103b0 `__terminate`): same call the generated body makes.
+            callee::TERMINATE_CPP.call(c, 0x0041_2828)?;
+        } else {
+            // Re-entry at the resume head carries its own charge (the
+            // inline fall-through after the call does not).
+            c.cycles += 4;
+        }
+        c.g[V1][0] = 0x450000;
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(TERMINATE_SLOT_OFF));
+        let t = c.g[RA][0] as u32;
+        c.sw(
+            (c.g[V1][0] as u32).wrapping_add(TERMINATE_SLOT_OFF),
+            c.g[A0][0],
+        );
+        c.pc = t;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// bad_typeid_dtor / bad_cast_dtor
+
+/// `bad_typeid::~bad_typeid(int)` (0x415088): install the vtable, then free
+/// the object when the low bit of `a1` says it owns it.
+pub fn bad_typeid_dtor(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 7;
+        c.g[V0][0] = 0x4a0000;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6748));
+        frame.save_ra(c, 0);
+        c.g[A1][0] &= 0x1;
+        c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x0041_50ac);
+            call::call_ptr(c, 0x0031_7e50, 0x0041_50ac)?;
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `bad_cast::~bad_cast(int)` (0x415120): install the vtable, then free
+/// the object when the low bit of `a1` says it owns it.
+pub fn bad_cast_dtor(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 7;
+        c.g[V0][0] = 0x4a0000;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6748));
+        frame.save_ra(c, 0);
+        c.g[A1][0] &= 0x1;
+        c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x0041_5144);
+            call::call_ptr(c, 0x0031_7e50, 0x0041_5144)?;
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// bad_typeid_ctor / bad_cast_ctor
+
+/// `bad_typeid::bad_typeid(void)` (0x4150b8): install the vtable.
+pub fn bad_typeid_ctor(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V1][0] = 0x4a0000;
+    c.g[V0][0] = c.g[A0][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x65e8));
+    let t = c.g[RA][0] as u32;
+    c.sw(c.g[A0][0] as u32, c.g[V1][0]);
+    c.pc = t;
+}
+
+/// `bad_cast::bad_cast(void)` (0x415150): install the vtable.
+pub fn bad_cast_ctor(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V1][0] = 0x4a0000;
+    c.g[V0][0] = c.g[A0][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x65d0));
+    let t = c.g[RA][0] as u32;
+    c.sw(c.g[A0][0] as u32, c.g[V1][0]);
+    c.pc = t;
+}
+
+// ---------------------------------------------------------------------------
+// RCMP type_info getters
+
+/// Shared body of the single-base RCMP type_info getters: return the
+/// registry slot when something installed it, else build it with
+/// `__rtti_user` (`slot` and `name` are the offsets from `0x4a0000` and
+/// `0x490000`; `ret` is the `__rtti_user` return address).
+pub(crate) fn tf_single_base(c: &mut Cpu, slot_off: u32, name_off: u32, ret: u32) -> Flow {
+    c.cycles += 7;
+    let frame = Frame::open(c, 0x20);
+    c.g[V1][0] = 0x4a0000;
+    frame.save(c, S0, 0x10);
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(slot_off));
+    c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(slot_off));
+    frame.save_ra(c, 0);
+    if c.g[V0][0] == 0 {
+        c.cycles += 4;
+        c.g[A1][0] = 0x490000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(name_off));
+        callee::RTTI_USER.call(c, ret)?;
+    }
+    c.cycles += 5;
+    c.g[V0][0] = c.g[S0][0];
+    c.g[RA][0] = c.ld(frame.at(c, 0));
+    frame.restore(c, S0, 0x10);
+    let t = c.g[RA][0] as u32;
+    frame.close(c);
+    c.pc = t;
+    Ok(())
+}
+
+/// `const type_info& __tfQ24RCMP5CODEC(void)` (0x42e2b0): `RCMP::CODEC`'s
+/// type_info (built on first use).
+pub fn tfq24rcmp5codec(c: &mut Cpu) {
+    call::guest(c, |c| tf_single_base(c, 0x5ba0, 0x5410, 0x0042_e2dc))
+}
+
+/// `const type_info& __tfQ24RCMP7DECODER(void)` (0x42e458):
+/// `RCMP::DECODER`'s type_info (built on first use).
+pub fn tfq24rcmp7decoder(c: &mut Cpu) {
+    call::guest(c, |c| tf_single_base(c, 0x5b90, 0x53d8, 0x0042_e484))
+}
+
+/// `const type_info& __tfQ24RCMP11RCMP_SYSTEM(void)` (0x42e4c8):
+/// `RCMP::RCMP_SYSTEM`'s type_info (built on first use).
+pub fn tfq24rcmp11rcmp_system(c: &mut Cpu) {
+    call::guest(c, |c| tf_single_base(c, 0x5b98, 0x53c0, 0x0042_e4f4))
+}
+
+/// `const type_info& __tf23PS2_SONY_CODEC_INTERNAL(void)` (0x42e200):
+/// `PS2_SONY_CODEC_INTERNAL`'s type_info (built on first use, on top of
+/// `RCMP::CODEC`'s user type_info).
+pub fn tf23ps2_sony_codec_internal(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x540000;
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1600));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_sub(0x1600));
+        c.g[S2][0] = c.g[V0][0];
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        if c.g[V1][0] == 0 {
+            c.cycles += 4;
+            c.g[V1][0] = 0x4a0000;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5ba0));
+            c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5ba0));
+            if c.g[V0][0] == 0 {
+                c.cycles += 4;
+                c.g[A1][0] = 0x490000;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5410));
+                callee::RTTI_USER.call(c, 0x0042_e248)?;
+            }
+            c.cycles += 5;
+            c.g[A1][0] = 0x490000;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5420));
+            c.g[A2][0] = c.g[S0][0];
+            callee::RTTI_SI.call(c, 0x0042_e25c)?;
+        }
+        c.cycles += 7;
+        c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1600));
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
 // 0x0040fcb0 __divdi3
 
 /// Entry of `__divdi3`. Every other address inside it runs the generated
@@ -21254,6 +21853,716 @@ pub(crate) mod tests {
             IEEE_LOG_2_SEEDS,
             &IEEE_LOG_2_TEST_PATHS,
             &|c, seed| ieee_log_2_setup(c, seed, true),
+        );
+    }
+    use crate::difftest::check_paths;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::prev_cell;
+    pub(crate) use crate::game::lib::libc::tests::glue_machine;
+    pub(crate) use crate::game::lib::libc::tests::SEEDS_4 as SEEDS_9;
+    pub(crate) use crate::game::misc::tests::unwind_machine;
+    pub(crate) use crate::game::misc::tests::SEEDS_UNWIND as SEEDS_2;
+
+    driven!(fde_split_gen_driven, ee::s15::f_004149f0__generated);
+
+    driven!(fde_split_hand_driven, fde_split);
+
+    #[test]
+    fn fde_split_matches() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = unwind_machine(c, seed, 0x4149);
+            // FDE table: entry count 0..4 (0 takes the empty-table arm);
+            // rows point at scratch FDEs. Row starts steer overlap:
+            // ascending (no overlap), a row-1 dip (overlapping pair,
+            // multi-iteration inner loop), a row-1 touch (equal starts,
+            // V0 == 0), a deep row-3 dip (non-sentinel inner latch), and
+            // a row-2 dip with a negative or equal
+            // current-vs-predecessor difference. The out descriptor has
+            // a real prefilled base; its index starts at 0 or 1.
+            let n = (seed / 5) % 5;
+            c.bus.write32(DATA + 0x400, DATA + 0x500);
+            c.bus.write32(DATA + 0x404, n);
+            for i in 0..4u32 {
+                let e = DATA + 0x600 + i * 16;
+                let start = match (seed % 5, i) {
+                    (0, _) => 0x1000 * (i + 1),
+                    (1, 1) => 0x800,
+                    (1, _) => 0x1000 * (i + 1),
+                    (2, 1) => 0x1000,
+                    (2, _) => 0x1000 * (i + 1),
+                    (3, 3) => 0x500,
+                    (3, _) => 0x1000 * (i + 1),
+                    (_, 2) => {
+                        if (seed / 5) % 2 == 0 {
+                            0x500
+                        } else {
+                            0x1000
+                        }
+                    }
+                    (_, _) => 0x1000 * (i + 1),
+                };
+                c.bus.write32(e, if i < n { 0x10 } else { 0 });
+                c.bus
+                    .write32(e + 4, if i < n { 1 + (seed + i) % 3 } else { 0 });
+                c.bus.write32(e + 8, if i < n { start } else { 0 });
+                c.bus.write32(e + 0xc, (seed * 37 + i * 11 + 1) % 0x100);
+                c.bus.write32(DATA + 0x500 + i * 4, e);
+            }
+            c.bus.write32(DATA + 0x700, DATA + 0x900);
+            c.bus.write32(DATA + 0x704, seed % 2);
+            for i in 0..0x40u32 {
+                c.bus.write32(DATA + 0x900 + i * 4, 0x5a5a_5a5a);
+            }
+            c.g[A0][0] = (DATA + 0x400) as u64;
+            c.g[A1][0] = (DATA + 0x700) as u64;
+            let mode = schedule(c, &mut r, seed, 0x0041_49f0);
+            // Deliver-only (same harness reason as ds_timetosecs).
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 1 << 40;
+            mode
+        };
+        check_paths(
+            ee::s15::f_004149f0__generated,
+            fde_split,
+            SEEDS_2,
+            &[53, 85, 117],
+            &|c, seed| {
+                setup(c, seed);
+            },
+        );
+        check_events(fde_split_gen_driven, fde_split_hand_driven, SEEDS_2, &setup);
+        // First-event placement per head: log every delivered event's
+        // head through the same fixture on both sides with identical
+        // logs, and require the outer (0x4a40) head to fire at least
+        // once. (Structured loops never unwind, so placement — not
+        // resumes — is the per-head evidence here; the inner head is
+        // pinned by the focused run below.)
+        let mut outer = false;
+        for seed in 0..SEEDS_2 {
+            let mut a = crate::difftest::fresh();
+            setup(&mut a, seed);
+            a.hooks.event = record_event_pc;
+            crate::difftest::run_generated(&mut a, ee::s15::f_004149f0__generated);
+            let mut b = crate::difftest::fresh();
+            setup(&mut b, seed);
+            b.hooks.event = record_event_pc;
+            crate::difftest::run_generated(&mut b, fde_split);
+            let n = a.bus.read32(FDE_EVENT_COUNT);
+            assert_eq!(
+                n,
+                b.bus.read32(FDE_EVENT_COUNT),
+                "seed {seed}: event count differs"
+            );
+            for i in 0..n.min(16) {
+                let (pa, pb) = (
+                    a.bus.read32(FDE_EVENT_PCS + i * 4),
+                    b.bus.read32(FDE_EVENT_PCS + i * 4),
+                );
+                assert_eq!(pa, pb, "seed {seed} event {i}: head differs");
+                if pa == 0x0041_4a40 {
+                    outer = true;
+                }
+            }
+        }
+        assert!(outer, "no event fired at the outer head 0x414a40");
+        // Inner-head placement: the deep row-3 dip (seed 23) spans a
+        // multi-iteration inner trip after the outer edges have passed,
+        // so an explicit deadline inside that window fires at the inner
+        // head on both sides with identical logs.
+        {
+            let mut inner = false;
+            for (f, tag) in [
+                (ee::s15::f_004149f0__generated as fn(&mut Cpu), "gen"),
+                (fde_split as fn(&mut Cpu), "hand"),
+            ] {
+                let mut c = crate::difftest::fresh();
+                setup(&mut c, 23);
+                c.hooks.event = record_event_pc;
+                c.cycles = 1000;
+                c.next_event = c.cycles + 110;
+                crate::difftest::run_generated(&mut c, f);
+                let n = c.bus.read32(FDE_EVENT_COUNT);
+                assert_eq!(n, 1, "{tag}: expected exactly one event");
+                let head = c.bus.read32(FDE_EVENT_PCS);
+                assert_eq!(
+                    head, 0x0041_4a80,
+                    "{tag}: expected the inner head 0x414a80, got {head:#x}"
+                );
+                inner = true;
+            }
+            assert!(inner, "no event fired at the inner head 0x414a80");
+        }
+    }
+
+    /// Event-PC log for the head-placement run below (count + heads).
+    pub(crate) const FDE_EVENT_COUNT: u32 = DATA + 0x2000;
+
+    pub(crate) const FDE_EVENT_PCS: u32 = DATA + 0x2004;
+
+    /// Test event hook: log the head `pc` of every delivered event (up
+    /// to 16), then run the machine's real event path with the same
+    /// cycle budget as the default test hook.
+    pub(crate) fn record_event_pc(c: &mut Cpu) -> bool {
+        let n = c.bus.read32(FDE_EVENT_COUNT);
+        if n < 16 {
+            c.bus.write32(FDE_EVENT_PCS + n * 4, c.pc);
+            c.bus.write32(FDE_EVENT_COUNT, n + 1);
+        }
+        if c.cycles >= crate::difftest::CYCLE_BUDGET {
+            panic!(
+                "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+                c.cycles, c.pc
+            );
+        }
+        (ssx3_ps2::platform::HOOKS.event)(c)
+    }
+
+    driven!(find_fde_gen_driven, ee::s15::f_00414148__generated);
+
+    driven!(find_fde_hand_driven, find_fde);
+
+    /// Frame-registry head the unwinder walks (real game address, in RAM).
+    pub(crate) const REG_HEAD: u32 = 0x0052_ade8;
+
+    /// Registry objects: low, high, fde array, table, count, next.
+    pub(crate) const OBJ0: u32 = DATA + 0x600;
+
+    /// Registry/table/chain writes for `setup_paths` (pure in the seed:
+    /// running it twice restores the pristine state).
+    fn build_registry(c: &mut Cpu, seed: u32) -> u32 {
+        // Up to two objects with sorted non-overlapping rows; row
+        // starts stay inside [low, high). Seeds looking up pc == low
+        // (seed % 8 == 6, always single-object) find the first object
+        // with zero FDEs (the empty-table arm).
+        let n_objs = 1 + (seed % 2);
+        for i in 0..2u32 {
+            let obj = OBJ0 + i * 0x40;
+            let low = 0x1_0000 * (i + 1);
+            let count = if seed % 8 == 6 && i == 0 {
+                0
+            } else {
+                1 + ((seed + i) % 3)
+            };
+            let tbl = DATA + 0x700 + i * 0x40;
+            for j in 0..4u32 {
+                let row = DATA + 0x800 + (i * 4 + j) * 0x10;
+                let on = i < n_objs && j < count;
+                let start = low + 0x100 + j * 0x200;
+                c.bus.write32(row + 8, if on { start } else { 0 });
+                c.bus.write32(row + 0xc, if on { 0x80 } else { 0 });
+                c.bus.write32(tbl + j * 4, if on { row } else { 0 });
+            }
+            c.bus.write32(obj, low);
+            c.bus.write32(obj + 4, low + 0x1000);
+            c.bus.write32(obj + 8, 0);
+            c.bus.write32(obj + 0xc, tbl);
+            c.bus.write32(obj + 0x10, count);
+            c.bus
+                .write32(obj + 0x14, if i + 1 < n_objs { obj + 0x40 } else { 0 });
+        }
+        // Seed 0 mod 7: empty registry (immediate null return).
+        // Seed 6 mod 7: first object uninitialized (frame_init path,
+        // with one valid chain node so init succeeds; odd quarters keep
+        // the table word set so the counting loop runs too).
+        if seed % 7 == 0 {
+            c.bus.write32(REG_HEAD, 0);
+        } else {
+            c.bus.write32(REG_HEAD, OBJ0);
+        }
+        if seed % 7 == 6 {
+            c.bus.write32(OBJ0, 0);
+            // One valid chain node (length 8, count/valid nonzero) plus
+            // the zero terminator, so frame_init succeeds.
+            c.bus.write32(DATA + 0x900, 8);
+            c.bus.write32(DATA + 0x904, 1);
+            c.bus.write32(DATA + 0x908, 1);
+            c.bus.write32(DATA + 0x90c, 0);
+            c.bus.write32(DATA + 0x910, DATA + 0x900);
+            c.bus.write32(DATA + 0x914, 0);
+            c.bus.write32(OBJ0 + 8, DATA + 0x900);
+            if (seed / 7) % 2 == 0 {
+                c.bus.write32(OBJ0 + 0xc, 0);
+            } else {
+                c.bus.write32(OBJ0 + 0xc, DATA + 0x910);
+            }
+        }
+        n_objs
+    }
+
+    fn setup_paths(c: &mut Cpu, seed: u32) -> Rng {
+        let r = unwind_machine(c, seed, 0x4148);
+        let n_objs = build_registry(c, seed);
+        // Looked-up pc: below all, row starts, row interiors, the
+        // high edge, the last row start, past the end, an exact low
+        // (enters the search), and a gap address (binary search runs
+        // dry). Two-object seeds steer at the second object, so the
+        // scan walks further. Init seeds look up the initialized low
+        // so the post-init compare is exact.
+        let low0 = 0x1_0000u32;
+        let low = if n_objs == 2 && matches!(seed % 8, 1 | 2 | 4) {
+            0x2_0000u32
+        } else {
+            low0
+        };
+        let count = if low == low0 {
+            1 + (seed % 3)
+        } else {
+            1 + ((seed + 1) % 3)
+        };
+        let mut pc = match seed % 8 {
+            0 => low0 - 4,
+            1 => low + 0x100,
+            2 => low + 0x110,
+            3 => low0 + 0x1000,
+            4 if count > 1 => low + 0x100 + 0x200,
+            4 => low + 0x180,
+            5 => low0 + 0x2000,
+            6 => low,
+            _ => low + 0x50,
+        };
+        if seed % 7 == 6 {
+            // Frame_init mutates the object while learning the low, so
+            // prime once to learn it, then rebuild pristine: the test
+            // itself runs the init path and lands on pc == low.
+            c.g[A0][0] = OBJ0 as u64;
+            c.pc = 0x0041_4008;
+            ee::s15::frame_init(c);
+            pc = c.bus.read32(OBJ0);
+            build_registry(c, seed);
+        }
+        c.g[A0][0] = pc as u64;
+        c.pc = 0x0041_4148;
+        r
+    }
+
+    #[test]
+    fn find_fde_matches() {
+        check_paths(
+            ee::s15::f_00414148__generated,
+            find_fde,
+            SEEDS_2,
+            &[15, 22, 33, 45, 58, 835, 851],
+            &|c, seed| {
+                setup_paths(c, seed);
+            },
+        );
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = setup_paths(c, seed);
+            schedule(c, &mut r, seed, 0x0041_4148)
+        };
+        check_events(find_fde_gen_driven, find_fde_hand_driven, SEEDS_2, &setup);
+    }
+
+    /// Find-FDE scan driven run: look up an address below every object
+    /// so the scan walks the whole two-object registry with a
+    /// frame-ready event due inside it, driven through the unwind and
+    /// re-entered at the scan head (counted 0x4168 resume).
+    #[test]
+    fn find_fde_scan_driven_matches() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let _ = unwind_machine(c, seed, 0x4148);
+            // Two-object registry, lookup below all lows: the scan
+            // advances twice (counted resume on the second edge).
+            build_registry(c, 1);
+            let saved = (c.g[A0], c.g[A1], c.g[31]);
+            ssx3_ps2::kernel::start_main_thread(c, 0x0041_4148, 0, 0);
+            (c.g[A0], c.g[A1], c.g[31]) = saved;
+            c.g[A0][0] = 0x5000;
+            c.pc = 0x0041_4148;
+            c.cycles = 1000;
+            c.next_event = c.cycles + 15;
+            Events::Unwind
+        };
+        check_events(find_fde_gen_driven, find_fde_hand_driven, 8, &setup);
+        // Pin the resume itself: every seed must re-enter at the scan
+        // head 0x4168 on both sides with identical per-seed sequences.
+        for seed in 0..8 {
+            let mut g = crate::difftest::fresh();
+            setup(&mut g, seed);
+            let mut h = crate::difftest::fresh();
+            setup(&mut h, seed);
+            let (gen_heads, hand_heads) = (
+                crate::game::misc::tests::drive_resumes(&mut g, ee::s15::f_00414148__generated),
+                crate::game::misc::tests::drive_resumes(&mut h, find_fde),
+            );
+            assert_eq!(
+                gen_heads, hand_heads,
+                "seed {seed}: resume sequences differ"
+            );
+            assert!(
+                hand_heads.contains(&0x0041_4168),
+                "seed {seed}: no resume at the scan head 0x4168 ({hand_heads:x?})"
+            );
+        }
+    }
+
+    /// Find-FDE resume heads: re-enter the scan and the binary search
+    /// mid-walk with a crafted mid-search state (direct entry; the
+    /// counted scan unwind lands in the driven test above).
+    #[test]
+    fn find_fde_resume_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let _ = setup_paths(c, seed);
+            // Reuse the registry the fixture built; the table is small
+            // and sorted, so every head below terminates.
+            let obj = OBJ0;
+            let tbl = c.bus.read32(obj + 0xc);
+            let count = c.bus.read32(obj + 0x10);
+            let row0 = c.bus.read32(tbl);
+            let start0 = c.bus.read32(row0 + 8);
+            match seed % 3 {
+                // Scan head mid-registry.
+                0 => {
+                    c.g[S0][0] = obj as u64;
+                    c.g[S1][0] = (start0 + 0x10) as u64;
+                    c.pc = 0x0041_4168;
+                }
+                // Binary search mid-point: T0 = lo, A3 = count.
+                1 => {
+                    c.g[T0][0] = 0;
+                    c.g[A3][0] = count as u64;
+                    c.g[A0][0] = tbl as u64;
+                    c.g[S0][0] = obj as u64;
+                    c.g[S1][0] = (start0 + 0x10) as u64;
+                    c.g[V0][0] = count as u64;
+                    c.pc = 0x0041_41d0;
+                }
+                // Found row: V1 points at it.
+                _ => {
+                    c.g[V1][0] = row0 as u64;
+                    c.g[S0][0] = obj as u64;
+                    c.g[S1][0] = (start0 + 0x10) as u64;
+                    c.pc = 0x0041_41b4;
+                }
+            }
+        };
+        check(ee::s15::f_00414148__generated, find_fde, SEEDS_2, &setup);
+    }
+
+    /// Gate word arming the `exit`/`set_terminate` callee fakes below.
+    pub(crate) const EXIT_GATE: u32 = DATA + 0x5050;
+
+    pub(crate) const EXIT_MAGIC: u32 = 0x474c_5545;
+
+    /// Gated `__do_global_dtors` (slot 0x40fb88): return at once when the
+    /// exit fixture arms the gate, else run the installed body.
+    pub(crate) fn exit_fake_dtors(c: &mut Cpu) {
+        if c.bus.read32(EXIT_GATE) != EXIT_MAGIC {
+            return fall_back(c, prev_cell(exit_fake_dtors), ee::s15::__do_global_dtors);
+        }
+        c.cycles += 3;
+        crate::abi::ret(c);
+    }
+
+    /// Gated `_cleanup` (slot 0x416fe0): return at once when armed.
+    pub(crate) fn exit_fake_cleanup(c: &mut Cpu) {
+        if c.bus.read32(EXIT_GATE) != EXIT_MAGIC {
+            return fall_back(c, prev_cell(exit_fake_cleanup), ee::s15::_cleanup);
+        }
+        c.cycles += 3;
+        crate::abi::ret(c);
+    }
+
+    /// Gated `terminate` (slot 0x412800): return at once when armed (the
+    /// real one re-enters `set_terminate` through the handler, which has
+    /// no bottom on a test machine).
+    pub(crate) fn exit_fake_terminate(c: &mut Cpu) {
+        if c.bus.read32(EXIT_GATE) != EXIT_MAGIC {
+            return fall_back(c, prev_cell(exit_fake_terminate), ee::s15::terminate);
+        }
+        c.cycles += 3;
+        crate::abi::ret(c);
+    }
+
+    /// Hook the three fakes (once per process; the gate word stays
+    /// per-Cpu, so unarmed tests still run the installed bodies).
+    #[allow(unused_unsafe)]
+    pub(crate) fn exit_install_fakes() {
+        unsafe {
+            hook(
+                std::ptr::addr_of_mut!(ee::s15::OVERRIDE_0040FB88),
+                exit_fake_dtors,
+                prev_cell(exit_fake_dtors),
+            );
+            hook(
+                std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00416FE0),
+                exit_fake_cleanup,
+                prev_cell(exit_fake_cleanup),
+            );
+            hook(
+                std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00412800),
+                exit_fake_terminate,
+                prev_cell(exit_fake_terminate),
+            );
+        }
+    }
+
+    /// Arm the gate on this machine.
+    pub(crate) fn exit_arm_fakes(c: &mut Cpu) {
+        exit_install_fakes();
+        c.bus.write32(EXIT_GATE, EXIT_MAGIC);
+    }
+
+    #[test]
+    fn set_terminate_matches() {
+        check(
+            ee::s15::f_00412818__generated,
+            set_terminate,
+            SEEDS_9,
+            &|c, seed| {
+                glue_machine(c, seed, 0);
+                let mut r = Rng(0x2818 ^ seed as u64);
+                c.g[A0][0] = (DATA + (r.next_u32() % 0x1000)) as u64;
+                c.pc = 0x0041_2818;
+                exit_arm_fakes(c);
+            },
+        );
+    }
+
+    #[test]
+    fn set_terminate_resume_matches() {
+        check(
+            ee::s15::f_00412818__generated,
+            set_terminate,
+            SEEDS_9,
+            &|c, seed| {
+                glue_machine(c, seed, 0);
+                let mut r = Rng(0x2828 ^ seed as u64);
+                c.g[A0][0] = (DATA + (r.next_u32() % 0x1000)) as u64;
+                c.g[RA][0] = 0x0012_3450 + seed as u64;
+                c.pc = 0x0041_2828;
+                exit_arm_fakes(c);
+            },
+        );
+    }
+
+    /// Seeds for the RTTI fixtures.
+    pub(crate) const SEEDS_10: u32 = 64;
+
+    /// Fixture base: scrambled machine; `a0`/`a1` from independent digits.
+    pub(crate) fn rtti_machine(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = machine(c, seed, 0x4343, 0);
+        c.g[A0][0] = (crate::difftest::DATA + 0x400 + (r.next_u32() % 0x100)) as u64;
+        c.g[A1][0] = (r.next_u32() % 4) as u64;
+        // Non-zero high halves (checklist (a)): slot-vs-neighbor slips show.
+        c.g[A0][1] = 0x5a5a_5a5a;
+        r
+    }
+
+    #[test]
+    fn bad_typeid_dtor_matches() {
+        check_paths(
+            ee::s15::f_00415088__generated,
+            bad_typeid_dtor,
+            SEEDS_10,
+            &[10, 156, 159, 168],
+            &|c, seed| {
+                rtti_machine(c, seed);
+                c.g[A0][0] = heap_obj(c) as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn bad_cast_dtor_matches() {
+        check_paths(
+            ee::s15::f_00415120__generated,
+            bad_cast_dtor,
+            SEEDS_10,
+            &[10, 156, 159, 168],
+            &|c, seed| {
+                rtti_machine(c, seed);
+                c.g[A0][0] = heap_obj(c) as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn bad_typeid_ctor_matches() {
+        check_paths(
+            ee::s15::f_004150b8__generated,
+            bad_typeid_ctor,
+            SEEDS_10,
+            &[5],
+            &|c, seed| {
+                rtti_machine(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn bad_cast_ctor_matches() {
+        check_paths(
+            ee::s15::f_00415150__generated,
+            bad_cast_ctor,
+            SEEDS_10,
+            &[5],
+            &|c, seed| {
+                rtti_machine(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn tfq24rcmp5codec_matches() {
+        check_paths(
+            ee::s15::f_0042e2b0__generated,
+            tfq24rcmp5codec,
+            SEEDS_10,
+            &[12, 23],
+            &|c, seed| {
+                rtti_machine(c, seed);
+                // Registry slot installed on even seeds (skip the build).
+                c.bus.write32(0x004a_5ba0, (seed % 2) as u32);
+            },
+        );
+    }
+
+    #[test]
+    fn tfq24rcmp7decoder_matches() {
+        check_paths(
+            ee::s15::f_0042e458__generated,
+            tfq24rcmp7decoder,
+            SEEDS_10,
+            &[12, 23],
+            &|c, seed| {
+                rtti_machine(c, seed);
+                c.bus.write32(0x004a_5b90, (seed % 2) as u32);
+            },
+        );
+    }
+
+    #[test]
+    fn tfq24rcmp11rcmp_system_matches() {
+        check_paths(
+            ee::s15::f_0042e4c8__generated,
+            tfq24rcmp11rcmp_system,
+            SEEDS_10,
+            &[12, 23],
+            &|c, seed| {
+                rtti_machine(c, seed);
+                c.bus.write32(0x004a_5b98, (seed % 2) as u32);
+            },
+        );
+    }
+
+    #[test]
+    fn tf23ps2_sony_codec_internal_matches() {
+        check_paths(
+            ee::s15::f_0042e200__generated,
+            tf23ps2_sony_codec_internal,
+            SEEDS_10,
+            &[17, 34, 45],
+            &|c, seed| {
+                rtti_machine(c, seed);
+                // Top slot installed every fourth seed (skip everything);
+                // the user slot installed on the next (skip the user
+                // build); both clear runs the full build.
+                c.bus.write32(0x0053_ea00, (seed % 4 == 0) as u32);
+                c.bus.write32(0x004a_5ba0, (seed % 4 == 1) as u32);
+            },
+        );
+    }
+
+    /// Gate word arming the `__rtti_user` upper-half probe below.
+    pub(crate) const RTTI_GATE: u32 = DATA + 0x5070;
+
+    pub(crate) const RTTI_MAGIC: u32 = 0x5254_4955;
+
+    /// Gated `__rtti_user` probe (slot 0x414c20): with the gate armed,
+    /// run the generated body (installing the record for real), then
+    /// clobber the S0 upper half a 64-bit restore would drop. With the
+    /// gate off, run the previously installed body.
+    pub(crate) fn fake_rtti_user_upper(c: &mut Cpu) {
+        if c.bus.read32(RTTI_GATE) != RTTI_MAGIC {
+            return fall_back(c, prev_cell(fake_rtti_user_upper), ee::s15::__rtti_user);
+        }
+        ee::s15::f_00414c20__generated(c);
+        c.g[S0][1] = 0xCA1F_0000_DEAD_BEEF;
+    }
+
+    /// Hook the probe once and arm the gate on this machine.
+    pub(crate) fn arm_rtti_user_upper(c: &mut Cpu) {
+        hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00414C20),
+            fake_rtti_user_upper,
+            prev_cell(fake_rtti_user_upper),
+        );
+        c.bus.write32(RTTI_GATE, RTTI_MAGIC);
+    }
+
+    /// Saved-register upper halves (M1): the four RTTI getters must
+    /// restore the full 128-bit callee-saved registers. The SYSTEM and
+    /// Sony fixtures place the save slot over the type-info record the
+    /// real callee fills, with a nonzero seeded upper half; the CODEC
+    /// and DECODER fixtures run the real install through a gated probe
+    /// that then clobbers the S0 upper half. A 64-bit restore keeps the
+    /// clobbered half and visibly differs from the generated `lq`.
+    #[test]
+    fn tf_saved_upper_halves_matches() {
+        // CODEC through the clobbering probe (slot clear: build runs).
+        check(
+            ee::s15::f_0042e2b0__generated,
+            tfq24rcmp5codec,
+            4,
+            &|c, _seed| {
+                let _ = machine(c, 0x4343, 0xe2b0, 0);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[S0][0] = 0x1234_5678;
+                c.g[S0][1] = 0x9abc_def0_1357_2468;
+                c.bus.write32(0x004a_5ba0, 0);
+                arm_rtti_user_upper(c);
+            },
+        );
+        // DECODER through the same probe.
+        check(
+            ee::s15::f_0042e458__generated,
+            tfq24rcmp7decoder,
+            4,
+            &|c, _seed| {
+                let _ = machine(c, 0x4343, 0xe458, 0);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[S0][0] = 0x1234_5678;
+                c.g[S0][1] = 0x9abc_def0_1357_2468;
+                c.bus.write32(0x004a_5b90, 0);
+                arm_rtti_user_upper(c);
+            },
+        );
+        // RCMP_SYSTEM with the save slot over its own record: entry SP
+        // 0x4a5ba0 puts saved S0.high on the slot the real
+        // `__rtti_user` fills; its low word reads 0 so the build runs.
+        check(
+            ee::s15::f_0042e4c8__generated,
+            tfq24rcmp11rcmp_system,
+            4,
+            &|c, _seed| {
+                let _ = machine(c, 0x4343, 0xe4c8, 0);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[SP][0] = 0x004a_5ba0;
+                c.g[S0][0] = 0x1234_5678;
+                c.g[S0][1] = 0xdead_0000_0000_0000;
+            },
+        );
+        // Sony with the S2 save slot over its type-info record: entry
+        // SP 0x53ea30, seeded S2 low 0 (build runs) and a nonzero high
+        // half the real `__rtti_si` record write visibly changes.
+        check(
+            ee::s15::f_0042e200__generated,
+            tf23ps2_sony_codec_internal,
+            4,
+            &|c, _seed| {
+                let _ = machine(c, 0x4343, 0xe200, 0);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[SP][0] = 0x0053_ea30;
+                c.g[S2][0] = 0;
+                c.g[S2][1] = 0xbeef_0000_0000_0000;
+                c.g[S0][1] = 0x5a5a_5a5a_5a5a_5a5a;
+                c.g[S1][1] = 0xa5a5_a5a5_a5a5_a5a5;
+            },
         );
     }
 }

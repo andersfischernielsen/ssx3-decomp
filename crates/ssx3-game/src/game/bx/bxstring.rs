@@ -6,7 +6,10 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::be::gp as gp_3;
@@ -151,6 +154,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_94a8, cbx_string_format, "cBXString_Format"),
     (0x0031_94f0, cbx_string_trim_right, "cBXString_TrimRight"),
     (0x0031_9578, cbx_string_trim_left, "cBXString_TrimLeft"),
+    (0x0031_91c0, cbx_string_format_v, "cBXString_FormatV"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -259,6 +263,10 @@ pub(crate) mod callee {
         addr: 0x0041_ad80,
         f: ee::s15::strstr,
     };
+    pub(crate) use crate::game::fe::feasyncfile::callee::VSPRINTF;
+    pub(crate) use crate::game::misc::callee::CBX_STRING_RELEASE_BUFFER;
+
+    pub(crate) use crate::game::misc::callee::STRTOL;
 }
 
 // ---------------------------------------------------------------------------
@@ -2231,6 +2239,558 @@ pub fn cbx_string_trim_left(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// cBXString_FormatV.
+
+/// Format-specifier classes of the first jump table (base 0x48d860, indexed
+/// by the character minus `'F'`): only the length modifiers skip to the next
+/// character, everything else enters the `c`/`C`/`s`/`S` chain.
+pub(crate) fn format_v_table1_skip(spec: u32) -> bool {
+    matches!(spec, 0 | 6 | 8 | 0x22 | 0x26)
+}
+
+/// Format-specifier classes of the second jump table (base 0x48d900, indexed
+/// by the character minus `'G'`): float (`e`/`f`/`g`/`G`), integer
+/// (`d`/`i`/`u`/`x`/`X`/`o`/`p`), count (`n`), or nothing.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum FormatVItem {
+    Float,
+    Int,
+    Count,
+    None,
+}
+
+pub(crate) fn format_v_table2_class(spec: u32) -> FormatVItem {
+    match spec {
+        0 | 30 | 31 | 32 => FormatVItem::Float,
+        17 | 29 | 34 | 40 | 41 | 46 | 49 => FormatVItem::Int,
+        39 => FormatVItem::Count,
+        _ => FormatVItem::None,
+    }
+}
+
+/// `void cBXString_FormatV(cBXString* self, const char* fmt, va_list ap)`
+/// (0x3191c0): scan `fmt`, sizing the result (`maxLen`, grown per conversion
+/// and flag), then `vsprintf` into a buffer of that size. The two jump
+/// tables above dispatch the conversion characters; length modifiers
+/// (`h`/`l`/`F`/`N`/`L`) only skip a character. `'*'` takes the width (or
+/// precision) from the argument list, digits from the format otherwise.
+pub fn cbx_string_format_v(c: &mut Cpu) {
+    guest(c, |c| {
+        const ENTRY: u32 = 0x0031_91c0;
+        const SCAN_HEAD: u32 = 0x0031_9210;
+        const FLAG_HEAD: u32 = 0x0031_9258;
+        const END: u32 = 0x0031_94a8;
+        const FRAME: u32 = 0xa0;
+        // The frame stays open across unwinds, so the resume heads reuse it
+        // instead of opening it again; the loop state lives in the registers
+        // (S0/S1/S4) and the open frame.
+        let frame = Frame { size: FRAME };
+        match c.pc {
+            ENTRY => {
+                c.cycles += 18;
+                Frame::open(c, FRAME);
+                frame.save(c, S0, 0x90);
+                frame.save(c, S1, 0x80);
+                frame.save(c, S4, 0x50);
+                frame.save(c, S5, 0x40);
+                frame.save(c, S6, 0x30);
+                frame.save(c, S7, 0x20);
+                frame.save(c, S2, 0x70);
+                frame.save(c, S3, 0x60);
+                c.g[S4][0] = 0x1;
+                c.g[S5][0] = c.g[A0][0];
+                c.g[S6][0] = c.g[A1][0];
+                c.g[S7][0] = c.g[A2][0];
+                c.g[S1][0] = c.g[S7][0];
+                frame.save_ra(c, 0x10);
+                c.g[V0][0] = Addr(r32(c, S6)).lb(c);
+                let empty = c.g[V0][0] == 0;
+                c.g[S0][0] = c.g[S6][0];
+                if !empty {
+                    // 0x319208 runs once on entry: its only incoming edge is
+                    // the entry fall-through, and every loop-back re-enters
+                    // at 0x319210.
+                    c.cycles += 2;
+                    c.g[V1][0] = Addr(r32(c, S0)).lb(c);
+                    format_v_scan(c)?;
+                }
+                format_v_tail(c, &frame)
+            }
+            // 0x319210 resume: re-executes the +3 head test; V1 already holds
+            // [S0], loaded (chargeless) by the back edge before the unwind.
+            SCAN_HEAD => {
+                format_v_scan(c)?;
+                format_v_tail(c, &frame)
+            }
+            // 0x319258 resume: re-executes the flag test with the flag-run
+            // registers intact, then rejoins the scan loop at its back edge.
+            FLAG_HEAD => {
+                format_v_flags(c)?;
+                format_v_conversion(c)?;
+                if !format_v_scan_back_edge(c)? {
+                    format_v_scan(c)?;
+                }
+                format_v_tail(c, &frame)
+            }
+            pc => {
+                c.jump_out(pc, ENTRY, END);
+                Ok(())
+            }
+        }
+    })
+}
+
+/// The scan loop of [`cbx_string_format_v`] from the +3 head test (0x319210,
+/// post-hoist shape): V1 already holds `[S0]` on entry. Each iteration
+/// dispatches one plain character or conversion; the back edge advances and
+/// either exits or unwinds at the scan head.
+pub(crate) fn format_v_scan(c: &mut Cpu) -> Flow {
+    loop {
+        // 0x319210: plain character or conversion.
+        c.cycles += 3;
+        c.g[V0][0] = 0x25;
+        let plain = c.g[V1][0] != c.g[V0][0];
+        if plain {
+            c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+        } else {
+            // 0x31921c: after '%': Verbatim '%' or a conversion.
+            c.cycles += 4;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+            c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+            let escaped = c.g[V0][0] != c.g[V1][0];
+            c.g[S3][0] = 0;
+            if !escaped {
+                // 0x31922c: '%%'.
+                c.cycles += 2;
+                c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+            } else {
+                // 0x319234: a conversion starts a flag run.
+                c.cycles += 2;
+                let end = c.g[V0][0] == 0;
+                c.g[A0][0] = 0;
+                if end {
+                    format_v_conversion(c)?;
+                } else {
+                    // 0x31923c: flag characters.
+                    c.cycles += 7;
+                    c.g[T1][0] = 0x23;
+                    c.g[T0][0] = 0x2a;
+                    c.g[A3][0] = 0x2d;
+                    c.g[A2][0] = 0x2b;
+                    c.g[A1][0] = 0x30;
+                    c.g[V1][0] = 0x20;
+                    c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+                    format_v_flags(c)?;
+                    format_v_conversion(c)?;
+                }
+            }
+        }
+        // 0x319444: scan-loop back edge.
+        if format_v_scan_back_edge(c)? {
+            return Ok(());
+        }
+    }
+}
+
+/// The scan-loop back edge of [`cbx_string_format_v`] (0x319444): advance
+/// S0, reload V0 (and V1 when continuing, chargeless, as the generated
+/// block does). Returns true on NUL (scan done); otherwise unwinds at the
+/// scan head (0x319210) when an event asks for it.
+pub(crate) fn format_v_scan_back_edge(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 4;
+    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+    c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+    if c.g[V0][0] == 0 {
+        return Ok(true);
+    }
+    c.g[V1][0] = Addr(r32(c, S0)).lb(c);
+    if back_edge_unwinds(c, 0x0031_9210) {
+        return Err(Unwound);
+    }
+    Ok(false)
+}
+
+/// The size/format/release tail of [`cbx_string_format_v`] (0x319454):
+/// size the result, `vsprintf` into it, release the buffer, restore and
+/// close the frame.
+pub(crate) fn format_v_tail(c: &mut Cpu, frame: &Frame) -> Flow {
+    const GET_BUFFER_RET: u32 = 0x0031_9460;
+    const VSPRINTF_RET: u32 = 0x0031_9470;
+    const RELEASE_BUFFER_RET: u32 = 0x0031_947c;
+    // 0x319454: size, format, release.
+    c.cycles += 21;
+    c.g[A1][0] = c.g[S4][0];
+    c.g[RA][0] = sx(GET_BUFFER_RET);
+    c.g[A0][0] = c.g[S5][0];
+    callee::CBX_STRING_GET_BUFFER.call(c, GET_BUFFER_RET)?;
+    c.g[A0][0] = Addr(r32(c, S5)).lw(c);
+    c.g[A1][0] = c.g[S6][0];
+    c.g[RA][0] = sx(VSPRINTF_RET);
+    c.g[A2][0] = c.g[S7][0];
+    call_ptr(c, callee::VSPRINTF, VSPRINTF_RET)?;
+    c.g[A0][0] = c.g[S5][0];
+    c.g[RA][0] = sx(RELEASE_BUFFER_RET);
+    c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+    callee::CBX_STRING_RELEASE_BUFFER.call(c, RELEASE_BUFFER_RET)?;
+    frame.restore(c, S0, 0x90);
+    frame.restore(c, S1, 0x80);
+    frame.restore(c, S2, 0x70);
+    frame.restore(c, S3, 0x60);
+    frame.restore(c, S4, 0x50);
+    frame.restore(c, S5, 0x40);
+    frame.restore(c, S6, 0x30);
+    frame.restore(c, S7, 0x20);
+    frame.restore_ra(c, 0x10);
+    frame.close(c);
+    Ok(())
+}
+
+/// The flag run of [`cbx_string_format_v`] from the flag test (0x319258):
+/// the 0x31923c setup left the flag characters in T1/T0/A3/A2/A1/V1 and the
+/// current character in V0. `'#'` and `'*'` advance through 0x3192a0; the
+/// `'-'`/`'+'`/`'0'` arms advance inline (as 0x3192a4 does) and rejoin at
+/// the flag test. Breaks with V0 holding the first non-flag character. Like
+/// the generated 0x3192a4, unwinds at the flag head (0x319258).
+pub(crate) fn format_v_flags(c: &mut Cpu) -> Flow {
+    'flags: loop {
+        // 0x319258.
+        c.cycles += 2;
+        let not_hash = c.g[V0][0] != c.g[T1][0];
+        if !not_hash {
+            // 0x319260: '#'.
+            c.cycles += 2;
+            c.g[S4][0] = sx(r32(c, S4).wrapping_add(2));
+        } else {
+            // 0x319268.
+            c.cycles += 2;
+            let not_star = c.g[V0][0] != c.g[T0][0];
+            if !not_star {
+                // 0x319270: '*' takes the width.
+                c.cycles += 4;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(8));
+                c.g[A0][0] = 0x1;
+                c.g[S3][0] = Addr(r32(c, S1).wrapping_sub(8)).lw(c);
+            } else {
+                // 0x319280: '-'. The generated arm advances
+                // `S0` itself and rejoins at `0x3192a4`,
+                // skipping the `0x3192a0` (`+1`, `S0+=1`)
+                // that only `'#'`, `'*'` and `' '` take.
+                c.cycles += 2;
+                if c.g[V0][0] == c.g[A3][0] {
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+                    if c.g[V0][0] == 0 {
+                        break 'flags;
+                    }
+                    if back_edge_unwinds(c, 0x0031_9258) {
+                        return Err(Unwound);
+                    }
+                    continue 'flags;
+                } else {
+                    // 0x319288: '+' (same shape as '-').
+                    c.cycles += 2;
+                    if c.g[V0][0] == c.g[A2][0] {
+                        c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+                        if c.g[V0][0] == 0 {
+                            break 'flags;
+                        }
+                        if back_edge_unwinds(c, 0x0031_9258) {
+                            return Err(Unwound);
+                        }
+                        continue 'flags;
+                    } else {
+                        // 0x319290: '0' (same shape).
+                        c.cycles += 2;
+                        if c.g[V0][0] == c.g[A1][0] {
+                            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                            c.cycles += 3;
+                            c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+                            if c.g[V0][0] == 0 {
+                                break 'flags;
+                            }
+                            if back_edge_unwinds(c, 0x0031_9258) {
+                                return Err(Unwound);
+                            }
+                            continue 'flags;
+                        } else {
+                            // 0x319298.
+                            c.cycles += 2;
+                            let other = c.g[V0][0] != c.g[V1][0];
+                            if other {
+                                break 'flags;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // 0x3192a0.
+        c.cycles += 1;
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+        // 0x3192a4: flag-run back edge.
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+        if c.g[V0][0] == 0 {
+            break 'flags;
+        }
+        if back_edge_unwinds(c, 0x0031_9258) {
+            return Err(Unwound);
+        }
+    }
+    Ok(())
+}
+
+/// The `%`-conversion tail of [`cbx_string_format_v`] (0x3192b0-0x31933c):
+/// width (a `'*'` takes it from the argument list, digits from the format),
+/// precision, and the first specifier-table dispatch.
+pub(crate) fn format_v_conversion(c: &mut Cpu) -> Flow {
+    // 0x3192b0: width, unless '*' already gave it.
+    c.cycles += 2;
+    if c.g[A0][0] != 0 {
+        c.g[V1][0] = Addr(r32(c, S0)).lb(c);
+    } else {
+        // 0x3192b8: width digits.
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[RA][0] = sx(0x0031_92c8);
+        c.g[A2][0] = 0xa;
+        callee::STRTOL.call(c, 0x0031_92c8)?;
+        c.g[S0][0] = Addr(sp(c)).lw(c);
+        c.g[S3][0] = sx(r32(c, V0));
+        c.g[V1][0] = Addr(r32(c, S0)).lb(c);
+    }
+    // 0x3192d8: precision.
+    c.cycles += 3;
+    c.g[V0][0] = 0x2e;
+    let no_precision = c.g[V1][0] != c.g[V0][0];
+    c.g[S2][0] = 0;
+    if !no_precision {
+        // 0x3192e4.
+        c.cycles += 5;
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+        c.g[V1][0] = 0x2a;
+        c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+        let prec_digits = c.g[V0][0] != c.g[V1][0];
+        c.g[A0][0] = c.g[S0][0];
+        if prec_digits {
+            // 0x319308: precision digits.
+            c.cycles += 6;
+            c.g[A1][0] = c.g[SP][0] | 0x4;
+            c.g[RA][0] = sx(0x0031_9314);
+            c.g[A2][0] = 0xa;
+            callee::STRTOL.call(c, 0x0031_9314)?;
+            c.g[S0][0] = Addr(sp(c).wrapping_add(4)).lw(c);
+            c.g[S2][0] = sx(r32(c, V0));
+        } else {
+            // 0x3192f8: '*' takes the precision.
+            c.cycles += 4;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(8));
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+            c.g[S2][0] = Addr(r32(c, S1).wrapping_sub(8)).lw(c);
+        }
+    }
+    // 0x319320: first specifier table (base 0x48d860, index char minus 'F').
+    c.cycles += 7;
+    c.g[V0][0] = Addr(r32(c, S0)).lbu(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x46));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_shl(24));
+    c.g[A0][0] = sx(((r32(c, V0) as i32) >> 24) as u32);
+    c.g[V1][0] = (c.g[A0][0] < 0x27u64) as u64;
+    let in_range = c.g[V1][0] != 0;
+    c.g[V0][0] = 0x490000;
+    if !in_range {
+        // Out-of-range first-table index: the generated `0x319320` falls
+        // through to the `c`/`C`/`s`/`S` chain at `0x319358`, not to the
+        // second table (table base `0x48d860`, `char - 'F' >= 0x27`).
+        return format_v_chain(c);
+    }
+    // 0x31933c: through the table (its words are in the game image).
+    c.cycles += 6;
+    c.g[V1][0] = sx(r32(c, A0).wrapping_shl(2));
+    c.g[V0][0] = sx(0x0049_0000u32.wrapping_sub(0x27a0));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    let spec = r32(c, A0);
+    c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+    if format_v_table1_skip(spec) {
+        // 0x319354: length modifiers only skip a character.
+        c.cycles += 1;
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+    }
+    format_v_chain(c)
+}
+
+/// The `c`/`C`/`s`/`S` chain of [`cbx_string_format_v`] (0x319358-0x3193c0):
+/// `c`/`C` cost a fixed 2, `s`/`S` cost `max(1, strlen(arg))`, anything else
+/// costs 0 here and falls into the second table.
+pub(crate) fn format_v_chain(c: &mut Cpu) -> Flow {
+    // 0x319358.
+    c.cycles += 4;
+    c.g[V1][0] = Addr(r32(c, S0)).lb(c);
+    c.g[V0][0] = 0x53;
+    let upper_s = c.g[V1][0] == c.g[V0][0];
+    c.g[A1][0] = 0;
+    if upper_s {
+        // 0x3193ac: 'S'.
+        c.cycles += 1;
+        c.g[S1][0] = sx(r32(c, S1).wrapping_add(8));
+        return format_v_strlen(c);
+    }
+    // 0x319368.
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[V1][0] as i64) < 84) as u64;
+    let high = c.g[V0][0] == 0;
+    c.g[V0][0] = 0x43;
+    if !high {
+        // 0x319374.
+        c.cycles += 2;
+        if c.g[V1][0] == c.g[V0][0] {
+            // 'C': fixed cost 2.
+            c.g[A1][0] = 0x2;
+            // 0x3193a4.
+            c.cycles += 2;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(8));
+        } else {
+            // 0x31937c.
+            c.cycles += 2;
+        }
+        return format_v_clamp(c);
+    }
+    // 0x319384.
+    c.cycles += 3;
+    c.g[V0][0] = 0x63;
+    let lower_c = c.g[V1][0] == c.g[V0][0];
+    c.g[V0][0] = 0x73;
+    if lower_c {
+        // 0x3193a0: fixed cost 2.
+        c.cycles += 1;
+        c.g[A1][0] = 0x2;
+        // 0x3193a4.
+        c.cycles += 2;
+        c.g[S1][0] = sx(r32(c, S1).wrapping_add(8));
+        return format_v_clamp(c);
+    }
+    // 0x319390.
+    c.cycles += 2;
+    if c.g[V1][0] == c.g[V0][0] {
+        // 's'.
+        c.g[S1][0] = sx(r32(c, S1).wrapping_add(8));
+        return format_v_strlen(c);
+    }
+    // 0x319398.
+    c.cycles += 2;
+    format_v_clamp(c)
+}
+
+/// The `s`/`S` arm of [`cbx_string_format_v`] (0x3193b0): `max(1, strlen)`.
+pub(crate) fn format_v_strlen(c: &mut Cpu) -> Flow {
+    c.cycles += 5;
+    c.g[RA][0] = sx(0x0031_93b8);
+    c.g[A0][0] = Addr(r32(c, S1).wrapping_sub(8)).lw(c);
+    call_ptr(c, callee::STRLEN, 0x0031_93b8)?;
+    c.g[A1][0] = 0x1;
+    c.g[V1][0] = ((0i64) < (c.g[V0][0] as i64)) as u64;
+    if c.g[V1][0] != 0 {
+        c.g[A1][0] = c.g[V0][0];
+    }
+    format_v_clamp(c)
+}
+
+/// The item-size clamp of [`cbx_string_format_v`] (0x3193c4-0x3193d4):
+/// `max(item, width)`, then `min(item, precision)` when a precision ran.
+pub(crate) fn format_v_clamp(c: &mut Cpu) -> Flow {
+    // 0x3193c4.
+    c.cycles += 2;
+    let no_item = c.g[A1][0] == 0;
+    c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[A1][0] as i64)) as u64;
+    if no_item {
+        return format_v_second(c);
+    }
+    // 0x3193cc.
+    c.cycles += 2;
+    let no_precision = c.g[S2][0] == 0;
+    if c.g[V0][0] == 0 {
+        c.g[A1][0] = c.g[S3][0];
+    }
+    if no_precision {
+        return format_v_advance(c);
+    }
+    // 0x3193d4.
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[S2][0] as i64)) as u64;
+    if c.g[V0][0] == 0 {
+        c.g[A1][0] = c.g[S2][0];
+    }
+    format_v_advance(c)
+}
+
+/// The second specifier table of [`cbx_string_format_v`] (0x3193e0-0x319440,
+/// base 0x48d900, index char minus `'G'`): floats cost at least 128, integers
+/// (and `%p`) at least 32, `%n` only advances the argument list.
+pub(crate) fn format_v_second(c: &mut Cpu) -> Flow {
+    // 0x3193e0.
+    c.cycles += 7;
+    c.g[V0][0] = Addr(r32(c, S0)).lbu(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x47));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_shl(24));
+    c.g[A0][0] = sx(((r32(c, V0) as i32) >> 24) as u32);
+    c.g[V1][0] = (c.g[A0][0] < 0x32u64) as u64;
+    let in_range = c.g[V1][0] != 0;
+    c.g[V0][0] = 0x490000;
+    if !in_range {
+        return format_v_advance(c);
+    }
+    // 0x3193fc: through the table (its words are in the game image).
+    c.cycles += 6;
+    c.g[V1][0] = sx(r32(c, A0).wrapping_shl(2));
+    c.g[V0][0] = sx(0x0049_0000u32.wrapping_sub(0x2700));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    let spec = r32(c, A0);
+    c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+    match format_v_table2_class(spec) {
+        FormatVItem::Float => {
+            // 0x319414.
+            c.cycles += 4;
+            c.g[V1][0] = sx(r32(c, S3).wrapping_add(r32(c, S2)));
+            c.g[A1][0] = 0x80;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 128) as u64;
+        }
+        FormatVItem::Int => {
+            // 0x319424.
+            c.cycles += 3;
+            c.g[V1][0] = sx(r32(c, S3).wrapping_add(r32(c, S2)));
+            c.g[A1][0] = 0x20;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 32) as u64;
+        }
+        FormatVItem::Count => {
+            // 0x31943c: '%n'.
+            c.cycles += 1;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(8));
+            return format_v_advance(c);
+        }
+        FormatVItem::None => return format_v_advance(c),
+    }
+    // 0x319430.
+    c.cycles += 3;
+    c.g[S1][0] = sx(r32(c, S1).wrapping_add(8));
+    if c.g[V0][0] == 0 {
+        c.g[A1][0] = c.g[V1][0];
+    }
+    format_v_advance(c)
+}
+
+/// The per-conversion tail of [`cbx_string_format_v`] (0x319440): grow the
+/// result size by the conversion's item length.
+pub(crate) fn format_v_advance(c: &mut Cpu) -> Flow {
+    c.cycles += 1;
+    c.g[S4][0] = sx(r32(c, S4).wrapping_add(r32(c, A1)));
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3921,5 +4481,180 @@ pub(crate) mod tests {
             }
             mode
         });
+    }
+
+    pub(crate) use crate::game::misc::tests::fv_fixture;
+
+    /// One format per specifier class the two jump tables dispatch: ints,
+    /// chars (`c`/`C`), strings (`s`/`S`), floats (`e`/`f`/`g`, `G` through
+    /// the first table's default), `%X`, count, unknown, length modifiers,
+    /// digit widths, digit precisions, `'*'` widths/precisions, every flag,
+    /// mixed forms, escapes, a bare trailing `%` (which scans one past the
+    /// NUL) and the empty format.
+    pub(crate) const FV_FMTS: [&[u8]; 48] = [
+        b"%d",
+        b"%x",
+        b"%o",
+        b"%u",
+        b"%i",
+        b"%p",
+        b"%c",
+        b"%C",
+        b"%s",
+        b"%S",
+        b"%e",
+        b"%f",
+        b"%g",
+        b"%G",
+        b"%X",
+        b"%d%n",
+        b"%q",
+        b"%ld",
+        b"%hd",
+        b"%Fd",
+        b"%Nd",
+        b"%5d",
+        b"%.3d",
+        b"%8.3d",
+        b"%.2s",
+        b"%8.2s",
+        b"%3s",
+        b"%.0s",
+        b"%*d",
+        b"%.*d",
+        b"%-d",
+        b"%+d",
+        b"% d",
+        b"%#x",
+        b"%05d",
+        b"v=%d s=%s!",
+        b"x%d%s",
+        b"%d%s",
+        b"%d-%d",
+        b"100%%",
+        b"plain",
+        b"%d%",
+        b"a%db",
+        b"%#d",
+        b"",
+        b"%m",
+        b"%T",
+        b"%y",
+    ];
+
+    /// `cBXString_FormatV`: every jump-table class against the generated
+    /// body, argument values crossed on `seed / FV_FMTS.len()` digits
+    /// (the tail entries `%m`, `%T`, `%y` cover the table-boundary
+    /// classes). No `check_paths`: the totals depend on the real
+    /// callees (`strtol`, `strlen`, `vsprintf`), which the fixtures
+    /// cannot run to pin.
+    #[test]
+    fn cbx_string_format_v_matches() {
+        use crate::difftest::check;
+        check(
+            ee::s10::f_003191c0__generated,
+            cbx_string_format_v,
+            200,
+            &|c, seed| {
+                let which = seed as usize % FV_FMTS.len();
+                fv_fixture(c, seed, FV_FMTS[which], which);
+            },
+        );
+    }
+
+    /// Tie/boundary formats for the clamp/second/strlen rows: float/int
+    /// width+precision sums at exactly 128/32, width==item and
+    /// item==precision pairs, a nonempty `strlen` probe, and `'*'`-driven
+    /// widths. Layouts reuse existing `which` shapes; the `strlen` probe
+    /// plants a string address at `[THIS-8]`.
+    pub(crate) const FV_TIES: [(&[u8], usize); 10] = [
+        (b"%120.8f", 10),
+        (b"%112.8f", 10),
+        (b"%24.8d", 28),
+        (b"%22.8d", 28),
+        (b"%6d", 28),
+        (b"%.6d", 28),
+        (b"%s", 8),
+        (b"%5s", 8),
+        (b"%*d", 28),
+        (b"%.*d", 28),
+    ];
+
+    /// `cBXString_FormatV` tie/boundary formats.
+    #[test]
+    fn cbx_string_format_v_ties() {
+        use crate::difftest::check;
+        use crate::game::misc::tests::{FV_SARG, FV_THIS};
+        check(
+            ee::s10::f_003191c0__generated,
+            cbx_string_format_v,
+            120,
+            &|c, seed| {
+                let (fmt, which) = FV_TIES[seed as usize % FV_TIES.len()];
+                fv_fixture(c, seed, fmt, which);
+                c.bus.write32(FV_THIS - 8, FV_SARG);
+                // `%s` strlen reads `[S1]` after the slot advance, i.e. the
+                // string-object header: point it at the nonempty arg so the
+                // `strlen == 0` row can die.
+                c.bus.write32(FV_THIS, FV_SARG);
+            },
+        );
+    }
+    pub(crate) use crate::game::misc::tests::{FV_ARGS, FV_FMT, FV_THIS};
+
+    driven!(gen_format_v, ee::s10::f_003191c0__generated);
+
+    driven!(hand_format_v, cbx_string_format_v);
+
+    /// Short event formats by `seed % 4`: a leading plain character (the
+    /// first unwind lands on the scan head), a leading flag (the flag head),
+    /// a call-heavy format (delivered but never unwound, so no mid-call
+    /// unwind), and a call-free format.
+    pub(crate) const FV_EVENT_FMTS: [&[u8]; 4] = [b"a%db", b"%#x", b"%d%s", b"ab"];
+
+    /// Event setup for [`cbx_string_format_v_events`]: the shared fixture
+    /// with a short format, then a main-thread event schedule. Unwind mode
+    /// only runs where the first back edge precedes any call; the call-heavy
+    /// format is forced to deliver-only. Returns the event mode.
+    pub(crate) fn fv_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let variant = (seed % 4) as usize;
+        let mut mode = seed / 4 % 3;
+        if variant == 2 && mode == 1 {
+            // "%d%s" would unwind inside `strtol`: deliver without unwinding.
+            mode = 2;
+        }
+        // Slot layouts matching each short format's shape.
+        let which = [42, 33, 37, 40][variant];
+        fv_fixture(c, seed, FV_EVENT_FMTS[variant], which);
+        // `schedule` starts the thread (clobbering the entry registers), so
+        // the entry state goes in after it.
+        let mut r = Rng(0x3191_c000 ^ seed as u64);
+        let ev = schedule(c, &mut r, mode, 0x0031_91c0);
+        c.pc = 0x0031_91c0;
+        c.g[A0][0] = FV_THIS as u64;
+        c.g[A1][0] = FV_FMT as u64;
+        c.g[A2][0] = FV_ARGS as u64;
+        c.cycles = 1000;
+        if mode != 0 {
+            // First back edge delivers at once, before any call runs.
+            c.next_event = 1000;
+        }
+        ev
+    }
+
+    /// `cBXString_FormatV` with real events: both sides driven through
+    /// unwinds, the first unwind landing on the scan head (seed 4) and the
+    /// flag head (seed 5) in turn. `RESUMES` counts print with the test.
+    #[test]
+    fn cbx_string_format_v_events() {
+        check_events(gen_format_v, hand_format_v, 48, &fv_events_setup);
+        use crate::difftest::{fresh, run_generated};
+        for (seed, head) in [(4u32, 0x0031_9210u32), (5, 0x0031_9258)] {
+            let mut c = fresh();
+            fv_events_setup(&mut c, seed);
+            c.next_event = c.cycles;
+            run_generated(&mut c, ee::s10::f_003191c0__generated);
+            assert_eq!(c.pc, head | 1, "seed {seed}: first unwind");
+        }
     }
 }

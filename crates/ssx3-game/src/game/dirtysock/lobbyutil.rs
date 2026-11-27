@@ -4,6 +4,7 @@ use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::abi::set_word;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -115,6 +116,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003f_4330, net_tick_wrapper2, "NetTick_Wrapper2"),
     (0x003f_43d0, net_conn_return_true, "NetConn_ReturnTrue"),
     (0x003f_4de8, net_tick, "NetTick"),
+    (0x003e_b090, ds_timetosecs, "ds_timetosecs"),
+    (0x0025_91e8, lobby_mem_alloc, "Lobby_MemAlloc"),
+    (0x0025_9210, lobby_mem_free, "Lobby_MemFree"),
+    (
+        0x003e_eab8,
+        lobby_hash_str_cmp_no_case,
+        "Lobby_HashStrCmpNoCase",
+    ),
 ];
 
 pub(crate) mod callee {
@@ -250,6 +259,9 @@ pub(crate) mod callee {
         addr: 0x003e_e028,
         f: ee::s14::Lobby_ListGrow,
     };
+    pub(crate) use crate::game::dirtysock::tags::callee::DS_SECSTOTIME;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::EA_MEM_FREE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_NEW_NAMED;
 }
 
 pub(crate) const DIRTY_RPC_STATE_HI: u64 = 0x0052_0000;
@@ -5766,6 +5778,221 @@ pub fn lobby_list_grow(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// ds_timetosecs
+
+/// `time_t ds_timetosecs(struct tm *t)` (0x3eb090): the seconds for a
+/// date/time record, found by bisecting `ds_secstotime` (about 32 rounds;
+/// the head checks events).
+pub fn ds_timetosecs(c: &mut Cpu) {
+    call::guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S0, 0x70);
+        c.g[S2][0] = 0xffff_ffff_ffff_0000;
+        frame.save(c, S3, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        c.g[S3][0] = 0;
+        frame.save_ra(c, 0x30);
+        c.g[S2][0] |= 0xffff;
+        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S2][0] as u32));
+        // Every exit below leaves `v0` ready except the converged
+        // mismatch, which returns zero as-is.
+        let mut shift = true;
+        loop {
+            c.cycles += 10;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[S1][0] = sx(((c.g[V0][0] as u32) >> 1) as u32);
+            c.g[A1][0] = c.g[S1][0] << 32;
+            c.g[A1][0] >>= 32;
+            callee::DS_SECSTOTIME.call(c, 0x003e_b0d4)?;
+            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            if c.g[V1][0] == 0 {
+                c.cycles += 5;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                if c.g[V1][0] == 0 {
+                    c.cycles += 5;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    if c.g[V1][0] == 0 {
+                        c.cycles += 5;
+                        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                        if c.g[V1][0] == 0 {
+                            c.cycles += 5;
+                            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                            if c.g[V1][0] == 0 {
+                                c.cycles += 5;
+                                c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                                c.g[V1][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                                c.g[V0][0] = c.g[S1][0] << 32;
+                                if c.g[V1][0] == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Mismatch: halve the range toward the target.
+            c.cycles += 2;
+            if (c.g[V1][0] as i64) <= 0 {
+                c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+            } else {
+                c.cycles += 1;
+                c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[S2][0] < c.g[S3][0]) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                if event_due(c) {
+                    deliver_event_here(c, 0x003e_b0c0);
+                }
+                continue;
+            }
+            c.cycles += 2;
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = 0;
+                shift = false;
+                break;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S1][0] << 32;
+            break;
+        }
+        if shift {
+            c.cycles += 1;
+            c.g[V0][0] >>= 32;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore_ra(c, 0x30);
+        let t = c.g[RA][0] as u32;
+        frame.close(c);
+        c.pc = t;
+        Ok(())
+    })
+}
+// Small lobby allocators and event forwarding.
+
+/// `void *Lobby_MemAlloc(unsigned int size)` (0x2591e8): allocate `size`
+/// bytes from the lobby heap (`operator_new` with the lobby heap tag).
+pub fn lobby_mem_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx(0x004a_2f28);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0x20000000;
+        c.g[A3][0] = 0u64;
+        // A0 (size) passes through untouched.
+        callee::OPERATOR_NEW_NAMED.call(c, 0x0025_9204)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Lobby_MemFree(void *ptr)` (0x259210): release a lobby-heap block,
+/// ignoring null.
+pub fn lobby_mem_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        let frame = Frame::open(c, 0x10);
+        let live = c.g[A0][0] != 0u64;
+        frame.save_ra(c, 0);
+        if live {
+            c.cycles += 2;
+            callee::EA_MEM_FREE.call(c, 0x0025_9224)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int Lobby_HashStrCmpNoCase(const char *a, const char *b)` (0x3eeab8):
+/// compare two lobby strings case-insensitively through the fold table,
+/// skipping characters that fold to 1; returns the first differing fold
+/// difference, or 0 when both terminate together.
+pub fn lobby_hash_str_cmp_no_case(c: &mut Cpu) {
+    c.g[V0][0] = 0x490000;
+    c.g[T0][0] = 0x1;
+    c.g[T2][0] = c.g[V0][0];
+    c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6a58));
+    c.cycles += 4;
+    'l_3eeac8: loop {
+        c.cycles += 1;
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).lbu(c);
+        'l_3eeacc: loop {
+            c.cycles += 6;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T1][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lbu(c);
+            let end_a = c.g[V1][0] == c.g[T0][0];
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+            if end_a {
+                if event_due(c) {
+                    deliver_event_here(c, 0x003e_eac8);
+                }
+                continue 'l_3eeac8;
+            }
+            c.cycles += 3;
+            c.g[A3][0] = sx((c.g[T2][0] as u32).wrapping_add(0x6a58));
+            c.g[A2][0] = 0x1;
+            'l_3eeaf0: loop {
+                c.cycles += 7;
+                c.g[V0][0] = Addr(c.g[A1][0] as u32).lbu(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                c.g[V0][0] = Addr(c.g[V0][0] as u32).lbu(c);
+                let end_b = c.g[V0][0] == c.g[A2][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                if end_b {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003e_eaf0);
+                    }
+                    continue 'l_3eeaf0;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                if c.g[V0][0] != 0u64 {
+                    c.cycles += 2;
+                    ret(c);
+                    return;
+                }
+                c.cycles += 2;
+                if c.g[V1][0] != 0u64 {
+                    c.g[V0][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003e_eacc);
+                    }
+                    continue 'l_3eeacc;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 0u64;
+                ret(c);
+                return;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9172,6 +9399,195 @@ pub(crate) mod tests {
                 let mode = schedule(c, &mut rng, seed, LIST_TEST_GROW);
                 if mode != Events::Off {
                     c.next_event = c.cycles + 98;
+                }
+                mode
+            },
+        );
+    }
+
+    driven!(ds_timetosecs_gen_driven, ee::s14::f_003eb090__generated);
+    driven!(ds_timetosecs_hand_driven, ds_timetosecs);
+
+    /// Seeds for the date round-trip (independent digits).
+    pub(crate) const SEEDS_2: u32 = 64;
+
+    #[test]
+    fn ds_timetosecs_matches() {
+        use crate::game::misc::tests::libm_machine;
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = libm_machine(c, seed, 0x3eb0);
+            c.g[GP][0] = crate::difftest::GAME_GP as u64;
+            crate::difftest::elf_image(c);
+            // Round-trip date: the seconds the search must find back.
+            // (Exact fixed point, so the bisection always converges.
+            // Out-of-range seconds do not terminate even in the
+            // original — the bisection overflows — so only fixed
+            // points are valid here, plus the invalid-interior killer
+            // below, whose bounds exhaust with no exact tuple.)
+            let secs = match seed % 9 {
+                0 => 0,
+                1 => 59,
+                2 => 3600,
+                3 => 86400,
+                4 => 30 * 86400,
+                5 => 365 * 86400,
+                6 => 366 * 86400,
+                7 => r.next_u32() % 2000000000,
+                _ => 86400,
+            };
+            c.g[A0][0] = (DATA + 0x400) as u64;
+            c.g[A1][0] = secs as u64;
+            c.pc = 0x003e_aeb8;
+            ee::s14::ds_secstotime(c);
+            if seed % 9 == 8 {
+                // Invalid interior date: Jan2 1970 with seconds forced
+                // to 60. No exact tuple exists, so the bounds exhaust
+                // and the search returns 0.
+                c.bus.write32(DATA + 0x400, 60);
+            }
+            c.g[A0][0] = (DATA + 0x400) as u64;
+            let mode = schedule(c, &mut r, seed, 0x003e_b090);
+            // Deliver-only: suppress VBlank unwinds. The loop calls the
+            // match-pc dispatcher `ds_secstotime`, which would unwind
+            // mid-call; re-entry restarts this function from the top, so
+            // a VBlank inside the callee restarts the whole search
+            // instead of resuming it (harness limitation). Events are
+            // still delivered at the loop head every ~20k cycles.
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 1 << 40;
+            mode
+        };
+        check_events(
+            ds_timetosecs_gen_driven,
+            ds_timetosecs_hand_driven,
+            SEEDS_2,
+            &setup,
+        );
+    }
+    use crate::difftest::fakes::machine;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::lobbyrig_arm;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::lobbyrig_mail;
+
+    // ------------------------------------------------------------------
+    // `Lobby_MemAlloc` (0x2591e8), `Lobby_MemFree` (0x259210).
+
+    /// Allocating goes through the named operator new; freeing a null
+    /// pointer returns at once, freeing a block calls the heap free.
+    #[test]
+    fn lobby_mem_alloc_matches() {
+        check(
+            ee::s06::f_002591e8__generated,
+            lobby_mem_alloc,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x2591_e8, 0);
+                lobbyrig_arm(c);
+                c.g[A0][0] = [0, 1, 7, 16, 64, 0x1000, 0x8000_0000u32.cast_signed()]
+                    [seed as usize % 7] as u64;
+                c.bus.write32(
+                    lobbyrig_mail(0x0031_7e30),
+                    if seed % 3 == 0 { 0 } else { DATA + 0x6000 },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_mem_free_matches() {
+        check(
+            ee::s06::f_00259210__generated,
+            lobby_mem_free,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x2592_10, 0);
+                lobbyrig_arm(c);
+                c.g[A0][0] = if seed % 4 == 0 {
+                    0
+                } else {
+                    (DATA + 0x6000 + seed % 0x40) as u64
+                };
+                c.bus.write32(lobbyrig_mail(0x0031_7e98), 0);
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `Lobby_HashStrCmpNoCase` (0x3eeab8).
+
+    pub(crate) const HASH_CMP_A: u32 = DATA + 0x1000;
+
+    pub(crate) const HASH_CMP_B: u32 = DATA + 0x1100;
+
+    driven!(gen_hash_str_cmp_no_case, ee::s14::f_003eeab8__generated);
+
+    driven!(hand_hash_str_cmp_no_case, lobby_hash_str_cmp_no_case);
+
+    pub(crate) fn hash_cmp_put(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, &b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// Case-insensitive lobby string compare: equal up to case and
+    /// skippable blanks, ordered otherwise, empty against anything.
+    #[test]
+    fn lobby_hash_str_cmp_no_case_matches() {
+        check_events(
+            gen_hash_str_cmp_no_case,
+            hand_hash_str_cmp_no_case,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3eea_b8, 0);
+                // Fold table: blanks skip (1), upper case folds down,
+                // everything else keys on itself, NUL terminates (0).
+                for i in 0..256u32 {
+                    let fold = if i == 0 {
+                        0
+                    } else if i == b' ' as u32 {
+                        1
+                    } else if (b'A' as u32..=b'Z' as u32).contains(&i) {
+                        i + 32
+                    } else {
+                        i
+                    };
+                    c.bus.write8(
+                        crate::game::dirtysock::tagsunk::HASH_CMP_FOLD_TABLE + i,
+                        fold as u8,
+                    );
+                }
+                match seed % 6 {
+                    0 => {
+                        hash_cmp_put(c, HASH_CMP_A, b"a b-C07");
+                        hash_cmp_put(c, HASH_CMP_B, b"A  B-c07");
+                    }
+                    1 => {
+                        hash_cmp_put(c, HASH_CMP_A, b"abc");
+                        hash_cmp_put(c, HASH_CMP_B, b"abd");
+                    }
+                    2 => {
+                        hash_cmp_put(c, HASH_CMP_A, b"ab");
+                        hash_cmp_put(c, HASH_CMP_B, b"abc");
+                    }
+                    3 => {
+                        hash_cmp_put(c, HASH_CMP_A, b"");
+                        hash_cmp_put(c, HASH_CMP_B, b"");
+                    }
+                    4 => {
+                        hash_cmp_put(c, HASH_CMP_A, b"Quick Match 12");
+                        hash_cmp_put(c, HASH_CMP_B, b"quick match 13");
+                    }
+                    _ => {
+                        hash_cmp_put(c, HASH_CMP_A, b" - ");
+                        hash_cmp_put(c, HASH_CMP_B, b"");
+                    }
+                }
+                let mode = schedule(c, &mut r, seed, 0x003e_eab8);
+                c.g[A0][0] = sx(HASH_CMP_A);
+                c.g[A1][0] = sx(HASH_CMP_B);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + 4;
                 }
                 mode
             },

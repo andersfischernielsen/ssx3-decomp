@@ -298,6 +298,24 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_1a48, font_upload_texture, "Font_UploadTexture"),
     (0x0039_4d50, defer_man_ctor, "DeferMan_ctor"),
     (0x0039_7138, ui_engine_store_word, "UIEngine_StoreWord"),
+    (
+        0x0021_d160,
+        font_draw_text_varargs_2,
+        "Font_DrawTextVarargs_2",
+    ),
+    (
+        0x0022_23e8,
+        font_draw_text_centered_varargs_2,
+        "Font_DrawTextCenteredVarargs_2",
+    ),
+    (0x0039_19e8, font_free, "Font_Free"),
+    (0x0039_2680, font_find_line_break_w, "Font_FindLineBreakW"),
+    (
+        0x0039_2980,
+        font_draw_text_centered_w,
+        "Font_DrawTextCenteredW",
+    ),
+    (0x0039_2ad0, font_draw_text_right_w, "Font_DrawTextRightW"),
 ];
 
 /// `DeferMan` layout (offsets from the `DeferMan*`).
@@ -396,6 +414,30 @@ pub(crate) mod callee {
     pub(crate) const GRAPHICS_MAN_DTOR: Callee = Callee {
         addr: 0x0036_95d8,
         f: ee::s12::GraphicsMan_dtor,
+    };
+
+    /// `void Gs_UploadImage(...)`: uploads a pixel rectangle to the GS.
+    pub(crate) const GS_UPLOAD_IMAGE: Callee = Callee {
+        addr: 0x0038_3808,
+        f: ee::s12::Gs_UploadImage,
+    };
+
+    /// `float Font_MeasureTextW(...)`: measures a wide string.
+    pub(crate) const FONT_MEASURE_TEXT_W: Callee = Callee {
+        addr: 0x0039_21f0,
+        f: ee::s12::Font_MeasureTextW,
+    };
+
+    /// `void Font_DrawTextW(...)`: draws a wide string.
+    pub(crate) const FONT_DRAW_TEXT_W: Callee = Callee {
+        addr: 0x0039_1e30,
+        f: ee::s12::Font_DrawTextW,
+    };
+
+    /// `void EA_MemFree(void *)`: frees a heap block.
+    pub(crate) const EA_MEM_FREE_2: Callee = Callee {
+        addr: 0x0031_7e98,
+        f: ee::s10::EA_MemFree,
     };
 }
 
@@ -4396,6 +4438,471 @@ pub fn ui_engine_store_word(c: &mut Cpu) {
     ret(c);
 }
 
+pub(crate) mod font_res {
+
+    /// Glyph count (binary-search upper bound).
+    pub const COUNT: u32 = 0x0;
+
+    /// Glyph table (sorted by code above `last`).
+    pub const TABLE: u32 = 0x4;
+
+    /// Default glyph (code not found).
+    pub const DEF: u32 = 0x8;
+
+    /// First directly indexed code.
+    pub const FIRST: u32 = 0xc;
+
+    /// Last directly indexed code.
+    pub const LAST: u32 = 0x10;
+
+    /// Horizontal padding subtracted from the width.
+    pub const PAD_X: u32 = 0x28;
+}
+
+pub(crate) mod glyph {
+
+    /// Advance width (signed byte).
+    pub const ADV: u32 = 0x8;
+
+    /// Left bearing (signed byte).
+    pub const XOFF: u32 = 0x9;
+
+    /// Pixel width (byte).
+    pub const WIDTH: u32 = 0x2;
+}
+
+/// `unsigned short *Font_FindLineBreakW(font, str, dst, max, sx, width)`
+/// (0x392680): copies into `dst` as much of `str` as fits in `width`,
+/// breaking at the last space; returns the next line's start (0 when the
+/// whole string fit).
+pub fn font_find_line_break_w(c: &mut Cpu) {
+    c.cycles += 17;
+    let frame = Frame::open(c, 0x60);
+    c.g[T3][0] = c.g[A0][0];
+    let font = r32(c, T3);
+    frame.save(c, S0, 0x50);
+    c.g[T0][0] = c.g[A1][0];
+    frame.save(c, S1, 0x40);
+    frame.save(c, S2, 0x30);
+    frame.save(c, S3, 0x20);
+    frame.save(c, S4, 0x10);
+    frame.save(c, S5, 0);
+    c.mtc1(0, 1);
+    c.lwc1(0, font.wrapping_add(font_res::PAD_X));
+    c.abs_s(0, 0);
+    c.sub_s(13, 13, 0);
+    c.c_lt_s(13, 1);
+    if c.fcc() {
+        c.mov_s(13, 1);
+    }
+    'b_3928e4: {
+        'b_3928e0: {
+            'b_3928d4: {
+                'b_3928cc: {
+                    'b_392884: {
+                        c.cycles += 8;
+                        c.mov_s(3, 1);
+                        c.g[V0][0] = c.lhu(r32(c, T0));
+                        c.g[S1][0] = c.g[T0][0];
+                        c.mov_s(4, 3);
+                        c.g[T8][0] = 0xffffffffffffffff;
+                        c.g[T5][0] = 0u64;
+                        let empty = c.g[V0][0] == 0u64;
+                        c.g[T9][0] = 0u64;
+                        if empty {
+                            break 'b_392884;
+                        }
+                        c.cycles += 7;
+                        c.g[S3][0] = sx(r32(c, A3).wrapping_sub(0x1));
+                        c.g[S2][0] = 0xc;
+                        c.g[S4][0] = 0xffffffffffffffff;
+                        c.g[T7][0] = sx(r32(c, T0).wrapping_sub(0x2));
+                        c.g[T6][0] = c.g[A2][0];
+                        c.g[V0][0] = c.lhu(r32(c, T0));
+                        'scan: loop {
+                            'b_392774: {
+                                // A space continues to the width check below;
+                                // any other code goes to the glyph lookup.
+                                c.cycles += 4;
+                                c.g[S0][0] = c.g[V0][0];
+                                c.g[V0][0] = c.g[V0][0] ^ 0x20;
+                                if c.g[V0][0] != 0u64 {
+                                    c.g[V1][0] = c.lhu(r32(c, T0));
+                                    break 'b_392774;
+                                } else {
+                                    c.cycles += 4;
+                                    c.c_le_s(13, 3);
+                                    let room = !c.fcc();
+                                    c.g[V0][0] = sx((c.g[T8][0] as u32) << 1);
+                                    if !room {
+                                        // The line is full: terminate it at the
+                                        // last space and return past the spaces.
+                                        c.cycles += 6;
+                                        c.g[A1][0] = 0x20;
+                                        c.g[V1][0] =
+                                            sx((c.g[V0][0] as u32).wrapping_add(r32(c, A2)));
+                                        c.g[A0][0] =
+                                            sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                        c.sh((c.g[V1][0] as u32).wrapping_add(0x2), 0u64);
+                                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                                        'spaces: loop {
+                                            c.cycles += 7;
+                                            c.g[V0][0] = c.lhu(c.g[A0][0] as u32);
+                                            if c.g[V0][0] == c.g[A1][0] {
+                                                c.g[A0][0] =
+                                                    sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                                                if event_due(c) {
+                                                    deliver_event_here(c, 0x0039_2738);
+                                                }
+                                                continue 'spaces;
+                                            }
+                                            c.cycles += 2;
+                                            c.g[V0][0] = c.g[A0][0];
+                                            break 'b_3928e4;
+                                        }
+                                    }
+                                }
+                                // The last-space bookkeeping.
+                                c.cycles += 2;
+                                let fresh = (c.g[T9][0] as i64) <= 0;
+                                c.g[V1][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x1));
+                                if !fresh {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lhu(c.g[T7][0] as u32);
+                                    c.g[V0][0] = c.g[V0][0] ^ 0x20;
+                                    if c.g[V0][0] != 0 {
+                                        c.g[T8][0] = c.g[V1][0];
+                                    }
+                                }
+                                c.cycles += 1;
+                                c.g[V1][0] = c.lhu(r32(c, T0));
+                            }
+                            // Glyph lookup: direct below `last`, binary
+                            // search above it, the default glyph on a miss
+                            // (leaves the glyph in `t2`, 0 for none).
+                            c.cycles += 4;
+                            c.g[T2][0] = c.lw(font.wrapping_add(font_res::FIRST));
+                            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[T2][0] as i64)) as u64;
+                            c.g[T4][0] = sx((c.g[T5][0] as u32) << 1);
+                            if c.g[V0][0] == 0u64 {
+                                c.cycles += 4;
+                                c.g[A0][0] = c.lw(font.wrapping_add(font_res::LAST));
+                                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                                if c.g[V0][0] != 0u64 {
+                                    // Above `last`: binary search.
+                                    c.g[A3][0] = c.lw(font.wrapping_add(font_res::COUNT));
+                                    c.cycles += 6;
+                                    c.g[T2][0] =
+                                        sx((c.g[A0][0] as u32).wrapping_sub(c.g[T2][0] as u32));
+                                    c.g[S5][0] = c.lw(font.wrapping_add(font_res::TABLE));
+                                    c.g[T4][0] = sx((c.g[T5][0] as u32) << 1);
+                                    c.g[T1][0] = 0xc;
+                                    c.g[V0][0] =
+                                        sx((c.g[T2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                                    'search: loop {
+                                        c.cycles += 6;
+                                        c.g[A1][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+                                        c.mult(0, 4, 5, 9);
+                                        c.g[V0][0] =
+                                            sx((c.g[A0][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                                        c.g[A0][0] = c.lhu(c.g[V0][0] as u32);
+                                        if c.g[V1][0] == c.g[A0][0] {
+                                            c.g[T2][0] = c.g[V0][0];
+                                            break;
+                                        }
+                                        c.cycles += 3;
+                                        c.g[V0][0] =
+                                            ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                                        if c.g[V0][0] == 0u64 {
+                                            c.g[T2][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[A3][0] = c.g[A1][0];
+                                        }
+                                        c.cycles += 3;
+                                        c.g[V0][0] =
+                                            ((c.g[T2][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                                        let searching = c.g[V0][0] != 0u64;
+                                        c.g[V0][0] =
+                                            sx((c.g[T2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                                        if searching {
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x0039_27d0);
+                                            }
+                                            continue 'search;
+                                        }
+                                        c.cycles += 1;
+                                        c.g[T2][0] = c.lw(font.wrapping_add(font_res::DEF));
+                                        break;
+                                    }
+                                } else {
+                                    // Direct index into the table.
+                                    c.cycles += 7;
+                                    c.mult(0, 3, 3, 18);
+                                    c.mult(0, 10, 10, 18);
+                                    c.g[V0][0] = c.lw(font.wrapping_add(font_res::TABLE));
+                                    c.g[T4][0] = sx((c.g[T5][0] as u32) << 1);
+                                    c.g[V0][0] =
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                    c.g[T2][0] =
+                                        sx((c.g[V0][0] as u32).wrapping_sub(c.g[T2][0] as u32));
+                                }
+                            } else {
+                                // Below `first`: no glyph.
+                                c.cycles += 2;
+                                c.g[T2][0] = 0u64;
+                            }
+                            // Advance the pen over the glyph.
+                            c.cycles += 2;
+                            if c.g[T2][0] != 0u64 {
+                                c.cycles += 13;
+                                c.g[V0][0] = c.lb((c.g[T2][0] as u32).wrapping_add(glyph::XOFF));
+                                c.g[V1][0] = c.lbu((c.g[T2][0] as u32).wrapping_add(glyph::WIDTH));
+                                c.g[A0][0] = c.lb((c.g[T2][0] as u32).wrapping_add(glyph::ADV));
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                c.mtc1(2, 0);
+                                c.cvt_s_w(0, 0);
+                                c.mtc1(4, 1);
+                                c.cvt_s_w(1, 1);
+                                c.mul_s(0, 0, 12);
+                                c.mul_s(1, 1, 12);
+                                c.add_s(2, 4, 0);
+                                c.sub_s(4, 1, 0);
+                                c.add_s(3, 3, 2);
+                            }
+                            // Emit the code when the line still has room.
+                            c.cycles += 4;
+                            c.c_le_s(13, 3);
+                            if !c.fcc() {
+                                c.sh(r32(c, T6), c.g[S0][0]);
+                            } else {
+                                c.cycles += 2;
+                                let unseen = c.g[T8][0] == c.g[S4][0];
+                                c.g[V1][0] = sx((c.g[T4][0] as u32).wrapping_add(r32(c, A2)));
+                                if unseen {
+                                    break 'b_3928cc;
+                                }
+                                c.cycles += 1;
+                                c.sh(r32(c, T6), c.g[S0][0]);
+                            }
+                            // Next code.
+                            c.cycles += 6;
+                            c.g[T5][0] = sx((c.g[T5][0] as u32).wrapping_add(0x1));
+                            c.g[T6][0] = sx((c.g[T6][0] as u32).wrapping_add(0x2));
+                            c.g[T7][0] = sx((c.g[T7][0] as u32).wrapping_add(0x2));
+                            c.g[T9][0] = sx((c.g[T9][0] as u32).wrapping_add(0x1));
+                            let full = c.g[T5][0] == c.g[S3][0];
+                            c.g[T0][0] = sx(r32(c, T0).wrapping_add(0x2));
+                            if full {
+                                break 'b_392884;
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lhu(r32(c, T0));
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lhu(r32(c, T0));
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0039_2700);
+                                }
+                                continue 'scan;
+                            }
+                            break 'b_392884;
+                        }
+                    }
+                    // The string ended: trim at the last space when the
+                    // line is full.
+                    c.cycles += 4;
+                    c.c_le_s(13, 3);
+                    let full = !c.fcc();
+                    c.g[V0][0] = sx((c.g[T8][0] as u32) << 1);
+                    if full {
+                        break 'b_3928d4;
+                    }
+                    c.cycles += 5;
+                    c.g[A1][0] = 0x20;
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(r32(c, A2)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sh((c.g[V1][0] as u32).wrapping_add(0x2), 0u64);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                    'tail_spaces: loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lhu(c.g[A0][0] as u32);
+                        if c.g[V0][0] == c.g[A1][0] {
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0039_28a8);
+                            }
+                            continue 'tail_spaces;
+                        }
+                        c.cycles += 2;
+                        c.g[V0][0] = c.g[A0][0];
+                        break 'b_3928e4;
+                    }
+                }
+                // No space seen: the line ends here.
+                c.cycles += 2;
+                c.g[V0][0] = c.g[T0][0];
+                break 'b_3928e0;
+            }
+            // Nothing fit past the break: terminate the copy.
+            c.cycles += 3;
+            c.g[V1][0] = sx((c.g[T5][0] as u32) << 1);
+            c.g[V0][0] = 0u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(r32(c, A2)));
+        }
+        // Store the terminator, return the pointer.
+        c.cycles += 1;
+        c.sh(c.g[V1][0] as u32, 0u64);
+    }
+    c.cycles += 8;
+    frame.restore(c, S0, 0x50);
+    frame.restore(c, S1, 0x40);
+    frame.restore(c, S2, 0x30);
+    frame.restore(c, S3, 0x20);
+    frame.restore(c, S4, 0x10);
+    frame.restore(c, S5, 0);
+    frame.close(c);
+}
+
+/// `void Font_DrawTextCenteredW(font, str, ...)` (0x392980): centres `str`
+/// with `Font_MeasureTextW`, then draws it with `Font_DrawTextW`.
+pub fn font_draw_text_centered_w(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = 0u64;
+        frame.save(c, S0, 0x20);
+        c.g[A3][0] = 0u64;
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_fpr(c, 20, 0x30);
+        c.mov_s(21, 12);
+        c.mov_s(20, 13);
+        c.lwc1(12, (c.g[S0][0] as u32).wrapping_add(0x38));
+        c.g[RA][0] = sx(0x0039_29bc);
+        c.lwc1(13, (c.g[S0][0] as u32).wrapping_add(0x3c));
+        callee::FONT_MEASURE_TEXT_W.call(c, 0x0039_29bc)?;
+        c.g[AT][0] = 0x3f000000;
+        c.mtc1(1, 1);
+        c.g[A0][0] = c.g[S0][0];
+        c.mov_s(13, 20);
+        c.g[A1][0] = c.g[S1][0];
+        c.mul_s(0, 0, 1);
+        c.g[RA][0] = sx(0x0039_29dc);
+        c.sub_s(12, 21, 0);
+        callee::FONT_DRAW_TEXT_W.call(c, 0x0039_29dc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Font_DrawTextRightW(font, str, ...)` (0x392ad0): right-aligns `str`
+/// with `Font_MeasureTextW`, then draws it with `Font_DrawTextW`.
+pub fn font_draw_text_right_w(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = 0u64;
+        frame.save(c, S0, 0x20);
+        c.g[A3][0] = 0u64;
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_fpr(c, 20, 0x30);
+        c.mov_s(21, 13);
+        c.mov_s(20, 12);
+        c.lwc1(12, (c.g[S0][0] as u32).wrapping_add(0x38));
+        c.g[RA][0] = sx(0x0039_2b0c);
+        c.lwc1(13, (c.g[S0][0] as u32).wrapping_add(0x3c));
+        callee::FONT_MEASURE_TEXT_W.call(c, 0x0039_2b0c)?;
+        c.sub_s(12, 20, 0);
+        c.g[A0][0] = c.g[S0][0];
+        c.mov_s(13, 21);
+        c.g[RA][0] = sx(0x0039_2b20);
+        c.g[A1][0] = c.g[S1][0];
+        callee::FONT_DRAW_TEXT_W.call(c, 0x0039_2b20)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Font_Free(font)` (0x3919e8): frees the font's heap block (unless
+/// its free flag is clear), zeroes the header, then runs the renderer's
+/// per-font teardown hook unless the font's flags are negative.
+pub fn font_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        if c.g[A0][0] == 0u64 {
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x60));
+        } else {
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x0039_1a0c);
+            callee::EA_MEM_FREE_2.call(c, 0x0039_1a0c)?;
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x60));
+        }
+        c.cycles += 4;
+        c.sw(c.g[S0][0] as u32, 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+        let negative = (c.g[A1][0] as i64) < 0;
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+        if !negative {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x10d8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x190));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x194));
+            let teardown = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x0039_1a34);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.pc = teardown;
+            call_indirect(c, teardown);
+            if c.pc != 0x0039_1a34 {
+                return Err(crate::call::Unwound);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Font_DrawTextVarargs_2(...)` (0x21d160): forwards to
+/// `Font_DrawTextF` through the varargs spill area.
+pub fn font_draw_text_varargs_2(c: &mut Cpu) {
+    guest(c, |c| {
+        crate::game::render::font::draw_varargs(c, 0x0039_1c48, 0x0021_d194)
+    })
+}
+
+/// `void Font_DrawTextCenteredVarargs_2(...)` (0x2223e8): forwards to
+/// `Font_DrawTextCenteredF` through the varargs spill area.
+pub fn font_draw_text_centered_varargs_2(c: &mut Cpu) {
+    guest(c, |c| {
+        crate::game::render::font::draw_varargs(c, 0x0039_29f8, 0x0022_241c)
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6664,6 +7171,332 @@ pub(crate) mod tests {
                 c.g[RA][0] = sx(crate::difftest::RA);
                 c.g[A0][0] = sx(OC798_OBJ + 4 * (seed & 7));
                 c.g[A1][0] = r.next_u32() as u64 | ((seed as u64) << 40);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::FAKE;
+
+    /// Font object, string and destination for
+    /// [`font_find_line_break_w`]: a glyph table the seed walks (region
+    /// prefilled non-zero so the byte-addressed direct-index reads exercise
+    /// the pen advance), six string kinds from `seed / 7 % 6` (spaced,
+    /// unspaced, tail-searched, default-glyph, and below-`first` codes that
+    /// take the no-glyph arm), and `s6` pinned inside the destination so the
+    /// old `a2`-clobber body writes visibly wrong.
+    pub(crate) const FIND_FONT: u32 = DATA + 0x1234;
+
+    pub(crate) const FIND_STR: u32 = DATA + 0x20_0000;
+
+    pub(crate) const FIND_DST: u32 = DATA + 0x21_0000;
+
+    pub(crate) const FIND_GLYPHS: u32 = DATA + 0x22_0000;
+
+    /// Fixture for [`font_find_line_break_w`]: direct-index glyphs for the
+    /// codes the string uses, a sorted tail with the default glyph, and a
+    /// width the seed steers (0, tight, roomy).
+    pub(crate) fn find_line_break_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = machine(c, seed, 0x39_2680, 0);
+        c.pc = 0x0039_2680;
+        // Glyph range 0x20..0x60 direct, sorted tail above.
+        // Total records: 0x40 direct + 4 tail. (4 degenerated the binary
+        // search above `last` to a single probe, hiding its mutants.)
+        c.bus.write32(FIND_FONT + font_res::COUNT, 0x40 + 4);
+        c.bus.write32(FIND_FONT + font_res::TABLE, FIND_GLYPHS);
+        c.bus
+            .write32(FIND_FONT + font_res::DEF, FIND_GLYPHS + 0x100);
+        c.bus.write32(FIND_FONT + font_res::FIRST, 0x20);
+        c.bus.write32(FIND_FONT + font_res::LAST, 0x5f);
+        c.bus
+            .write32(FIND_FONT + font_res::PAD_X, f32::to_bits(2.0));
+        fill(c, &mut r, FIND_GLYPHS, 0x120);
+        for i in 0..0x40u32 {
+            let g = FIND_GLYPHS + 16 * i;
+            c.bus.write16(g, (0x20 + i) as u16);
+            c.bus.write8(g + glyph::WIDTH, 8);
+            c.bus.write8(g + glyph::ADV, 9);
+            c.bus.write8(g + glyph::XOFF, 1);
+        }
+        for i in 0..4u32 {
+            let g = FIND_GLYPHS + 16 * (0x40 + i);
+            c.bus.write16(g, (0x70 + 2 * i) as u16);
+            c.bus.write8(g + glyph::WIDTH, 8);
+            c.bus.write8(g + glyph::ADV, 9);
+            c.bus.write8(g + glyph::XOFF, 1);
+        }
+        // The default glyph's metrics differ from every table glyph's, so
+        // a wrong search direction (hit vs default) changes the pen.
+        let def = FIND_GLYPHS + 0x100;
+        c.bus.write16(def, 0x7fu16);
+        c.bus.write8(def + glyph::WIDTH, 3);
+        c.bus.write8(def + glyph::ADV, 4);
+        c.bus.write8(def + glyph::XOFF, 0xfb);
+        // String: seed-picked codes with spaces, then NUL. Kind 5 carries
+        // non-zero codes below `first` (0x01) mid-string: they pass the scan
+        // head (only NUL exits there) and take the no-glyph arm. Kind 6
+        // carries 0x5f (direct arm) and 0x60 (search arm) so the
+        // `LAST < V1` mutants' two sides differ. Kind 7 is content then
+        // consecutive spaces: a tight width breaks the line at the second
+        // space, using the `^ 0x20` bookkeeping the mutant changes.
+        let kind = seed / 7 % 8;
+        let codes: [u16; 12] = match kind {
+            0 => [0x41, 0x42, 0x20, 0x43, 0x44, 0x20, 0x45, 0x46, 0, 0, 0, 0],
+            1 => [0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0, 0, 0, 0],
+            2 => [
+                0x70, 0x72, 0x20, 0x74, 0x76, 0x20, 0x41, 0x20, 0x42, 0, 0, 0,
+            ],
+            3 => [0x20, 0x20, 0x41, 0x42, 0x20, 0, 0, 0, 0, 0, 0, 0],
+            4 => [0x7f, 0x41, 0x20, 0x42, 0, 0, 0, 0, 0, 0, 0, 0],
+            5 => [0x41, 0x01, 0x42, 0x20, 0x43, 0x01, 0x44, 0, 0, 0, 0, 0],
+            6 => [0x5f, 0x41, 0x60, 0x20, 0x42, 0, 0, 0, 0, 0, 0, 0],
+            _ => [0x41, 0x20, 0x20, 0x20, 0x20, 0x20, 0, 0, 0, 0, 0, 0],
+        };
+        for (i, &code) in codes.iter().enumerate() {
+            c.bus.write16(FIND_STR + 2 * i as u32, code);
+        }
+        fill(c, &mut r, FIND_DST, 0x40);
+        c.g[A0][0] = sx(FIND_FONT);
+        c.g[A1][0] = sx(FIND_STR);
+        c.g[A2][0] = sx(FIND_DST);
+        // Distinct from `a2` but inside the prefilled destination, so the
+        // clobber writes to a valid, observed address instead of faulting.
+        c.g[S6][0] = sx(FIND_DST + 0x40);
+        c.g[A3][0] = 8 + (seed % 3) as u64;
+        c.f[12] = f32::to_bits(1.0);
+        c.f[13] = f32::to_bits([0.0, 30.0, 500.0][(seed / 3 % 3) as usize]);
+        r
+    }
+
+    /// Widths 0, tight and roomy over spaced, unspaced, tail-searched,
+    /// default-glyph, below-`first`, boundary-code (0x5f/0x60) and
+    /// consecutive-space strings; `max` 8..10.
+    #[test]
+    fn font_find_line_break_w_matches() {
+        check_lohi(
+            ee::s12::f_00392680__generated,
+            font_find_line_break_w,
+            200,
+            &|c, seed| {
+                find_line_break_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn font_find_line_break_w_events() {
+        driven!(gen_find, ee::s12::f_00392680__generated);
+        driven!(hand_find, font_find_line_break_w);
+        check_events(gen_find, hand_find, 60, &|c, seed| {
+            find_line_break_setup(c, seed / 3);
+            schedule(
+                c,
+                &mut Rng(0x39_2680 ^ (seed as u64) << 8),
+                seed,
+                0x0039_2680,
+            )
+        });
+    }
+
+    /// Gates for the two font draw wrappers: measure and draw are faked
+    /// (override slots); the tests check the FPU setup and forwarding.
+    pub(crate) const FONT_DRAW_CTRL: u32 = DATA + 0x32_0000;
+
+    pub(crate) const FONT_DRAW_MAGIC: u32 = 0x0c13_7203;
+
+    pub(crate) static FONT_DRAW_PREV_MEASURE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static FONT_DRAW_PREV_DRAW: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_measure_text_w(c: &mut Cpu) {
+        if c.bus.read32(FONT_DRAW_CTRL) != FONT_DRAW_MAGIC {
+            return fakes::fall_back(c, &FONT_DRAW_PREV_MEASURE, ee::s12::f_003921f0__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn fake_draw_text_w(c: &mut Cpu) {
+        if c.bus.read32(FONT_DRAW_CTRL) != FONT_DRAW_MAGIC {
+            return fakes::fall_back(c, &FONT_DRAW_PREV_DRAW, ee::s12::f_00391e30__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn font_draw_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_003921F0),
+            fake_measure_text_w,
+            &FONT_DRAW_PREV_MEASURE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00391E30),
+            fake_draw_text_w,
+            &FONT_DRAW_PREV_DRAW,
+        );
+    }
+
+    /// Font object with measure/draw sizes, edge-float register inputs.
+    pub(crate) fn font_draw_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        let mut r = machine(c, seed, entry as u64, 0);
+        c.bus.write32(FONT_DRAW_CTRL, FONT_DRAW_MAGIC);
+        const OBJ: u32 = DATA + 0x1234;
+        const STR: u32 = DATA + 0x20_0000;
+        fill(c, &mut r, OBJ, 0x40);
+        fill(c, &mut r, STR, 0x40);
+        c.g[A0][0] = sx(OBJ);
+        c.g[A1][0] = sx(STR);
+        c.f[12] = r.next_u32();
+        c.f[13] = r.next_u32();
+        c.pc = entry;
+    }
+
+    #[test]
+    fn font_draw_text_centered_w_matches() {
+        font_draw_hook();
+        check(
+            ee::s13::f_00392980__generated,
+            font_draw_text_centered_w,
+            120,
+            &|c, seed| {
+                font_draw_setup(c, seed, 0x0039_2980);
+            },
+        );
+    }
+
+    #[test]
+    fn font_draw_text_right_w_matches() {
+        font_draw_hook();
+        check(
+            ee::s13::f_00392ad0__generated,
+            font_draw_text_right_w,
+            120,
+            &|c, seed| {
+                font_draw_setup(c, seed, 0x0039_29ad0);
+            },
+        );
+    }
+
+    /// Fixture for [`font_free`]: the free flag from `seed % 2`, the
+    /// teardown sign from `seed / 2 % 2`; the heap free is faked (override
+    /// slot), the teardown hook is the miss-hook fake.
+    pub(crate) const FONT_FREE_OBJ: u32 = DATA + 0x1234;
+
+    pub(crate) const FONT_FREE_TABLE: u32 = DATA + 0x20_0000;
+
+    pub(crate) fn font_free_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = machine(c, seed, 0x39_19e8, 1);
+        c.pc = 0x0039_19e8;
+        c.g[A0][0] = sx(FONT_FREE_OBJ);
+        fill(c, &mut r, FONT_FREE_OBJ + 8, 0x18);
+        // After the fill: it spans +8..+0x68 and used to clobber both
+        // words below, so the `< 0` boundary (flags 0) never occurred.
+        c.bus.write32(FONT_FREE_OBJ + 4, (seed % 2) as u32 * 0x2410);
+        c.bus.write32(
+            FONT_FREE_OBJ + 0x60,
+            if seed / 2 % 2 == 0 { 0 } else { 0x8000_0001 },
+        );
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(GAME_GP + 0x2a90, FONT_FREE_TABLE);
+        c.bus
+            .write32(FONT_FREE_TABLE + 0x10d8, FONT_FREE_TABLE + 0x100);
+        c.bus.write16(FONT_FREE_TABLE + 0x100 + 0x190, 0x30);
+        c.bus.write32(FONT_FREE_TABLE + 0x100 + 0x194, FAKE);
+        r
+    }
+
+    pub(crate) static FONT_FREE_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_ea_mem_free(c: &mut Cpu) {
+        if c.bus.read32(FONT_DRAW_CTRL) != FONT_DRAW_MAGIC {
+            return fakes::fall_back(c, &FONT_FREE_PREV, ee::s10::f_00317e98__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// The free arm, the skip arm, and the negative/hook teardown arms;
+    /// hook unwinds cover the unwind return.
+    #[test]
+    fn font_free_matches() {
+        font_draw_hook();
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            fake_ea_mem_free,
+            &FONT_FREE_PREV,
+        );
+        covered(
+            ee::s12::f_003919e8__generated,
+            font_free,
+            200,
+            &|c, seed| {
+                c.bus.write32(FONT_DRAW_CTRL, FONT_DRAW_MAGIC);
+                font_free_setup(c, seed);
+            },
+        );
+    }
+
+    /// Gates for the varargs forwarders: the draw targets are faked
+    /// (override slots); the tests check the spill layout and forwarding.
+    pub(crate) static VARARGS_PREV_F: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static VARARGS_PREV_CENTERED: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_draw_text_f(c: &mut Cpu) {
+        if c.bus.read32(FONT_DRAW_CTRL) != FONT_DRAW_MAGIC {
+            return fakes::fall_back(c, &VARARGS_PREV_F, ee::s12::f_00391c48__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn fake_draw_text_centered_f(c: &mut Cpu) {
+        if c.bus.read32(FONT_DRAW_CTRL) != FONT_DRAW_MAGIC {
+            return fakes::fall_back(c, &VARARGS_PREV_CENTERED, ee::s13::f_003929f8__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn varargs_hook() {
+        font_draw_hook();
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00391C48),
+            fake_draw_text_f,
+            &VARARGS_PREV_F,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003929F8),
+            fake_draw_text_centered_f,
+            &VARARGS_PREV_CENTERED,
+        );
+    }
+
+    #[test]
+    fn font_draw_text_varargs_2_matches() {
+        varargs_hook();
+        check(
+            ee::s05::f_0021d160__generated,
+            font_draw_text_varargs_2,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x21_d160, 1);
+                c.bus.write32(FONT_DRAW_CTRL, FONT_DRAW_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x1234);
+                c.g[A1][0] = sx(DATA + 0x20_0000);
+                c.pc = 0x0021_d160;
+            },
+        );
+    }
+
+    #[test]
+    fn font_draw_text_centered_varargs_2_matches() {
+        varargs_hook();
+        check(
+            ee::s05::f_002223e8__generated,
+            font_draw_text_centered_varargs_2,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x22_23e8, 1);
+                c.bus.write32(FONT_DRAW_CTRL, FONT_DRAW_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x1234);
+                c.g[A1][0] = sx(DATA + 0x20_0000);
+                c.pc = 0x0022_23e8;
             },
         );
     }

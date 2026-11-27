@@ -1094,6 +1094,35 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         buddy_man_remove_temp_entry_at,
         "BuddyMan_RemoveTempEntryAt",
     ),
+    (
+        0x0025_9098,
+        lobby_man_setup_net_race,
+        "LobbyMan_SetupNetRace",
+    ),
+    (
+        0x0025_9230,
+        lobby_man_forward_event_to_ui,
+        "LobbyMan_ForwardEventToUI",
+    ),
+    (
+        0x0025_9390,
+        lobby_man_null_lobby_callback,
+        "LobbyMan_NullLobbyCallback",
+    ),
+    (
+        0x0026_8890,
+        lobby_man_init_string_fields,
+        "LobbyMan_InitStringFields",
+    ),
+    (0x0026_89b8, buddy_man_dtor, "BuddyMan_dtor"),
+    (
+        0x0026_8e50,
+        lobby_man_on_user_stats_reply_thunk,
+        "LobbyMan_OnUserStatsReply_Thunk",
+    ),
+    (0x0026_9ea0, lobby_man_global_ctors, "LobbyMan_GlobalCtors"),
+    (0x0025_6bb0, net_rpc_alloc, "Net_RpcAlloc"),
+    (0x0025_6bd8, net_rpc_free, "Net_RpcFree"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3179,6 +3208,86 @@ pub(crate) mod callee {
     pub const LOBBY_MAN_RESET_ACCOUNT_INFO: Callee = Callee {
         addr: 0x0026_0f10,
         f: ee::s06::LobbyMan_ResetAccountInfo,
+    };
+
+    pub const STR_HASH: Callee = Callee {
+        addr: 0x0031_7670,
+        f: ee::s10::f_00317670,
+    };
+
+    pub const UI_STATE_MGR_FIND_STATE: Callee = Callee {
+        addr: 0x0039_f9d8,
+        f: ee::s13::f_0039f9d8,
+    };
+
+    pub const USTR_COPY: Callee = Callee {
+        addr: 0x002c_2508,
+        f: ee::s08::f_002c2508,
+    };
+
+    pub const C_GAME_COMM_SEND_PACKET: Callee = Callee {
+        addr: 0x0025_7e98,
+        f: ee::s06::f_00257e98,
+    };
+
+    pub const BE_GET_BE_2: Callee = Callee {
+        addr: 0x0014_dc80,
+        f: ee::s01::f_0014dc80,
+    };
+
+    pub const BE_GET_INTERFACE_2: Callee = Callee {
+        addr: 0x0014_dd58,
+        f: ee::s01::f_0014dd58,
+    };
+
+    pub const BE_NEW_PLAYER_GET_CHAR: Callee = Callee {
+        addr: 0x0014_7488,
+        f: ee::s01::f_00147488,
+    };
+
+    pub const BE_SET_NET_STRING_A: Callee = Callee {
+        addr: 0x0014_ebb8,
+        f: ee::s01::f_0014ebb8,
+    };
+
+    pub const BE_SET_NET_STRING_B: Callee = Callee {
+        addr: 0x0014_ebd8,
+        f: ee::s01::f_0014ebd8,
+    };
+
+    pub const NET_START_GAME_SETUP: Callee = Callee {
+        addr: 0x0026_39e0,
+        f: ee::s07::f_002639e0,
+    };
+
+    pub const BUILTIN_DELETE_3: Callee = Callee {
+        addr: 0x0031_7e50,
+        f: ee::s10::f_00317e50,
+    };
+
+    pub const CBXSTRING_DTOR: Callee = Callee {
+        addr: 0x0031_8260,
+        f: ee::s10::f_00318260,
+    };
+
+    pub const UI_LIST_FIRST_WRAPPER: Callee = Callee {
+        addr: 0x0039_fae8,
+        f: ee::s13::f_0039fae8,
+    };
+
+    pub const NET_EVENT_DTOR: Callee = Callee {
+        addr: 0x0026_7e18,
+        f: ee::s07::f_00267e18,
+    };
+
+    pub const LOBBY_MAN_STATIC_INIT: Callee = Callee {
+        addr: 0x0026_7468,
+        f: ee::s07::f_00267468,
+    };
+
+    pub const LOBBY_MAN_ON_USER_STATS_REPLY: Callee = Callee {
+        addr: 0x0025_eb00,
+        f: ee::s06::f_0025eb00,
     };
 }
 
@@ -26289,6 +26398,410 @@ pub fn lobby_man_dtor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// `LobbyMan_SetupNetRace` (0x259098) constants.
+
+/// Stack frame size of `LobbyMan_SetupNetRace`.
+pub(crate) const SETUP_NET_RACE_FRAME: u32 = 0x80;
+
+/// Frame slots holding the caller's `s0`..`s6`.
+pub(crate) const SETUP_NET_RACE_S0: u32 = 0x70;
+
+pub(crate) const SETUP_NET_RACE_S1: u32 = 0x60;
+
+pub(crate) const SETUP_NET_RACE_S2: u32 = 0x50;
+
+pub(crate) const SETUP_NET_RACE_S3: u32 = 0x40;
+
+pub(crate) const SETUP_NET_RACE_S4: u32 = 0x30;
+
+pub(crate) const SETUP_NET_RACE_S5: u32 = 0x20;
+
+pub(crate) const SETUP_NET_RACE_S6: u32 = 0x10;
+
+/// Frame slot holding the return address.
+pub(crate) const SETUP_NET_RACE_RA: u32 = 0x0;
+
+/// `D_004A3028` field: nonzero while a net race is being set up.
+pub(crate) const SETUP_NET_RACE_ACTIVE: u32 = 0xb4;
+
+/// `D_004A3028` field: pending race id, used while active.
+pub(crate) const SETUP_NET_RACE_PENDING: u32 = 0xac;
+
+/// `D_004A3028` field: current race id, used while the active word
+/// is 0 (the pending id is used otherwise).
+pub(crate) const SETUP_NET_RACE_CURRENT: u32 = 0xa8;
+
+/// `void LobbyMan_SetupNetRace(void *a0, int a1, int a2)` (0x259098): start
+/// a network race. Resolves the player and race interfaces, records the
+/// local player's character, publishes the pending race strings and hands
+/// the lobby's arguments to the net game setup.
+pub fn lobby_man_setup_net_race(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, SETUP_NET_RACE_FRAME);
+        frame.save(c, S2, SETUP_NET_RACE_S2);
+        frame.save(c, S4, SETUP_NET_RACE_S4);
+        frame.save(c, S5, SETUP_NET_RACE_S5);
+        frame.save(c, S6, SETUP_NET_RACE_S6);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S0, SETUP_NET_RACE_S0);
+        frame.save(c, S1, SETUP_NET_RACE_S1);
+        frame.save(c, S3, SETUP_NET_RACE_S3);
+        frame.save_ra(c, SETUP_NET_RACE_RA);
+        c.g[S5][0] = c.g[A1][0];
+        let setup = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
+        c.g[S2][0] = setup;
+        c.g[V0][0] = Addr(setup as u32).off(SETUP_NET_RACE_ACTIVE).lw(c);
+        c.g[S6][0] = c.g[A2][0];
+        let race = if c.g[V0][0] == 0u64 {
+            c.cycles += 1;
+            Addr(setup as u32).off(SETUP_NET_RACE_CURRENT).lw(c)
+        } else {
+            c.cycles += 2;
+            Addr(setup as u32).off(SETUP_NET_RACE_PENDING).lw(c)
+        };
+        c.g[S3][0] = race;
+        c.cycles += 45;
+        callee::BE_GET_BE_2.call(c, 0x0025_90e8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x1;
+        callee::BE_GET_INTERFACE_2.call(c, 0x0025_90f4)?;
+        c.g[S1][0] = c.g[V0][0];
+        let app = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        c.g[V1][0] = app;
+        c.g[A1][0] = 0x7;
+        c.g[A0][0] = Addr(app as u32).off(0x78).lw(c);
+        callee::BE_GET_INTERFACE_2.call(c, 0x0025_9108)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0u64;
+        callee::BE_NEW_PLAYER_GET_CHAR.call(c, 0x0025_9118)?;
+        c.g[V1][0] = 0x530000;
+        c.g[A2][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
+        Addr((c.g[V1][0] as u32).wrapping_add(0x4e58)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = Addr(c.g[A2][0] as u32).off(0x98).lw(c);
+        callee::BE_SET_NET_STRING_A.call(c, 0x0025_9130)?;
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = Addr(c.g[V0][0] as u32).off(0x80).lw(c);
+        callee::BE_SET_NET_STRING_B.call(c, 0x0025_9140)?;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0xc).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x8).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+        let publish = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, publish, 0x0025_9154)?;
+        c.g[A2][0] = Addr(c.g[S2][0] as u32).off(SETUP_NET_RACE_ACTIVE).lw(c);
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A3][0] = c.g[S5][0];
+        c.g[T0][0] = c.g[S6][0];
+        callee::NET_START_GAME_SETUP.call(c, 0x0025_916c)?;
+        frame.restore(c, S0, SETUP_NET_RACE_S0);
+        frame.restore(c, S1, SETUP_NET_RACE_S1);
+        frame.restore(c, S2, SETUP_NET_RACE_S2);
+        frame.restore(c, S3, SETUP_NET_RACE_S3);
+        frame.restore(c, S4, SETUP_NET_RACE_S4);
+        frame.restore(c, S5, SETUP_NET_RACE_S5);
+        frame.restore(c, S6, SETUP_NET_RACE_S6);
+        frame.restore_ra(c, SETUP_NET_RACE_RA);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void LobbyMan_ForwardEventToUI(void *event)` (0x259230): hand a lobby
+/// event to the lobby menu's UI object, through its virtual event handler.
+pub fn lobby_man_forward_event_to_ui(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        let app = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(app as u32).off(0x7c).lw(c);
+        c.g[S0][0] = c.g[A0][0];
+        if c.g[V0][0] != 0u64 {
+            c.cycles += 10;
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+            callee::UI_LIST_FIRST_WRAPPER.call(c, 0x0025_9258)?;
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x8).lw(c);
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0xc0).lh(c);
+            c.g[A3][0] = Addr(c.g[V1][0] as u32).off(0xc4).lw(c);
+            let on_event = c.g[A3][0] as u32;
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, on_event, 0x0025_9274)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void LobbyMan_NullLobbyCallback(void)` (0x259390): the lobby callback
+/// installed when no handler is wanted; returns at once.
+pub fn lobby_man_null_lobby_callback(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// `LobbyMan_InitStringFields` (0x268890) constants.
+
+/// Shared string table pointer (`gp + 0xda0`), copied into each string
+/// field.
+pub(crate) const STRING_FIELDS_TABLE_OFF: u32 = 0xda0;
+
+/// First string field offset in the object.
+pub(crate) const STRING_FIELDS_FIRST: u32 = 0x14;
+
+/// `void LobbyMan_InitStringFields(void *self)` (0x268890): point the
+/// lobby's string fields at the shared string table: five fields, then four
+/// more advancing one word at a time.
+pub fn lobby_man_init_string_fields(c: &mut Cpu) {
+    c.cycles += 10;
+    let table = Addr((c.g[GP][0] as u32).wrapping_add(STRING_FIELDS_TABLE_OFF)).lw(c);
+    c.g[V0][0] = table;
+    let obj = Addr(r32(c, A0));
+    obj.sw(c, table);
+    obj.off(0x4).sw(c, table);
+    obj.off(0x8).sw(c, table);
+    obj.off(0xc).sw(c, table);
+    obj.off(0x10).sw(c, table);
+    c.g[V1][0] = sx(r32(c, A0).wrapping_add(STRING_FIELDS_FIRST));
+    c.g[A1][0] = 0x3;
+    c.g[A2][0] = table;
+    c.g[A3][0] = 0xffffffffffffffff;
+    'l_2688b8: loop {
+        c.cycles += 7;
+        Addr(c.g[V1][0] as u32).sw(c, c.g[A2][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+        let more = c.g[A1][0] != c.g[A3][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x0026_88b8);
+            }
+            continue 'l_2688b8;
+        }
+        break;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// `BuddyMan_dtor` (0x2689b8) constants.
+
+/// Frame slot holding the caller's `s0` (`self`).
+pub(crate) const BUDDY_DTOR_S0: u32 = 0x20;
+
+/// Frame slot holding the caller's `s1` (flags).
+pub(crate) const BUDDY_DTOR_S1: u32 = 0x10;
+
+/// Frame slot holding the return address.
+pub(crate) const BUDDY_DTOR_RA: u32 = 0x0;
+
+/// `BuddyMan` field: string block destroyed first.
+pub(crate) const BUDDY_DTOR_STRINGS: u32 = 0xec;
+
+/// `BuddyMan` field: start of the first pointer range.
+pub(crate) const BUDDY_DTOR_RANGE_A_BEGIN: u32 = 0xbc;
+
+/// `BuddyMan` field: end of the first pointer range.
+pub(crate) const BUDDY_DTOR_RANGE_A_END: u32 = 0xc4;
+
+/// `BuddyMan` field: start of the second pointer range.
+pub(crate) const BUDDY_DTOR_RANGE_B_BEGIN: u32 = 0xac;
+
+/// `BuddyMan` field: end of the second pointer range.
+pub(crate) const BUDDY_DTOR_RANGE_B_END: u32 = 0xb4;
+
+/// `void BuddyMan_dtor(BuddyMan *self, int flags)` (0x2689b8): destroy the
+/// buddy manager's string block and its two pointer ranges (freeing the
+/// range storage unless it holds exactly one entry, which is deleted
+/// instead), then free `self` when `flags & 1`.
+pub fn buddy_man_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, BUDDY_DTOR_S0);
+        frame.save(c, S1, BUDDY_DTOR_S1);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(BUDDY_DTOR_STRINGS));
+        frame.save_ra(c, BUDDY_DTOR_RA);
+        c.g[A1][0] = 0x2;
+        callee::CBXSTRING_DTOR.call(c, 0x0026_89dc)?;
+        'b_268a1c: {
+            'b_268a18: {
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).off(BUDDY_DTOR_RANGE_A_BEGIN).lw(c);
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(BUDDY_DTOR_RANGE_A_END).lw(c);
+                c.g[V1][0] = c.g[A0][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                let empty = c.g[A0][0] == 0u64;
+                c.g[V1][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+                if empty {
+                    break 'b_268a18;
+                }
+                'b_268a10: {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x1;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        break 'b_268a10;
+                    }
+                    c.cycles += 4;
+                    callee::BUILTIN_DELETE_3.call(c, 0x0026_8a08)?;
+                    c.g[V1][0] = Addr(c.g[S0][0] as u32).off(BUDDY_DTOR_RANGE_B_BEGIN).lw(c);
+                    break 'b_268a1c;
+                }
+                c.cycles += 2;
+                callee::EA_MEM_FREE.call(c, 0x0026_8a18)?;
+            }
+            c.cycles += 1;
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).off(BUDDY_DTOR_RANGE_B_BEGIN).lw(c);
+        }
+        'b_268a58: {
+            'b_268a54: {
+                c.cycles += 5;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(BUDDY_DTOR_RANGE_B_END).lw(c);
+                c.g[A0][0] = c.g[V1][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                let empty = c.g[A0][0] == 0u64;
+                c.g[V1][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+                if empty {
+                    break 'b_268a54;
+                }
+                'b_268a4c: {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x1;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        break 'b_268a4c;
+                    }
+                    c.cycles += 4;
+                    callee::BUILTIN_DELETE_3.call(c, 0x0026_8a44)?;
+                    c.g[V0][0] = c.g[S1][0] & 0x1;
+                    break 'b_268a58;
+                }
+                c.cycles += 2;
+                callee::EA_MEM_FREE.call(c, 0x0026_8a54)?;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S1][0] & 0x1;
+        }
+        // Tail block charge runs on both arms; the `+3` only on the live one.
+        c.cycles += 2;
+        if c.g[V0][0] == 0u64 {
+            frame.restore(c, S0, BUDDY_DTOR_S0);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            callee::BUILTIN_DELETE_3.call(c, 0x0026_8a68)?;
+            frame.restore(c, S0, BUDDY_DTOR_S0);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, BUDDY_DTOR_S1);
+        frame.restore_ra(c, BUDDY_DTOR_RA);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void LobbyMan_OnUserStatsReply_Thunk(void *a0, void *a1, int shift)`
+/// (0x268e50): forward a user-stats reply to the lobby handler, adding the
+/// lobby's per-reply id offset to the callback argument.
+pub fn lobby_man_on_user_stats_reply_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x4a0000;
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x31d0)).lh(c);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        callee::LOBBY_MAN_ON_USER_STATS_REPLY.call(c, 0x0026_8e68)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void LobbyMan_GlobalCtors(void)` (0x269ea0): run the lobby manager's
+/// static initializer.
+pub fn lobby_man_global_ctors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x1;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xffff;
+        callee::LOBBY_MAN_STATIC_INIT.call(c, 0x0026_9eb4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `Lobby_HashStrCmpNoCase` (0x3eeab8) constants.
+
+/// Case-fold table: `fold[c]` is 1 for skipped characters, otherwise the
+/// comparison key (0 only for the NUL terminator).
+#[cfg(test)]
+pub(crate) const HASH_CMP_FOLD_TABLE: u32 = 0x0049_6a58;
+
+/// `Net_RpcAlloc` (0x00256bb0): Allocate an RPC block on the game heap. Straight-line.
+pub fn net_rpc_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = 0x480000;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x478));
+        c.g[A2][0] = 0x20000000;
+        c.g[RA][0] = sx(0x00256bcc);
+        c.g[A3][0] = 0u64;
+        callee::OPERATOR_NEW_NAMED.call(c, 0x00256bcc)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `Net_RpcFree` (0x00256bd8): Free the RPC block unless null. Straight-line dispatch.
+pub fn net_rpc_free(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_256bec: {
+            c.cycles += 3;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+            let t = c.g[A0][0] == 0u64;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            if t {
+                break 'b_256bec;
+            } else {
+                c.cycles += 2;
+                callee::EA_MEM_FREE.call(c, 0x00256bec)?;
+                break 'b_256bec;
+            }
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -38689,6 +39202,522 @@ pub(crate) mod tests {
                 assert_eq!(c.bus.read8(record + off + 7), b'r');
                 c.bus.write8(record + off + 7, b'q');
             },
+        );
+    }
+    /// Gate word all of this module's fakes check in the machine's RAM.
+    pub(crate) const LOBBY_RIG_CTRL: u32 = DATA + 0x30_0000;
+
+    /// Magic value arming the fakes for this module's machines.
+    pub(crate) const LOBBY_RIG_MAGIC: u32 = 0x4741_5447;
+
+    /// Mailbox area: forced `v0` per faked callee address.
+    pub(crate) const LOBBY_RIG_MAIL: u32 = DATA + 0x31_0000;
+
+    /// Mailbox cell forcing the result of the callee at `addr`.
+    pub(crate) fn lobbyrig_mail(addr: u32) -> u32 {
+        LOBBY_RIG_MAIL + (addr & 0xfff)
+    }
+
+    macro_rules! lobbyrig_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(LOBBY_RIG_CTRL) != LOBBY_RIG_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    let ra = c.g[RA][0] as u32;
+                    fakes::fake_call(c, $addr);
+                    if c.pc == ra {
+                        c.g[V0][0] = c.bus.read32(lobbyrig_mail($addr)) as u64;
+                    }
+                }
+            )*
+            pub(crate) fn lobbyrig_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+    lobbyrig_fakes!(
+        (
+            lobbyrig_fake_uistate_find_state,
+            LOBBY_RIG_PREV_UISTATE_FIND_STATE,
+            ee::s13::OVERRIDE_0039F9D8,
+            ee::s13::f_0039f9d8__generated,
+            0x0039_f9d8
+        ),
+        (
+            lobbyrig_fake_be_get_instance,
+            LOBBY_RIG_PREV_BE_GET_INSTANCE,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80
+        ),
+        (
+            lobbyrig_fake_get_character_by_slot,
+            LOBBY_RIG_PREV_GET_CHARACTER_BY_SLOT,
+            ee::s01::OVERRIDE_00147488,
+            ee::s01::f_00147488__generated,
+            0x0014_7488
+        ),
+        (
+            lobbyrig_fake_set_net_string_a,
+            LOBBY_RIG_PREV_SET_NET_STRING_A,
+            ee::s01::OVERRIDE_0014EBB8,
+            ee::s01::f_0014ebb8__generated,
+            0x0014_ebb8
+        ),
+        (
+            lobbyrig_fake_set_net_string_b,
+            LOBBY_RIG_PREV_SET_NET_STRING_B,
+            ee::s01::OVERRIDE_0014EBD8,
+            ee::s01::f_0014ebd8__generated,
+            0x0014_ebd8
+        ),
+        (
+            lobbyrig_fake_start_game_setup,
+            LOBBY_RIG_PREV_START_GAME_SETUP,
+            ee::s07::OVERRIDE_002639E0,
+            ee::s07::f_002639e0__generated,
+            0x0026_39e0
+        ),
+        (
+            lobbyrig_fake_on_user_stats_reply,
+            LOBBY_RIG_PREV_ON_USER_STATS_REPLY,
+            ee::s06::OVERRIDE_0025EB00,
+            ee::s06::f_0025eb00__generated,
+            0x0025_eb00
+        ),
+        (
+            lobbyrig_fake_ea_mem_alloc_named,
+            LOBBY_RIG_PREV_EA_MEM_ALLOC_NAMED,
+            ee::s10::OVERRIDE_00317E30,
+            ee::s10::f_00317e30__generated,
+            0x0031_7e30
+        ),
+        (
+            lobbyrig_fake_ea_mem_free,
+            LOBBY_RIG_PREV_EA_MEM_FREE,
+            ee::s10::OVERRIDE_00317E98,
+            ee::s10::f_00317e98__generated,
+            0x0031_7e98
+        ),
+        (
+            lobbyrig_fake_builtin_delete,
+            LOBBY_RIG_PREV_BUILTIN_DELETE,
+            ee::s10::OVERRIDE_00317E50,
+            ee::s10::f_00317e50__generated,
+            0x0031_7e50
+        ),
+        (
+            lobbyrig_fake_bxstring_dtor,
+            LOBBY_RIG_PREV_BXSTRING_DTOR,
+            ee::s10::OVERRIDE_00318260,
+            ee::s10::f_00318260__generated,
+            0x0031_8260
+        ),
+        (
+            lobbyrig_fake_uilist_first,
+            LOBBY_RIG_PREV_UILIST_FIRST,
+            ee::s13::OVERRIDE_0039FAE8,
+            ee::s13::f_0039fae8__generated,
+            0x0039_fae8
+        ),
+        (
+            lobbyrig_fake_net_event_dtor,
+            LOBBY_RIG_PREV_NET_EVENT_DTOR,
+            ee::s07::OVERRIDE_00267E18,
+            ee::s07::f_00267e18__generated,
+            0x0026_7e18
+        ),
+        (
+            lobbyrig_fake_static_init,
+            LOBBY_RIG_PREV_STATIC_INIT,
+            ee::s07::OVERRIDE_00267468,
+            ee::s07::f_00267468__generated,
+            0x0026_7468
+        ),
+    );
+
+    /// `UStr_Copy` bounded like the real thing: the source is a miss-hook
+    /// result pointing into the test data area, so copy at most 255 bytes
+    /// up to the NUL. The call arguments come from the harness log: the
+    /// hook scrambles `a0`-`a3` (see `difftest/fakes.rs`), so reading them
+    /// after `fake_call` would copy between two garbage addresses.
+    pub(crate) static LOBBY_RIG_PREV_USTR_COPY: AtomicUsize = AtomicUsize::new(0);
+
+    /// Log slot holding the low word of GPR `r` for the most recent fake
+    /// call (each entry is `0x220` bytes; GPR `r`'s low word sits at
+    /// `+0x10 + 16 * r`).
+    pub(crate) fn lobbyrig_logged_arg(c: &mut Cpu, r: usize) -> u32 {
+        let n = c.bus.read32(fakes::LOG_COUNT).wrapping_sub(1);
+        c.bus
+            .read32(fakes::LOG_START + 0x220 * n + 0x10 + 16 * r as u32)
+    }
+
+    pub(crate) fn lobbyrig_fake_ustr_copy(c: &mut Cpu) {
+        if c.bus.read32(LOBBY_RIG_CTRL) != LOBBY_RIG_MAGIC {
+            return fakes::fall_back(c, &LOBBY_RIG_PREV_USTR_COPY, ee::s08::f_002c2508__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, 0x002c_2508);
+        if c.pc != ra {
+            return;
+        }
+        let (mut dst, mut src) = (lobbyrig_logged_arg(c, A0), lobbyrig_logged_arg(c, A1));
+        for _ in 0..256 {
+            let b = c.lbu(src);
+            c.sb(dst, b);
+            if b == 0 {
+                break;
+            }
+            dst = dst.wrapping_add(1);
+            src = src.wrapping_add(1);
+        }
+        c.g[V0][0] = c.g[A0][0];
+    }
+
+    /// `BE_GetInterface`: interface 1 is the player interface, anything
+    /// else the race interface. The index comes from the harness log (see
+    /// `lobbyrig_logged_arg`): after `fake_call` `a1` is scrambled, so the
+    /// old test could never see index 1 and a port that swapped the two
+    /// interfaces would still pass.
+    pub(crate) static LOBBY_RIG_PREV_BE_GET_INTERFACE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn lobbyrig_fake_be_get_interface(c: &mut Cpu) {
+        if c.bus.read32(LOBBY_RIG_CTRL) != LOBBY_RIG_MAGIC {
+            return fakes::fall_back(
+                c,
+                &LOBBY_RIG_PREV_BE_GET_INTERFACE,
+                ee::s01::f_0014dd58__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, 0x0014_dd58);
+        if c.pc == ra {
+            c.g[V0][0] = if lobbyrig_logged_arg(c, A1) == 1 {
+                LOBBY_RIG_PI as u64
+            } else {
+                LOBBY_RIG_RI as u64
+            };
+        }
+    }
+
+    /// Player interface block handed out by the `BE_GetInterface` fake.
+    pub(crate) const LOBBY_RIG_PI: u32 = DATA + 0x1_4000;
+
+    /// Race interface block handed out by the `BE_GetInterface` fake.
+    pub(crate) const LOBBY_RIG_RI: u32 = DATA + 0x1_5000;
+
+    /// Arm this module's fakes for the machine `c` (both diff sides get
+    /// their own machine, so the gate is per-machine).
+    pub(crate) fn lobbyrig_arm(c: &mut Cpu) {
+        lobbyrig_install_fakes();
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C2508),
+            lobbyrig_fake_ustr_copy,
+            &LOBBY_RIG_PREV_USTR_COPY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            lobbyrig_fake_be_get_interface,
+            &LOBBY_RIG_PREV_BE_GET_INTERFACE,
+        );
+        c.bus.write32(LOBBY_RIG_CTRL, LOBBY_RIG_MAGIC);
+    }
+
+    // ------------------------------------------------------------------
+    // `LobbyMan_SetupNetRace` (0x259098).
+
+    pub(crate) const SETUP_NET_RACE_G: u32 = DATA + 0xd000;
+
+    pub(crate) const SETUP_NET_RACE_VT: u32 = DATA + 0xf100;
+
+    pub(crate) fn setup_net_race_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x2590_98, 2);
+        lobbyrig_arm(c);
+        c.g[A0][0] = sx(DATA + 0x100 + seed % 0x10);
+        c.g[A1][0] = sx(DATA + 0x200 + seed % 0x20);
+        c.g[A2][0] = (seed % 7) as u64;
+        c.bus.write32(GAME_GP - 0xc8, SETUP_NET_RACE_G);
+        c.bus.write32(GAME_GP - 0x848, DATA + 0x300);
+        c.bus.write32(DATA + 0x300 + 0x78, DATA + 0x400);
+        c.bus
+            .write32(SETUP_NET_RACE_G + SETUP_NET_RACE_ACTIVE, seed % 2);
+        c.bus.write32(
+            SETUP_NET_RACE_G + SETUP_NET_RACE_PENDING,
+            0xA0A0_0000 + seed % 5,
+        );
+        c.bus.write32(
+            SETUP_NET_RACE_G + SETUP_NET_RACE_CURRENT,
+            0xB0B0_0000 + seed % 5,
+        );
+        c.bus
+            .write32(SETUP_NET_RACE_G + 0x98, 0xC0C0_0000 + seed % 3);
+        c.bus
+            .write32(SETUP_NET_RACE_G + 0x80, 0xD0D0_0000 + seed % 3);
+        c.bus.write32(lobbyrig_mail(0x0014_dc80), DATA + 0x500);
+        c.bus.write32(lobbyrig_mail(0x0014_7488), 3 + seed % 4);
+        c.bus.write32(lobbyrig_mail(0x0014_ebb8), 0);
+        c.bus.write32(lobbyrig_mail(0x0014_ebd8), 0);
+        c.bus.write32(lobbyrig_mail(0x0026_39e0), 0);
+        c.bus.write32(LOBBY_RIG_RI + 0xc, SETUP_NET_RACE_VT);
+        c.bus.write16(SETUP_NET_RACE_VT + 0x8, 0);
+        c.bus.write32(SETUP_NET_RACE_VT + 0xc, fakes::FAKE + 0x10);
+    }
+
+    /// Setting up a net race resolves both interfaces, records the local
+    /// character and publishes the pending strings before handing off.
+    #[test]
+    fn lobby_man_setup_net_race_matches() {
+        fakes::covered(
+            ee::s06::f_00259098__generated,
+            lobby_man_setup_net_race,
+            300,
+            &setup_net_race_setup,
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `LobbyMan_ForwardEventToUI` (0x259230).
+
+    pub(crate) const FORWARD_EVENT_APP: u32 = DATA + 0x8000;
+
+    pub(crate) const FORWARD_EVENT_OBJ: u32 = DATA + 0x8100;
+
+    pub(crate) const FORWARD_EVENT_ENV: u32 = DATA + 0x8200;
+
+    pub(crate) const FORWARD_EVENT_VT: u32 = DATA + 0x8300;
+
+    pub(crate) const FORWARD_EVENT_EV: u32 = DATA + 0x8400;
+
+    pub(crate) fn forward_event_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x2592_30, 2);
+        lobbyrig_arm(c);
+        c.g[A0][0] = sx(FORWARD_EVENT_EV);
+        c.bus.write32(FORWARD_EVENT_EV, 0xE000_0000 + seed % 16);
+        c.bus.write32(GAME_GP - 0x848, FORWARD_EVENT_APP);
+        c.bus.write32(
+            FORWARD_EVENT_APP + 0x7c,
+            if seed % 3 == 0 { 0 } else { FORWARD_EVENT_OBJ },
+        );
+        c.bus.write32(FORWARD_EVENT_OBJ + 0xc, FORWARD_EVENT_ENV);
+        c.bus.write32(FORWARD_EVENT_ENV + 0x8, FORWARD_EVENT_VT);
+        c.bus.write16(FORWARD_EVENT_VT + 0xc0, 0);
+        c.bus.write32(FORWARD_EVENT_VT + 0xc4, fakes::FAKE + 0x10);
+        c.bus.write32(lobbyrig_mail(0x0039_fae8), FORWARD_EVENT_ENV);
+    }
+
+    /// Lobby events with no menu object go nowhere; otherwise the menu's
+    /// envelope resolves and its virtual handler runs.
+    #[test]
+    fn lobby_man_forward_event_to_ui_matches() {
+        fakes::covered(
+            ee::s06::f_00259230__generated,
+            lobby_man_forward_event_to_ui,
+            300,
+            &forward_event_setup,
+        );
+    }
+
+    /// The null lobby callback returns at once, leaving everything alone.
+    #[test]
+    fn lobby_man_null_lobby_callback_matches() {
+        check(
+            ee::s06::f_00259390__generated,
+            lobby_man_null_lobby_callback,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x2593_90, 0);
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `LobbyMan_InitStringFields` (0x268890).
+
+    pub(crate) const STRING_FIELDS_OBJ: u32 = DATA + 0x1000;
+
+    driven!(gen_init_string_fields, ee::s07::f_00268890__generated);
+
+    driven!(hand_init_string_fields, lobby_man_init_string_fields);
+
+    /// The string fields take the shared table value, five at once then
+    /// four more through the event-checked loop.
+    #[test]
+    fn lobby_man_init_string_fields_matches() {
+        check_events(
+            gen_init_string_fields,
+            hand_init_string_fields,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2688_90, 0);
+                c.bus.write32(
+                    GAME_GP + STRING_FIELDS_TABLE_OFF,
+                    0x0A0B_0000 + seed % 0x1000,
+                );
+                let obj = STRING_FIELDS_OBJ + (seed % 4) * 0x40;
+                for i in 0..9u32 {
+                    c.bus.write32(obj + 4 * i, 0xA5A5_0000 + seed + i);
+                }
+                let mode = schedule(c, &mut r, seed, 0x0026_8890);
+                c.g[A0][0] = sx(obj);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + 4;
+                }
+                mode
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `BuddyMan_dtor` (0x2689b8).
+
+    pub(crate) const BUDDY_OBJ: u32 = DATA + 0x1000;
+
+    pub(crate) const BUDDY_RANGE: u32 = DATA + 0x2000;
+
+    pub(crate) fn buddy_dtor_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x2689_b8, 0);
+        lobbyrig_arm(c);
+        c.g[A0][0] = sx(BUDDY_OBJ);
+        c.g[A1][0] = (seed % 4) as u64;
+        c.bus
+            .write32(BUDDY_OBJ + BUDDY_DTOR_STRINGS, BUDDY_OBJ + 0x40);
+        // First range: null begin, or 0, 1, 2 entries.
+        let (begin, end) = match seed / 5 % 4 {
+            0 => (0, BUDDY_RANGE),
+            1 => (BUDDY_RANGE, BUDDY_RANGE),
+            2 => (BUDDY_RANGE, BUDDY_RANGE + 4),
+            _ => (BUDDY_RANGE, BUDDY_RANGE + 8),
+        };
+        c.bus.write32(BUDDY_OBJ + BUDDY_DTOR_RANGE_A_BEGIN, begin);
+        c.bus.write32(BUDDY_OBJ + BUDDY_DTOR_RANGE_A_END, end);
+        c.bus
+            .write32(BUDDY_OBJ + BUDDY_DTOR_RANGE_B_BEGIN, (seed / 11 % 3) as u32);
+        // Range B's begin (+0xac) takes 0, 1 or 2 and its end varies with
+        // the seed, so the empty, single-entry and multi-entry arms run.
+        let begin_b = if begin == 0 {
+            seed / 11 % 3
+        } else {
+            (end - begin) / 4
+        };
+        c.bus.write32(
+            BUDDY_OBJ + BUDDY_DTOR_RANGE_B_END,
+            begin_b + 4 * (seed / 13 % 4),
+        );
+        c.bus.write32(lobbyrig_mail(0x0031_8260), 0);
+        c.bus.write32(lobbyrig_mail(0x0031_7e50), 0);
+        c.bus.write32(lobbyrig_mail(0x0031_7e98), 0);
+    }
+
+    /// The buddy destructor clears both pointer ranges (freeing storage of
+    /// any length but one, deleting a lone entry) and frees itself on the
+    /// low flag bit.
+    #[test]
+    fn buddy_man_dtor_matches() {
+        check(
+            ee::s07::f_002689b8__generated,
+            buddy_man_dtor,
+            300,
+            &buddy_dtor_setup,
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `LobbyMan_OnUserStatsReply_Thunk` (0x268e50).
+
+    /// The stats-reply thunk forwards the callback argument plus the
+    /// lobby's per-reply offset.
+    #[test]
+    fn lobby_man_on_user_stats_reply_thunk_matches() {
+        check(
+            ee::s07::f_00268e50__generated,
+            lobby_man_on_user_stats_reply_thunk,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x268e_50, 0);
+                lobbyrig_arm(c);
+                c.bus.write16(
+                    GAME_GP + 0xe0,
+                    [0, 1, 0x7fff, 0x8000, 0xffff][seed as usize % 5],
+                );
+                c.g[A2][0] =
+                    [0, 5, 0x1_0000, 0xffff_ffffu32.cast_signed()][seed as usize / 5 % 4] as u64;
+                c.bus.write32(lobbyrig_mail(0x0025_eb00), 0);
+            },
+        );
+    }
+
+    /// The global constructors run the lobby's static initializer.
+    #[test]
+    fn lobby_man_global_ctors_matches() {
+        check(
+            ee::s07::f_00269ea0__generated,
+            lobby_man_global_ctors,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x269e_a0, 0);
+                lobbyrig_arm(c);
+                c.bus.write32(lobbyrig_mail(0x0026_7468), 0);
+            },
+        );
+    }
+    pub(crate) use crate::game::misc::tests::base as rpc_base;
+    pub(crate) use crate::game::misc::tests::clear_words;
+    pub(crate) use crate::game::misc::tests::comms;
+    pub(crate) use crate::game::misc::tests::install_fakes_2 as install_fakes;
+    pub(crate) use crate::game::misc::tests::FIX;
+    pub(crate) use crate::game::misc::tests::SEEDS as SEEDS_6;
+    use ssx3_ee_rt::cpu::sx;
+
+    /// `RpcAlloc` fixture: the size is seed-steered; the real
+    /// `operator_new` allocates on the DLHeap arena deterministically.
+    pub(crate) fn rpc_alloc_fixture(c: &mut Cpu, seed: u32) {
+        let _r = rpc_base(c, seed, 0x0025_6bb0);
+        elf_image(c);
+        install_fakes();
+        comms(c);
+        c.g[A0][0] = [0x40u32, 0x200][(seed % 2) as usize] as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_6bb0;
+    }
+
+    #[test]
+    fn net_rpc_alloc_matches() {
+        const PATHS: &[u64] = &[1217];
+        check_paths(
+            ee::s06::f_00256bb0__generated,
+            net_rpc_alloc,
+            SEEDS_6,
+            PATHS,
+            &rpc_alloc_fixture,
+        );
+    }
+
+    /// `RpcFree` fixture: null takes the early return, an arena block
+    /// the real free.
+    pub(crate) fn rpc_free_fixture(c: &mut Cpu, seed: u32) {
+        let _r = rpc_base(c, seed, 0x0025_6bd8);
+        elf_image(c);
+        install_fakes();
+        comms(c);
+        let blk = FIX + 0x3100;
+        clear_words(c, blk, 0x10);
+        c.g[A0][0] = if seed % 2 == 0 { 0 } else { blk as u64 };
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_6bd8;
+    }
+
+    #[test]
+    fn net_rpc_free_matches() {
+        const PATHS: &[u64] = &[6, 195, 420, 429];
+        check_paths(
+            ee::s06::f_00256bd8__generated,
+            net_rpc_free,
+            SEEDS_6,
+            PATHS,
+            &rpc_free_fixture,
         );
     }
 }

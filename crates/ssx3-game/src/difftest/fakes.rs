@@ -56,6 +56,40 @@ pub fn covered(
     );
 }
 
+/// `check`, and also require that for each address in `rets` some seed's
+/// generated run made a logged call (a fake or a syscall) returning there:
+/// the arm making that call really ran.
+pub fn check_reaching(
+    generated: fn(&mut Cpu),
+    hand: fn(&mut Cpu),
+    seeds: u32,
+    rets: &[u32],
+    setup: &dyn Fn(&mut Cpu, u32),
+) {
+    check(generated, hand, seeds, setup);
+    let mut seen = std::collections::BTreeSet::new();
+    for seed in 0..seeds {
+        let mut c = super::fresh();
+        setup(&mut c, seed);
+        super::run_generated(&mut c, generated);
+        seen.extend(logged_returns(&mut c));
+    }
+    for ret in rets {
+        assert!(
+            seen.contains(ret),
+            "no seed made the call returning to {ret:#x}"
+        );
+    }
+}
+
+/// The return address (`ra`) of every call logged on this machine.
+pub fn logged_returns(c: &mut Cpu) -> Vec<u32> {
+    let n = c.bus.read32(LOG_COUNT);
+    (0..n)
+        .map(|i| c.bus.read64(LOG_START + 0x220 * i + 0x10 + 16 * RA as u32) as u32)
+        .collect()
+}
+
 /// The `miss` hook: a call to `target` returning to `ra`.
 pub fn fake_call(c: &mut Cpu, target: u32) {
     let ra = c.g[RA][0] as u32;

@@ -2552,6 +2552,44 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_fe_state_stats_on_widget_created,
         "cFEStateStats_OnWidgetCreated",
     ),
+    (
+        0x001a_8828,
+        net_fe_state_transition_in,
+        "NetFEState_TransitionIn",
+    ),
+    (
+        0x001d_e860,
+        net_fe_state_handle_input,
+        "NetFEState_HandleInput",
+    ),
+    (0x001d_e868, net_fe_state_v25, "NetFEState_v25"),
+    (0x001d_e870, net_fe_state_v29, "NetFEState_v29"),
+    (0x001d_e8a8, net_fe_state_v30, "NetFEState_v30"),
+    (
+        0x001e_0c10,
+        net_config_auth_popup_transition_in,
+        "NetConfigAuthPopup_TransitionIn",
+    ),
+    (
+        0x001e_0c18,
+        net_config_auth_popup_transition_out,
+        "NetConfigAuthPopup_TransitionOut",
+    ),
+    (
+        0x001e_0c20,
+        net_config_auth_popup_v32,
+        "NetConfigAuthPopup_v32",
+    ),
+    (
+        0x001e_0c28,
+        net_config_auth_popup_v29,
+        "NetConfigAuthPopup_v29",
+    ),
+    (
+        0x001a_90f0,
+        net_fe_state_open_keyboard_wstr,
+        "NetFEState_OpenKeyboardWStr",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4763,6 +4801,91 @@ pub(crate) mod callee {
     pub(crate) const ASYNC_FILE_CANCEL: Callee = Callee {
         addr: 0x003d_faf0,
         f: ee::s14::AsyncFile_Cancel,
+    };
+
+    pub const MENU_SYS_POP_PAGE: Callee = Callee {
+        addr: 0x002c_c460,
+        f: ee::s09::f_002cc460,
+    };
+
+    pub const MENU_SYS_PUSH_PAGE: Callee = Callee {
+        addr: 0x002c_c3b8,
+        f: ee::s09::f_002cc3b8,
+    };
+
+    pub const C_BX_STRING_ASSIGN_CSTR_2: Callee = Callee {
+        addr: 0x0031_84e8,
+        f: ee::s10::f_003184e8,
+    };
+
+    pub const LOBBY_MAN_LOGIN: Callee = Callee {
+        addr: 0x0025_c610,
+        f: ee::s06::f_0025c610,
+    };
+
+    pub const LOBBY_MAN_SELECT_PERSONA_INDEX: Callee = Callee {
+        addr: 0x0025_cd28,
+        f: ee::s06::f_0025cd28,
+    };
+
+    pub const LOBBY_MAN_GET_ROOM_NAME: Callee = Callee {
+        addr: 0x0025_f150,
+        f: ee::s06::f_0025f150,
+    };
+
+    pub const STRCMP_2: Callee = Callee {
+        addr: 0x0041_65a8,
+        f: ee::s15::f_004165a8,
+    };
+
+    pub const LOBBY_MAN_MOVE_TO_ROOM_INDEX: Callee = Callee {
+        addr: 0x0025_d800,
+        f: ee::s06::f_0025d800,
+    };
+
+    pub const LOBBY_MAN_GET_ROOM_COUNT: Callee = Callee {
+        addr: 0x0025_f120,
+        f: ee::s06::f_0025f120,
+    };
+
+    pub const LOBBY_MAN_IS_IN_ROOM: Callee = Callee {
+        addr: 0x0025_f430,
+        f: ee::s06::f_0025f430,
+    };
+
+    pub const LOBBY_MENU_SHOW_ERROR: Callee = Callee {
+        addr: 0x0017_da30,
+        f: ee::s02::f_0017da30,
+    };
+
+    pub const LOBBY_MENU_START_NET_RACE: Callee = Callee {
+        addr: 0x0017_de70,
+        f: ee::s02::f_0017de70,
+    };
+
+    pub const C_BX_STRING_ASSIGN: Callee = Callee {
+        addr: 0x0031_8448,
+        f: ee::s10::f_00318448,
+    };
+
+    pub const EA_MEM_ALLOC_NAMED: Callee = Callee {
+        addr: 0x0031_7d70,
+        f: ee::s10::f_00317d70,
+    };
+
+    pub const NET_FE_STATE_CREATE_KEYBOARD_POPUP: Callee = Callee {
+        addr: 0x001a_91b0,
+        f: ee::s03::f_001a91b0,
+    };
+
+    pub const C_KEYBOARD_POPUP_SET_STATIC_WIDE_TEXT: Callee = Callee {
+        addr: 0x001c_cf70,
+        f: ee::s04::f_001ccf70,
+    };
+
+    pub const C_KEYBOARD_POPUP_SET_TEXT: Callee = Callee {
+        addr: 0x001c_b418,
+        f: ee::s04::f_001cb418,
     };
 }
 
@@ -7044,6 +7167,7 @@ macro_rules! child_event_switch {
         }
     };
 }
+use crate::abi::arg;
 use crate::abi::ret;
 use crate::call::tail_wrapper;
 use crate::call::Target;
@@ -25281,6 +25405,34 @@ pub fn net_fe_state_init(c: &mut Cpu) {
     ret(c);
 }
 
+/// Status word the `NetFEState` table reads at +0x58.
+pub(crate) const NET_FE_STATE_HANDLE_INPUT_STATUS: u32 = 0x58;
+/// First word `NetFEState_v30` tests at +0x40.
+pub(crate) const NET_FE_STATE_V30_GATE: u32 = 0x40;
+/// Second word `NetFEState_v30` tests at +0x48.
+pub(crate) const NET_FE_STATE_V30_FLAG: u32 = 0x48;
+/// `NetFEState_TransitionIn` (0x001a8828): enter the network front-end state.
+/// Always reports 0.
+pub fn net_fe_state_transition_in(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+/// `NetFEState_HandleInput` (0x001de860): poll the network front-end state.
+/// Returns its status word.
+pub fn net_fe_state_handle_input(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = Addr(arg(c, 0)).off(NET_FE_STATE_HANDLE_INPUT_STATUS).lw(c);
+    ret(c);
+}
+/// `NetFEState_v25` (0x001de868): an unhandled `NetFEState` virtual slot.
+/// Does nothing.
+pub fn net_fe_state_v25(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 /// `NetFEState_GotoNextState(this)` (0x1a8a40): follow the chain at +0x20 to
 /// its last state, then run that state's `OnEnter` (through the vtable slot at
 /// +0xd4) and report whether it moved on (1) or not (0).
@@ -25585,6 +25737,60 @@ pub fn oc869_net_fe_state_on_net_timeout(c: &mut Cpu) {
 /// child handler, only the return.
 pub fn oc869_c_fe_state_online_character_select_empty_child_handler(c: &mut Cpu) {
     c.cycles += 2;
+    ret(c);
+}
+
+/// `NetFEState_v29` (0x001de870): a `NetFEState` virtual slot that always
+/// reports handled (1).
+pub fn net_fe_state_v29(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+
+/// `NetFEState_v30` (0x001de8a8): a `NetFEState` readiness check. Reports
+/// whether the gate word is set and the flag word is non-zero.
+pub fn net_fe_state_v30(c: &mut Cpu) {
+    c.cycles += 3;
+    let state = Addr(arg(c, 0));
+    let mut ready = 0;
+    if state.off(NET_FE_STATE_V30_GATE).lw(c) != 0 {
+        c.cycles += 2;
+        ready = (state.off(NET_FE_STATE_V30_FLAG).lw(c) != 0) as u64;
+    }
+    c.cycles += 2;
+    c.g[V1][0] = ready;
+    c.g[V0][0] = ready;
+    ret(c);
+}
+
+/// `NetConfigAuthPopup_TransitionIn` (0x001e0c10): enter the network-config
+/// authorisation popup. Always reports handled (1).
+pub fn net_config_auth_popup_transition_in(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+
+/// `NetConfigAuthPopup_TransitionOut` (0x001e0c18): leave the network-config
+/// authorisation popup. Always reports handled (1).
+pub fn net_config_auth_popup_transition_out(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+/// `NetConfigAuthPopup_v32` (0x001e0c20): an unhandled authorisation-popup
+/// virtual slot. Does nothing.
+pub fn net_config_auth_popup_v32(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `NetConfigAuthPopup_v29` (0x001e0c28): an authorisation-popup virtual slot
+/// that always reports 0.
+pub fn net_config_auth_popup_v29(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0;
     ret(c);
 }
 
@@ -71252,6 +71458,39 @@ pub fn c_fe_state_stats_on_widget_created(c: &mut Cpu) {
     });
 }
 
+/// `void NetFEState_OpenKeyboardWStr(NetFEState* self, uint a1, uint* a2, uint a3)` (0x1a90f0):
+/// open the keyboard popup for a wide-string entry, then set its static
+/// and initial text. 24 cycles.
+pub fn net_fe_state_open_keyboard_wstr(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A2][0] = c.g[T0][0];
+        c.g[S2][0] = c.g[A3][0];
+        frame.save_ra(c, 0);
+        c.g[T0][0] = c.g[T2][0];
+        c.g[A3][0] = c.g[T1][0];
+        callee::NET_FE_STATE_CREATE_KEYBOARD_POPUP.call(c, 0x001a_9120)?;
+        c.g[A0][0] = c.lw(r32(c, S1).wrapping_add(0x69c));
+        c.g[A1][0] = c.g[S0][0];
+        callee::C_KEYBOARD_POPUP_SET_STATIC_WIDE_TEXT.call(c, 0x001a_912c)?;
+        c.g[A0][0] = c.lw(r32(c, S1).wrapping_add(0x69c));
+        c.g[A1][0] = c.g[S2][0];
+        callee::C_KEYBOARD_POPUP_SET_TEXT.call(c, 0x001a_9138)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -79569,6 +79808,7 @@ pub(crate) mod tests {
         let w = if v == 0 { 1 } else { v + 2 };
         c.bus.write32(OC862_MAIL + (target & 0xf_fffc), w);
     }
+    pub(crate) use crate::game::dirtysock::gamecomm::tests::gcomm_fix_word;
 
     #[test]
     fn cfe_state_net_messenger_v32_matches() {
@@ -79588,6 +79828,20 @@ pub(crate) mod tests {
                 );
                 c.bus.write32(GAME_GP.wrapping_sub(0xc8), DATA + 0x200);
                 oc862_force(c, 0x0026_1460, if seed & 2 == 0 { 0 } else { 5 });
+            },
+        );
+    }
+
+    #[test]
+    fn net_fe_state_transition_in_matches() {
+        check(
+            ee::s03::f_001a8828__generated,
+            net_fe_state_transition_in,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0001 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001a_8828;
             },
         );
     }
@@ -82446,6 +82700,30 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn net_fe_state_handle_input_matches() {
+        check(
+            ee::s04::f_001de860__generated,
+            net_fe_state_handle_input,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0002 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001d_e860;
+                c.g[A0][0] = sx(DATA);
+                c.bus.write32(DATA, gcomm_fix_word(&mut r));
+                c.bus.write32(
+                    DATA + NET_FE_STATE_HANDLE_INPUT_STATUS,
+                    if seed % 2 == 0 {
+                        0
+                    } else {
+                        gcomm_fix_word(&mut r)
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
     fn c_fe_state_challenge_received_popup_accept_matches() {
         check(
             ssx3_ee::s03::f_001b0e10__generated,
@@ -82912,6 +83190,20 @@ pub(crate) mod tests {
                 c.bus.write16(DATA + 0x4000 + 0x20, 0x10);
                 c.bus.write32(GAME_GP + 0x2e0, DATA + 0x5000);
                 c.bus.write32(this + 0x6d8, seed & 1);
+            },
+        );
+    }
+
+    #[test]
+    fn net_fe_state_v25_matches() {
+        check(
+            ee::s04::f_001de868__generated,
+            net_fe_state_v25,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0003 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001d_e868;
             },
         );
     }
@@ -93340,6 +93632,53 @@ pub(crate) mod tests {
                 c.bus.write32(OC922_THIS + 0x6e8, r.next_u32() % 20);
                 c.bus.write32(OC922_THIS + 0x6ec, (seed / 3) % 2);
                 c.g[A0][0] = OC922_THIS as u64;
+                c.g[A1][0] = [0u64, 1, 5, 0, 0xffff_ffff_0000_0000][(seed % 5) as usize];
+            },
+        );
+    }
+
+    #[test]
+    fn net_fe_state_v29_matches() {
+        check(
+            ee::s04::f_001de870__generated,
+            net_fe_state_v29,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0004 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001d_e870;
+            },
+        );
+    }
+
+    #[test]
+    fn net_fe_state_v30_matches() {
+        check(
+            ee::s04::f_001de8a8__generated,
+            net_fe_state_v30,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0005 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001d_e8a8;
+                c.g[A0][0] = sx(DATA);
+                // Gate shut, gate open with flag clear, gate open with flag set.
+                c.bus.write32(
+                    DATA + NET_FE_STATE_V30_GATE,
+                    if seed % 3 == 0 {
+                        0
+                    } else {
+                        gcomm_fix_word(&mut r)
+                    },
+                );
+                c.bus.write32(
+                    DATA + NET_FE_STATE_V30_FLAG,
+                    if seed % 3 == 2 {
+                        gcomm_fix_word(&mut r)
+                    } else {
+                        0
+                    },
+                );
             },
         );
     }
@@ -93689,6 +94028,20 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn net_config_auth_popup_transition_in_matches() {
+        check(
+            ee::s04::f_001e0c10__generated,
+            net_config_auth_popup_transition_in,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0006 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001e_0c10;
+            },
+        );
+    }
+
     /// `cFEStateNetConfig_GetErrorText`: every error code of the search
     /// tree, its neighbours (to take every compare both ways) and random
     /// ones.
@@ -93729,6 +94082,20 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn net_config_auth_popup_transition_out_matches() {
+        check(
+            ee::s04::f_001e0c18__generated,
+            net_config_auth_popup_transition_out,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0007 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001e_0c18;
+            },
+        );
+    }
+
     /// Shared fixture of the two messenger popups: the BuddyMan session
     /// (or none), the helpers' booleans, the engine and its state stack.
     pub(crate) fn messenger(c: &mut Cpu, r: &mut Rng) {
@@ -93757,6 +94124,20 @@ pub(crate) mod tests {
                 c.g[A0][0] = SELF as u64;
                 c.g[A1][0] = NAME as u64;
                 force(c, F_262A38, &[pick(&mut r, 2)]);
+            },
+        );
+    }
+
+    #[test]
+    fn net_config_auth_popup_v32_matches() {
+        check(
+            ee::s04::f_001e0c20__generated,
+            net_config_auth_popup_v32,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0008 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001e_0c20;
             },
         );
     }
@@ -95520,5 +95901,1455 @@ pub(crate) mod tests {
                 news_fixture(c, seed, &mut r);
             },
         );
+    }
+
+    #[test]
+    fn net_config_auth_popup_v29_matches() {
+        check(
+            ee::s04::f_001e0c28__generated,
+            net_config_auth_popup_v29,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3900_0009 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x001e_0c28;
+            },
+        );
+    }
+    use crate::difftest::events::Events;
+    use crate::game::bx::bxstringctor::tests::alloc_base as alloc_base_bx;
+    use crate::game::bx::bxstringctor::tests::be_library as be_library_bx;
+
+    pub(crate) const SEEDS_18: u32 = 200;
+
+    pub(crate) const FIX: u32 = DATA + 0x1010;
+
+    pub(crate) const SELF_KB: u32 = DATA + 0x8010;
+
+    pub(crate) const COMMS_A: u32 = FIX;
+
+    pub(crate) const COMMS_B: u32 = FIX + 0x400;
+
+    pub(crate) const LOBBY_R2: u32 = FIX + 0x800;
+
+    pub(crate) const VT_2_R2: u32 = FIX + 0x1400;
+
+    pub(crate) fn base_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = alloc_base_bx(c, seed, salt);
+        be_library_bx(c);
+        fill(c, &mut r, SELF_KB, 0x2000);
+        fill(c, &mut r, FIX, 0x1000);
+        r
+    }
+
+    pub(crate) fn comms(c: &mut Cpu) {
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), COMMS_A);
+        c.bus.write32(GAME_GP.wrapping_sub(0x238), COMMS_B);
+        c.bus.write32(GAME_GP.wrapping_sub(0xc8), LOBBY_R2);
+    }
+
+    pub(crate) fn clear_words(c: &mut Cpu, base: u32, words: u32) {
+        for i in 0..words {
+            c.bus.write32(base + 4 * i, 0);
+        }
+    }
+
+    pub(crate) fn vtable_slot(c: &mut Cpu, vt: u32, off: u32, target: u32) {
+        c.bus.write16(vt + off, 0);
+        c.bus.write32(vt + off + 4, target);
+    }
+
+    pub(crate) fn str(c: &mut Cpu, addr: u32, s: &[u8]) {
+        for (i, &b) in s.iter().enumerate() {
+            c.bus.write8(addr + i as u32, b);
+        }
+        c.bus.write8(addr + s.len() as u32, 0);
+    }
+
+    /// `NetFEState_ShowNetErrorPopup` fixture: the error word steers the
+    /// matcher through the equality and greater arms plus the fallthrough
+    /// default; popup, hash, buddy and lobby fixtures cover the message
+    /// tails. Plain check: the string-builder loop is data-terminated and
+    /// the nested callees deliver no events in test (their unwinds belong
+    /// to the live game, where the dispatcher resumes at any arm).
+    pub(crate) fn fixture(c: &mut Cpu, seed: u32) -> Rng {
+        let r = base_machine(c, seed, 0x001a_9cc0);
+        elf_image(c);
+        clear_words(c, SELF_KB, 0x710);
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY_R2, 0x100);
+        let this = SELF_KB;
+        let live = FIX + 0x2400;
+        clear_words(c, live, 0x80);
+        c.bus
+            .write32(this + 0x6a0, if seed % 2 == 0 { 0 } else { live });
+        c.bus.write32(this + 0x10, FIX + 0x2500);
+        let err = FIX + 0x2600;
+        clear_words(c, err, 0x20);
+        c.bus.write32(err + 8, WORDS[(seed as usize) % WORDS.len()]);
+        c.bus.write32(COMMS_A + 0x8c, FIX + 0x2700);
+        c.bus.write32(FIX + 0x2700 + 4, FIX + 0x2800);
+        vtable_slot(c, FIX + 0x2800, 0x20, VT_2_R2);
+        vtable_slot(c, VT_2_R2 + 0x20, 0, 0x0041_0000);
+        c.bus.write32(FIX + 0x2800 + 0x24, VT_2_R2 + 0x80);
+        vtable_slot(c, VT_2_R2 + 0x80, 0, crate::difftest::fakes::FAKE);
+        c.bus.write32(err + 0x10, FIX + 0x2a00);
+        clear_words(c, FIX + 0x2a00, 0x20);
+        // `S3 + 0xc`: the message buffer (refcount/length before
+        // it), used as a name string by the fmt tail and scanned
+        // for newlines by the string-builder tail.
+        let strbuf = FIX + 0x2b10;
+        c.bus.write32(
+            strbuf - 0xc,
+            if seed / 5 % 2 == 0 { 0xffff_ffff } else { 1 },
+        );
+        c.bus.write32(strbuf - 8, 18);
+        str(c, strbuf, b"name1\nname2\nname3");
+        c.bus.write32(err + 0xc, strbuf);
+        c.bus.write32(GAME_GP + 0xda0, FIX + 0x2d00);
+        str(c, FIX + 0x2d00, b"");
+        let buddy = FIX + 0x2c00;
+        clear_words(c, buddy, 0x80);
+        c.bus.write32(buddy + 0x40, 0xffff_ffff);
+        c.bus.write32(buddy + 0xc8, 1);
+        c.bus.write32(buddy + 0xd8, 1);
+        c.bus
+            .write32(GAME_GP + 0x238, if seed / 3 % 2 == 0 { 0 } else { buddy });
+        c.bus.write32(LOBBY_R2 + 0x54, 0);
+        c.bus.write32(LOBBY_R2 + 0xb4, 0);
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = (FIX + 0x3000) as u64;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = err as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x001a_9cc0;
+        r
+    }
+
+    pub(crate) const WORDS: &[u32] = &[
+        0x616a6f69, 0x61756e72, 0x61757468, 0x62616463, 0x626c616b, 0x626f6775, 0x626f726e,
+        0x63646576, 0x6368616c, 0x63686574, 0x64626572, 0x64656670, 0x64657465, 0x64697361,
+        0x646e7366, 0x646f776e, 0x6475706c, 0x65636f6e, 0x656c656e, 0x66696c74, 0x66756c6c,
+        0x67656e64, 0x67706172, 0x686f7374, 0x69616472, 0x6967616d, 0x69676e6f, 0x696d7374,
+        0x696e616d, 0x696e676d, 0x696e7073, 0x696e7670, 0x69706173, 0x69706572, 0x6974726e,
+        0x6a6f696e, 0x6b69636b, 0x6b696b68, 0x6c6f636b, 0x6c6f676e, 0x6d61696c, 0x6d616e79,
+        0x6d617574, 0x6d617870, 0x6d617874, 0x6d697373, 0x6e656d6c, 0x6e657730, 0x6e666e64,
+        0x6e67616d, 0x6e6b696b, 0x6e6f776e, 0x6e706c61, 0x6e707269, 0x6e726f6d, 0x6e737063,
+        0x6e737276, 0x6f6e6c6e, 0x6f766572, 0x70617373, 0x70617574, 0x706d616c, 0x70736574,
+        0x71756974, 0x72616e67, 0x72616e6b, 0x72617574, 0x726f6f6d, 0x72737276, 0x73616d65,
+        0x73656c66, 0x736f6f6e, 0x7370616d, 0x73747274, 0x7465616d, 0x74696d65, 0x746f6f79,
+        0x746f7361, 0x74737461, 0x7567616d, 0x756c7374, 0x756d6163, 0x75726f6d, 0x75757372,
+        0x776f6c66, 0x78697374, 0x616feeed, 0x6175716d, 0x626f6cf1, 0x63686370, 0x64656d6a,
+        0x666f6c70, 0x696462ef, 0x6aec666c, 0x6c6f656c, 0x6d6171f6, 0x6e65724e, 0x6e706f65,
+        0x6f7268f0, 0x70617473, 0x72616e69, 0x73636ce5, 0x746c6e6f, 0x756cea6b, 0x0, 0x1,
+        0xffffffff, 0x7fffffff, 0x40404040,
+    ];
+
+    driven!(
+        net_fe_state_show_net_error_popup_generated,
+        ee::s03::f_001a9cc0__generated
+    );
+
+    driven!(
+        net_fe_state_show_net_error_popup_hand,
+        net_fe_state_show_net_error_popup
+    );
+
+    /// `NetFEState_ShowNetErrorPopup`: the resume path. The string-builder
+    /// loop's head unwinds when a VBlank is due there; both sides resume at
+    /// the head and finish identically.
+    #[test]
+    fn net_fe_state_show_net_error_popup_unwinds_r2() {
+        let resumes = check_events(
+            net_fe_state_show_net_error_popup_generated,
+            net_fe_state_show_net_error_popup_hand,
+            SEEDS_18,
+            &|c, seed| {
+                // Unwind seeds all run seed 124's fixture: it is the only
+                // one whose message tail enters the string-builder loop,
+                // so without the remap no Unwind seed could ever reach the
+                // head below. (`fixture` installs no fakes itself, so
+                // the two pin wrappers that keep this path's nested loops
+                // from unwinding first are hooked here.)
+                fakes::hook(
+                    std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00416210),
+                    pin_416210,
+                    &PREV_PIN_416210,
+                );
+                fakes::hook(
+                    std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003DC450),
+                    pin_3dc450,
+                    &PREV_PIN_3DC450,
+                );
+                let fseed = if seed % 3 == 1 { 124 } else { seed };
+                let mut r = fixture(c, fseed);
+                c.bus.write32(FAKE_POP_GATE, FAKE_MAGIC_P6);
+                let mode = schedule(c, &mut r, seed, 0x001a_9cc0);
+                if mode == Events::Unwind {
+                    // Defer the VBlank past the confirm chain's loops and
+                    // the string emit's own check: with the default timing
+                    // the first due check is nested and either unwinds
+                    // there (fatal to `drive`) or delivers without
+                    // unwinding and reschedules the head into silence. The
+                    // value lands between the last nested check and the
+                    // head; it is cycle-exact to this fixture, so a
+                    // failure here means recalibrating it, not the port.
+                    ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                        .sched
+                        .next_vblank = 7020;
+                }
+                mode
+            },
+        );
+        assert!(
+            resumes.get(&0x001a_a820).copied().unwrap_or(0) > 0,
+            "no unwind at head 0x1aa820",
+        );
+    }
+
+    pub(crate) const SEEDS_19: u32 = 200;
+
+    /// Fake control words: gate, `is_in_room` result, find result, active
+    /// flag, kick reason, string hash, hash gate.
+    pub(crate) const FAKE_CTRL: u32 = FIX + 0xC00;
+
+    pub(crate) const FAKE_IS_IN_ROOM: u32 = FIX + 0xC04;
+
+    pub(crate) const FAKE_FIND: u32 = FIX + 0xC08;
+
+    pub(crate) const FAKE_ACTIVE: u32 = FIX + 0xC0C;
+
+    pub(crate) const FAKE_KICK: u32 = FIX + 0xC10;
+
+    pub(crate) const FAKE_HASH: u32 = FIX + 0xC14;
+
+    pub(crate) const FAKE_HASHGATE: u32 = FIX + 0xC18;
+
+    pub(crate) const FAKE_MAGIC: u32 = 0x0c11_8200;
+
+    /// Distinct magic for the update-state test's channel-connected fake,
+    /// so the shared fakes stay off and cannot cross-talk with other tests.
+    pub(crate) const FAKE_MAGIC_U4: u32 = 0x0c11_8404;
+
+    pub(crate) const FAKE_CONN_GATE: u32 = FIX + 0xC2C;
+
+    pub(crate) const FAKE_CONN: u32 = FIX + 0xC30;
+
+    /// Distinct magic for the lobby-event test's room fakes, so the shared
+    /// fakes stay off and cannot cross-talk with other tests.
+    pub(crate) const FAKE_MAGIC_E6: u32 = 0x0c11_8506;
+
+    pub(crate) const FAKE_EV_GATE: u32 = FIX + 0xC34;
+
+    pub(crate) const FAKE_ROOM_COUNT: u32 = FIX + 0xC38;
+
+    pub(crate) const FAKE_ROOM_NAME: u32 = FIX + 0xC3C;
+
+    /// Distinct magic for the popup unwind test's memset fake, so the
+    /// shared fakes stay off and cannot cross-talk with other tests.
+    pub(crate) const FAKE_MAGIC_P6: u32 = 0x0c11_8508;
+
+    pub(crate) const FAKE_POP_GATE: u32 = FIX + 0xC40;
+
+    /// C strings and message ids.
+    pub(crate) const STR: u32 = FIX + 0x1000;
+
+    /// Fixture vtables.
+    pub(crate) const VT_3: u32 = FIX + 0x1400;
+
+    pub(crate) static PREV_IS_IN_ROOM: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_FIND: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_KICK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_HASH: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_CLOSE_TOP: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_SWITCH: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_CONN: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_ROOM_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_ROOM_NAME: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_PIN_416210: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_PIN_3DC450: AtomicUsize = AtomicUsize::new(0);
+
+    /// Run the real body of a nested dispatcher with its event checks
+    /// pinned off, then re-arm the deadline the caller was running with.
+    /// The popup unwind test wraps the nested loops on the message path
+    /// this way so the only unwind in the run is the popup's own head;
+    /// anything else falls back to the generated body. Both sides run the
+    /// same wrapper, so the comparison stays exact.
+    fn pin_inner(c: &mut Cpu, real: fn(&mut Cpu)) {
+        let saved = c.next_event;
+        c.next_event = u64::MAX;
+        real(c);
+        if c.pc == c.g[RA][0] as u32 {
+            c.next_event = saved;
+        }
+    }
+
+    /// Vectorised fill behind the popup's confirm chain (0x416210).
+    pub(crate) fn pin_416210(c: &mut Cpu) {
+        if c.bus.read32(FAKE_POP_GATE) != FAKE_MAGIC_P6 {
+            return fakes::fall_back(c, &PREV_PIN_416210, ee::s15::f_00416210__generated);
+        }
+        pin_inner(c, ee::s15::f_00416210__generated);
+    }
+
+    /// String formatter on the popup's message path (0x3dc450).
+    pub(crate) fn pin_3dc450(c: &mut Cpu) {
+        if c.bus.read32(FAKE_POP_GATE) != FAKE_MAGIC_P6 {
+            return fakes::fall_back(c, &PREV_PIN_3DC450, ee::s14::f_003dc450__generated);
+        }
+        pin_inner(c, ee::s14::f_003dc450__generated);
+    }
+
+    /// `LobbyMan_GetRoomCount` with a seed-steered count: the lobby-event
+    /// fixture steers the room loop through `FAKE_ROOM_COUNT` while its gate
+    /// word holds the `E6` magic; every other test falls back to the
+    /// generated body.
+    pub(crate) fn lobby_room_count_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_EV_GATE) != FAKE_MAGIC_E6 {
+            return fakes::fall_back(c, &PREV_ROOM_COUNT, ee::s06::f_0025f120__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0025_f120, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_ROOM_COUNT) as u64;
+        }
+    }
+
+    /// `LobbyMan_GetRoomName` with a seed-steered answer: same gate as the
+    /// room-count fake; the fixture points it at a name that mismatches the
+    /// lobby's selected-room string so the room loop iterates.
+    pub(crate) fn lobby_room_name_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_EV_GATE) != FAKE_MAGIC_E6 {
+            return fakes::fall_back(c, &PREV_ROOM_NAME, ee::s06::f_0025f150__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0025_f150, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_ROOM_NAME) as u64;
+        }
+    }
+
+    /// `CCommSystem_IsChannelConnected` with a seed-steered result: the
+    /// update-state fixture steers the channel arm through `FAKE_CONN` while
+    /// its gate word holds the `U4` magic; every other test falls back to
+    /// the generated body.
+    pub(crate) fn channel_connected_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CONN_GATE) != FAKE_MAGIC_U4 {
+            return fakes::fall_back(c, &PREV_CONN, ee::s06::f_00255d50__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0025_5d50, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_CONN) as u64;
+        }
+    }
+
+    /// `LobbyMan_IsInRoom` with a seed-steered result (the generated body
+    /// reaches an unported lobby helper, so its nonzero path is not
+    /// RAM-steerable). Fixture vtable slots that need a steerable `v0`
+    /// point at `0x0025f430` and read this word.
+    pub(crate) fn is_in_room_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return fakes::fall_back(c, &PREV_IS_IN_ROOM, ee::s06::f_0025f430__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0025_f430, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_IS_IN_ROOM) as u64;
+        }
+    }
+
+    /// `UIScreen_LookupValue` (0x39c778) has no override slot, so it cannot
+    /// be hooked: the tests drive it for real on a fixture screen list.
+    /// `StrHash` (0x317670) does have a slot: the fake returns the
+    /// seed-steered `FAKE_HASH` word when `FAKE_HASHGATE` holds the magic word,
+    /// so the `GotoNextState` test can match (or miss) its screen entry
+    /// without depending on the real game's string bytes.
+    pub(crate) fn str_hash_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC || c.bus.read32(FAKE_HASHGATE) != FAKE_MAGIC {
+            return fakes::fall_back(c, &PREV_HASH, ee::s10::f_00317670__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_7670, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_HASH) as u64;
+        }
+    }
+
+    /// `UIScreen_FindObject` with a seed-steered result: null or the
+    /// fixture object.
+    pub(crate) fn find_object_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return fakes::fall_back(c, &PREV_FIND, ee::s13::f_0039d860__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0039_d860, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_FIND) as u64;
+        }
+    }
+
+    /// `MenuSys_IsActive` (0x2cc098) with a seed-steered result: the update
+    /// loop pushes a page or reuses the live one.
+    pub(crate) fn is_active_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return fakes::fall_back(c, &PREV_ACTIVE, ee::s09::f_002cc098__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x002c_c098, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_ACTIVE) as u64;
+        }
+    }
+
+    /// `LobbyMan_GetKickReason` (0x25da90) with a seed-steered result: the
+    /// handle-event lobby-menu arm constructs the menu or bails.
+    pub(crate) fn kick_reason_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return fakes::fall_back(c, &PREV_KICK, ee::s06::f_0025da90__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0025_da90, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_KICK) as u64;
+        }
+    }
+
+    /// `UIStateMgr_CloseTopStates`: the return value is unused, so the fake
+    /// just logs the call and returns.
+    pub(crate) fn close_top_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return fakes::fall_back(c, &PREV_CLOSE_TOP, ee::s13::f_0039f190__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0039_f190, ra);
+    }
+
+    /// `UIStateMgr_SwitchStateClosePopups`: the return value is unused, so
+    /// the fake just logs the call and returns.
+    pub(crate) fn switch_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return fakes::fall_back(c, &PREV_SWITCH, ee::s13::f_0039f4c0__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0039_f4c0, ra);
+    }
+
+    pub(crate) fn install_fakes() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025F430),
+            is_in_room_fake,
+            &PREV_IS_IN_ROOM,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317670),
+            str_hash_fake,
+            &PREV_HASH,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_0039D860),
+            find_object_fake,
+            &PREV_FIND,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s09::OVERRIDE_002CC098),
+            is_active_fake,
+            &PREV_ACTIVE,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_00255D50),
+            channel_connected_fake,
+            &PREV_CONN,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025F120),
+            lobby_room_count_fake,
+            &PREV_ROOM_COUNT,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025F150),
+            lobby_room_name_fake,
+            &PREV_ROOM_NAME,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00416210),
+            pin_416210,
+            &PREV_PIN_416210,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003DC450),
+            pin_3dc450,
+            &PREV_PIN_3DC450,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025DA90),
+            kick_reason_fake,
+            &PREV_KICK,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_0039F190),
+            close_top_fake,
+            &PREV_CLOSE_TOP,
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_0039F4C0),
+            switch_fake,
+            &PREV_SWITCH,
+        );
+    }
+
+    /// Machine + pools + DLHeap arena + BELibrary dummy. Every fixture
+    /// builds on this; gp slots and control words are wired per test.
+    /// Buffers the ports write are pre-filled non-zero so a missing or
+    /// extra store changes RAM.
+    pub(crate) fn base_machine_unwind(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let mut r = alloc_base_bx(c, seed, salt);
+        be_library_bx(c);
+        // Idempotent: every test installs its hooks through its own setup.
+        install_fakes();
+        if calls > 0 {
+            c.bus.write32(
+                fakes::LOG_UNWIND_AT,
+                if seed % 3 == 0 {
+                    (seed / 3) % calls
+                } else {
+                    u32::MAX
+                },
+            );
+        }
+        fill(c, &mut r, SELF_KB, 0x2000);
+        fill(c, &mut r, FIX, 0x1000);
+        r
+    }
+
+    /// Write a NUL-terminated wide (u16) string.
+    pub(crate) fn wstr(c: &mut Cpu, addr: u32, s: &[u16]) {
+        for (i, &w) in s.iter().enumerate() {
+            c.bus.write16(addr + 2 * i as u32, w);
+        }
+        c.bus.write16(addr + 2 * s.len() as u32, 0);
+    }
+
+    /// Allocate `size` bytes from the DLHeap arena through the real
+    /// `EA_MemAllocNamed`, so the frees in the test see arena pointers.
+    /// Deterministic: the arena state after `base` is seed-fixed.
+    pub(crate) fn arena_alloc(c: &mut Cpu, size: u32) -> u32 {
+        str(c, STR, b"oc");
+        c.g[A0][0] = size as u64;
+        c.g[A1][0] = STR as u64;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        ee::s10::f_00317d70(c);
+        c.g[V0][0] as u32
+    }
+
+    driven!(net_fe_state_dtor_generated, ee::s03::f_001a85d0__generated);
+
+    driven!(
+        net_fe_state_dtor_hand,
+        crate::game::fe::feasyncfile::net_fe_state_base_dtor
+    );
+
+    /// `NetFEState_dtor`: the message-list drain frees its arena nodes
+    /// (the `+0x6c8` head walks back to itself), the message slot frees,
+    /// and the name string and `UIState` base destroy. The deleting flag
+    /// steers the final free.
+    #[test]
+    fn net_fe_state_dtor_matches_r2() {
+        check_events(
+            net_fe_state_dtor_generated,
+            net_fe_state_dtor_hand,
+            SEEDS_19,
+            &|c, seed| {
+                let mut r = base_machine_unwind(c, seed, 0x001a_85d0, 0);
+                let this = arena_alloc(c, 0x800);
+                clear_words(c, this, 0x200);
+                c.bus.write32(this + 8, 0x0046_b808);
+                // Shared-empty name string: no buffer free.
+                c.bus.write32(this + 0x6c0, 0x0046_dcd4);
+                // Message-list drain, as in the lobby dtor test. Both the
+                // head and the freeme chunk come from the arena heap so
+                // pool free-lists cannot disturb the list head word. The
+                // `n1` anchor is never freed (the loop ends when its next
+                // word points back at itself); the ring after it drains.
+                let n1 = arena_alloc(c, 0x800);
+                c.bus.write32(this + 0x6cc, n1);
+                let mut prev = n1;
+                // Zero, one or two message nodes: `+0` next, `+4` prev, `+8`
+                // the message object (null, or a fake-routed vtable object
+                // on odd seeds so the per-message cleanup call runs).
+                let nodes = seed / 5 % 3;
+                for _ in 0..nodes {
+                    let n = arena_alloc(c, 0x800);
+                    c.bus.write32(prev, n);
+                    c.bus.write32(n + 4, prev);
+                    c.bus.write32(n + 8, if seed % 2 == 0 { 0 } else { VT_3 });
+                    prev = n;
+                }
+                c.bus.write32(prev, n1);
+                c.bus.write32(n1 + 4, prev);
+                c.bus.write32(VT_3 + 4, VT_3);
+                vtable_slot(c, VT_3 + 8, 0, FAKE);
+                // `+0x6b8` free arm and the deleting flag word.
+                let freeme = if seed % 4 == 0 {
+                    arena_alloc(c, 0x20)
+                } else {
+                    0
+                };
+                c.bus.write32(this + 0x6b8, freeme);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (seed / 3 % 2) as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                schedule(c, &mut r, seed, 0x001a_85d0)
+            },
+        );
+    }
+
+    driven!(
+        net_fe_state_goto_next_state_generated,
+        ee::s03::f_001a8a40__generated
+    );
+
+    driven!(
+        net_fe_state_goto_next_state_hand,
+        net_fe_state_goto_next_state
+    );
+
+    /// `NetFEState_GotoNextState`: finished child states are followed down
+    /// the `+0x20` chain; otherwise the screen's lookup frame runs and the
+    /// next state is notified. The vtable answer, the hashed frame name
+    /// (matched or missed in the fixture screen list) and the chain length
+    /// steer the arms.
+    #[test]
+    fn net_fe_state_goto_next_state_matches_r2() {
+        check_events(
+            net_fe_state_goto_next_state_generated,
+            net_fe_state_goto_next_state_hand,
+            SEEDS_19,
+            &|c, seed| {
+                let mut r = base_machine_unwind(c, seed, 0x001a_8a40, 0);
+                clear_words(c, SELF_KB, 0x710);
+                let this = SELF_KB;
+                let screen = FIX + 0x2400;
+                // Child-state chain off `+0x20`: length 0, 1 or 2; the
+                // final node carries the vtable object behind `+0x8`.
+                let mut next = 0;
+                for i in (0..seed % 3).rev() {
+                    let node = FIX + 0x2500 + 0x40 * i;
+                    c.bus.write32(node + 0x20, next);
+                    c.bus.write32(node + 8, VT_3);
+                    next = node;
+                }
+                c.bus.write32(this + 0x20, next);
+                c.bus.write32(this + 0x40, screen);
+                // Vtable object behind `*(this + 8)`: the slot routes to
+                // `FAKE`, steered through the first fake-call result.
+                c.bus.write32(this + 8, VT_3);
+                c.bus.write32(VT_3 + 0xd0, 0);
+                vtable_slot(c, VT_3 + 0xd4 - 4, 0, FAKE);
+                c.bus.write32(
+                    LOG_RESULTS,
+                    if seed / 3 % 2 == 0 { 0 } else { FIX + 0x2600 },
+                );
+                // Screen thread list: one entry, matched or missed.
+                const HASH: u32 = 0x0c1a_8a40;
+                c.bus.write32(FAKE_CTRL, FAKE_MAGIC);
+                c.bus.write32(FAKE_HASHGATE, FAKE_MAGIC);
+                c.bus.write32(FAKE_HASH, HASH);
+                let entry_hash = if seed / 9 % 2 == 0 { HASH } else { HASH ^ 1 };
+                c.bus.write32(screen + 0x34, screen + 0x100);
+                c.bus.write32(screen + 0x100, 1);
+                c.bus.write32(screen + 0x104, entry_hash);
+                c.bus.write32(screen + 0x108, 0xc);
+                c.bus.write32(screen + 0x10c, 7);
+                // Screen thread list head for the start call.
+                c.bus.write32(screen + 0x18, screen + 0x18);
+                c.bus.write32(screen + 0x1c, screen + 0x18);
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                schedule(c, &mut r, seed, 0x001a_8a40)
+            },
+        );
+    }
+
+    /// `NetFEState_OpenKeyboardWStr`: open the keyboard popup, then set
+    /// its static and initial wide text.
+    #[test]
+    fn net_fe_state_open_keyboard_wstr_matches() {
+        check(
+            ee::s03::f_001a90f0__generated,
+            net_fe_state_open_keyboard_wstr,
+            SEEDS_19,
+            &|c, seed| {
+                let _r = base_machine_unwind(c, seed, 0x001a_90f0, 0);
+                clear_words(c, SELF_KB, 0x710);
+                let this = SELF_KB;
+                // Cleared well past the popup object: its text setters run
+                // a fill loop bounded by the object's own size words.
+                clear_words(c, FIX + 0x2400, 0x200);
+                c.bus.write32(this + 0x69c, FIX + 0x2400);
+                wstr(c, STR, &[0x6b, 0x62]);
+                wstr(c, STR + 0x20, &[0x6b, 0x62]);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = seed as u64;
+                c.g[A2][0] = STR as u64;
+                c.g[A3][0] = (STR + 0x20) as u64;
+                c.g[T0][0] = (seed / 3) as u64;
+                c.g[T1][0] = (seed / 5) as u64;
+                c.g[T2][0] = (seed / 7) as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x001a_90f0;
+            },
+        );
+    }
+
+    /// Gate for the re-run stub below (other tests' machines fall back
+    /// to the generated keyboard popup).
+    pub(crate) const FAKE_MAGIC_RERUN: u32 = 0x0c11_8210;
+
+    /// `NetFEState_OnKeyboardPopupEvent` returning at once: the
+    /// `OnChildEvent` re-run test exits through it with a non-object
+    /// A0, so the real body must not run on that machine.
+    pub(crate) fn keyboard_rerun_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC_RERUN {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(keyboard_rerun_fake),
+                ee::s03::f_001a94e0__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x001a_94e0, ra);
+    }
+
+    /// Back-edge event hook for the re-run test below: on the first
+    /// event call (the self-loop back edge, where A1 still selects
+    /// the table slot) steer the second pass into the keyboard arm
+    /// by making A1 match the reloaded entry word; later event calls
+    /// are impossible on this path. Counts flips so the test can
+    /// prove the re-run happened.
+    pub(crate) fn on_child_event_rerun_event(c: &mut Cpu) -> bool {
+        if c.g[A1][0] != 0x3442_6670 {
+            c.g[A1][0] = 0x3442_6670;
+            CHILD_RERUN_FLIPS.with(|n| n.set(n.get() + 1));
+        }
+        if c.cycles >= crate::difftest::CYCLE_BUDGET {
+            panic!(
+                "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+                c.cycles, c.pc
+            );
+        }
+        (ssx3_ps2::platform::HOOKS.event)(c)
+    }
+
+    thread_local! {
+        static CHILD_RERUN_FLIPS: std::cell::Cell<u32> =
+            const { std::cell::Cell::new(0) };
+    }
+
+    thread_local! {
+        static RERUN_FLIPS: std::cell::Cell<u32> =
+            const { std::cell::Cell::new(0) };
+    }
+
+    /// `NetFEState_OnChildEvent` re-run: with the dispatch word
+    /// planted as the self-loop target `0x001a97b8` (absent from the
+    /// real table), the first pass takes the inferred back edge; the
+    /// back-edge event call flips A1 (see above), so the second pass
+    /// re-runs the entry prologue (a second 0x10 frame, reloaded
+    /// state) and exits through the keyboard arm (hooked above). No
+    /// event is delivered anywhere.
+    #[test]
+    fn net_fe_state_on_child_event_rerun_matches_r2() {
+        CHILD_RERUN_FLIPS.with(|n| n.set(0));
+        check(
+            ee::s03::f_001a97b8__generated,
+            net_fe_state_on_child_event,
+            SEEDS_19,
+            &|c, seed| {
+                let _r = base_machine_unwind(c, seed, 0x001a_97b8, 0);
+                elf_image(c);
+                clear_words(c, SELF_KB, 0x710);
+                comms(c);
+                clear_words(c, COMMS_A, 0x100);
+                clear_words(c, COMMS_B, 0x100);
+                clear_words(c, LOBBY_R2, 0x100);
+                fakes::hook(
+                    std::ptr::addr_of_mut!(ee::s03::OVERRIDE_001A94E0),
+                    keyboard_rerun_fake,
+                    fakes::prev_cell(keyboard_rerun_fake),
+                );
+                c.bus.write32(FAKE_CTRL, FAKE_MAGIC_RERUN);
+                // Dispatch slot 0 carries the self-loop target
+                // directly; the popup word steers the first pass to
+                // the table (not the keyboard arm).
+                c.bus.write32(0x0046_1cf0, 0x001a_97b8);
+                let popup = FIX + 0x2400;
+                clear_words(c, popup, 0x20);
+                c.bus.write32(popup + 0x18, 0x832);
+                c.bus.write32(SELF_KB + 0x69c, 0);
+                c.next_event = 0;
+                c.hooks.event = on_child_event_rerun_event;
+                c.g[A0][0] = SELF_KB as u64;
+                c.g[A1][0] = popup as u64;
+                c.g[A2][0] = 0;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x001a_97b8;
+            },
+        );
+        assert_eq!(
+            CHILD_RERUN_FLIPS.with(|n| n.get()),
+            2 * seed_count(SEEDS_19),
+            "back edge never re-ran",
+        );
+    }
+
+    /// Back-edge event hook for the re-run test below: on the first
+    /// event call (the self-loop back edge, where A1 still selects the
+    /// self target) steer the second pass out of range so the loop
+    /// terminates; later event calls are impossible on this path.
+    /// Counts flips so the test can prove the re-run happened.
+    pub(crate) fn handle_net_event_rerun_event(c: &mut Cpu) -> bool {
+        if c.g[A1][0] == 0xdc {
+            c.g[A1][0] = 0x200;
+            RERUN_FLIPS.with(|n| n.set(n.get() + 1));
+        }
+        if c.cycles >= crate::difftest::CYCLE_BUDGET {
+            panic!(
+                "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+                c.cycles, c.pc
+            );
+        }
+        (ssx3_ps2::platform::HOOKS.event)(c)
+    }
+
+    /// `NetFEState_HandleNetEvent` re-run: A1 selects the self-loop
+    /// table target; the back-edge event call flips A1 out of range
+    /// (see above), so the second pass re-runs the prologue (a second
+    /// 0x40 frame in generated) and exits. No event is delivered
+    /// anywhere (the hook only reschedules).
+    #[test]
+    fn net_fe_state_handle_net_event_rerun_matches_r2() {
+        RERUN_FLIPS.with(|n| n.set(0));
+        check(
+            ee::s03::f_001a8e40__generated,
+            net_fe_state_handle_net_event,
+            SEEDS_19,
+            &|c, seed| {
+                let _r = base_machine_unwind(c, seed, 0x001a_8e40, 0);
+                elf_image(c);
+                clear_words(c, SELF_KB, 0x710);
+                comms(c);
+                clear_words(c, COMMS_A, 0x100);
+                clear_words(c, COMMS_B, 0x100);
+                clear_words(c, LOBBY_R2, 0x100);
+                // Slot 0 carries the self-loop target (as in the real
+                // table).
+                c.bus.write32(0x0046_1b50, 0x001a_8e40);
+                c.next_event = 0;
+                c.hooks.event = handle_net_event_rerun_event;
+                c.g[A0][0] = SELF_KB as u64;
+                c.g[A1][0] = 0xdc;
+                c.g[A2][0] = 0;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x001a_8e40;
+            },
+        );
+        assert_eq!(
+            RERUN_FLIPS.with(|n| n.get()),
+            2 * seed_count(SEEDS_19),
+            "back edge never re-ran",
+        );
+    }
+
+    /// Miss targets for the re-run test below: the `0x1a8c0c` page
+    /// call returns nonzero (the drain check runs), the
+    /// message-handler call preserves every register (the second pass
+    /// must dispatch on the same id).
+    pub(crate) const RERUN_MISS_8C0C: u32 = 0x0bad_0001;
+    pub(crate) const RERUN_MISS_8D4C: u32 = 0x0bad_0002;
+
+    /// A miss hook returning to RA without touching registers (the two
+    /// targets above), delegating anything else to the logging fake.
+    /// Installed per-machine, so other tests are unaffected.
+    pub(crate) fn on_net_event_rerun_miss(c: &mut Cpu, target: u32) {
+        if target == RERUN_MISS_8C0C {
+            c.g[V0][0] = 1;
+            c.pc = c.g[RA][0] as u32;
+            return;
+        }
+        if target == RERUN_MISS_8D4C {
+            c.pc = c.g[RA][0] as u32;
+            return;
+        }
+        fakes::fake_call(c, target)
+    }
+
+    /// `NetFEState_OnNetEvent` re-run: with A1 = S0 = `0x114` the
+    /// `+0x6b4`-clear arm skips the queue call and reaches the drain
+    /// check with unequal words, so the one-message queue unlinks and
+    /// deletes its node, calls its handler, plants the outer-loop
+    /// target in dispatch slot 0 and continues the outer loop; the
+    /// second pass re-runs the prologue (a second 0x80 frame) and
+    /// finds the queue rewritten to equal words, exiting. The miss
+    /// hook preserves registers so the second pass dispatches
+    /// identically. No event is delivered anywhere.
+    #[test]
+    fn net_fe_state_on_net_event_rerun_matches_r2() {
+        check(
+            ee::s03::f_001a8b88__generated,
+            net_fe_state_on_net_event,
+            SEEDS_19,
+            &|c, seed| {
+                let _r = base_machine_unwind(c, seed, 0x001a_8b88, 0);
+                elf_image(c);
+                clear_words(c, SELF_KB, 0x710);
+                comms(c);
+                clear_words(c, COMMS_A, 0x100);
+                clear_words(c, COMMS_B, 0x100);
+                clear_words(c, LOBBY_R2, 0x100);
+                c.hooks.miss = on_net_event_rerun_miss;
+                let this = SELF_KB;
+                // Message page behind `+0x8`: the queue call returns
+                // nonzero, the handler preserves registers, and the
+                // 0x1a8e20 exit call reuses the handler slots.
+                let page = FIX + 0x3a00;
+                clear_words(c, page, 0x40);
+                c.bus.write32(page + 0xf0, 0);
+                c.bus.write32(page + 0xf4, RERUN_MISS_8C0C);
+                c.bus.write32(page + 0xf8, 0);
+                c.bus.write32(page + 0xfc, RERUN_MISS_8D4C);
+                c.bus.write32(this + 8, page);
+                // One-message queue: Q0 holds the node M with
+                // M = { W1, Q0, Q1 }; the unlink writes Q0 over
+                // itself, so the second pass reads equal words.
+                let q0 = FIX + 0x3b00;
+                let q1 = FIX + 0x3c00;
+                let w1 = FIX + 0x3d00;
+                clear_words(c, q0, 8);
+                clear_words(c, q1, 4);
+                clear_words(c, w1, 4);
+                let m = arena_alloc(c, 0x20);
+                c.bus.write32(m, w1);
+                c.bus.write32(m + 4, q0);
+                c.bus.write32(m + 8, q1);
+                c.bus.write32(q0, m);
+                c.bus.write32(q0 + 4, 0);
+                c.bus.write32(q1, 0xec);
+                c.bus.write32(w1, q0);
+                c.bus.write32(this + 0x6cc, q0);
+                // Dispatch table slot 0 carries the outer-loop target.
+                c.bus.write32(0x0046_1a90, 0x001a_8b88);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = 0x114;
+                c.g[A2][0] = 0x114;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x001a_8b88;
+            },
+        );
+    }
+
+    /// MAGIC3-gated twins of the four chain fakes above (the bare names
+    /// resolve to the MAGIC2-gated originals): identical bodies, gate on
+    /// `FAKE_MAGIC3` and read `FAKE_IS_CONNECTED_2`.
+    pub(crate) fn create_fake_3(c: &mut Cpu) {
+        chain_fake_2(
+            c,
+            0x0026_0f80,
+            FAKE_IS_CONNECTED_2,
+            fakes::prev_cell(create_fake_3),
+            ee::s06::f_00260f80__generated,
+        );
+    }
+
+    pub(crate) fn is_connected_fake_3(c: &mut Cpu) {
+        chain_fake_2(
+            c,
+            0x0026_1460,
+            FAKE_IS_CONNECTED_2,
+            fakes::prev_cell(is_connected_fake_3),
+            ee::s06::f_00261460__generated,
+        );
+    }
+
+    pub(crate) fn reconnect_fake_3(c: &mut Cpu) {
+        chain_fake_2(
+            c,
+            0x0026_13c8,
+            FAKE_IS_CONNECTED_2,
+            fakes::prev_cell(reconnect_fake_3),
+            ee::s06::f_002613c8__generated,
+        );
+    }
+
+    pub(crate) fn disconnect_fake_3(c: &mut Cpu) {
+        chain_fake_2(
+            c,
+            0x0025_b800,
+            FAKE_IS_CONNECTED_2,
+            fakes::prev_cell(disconnect_fake_3),
+            ee::s06::f_0025b800__generated,
+        );
+    }
+
+    pub(crate) const SEEDS_21: u32 = 256;
+
+    pub(crate) const FAKE_MAGIC3: u32 = 0x0c11_8301;
+
+    pub(crate) const FAKE_MSG_N: u32 = FIX + 0xC04;
+
+    pub(crate) const FAKE_IS_CONNECTED_2: u32 = FIX + 0xC0C;
+
+    pub(crate) const FAKE_HAS_MSG: u32 = FIX + 0xC10;
+
+    pub(crate) const FAKE_NEW_BUF: u32 = FIX + 0x3A00;
+
+    pub(crate) const FAKE_HAS_CHALLENGER_2: u32 = FIX + 0xC14;
+
+    pub(crate) const FAKE_W1: u32 = FIX + 0xC18;
+
+    pub(crate) const FAKE_W2: u32 = FIX + 0xC1C;
+
+    pub(crate) const FAKE_W3: u32 = FIX + 0xC20;
+
+    pub(crate) const FAKE_W4: u32 = FIX + 0xC24;
+
+    pub(crate) const FAKE_DST: u32 = FIX + 0x3400;
+
+    pub(crate) const FAKE_REALFIND: u32 = FIX + 0xC2C;
+
+    pub(crate) fn base_machine_ctrl(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = alloc_base_bx(c, seed, salt);
+        be_library_bx(c);
+        fill(c, &mut r, SELF_KB, 0x2000);
+        fill(c, &mut r, FIX, 0x1000);
+        // Control words start cleared every fixture; each fixture sets
+        // the ones its fakes read.
+        clear_words(c, FAKE_CTRL, 0x10);
+        r
+    }
+
+    /// `BuddyMan_GetMessageCount` with a seed-steered result: the real
+    /// body counts fixture buddy state, which this test leaves cleared.
+    pub(crate) fn msg_count_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(msg_count_fake),
+                ee::s07::f_00262938__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0026_2938, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_MSG_N) as u64;
+        }
+    }
+
+    /// `BuddyMan_HasMessageFrom` with a seed-steered result: the real
+    /// body reads the buddy block, which this test leaves cleared.
+    pub(crate) fn has_msg_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(has_msg_fake),
+                ee::s07::f_00262a38__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0026_2a38, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_HAS_MSG) as u64;
+        }
+    }
+
+    /// `BuddyMan_HasChallenger` with a seed-steered result: the real
+    /// body reads the buddy block, which this test leaves cleared.
+    pub(crate) fn has_challenger_fake_2(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(has_challenger_fake_2),
+                ee::s07::f_00263128__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0026_3128, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_HAS_CHALLENGER_2) as u64;
+        }
+    }
+
+    /// `NetFEState_OnChildEvent` logging the call and returning: the
+    /// real body dispatches ten child handlers over UI state the test
+    /// does not build. The port's call (self and the event words) is
+    /// verified through the fake log.
+    pub(crate) fn on_child_event_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(on_child_event_fake),
+                ee::s03::f_001a97b8__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x001a_97b8, ra);
+    }
+
+    /// `EA_MemAllocNamed` returning the fixture buffer: the real body
+    /// allocates on the game heap, whose free state is seed-dependent
+    /// in the test machine. The port's call (size and tag) is verified
+    /// through the fake log.
+    pub(crate) fn new_named_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(new_named_fake),
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_7d70, ra);
+        if c.pc == ra {
+            c.g[V0][0] = FAKE_NEW_BUF as u64;
+        }
+    }
+
+    /// `operator new` returning the fixture buffer (same reason).
+    pub(crate) fn mem_new_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mem_new_fake),
+                ee::s10::f_00317e30__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_7e30, ra);
+        if c.pc == ra {
+            c.g[V0][0] = FAKE_NEW_BUF as u64;
+        }
+    }
+
+    /// `operator delete` logging the call and returning: the real body
+    /// would free the fixture buffer, which was never allocated.
+    pub(crate) fn mem_free_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mem_free_fake),
+                ee::s10::f_00317e98__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_7e98, ra);
+    }
+
+    /// `NetFEState_Update` logging the call and returning: the real
+    /// body runs the whole NetFE update, which the test does not
+    /// build. The port's call (self) is verified through the fake log.
+    pub(crate) fn netfe_update_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(netfe_update_fake),
+                ee::s03::f_001a8770__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x001a_8770, ra);
+    }
+
+    /// `UIScreen_FindObject` with a seed-steered result: null (miss) or
+    /// the fixture text object (hit). Set `FAKE_REALFIND` to run the real
+    /// body instead (the stats test's fixture screen list): the hook is
+    /// never removed, so parallel tests cannot observe a flipped slot.
+    pub(crate) fn find_object_fake_2(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 || c.bus.read32(FAKE_REALFIND) == 1 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(find_object_fake_2),
+                ee::s13::f_0039d860__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0039_d860, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(FAKE_FIND) as u64;
+        }
+    }
+
+    /// `UIText_SetString` (0x3a0c50) with no effect beyond logging the
+    /// call: the real body converts the string on the uninitialized game
+    /// heap, which hangs the test machine. The port's call (text object
+    /// and string) is verified through the fake log.
+    pub(crate) fn set_string_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(set_string_fake),
+                ee::s13::f_003a0c70__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x003a_0c50, ra);
+    }
+
+    /// Session-ensure chain fakes (same shape as `chain_fake` above):
+    /// `IsConnected` is seed-steered; the rest log the call. Keeps
+    /// unmapped-helper miss calls and their fill-dependent results out
+    /// of the test.
+    pub(crate) fn chain_fake_2(
+        c: &mut Cpu,
+        slot: u32,
+        word: u32,
+        prev: &'static std::sync::atomic::AtomicUsize,
+        generated: fn(&mut Cpu),
+    ) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(c, prev, generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, slot, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(word) as u64;
+        }
+    }
+
+    pub(crate) fn install_fakes_3() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_00262938),
+            msg_count_fake,
+            fakes::prev_cell(msg_count_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_00262A38),
+            has_msg_fake,
+            fakes::prev_cell(has_msg_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_00263128),
+            has_challenger_fake_2,
+            fakes::prev_cell(has_challenger_fake_2),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s03::OVERRIDE_001A97B8),
+            on_child_event_fake,
+            fakes::prev_cell(on_child_event_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            mem_new_fake,
+            fakes::prev_cell(mem_new_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            mem_free_fake,
+            fakes::prev_cell(mem_free_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s03::OVERRIDE_001A8770),
+            netfe_update_fake,
+            fakes::prev_cell(netfe_update_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_0014BE70),
+            bolts_read_fake,
+            fakes::prev_cell(bolts_read_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003DD4E8),
+            queue_open_fake,
+            fakes::prev_cell(queue_open_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            new_named_fake,
+            fakes::prev_cell(new_named_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_0039D860),
+            find_object_fake_2,
+            fakes::prev_cell(find_object_fake_2),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003A0C70),
+            set_string_fake,
+            fakes::prev_cell(set_string_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_00260F80),
+            create_fake_3,
+            fakes::prev_cell(create_fake_3),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_00261460),
+            is_connected_fake_3,
+            fakes::prev_cell(is_connected_fake_3),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_002613C8),
+            reconnect_fake_3,
+            fakes::prev_cell(reconnect_fake_3),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025B800),
+            disconnect_fake_3,
+            fakes::prev_cell(disconnect_fake_3),
+        );
+    }
+
+    driven!(
+        net_fe_format_room_name_generated,
+        ee::s03::f_001b25e0__generated
+    );
+
+    driven!(net_fe_format_room_name_hand, net_fe_format_room_name);
+
+    /// `NetFE_FormatRoomName` fixture: null name for the early return
+    /// (`seed % 2`), else the room name (`seed / 32 % 5`: dot-early,
+    /// no-dot, short, dot-first and a >127-char name) and the four
+    /// table words (`seed / 2|4|8|16 % 2`: a ROM string for the taken
+    /// arm, `SP` for the hash arm, which compares the stack part
+    /// against itself). The Text vtable behind `COMMS_A + 0x8c` and
+    /// the value forced like the stats test. Both scan loops run
+    /// every seed; `check_events` drives real events through both
+    /// heads.
+    pub(crate) fn format_room_fixture(c: &mut Cpu, seed: u32) -> Events {
+        let mut r = base_machine_ctrl(c, seed, 0x001b_25e0);
+        elf_image(c);
+        install_fakes_3();
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY_R2, 0x100);
+        clear_words(c, SELF_KB, 0x710);
+        // Room names: zero-pad the region first so the dotless loops
+        // (which ignore NUL and run to their bounds) copy zeros, not
+        // fill garbage, into the stack parts; the wide conversion then
+        // stays inside the frame on every seed.
+        let name = FIX + 0x3000;
+        clear_words(c, name, 0x40);
+        c.bus.write32(FAKE_CTRL, FAKE_MAGIC3);
+        match seed / 32 % 5 {
+            0 => str(c, name, b"AB.CD"),
+            1 => str(c, name, b"NoDotHere"),
+            2 => str(c, name, b"x"),
+            3 => str(c, name, b".DOT"),
+            _ => {
+                for i in 0..130u32 {
+                    c.bus.write8(name + i, b'y');
+                }
+                c.bus.write8(name + 130, 0);
+            }
+        }
+        // "AB" for the block-1 hash arm (matches part1 of name 0).
+        str(c, FIX + 0x3200, b"AB");
+        c.bus.write32(
+            FAKE_W1,
+            if seed / 2 % 2 == 0 {
+                0x004a_1390u32
+            } else {
+                FIX + 0x3200
+            },
+        );
+        c.bus.write32(
+            FAKE_W2,
+            if seed / 4 % 2 == 0 {
+                0x004a_1390u32
+            } else {
+                SP as u32
+            },
+        );
+        c.bus.write32(
+            FAKE_W3,
+            if seed / 8 % 2 == 0 {
+                0x004a_1390u32
+            } else {
+                SP as u32
+            },
+        );
+        c.bus.write32(
+            FAKE_W4,
+            if seed / 16 % 2 == 0 {
+                0x004a_1390u32
+            } else {
+                SP as u32
+            },
+        );
+        // Destination UStr buffer.
+        clear_words(c, FAKE_DST, 0x40);
+        // Text vtable behind `COMMS_A + 0x8c` (as in the stats test).
+        let table = FIX + 0x2800;
+        clear_words(c, table, 0x20);
+        let obj = FIX + 0x2880;
+        clear_words(c, obj, 0x20);
+        c.bus.write32(COMMS_A + 0x8c, table);
+        c.bus.write32(table + 4, obj);
+        c.bus.write32(obj + 0x24, fakes::FAKE);
+        str(c, FIX + 0x3100, b"Rider1");
+        for i in 0..16u32 {
+            c.bus.write32(fakes::LOG_RESULTS + 4 * i, FIX + 0x3100);
+        }
+        c.g[A0][0] = if seed % 2 == 0 { 0 } else { name } as u64;
+        c.g[A1][0] = FAKE_DST as u64;
+        c.g[A2][0] = 0;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        schedule(c, &mut r, seed, 0x001b_25e0)
+    }
+
+    #[test]
+    fn net_fe_format_room_name_matches_r2() {
+        check_events(
+            net_fe_format_room_name_generated,
+            net_fe_format_room_name_hand,
+            SEEDS_21,
+            &format_room_fixture,
+        );
+    }
+
+    /// `Bolts_ReadFile` logging the call and returning: the real body
+    /// waits on the async file queue, which never completes in the
+    /// test machine. The caller's buffer keeps its fixture contents;
+    /// the call is verified through the fake log.
+    pub(crate) fn bolts_read_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(bolts_read_fake),
+                ee::s01::f_0014be70__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0014_be70, ra);
+    }
+
+    /// `EAFile_QueueOpen` logging the call and returning a fake handle:
+    /// mounting a bigfile waits on the async queue in the test machine.
+    /// The call is verified through the fake log.
+    pub(crate) fn queue_open_fake(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC3 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(queue_open_fake),
+                ee::s14::f_003dd4e8__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x003d_d4e8, ra);
     }
 }

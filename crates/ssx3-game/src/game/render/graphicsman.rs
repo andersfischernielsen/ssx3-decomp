@@ -175,6 +175,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_graphics_man_alloc_blended_matrix_history,
         "PS2GraphicsMan_AllocBlendedMatrixHistory",
     ),
+    (
+        0x0036_a290,
+        deferred_delete_flush_all,
+        "DeferredDelete_FlushAll",
+    ),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -212,6 +217,8 @@ pub(crate) mod callee {
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::DYNAMIC_EMITTER_FREE_DATA_2 as DYNAMIC_EMITTER_FREE_DATA;
 
     pub(crate) use crate::game::worldpainter::quadtree::callee::EMITTER_RENDER as EMITTER_RENDER_2;
+
+    pub(crate) use crate::game::render::particle::callee::DEFERRED_DELETE_ADVANCE_FRAME;
 }
 
 // ---------------------------------------------------------------------------
@@ -6802,6 +6809,37 @@ pub(crate) fn ps2gm_blend_history_exit(c: &mut Cpu, frame: Frame) -> crate::call
     Ok(())
 }
 
+/// `void DeferredDelete_FlushAll()` (0x36a290): advances the deferred-delete
+/// buckets four times, deleting everything queued.
+pub fn deferred_delete_flush_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = 0x3;
+        loop {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x0036_a2a8);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            callee::DEFERRED_DELETE_ADVANCE_FRAME.call(c, 0x0036_a2a8)?;
+            let done = (c.g[S0][0] as i64) < 0;
+            frame.restore_ra(c, 0);
+            if done {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0036_a2a0);
+            }
+        }
+        c.cycles += 3;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7888,5 +7926,54 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+
+    /// `DeferredDelete_FlushAll`: empty buckets, so the real
+    /// `DeferredDelete_AdvanceFrame` just advances the index four times.
+    #[test]
+    fn deferred_delete_flush_all_matches() {
+        use crate::game::render::graphicsman::{DD_BUCKETS_HI, DD_BUCKETS_LO, DD_INDEX};
+        check(
+            ee::s12::f_0036a290__generated,
+            deferred_delete_flush_all,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x36_a290, 0);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP + DD_INDEX, seed % 4);
+                let buckets = DD_BUCKETS_HI - DD_BUCKETS_LO;
+                for k in 0..4u32 {
+                    c.bus.write32(buckets + 4 * k, 0);
+                }
+                c.pc = 0x0036_a290;
+            },
+        );
+    }
+
+    #[test]
+    fn deferred_delete_flush_all_events() {
+        use crate::game::render::graphicsman::{DD_BUCKETS_HI, DD_BUCKETS_LO, DD_INDEX};
+        driven!(gen_flush, ee::s12::f_0036a290__generated);
+        driven!(hand_flush, deferred_delete_flush_all);
+        check_events(gen_flush, hand_flush, 60, &|c, seed| {
+            machine(c, seed / 3, 0x36_a290, 0);
+            c.g[GP][0] = GAME_GP as u64;
+            c.bus.write32(GAME_GP + DD_INDEX, seed % 4);
+            let buckets = DD_BUCKETS_HI - DD_BUCKETS_LO;
+            for k in 0..4u32 {
+                c.bus.write32(buckets + 4 * k, 0);
+            }
+            c.pc = 0x0036_a290;
+            schedule(
+                c,
+                &mut Rng(0x36_a290 ^ (seed as u64) << 8),
+                seed,
+                0x0036_a290,
+            )
+        });
     }
 }

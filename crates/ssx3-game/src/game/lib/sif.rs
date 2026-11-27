@@ -14,6 +14,7 @@ use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+use crate::game::lib::kernel::callee::FLUSH_CACHE;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -151,6 +152,46 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_73f8, sce_sif_rpc_loop, "sceSifRpcLoop"),
     (0x0042_6078, _sce_sif_send_cmd, "_sceSifSendCmd"),
     (0x0042_41d0, deci2_call, "Deci2Call"),
+    (0x0042_5d38, sce_sif_init_cmd, "sceSifInitCmd"),
+    (
+        0x0042_67c0,
+        sce_sif_rpc_retry_send_alarm,
+        "sceSifRpc_RetrySendAlarm",
+    ),
+    (
+        0x0042_6820,
+        sce_sif_rpc_request_rdata,
+        "sceSifRpc_RequestRData",
+    ),
+    (0x0042_68f0, sce_sif_get_other_data, "sceSifGetOtherData"),
+    (
+        0x0042_6a48,
+        sce_sif_rpc_search_svdata,
+        "sceSifRpc_SearchSvdata",
+    ),
+    (
+        0x0042_6a98,
+        sce_sif_rpc_request_bind,
+        "sceSifRpc_RequestBind",
+    ),
+    (
+        0x0042_6c88,
+        sce_sif_rpc_request_call,
+        "sceSifRpc_RequestCall",
+    ),
+    (0x0042_6f48, sce_sif_set_rpc_queue, "sceSifSetRpcQueue"),
+    (0x0042_70b0, sce_sif_remove_rpc, "sceSifRemoveRpc"),
+    (
+        0x0042_7148,
+        sce_sif_remove_rpc_queue,
+        "sceSifRemoveRpcQueue",
+    ),
+    (
+        0x0042_71d8,
+        sce_sif_get_next_request,
+        "sceSifGetNextRequest",
+    ),
+    (0x0042_7230, sce_sif_exec_request, "sceSifExecRequest"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -392,6 +433,52 @@ pub(crate) mod callee {
     pub(crate) const GET_NEXT_REQUEST: Callee = Callee {
         addr: 0x0042_71d8,
         f: ee::s15::f_004271d8,
+    };
+
+    /// `isceSifSendCmd` (`0x004261f0`).
+    pub(crate) const ISCE_SEND_CMD: Callee = Callee {
+        addr: 0x0042_61f0,
+        f: ee::s15::f_004261f0,
+    };
+
+    /// `sceSifRpc_GetFPacket2` (`0x004266c8`).
+    pub(crate) const GET_FPACKET2: Callee = Callee {
+        addr: 0x0042_66c8,
+        f: ee::s15::f_004266c8,
+    };
+
+    pub(crate) use crate::game::seg::seg_325220::oc698_callee::{
+        OC698_SCE_SIF_RPC_FREE_PACKET, OC698_SCE_SIF_RPC_GET_PACKET,
+    };
+
+    /// `sceSifRpc_SearchSvdata` (`0x00426a48`; same-module call).
+    pub(crate) const SEARCH_SVDATA: Callee = Callee {
+        addr: 0x0042_6a48,
+        f: ee::s15::f_00426a48,
+    };
+
+    /// `sceFs_FdSemaInit` (`0x00427438`).
+    pub(crate) const FD_SEMA_INIT: Callee = Callee {
+        addr: 0x0042_7438,
+        f: ee::s15::f_00427438,
+    };
+
+    /// `AddDmacHandler` (`0x00423ab0`).
+    pub(crate) const ADD_DMAC_HANDLER: Callee = Callee {
+        addr: 0x0042_3ab0,
+        f: ee::s15::f_00423ab0,
+    };
+
+    /// `sceSifSetDChain` (`0x00424180`).
+    pub(crate) const SCE_SET_DCHAIN: Callee = Callee {
+        addr: 0x0042_4180,
+        f: ee::s15::f_00424180,
+    };
+
+    /// `EnableDmac` (`0x004249b8`, the interrupt-saving wrapper).
+    pub(crate) const ENABLE_DMAC: Callee = Callee {
+        addr: 0x0042_49b8,
+        f: ee::s15::f_004249b8,
     };
 
     /// `SleepThread` (`0x0042_3cc0`; shared with `buddyapi`).
@@ -4391,6 +4478,1239 @@ pub fn sce_sif_rpc_loop(c: &mut Cpu) {
     });
 }
 
+/// `sceSifRpc_RetrySendAlarm(int id, u16 time, void *pkt)` (0x4267c0): the
+/// alarm handler that re-sends the RPC packet `pkt` (in `a2`) through
+/// `isceSifSendCmd` (command 0x80000008, 0x40 bytes, the destination words
+/// at `pkt + 0x24..0x2c`), returning the send's result. When the send fails
+/// it re-arms itself for 10 ticks with `iSetAlarm` (a tail call).
+pub fn sce_sif_rpc_retry_send_alarm(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.g[A0][0] = 0xffffffff80000000;
+        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+        c.g[A0][0] = c.g[A0][0] | 0x8;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = 0x40;
+        c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2c));
+        ISCE_SEND_CMD.call(c, 0x004267f0)?;
+        let t = c.g[V0][0] != 0u64;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        if t {
+            c.cycles += 3;
+            c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.pc = t;
+            return Ok(());
+        }
+        c.cycles += 7;
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A1][0] = 0x420000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x67c0));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        c.g[A0][0] = 0xa;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        // Tail call: `iSetAlarm` returns straight to our caller.
+        c.pc = 0x00423b80;
+        (ee::s15::f_00423b80)(c);
+        Ok(())
+    })
+}
+
+/// `int sceSifRpc_RequestRData(...)` (0x426820): build the reply packet for
+/// an RPC request. Flag word bit 2 set: allocate from the free pool
+/// (`GetFPacket2`, index `word >> 16`); clear: from the request's own
+/// packet (`GetFPacket`). Then send through `isceSifSendCmd`; on failure
+/// arm alarm 10 instead of returning the packet.
+pub fn sce_sif_rpc_request_rdata(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_426864: {
+            'b_426858: {
+                c.cycles += 10;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.g[S1][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[A0][0] = c.g[A1][0];
+                c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = c.g[A1][0] & 0x4;
+                let t = c.g[V0][0] == 0u64;
+                if t {
+                    break 'b_426858;
+                }
+                c.cycles += 4;
+                c.g[A1][0] = sx(c.g[A1][0] as u32 >> 16);
+                GET_FPACKET2.call(c, 0x00426850)?;
+                let t = true;
+                c.g[S0][0] = c.g[V0][0];
+                if t {
+                    break 'b_426864;
+                } else {
+                    break 'b_426858;
+                }
+            }
+            c.cycles += 3;
+            GET_FPACKET.call(c, 0x00426860)?;
+            c.g[S0][0] = c.g[V0][0];
+            break 'b_426864;
+        }
+        c.cycles += 23;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+        c.g[V0][0] = 0xffffffff80000000;
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V0][0] = c.g[V0][0] | 0xc;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+        c.g[A0][0] = 0xffffffff80000000;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[A1][0]);
+        c.g[A0][0] = c.g[A0][0] | 0x8;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = 0x40;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[V1][0]);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+        c.g[T1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+        c.g[A3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+        ISCE_SEND_CMD.call(c, 0x004268b8)?;
+        let t = c.g[V0][0] != 0u64;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        if t {
+            c.cycles += 4;
+            c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+            c.pc = t;
+            return Ok(());
+        }
+        c.cycles += 8;
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A1][0] = 0x420000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x67c0));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[A0][0] = 0xa;
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        // Tail call: `iSetAlarm` returns straight to our caller.
+        c.pc = 0x00423b80;
+        (ee::s15::f_00423b80)(c);
+        Ok(())
+    })
+}
+
+/// `int sceSifGetOtherData(...)` (0x4268f0): fetch an RPC reply packet
+/// (`GetPacket` from the fixed SIF pool), fill in the caller's words and
+/// send the request (`SendCmd`). With no flag bit 0, wait on a fresh
+/// semaphore (`CreateSema`/`WaitSema`/`DeleteSema`); a failed send frees
+/// the packet and reports -2, a failed create -3, no packet -1.
+pub fn sce_sif_get_other_data(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_426a24: {
+            c.cycles += 19;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+            c.g[S1][0] = c.g[A0][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[S5][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
+            c.g[A0][0] = 0x530000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
+            c.g[S4][0] = c.g[A2][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+            c.g[S3][0] = c.g[A1][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+            c.g[S5][0] = c.g[A3][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[RA][0]);
+            c.g[S2][0] = c.g[T0][0];
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2980));
+            OC698_SCE_SIF_RPC_GET_PACKET.call(c, 0x00426930)?;
+            c.g[S0][0] = c.g[V0][0];
+            let t = c.g[S0][0] == 0u64;
+            c.g[V0][0] = 0xffffffffffffffff;
+            if t {
+                break 'b_426a24;
+            }
+            'b_4269e8: {
+                c.cycles += 10;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                c.g[V1][0] = c.g[S2][0] & 0x1;
+                c.sw(c.g[S1][0] as u32, c.g[S0][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[S3][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[S4][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[S5][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S0][0]);
+                let t = c.g[V1][0] != 0u64;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[S1][0]);
+                if t {
+                    break 'b_4269e8;
+                }
+                'b_426990: {
+                    c.cycles += 7;
+                    c.g[V0][0] = 0x1;
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[A0][0] = c.g[SP][0];
+                    CREATE_SEMA.call(c, 0x00426978)?;
+                    let t = (c.g[V0][0] as i64) >= 0;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    if t {
+                        break 'b_426990;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    OC698_SCE_SIF_RPC_FREE_PACKET.call(c, 0x00426988)?;
+                    let t = true;
+                    c.g[V0][0] = 0xfffffffffffffffd;
+                    if t {
+                        break 'b_426a24;
+                    } else {
+                        break 'b_426990;
+                    }
+                }
+                'b_4269d0: {
+                    c.cycles += 10;
+                    c.g[A0][0] = 0xffffffff80000000;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[A0][0] | 0xc;
+                    c.g[A2][0] = 0x40;
+                    c.g[A3][0] = 0u64;
+                    c.g[T0][0] = 0u64;
+                    c.g[T1][0] = 0u64;
+                    SEND_CMD.call(c, 0x004269b0)?;
+                    let t = c.g[V0][0] != 0u64;
+                    if t {
+                        break 'b_4269d0;
+                    }
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S0][0];
+                    OC698_SCE_SIF_RPC_FREE_PACKET.call(c, 0x004269c0)?;
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    DELETE_SEMA.call(c, 0x004269c8)?;
+                    let t = true;
+                    c.g[V0][0] = 0xfffffffffffffffe;
+                    if t {
+                        break 'b_426a24;
+                    } else {
+                        break 'b_4269d0;
+                    }
+                }
+                c.cycles += 6;
+                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                WAIT_SEMA.call(c, 0x004269d8)?;
+                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                DELETE_SEMA.call(c, 0x004269e0)?;
+                let t = true;
+                c.g[V0][0] = 0u64;
+                if t {
+                    break 'b_426a24;
+                } else {
+                    break 'b_4269e8;
+                }
+            }
+            c.cycles += 12;
+            c.g[V0][0] = 0xffffffffffffffff;
+            c.g[A0][0] = 0xffffffff80000000;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            c.g[A0][0] = c.g[A0][0] | 0xc;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A2][0] = 0x40;
+            c.g[A3][0] = 0u64;
+            c.g[T0][0] = 0u64;
+            c.g[T1][0] = 0u64;
+            SEND_CMD.call(c, 0x00426a10)?;
+            let t = c.g[V0][0] != 0u64;
+            c.g[V0][0] = 0u64;
+            if t {
+                break 'b_426a24;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            OC698_SCE_SIF_RPC_FREE_PACKET.call(c, 0x00426a20)?;
+            c.g[V0][0] = 0xfffffffffffffffe;
+            break 'b_426a24;
+        }
+        c.cycles += 9;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S5][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void *sceSifRpc_SearchSvdata(...)` (0x426a48): scan the server-data
+/// buckets for the entry whose id matches `a0`; null when no bucket or no
+/// entry matches. Both list walks check for due events on their back edge.
+pub fn sce_sif_rpc_search_svdata(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_426a8c: {
+            c.cycles += 3;
+            c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x28));
+            let t = c.g[A1][0] == 0u64;
+            if t {
+                break 'b_426a8c;
+            }
+            c.cycles += 1;
+            c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+            'l_426a58: loop {
+                'b_426a84: {
+                    c.cycles += 2;
+                    if c.g[V1][0] == 0u64 {
+                        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x14));
+                        break 'b_426a84;
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    'l_426a68: loop {
+                        c.cycles += 2;
+                        if c.g[V0][0] != c.g[A0][0] {
+                            c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x38));
+                            c.cycles += 2;
+                            if c.g[V1][0] != 0u64 {
+                                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x00426a68);
+                                }
+                                continue 'l_426a68;
+                            }
+                            c.cycles += 1;
+                            c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x14));
+                            break 'b_426a84;
+                        }
+                        c.cycles += 2;
+                        let t = c.g[RA][0] as u32;
+                        c.g[V0][0] = c.g[V1][0];
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+                c.cycles += 2;
+                if c.g[A1][0] != 0u64 {
+                    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00426a58);
+                    }
+                    continue 'l_426a58;
+                }
+                break 'b_426a8c;
+            }
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.g[V0][0] = 0u64;
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int sceSifRpc_RequestBind(...)` (0x426a98): allocate a bind packet
+/// (`GetFPacket`), look the server data up (`SearchSvdata`) and, when
+/// found, copy its words into the packet and send it (`isceSifSendCmd`,
+/// tail call). Without a match, clear the server words instead.
+pub fn sce_sif_rpc_request_bind(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_426b14: {
+            'b_426b04: {
+                c.cycles += 23;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[S1][0] = c.g[A1][0];
+                c.g[S0][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                c.g[A0][0] = c.g[S1][0];
+                GET_FPACKET.call(c, 0x00426abc)?;
+                c.g[S2][0] = c.g[V0][0];
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                c.g[V0][0] = 0xffffffff80000000;
+                c.g[V0][0] = c.g[V0][0] | 0x9;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x1c), c.g[A0][0]);
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+                c.g[A1][0] = c.g[S1][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+                SEARCH_SVDATA.call(c, 0x00426ae8)?;
+                c.g[V1][0] = c.g[V0][0];
+                if c.g[V1][0] != 0u64 {
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x24), c.g[V1][0]);
+                    break 'b_426b04;
+                }
+                c.cycles += 4;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x24), 0u64);
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x28), 0u64);
+                let t = true;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x2c), 0u64);
+                if t {
+                    break 'b_426b14;
+                } else {
+                    break 'b_426b04;
+                }
+            }
+            c.cycles += 4;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+            c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x2c), c.g[V1][0]);
+            break 'b_426b14;
+        }
+        c.cycles += 13;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = 0xffffffff80000000;
+        c.g[A0][0] = c.g[A0][0] | 0x8;
+        c.g[A2][0] = 0x40;
+        c.g[A3][0] = 0u64;
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        c.g[T0][0] = 0u64;
+        c.g[T1][0] = 0u64;
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        // Tail call: `isceSifSendCmd` returns straight to our caller.
+        c.pc = 0x004261f0;
+        (ee::s15::f_004261f0)(c);
+        Ok(())
+    })
+}
+
+/// `sceSifRpc_RequestCall(void *pkt)` (0x426c88): append the server data
+/// `sd = [pkt + 0x34]` to its queue `q = [sd + 0x40]` (head `q + 0xc` when
+/// empty, else linked after the tail `q + 0x10`, which it becomes), copy
+/// the call's words from the packet into `sd`, then wake the queue's
+/// thread (`iWakeupThread`, a tail call) unless its id (`q + 0`) is
+/// negative or its wake word (`q + 4`) is already set.
+pub fn sce_sif_rpc_request_call(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_426ca8: {
+            'b_426ca4: {
+                c.cycles += 5;
+                c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x34));
+                c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x40));
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
+                if c.g[V0][0] != 0u64 {
+                    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x10));
+                    break 'b_426ca4;
+                }
+                c.cycles += 2;
+                let t = true;
+                c.sw((c.g[A2][0] as u32).wrapping_add(0xc), c.g[A1][0]);
+                if t {
+                    break 'b_426ca8;
+                } else {
+                    break 'b_426ca4;
+                }
+            }
+            c.cycles += 1;
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x3c), c.g[A1][0]);
+            break 'b_426ca8;
+        }
+        'b_426d0c: {
+            c.cycles += 20;
+            c.sw((c.g[A2][0] as u32).wrapping_add(0x10), c.g[A1][0]);
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1c));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x20));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x24));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x28));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x2c));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x2c), c.g[V1][0]);
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x30));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x34), c.g[V1][0]);
+            c.g[A0][0] = c.lw(c.g[A2][0] as u32);
+            let t = (c.g[A0][0] as i64) < 0;
+            if t {
+                break 'b_426d0c;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+            let t = c.g[V0][0] != 0u64;
+            if t {
+                break 'b_426d0c;
+            }
+            c.cycles += 2;
+            // Tail return through `iWakeupThread` (no return check: the
+            // function ends wherever the wakeup leaves `pc`).
+            c.pc = 0x00424c50;
+            (ee::s15::f_00424c50)(c);
+            return Ok(());
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int sceSifGetNextRequest(...)` (0x4271d8): under `DIntr`, take the
+/// next queued request off the server entry (marking it taken), or report
+/// the entry empty. The interrupt state is restored (`EIntr`) either way.
+pub fn sce_sif_get_next_request(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_427210: {
+            'b_427204: {
+                c.cycles += 9;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+                c.g[S0][0] = c.g[A0][0];
+                callee::DINTR.call(c, 0x004271f0)?;
+                c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                if c.g[S1][0] != 0u64 {
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
+                    break 'b_427204;
+                }
+                c.cycles += 2;
+                let t = true;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+                if t {
+                    break 'b_427210;
+                } else {
+                    break 'b_427204;
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 0x1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+            break 'b_427210;
+        }
+        c.cycles += 8;
+        callee::EINTR.call(c, 0x00427218)?;
+        c.g[V0][0] = c.g[S1][0];
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `sceSifExecRequest(void *sd)` (0x427230): run an RPC request: call the
+/// server function (`sd + 4`) with the caches written back around it, take
+/// a reply packet (`GetFPacket2` when the flag word's bit 2 is set, else
+/// `GetFPacket`), then answer: with a reply count (`sd + 0x30`) through
+/// `sceSifSendCmd`, retried until it succeeds; without one by
+/// `sceSifSetDma` of the reply descriptors, waiting out a 0x100000-step
+/// countdown and retrying while the start fails. Both retry loops check
+/// for due events on their back edges.
+pub fn sce_sif_exec_request(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_427274: {
+            c.cycles += 17;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+            c.g[S4][0] = 0u64;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
+            c.g[S1][0] = c.g[A0][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+            let t = c.g[V0][0] as u32;
+            c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+            call_ptr(c, t, 0x00427268)?;
+            c.g[S2][0] = c.g[V0][0];
+            if c.g[S2][0] != 0u64 {
+                c.g[S4][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2c));
+                break 'b_427274;
+            } else {
+                break 'b_427274;
+            }
+        }
+        'b_427288: {
+            c.cycles += 3;
+            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+            let t = (c.g[A1][0] as i64) <= 0;
+            if t {
+                break 'b_427288;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+            WRITEBACK.call(c, 0x00427288)?;
+            break 'b_427288;
+        }
+        'b_427298: {
+            c.cycles += 2;
+            let t = (c.g[S4][0] as i64) <= 0;
+            c.g[A0][0] = c.g[S2][0];
+            if t {
+                break 'b_427298;
+            }
+            c.cycles += 2;
+            c.g[A1][0] = c.g[S4][0];
+            WRITEBACK.call(c, 0x00427298)?;
+            break 'b_427298;
+        }
+        'b_4272d4: {
+            'b_4272c4: {
+                c.cycles += 6;
+                DINTR.call(c, 0x004272a0)?;
+                c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
+                c.g[V0][0] = c.g[A1][0] & 0x4;
+                let t = c.g[V0][0] == 0u64;
+                c.g[A1][0] = sx(c.g[A1][0] as u32 >> 16);
+                if t {
+                    break 'b_4272c4;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = 0x530000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2980));
+                GET_FPACKET2.call(c, 0x004272bc)?;
+                let t = true;
+                c.g[S0][0] = c.g[V0][0];
+                if t {
+                    break 'b_4272d4;
+                } else {
+                    break 'b_4272c4;
+                }
+            }
+            c.cycles += 4;
+            c.g[A0][0] = 0x530000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2980));
+            GET_FPACKET.call(c, 0x004272d0)?;
+            c.g[S0][0] = c.g[V0][0];
+            break 'b_4272d4;
+        }
+        'b_4273dc: {
+            'b_427330: {
+                c.cycles += 10;
+                EINTR.call(c, 0x004272dc)?;
+                c.g[V1][0] = 0xffffffff80000000;
+                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                c.g[V1][0] = c.g[V1][0] | 0xa;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[A0][0]);
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x30));
+                if c.g[V0][0] == 0u64 {
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0u64);
+                    break 'b_427330;
+                }
+                c.cycles += 1;
+                'l_427300: loop {
+                    c.cycles += 10;
+                    c.g[A0][0] = 0xffffffff80000000;
+                    c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                    c.g[A0][0] = c.g[A0][0] | 0x8;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A2][0] = 0x40;
+                    c.g[A3][0] = c.g[S2][0];
+                    c.g[T1][0] = c.g[S4][0];
+                    SEND_CMD.call(c, 0x00427320)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00427300);
+                        }
+                        continue 'l_427300;
+                    }
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+                    if t {
+                        break 'b_4273dc;
+                    } else {
+                        break 'b_427330;
+                    }
+                }
+            }
+            'b_427354: {
+                c.cycles += 3;
+                c.g[S3][0] = 0u64;
+                let t = (c.g[S4][0] as i64) <= 0;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+                if t {
+                    break 'b_427354;
+                }
+                c.cycles += 6;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                c.g[S3][0] = 0x1;
+                c.sw(c.g[SP][0] as u32, c.g[S2][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S4][0]);
+                c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
+                break 'b_427354;
+            }
+            c.cycles += 17;
+            c.g[A1][0] = sx((c.g[S3][0] as u32) << 4);
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+            c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x4));
+            c.sw(c.g[V1][0] as u32, c.g[S0][0]);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+            c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[A0][0] = 0x40;
+            c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc));
+            c.sw(c.g[V1][0] as u32, c.g[A0][0]);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[V0][0] as u32, 0u64);
+            c.g[A0][0] = c.g[SP][0];
+            'l_427398: loop {
+                'b_4273d8: {
+                    c.cycles += 4;
+                    c.g[A1][0] = c.g[S3][0];
+                    SET_DMA.call(c, 0x004273a0)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                    if t {
+                        break 'b_4273d8;
+                    }
+                    c.cycles += 2;
+                    c.g[V1][0] = 0x100000;
+                    c.g[A0][0] = 0xffffffffffffffff;
+                    'l_4273b0: loop {
+                        c.cycles += 7;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                        let t = c.g[V1][0] != c.g[A0][0];
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x004273b0);
+                            }
+                            continue 'l_4273b0;
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] == 0u64 {
+                            c.g[A0][0] = c.g[SP][0];
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00427398);
+                            }
+                            continue 'l_427398;
+                        }
+                        c.cycles += 1;
+                        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                        break 'b_4273d8;
+                    }
+                }
+                c.cycles += 1;
+                c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+                break 'b_4273dc;
+            }
+        }
+        c.cycles += 6;
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int sceSifSetRpcQueue(...)` (0x426f48): under `DIntr`, park the queue
+/// `a0` in the SIF pool (fixed head word): empty head takes it directly,
+/// otherwise append after the last queued entry (the walk checks for due
+/// events). The interrupt state is restored by the `EIntr` tail call.
+pub fn sce_sif_set_rpc_queue(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_426fc8: {
+            'b_426f94: {
+                c.cycles += 17;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[S1][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+                c.g[S0][0] = c.g[A1][0];
+                callee::DINTR.call(c, 0x00426f64)?;
+                c.g[V1][0] = 0x530000;
+                c.sw(c.g[S1][0] as u32, c.g[S0][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2980));
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x4), 0u64);
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0xc), 0u64);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x10), 0u64);
+                let t = c.g[V0][0] != 0u64;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x14), 0u64);
+                if t {
+                    break 'b_426f94;
+                }
+                c.cycles += 2;
+                let t = true;
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x28), c.g[S1][0]);
+                if t {
+                    break 'b_426fc8;
+                } else {
+                    break 'b_426f94;
+                }
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+            if c.g[V1][0] == 0u64 {
+                c.sw((c.g[A0][0] as u32).wrapping_add(0x14), c.g[S1][0]);
+                break 'b_426fc8;
+            }
+            c.cycles += 1;
+            'l_426fa8: loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[V1][0];
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+                c.g[V1][0] = c.g[V0][0];
+                let t = c.g[V0][0] != 0u64;
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00426fa8);
+                    }
+                    continue 'l_426fa8;
+                }
+                c.cycles += 1;
+                c.sw((c.g[A0][0] as u32).wrapping_add(0x14), c.g[S1][0]);
+                break 'b_426fc8;
+            }
+        }
+        c.cycles += 5;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        // Tail call: `EIntr` returns straight to our caller.
+        c.pc = 0x0042c0c0;
+        (ee::s15::f_0042c0c0)(c);
+        Ok(())
+    })
+}
+
+/// `int sceSifRemoveRpc(...)` (0x4270b0): under `DIntr`, unlink the RPC
+/// entry `a0` from its server's list: a head match drops it directly,
+/// otherwise the list is walked (due events checked) for the entry whose
+/// successor is `a0`, and the successor is skipped over.
+pub fn sce_sif_remove_rpc(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_427120: {
+            'b_4270e8: {
+                c.cycles += 11;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.g[S2][0] = c.g[A1][0];
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                c.g[S1][0] = c.g[A0][0];
+                callee::DINTR.call(c, 0x004270d0)?;
+                c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                let t = c.g[S0][0] != c.g[S1][0];
+                if t {
+                    break 'b_4270e8;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x38));
+                let t = true;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                if t {
+                    break 'b_427120;
+                } else {
+                    break 'b_4270e8;
+                }
+            }
+            c.cycles += 2;
+            let t = c.g[S0][0] == 0u64;
+            if t {
+                break 'b_427120;
+            }
+            'b_42711c: {
+                c.cycles += 3;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x38));
+                if c.g[V1][0] == c.g[S1][0] {
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
+                    break 'b_42711c;
+                }
+                c.cycles += 1;
+                'l_427100: loop {
+                    c.cycles += 3;
+                    c.g[S0][0] = c.g[V1][0];
+                    let t = c.g[S0][0] == 0u64;
+                    if t {
+                        break 'b_427120;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x38));
+                    let t = c.g[V0][0] != c.g[S1][0];
+                    c.g[V1][0] = c.g[V0][0];
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00427100);
+                        }
+                        continue 'l_427100;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
+                    break 'b_42711c;
+                }
+            }
+            c.cycles += 1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+            break 'b_427120;
+        }
+        c.cycles += 9;
+        callee::EINTR.call(c, 0x00427128)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int sceSifRemoveRpcQueue(...)` (0x427148): under `DIntr`, drop the
+/// queue `a0` from the SIF pool's queue list (head or walked-to entry,
+/// with due-event checks); the interrupt state is restored after.
+pub fn sce_sif_remove_rpc_queue(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_4271b8: {
+            'b_427180: {
+                c.cycles += 11;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+                c.g[S1][0] = c.g[A0][0];
+                callee::DINTR.call(c, 0x00427160)?;
+                c.g[V1][0] = 0x530000;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2980));
+                c.g[S0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+                let t = c.g[S0][0] != c.g[S1][0];
+                if t {
+                    break 'b_427180;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                let t = true;
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+                if t {
+                    break 'b_4271b8;
+                } else {
+                    break 'b_427180;
+                }
+            }
+            c.cycles += 2;
+            let t = c.g[S0][0] == 0u64;
+            if t {
+                break 'b_4271b8;
+            }
+            'b_4271b4: {
+                c.cycles += 3;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                if c.g[V1][0] == c.g[S1][0] {
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                    break 'b_4271b4;
+                }
+                c.cycles += 1;
+                'l_427198: loop {
+                    c.cycles += 3;
+                    c.g[S0][0] = c.g[V1][0];
+                    let t = c.g[S0][0] == 0u64;
+                    if t {
+                        break 'b_4271b8;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    let t = c.g[V0][0] != c.g[S1][0];
+                    c.g[V1][0] = c.g[V0][0];
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00427198);
+                        }
+                        continue 'l_427198;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                    break 'b_4271b4;
+                }
+            }
+            c.cycles += 1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+            break 'b_4271b8;
+        }
+        c.cycles += 8;
+        callee::EINTR.call(c, 0x004271c0)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int sceSifInitCmd(...)` (0x425d38): bring up the SIF command path.
+/// When the init flag is clear, zero the command tables, enable
+/// interrupts, flush the cache, install the DMA chain and handlers, and
+/// send the init packet (polling `GetReg` until the peer answers); when
+/// set, just restore the interrupt state. The table/poll loops check for
+/// due events on their back edges.
+pub fn sce_sif_init_cmd(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[RA][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+        DINTR.call(c, 0x00425d58)?;
+        c.g[T2][0] = 0x450000;
+        c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x517c));
+        let t = c.g[V0][0] == 0u64;
+        c.g[S3][0] = 0x530000;
+        if t {
+            c.cycles += 26;
+            c.g[A1][0] = 0x530000;
+            c.g[V0][0] = 0x20000000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4380));
+            c.g[A2][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x4400));
+            c.g[S2][0] = 0x530000;
+            c.g[A1][0] = c.g[A1][0] | c.g[V0][0];
+            c.g[A2][0] = c.g[A2][0] | c.g[V0][0];
+            c.g[V1][0] = 0x1;
+            c.g[T1][0] = 0x530000;
+            c.g[A0][0] = 0x530000;
+            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x4328));
+            c.sw((c.g[T2][0] as u32).wrapping_add(0x517c), c.g[V1][0]);
+            c.g[T0][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x4300));
+            c.sw((c.g[S2][0] as u32).wrapping_sub(0x4328), c.g[A2][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x4200));
+            c.g[A3][0] = 0x20;
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x1c), c.g[A0][0]);
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+            c.g[V1][0] = c.g[T0][0];
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+            c.g[S4][0] = 0x530000;
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[S0][0] = 0x1f;
+            c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[T0][0]);
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x14), 0u64);
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x18), 0u64);
+            'l_425df0: loop {
+                c.cycles += 7;
+                c.sw(c.g[V1][0] as u32, 0u64);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                c.sw(c.g[V1][0] as u32 + 0x4, 0u64);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8));
+                let t = (c.g[S0][0] as i64) >= 0;
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00425df0);
+                    }
+                    continue 'l_425df0;
+                }
+                break 'l_425df0;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = 0x530000;
+            c.g[S0][0] = 0x1f;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4200));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7c));
+            'l_425e20: loop {
+                c.cycles += 7;
+                c.sw(c.g[V0][0] as u32, 0u64);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+                let t = (c.g[S0][0] as i64) >= 0;
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00425e20);
+                    }
+                    continue 'l_425e20;
+                }
+                break 'l_425e20;
+            }
+            'b_425e98: {
+                c.cycles += 20;
+                c.g[V0][0] = 0x420000;
+                c.g[V1][0] = 0x420000;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5ce0));
+                c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x4300));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5cc0));
+                c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x4328));
+                c.sw((c.g[T1][0] as u32).wrapping_sub(0x4300), c.g[V0][0]);
+                c.g[S0][0] = 0x20;
+                c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                c.sw((c.g[A0][0] as u32).wrapping_add(0xc), c.g[S1][0]);
+                c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                EINTR.call(c, 0x00425e6c)?;
+                c.g[A0][0] = 0u64;
+                FLUSH_CACHE.call(c, 0x00425e74)?;
+                c.g[V0][0] = 0x10000000;
+                c.g[V0][0] = c.g[V0][0] | 0xe010;
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[V1][0] = c.g[V1][0] & 0x20;
+                let t = c.g[V1][0] == 0u64;
+                c.g[V0][0] = 0x10000000;
+                if t {
+                    break 'b_425e98;
+                }
+                c.cycles += 3;
+                c.g[AT][0] = 0x10010000;
+                c.sw((c.g[AT][0] as u32).wrapping_sub(0x1ff0), c.g[S0][0]);
+                c.g[V0][0] = 0x10000000;
+                break 'b_425e98;
+            }
+            'b_425eb8: {
+                c.cycles += 5;
+                c.g[V0][0] = c.g[V0][0] | 0xc000;
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[V1][0] = c.g[V1][0] & 0x100;
+                let t = c.g[V1][0] != 0u64;
+                c.g[A1][0] = 0x420000;
+                if t {
+                    break 'b_425eb8;
+                }
+                c.cycles += 3;
+                SCE_SET_DCHAIN.call(c, 0x00425eb4)?;
+                c.g[A1][0] = 0x420000;
+                break 'b_425eb8;
+            }
+            c.cycles += 13;
+            c.g[A0][0] = 0x5;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6230));
+            c.g[A2][0] = 0u64;
+            ADD_DMAC_HANDLER.call(c, 0x00425ec8)?;
+            c.g[V1][0] = 0x530000;
+            c.g[A0][0] = 0x5;
+            c.sw((c.g[V1][0] as u32).wrapping_sub(0x432c), c.g[V0][0]);
+            ENABLE_DMAC.call(c, 0x00425ed8)?;
+            c.g[A0][0] = 0xffffffff80000000;
+            GET_REG.call(c, 0x00425ee4)?;
+            let t = c.g[V0][0] == 0u64;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            if t {
+                c.cycles += 1;
+                c.g[S0][0] = 0x20000;
+                'l_425f30: loop {
+                    c.cycles += 5;
+                    c.g[A0][0] = 0x4;
+                    GET_REG.call(c, 0x00425f38)?;
+                    c.g[V0][0] = c.g[V0][0] & c.g[S0][0];
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = 0x2;
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00425f30);
+                        }
+                        continue 'l_425f30;
+                    }
+                    break 'l_425f30;
+                }
+                c.cycles += 29;
+                c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x4328));
+                GET_REG.call(c, 0x00425f4c)?;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[A0][0] = 0xffffffff80000000;
+                c.g[A1][0] = c.g[V0][0];
+                SET_REG.call(c, 0x00425f5c)?;
+                c.g[A0][0] = 0xffffffff80000000;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[A0][0] | 0x1;
+                SET_REG.call(c, 0x00425f6c)?;
+                c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x4340));
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x4400));
+                c.g[A0][0] = 0xffffffff80000000;
+                c.g[A1][0] = c.g[V1][0];
+                c.g[A2][0] = 0x14;
+                c.g[A3][0] = 0u64;
+                c.g[T0][0] = 0u64;
+                c.g[T1][0] = 0u64;
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+                c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[A0][0] = c.g[A0][0] | 0x2;
+                c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+                // Tail call: `SendCmd` returns straight to our caller.
+                c.pc = 0x004261b0;
+                (ee::s15::f_004261b0)(c);
+                return Ok(());
+            }
+            c.cycles += 16;
+            c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x4340));
+            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x4400));
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[A0][0] = 0xffffffff80000000;
+            c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[A2][0] = 0x14;
+            c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[A3][0] = 0u64;
+            c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[T0][0] = 0u64;
+            c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[T1][0] = 0u64;
+            c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+            // Tail call: `SendCmd` returns straight to our caller.
+            c.pc = 0x004261b0;
+            (ee::s15::f_004261b0)(c);
+            return Ok(());
+        }
+        c.cycles += 8;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+        // Tail call: `EIntr` returns straight to our caller.
+        c.pc = 0x0042c0c0;
+        (ee::s15::f_0042c0c0)(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6682,6 +8002,1149 @@ pub(crate) mod tests {
                     c.g[RA][0],
                 );
                 c.pc = [0x0042_7410, 0x0042_7418][seed as usize % 2];
+            },
+        );
+    }
+    use crate::difftest::fakes;
+    use crate::difftest::fresh;
+    use crate::difftest::run_generated;
+
+    /// Gate + forced result for the send-command fakes below (per-machine
+    /// words; other tests' machines read 0 here, so their runs fall back
+    /// to the slot bodies).
+    pub(crate) const SEND_CMD_GATE: u32 = DATA + 0x6400;
+
+    pub(crate) const SEND_RESULT: u32 = DATA + 0x6404;
+
+    /// `isceSifSendCmd`/`sceSifSendCmd` with the gate set: report the
+    /// forced result without sending. Anywhere else (or with the gate
+    /// clear): the slot body.
+    pub(crate) fn fake_send_zero(c: &mut Cpu) {
+        if c.bus.read32(SEND_CMD_GATE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_send_zero),
+                ee::s15::f_004261f0__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(SEND_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `sceSifSendCmd` with the gate set: fail the next `SEND_N` sends
+    /// (`u32::MAX` fails them all), then the slot body. Anywhere else
+    /// (or with the gate clear): the slot body.
+    pub(crate) const SEND_N: u32 = DATA + 0x641c;
+
+    pub(crate) fn fake_send_cmd_zero(c: &mut Cpu) {
+        if c.bus.read32(SEND_CMD_GATE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_send_cmd_zero),
+                ee::s15::f_004261b0__generated,
+            );
+        }
+        let n = c.bus.read32(SEND_N);
+        if n == 0 {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_send_cmd_zero),
+                ee::s15::f_004261b0__generated,
+            );
+        }
+        if n != u32::MAX {
+            c.bus.write32(SEND_N, n - 1);
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn hook_send_fakes() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_004261F0),
+            fake_send_zero,
+            fakes::prev_cell(fake_send_zero),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_004261B0),
+            fake_send_cmd_zero,
+            fakes::prev_cell(fake_send_cmd_zero),
+        );
+    }
+
+    /// Packet words the SIF sends read: nonzero with nonzero low bytes.
+    pub(crate) fn send_words(c: &mut Cpu, base: u32, seed: u32) {
+        for (i, off) in [0x14u32, 0x1c, 0x20, 0x24, 0x28].iter().enumerate() {
+            c.bus.write32(
+                base + off,
+                0x0101_0100
+                    + seed
+                        .wrapping_mul(0x9e37_79b9)
+                        .wrapping_add(i as u32 * 0x110),
+            );
+        }
+    }
+
+    /// `sceSifRpc_RetrySendAlarm`: the retry packet goes out through the
+    /// real send (length 8..64: packet fill, always succeeding here).
+    #[test]
+    fn retry_send_matches() {
+        covered(
+            ee::s15::f_004267c0__generated,
+            sce_sif_rpc_retry_send_alarm,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_361_001, 1);
+                c.pc = 0x0042_67c0;
+                c.g[A2][0] = (DATA + 0x300) as u64;
+                c.bus.write32(DATA + 0x324, 0x0202_0200 + seed);
+                c.bus.write32(DATA + 0x328, 0x0303_0300 + seed);
+                // Length digit: small packet fills, all succeeding.
+                c.bus.write32(DATA + 0x32c, [8, 12, 64][seed as usize % 3]);
+            },
+        );
+    }
+
+    /// `sceSifRpc_RetrySendAlarm` with the send forced to fail: the alarm
+    /// arm runs the real `iSetAlarm`.
+    #[test]
+    fn retry_send_fail_matches() {
+        hook_send_fakes();
+        covered(
+            ee::s15::f_004267c0__generated,
+            sce_sif_rpc_retry_send_alarm,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_361_002, 1);
+                c.pc = 0x0042_67c0;
+                c.g[A2][0] = (DATA + 0x300) as u64;
+                c.bus.write32(DATA + 0x324, 0x0202_0200 + seed);
+                c.bus.write32(DATA + 0x328, 0x0303_0300 + seed);
+                c.bus.write32(DATA + 0x32c, 12);
+                c.bus.write32(SEND_CMD_GATE, GATE_MAGIC);
+                c.bus.write32(SEND_RESULT, 0);
+            },
+        );
+    }
+
+    /// Pool struct shared by the `GetFPacket`/`GetFPacket2` fixtures: count
+    /// 3, all words nonzero with nonzero low bytes.
+    pub(crate) fn sif_pool(c: &mut Cpu, base: u32, seed: u32) {
+        for i in 0..10 {
+            c.bus.write32(
+                base + 4 * i,
+                0x0101_0100 + seed.wrapping_mul(0x5bd1_e995).wrapping_add(i * 0x111),
+            );
+        }
+        c.bus.write32(base + 0x20, 3);
+    }
+
+    /// Real packets for the packet pool at `pool`: free packets at `DATA +
+    /// 0x1000` (four of 0x40 bytes; the next one from `seed`), fixed
+    /// packets at `DATA + 0x2000` (three), every packet word nonzero so the
+    /// stores into them show.
+    pub(crate) fn real_pool(c: &mut Cpu, pool: u32, seed: u32) {
+        c.bus.write32(pool + 0x14, DATA + 0x1000);
+        c.bus.write32(pool + 0x18, 4);
+        c.bus.write32(pool + 0x1c, DATA + 0x2000);
+        c.bus.write32(pool + 0x20, 3);
+        c.bus.write32(pool + 0x24, seed % 7);
+        for i in 0..0x40u32 {
+            c.bus.write32(DATA + 0x1000 + 4 * i, 0x5a5a_0000 + 4 * i);
+        }
+        for i in 0..0x30u32 {
+            c.bus.write32(DATA + 0x2000 + 4 * i, 0x6b6b_0000 + 4 * i);
+        }
+    }
+
+    /// `sceSifRpc_RequestRData`: flag bit 2 clear takes `GetFPacket`,
+    /// set takes `GetFPacket2` (index `word >> 16`: 0 and 2 in range of
+    /// the count, 9 past it); the reply then goes out through the real
+    /// send.
+    #[test]
+    fn request_rdata_matches() {
+        covered(
+            ee::s15::f_00426820__generated,
+            sce_sif_rpc_request_rdata,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_361_003, 1);
+                c.pc = 0x0042_6820;
+                c.g[A0][0] = (DATA + 0x300) as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                sif_pool(c, DATA + 0x100, seed);
+                real_pool(c, DATA + 0x100, seed);
+                // Bit digit crossed with the pool-word index digit.
+                let bit = [0, 4, 4][seed as usize % 3];
+                let idx = [0, 2, 9][seed as usize / 3 % 3];
+                c.bus
+                    .write32(DATA + 0x310, ((idx << 16) | bit | 0x0101) as u32);
+                // Send-setup words: inline size, small lengths.
+                send_words(c, DATA + 0x300, seed);
+                c.bus.write32(DATA + 0x320, 0x40);
+                c.bus
+                    .write32(DATA + 0x328, [8, 12, 64][seed as usize / 9 % 3]);
+            },
+        );
+        // The pool's own splits (index == count takes the free-packet
+        // arm) are covered by the `GetFPacket2` tests; the request arms
+        // here end in the real send, whose fake call charges vary.
+    }
+
+    /// `sceSifRpc_RequestRData` with the send forced to fail: the alarm
+    /// arm runs the real `iSetAlarm`.
+    #[test]
+    fn request_rdata_fail_matches() {
+        hook_send_fakes();
+        covered(
+            ee::s15::f_00426820__generated,
+            sce_sif_rpc_request_rdata,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_361_004, 1);
+                c.pc = 0x0042_6820;
+                c.g[A0][0] = (DATA + 0x300) as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                sif_pool(c, DATA + 0x100, seed);
+                real_pool(c, DATA + 0x100, seed);
+                let bit = [0, 4][seed as usize % 2];
+                c.bus
+                    .write32(DATA + 0x310, ((2 << 16) | bit | 0x0101) as u32);
+                send_words(c, DATA + 0x300, seed);
+                c.bus.write32(DATA + 0x320, 0x40);
+                c.bus.write32(DATA + 0x328, 12);
+                c.bus.write32(SEND_CMD_GATE, GATE_MAGIC);
+                c.bus.write32(SEND_RESULT, 0);
+            },
+        );
+    }
+
+    /// Gate + reply packet for the `GetPacket` fake below.
+    pub(crate) const PACKET_GATE: u32 = DATA + 0x6408;
+
+    pub(crate) const PACKET_ADDR: u32 = DATA + 0x640c;
+
+    /// `sceSifRpc_GetPacket` with the gate set: hand out the test packet.
+    /// Anywhere else (or with the gate clear): the slot body (the zeroed
+    /// fixed pool then takes the null arm).
+    pub(crate) fn fake_get_packet(c: &mut Cpu) {
+        if c.bus.read32(PACKET_GATE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_get_packet),
+                ee::s15::f_004265d0__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(PACKET_ADDR) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn hook_packet_fake() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_004265D0),
+            fake_get_packet,
+            fakes::prev_cell(fake_get_packet),
+        );
+    }
+
+    /// Reply packet for `GetOtherData`: all words nonzero with nonzero
+    /// low bytes.
+    pub(crate) fn other_packet(c: &mut Cpu, base: u32, seed: u32) {
+        for i in 0..10 {
+            c.bus.write32(
+                base + 4 * i,
+                0x0404_0400 + seed.wrapping_mul(0x1f2b_3c4d).wrapping_add(i * 0x101),
+            );
+        }
+    }
+
+    /// `sceSifGetOtherData`: no packet from the pool reports -1; a packet
+    /// with flag bit 0 set sends straight through, clear waits on a fresh
+    /// semaphore; both end in the real `SendCmd`.
+    #[test]
+    fn get_other_data_matches() {
+        hook_packet_fake();
+        hook_send_fakes();
+        covered(
+            ee::s15::f_004268f0__generated,
+            sce_sif_get_other_data,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_361_005, 1);
+                c.pc = 0x0042_68f0;
+                c.g[A0][0] = (DATA + 0x300) as u64;
+                c.g[A1][0] = 0x1111_1100 + seed as u64;
+                c.g[A2][0] = 0x2222_2200 + seed as u64;
+                c.g[A3][0] = 0x3333_3300 + seed as u64;
+                // Flag digit: direct send vs semaphore wait.
+                c.g[T0][0] = [1, 0, 0][seed as usize % 3] as u64;
+                // Length the sends use.
+                c.g[T2][0] = 12;
+                // Packet digit: null pool arm vs handed-out packet.
+                if seed / 3 % 2 == 0 {
+                    other_packet(c, DATA + 0x400, seed);
+                    c.bus.write32(PACKET_GATE, GATE_MAGIC);
+                    c.bus.write32(PACKET_ADDR, DATA + 0x400);
+                } else {
+                    c.bus.write32(PACKET_GATE, 0);
+                }
+            },
+        );
+        // Unreached: the `CreateSema` failure arm (V0 = -3). The
+        // harness's fake syscalls always return non-negative ids, so
+        // the failure check never fires here; in the game a drained
+        // semaphore table takes it.
+    }
+
+    /// `sceSifGetOtherData` with the send forced to fail: both the
+    /// semaphore and the direct path free the packet and report -2.
+    #[test]
+    fn get_other_data_send_fail_matches() {
+        hook_packet_fake();
+        hook_send_fakes();
+        covered(
+            ee::s15::f_004268f0__generated,
+            sce_sif_get_other_data,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_361_006, 1);
+                c.pc = 0x0042_68f0;
+                c.g[A0][0] = (DATA + 0x300) as u64;
+                c.g[A1][0] = 0x1111_1100 + seed as u64;
+                c.g[A2][0] = 0x2222_2200 + seed as u64;
+                c.g[A3][0] = 0x3333_3300 + seed as u64;
+                c.g[T0][0] = (seed % 2) as u64;
+                c.g[T2][0] = 12;
+                other_packet(c, DATA + 0x400, seed);
+                c.bus.write32(PACKET_GATE, GATE_MAGIC);
+                c.bus.write32(PACKET_ADDR, DATA + 0x400);
+                c.bus.write32(SEND_CMD_GATE, GATE_MAGIC);
+                c.bus.write32(SEND_N, u32::MAX);
+            },
+        );
+    }
+
+    /// Bucket list for `SearchSvdata`: two buckets, three entries then
+    /// two; every id word nonzero with a nonzero low byte.
+    pub(crate) fn search_buckets(
+        c: &mut Cpu,
+        seed: u32,
+        null_list: bool,
+        absent: bool,
+        target_slot: u32,
+    ) -> u32 {
+        let ids = [
+            0x0b0b_0b01 + seed,
+            0x0b0b_0b02 + seed,
+            0x0b0b_0b03 + seed,
+            0x0c0c_0c01 + seed,
+            0x0c0c_0c02 + seed,
+        ];
+        if null_list {
+            c.bus.write32(DATA + 0x328, 0);
+            return 0x0d0d_0d00 + seed;
+        }
+        c.bus.write32(DATA + 0x328, DATA + 0x400);
+        // Bucket 0 (entries 0-2) -> bucket 1 (entries 3-4) -> null.
+        c.bus.write32(DATA + 0x400, 0);
+        c.bus.write32(DATA + 0x408, DATA + 0x500);
+        c.bus.write32(DATA + 0x414, DATA + 0x480);
+        c.bus.write32(DATA + 0x480, 0);
+        c.bus.write32(DATA + 0x488, DATA + 0x5c0);
+        c.bus.write32(DATA + 0x494, 0);
+        // Entries: ids then null-terminated chains.
+        for (i, base) in [0x500u32, 0x540, 0x580, 0x5c0, 0x600].iter().enumerate() {
+            c.bus.write32(DATA + *base, ids[i]);
+            c.bus.write32(
+                DATA + *base + 0x38,
+                if i == 2 || i == 4 {
+                    0
+                } else {
+                    DATA + base + 0x40
+                },
+            );
+        }
+        if absent {
+            0x0e0e_0e00 + seed
+        } else {
+            ids[target_slot as usize % ids.len()]
+        }
+    }
+
+    /// `sceSifRpc_SearchSvdata`: empty list, id found in the first entry,
+    /// id found in the last entry, id absent. No calls on any path, so
+    /// the four totals pin every arm.
+    #[test]
+    fn search_svdata_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_361_007, 0);
+            c.pc = 0x0042_6a48;
+            // Mode digit: null list / found first / found last / absent.
+            let mode = seed % 4;
+            let target = search_buckets(c, seed, mode == 0, mode == 3, 4);
+            c.g[A0][0] = (if mode == 1 {
+                0x0b0b_0b01 + seed
+            } else {
+                target
+            }) as u64;
+            c.g[A1][0] = (DATA + 0x300) as u64;
+        };
+        check(
+            ee::s15::f_00426a48__generated,
+            sce_sif_rpc_search_svdata,
+            SEEDS,
+            setup,
+        );
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..SEEDS {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s15::f_00426a48__generated);
+            seen.insert(c.cycles - before);
+        }
+        // Four modes, four totals: one arm per total.
+        assert_eq!(seen.len(), 4, "paths seen: {seen:?}");
+    }
+
+    driven!(search_svdata_driven, sce_sif_rpc_search_svdata);
+
+    driven!(
+        search_svdata_generated_driven,
+        ee::s15::f_00426a48__generated
+    );
+
+    /// `sceSifRpc_SearchSvdata` with events due: deliveries on both list
+    /// walks deliver inline on both sides; the loop still finds the id.
+    /// Two buckets: the first one's six misses run the inner head
+    /// (0x426a68), the hop to the second (entries at `DATA + 0x700`, apart
+    /// from the first's) the outer head (0x426a58).
+    #[test]
+    fn search_svdata_events() {
+        check_events(
+            search_svdata_generated_driven,
+            search_svdata_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_361_008, 0);
+                c.bus.write32(DATA + 0x328, DATA + 0x400);
+                c.bus.write32(DATA + 0x408, DATA + 0x500);
+                c.bus.write32(DATA + 0x414, DATA + 0x480);
+                c.bus.write32(DATA + 0x488, DATA + 0x700);
+                c.bus.write32(DATA + 0x494, 0);
+                // Bucket 1: six misses; bucket 2: miss then the target.
+                for i in 0..6u32 {
+                    c.bus
+                        .write32(DATA + 0x500 + 0x40 * i, 0x0b0b_0c00 + seed + i);
+                    c.bus.write32(
+                        DATA + 0x500 + 0x40 * i + 0x38,
+                        if i == 5 {
+                            0
+                        } else {
+                            DATA + 0x500 + 0x40 * (i + 1)
+                        },
+                    );
+                }
+                c.bus.write32(DATA + 0x700, 0x0b0b_0d00 + seed);
+                c.bus.write32(DATA + 0x738, DATA + 0x740);
+                c.bus.write32(DATA + 0x740, 0x0b0b_0b00 + seed);
+                c.bus.write32(DATA + 0x778, 0);
+                c.g[A0][0] = (0x0b0b_0b00 + seed) as u64;
+                c.g[A1][0] = (DATA + 0x300) as u64;
+                schedule(c, &mut r, seed, 0x0042_6a48)
+            },
+        );
+    }
+
+    /// Bucket list like [`search_buckets`] but rooted at `holder` with
+    /// buckets/entries at `base`: for callees whose holder is not the
+    /// DATA+0x300 request struct.
+    pub(crate) fn search_buckets_at(
+        c: &mut Cpu,
+        seed: u32,
+        holder: u32,
+        base: u32,
+        absent: bool,
+    ) -> u32 {
+        let ids = [
+            0x0b0b_0b01 + seed,
+            0x0b0b_0b02 + seed,
+            0x0b0b_0b03 + seed,
+            0x0c0c_0c01 + seed,
+            0x0c0c_0c02 + seed,
+        ];
+        c.bus.write32(holder + 0x28, base);
+        c.bus.write32(base, 0);
+        c.bus.write32(base + 0x8, base + 0x100);
+        c.bus.write32(base + 0x14, base + 0x80);
+        c.bus.write32(base + 0x80, 0);
+        c.bus.write32(base + 0x88, base + 0x1c0);
+        c.bus.write32(base + 0x94, 0);
+        for (i, off) in [0x100u32, 0x140, 0x180, 0x1c0, 0x200].iter().enumerate() {
+            c.bus.write32(base + off, ids[i]);
+            c.bus.write32(
+                base + off + 0x38,
+                if i == 2 || i == 4 {
+                    0
+                } else {
+                    base + off + 0x40
+                },
+            );
+        }
+        if absent {
+            0x0e0e_0e00 + seed
+        } else {
+            ids[4]
+        }
+    }
+
+    /// `sceSifRpc_RequestBind`: with the id present in the server data
+    /// the packet takes the found words, otherwise zeros; either way it
+    /// goes out through the real `isceSifSendCmd`.
+    #[test]
+    fn request_bind_matches() {
+        check(
+            ee::s15::f_00426a98__generated,
+            sce_sif_rpc_request_bind,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_361_009, 1);
+                c.pc = 0x0042_6a98;
+                c.g[A0][0] = (DATA + 0x300) as u64;
+                c.g[A1][0] = (DATA + 0x400) as u64;
+                // GetFPacket inputs: the packet at `DATA + 0x700` (index
+                // 0 of the pool's free packets), its words nonzero.
+                c.bus.write32(DATA + 0x400, 0x2323_2300 + seed);
+                c.bus.write32(DATA + 0x414, DATA + 0x700);
+                c.bus.write32(DATA + 0x418, 0x2424_2400 + seed);
+                c.bus.write32(DATA + 0x424, 0);
+                for i in 0..0x30u32 {
+                    c.bus.write32(DATA + 0x700 + 4 * i, 0x7c7c_0000 + 4 * i);
+                }
+                // Found vs missing server entry; the found one (at `DATA +
+                // 0x640`) has nonzero words for the packet (`+0x8`, `+0x14`).
+                let absent = seed % 2 == 0;
+                let target = search_buckets_at(c, seed, DATA + 0x400, DATA + 0x440, absent);
+                c.bus.write32(DATA + 0x648, 0x2626_2600 + seed);
+                c.bus.write32(DATA + 0x654, 0x2727_2700 + seed);
+                c.bus.write32(DATA + 0x31c, target);
+                c.bus.write32(DATA + 0x314, 0x2525_2500 + seed);
+                c.bus.write32(DATA + 0x320, target);
+            },
+        );
+    }
+
+    /// `sceSifRpc_RequestCall`: the request packet starts the server
+    /// entry's queue (empty) or is appended at its tail, the call words are
+    /// copied into the entry, and the server thread is woken unless its id
+    /// is negative or its wake word is already set (real `iWakeupThread`).
+    /// The four totals without the wakeup (which makes syscalls) pin the
+    /// empty/append and the two no-wake arms.
+    #[test]
+    fn request_call_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_361_010, 0);
+            c.pc = 0x0042_6c88;
+            c.g[A0][0] = (DATA + 0x300) as u64;
+            c.bus.write32(DATA + 0x334, DATA + 0x400);
+            c.bus.write32(DATA + 0x440, DATA + 0x500);
+            for (i, off) in [0x14u32, 0x1c, 0x20, 0x24, 0x28, 0x2c, 0x30, 0x10]
+                .iter()
+                .enumerate()
+            {
+                c.bus.write32(
+                    DATA + 0x300 + off,
+                    0x3131_3100
+                        + seed
+                            .wrapping_mul(0xabcd_1234)
+                            .wrapping_add(i as u32 * 0x101),
+                );
+            }
+            // The entry words the copies overwrite start nonzero.
+            for i in 0..12u32 {
+                c.bus.write32(DATA + 0x40c + 4 * i, 0x3838_0000 + 4 * i);
+            }
+            // Queue digit: empty, or a queued packet whose tail (at `DATA
+            // + 0x640`) takes the append.
+            let queued = seed % 2 == 1;
+            c.bus
+                .write32(DATA + 0x50c, if queued { DATA + 0x600 } else { 0 });
+            c.bus.write32(
+                DATA + 0x510,
+                if queued {
+                    DATA + 0x640
+                } else {
+                    0x4343_4300 + seed
+                },
+            );
+            c.bus.write32(DATA + 0x67c, 0x4444_4400 + seed);
+            // Thread digit: id negative, wake word set, or a wakeup.
+            let mode = seed / 2 % 3;
+            c.bus.write32(
+                DATA + 0x500,
+                if mode == 0 {
+                    0xffff_ffff
+                } else {
+                    0x4545_4500 + seed
+                },
+            );
+            c.bus
+                .write32(DATA + 0x504, if mode == 2 { 0 } else { 0x4646_4600 + seed });
+        };
+        check_paths(
+            ee::s15::f_00426c88__generated,
+            sce_sif_rpc_request_call,
+            SEEDS,
+            &[28, 29, 31, 32],
+            setup,
+        );
+    }
+
+    /// `sceSifGetNextRequest`: a queued request is taken off the server
+    /// entry (marked taken), otherwise the entry is reported empty; the
+    /// interrupt state is restored either way.
+    #[test]
+    fn get_next_request_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_361_011, 0);
+            c.pc = 0x0042_71d8;
+            c.g[A0][0] = (DATA + 0x300) as u64;
+            // The taken word both arms store, nonzero before.
+            c.bus.write32(DATA + 0x304, 0x5252_5200 + seed);
+            // Queue digit: empty, a request with another behind it, the
+            // last request.
+            match seed % 3 {
+                0 => c.bus.write32(DATA + 0x30c, 0),
+                1 => {
+                    c.bus.write32(DATA + 0x30c, DATA + 0x400);
+                    c.bus.write32(DATA + 0x43c, 0x5151_5100 + seed);
+                }
+                _ => {
+                    c.bus.write32(DATA + 0x30c, DATA + 0x400);
+                    c.bus.write32(DATA + 0x43c, 0);
+                }
+            }
+        };
+        check(
+            ee::s15::f_004271d8__generated,
+            sce_sif_get_next_request,
+            SEEDS,
+            setup,
+        );
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..SEEDS {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s15::f_004271d8__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert_eq!(seen.len(), 2, "paths seen: {seen:?}");
+    }
+
+    /// Gate + countdown for the `SetDma` fake below.
+    pub(crate) const SET_DMA_GATE: u32 = DATA + 0x6414;
+
+    pub(crate) const DMA_FAIL_N: u32 = DATA + 0x6418;
+
+    /// `sceSifSetDma` with the gate set: fail the next `DMA_FAIL_N` starts
+    /// (the wait loop spins), then fall back to the slot body. Anywhere
+    /// else (or with the gate clear): the slot body.
+    pub(crate) fn fake_set_dma_zero(c: &mut Cpu) {
+        if c.bus.read32(SET_DMA_GATE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_set_dma_zero),
+                ee::s15::f_00424160__generated,
+            );
+        }
+        let n = c.bus.read32(DMA_FAIL_N);
+        if n > 0 {
+            c.bus.write32(DMA_FAIL_N, n - 1);
+            c.g[V0][0] = 0;
+            c.cycles += 4;
+            crate::abi::ret(c);
+            return;
+        }
+        fakes::fall_back(
+            c,
+            fakes::prev_cell(fake_set_dma_zero),
+            ee::s15::f_00424160__generated,
+        );
+    }
+
+    pub(crate) fn hook_dma_fakes() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00424160),
+            fake_set_dma_zero,
+            fakes::prev_cell(fake_set_dma_zero),
+        );
+    }
+
+    /// Request struct for `ExecRequest`: every steering word from an
+    /// independent digit (server address/kind, cache sizes, pool flag,
+    /// reply count), and real packets in the SIF pool at `0x52d680`.
+    pub(crate) fn exec_setup(c: &mut Cpu, seed: u32) {
+        c.pc = 0x0042_7230;
+        real_pool(c, 0x0052_d680, seed);
+        c.g[A0][0] = (DATA + 0x300) as u64;
+        // Server digit: the real zero leaf (no reply) vs an unmapped
+        // address (the miss-hook fake answers nonzero).
+        c.bus.write32(
+            DATA + 0x304,
+            if seed % 2 == 0 {
+                0x0014_06c0
+            } else {
+                DATA + 0x700
+            },
+        );
+        for (i, off) in [0x8u32, 0x24, 0x1c, 0x20, 0x28].iter().enumerate() {
+            c.bus.write32(
+                DATA + 0x300 + off,
+                0x6161_6100
+                    + seed
+                        .wrapping_mul(0x789a_bcde)
+                        .wrapping_add(i as u32 * 0x111),
+            );
+        }
+        // Cache-size digits: writeback or skip, each.
+        c.bus.write32(
+            DATA + 0x30c,
+            if seed / 2 % 2 == 0 { 0xffff_fff0 } else { 0x10 },
+        );
+        c.bus.write32(
+            DATA + 0x32c,
+            if seed / 4 % 2 == 0 { 0xffff_fff0 } else { 0x10 },
+        );
+        // Pool flag digit: plain packet vs free-pool packet; in-range index.
+        c.bus.write32(
+            DATA + 0x334,
+            (((seed / 8 % 2) * 2) << 16) | ((seed / 8 % 2) * 4) | 0x0101,
+        );
+        // Reply-count digit: skip the send loop or run it once.
+        c.bus
+            .write32(DATA + 0x330, if seed / 16 % 2 == 0 { 0 } else { 5 });
+    }
+
+    /// `sceSifExecRequest`: the server answer picks the reply shape, the
+    /// cache sizes pick the writebacks, the pool flag picks the packet
+    /// and the reply count runs or skips the send loop; the real `SendCmd`
+    /// succeeds first try.
+    #[test]
+    fn exec_request_matches() {
+        covered(
+            ee::s15::f_00427230__generated,
+            sce_sif_exec_request,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_361_012, 1);
+                exec_setup(c, seed);
+            },
+        );
+    }
+
+    /// `sceSifExecRequest` on the DMA path (no reply count) with the first
+    /// DMA start failing: the countdown (0x4273b0) and the retry
+    /// (0x427398) run once, then the real start goes through. Few seeds:
+    /// each run spins about 7.3 M cycles.
+    #[test]
+    fn exec_request_dma_wait_matches() {
+        hook_dma_fakes();
+        check(
+            ee::s15::f_00427230__generated,
+            sce_sif_exec_request,
+            8,
+            &|c, seed| {
+                machine(c, seed, 1_361_013, 0);
+                exec_setup(c, seed * 16 + 15);
+                // Nonsense server answer, no reply count (the DMA path).
+                c.bus.write32(DATA + 0x304, DATA + 0x700);
+                c.bus.write32(DATA + 0x330, 0);
+                c.bus.write32(SET_DMA_GATE, GATE_MAGIC);
+                c.bus.write32(DMA_FAIL_N, 1);
+            },
+        );
+    }
+
+    driven!(exec_request_driven, sce_sif_exec_request);
+
+    driven!(
+        exec_request_generated_driven,
+        ee::s15::f_00427230__generated
+    );
+
+    /// `sceSifExecRequest` with events due and the first send failing
+    /// once: the send loop delivers inline on both sides, then the
+    /// real send breaks it out.
+    #[test]
+    fn exec_request_events() {
+        hook_dma_fakes();
+        hook_send_fakes();
+        check_events(
+            exec_request_generated_driven,
+            exec_request_driven,
+            24,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_361_014, 0);
+                exec_setup(c, seed * 16 + 15);
+                c.bus.write32(DATA + 0x304, DATA + 0x700);
+                c.bus.write32(DATA + 0x330, 5);
+                c.bus.write32(SEND_CMD_GATE, GATE_MAGIC);
+                c.bus.write32(SEND_N, 1);
+                schedule(c, &mut r, seed, 0x0042_7230)
+            },
+        );
+    }
+
+    /// Queue links in the fixed SIF pool head (`0x52d680 + 0x28`): a chain
+    /// of `len` entries at `base`, linked through `+0x14`.
+    pub(crate) fn pool_chain(c: &mut Cpu, len: u32, base: u32) {
+        c.bus
+            .write32(0x0052_d680 + 0x28, if len == 0 { 0 } else { base });
+        for i in 0..len {
+            c.bus.write32(
+                base + 0x40 * i + 0x14,
+                if i + 1 == len {
+                    0
+                } else {
+                    base + 0x40 * (i + 1)
+                },
+            );
+            c.bus.write32(base + 0x40 * i, 0x7171_7100 + i);
+        }
+    }
+
+    /// `sceSifSetRpcQueue`: empty head, one queued entry, three queued
+    /// entries. No traps on any path, so the totals pin every arm.
+    #[test]
+    fn set_rpc_queue_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_362_001, 0);
+            c.pc = 0x0042_6f48;
+            c.g[A0][0] = (DATA + 0x300) as u64;
+            c.g[A1][0] = 0x7272_7200 + seed as u64;
+            // The queue struct's words, which the setup zeroes, start
+            // nonzero.
+            for i in 0..7u32 {
+                c.bus.write32(DATA + 0x300 + 4 * i, 0x7373_7300 + i);
+            }
+            pool_chain(c, [0, 1, 3][seed as usize % 3], 0x0052_d000);
+        };
+        check(
+            ee::s15::f_00426f48__generated,
+            sce_sif_set_rpc_queue,
+            SEEDS,
+            setup,
+        );
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..SEEDS {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s15::f_00426f48__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert_eq!(seen.len(), 3, "paths seen: {seen:?}");
+    }
+
+    driven!(set_rpc_queue_driven, sce_sif_set_rpc_queue);
+
+    driven!(
+        set_rpc_queue_generated_driven,
+        ee::s15::f_00426f48__generated
+    );
+
+    /// `sceSifSetRpcQueue` with events due: the append walk unwinds and
+    /// re-enters identically.
+    #[test]
+    fn set_rpc_queue_events() {
+        check_events(
+            set_rpc_queue_generated_driven,
+            set_rpc_queue_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_362_002, 0);
+                c.pc = 0x0042_6f48;
+                c.g[A0][0] = (DATA + 0x300) as u64;
+                c.g[A1][0] = 0x7272_7200 + seed as u64;
+                pool_chain(c, 8, 0x0052_d000);
+                schedule(c, &mut r, seed, 0x0042_6f48)
+            },
+        );
+    }
+
+    /// Server entry (`+0x8` head) with a chain of `len` RPC entries at
+    /// `base`, linked through `+0x38`; returns the entry addresses.
+    pub(crate) fn rpc_chain(c: &mut Cpu, server: u32, base: u32, len: u32) -> Vec<u32> {
+        c.bus.write32(server + 0x8, if len == 0 { 0 } else { base });
+        let mut out = Vec::new();
+        for i in 0..len {
+            let e = base + 0x40 * i;
+            out.push(e);
+            c.bus.write32(e, 0x8181_8100 + i);
+            c.bus.write32(
+                e + 0x38,
+                if i + 1 == len {
+                    0
+                } else {
+                    base + 0x40 * (i + 1)
+                },
+            );
+        }
+        out
+    }
+
+    /// `sceSifRemoveRpc`: the head drops directly, the second entry and a
+    /// later one unlink by skipping, an empty list and an absent entry
+    /// report null. No traps on any path, so the five totals are the five
+    /// exits.
+    #[test]
+    fn remove_rpc_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_362_003, 0);
+            c.pc = 0x0042_70b0;
+            // Mode digit: head match, empty list, second-entry match, walk
+            // match, absent.
+            let mode = seed % 5;
+            let entries = rpc_chain(c, DATA + 0x400, DATA + 0x500, if mode == 1 { 0 } else { 4 });
+            c.g[A0][0] = match mode {
+                0 => entries[0],
+                1 => DATA + 0x500,
+                2 => entries[1],
+                3 => entries[2],
+                _ => DATA + 0x700,
+            } as u64;
+            c.g[A1][0] = (DATA + 0x400) as u64;
+        };
+        check(
+            ee::s15::f_004270b0__generated,
+            sce_sif_remove_rpc,
+            SEEDS,
+            setup,
+        );
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..SEEDS {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s15::f_004270b0__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert_eq!(seen.len(), 5, "paths seen: {seen:?}");
+    }
+
+    driven!(remove_rpc_driven, sce_sif_remove_rpc);
+
+    driven!(remove_rpc_generated_driven, ee::s15::f_004270b0__generated);
+
+    /// `sceSifRemoveRpc` with events due: the unlink walk unwinds and
+    /// re-enters identically.
+    #[test]
+    fn remove_rpc_events() {
+        check_events(
+            remove_rpc_generated_driven,
+            remove_rpc_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_362_004, 0);
+                let entries = rpc_chain(c, DATA + 0x400, DATA + 0x500, 8);
+                c.g[A0][0] = entries[7] as u64;
+                c.g[A1][0] = (DATA + 0x400) as u64;
+                schedule(c, &mut r, seed, 0x0042_70b0)
+            },
+        );
+    }
+
+    /// `sceSifRemoveRpcQueue`: the head drops directly, the second queue
+    /// and a later one unlink by skipping, an empty list and an absent
+    /// queue report null. No traps on any path, so the five totals are
+    /// the five exits.
+    #[test]
+    fn remove_rpc_queue_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_362_005, 0);
+            c.pc = 0x0042_7148;
+            // Mode digit: head match, empty list, second-queue match, walk
+            // match, absent.
+            let mode = seed % 5;
+            pool_chain(c, if mode == 1 { 0 } else { 4 }, DATA + 0x500);
+            c.g[A0][0] = [
+                DATA + 0x500,
+                DATA + 0x500,
+                DATA + 0x540,
+                DATA + 0x580,
+                DATA + 0x700,
+            ][mode as usize] as u64;
+        };
+        check(
+            ee::s15::f_00427148__generated,
+            sce_sif_remove_rpc_queue,
+            SEEDS,
+            setup,
+        );
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..SEEDS {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s15::f_00427148__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert_eq!(seen.len(), 5, "paths seen: {seen:?}");
+    }
+
+    driven!(remove_rpc_queue_driven, sce_sif_remove_rpc_queue);
+
+    driven!(
+        remove_rpc_queue_generated_driven,
+        ee::s15::f_00427148__generated
+    );
+
+    /// `sceSifRemoveRpcQueue` with events due: the unlink walk unwinds
+    /// and re-enters identically.
+    #[test]
+    fn remove_rpc_queue_events() {
+        check_events(
+            remove_rpc_queue_generated_driven,
+            remove_rpc_queue_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_362_006, 0);
+                pool_chain(c, 8, DATA + 0x500);
+                c.g[A0][0] = (DATA + 0x500 + 0x40 * 7) as u64;
+                schedule(c, &mut r, seed, 0x0042_7148)
+            },
+        );
+    }
+
+    /// Gate + poll countdown for the `GetReg` fake below (per-machine
+    /// words; other tests' machines read 0 here, so their runs fall back
+    /// to the slot body).
+    pub(crate) const INIT_GATE: u32 = DATA + 0x6500;
+
+    pub(crate) const INIT_POLL_N: u32 = DATA + 0x6504;
+
+    /// `sceSifGetReg` with the gate set: the bring-up read reports no
+    /// peer (enter the poll), the poll answers 0 `INIT_POLL_N` times then
+    /// sets the ready bit, the post-poll read reports a fixed value.
+    /// Anywhere else (or with the gate clear): the slot body.
+    pub(crate) fn fake_init_get_reg(c: &mut Cpu) {
+        if c.bus.read32(INIT_GATE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_init_get_reg),
+                ee::s15::f_004241b0__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        if ra == 0x0042_5ee4 {
+            c.g[V0][0] = 0;
+        } else if ra == 0x0042_5f38 {
+            let n = c.bus.read32(INIT_POLL_N);
+            if n > 0 {
+                c.bus.write32(INIT_POLL_N, n - 1);
+                c.g[V0][0] = 0;
+            } else {
+                c.g[V0][0] = 0x20000;
+            }
+        } else if ra == 0x0042_5f4c {
+            c.g[V0][0] = 0x37;
+        } else {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_init_get_reg),
+                ee::s15::f_004241b0__generated,
+            );
+        }
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn hook_init_fake() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_004241B0),
+            fake_init_get_reg,
+            fakes::prev_cell(fake_init_get_reg),
+        );
+    }
+
+    /// `sceSifInitCmd` with the init flag set: the short exit restores
+    /// the interrupt state. No traps on the path, so the total pins it.
+    #[test]
+    fn init_cmd_short_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_362_010, 0);
+            c.pc = 0x0042_5d38;
+            c.bus.write32(0x0045_0000 + 0x517c, 0x0101_0100 + seed);
+        };
+        check(
+            ee::s15::f_00425d38__generated,
+            sce_sif_init_cmd,
+            SEEDS,
+            setup,
+        );
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..SEEDS {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            run_generated(&mut c, ee::s15::f_00425d38__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert_eq!(seen.len(), 1, "paths seen: {seen:?}");
+    }
+
+    /// `sceSifInitCmd` with the flag clear: the full bring-up runs over
+    /// the game's SIF state (nonzero before, so the table clears show),
+    /// ending in the real `SendCmd`. The `GetReg` fake steers the peer
+    /// poll; with it off (every fourth seed) the syscall answers nonzero
+    /// and the peer-already-up arm (0x425eec) runs.
+    #[test]
+    fn init_cmd_full_matches() {
+        hook_init_fake();
+        check(
+            ee::s15::f_00425d38__generated,
+            sce_sif_init_cmd,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_362_011, 1);
+                c.pc = 0x0042_5d38;
+                c.bus.write32(0x0045_0000 + 0x517c, 0);
+                for i in 0..0x70u32 {
+                    c.bus.write32(0x0052_bcc0 + 4 * i, 0x5d5d_0000 ^ (4 * i));
+                }
+                if seed % 4 != 3 {
+                    c.bus.write32(INIT_GATE, GATE_MAGIC);
+                }
+                c.bus.write32(INIT_POLL_N, 1 + seed % 3);
+            },
+        );
+    }
+
+    driven!(init_cmd_driven, sce_sif_init_cmd);
+
+    driven!(init_cmd_generated_driven, ee::s15::f_00425d38__generated);
+
+    /// `sceSifInitCmd` with events due: deliveries in the table loops
+    /// and the peer poll deliver inline on both sides.
+    #[test]
+    fn init_cmd_events() {
+        hook_init_fake();
+        check_events(
+            init_cmd_generated_driven,
+            init_cmd_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_362_012, 0);
+                c.pc = 0x0042_5d38;
+                c.bus.write32(0x0045_0000 + 0x517c, 0);
+                c.bus.write32(INIT_GATE, GATE_MAGIC);
+                c.bus.write32(INIT_POLL_N, 2);
+                c.g[T2][0] = 12;
+                schedule(c, &mut r, seed, 0x0042_5d38)
             },
         );
     }
