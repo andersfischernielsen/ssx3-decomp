@@ -446,11 +446,33 @@ impl App {
         if let Some(p) = self.presenter.as_mut() {
             // Rendering at the window's size fills it exactly.
             let native_fill = self.engine.native_image() && self.engine.follows_surface();
-            p.set_aspect(if native_fill {
+            let aspect = if native_fill {
                 self.engine.aspect_box().unwrap_or(0.0)
             } else {
                 display_aspect(self.engine.cpu())
-            });
+            };
+            // SSX3_ASPECT=cover: menus, the intro and other front end
+            // screens are pre-squeezed 4:3 content with black side bars
+            // baked into the wide frame (the menu occupies the central 75%
+            // of the frame width, at full frame height). While the game is
+            // in the front end, show the central 75% × 75% of the frame
+            // filling the window: the side bars go, the remaining top and
+            // bottom is cropped for the 16:9 window. Races and their HUD
+            // keep the full wide frame.
+            let cover = settings::get("SSX3_ASPECT").as_deref() == Some("cover");
+            let fill = cover
+                && game_widescreen(self.engine.cpu())
+                && (!in_race(self.engine.cpu()) || game_paused(self.engine.cpu()));
+            // How much of the frame's height the fill shows: 0.75 is the
+            // exact 16:9 fill (no distortion, the menu's top and bottom
+            // edges are cut); more shows more menu at the cost of a
+            // horizontal stretch. `SSX3_MENU_FILL_HEIGHT` overrides.
+            let fill_h = settings::get("SSX3_MENU_FILL_HEIGHT")
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|f| (0.5..=1.0).contains(f))
+                .unwrap_or(0.88);
+            p.set_crop(fill.then_some([0.125, (1.0 - fill_h) / 2.0, 0.75, fill_h]));
+            p.set_aspect(if fill { 0.0 } else { aspect });
             match self.menu {
                 Some(sel) => {
                     let (w, h, img) = settings::draw(sel, self.restart_pending);
@@ -610,13 +632,15 @@ enum MenuKey {
 /// The aspect ratio to show the game at. SSX3_ASPECT=4:3 / 16:9 / stretch
 /// overrides; by default it follows the game's own widescreen option
 /// (options word at 0x535610, bits 20-21: off, 16:9 letterboxed in a 4:3
-/// image, anamorphic), so anamorphic is shown at 16:9.
+/// image, anamorphic), so anamorphic is shown at 16:9. `cover` is like the
+/// default, with the front end filling the window (see `show`).
 fn display_aspect(cpu: &Cpu) -> f32 {
     static FORCED: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
     let forced = *FORCED.get_or_init(|| match ssx3_core::config::var("SSX3_ASPECT")?.as_str() {
         "stretch" => Some(0.0),
         "16:9" => Some(16.0 / 9.0),
         "4:3" => Some(4.0 / 3.0),
+        "cover" => None,
         v => {
             eprintln!("SSX3_ASPECT={v}: expected 4:3, 16:9 or stretch");
             None
@@ -627,6 +651,49 @@ fn display_aspect(cpu: &Cpu) -> f32 {
     } else {
         4.0 / 3.0
     })
+}
+
+/// Whether the game renders anamorphic wide frames: its own widescreen
+/// option (the options word at 0x535610, bits 20-21; 2 = anamorphic). Only
+/// then do front end screens carry baked-in black side bars.
+fn game_widescreen(cpu: &Cpu) -> bool {
+    (cpu.bus.ram_u32(0x0053_5610) >> 20) & 3 == 2
+}
+
+/// Whether a race is actually on screen: the race world (`gp` - 0x848) is
+/// null until one is loaded, and its game module (+0x84) then holds the AI
+/// race manager (+0xc) whose first word is the race state (2 = game init,
+/// 4 = countdown, 5 = racing / free ride; `gamecomm.rs`, `racestate.rs`).
+/// Front end and loading screens fill, races do not.
+fn in_race(cpu: &Cpu) -> bool {
+    let gp = cpu.g[28][0] as u32;
+    if gp == 0 {
+        return false;
+    }
+    let world = cpu.bus.ram_u32(gp.wrapping_sub(0x848));
+    if world == 0 {
+        return false;
+    }
+    let module = cpu.bus.ram_u32(world + 0x84);
+    if module == 0 {
+        return false;
+    }
+    let ai = cpu.bus.ram_u32(module + 0xc);
+    if ai == 0 {
+        return false;
+    }
+    cpu.bus.ram_u32(ai) >= 2
+}
+
+/// Whether the game is paused: the audio system's pause/menu flags at
+/// `gp` - 0x6a0, bit 0 (set while the pause menu is up — verified live:
+/// the word flips to `0xffffffdb` while paused).
+fn game_paused(cpu: &Cpu) -> bool {
+    let gp = cpu.g[28][0] as u32;
+    if gp == 0 {
+        return false;
+    }
+    cpu.bus.ram_u32(gp.wrapping_sub(0x6a0)) & 1 != 0
 }
 
 pub use headless::run as run_headless;

@@ -14,6 +14,9 @@ use winit::window::Window;
 const SHADER: &str = r#"
 @group(0) @binding(0) var frame_tex: texture_2d<f32>;
 @group(0) @binding(1) var frame_smp: sampler;
+// The region of the frame to show: (offset x, offset y, scale x, scale y);
+// (0, 0, 1, 1) shows all of it.
+@group(1) @binding(0) var<uniform> crop: vec4<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -35,7 +38,7 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VsOut {
     );
     var out: VsOut;
     out.pos = vec4<f32>(p[i], 0.0, 1.0);
-    out.uv = uv[i];
+    out.uv = crop.zw * uv[i] + crop.xy;
     return out;
 }
 
@@ -51,6 +54,9 @@ const BUFFER_SHADER: &str = r#"
 @group(0) @binding(0) var<storage, read> frame: array<u32>;
 // (width, height, 1 if the surface is sRGB)
 @group(0) @binding(1) var<uniform> dims: vec4<u32>;
+// The region of the frame to show: (offset x, offset y, scale x, scale y);
+// (0, 0, 1, 1) shows all of it.
+@group(1) @binding(0) var<uniform> crop: vec4<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -94,16 +100,17 @@ fn frame_rgb(x: u32, y: u32) -> vec3<f32> {
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let w = dims.x;
     let h = dims.y;
+    let uv = in.uv * crop.zw + crop.xy;
     // Frame pixels per window pixel: above 1 (an N× frame in a smaller
     // window) average the footprint, otherwise nearest.
-    let n = vec2<u32>(clamp(ceil(fwidth(in.uv) * vec2<f32>(f32(w), f32(h)) - 0.01), vec2<f32>(1.0), vec2<f32>(4.0)));
-    let x = min(u32(max(in.uv.x, 0.0) * f32(w)), w - 1u);
-    let y = min(u32(max(in.uv.y, 0.0) * f32(h)), h - 1u);
+    let n = vec2<u32>(clamp(ceil(fwidth(uv) * vec2<f32>(f32(w), f32(h)) - 0.01), vec2<f32>(1.0), vec2<f32>(4.0)));
+    let x = min(u32(max(uv.x, 0.0) * f32(w)), w - 1u);
+    let y = min(u32(max(uv.y, 0.0) * f32(h)), h - 1u);
     if (n.x == 1u && n.y == 1u) {
         return vec4<f32>(frame_rgb(x, y), 1.0);
     }
-    let x0 = min(u32(max(in.uv.x * f32(w) - 0.5 * f32(n.x - 1u), 0.0)), w - 1u);
-    let y0 = min(u32(max(in.uv.y * f32(h) - 0.5 * f32(n.y - 1u), 0.0)), h - 1u);
+    let x0 = min(u32(max(uv.x * f32(w) - 0.5 * f32(n.x - 1u), 0.0)), w - 1u);
+    let y0 = min(u32(max(uv.y * f32(h) - 0.5 * f32(n.y - 1u), 0.0)), h - 1u);
     var sum = vec3<f32>(0.0);
     for (var j = 0u; j < n.y; j = j + 1u) {
         for (var i = 0u; i < n.x; i = i + 1u) {
@@ -148,6 +155,14 @@ pub struct Presenter {
     /// Display aspect ratio the image is fitted to (letterboxed or
     /// pillarboxed); 0 stretches it over the whole window.
     aspect: f32,
+    /// The region of the frame shown: (offset x, offset y, scale x, scale
+    /// y); (0, 0, 1, 1) shows all of it. One uniform shared by every
+    /// pipeline (they all bind it as group 1).
+    crop: [f32; 4],
+    crop_buf: wgpu::Buffer,
+    crop_bg: wgpu::BindGroup,
+    /// The identity crop, for the overlay (which never crops).
+    crop_id_bg: wgpu::BindGroup,
     /// The surface needs reconfiguring (a resize, or a configure that
     /// failed: retried at the next present).
     reconfigure: bool,
@@ -275,6 +290,65 @@ impl Presenter {
             ],
         });
 
+        let crop_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("crop"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(
+            &crop_buf,
+            0,
+            &[0.0f32, 0.0, 1.0, 1.0]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        );
+        let crop_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("crop-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let crop_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("crop-bg"),
+            layout: &crop_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: crop_buf.as_entire_binding(),
+            }],
+        });
+        // The overlay shows in full, never cropped: an identity binding.
+        let crop_id_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("crop-id"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(
+            &crop_id_buf,
+            0,
+            &[0.0f32, 0.0, 1.0, 1.0]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        );
+        let crop_id_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("crop-id-bg"),
+            layout: &crop_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: crop_id_buf.as_entire_binding(),
+            }],
+        });
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("gs-present"),
             source: wgpu::ShaderSource::Wgsl(SHADER.into()),
@@ -282,7 +356,7 @@ impl Presenter {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("gs-present-layout"),
-            bind_group_layouts: &[Some(&bgl)],
+            bind_group_layouts: &[Some(&bgl), Some(&crop_bgl)],
             immediate_size: 0,
         });
 
@@ -338,7 +412,7 @@ impl Presenter {
             cache: None,
         });
         #[cfg(feature = "emu-gs")]
-        let buffer_path = BufferPath::new(&device, config.format);
+        let buffer_path = BufferPath::new(&device, config.format, &crop_bgl);
         Self {
             surface,
             device,
@@ -353,6 +427,10 @@ impl Presenter {
             #[cfg(feature = "emu-gs")]
             buffer_path,
             aspect: 4.0 / 3.0,
+            crop: [0.0, 0.0, 1.0, 1.0],
+            crop_buf,
+            crop_bg,
+            crop_id_bg,
             reconfigure: false,
             overlay: None,
             overlay_pipeline,
@@ -516,6 +594,18 @@ impl Presenter {
         self.aspect = aspect;
     }
 
+    /// Show a region of the frame: `(offset x, offset y, scale x, scale
+    /// y)`, or `None` for all of it. Applied at the next present.
+    pub fn set_crop(&mut self, crop: Option<[f32; 4]>) {
+        let c = crop.unwrap_or([0.0, 0.0, 1.0, 1.0]);
+        if self.crop == c {
+            return;
+        }
+        self.crop = c;
+        let bytes: Vec<u8> = c.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.queue.write_buffer(&self.crop_buf, 0, &bytes);
+    }
+
     /// Upload an RGBA8 frame (`w`×`h`) and draw it to the window.
     pub fn render(&mut self, w: u32, h: u32, rgba: &[u32]) -> Result<(), PresentError> {
         if (w, h) != self.tex_size && w > 0 && h > 0 {
@@ -649,6 +739,7 @@ impl Presenter {
             }
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bind_group, &[]);
+            pass.set_bind_group(1, &self.crop_bg, &[]);
             pass.draw(0..3, 0..1);
             if let Some((tex, bg)) = &self.overlay {
                 // Centred, the largest whole scale that fits 90% of the window.
@@ -665,6 +756,7 @@ impl Presenter {
                 );
                 pass.set_pipeline(&self.overlay_pipeline);
                 pass.set_bind_group(0, bg, &[]);
+                pass.set_bind_group(1, &self.crop_id_bg, &[]);
                 pass.draw(0..3, 0..1);
             }
         }
@@ -677,7 +769,11 @@ impl Presenter {
 
 #[cfg(feature = "emu-gs")]
 impl BufferPath {
-    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> BufferPath {
+    fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        crop_bgl: &wgpu::BindGroupLayout,
+    ) -> BufferPath {
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("gs-frame-bgl"),
             entries: &[
@@ -709,7 +805,7 @@ impl BufferPath {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("gs-frame-layout"),
-            bind_group_layouts: &[Some(&bgl)],
+            bind_group_layouts: &[Some(&bgl), Some(crop_bgl)],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
