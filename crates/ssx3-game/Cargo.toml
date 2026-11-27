@@ -28,6 +28,9 @@ png = "0.18.1"
 default = ["packages", "ee-threads"]
 packages = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch", "rider_states", "skeleton", "world", "ai", "ui", "audio", "containers", "chase", "rider_logic", "world_cache", "world_painter", "graphics", "streaming", "replay_script", "snd_lib", "audio_system"]
 ee-threads = ["dep:ssx3-ee-threads"]
+# `SSX3_SHADOW` also compares the calls made and the cycle each starts at
+# (build with `--features ssx3-game/shadow-trace`; slows every call).
+shadow-trace = ["ssx3-ee-rt/calltrace"]
 math = []
 anim = []
 camera = []

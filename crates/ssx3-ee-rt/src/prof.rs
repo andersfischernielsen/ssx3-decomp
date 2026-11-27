@@ -38,11 +38,20 @@ pub mod trace {
 
     thread_local! {
         static T: RefCell<Option<Vec<Call>>> = const { RefCell::new(None) };
+        /// `c.cycles` at each recorded call (same index as `T`).
+        static CYC: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
     }
 
     /// Start recording on this thread.
     pub fn start() {
         T.with(|t| *t.borrow_mut() = Some(Vec::new()));
+        CYC.with(|t| t.borrow_mut().clear());
+    }
+
+    /// The cycle count at each call recorded since [`start`] (same indices as
+    /// the calls [`take`] returns; take them first).
+    pub fn take_cycles() -> Vec<u64> {
+        CYC.with(|t| std::mem::take(&mut *t.borrow_mut()))
     }
 
     /// Stop recording; the calls since [`start`].
@@ -54,6 +63,7 @@ pub mod trace {
         T.with(|t| {
             if let Some(v) = t.borrow_mut().as_mut() {
                 if v.len() < 4096 {
+                    CYC.with(|y| y.borrow_mut().push(c.cycles));
                     v.push([
                         start as u64,
                         c.g[4][0],

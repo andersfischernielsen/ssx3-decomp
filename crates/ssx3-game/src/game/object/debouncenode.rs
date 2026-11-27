@@ -2305,53 +2305,6 @@ pub(crate) const MOD_OBJ_V36: Callee = Callee {
     f: ee::s11::ModObj_v36,
 };
 
-/// `void Conveyor_ctor_2(void* self, ..., void* stream)` (0x3430d0): runs the
-/// base constructor (`WorldObj_ctor_2`), sets the conveyor's vptr-relative
-/// fields (0x490000 + 0x570 at +0xc) and calls the stream's vtable slot 0x14
-/// with `stream + delta`, the delta a halfword at 0x10. Resumes (a return
-/// from a callee that unwound) go to the generated `__entries`.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn conveyor_ctor_2(c: &mut Cpu) {
-    if c.pc != 0x0034_30d0 {
-        return ee::s11::f_003430d0__entries(c);
-    }
-    guest(c, conveyor_ctor_2_body)
-}
-
-pub(crate) fn conveyor_ctor_2_body(c: &mut Cpu) -> Flow {
-    c.cycles += 23;
-    let frame = Frame::open(c, 0x30);
-    frame.save(c, S0, 0x20);
-    frame.save(c, S1, 0x10);
-    c.g[S0][0] = c.g[A0][0];
-    frame.save_ra(c, 0);
-    WORLD_OBJ_CTOR_2.call(c, 0x0034_30ec)?;
-    c.g[V1][0] = 0x49_0000;
-    c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1c));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x570));
-    c.g[A2][0] = 0x2c;
-    let vptr_word = c.g[V1][0];
-    Addr((c.g[S0][0] as u32).wrapping_add(0xc)).sw(c, vptr_word);
-    c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
-    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x10).lh(c);
-    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x14).lw(c);
-    let slot = c.g[V1][0] as u32;
-    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
-    call_ptr(c, slot, 0x0034_3114)?;
-    c.g[V0][0] = c.g[S0][0];
-    frame.restore(c, S1, 0x10);
-    frame.restore(c, S0, 0x20);
-    frame.restore_ra(c, 0);
-    frame.close(c);
-    Ok(())
-}
-
-pub(crate) const WORLD_OBJ_CTOR_2: Callee = Callee {
-    addr: 0x0034_fb90,
-    f: ee::s11::WorldObj_ctor_2,
-};
-
 /// `CrowdMan3d_AddInstance` (0x00343c60): the normal entry, converted from the generated body
 /// (a `match pc` / labelled-block body: every register, cycle and call kept).
 /// Any other `pc` (a resume after an unwound callee or event) runs the

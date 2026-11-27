@@ -358,9 +358,6 @@ pub(crate) mod callee {
     /// `LobbyMan_RequestStatsPage`.
     pub const LOBBY_MAN_REQUEST_STATS_PAGE: u32 = 0x0025_e348;
 
-    /// `SSXApp_BootLoad`.
-    pub const SSX_APP_BOOT_LOAD: u32 = 0x0022_82d0;
-
     /// `UStr_FromAscii_2`.
     pub const USTR_FROM_ASCII: u32 = 0x002c_2540;
 
