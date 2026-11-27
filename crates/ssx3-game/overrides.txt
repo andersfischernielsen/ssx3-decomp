@@ -10532,6 +10532,10 @@
 # Phase 2 wave: oc1120, oc1121, oc1122, oc1123
 # Phase 2 wave: oc1120, oc1121, oc1122, oc1123
 # Phase 2 wave: oc1123
+# Phase 2 wave: oc1124, oc1125, oc1126, oc1127, oc1129, oc1131, oc1132, oc1133, oc1134, oc1135, oc1136, oc1137
+# Phase 2 wave: oc1124, oc1125, oc1126, oc1127, oc1129, oc1131, oc1132, oc1133, oc1134, oc1135, oc1136, oc1137
+# Phase 2 wave: oc1128, oc1130
+# Phase 2 wave: oc1124, oc1125, oc1126, oc1127, oc1128, oc1129, oc1130, oc1131, oc1132, oc1133, oc1134, oc1135, oc1136, oc1137
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
@@ -11838,3 +11842,38 @@
 0x00408df0    libmpeg_IpuCscDma
 0x00409088    libmpeg_ConvertPictureCsc
 0x004061e8    libmpeg_SliceHeader
+0x0019f138    FEModule_RiderPreviewUpdate
+0x003c4450    SND_SifDmaStartNext
+0x003c4668    SND_SifDmaQueue
+0x003c4788    SND_SifDmaUpload
+0x001a3cd8    FEAsyncManager_LoadSlot
+0x003cbec8    SND_EeFxFree
+0x003b8978    SND_SetLowpass
+0x00185268    cFEStateUberTrick_OnWidgetAction
+0x00196f50    cFEStateRequestLine_TransitionIn
+0x00196f98    cFEStateRequestLine_OnWidgetCreated
+0x00199458    cFEStateCharEquip_OnWidgetCreated
+0x00199f20    cFEStateCharEquip_OnWidgetNotify
+0x001a4330    cFEStateNetMessenger_OnWidgetAction
+0x001a49a0    cFEStateNetMessenger_v34
+0x001a4b20    cFEStateNetMessenger_v35
+0x001a54d8    cFEStateNetMessenger_AddNewBuddies
+0x001a5898    cFEStateNetMessenger_BuildBuddyList
+0x001a6070    cFEStateNetMessenger_ShowBuddyInfo
+0x003a1d30    cUITextScroll_SetWideString
+0x003a2220    Render2D_DrawWipeQuad
+0x003a2a00    Render2D_DrawSpriteXform
+0x003bcae8    SNDENC_PutBits
+0x003d0c20    PATH_SkipRemainingActions
+0x003d1470    PATH_StopAllTracks
+0x003d1608    PATH_FatalExit
+0x003d1940    PATH_FlushEvents
+0x003d2c20    PATH_GetMaxBranchRatio
+0x003d5698    PATH_FadeVolume
+0x003d5800    PATH_FadeAuxSend
+0x003d5968    PATH_UpdateFadeStops
+0x003d5a98    PATH_TrackUpdateVolumeFade
+0x003d5cc0    PATH_TrackUpdateAuxSendFade
+0x003d5ee8    PATH_TrackUpdateFade3
+0x00407438    libmpeg_NextStartCode
+0x001db778    StdVector_InsertAux
