@@ -222,6 +222,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         femodule_rider_preview_get_anim_progress,
         "FEModule_RiderPreviewGetAnimProgress",
     ),
+    (
+        0x0019_f138,
+        fe_rider_preview_update,
+        "FEModule_RiderPreviewUpdate",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4091,12 +4096,308 @@ pub fn femodule_rider_preview_get_anim_progress(c: &mut Cpu) {
     });
 }
 
+/// `void FEModule_RiderPreviewUpdate(RiderPreview* self)` (0x19f138): per-frame
+/// update of a front-end rider preview. While a character load is pending
+/// (`+0xcd4 >= 0`) it waits until the vtable count passes the pending index and
+/// then restarts the load (`FEModule_RiderPreviewLoadChar`); otherwise, while
+/// `state < 10`, it steps through the load stages (models polled `+0xcbc`,
+/// textures polled `+0xcb8`, model set up `+0xcb4`, bolt materials applied
+/// `+0xcc0`). Once the preview is ready (`+0xcc8`) it ticks the animation
+/// (`+0xc`), applies the transform and updates the two attached effects
+/// (`+0xc70`, `+0xc74`). Converted from the generated labelled-block body
+/// with every register, cycle and call kept; any other `pc` (a resume) runs
+/// the generated body.
+pub fn fe_rider_preview_update(c: &mut Cpu) {
+    if c.pc != 0x0019f138 {
+        return ee::s03::f_0019f138__generated(c);
+    }
+    guest(c, |c| {
+        'b_19f2c4: {
+            'b_19f27c: {
+                'b_19f278: {
+                    'b_19f198: {
+                        c.cycles += 7;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                        c.g[S0][0] = c.g[A0][0];
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcd4));
+                        let t = (c.g[V0][0] as i64) < 0;
+                        c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                        if t {
+                            break 'b_19f198;
+                        } else {
+                            c.cycles += 9;
+                            c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10d8));
+                            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x390));
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x394));
+                            let t = c.g[V0][0] as u32;
+                            c.g[RA][0] = sx(0x0019f168);
+                            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            call_ptr(c, t, 0x0019f168)?;
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcd4));
+                            c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            let t = c.g[V1][0] == 0u64;
+                            c.g[V0][0] = 0xffffffffffffffff;
+                            if t {
+                                break 'b_19f278;
+                            } else {
+                                c.cycles += 8;
+                                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc24));
+                                c.g[A0][0] = c.g[S0][0];
+                                c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc28));
+                                c.g[RA][0] = sx(0x0019f190);
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xcd4), c.g[V0][0]);
+                                Callee {
+                                    addr: 0x0019e960,
+                                    f: ee::s03::FEModule_RiderPreviewLoadChar,
+                                }
+                                .call(c, 0x0019f190)?;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                                if t {
+                                    break 'b_19f27c;
+                                } else {
+                                    break 'b_19f198;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[V0][0] = (c.g[V0][0] < 0xau64) as u64;
+                    if c.g[V0][0] == 0u64 {
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        break 'b_19f2c4;
+                    } else {
+                        'b_19f1dc: {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcb8));
+                                break 'b_19f1dc;
+                            } else {
+                                'b_19f1cc: {
+                                    c.cycles += 4;
+                                    c.g[RA][0] = sx(0x0019f1bc);
+                                    c.g[A0][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x001a0100,
+                                        f: ee::s03::FEModule_RiderPreviewPollModels,
+                                    }
+                                    .call(c, 0x0019f1bc)?;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = 0x1;
+                                    if t {
+                                        break 'b_19f1cc;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = true;
+                                        c.sw((c.g[S0][0] as u32).wrapping_add(0xcbc), c.g[V0][0]);
+                                        if t {
+                                            break 'b_19f278;
+                                        } else {
+                                            break 'b_19f1cc;
+                                        }
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                                if c.g[V0][0] == 0u64 {
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                                    break 'b_19f27c;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcb8));
+                                    break 'b_19f1dc;
+                                }
+                            }
+                        }
+                        'b_19f214: {
+                            c.cycles += 2;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                                break 'b_19f214;
+                            } else {
+                                'b_19f210: {
+                                    c.cycles += 4;
+                                    c.g[RA][0] = sx(0x0019f1ec);
+                                    c.g[A0][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x0019fd58,
+                                        f: ee::s03::FEModule_RiderPreviewPollTextures,
+                                    }
+                                    .call(c, 0x0019f1ec)?;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = 0x1;
+                                    if t {
+                                        break 'b_19f210;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcb4));
+                                        let t = c.g[V1][0] != 0u64;
+                                        c.sw((c.g[S0][0] as u32).wrapping_add(0xcb8), c.g[V0][0]);
+                                        if t {
+                                            break 'b_19f278;
+                                        } else {
+                                            c.cycles += 4;
+                                            c.g[RA][0] = sx(0x0019f208);
+                                            c.g[A0][0] = c.g[S0][0];
+                                            Callee {
+                                                addr: 0x0019ed80,
+                                                f: ee::s03::FEModule_RiderPreviewSetupModel,
+                                            }
+                                            .call(c, 0x0019f208)?;
+                                            let t = true;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                                            if t {
+                                                break 'b_19f27c;
+                                            } else {
+                                                break 'b_19f210;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 1;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                                break 'b_19f214;
+                            }
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] == 0u64 {
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                            break 'b_19f27c;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcb8));
+                            if c.g[V0][0] == 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                                break 'b_19f27c;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcb4));
+                                if c.g[V0][0] == 0u64 {
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                                    break 'b_19f27c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcc0));
+                                    if c.g[V0][0] != 0u64 {
+                                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                                        break 'b_19f27c;
+                                    } else {
+                                        'b_19f274: {
+                                            'b_19f26c: {
+                                                c.cycles += 8;
+                                                c.g[RA][0] = sx(0x0019f248);
+                                                c.g[A0][0] = c.g[S0][0];
+                                                Callee { addr: 0x0019f780, f: ee::s03::FEModule_RiderPreviewApplyBoltMaterials }.call(c, 0x0019f248)?;
+                                                c.g[V0][0] = 0x1;
+                                                c.g[V1][0] =
+                                                    c.lw((c.g[S0][0] as u32).wrapping_add(0xcc4));
+                                                c.g[A1][0] =
+                                                    sx((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                                                c.g[A0][0] = 0u64;
+                                                let t = c.g[V1][0] != 0u64;
+                                                c.sw(
+                                                    (c.g[S0][0] as u32).wrapping_add(0xcc0),
+                                                    c.g[V0][0],
+                                                );
+                                                if t {
+                                                    break 'b_19f26c;
+                                                } else {
+                                                    c.cycles += 3;
+                                                    c.g[V0][0] =
+                                                        c.lw(
+                                                            (c.g[S0][0] as u32).wrapping_add(0xcc8)
+                                                        );
+                                                    if c.g[V0][0] == 0u64 {
+                                                        c.sw(c.g[A1][0] as u32, c.g[A0][0]);
+                                                        break 'b_19f274;
+                                                    } else {
+                                                        break 'b_19f26c;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            c.g[A0][0] = 0x1;
+                                            c.sw(c.g[A1][0] as u32, c.g[A0][0]);
+                                            break 'b_19f274;
+                                        }
+                                        c.cycles += 1;
+                                        c.sw((c.g[S0][0] as u32).wrapping_add(0xcc4), 0u64);
+                                        break 'b_19f278;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                break 'b_19f27c;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] == 0u64 {
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                break 'b_19f2c4;
+            } else {
+                'b_19f2a8: {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    let t = c.g[A0][0] == 0u64;
+
+                    if t {
+                        break 'b_19f2a8;
+                    } else {
+                        c.cycles += 6;
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 12);
+                        c.g[RA][0] = sx(0x0019f2a0);
+                        c.g[A1][0] = 0u64;
+                        call_ptr(c, 0x003123c0, 0x0019f2a0)?;
+                        c.g[RA][0] = sx(0x0019f2a8);
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                        call_ptr(c, 0x00312490, 0x0019f2a8)?;
+                        break 'b_19f2a8;
+                    }
+                }
+                c.cycles += 7;
+                c.g[RA][0] = sx(0x0019f2b0);
+                c.g[A0][0] = c.g[S0][0];
+                Callee {
+                    addr: 0x0019f2d0,
+                    f: ee::s03::FEModule_RiderPreviewApplyTransform,
+                }
+                .call(c, 0x0019f2b0)?;
+                c.g[RA][0] = sx(0x0019f2b8);
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc70));
+                call_ptr(c, 0x002f1a08, 0x0019f2b8)?;
+                c.g[RA][0] = sx(0x0019f2c0);
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc74));
+                call_ptr(c, 0x002ecf78, 0x0019f2c0)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                break 'b_19f2c4;
+            }
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     pub(crate) use crate::game::fe::uitemplatemap::tests::oc777_install_fakes;
+    use crate::game::lib::snd::tests::oc1130_install;
     pub(crate) use crate::game::lib::snd::tests::oc792_install_fakes;
     pub(crate) use crate::game::sound::bankmanager::tests::oc786_install_fakes;
     pub(crate) use crate::game::sound::bankmanager::tests::oc788_install_fakes;
@@ -6000,6 +6301,81 @@ pub(crate) mod tests {
             femodule_rider_preview_get_anim_progress,
             60,
             &|c, seed| oc859_anim_fixture(c, seed, 0x0019_f760),
+        );
+    }
+
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    pub(crate) use crate::game::lib::snd::tests::OC1130_CTRL;
+    pub(crate) use crate::game::lib::snd::tests::OC1130_MAGIC;
+    pub(crate) use crate::game::lib::snd::tests::OC1130_MAIL;
+
+    /// Make fake number `idx` return `v` in `v0`.
+    pub(crate) fn oc1130_force(c: &mut Cpu, idx: u32, v: u32) {
+        c.bus.write32(OC1130_MAIL + 4 * idx, v.wrapping_add(3));
+    }
+
+    /// `FEModule_RiderPreviewUpdate`: a pending character load (the vtable
+    /// call's result above or below `pending`, or no load pending), the
+    /// five load stages in every flag combination (models polled, textures
+    /// polled, bolt models, materials applied, state >= 10), and the pose
+    /// step with and without an animation. Callees are gated fakes; a random
+    /// call unwinds.
+    #[test]
+    fn fe_rider_preview_update_matches() {
+        oc1130_install();
+        check(
+            ee::s03::f_0019f138__generated,
+            fe_rider_preview_update,
+            600,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0019_f138, 8);
+                c.pc = 0x0019_f138;
+                c.bus.write32(OC1130_CTRL, OC1130_MAGIC);
+                let this = DATA + 0x1000;
+                let globals = DATA + 0x2000;
+                let vtable = DATA + 0x3000;
+                c.bus.write32(GAME_GP - 0x854, globals);
+                c.bus.write32(globals + 0x10d8, vtable);
+                c.bus
+                    .write16(vtable + 0x390, (r.next_u32() % 0x40 * 4) as u16);
+                c.bus.write32(vtable + 0x394, FAKE);
+                let flags = r.next_u32();
+                let bit = |n: u32| (flags >> n) & 1;
+                let pending = match seed % 3 {
+                    0 => u32::MAX,
+                    1 => r.next_u32() % 3,
+                    _ => 3 + r.next_u32() % 2,
+                };
+                c.bus.write32(this + 0xcd4, pending);
+                // the vtable call is the first fake call
+                c.bus.write32(LOG_RESULTS, 3);
+                let state = if flags & 7 == 0 {
+                    10 + r.next_u32() % 4
+                } else {
+                    r.next_u32() % 10
+                };
+                c.bus.write32(this, state);
+                c.bus.write32(this + 4, r.next_u32());
+                c.bus
+                    .write32(this + 0xc, if bit(3) == 1 { DATA + 0x4000 } else { 0 });
+                c.bus.write32(this + 0xc24, r.next_u32());
+                c.bus.write32(this + 0xc28, r.next_u32());
+                c.bus.write32(this + 0xc70, r.next_u32());
+                c.bus.write32(this + 0xc74, r.next_u32());
+                c.bus.write32(this + 0xcb4, bit(4) * (1 + r.next_u32() % 3));
+                c.bus.write32(this + 0xcb8, bit(5) * (1 + r.next_u32() % 3));
+                c.bus.write32(
+                    this + 0xcbc,
+                    if bit(6) == 1 || seed % 4 == 3 { 1 } else { 0 },
+                );
+                c.bus.write32(this + 0xcc0, bit(7) * (1 + r.next_u32() % 3));
+                c.bus.write32(this + 0xcc4, bit(8) * (1 + r.next_u32() % 3));
+                c.bus.write32(this + 0xcc8, bit(9) * (1 + r.next_u32() % 3));
+                oc1130_force(c, 1, bit(10));
+                oc1130_force(c, 2, bit(11));
+                c.g[A0][0] = sx(this);
+            },
         );
     }
 }
