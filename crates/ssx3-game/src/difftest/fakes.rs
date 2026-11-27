@@ -224,6 +224,17 @@ pub fn test_allocator(c: &mut Cpu) {
         c.bus.write32(GAME_GP + slot, pool);
         nodes += block * 16;
     }
+    // The EAFile request and handle pools (the file manager at 0x519ab0):
+    // a few free slots each, so real callees that open or queue a file do not
+    // spin forever in `EAFile_AllocRequest` / `EAFile_AllocFileHandle` on an
+    // exhausted pool. Counts at +0 (requests, 0x30-byte slots behind +0x28)
+    // and +4 (handles, 0x110-byte slots behind +0x2c); a zeroed slot is free.
+    const FILE_SLOTS: u32 = 4;
+    let (requests, handles) = (DATA + 0x3e_0000, DATA + 0x3e_8000);
+    c.bus.write32(0x0051_9ab0, FILE_SLOTS);
+    c.bus.write32(0x0051_9ab0 + 4, FILE_SLOTS);
+    c.bus.write32(0x0051_9ab0 + 0x28, requests);
+    c.bus.write32(0x0051_9ab0 + 0x2c, handles);
     c.g[A0][0] = 0x004f_f250;
     c.g[A1][0] = (DATA + 0x4_0000) as u64;
     c.g[A2][0] = 0x4_0000;
