@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -68,6 +69,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0019_6db0,
         cfe_state_request_line_init,
         "cFEStateRequestLine_Init",
+    ),
+    (
+        0x0019_6f50,
+        cfe_state_request_line_transition_in_2,
+        "cFEStateRequestLine_TransitionIn",
     ),
 ];
 
@@ -1669,6 +1675,44 @@ pub fn cfe_state_request_line_transition_in(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------- cFEStateRequestLine_TransitionIn
+
+/// `int cFEStateRequestLine_TransitionIn(self, int first_time)` (0x196f50):
+/// on the first transition in, refreshes the scroll arrows, the button text
+/// and the help text; returns 0.
+pub fn cfe_state_request_line_transition_in_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        Frame::open(c, 0x20);
+        let sq_at = sp(c).wrapping_add(0x10);
+        c.sq(16, sq_at);
+        let ra_at = sp(c);
+        c.sd(ra_at, c.g[RA][0]);
+        let skip = c.g[A1][0] == 0;
+        c.g[S0][0] = c.g[A0][0];
+        if !skip {
+            c.cycles += 8;
+            call_ptr(c, 0x0019_7db8, 0x0019_6f6c)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0019_8340, 0x0019_6f78)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0019_81f8, 0x0019_6f84)?;
+        }
+        c.cycles += 5;
+        let lq_at = sp(c).wrapping_add(0x10);
+        c.lq(16, lq_at);
+        c.g[V0][0] = 0;
+        let ra_at = sp(c);
+        c.g[RA][0] = c.ld(ra_at);
+        let target = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+        c.pc = target;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2171,6 +2215,35 @@ pub(crate) mod tests {
                 c.bus.write8(OC853_SELF + 0x14c, r.next_u32() as u8);
                 oc853_w(c, oc853_mail(0x0039_f9d8), (seed % 3 == 0) as u32);
                 oc853_w(c, oc853_mail(0x0039_7cc0), (seed % 2 == 0) as u32);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::OC1132_GATE;
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::OC1132_MAGIC;
+
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::oc1132_install_fakes;
+
+    // ----------------------------------- cFEStateRequestLine_TransitionIn
+
+    /// cFEStateRequestLine_TransitionIn: first transition in (three calls:
+    /// scroll arrows, button text, help text; any may unwind) or not (no
+    /// calls).
+    #[test]
+    fn cfe_state_request_line_transition_in_matches() {
+        oc1132_install_fakes();
+        covered(
+            ee::s02::f_00196f50__generated,
+            cfe_state_request_line_transition_in_2,
+            90,
+            &|c, seed| {
+                machine(c, seed, 0x196f50, 3);
+                c.bus.write32(OC1132_GATE, OC1132_MAGIC);
+                c.pc = 0x0019_6f50;
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 0x10);
+                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(seed | 1) };
             },
         );
     }

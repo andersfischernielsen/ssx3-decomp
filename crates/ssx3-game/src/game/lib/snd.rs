@@ -709,6 +709,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x003d_b008, spch_roll_chance, "SPCH_RollChance"),
     (0x003d_b3e0, spch_get_event_param, "SPCH_GetEventParam"),
+    (0x003b_8978, snd_set_lowpass, "SND_SetLowpass"),
+    (0x003b_cae8, snd_enc_put_bits, "SNDENC_PutBits"),
+    (0x003c_4450, snd_sif_dma_start_next, "SND_SifDmaStartNext"),
+    (0x003c_4668, snd_sif_dma_queue, "SND_SifDmaQueue"),
+    (0x003c_4788, snd_sif_dma_upload, "SND_SifDmaUpload"),
+    (0x003c_bec8, snd_ee_fx_free, "SND_EeFxFree"),
 ];
 
 /// Fields of the driver state block.
@@ -44058,6 +44064,911 @@ pub fn spch_get_event_param(c: &mut Cpu) {
     frame.close(c);
 }
 
+/// Offsets of the SIF DMA queue block (`0x50ad00`, `0x510000 - 0x5300`) that
+/// `SND_SifDmaStartNext` reads (see `SIFDMA_*` in `game::lib::snd`).
+pub(crate) const OC1130_QUEUED: u32 = 0xcc0;
+
+/// `u8`: index of the chosen queue entry.
+pub(crate) const OC1130_CHOSEN: u32 = 0xcc1;
+
+/// `u8`: set while a transfer is in flight.
+pub(crate) const OC1130_BUSY: u32 = 0xcc2;
+
+/// `u32`: audio tick at which the transfer started.
+pub(crate) const OC1130_STARTED: u32 = 0xcc4;
+
+/// 28 entries of 16 bytes: `{ u32 key, u32 src, u32 _, u16 size, u8 priority }`.
+pub(crate) const OC1130_ENTRIES: u32 = 0xcc8;
+
+/// `u32`: IOP destination address of the transfers.
+pub(crate) const OC1130_IOP_DEST: u32 = 0xe8c;
+
+/// `void SND_SifDmaStartNext(int nonblocking)` (0x3c4450): start the next
+/// queued SIF DMA. Scans the 28 queue entries for the used one (key != 0)
+/// with the highest priority byte (+0xe; ties go to the smaller key), stops
+/// once `+0xcc0` used entries were seen, records its index (+0xcc1) and the
+/// audio tick (+0xcc4), copies it to the IOP (`SND_SifSetDma(src, dest, size,
+/// nonblocking)`), marks the queue busy (+0xcc2) and sends the 0x30-byte
+/// command packet (`sceSifSendCmd`, or the interrupt-safe `isceSifSendCmd`
+/// when `nonblocking != 0`).
+pub fn snd_sif_dma_start_next(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x510000;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x4638));
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[A1][0] = 0xffff_ffff_ffff_0000;
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        c.g[T2][0] = sx(r32(c, V0).wrapping_sub(0xcc8));
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[V0][0];
+        c.g[T1][0] = 0;
+        c.g[A1][0] |= 0xffff;
+        c.g[T0][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[S3][0] = 0x510000;
+        'scan: loop {
+            'done: {
+                'step: {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw(r32(c, A2));
+                    if c.g[A0][0] == 0 {
+                        // free entry
+                        c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                        break 'step;
+                    }
+                    'chosen: {
+                        'compare: {
+                            c.cycles += 4;
+                            c.g[V1][0] = c.lbu(r32(c, A2).wrapping_add(0xe));
+                            c.g[V0][0] = (c.g[T0][0] < c.g[V1][0]) as u64;
+                            let not_higher = c.g[V0][0] == 0;
+                            c.g[T1][0] = sx(r32(c, T1).wrapping_add(1));
+                            if not_higher {
+                                break 'compare;
+                            }
+                            // higher priority than the best so far
+                            c.cycles += 4;
+                            let at = r32(c, T2).wrapping_add(OC1130_CHOSEN);
+                            c.sb(at, c.g[A3][0]);
+                            c.g[A1][0] = c.lw(r32(c, A2));
+                            c.g[T0][0] = c.lbu(r32(c, A2).wrapping_add(0xe));
+                            break 'chosen;
+                        }
+                        c.cycles += 2;
+                        let other_priority = c.g[V1][0] != c.g[T0][0];
+                        c.g[V0][0] = (c.g[A0][0] < c.g[A1][0]) as u64;
+                        if other_priority {
+                            break 'chosen;
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] == 0 {
+                            break 'chosen;
+                        }
+                        // same priority, smaller key
+                        c.cycles += 2;
+                        let at = r32(c, T2).wrapping_add(OC1130_CHOSEN);
+                        c.sb(at, c.g[A3][0]);
+                        c.g[A1][0] = c.lw(r32(c, A2));
+                    }
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lbu(r32(c, T2).wrapping_add(OC1130_QUEUED));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+                    c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let all_seen = c.g[V0][0] == 0;
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                    if all_seen {
+                        break 'done;
+                    }
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A3][0] as i64) < 28) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_4498);
+                    }
+                    continue 'scan;
+                }
+            }
+            break 'scan;
+        }
+        c.cycles += 34;
+        c.g[S1][0] = 0x510000;
+        c.g[V0][0] = 0x510000;
+        c.g[S1][0] = sx(r32(c, S1).wrapping_sub(0x5300));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x5718));
+        c.g[S0][0] = c.lbu(r32(c, S1).wrapping_add(OC1130_CHOSEN));
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(OC1130_ENTRIES));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x180));
+        c.g[A3][0] = c.g[S2][0];
+        c.g[S0][0] = sx((c.g[S0][0] as u32) << 24);
+        c.g[A1][0] = c.lw(r32(c, S1).wrapping_add(OC1130_IOP_DEST));
+        c.sw(r32(c, S1).wrapping_add(OC1130_STARTED), c.g[V1][0]);
+        c.g[S0][0] = sx(((c.g[S0][0] as u32) as i32 >> 20) as u32);
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(4));
+        c.g[A2][0] = c.lhu(r32(c, S0).wrapping_add(0xc));
+        Callee {
+            addr: 0x003c_43c0,
+            f: ee::s13::f_003c43c0,
+        }
+        .call(c, 0x003c_4540)?;
+        c.g[V0][0] = 1;
+        c.g[A3][0] = c.lw(r32(c, S1).wrapping_add(OC1130_IOP_DEST));
+        c.sb(r32(c, S1).wrapping_add(OC1130_BUSY), c.g[V0][0]);
+        c.g[A2][0] = 0x30;
+        c.g[T1][0] = sx(r32(c, S3).wrapping_add(0x5780));
+        c.g[V1][0] = 1;
+        c.g[T0][0] = c.lbu(r32(c, S0).wrapping_add(0xe));
+        c.g[V0][0] = c.lw(r32(c, S0));
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(8));
+        c.g[A1][0] = c.lhu(r32(c, S0).wrapping_add(0xc));
+        c.sb(r32(c, S3).wrapping_add(0x5780), c.g[A2][0]);
+        // the command packet: { u8 size; ...; u32 +0x10 = 1, +0x14 = key,
+        // +0x18 = IOP dest, +0x1c = third word, +0x20 = size, +0x22 = priority }
+        c.sw(r32(c, T1).wrapping_add(0x10), c.g[V1][0]);
+        c.sw(r32(c, T1).wrapping_add(0x14), c.g[V0][0]);
+        c.sw(r32(c, T1).wrapping_add(0x18), c.g[A3][0]);
+        c.sw(r32(c, T1).wrapping_add(0x1c), c.g[A0][0]);
+        c.sh(r32(c, T1).wrapping_add(0x20), c.g[A1][0]);
+        let blocking = c.g[S2][0] == 0;
+        c.sh(r32(c, T1).wrapping_add(0x22), c.g[T0][0]);
+        if blocking {
+            c.cycles += 8;
+            c.g[A1][0] = c.g[T1][0];
+            c.g[A0][0] = 0;
+            c.g[A2][0] = 0x30;
+            c.g[A3][0] = 0;
+            c.g[T0][0] = 0;
+            c.g[T1][0] = 0;
+            call_ptr(c, 0x004261b0, 0x003c_45c8)?;
+        } else {
+            c.cycles += 9;
+            c.g[A1][0] = c.g[T1][0];
+            c.g[A0][0] = 0;
+            c.g[A2][0] = 0x30;
+            c.g[A3][0] = 0;
+            c.g[T0][0] = 0;
+            c.g[T1][0] = 0;
+            call_ptr(c, 0x004261f0, 0x003c_45a4)?;
+        }
+        frame.restore(c, S0, 0x40);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SND_SifDmaQueue(int key, src, dst, int size, u8 priority)` (0x3c4668):
+/// queue one SIF DMA transfer. Rounds `size` up to 64 bytes, disables
+/// interrupts, bumps the request counter (`+0xcbc`, wrapping to 1). Key 0x100
+/// starts the transfer at once (`SND_SifSetDma`); any other key takes the first
+/// free queue entry (`+0xcc8`, 28 of 16 bytes), counts it (`+0xcc0`) and kicks
+/// the queue (`SND_SifDmaKick(0)`); returns the request id (0 when the queue is
+/// full). Converted from the generated `match pc` body (back-edge events
+/// kept); any other `pc` (a resume) runs the generated body.
+pub fn snd_sif_dma_queue(c: &mut Cpu) {
+    if c.pc != 0x003c4668 {
+        return ee::s13::f_003c4668__generated(c);
+    }
+    guest(c, |c| {
+        let mut pc: u32 = 0x003c4668;
+        loop {
+            match pc {
+                0x003c4668 => {
+                    c.cycles += 5;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.g[V0][0] = c.g[A3][0] & 0x3f;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    let t = c.g[V0][0] == 0u64;
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    if t {
+                        pc = 0x003c468c;
+                        continue;
+                    }
+                    pc = 0x003c467c;
+                    continue;
+                }
+                0x003c467c => {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0xffffffffffff0000;
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x40));
+                    c.g[V0][0] = c.g[V0][0] | 0xffc0;
+                    c.g[A3][0] = c.g[A3][0] & c.g[V0][0];
+                    pc = 0x003c468c;
+                    continue;
+                }
+                0x003c468c => {
+                    c.cycles += 1;
+                    c.g[V1][0] = 0x10000;
+                    pc = 0x003c4690;
+                    continue;
+                }
+                0x003c4690 => {
+                    c.cycles += 7;
+                    c.di();
+                    c.mfc0(2, 12);
+                    c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0x510000;
+                    if t {
+                        if back_edge_unwinds(c, 0x003c4690) {
+                            return Ok(());
+                        }
+                        pc = 0x003c4690;
+                        continue;
+                    }
+                    pc = 0x003c46ac;
+                    continue;
+                }
+                0x003c46ac => {
+                    c.cycles += 7;
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5300));
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xcbc), c.g[V1][0]);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0x100;
+                    if t {
+                        pc = 0x003c46d4;
+                        continue;
+                    }
+                    pc = 0x003c46c8;
+                    continue;
+                }
+                0x003c46c8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x1;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xcbc), c.g[V0][0]);
+                    c.g[V0][0] = 0x100;
+                    pc = 0x003c46d4;
+                    continue;
+                }
+                0x003c46d4 => {
+                    c.cycles += 2;
+                    let t = c.g[A0][0] != c.g[V0][0];
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xcc8));
+                    if t {
+                        pc = 0x003c4740;
+                        continue;
+                    }
+                    pc = 0x003c46dc;
+                    continue;
+                }
+                0x003c46dc => {
+                    c.cycles += 9;
+                    c.g[A0][0] = c.g[A1][0];
+                    c.g[A1][0] = c.g[A2][0];
+                    c.g[A2][0] = c.g[A3][0];
+                    c.g[RA][0] = sx(0x003c46f0);
+                    c.g[A3][0] = 0u64;
+                    Callee {
+                        addr: 0x003c43c0,
+                        f: ee::s13::SND_SifSetDma,
+                    }
+                    .call(c, 0x003c46f0)?;
+                    c.ei();
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    if t {
+                        pc = 0x003c4778;
+                        continue;
+                    }
+                    pc = 0x003c4700;
+                    continue;
+                }
+                0x003c4700 => {
+                    c.cycles += 16;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xcc8));
+                    c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0xcc0));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.sb((c.g[S0][0] as u32).wrapping_add(0xcc0), c.g[V0][0]);
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                    c.sb((c.g[T1][0] as u32).wrapping_add(0xe), c.g[T0][0]);
+                    c.sw(c.g[T1][0] as u32, c.g[V1][0]);
+                    c.sw((c.g[T1][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+                    c.sw((c.g[T1][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+                    c.sh((c.g[T1][0] as u32).wrapping_add(0xc), c.g[A3][0]);
+                    c.ei();
+                    c.g[RA][0] = sx(0x003c4734);
+                    c.g[A0][0] = 0u64;
+                    Callee {
+                        addr: 0x003c45e8,
+                        f: ee::s13::SND_SifDmaKick,
+                    }
+                    .call(c, 0x003c4734)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xcbc));
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    if t {
+                        pc = 0x003c4778;
+                        continue;
+                    }
+                    pc = 0x003c4740;
+                    continue;
+                }
+                0x003c4740 => {
+                    c.cycles += 4;
+                    c.g[T2][0] = 0u64;
+                    c.g[S0][0] = c.g[V1][0];
+                    c.g[T1][0] = c.g[V1][0];
+                    pc = 0x003c4750;
+                    continue;
+                }
+                0x003c4750 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if back_edge_unwinds(c, 0x003c4700) {
+                            return Ok(());
+                        }
+                        pc = 0x003c4700;
+                        continue;
+                    }
+                    pc = 0x003c475c;
+                    continue;
+                }
+                0x003c475c => {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = ((c.g[T2][0] as i64) < 28i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if back_edge_unwinds(c, 0x003c4750) {
+                            return Ok(());
+                        }
+                        pc = 0x003c4750;
+                        continue;
+                    }
+                    pc = 0x003c476c;
+                    continue;
+                }
+                0x003c476c => {
+                    c.cycles += 3;
+                    c.ei();
+                    c.g[V0][0] = 0u64;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    pc = 0x003c4778;
+                    continue;
+                }
+                0x003c4778 => {
+                    c.cycles += 3;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003c4668, 0x003c4784);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// Addresses and offsets of `SND_SifDmaUpload` (0x3c4788).
+#[allow(dead_code)]
+pub(crate) const SND_DMA_STATE: u32 = 0x0050_ad00;
+
+/// Count of queued DMA transfers (a signed byte) in the DMA state block.
+pub(crate) const SND_DMA_QUEUED: u32 = 0x0cc0;
+
+/// `int SND_SifDmaUpload(int playLoc /*a0*/, int src /*a1*/, int dst /*a2*/,
+/// int bytes /*a3*/, int priority /*t0*/)` (0x3c4788): upload `bytes` bytes to
+/// the sound IOP in chunks of at most 0x1000. Before each chunk, kick the
+/// transfer queue until at least 5 of its 28 slots are free, then queue the
+/// chunk (`SND_SifDmaQueue`). Returns the last transfer id (0 if nothing was
+/// sent).
+pub fn snd_sif_dma_upload(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S4, 0x50);
+        c.g[S0][0] = c.g[A3][0];
+        frame.save(c, S5, 0x40);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save(c, S6, 0x30);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S7, 0x20);
+        c.g[S6][0] = c.g[T0][0];
+        frame.save(c, S1, 0x80);
+        c.g[S7][0] = c.g[A0][0];
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, FP, 0x10);
+        let done = (c.g[S0][0] as i64) <= 0;
+        frame.save_ra(c, 0);
+        if !done {
+            c.cycles += 2;
+            c.g[FP][0] = 0x1c;
+            'chunks: loop {
+                c.cycles += 12;
+                c.g[V1][0] = 0x0051_0000;
+                c.g[A0][0] = 0xfff;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x5300));
+                c.g[S1][0] = 0x1000;
+                c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(SND_DMA_QUEUED));
+                c.g[V1][0] = ((c.g[A0][0] as i64) < (c.g[S0][0] as i64)) as u64;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+                c.g[V0][0] = sx((c.g[FP][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 5) as u64;
+                let enough_room = c.g[V0][0] == 0;
+                if c.g[V1][0] == 0 {
+                    c.g[S1][0] = c.g[S0][0];
+                }
+                if !enough_room {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0x0051_0000;
+                    c.g[S2][0] = 0x1c;
+                    c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5300));
+                    loop {
+                        c.cycles += 9;
+                        c.g[A0][0] = 0;
+                        Callee {
+                            addr: 0x003c_45e8,
+                            f: ee::s13::f_003c45e8,
+                        }
+                        .call(c, 0x003c_4820)?;
+                        c.g[V0][0] = c.lbu((c.g[S3][0] as u32).wrapping_add(SND_DMA_QUEUED));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+                        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+                        c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < 5) as u64;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c_4818);
+                        }
+                    }
+                }
+                c.cycles += 10;
+                c.g[A1][0] = c.g[S5][0];
+                c.g[A2][0] = c.g[S4][0];
+                c.g[A0][0] = c.g[S7][0];
+                c.g[A3][0] = c.g[S1][0];
+                c.g[T0][0] = c.g[S6][0];
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                Callee {
+                    addr: 0x003c_4668,
+                    f: ee::s13::f_003c4668,
+                }
+                .call(c, 0x003c_4858)?;
+                c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                let more = (c.g[S0][0] as i64) > 0;
+                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                if !more {
+                    break 'chunks;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_47d8);
+                }
+            }
+        }
+        c.cycles += 12;
+        for (reg, off) in [
+            (S0, 0x90),
+            (S1, 0x80),
+            (S2, 0x70),
+            (S3, 0x60),
+            (S4, 0x50),
+            (S5, 0x40),
+            (S6, 0x30),
+            (S7, 0x20),
+            (FP, 0x10),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Size of the buffer `FEAsyncManager_LoadSlot` allocates for a slot.
+#[allow(dead_code)]
+pub(crate) const FEASYNC_SLOT_BYTES: u32 = 0x109a0;
+
+/// The "FX bank loaded" flag of `SND_EeFxFree`.
+#[allow(dead_code)]
+pub(crate) const SND_EEFX_LOADED: u32 = 0x0044_e898;
+
+/// `SND_EeFxFree` state words in the sound block (`0x510000 + off`).
+pub(crate) const SND_EEFX_BASE_OFF: u32 = 0x5d40;
+
+pub(crate) const SND_EEFX_ENTRIES_OFF: u32 = 0x5d44;
+
+pub(crate) const SND_EEFX_TABLE6_OFF: u32 = 0x5d48;
+
+pub(crate) const SND_EEFX_INDEX_OFF: u32 = 0x5d54;
+
+/// `void SND_EeFxFree(void)` (0x3cbec8): if the FX bank is loaded, read the
+/// entry count (big endian) from `base + index*4 + 4`, call each entry's
+/// release callback (`+4`) and free the entry, free the entry array, clear the
+/// six-word table and free it, zero the bank's counters, clear the loaded flag
+/// and `memset(0x515d80, 0, 0x800)`.
+pub fn snd_ee_fx_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[V1][0] = 0x0045_0000;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x1768));
+        for (reg, off) in [
+            (S0, 0x90),
+            (S1, 0x80),
+            (S2, 0x70),
+            (S3, 0x60),
+            (S4, 0x50),
+            (S5, 0x40),
+            (S6, 0x30),
+            (S7, 0x20),
+            (FP, 0x10),
+        ] {
+            frame.save(c, reg, off);
+        }
+        let loaded = c.g[V0][0] != 0;
+        frame.save_ra(c, 0);
+        if loaded {
+            c.cycles += 17;
+            c.g[V0][0] = 0x0051_0000;
+            c.g[V1][0] = 0x0051_0000;
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(SND_EEFX_INDEX_OFF));
+            c.g[A1][0] = 4;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(SND_EEFX_BASE_OFF));
+            c.g[S3][0] = 0x0051_0000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+            c.g[S4][0] = 0x0051_0000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+            c.g[FP][0] = 0x0051_0000;
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[S7][0] = 0x0051_0000;
+            call_ptr(c, 0x003c_72f8, 0x003c_bf34)?;
+            c.g[S6][0] = 0x0051_0000;
+            c.g[S2][0] = c.g[V0][0];
+            let none = c.g[S2][0] == 0;
+            c.g[S5][0] = 0x0051_0000;
+            if !none {
+                c.cycles += 2;
+                let empty = (c.g[S2][0] as i64) <= 0;
+                c.g[S0][0] = 0;
+                if !empty {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(SND_EEFX_ENTRIES_OFF));
+                    loop {
+                        c.cycles += 6;
+                        c.g[S1][0] = sx((c.g[S0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(4));
+                        if c.g[V0][0] == 0 {
+                            c.g[V0][0] =
+                                c.lw((c.g[S3][0] as u32).wrapping_add(SND_EEFX_ENTRIES_OFF));
+                        } else {
+                            c.cycles += 7;
+                            let callback = c.g[V0][0] as u32;
+                            call_ptr(c, callback, 0x003c_bf70)?;
+                            c.g[V0][0] =
+                                c.lw((c.g[S3][0] as u32).wrapping_add(SND_EEFX_ENTRIES_OFF));
+                            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            c.sw((c.g[V1][0] as u32).wrapping_add(4), 0);
+                            c.g[V0][0] =
+                                c.lw((c.g[S3][0] as u32).wrapping_add(SND_EEFX_ENTRIES_OFF));
+                        }
+                        c.cycles += 4;
+                        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                        let entry_empty = c.g[A0][0] == 0;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                        if !entry_empty {
+                            c.cycles += 5;
+                            call_ptr(c, 0x003b_5e98, 0x003c_bf9c)?;
+                            c.g[V0][0] =
+                                c.lw((c.g[S3][0] as u32).wrapping_add(SND_EEFX_ENTRIES_OFF));
+                            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.sw(c.g[V0][0] as u32, 0);
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(SND_EEFX_ENTRIES_OFF));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c_bf50);
+                        }
+                    }
+                }
+            }
+            // Free the entry array.
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(SND_EEFX_ENTRIES_OFF));
+            let no_array = c.g[A0][0] == 0;
+            c.g[S0][0] = 0;
+            if !no_array {
+                c.cycles += 3;
+                call_ptr(c, 0x003b_5e98, 0x003c_bfc8)?;
+                c.sw((c.g[S3][0] as u32).wrapping_add(SND_EEFX_ENTRIES_OFF), 0);
+            }
+            // Clear the six-word table.
+            c.cycles += 3;
+            c.g[A1][0] = 0x0051_0000;
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(SND_EEFX_TABLE6_OFF));
+            loop {
+                c.cycles += 5;
+                c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                if c.g[A0][0] != 0 {
+                    c.sw(c.g[V1][0] as u32, 0);
+                }
+                c.cycles += 4;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S0][0] as i64) < 6) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(SND_EEFX_TABLE6_OFF));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_bfd8);
+                }
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(SND_EEFX_TABLE6_OFF));
+            let no_table = c.g[A0][0] == 0;
+            c.g[V0][0] = 0x0051_0000;
+            if !no_table {
+                c.cycles += 4;
+                call_ptr(c, 0x003b_5e98, 0x003c_c010)?;
+                c.sw((c.g[S4][0] as u32).wrapping_add(SND_EEFX_TABLE6_OFF), 0);
+                c.g[V0][0] = 0x0051_0000;
+            }
+            c.cycles += 10;
+            c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(0x5d80));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x75f8), 0);
+            c.g[A1][0] = 0;
+            c.g[V0][0] = 0x0045_0000;
+            c.sw((c.g[FP][0] as u32).wrapping_add(0x75fc), 0);
+            c.sw((c.g[S7][0] as u32).wrapping_add(0x5d50), 0);
+            c.g[A2][0] = 0x800;
+            c.sw((c.g[S6][0] as u32).wrapping_add(0x5d4c), 0);
+            c.sw((c.g[V0][0] as u32).wrapping_sub(0x1768), 0);
+            call_ptr(c, 0x0041_6210, 0x003c_c040)?;
+        }
+        c.cycles += 12;
+        for (reg, off) in [
+            (S0, 0x90),
+            (S1, 0x80),
+            (S2, 0x70),
+            (S3, 0x60),
+            (S4, 0x50),
+            (S5, 0x40),
+            (S6, 0x30),
+            (S7, 0x20),
+            (FP, 0x10),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------------------ SND_SetLowpass
+
+pub(crate) const OC1132_SETLOWPASS_START: u32 = 0x003b_8978;
+
+pub(crate) const OC1132_SETLOWPASS_END: u32 = 0x003b_89dc;
+
+/// Loop head (apply the low-pass to the cursor's channel): the resume point
+/// after an unwind at the back edge.
+pub(crate) const OC1132_SETLOWPASS_HEAD: u32 = 0x003b_89a8;
+
+pub(crate) const OC1132_HANDLE_TO_CHANNEL: Callee = Callee {
+    addr: 0x003b_a6e8,
+    f: ee::s13::SND_HandleToChannel,
+};
+
+pub(crate) const OC1132_NEXT_HANDLE_CHANNEL: Callee = Callee {
+    addr: 0x003b_aa00,
+    f: ee::s13::SND_NextHandleChannel,
+};
+
+pub(crate) const OC1132_APPLY_LOWPASS: Callee = Callee {
+    addr: 0x003c_3178,
+    f: ee::s13::SND_ChannelApplyLowpass,
+};
+
+/// `int SND_SetLowpass(int handle, int cutoff)` (0x3b8978): apply the low-pass
+/// cutoff to every voice channel of a handle (`SND_ChannelApplyLowpass`).
+/// Returns the handle's first channel (or the error from
+/// `SND_HandleToChannel`, which skips the loop).
+///
+/// The original is a `match pc` dispatcher whose loop returns on an unwind
+/// request, so the loop head is an entry point too (s0 the first channel, s1
+/// the cutoff, a0 the cursor's channel, the cursor at `0(sp)`).
+pub fn snd_set_lowpass(c: &mut Cpu) {
+    let frame = Frame { size: 0x40 };
+    let resumed = match c.pc {
+        OC1132_SETLOWPASS_START => false,
+        OC1132_SETLOWPASS_HEAD => true,
+        pc => {
+            c.jump_out(pc, OC1132_SETLOWPASS_START, OC1132_SETLOWPASS_END);
+            return;
+        }
+    };
+    guest(c, |c| {
+        if !resumed {
+            c.cycles += 9;
+            Frame::open(c, frame.size);
+            frame.save(c, S1, 0x20);
+            frame.save(c, S0, 0x30);
+            frame.save_ra(c, 0x10);
+            c.g[S1][0] = c.g[A1][0];
+            OC1132_HANDLE_TO_CHANNEL.call(c, 0x003b_8990)?;
+            c.g[S0][0] = c.g[V0][0];
+            let failed = (c.g[S0][0] as i64) < 0;
+            c.g[V0][0] = u64::MAX;
+            if failed {
+                return oc1132_setlowpass_epilogue(c, frame);
+            }
+            // 0x3b899c: the cursor starts at -1; the first step only finds
+            // the first channel.
+            c.cycles += 2;
+            let cursor = sp(c);
+            c.sw(cursor, c.g[V0][0]);
+        }
+        let mut apply = resumed;
+        loop {
+            if apply {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S1][0];
+                OC1132_APPLY_LOWPASS.call(c, 0x003b_89b0)?;
+            }
+            apply = true;
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            OC1132_NEXT_HANDLE_CHANNEL.call(c, 0x003b_89bc)?;
+            let more = c.g[V0][0] != 0;
+            let cursor = sp(c);
+            c.g[A0][0] = c.lw(cursor);
+            if !more {
+                return oc1132_setlowpass_epilogue(c, frame);
+            }
+            if back_edge_unwinds(c, OC1132_SETLOWPASS_HEAD) {
+                return Ok(());
+            }
+        }
+    })
+}
+
+pub(crate) fn oc1132_setlowpass_epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 6;
+    c.g[V0][0] = c.g[S0][0];
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S0, 0x30);
+    frame.restore_ra(c, 0x10);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void SNDENC_PutBits(unsigned value, int n)` (0x3bcae8): appends the low `n`
+/// bits of `value` to the encoder's bit buffer (`*0x50ac68`: `pos` bit
+/// position as u16 at +6, byte buffer pointer at +8), MSB first within each
+/// byte, bytes swapped pairwise (`byte ^ 1`); a fresh byte is cleared first.
+pub fn snd_enc_put_bits(c: &mut Cpu) {
+    'b_3bcb94: {
+        c.cycles += 6;
+        c.g[T1][0] = c.g[A1][0];
+        c.g[V0][0] = 0x20;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[T1][0] as u32));
+        c.g[T3][0] = sx((c.g[A0][0] as u32) << ((c.g[V0][0] as u32) & 31));
+        let t = (c.g[T1][0] as i64) <= 0;
+        c.g[T3][0] = sx((c.g[T3][0] as u32) >> ((c.g[V0][0] as u32) & 31));
+        if t {
+            break 'b_3bcb94;
+        } else {
+            c.cycles += 2;
+            c.g[T2][0] = 0x510000;
+            c.g[T4][0] = 0x8;
+            'l_3bcb08: loop {
+                'b_3bcb24: {
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_sub(0x5398));
+                    c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x6));
+                    c.g[T0][0] = sx((c.g[V1][0] as u32) >> 3);
+                    c.g[V0][0] = c.g[T0][0] & 0x1;
+                    if c.g[V0][0] == 0u64 {
+                        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                        break 'b_3bcb24;
+                    } else {
+                        c.cycles += 1;
+                        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x1));
+                        break 'b_3bcb24;
+                    }
+                }
+                'b_3bcb4c: {
+                    c.cycles += 6;
+                    c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_sub(0x5398));
+                    c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x6));
+                    c.g[V0][0] = c.g[V0][0] & 0x7;
+                    c.g[A3][0] = sx((c.g[T4][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    let t = c.g[A3][0] != c.g[T4][0];
+                    c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_sub(0x5398));
+                    if t {
+                        break 'b_3bcb4c;
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                        c.sb(c.g[V0][0] as u32, 0u64);
+                        c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_sub(0x5398));
+                        break 'b_3bcb4c;
+                    }
+                }
+                c.cycles += 18;
+                c.g[V1][0] = ((c.g[A3][0] as i64) < (c.g[T1][0] as i64)) as u64;
+                c.g[A2][0] = c.g[A3][0];
+                c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+                if c.g[V1][0] == 0 {
+                    c.g[A2][0] = c.g[T1][0];
+                }
+                c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                c.g[V0][0] = sx((c.g[T3][0] as u32) >> ((c.g[A0][0] as u32) & 31));
+                c.g[V1][0] = c.lbu(c.g[A1][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << ((c.g[A3][0] as u32) & 31));
+                c.g[T1][0] = c.g[A0][0];
+                c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
+                c.sb(c.g[A1][0] as u32, c.g[V1][0]);
+                c.g[A0][0] = c.lw((c.g[T2][0] as u32).wrapping_sub(0x5398));
+                c.g[V0][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x6));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                let t = (c.g[T1][0] as i64) > 0;
+                c.sh((c.g[A0][0] as u32).wrapping_add(0x6), c.g[V0][0]);
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003bcb08);
+                    }
+                    continue 'l_3bcb08;
+                } else {
+                    break 'b_3bcb94;
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+    return;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -60193,6 +61104,669 @@ pub(crate) mod tests {
                 c.g[A1][0] = (seed % 11) as u64;
             },
         );
+    }
+
+    /// Gate word: the fakes below answer only while this magic is in the
+    /// machine's RAM (the suite runs tests in parallel), else they run the
+    /// body their slot held.
+    pub(crate) const OC1130_CTRL: u32 = DATA_m2 + 0x2e_0000;
+
+    pub(crate) const OC1130_MAGIC: u32 = 0x1130_c001;
+
+    /// Forced results, one word per fake (`result + 3`; 0 = the fake's own
+    /// pointer result).
+    pub(crate) const OC1130_MAIL: u32 = DATA_m2 + 0x2f_0000;
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns the
+    /// forced result unless it unwound.
+    pub(crate) fn oc1130_fake_body(c: &mut Cpu, addr: u32, idx: u32) {
+        let ra = c.g[RA][0] as u32;
+        let mail = c.bus.read32(OC1130_MAIL + 4 * idx);
+        fakes::fake(c, addr, ra);
+        if c.pc != ra {
+            return;
+        }
+        if mail != 0 {
+            c.g[V0][0] = sx(mail.wrapping_sub(3));
+        }
+    }
+
+    macro_rules! oc1130_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr, $idx:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC1130_CTRL) != OC1130_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    oc1130_fake_body(c, $addr, $idx);
+                }
+            )*
+            pub(crate) fn oc1130_install() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc1130_fakes!(
+        (
+            oc1130_fake_load_char,
+            OC1130_PREV_LOAD_CHAR,
+            ee::s03::OVERRIDE_0019E960,
+            ee::s03::f_0019e960__generated,
+            0x0019_e960,
+            0
+        ),
+        (
+            oc1130_fake_poll_models,
+            OC1130_PREV_POLL_MODELS,
+            ee::s03::OVERRIDE_001A0100,
+            ee::s03::f_001a0100__generated,
+            0x001a_0100,
+            1
+        ),
+        (
+            oc1130_fake_poll_textures,
+            OC1130_PREV_POLL_TEXTURES,
+            ee::s03::OVERRIDE_0019FD58,
+            ee::s03::f_0019fd58__generated,
+            0x0019_fd58,
+            2
+        ),
+        (
+            oc1130_fake_setup_model,
+            OC1130_PREV_SETUP_MODEL,
+            ee::s03::OVERRIDE_0019ED80,
+            ee::s03::f_0019ed80__generated,
+            0x0019_ed80,
+            3
+        ),
+        (
+            oc1130_fake_bolt_materials,
+            OC1130_PREV_BOLT_MATERIALS,
+            ee::s03::OVERRIDE_0019F780,
+            ee::s03::f_0019f780__generated,
+            0x0019_f780,
+            4
+        ),
+        (
+            oc1130_fake_apply_transform,
+            OC1130_PREV_APPLY_TRANSFORM,
+            ee::s03::OVERRIDE_0019F2D0,
+            ee::s03::f_0019f2d0__generated,
+            0x0019_f2d0,
+            5
+        ),
+        (
+            oc1130_fake_anim_update,
+            OC1130_PREV_ANIM_UPDATE,
+            ee::s10::OVERRIDE_003123C0,
+            ee::s10::f_003123c0__generated,
+            0x0031_23c0,
+            6
+        ),
+        (
+            oc1130_fake_anim_events,
+            OC1130_PREV_ANIM_EVENTS,
+            ee::s10::OVERRIDE_00312490,
+            ee::s10::f_00312490__generated,
+            0x0031_2490,
+            7
+        ),
+        (
+            oc1130_fake_emitter_update,
+            OC1130_PREV_EMITTER_UPDATE,
+            ee::s09::OVERRIDE_002F1A08,
+            ee::s09::f_002f1a08__generated,
+            0x002f_1a08,
+            8
+        ),
+        (
+            oc1130_fake_bolt_update,
+            OC1130_PREV_BOLT_UPDATE,
+            ee::s09::OVERRIDE_002ECF78,
+            ee::s09::f_002ecf78__generated,
+            0x002e_cf78,
+            9
+        ),
+        (
+            oc1130_fake_sif_set_dma,
+            OC1130_PREV_SIF_SET_DMA,
+            ee::s13::OVERRIDE_003C43C0,
+            ee::s13::f_003c43c0__generated,
+            0x003c_43c0,
+            10
+        ),
+        (
+            oc1130_fake_sif_send_cmd,
+            OC1130_PREV_SIF_SEND_CMD,
+            ee::s15::OVERRIDE_004261B0,
+            ee::s15::f_004261b0__generated,
+            0x0042_61b0,
+            11
+        ),
+        (
+            oc1130_fake_isif_send_cmd,
+            OC1130_PREV_ISIF_SEND_CMD,
+            ee::s15::OVERRIDE_004261F0,
+            ee::s15::f_004261f0__generated,
+            0x0042_61f0,
+            12
+        ),
+    );
+
+    /// The SIF DMA queue block and the audio tick for the sound tests.
+    pub(crate) fn oc1130_queue(c: &mut Cpu, r: &mut crate::difftest::Rng, count: u8, dense: bool) {
+        let base = 0x0050_ad00;
+        c.bus.write8(base + OC1130_QUEUED, count);
+        c.bus
+            .write8(base + OC1130_CHOSEN, (r.next_u32() % 28) as u8);
+        c.bus
+            .write8(base + OC1130_BUSY, (r.next_u32() % 3 == 0) as u8);
+        for i in 0..28u32 {
+            let rec = base + OC1130_ENTRIES + 0x10 * i;
+            let used = dense || r.next_u32() % 3 != 0;
+            let key = match r.next_u32() % 8 {
+                _ if !used => 0,
+                0 => 0x8000_0000 | (r.next_u32() % 4) * 0x100,
+                n => 0x100 * (1 + n % 4),
+            };
+            c.bus.write32(rec, key);
+            c.bus.write32(rec + 4, DATA_m2 + 0x4000 + 0x100 * i);
+            c.bus.write32(rec + 8, r.next_u32());
+            c.bus.write16(rec + 0xc, (r.next_u32() % 0x1000) as u16);
+            c.bus.write8(rec + 0xe, (r.next_u32() % 3) as u8);
+        }
+        c.bus.write32(base + OC1130_IOP_DEST, r.next_u32());
+        c.bus.write32(base + OC1130_STARTED, r.next_u32());
+        c.bus.write32(0x0050_a8e8 + 0x180, r.next_u32());
+    }
+
+    pub(crate) const OC1130_COUNTS: [u8; 10] = [0xff, 0, 1, 2, 3, 4, 6, 9, 28, 100];
+
+    pub(crate) fn oc1130_start_next_setup(c: &mut Cpu, seed: u32) -> crate::difftest::Rng {
+        oc1130_install();
+        let mut r = machine(c, seed, 0x003c_4450, 3);
+        c.pc = 0x003c_4450;
+        c.bus.write32(OC1130_CTRL, OC1130_MAGIC);
+        let count = OC1130_COUNTS[(seed % 10) as usize];
+        oc1130_queue(c, &mut r, count, seed / 10 % 2 == 0);
+        r
+    }
+
+    /// `SND_SifDmaStartNext`: queues with free and used entries (all used
+    /// for half of the seeds), signed counts from -1 to 100, equal and
+    /// different priorities and keys (also keys with the sign bit set),
+    /// blocking and non-blocking; `SND_SifSetDma` and the command sends are
+    /// gated fakes, and a random one of them unwinds.
+    #[test]
+    fn snd_sif_dma_start_next_matches() {
+        check(
+            ee::s13::f_003c4450__generated,
+            snd_sif_dma_start_next,
+            400,
+            &|c, seed| {
+                let mut r = oc1130_start_next_setup(c, seed);
+                c.g[A0][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    sx(1 + r.next_u32() % 3)
+                };
+            },
+        );
+    }
+
+    /// `SND_SifDmaStartNext` with events delivered at the scan's back edge.
+    #[test]
+    fn snd_sif_dma_start_next_events() {
+        check_events(
+            ee::s13::f_003c4450__generated,
+            snd_sif_dma_start_next,
+            300,
+            &|c, seed| {
+                let mut r = oc1130_start_next_setup(c, seed);
+                let ev = schedule(c, &mut r, seed, 0x003c_4450);
+                c.g[A0][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    sx(1 + r.next_u32() % 3)
+                };
+                ev
+            },
+        );
+    }
+
+    pub(crate) fn oc1130_queue_setup(c: &mut Cpu, seed: u32) -> crate::difftest::Rng {
+        oc1130_install();
+        let mut r = machine(c, seed, 0x003c_4668, 3);
+        c.pc = 0x003c_4668;
+        c.bus.write32(OC1130_CTRL, OC1130_MAGIC);
+        c.cop0[12] = r.next_u32();
+        // all entries used for every fifth seed: no free slot, return 0
+        let count = (r.next_u32() % 4) as u8;
+        oc1130_queue(c, &mut r, count, seed % 5 == 4);
+        let counter = [u32::MAX, 0, 5, 0x7fff_ffff][(seed / 5 % 4) as usize];
+        c.bus.write32(0x0050_ad00 + 0xcbc, counter);
+        r
+    }
+
+    pub(crate) fn oc1130_queue_args(c: &mut Cpu, r: &mut crate::difftest::Rng, seed: u32) {
+        // key 0x100: start the transfer at once; any other key: queue it
+        c.g[A0][0] = if seed % 3 == 0 {
+            0x100
+        } else {
+            sx(r.next_u32())
+        };
+        c.g[A1][0] = sx(r.next_u32());
+        c.g[A2][0] = sx(r.next_u32());
+        // sizes with and without the 64-byte alignment step
+        c.g[A3][0] = sx(if seed % 2 == 0 {
+            r.next_u32() & !0x3f
+        } else {
+            r.next_u32()
+        });
+        c.g[T0][0] = sx(r.next_u32());
+    }
+
+    /// `SND_SifDmaQueue(key, src, dst, size, priority)`: the immediate transfer
+    /// for key 0x100, else the first free queue entry gets the request and
+    /// `SND_SifDmaKick(0)` runs (the real kick and start-next; its callees are
+    /// gated fakes); counter wrap to 1, a full queue, aligned and unaligned
+    /// sizes.
+    #[test]
+    fn snd_sif_dma_queue_matches() {
+        check(
+            ee::s13::f_003c4668__generated,
+            snd_sif_dma_queue,
+            500,
+            &|c, seed| {
+                let mut r = oc1130_queue_setup(c, seed);
+                oc1130_queue_args(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// `SND_SifDmaQueue` with events delivered at the interrupt-wait loop and
+    /// the free-slot scan (the unwound call resumes in the generated body).
+    #[test]
+    fn snd_sif_dma_queue_events() {
+        check_events(
+            ee::s13::f_003c4668__generated,
+            snd_sif_dma_queue,
+            400,
+            &|c, seed| {
+                let mut r = oc1130_queue_setup(c, seed);
+                let ev = schedule(c, &mut r, seed, 0x003c_4668);
+                oc1130_queue_args(c, &mut r, seed);
+                ev
+            },
+        );
+    }
+
+    /// Gate of this module's callee fakes: they answer only while this word
+    /// holds `OC1131_MAGIC` (otherwise the bodies they replaced run).
+    pub(crate) const OC1131_CTRL: u32 = DATA_m3 + 0x0079_0000;
+
+    pub(crate) const OC1131_MAGIC: u32 = 0x1131_c0de;
+
+    /// The entry count `SND_ReadBigEndian`'s fake returns.
+    pub(crate) const OC1131_COUNT: u32 = OC1131_CTRL + 8;
+
+    pub(crate) fn oc1131_gated(c: &mut Cpu) -> bool {
+        c.bus.read32(OC1131_CTRL) == OC1131_MAGIC
+    }
+
+    /// A callee fake that logs the call and returns (gate on), or runs the
+    /// body it replaced (gate off).
+    macro_rules! oc1131_fake {
+        ($name:ident, $target:expr, $generated:path) => {
+            fn $name(c: &mut Cpu) {
+                if !oc1131_gated(c) {
+                    return fakes::fall_back(c, fakes::prev_cell($name), $generated);
+                }
+                fakes::fake_call(c, $target);
+            }
+        };
+    }
+    #[allow(unused_imports)]
+    pub(crate) use oc1131_fake;
+
+    oc1131_fake!(oc1131_fake_new, 0x0031_7e30, ee::s10::f_00317e30__generated);
+
+    oc1131_fake!(
+        oc1131_fake_set_state,
+        0x001a_39d8,
+        ee::s03::f_001a39d8__generated
+    );
+
+    oc1131_fake!(
+        oc1131_fake_async_load,
+        0x003d_f748,
+        ee::s14::f_003df748__generated
+    );
+
+    oc1131_fake!(
+        oc1131_fake_file_load,
+        0x003e_1bb8,
+        ee::s14::f_003e1bb8__generated
+    );
+
+    oc1131_fake!(
+        oc1131_fake_mem_free,
+        0x003b_5e98,
+        ee::s13::f_003b5e98__generated
+    );
+
+    oc1131_fake!(
+        oc1131_fake_memset,
+        0x0041_6210,
+        ee::s15::f_00416210__generated
+    );
+
+    /// SND_SifDmaKick: a transfer leaves the queue (count -= 2).
+    pub(crate) fn oc1131_fake_kick(c: &mut Cpu) {
+        if !oc1131_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1131_fake_kick),
+                ee::s13::f_003c45e8__generated,
+            );
+        }
+        fakes::fake_call(c, 0x003c_45e8);
+        let n = c.bus.read8(SND_DMA_STATE + SND_DMA_QUEUED);
+        c.bus
+            .write8(SND_DMA_STATE + SND_DMA_QUEUED, n.wrapping_sub(2));
+    }
+
+    /// SND_SifDmaQueue: the chunk joins the queue (count += 1).
+    pub(crate) fn oc1131_fake_queue(c: &mut Cpu) {
+        if !oc1131_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1131_fake_queue),
+                ee::s13::f_003c4668__generated,
+            );
+        }
+        fakes::fake_call(c, 0x003c_4668);
+        let n = c.bus.read8(SND_DMA_STATE + SND_DMA_QUEUED);
+        c.bus
+            .write8(SND_DMA_STATE + SND_DMA_QUEUED, n.wrapping_add(1));
+    }
+
+    /// SND_ReadBigEndian: returns the count the test put in `OC1131_COUNT`.
+    pub(crate) fn oc1131_fake_read_be(c: &mut Cpu) {
+        if !oc1131_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1131_fake_read_be),
+                ee::s13::f_003c72f8__generated,
+            );
+        }
+        let count = c.bus.read32(OC1131_COUNT);
+        fakes::fake_call(c, 0x003c_72f8);
+        c.g[V0][0] = sx(count);
+    }
+
+    pub(crate) fn oc1131_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            oc1131_fake_new,
+            fakes::prev_cell(oc1131_fake_new),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s03::OVERRIDE_001A39D8),
+            oc1131_fake_set_state,
+            fakes::prev_cell(oc1131_fake_set_state),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DF748),
+            oc1131_fake_async_load,
+            fakes::prev_cell(oc1131_fake_async_load),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E1BB8),
+            oc1131_fake_file_load,
+            fakes::prev_cell(oc1131_fake_file_load),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B5E98),
+            oc1131_fake_mem_free,
+            fakes::prev_cell(oc1131_fake_mem_free),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00416210),
+            oc1131_fake_memset,
+            fakes::prev_cell(oc1131_fake_memset),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003C45E8),
+            oc1131_fake_kick,
+            fakes::prev_cell(oc1131_fake_kick),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003C4668),
+            oc1131_fake_queue,
+            fakes::prev_cell(oc1131_fake_queue),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003C72F8),
+            oc1131_fake_read_be,
+            fakes::prev_cell(oc1131_fake_read_be),
+        );
+    }
+
+    /// Uploads of 0, negative, one-chunk and several-chunk sizes, with the DMA
+    /// queue empty, half full and full (so the kick loop runs 0-3 times).
+    #[test]
+    fn oc1131_snd_sif_dma_upload_matches() {
+        oc1131_install_fakes();
+        fakes::covered(
+            ee::s13::f_003c4788__generated,
+            snd_sif_dma_upload,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1131_0001, 6);
+                c.bus.write32(OC1131_CTRL, OC1131_MAGIC);
+                let bytes: u32 = match seed % 7 {
+                    0 => 0,
+                    1 => (r.next_u32() | 0x8000_0000) & 0xffff_fff0,
+                    2 => 0x10 + (r.next_u32() & 0xff),
+                    3 => 0x1000,
+                    4 => 0xfff,
+                    5 => 0x2fff,
+                    _ => 0x3500,
+                };
+                let queued: u8 = match seed % 5 {
+                    0 => 0,
+                    1 => 0x1c,
+                    2 => 0x18,
+                    3 => 0x17,
+                    _ => 0xf0,
+                };
+                c.bus.write8(SND_DMA_STATE + SND_DMA_QUEUED, queued);
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = sx(0x0010_0000 + (r.next_u32() & 0xf_fff0));
+                c.g[A2][0] = sx(r.next_u32() & 0x1f_fff0);
+                c.g[A3][0] = sx(bytes);
+                c.g[T0][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    pub(crate) const OC1131_ENTRIES: u32 = DATA_m3 + 0x0079_2000;
+
+    pub(crate) const OC1131_OBJECTS: u32 = DATA_m3 + 0x0079_3000;
+
+    pub(crate) const OC1131_TABLE6: u32 = DATA_m3 + 0x0079_4000;
+
+    pub(crate) const OC1131_BASE: u32 = DATA_m3 + 0x0079_5000;
+
+    /// Frees an FX bank: not loaded, no entries, entries with and without
+    /// release callbacks, and with and without the entry array / table.
+    #[test]
+    fn oc1131_snd_ee_fx_free_matches() {
+        oc1131_install_fakes();
+        fakes::covered(
+            ee::s14::f_003cbec8__generated,
+            snd_ee_fx_free,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1131_0003, 10);
+                c.bus.write32(OC1131_CTRL, OC1131_MAGIC);
+                let count: u32 = match seed % 6 {
+                    0 => 0,
+                    1 => 0xffff_ffff,
+                    2 => 1,
+                    3 => 2,
+                    4 => 3,
+                    _ => 4,
+                };
+                c.bus.write32(OC1131_COUNT, count);
+                c.bus
+                    .write32(SND_EEFX_LOADED, if seed % 9 == 0 { 0 } else { 1 });
+                c.bus.write32(0x0051_5d54, r.next_u32() & 3);
+                c.bus.write32(0x0051_5d40, OC1131_BASE);
+                let entries = if seed % 11 == 5 { 0 } else { OC1131_ENTRIES };
+                c.bus.write32(0x0051_5d44, entries);
+                let table = if seed % 7 == 3 { 0 } else { OC1131_TABLE6 };
+                c.bus.write32(0x0051_5d48, table);
+                for i in 0..4u32 {
+                    let obj = OC1131_OBJECTS + 0x40 * i;
+                    let callback = if (seed >> i) & 1 == 0 {
+                        0
+                    } else {
+                        0x4000 + 0x10 * i
+                    };
+                    c.bus.write32(obj + 4, callback);
+                    let present = (seed >> (i + 2)) % 5 != 0;
+                    c.bus
+                        .write32(OC1131_ENTRIES + 4 * i, if present { obj } else { 0 });
+                }
+                for i in 0..6u32 {
+                    let word = if r.next_u32() & 1 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    };
+                    c.bus.write32(OC1131_TABLE6 + 4 * i, word);
+                }
+                for (off, v) in [(0x75f8, 7), (0x75fc, 8)] {
+                    c.bus.write32(0x0051_0000 + off, v);
+                }
+                c.bus.write32(0x0051_5d4c, 9);
+                c.bus.write32(0x0051_5d50, 10);
+            },
+        );
+    }
+
+    /// The SND_SetVolume fixture (channels in the driver state block, some
+    /// sharing a handle, no voices listed) with some channels filtered (flag
+    /// 4, so the real `SND_ChannelApplyLowpass` computes the cutoff but has
+    /// no voice to set) and a random output rate.
+    pub(crate) fn oc1132_lowpass_fixture(c: &mut Cpu, r: &mut Rng) {
+        use crate::game::lib::snd::tests::set_volume_setup;
+        set_volume_setup(c, r);
+        let state = 0x0050_a8e8u32;
+        let n = c.bus.read16(state + 0x17e) as u32;
+        let channels = c.bus.read32(state + 0x1f0);
+        c.bus.write16(state + 0x2a, r.next_u32() as u16);
+        for i in 0..n {
+            let flags = if r.next_u32() % 2 == 0 { 0xc } else { 0x8 };
+            c.bus.write16(channels + i * 0x8c + 0x24, flags);
+        }
+    }
+
+    crate::difftest::events::driven!(oc1132_gen_set_lowpass, ee::s13::f_003b8978__generated);
+    crate::difftest::events::driven!(oc1132_hand_set_lowpass, snd_set_lowpass);
+
+    /// SND_SetLowpass: bad handles (loop skipped), single and multi-channel
+    /// handles, filtered or not; and with events at the loop's back edge
+    /// (delivered or unwinding, then resumed at the loop head).
+
+    #[test]
+    fn snd_set_lowpass_matches() {
+        check(
+            ee::s13::f_003b8978__generated,
+            snd_set_lowpass,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x8978, 0);
+                c.pc = 0x003b_8978;
+                oc1132_lowpass_fixture(c, &mut r);
+            },
+        );
+        check_events(
+            oc1132_gen_set_lowpass,
+            oc1132_hand_set_lowpass,
+            600,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x8979, 0);
+                oc1132_lowpass_fixture(c, &mut r);
+                schedule(c, &mut r, seed, 0x003b_8978)
+            },
+        );
+    }
+
+    /// Encoder state of `SNDENC_PutBits`: the pointer at 0x50ac68, the struct
+    /// (`pos` u16 at +6, buffer pointer at +8) and the byte buffer.
+    pub(crate) const OC1134_ENC_PTR: u32 = 0x0050_ac68;
+
+    pub(crate) const OC1134_ENC: u32 = DATA_m5 + 0x4000;
+
+    pub(crate) const OC1134_BUF: u32 = DATA_m5 + 0x5000;
+
+    pub(crate) fn oc1134_put_bits_setup(c: &mut Cpu, seed: u32) -> Rng {
+        let mut r = fakes::machine(c, seed, 0x3b_cae8, 0);
+        c.bus.write32(OC1134_ENC_PTR, OC1134_ENC);
+        // Bit position: byte aligned and not, low and high; a stale buffer.
+        let pos = match seed % 4 {
+            0 => 0,
+            1 => 8 * (r.next_u32() % 16),
+            _ => r.next_u32() % 200,
+        };
+        c.bus.write16(OC1134_ENC + 6, pos as u16);
+        c.bus.write32(OC1134_ENC + 8, OC1134_BUF);
+        fill(c, &mut r, OC1134_BUF, 0x20);
+        // Widths: none, negative, 1..32 bits and wider than a word.
+        let n: i32 = match seed % 10 {
+            0 => 0,
+            1 => -(r.next_u32() as i32 % 9),
+            2 => 32,
+            3 => 33 + (r.next_u32() % 8) as i32,
+            _ => 1 + (r.next_u32() % 31) as i32,
+        };
+        c.g[A0][0] = if seed % 5 == 0 {
+            r.next_u32() as u64
+        } else {
+            sx(r.next_u32())
+        };
+        c.g[A1][0] = sx(n as u32);
+        c.pc = 0x003b_cae8;
+        r
+    }
+
+    /// `SNDENC_PutBits`: field widths from negative and zero to over 32, with
+    /// the bit position byte aligned (fresh byte cleared) and not.
+    #[test]
+    fn snd_enc_put_bits_matches() {
+        check(
+            ee::s13::f_003bcae8__generated,
+            snd_enc_put_bits,
+            400,
+            &|c, seed| {
+                oc1134_put_bits_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn snd_enc_put_bits_events() {
+        driven!(gen_put, ee::s13::f_003bcae8__generated);
+        driven!(hand_put, snd_enc_put_bits);
+        check_events(gen_put, hand_put, 120, &|c, seed| {
+            let mut r = oc1134_put_bits_setup(c, 270 + seed / 3 % 15);
+            schedule(c, &mut r, seed, 0x003b_cae8)
+        });
     }
 }
 
