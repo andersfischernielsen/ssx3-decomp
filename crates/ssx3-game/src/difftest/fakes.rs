@@ -161,7 +161,15 @@ pub fn machine_rt(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
 /// (the heap at 0x4ff250, backed by `DATA+0x40000..+0x80000`). Leaves the
 /// argument registers and `pc` as the arena setup call left them.
 pub fn test_allocator(c: &mut Cpu) {
+    // What the setup changes inside the game image is recorded, so a later
+    // `elf_image` keeps it (see `difftest::RT_PATCH`).
+    static SPAN: std::sync::OnceLock<(usize, usize)> = std::sync::OnceLock::new();
+    let (at, len) = *SPAN.get_or_init(super::image_span);
+    let before = c.bus.ram[at..at + len].to_vec();
     c.bus.write32(GAME_GP + 0xdd8, 1);
+    // The BELibrary dummy: `getBE` finds a singleton instead of building one.
+    c.bus
+        .write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
     const POOLS: [(u32, u32, u32); 7] = [
         (0x2a70, 0x800, 8),
         (0x2a60, 0x2000, 0x10),
@@ -188,6 +196,20 @@ pub fn test_allocator(c: &mut Cpu) {
     c.g[RA][0] = super::RA as u64;
     c.pc = 0x0031_ff60;
     ssx3_ee::s10::DLHeap_InitArena(c);
+    let mut patch = Vec::new();
+    let mut i = 0;
+    while i < len {
+        if c.bus.ram[at + i] != before[i] {
+            let start = i;
+            while i < len && (c.bus.ram[at + i] != before[i] || i - start < 1) {
+                i += 1;
+            }
+            patch.push((at + start, c.bus.ram[at + start..at + i].to_vec()));
+        } else {
+            i += 1;
+        }
+    }
+    super::RT_PATCH.with(|p| *p.borrow_mut() = patch);
 }
 
 /// A random pointer into the test data area (16-byte aligned).

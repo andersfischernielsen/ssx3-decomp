@@ -37,7 +37,6 @@ pub(crate) use crate::game::main::ssxappdtor::p;
 pub(crate) use crate::game::main::ssxappdtor::vtable_dtor;
 pub(crate) use crate::game::scripter::ssxscriptengine::gp_5 as gp_2;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
-pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2 as gp;
 pub(crate) use crate::game::world::worldview::p_2 as p_3;
 use crate::guest::Addr;
@@ -198,8 +197,6 @@ pub(crate) mod callee {
     pub(crate) use crate::game::main::ssxappdtor::callee::APP_MODULE_UPDATE;
 
     pub(crate) use crate::game::main::ssxappdtor::callee::UI_ENGINE_UPDATE;
-
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SSX_APP_BOOT_LOAD;
 }
 
 /// `cPreGameLoadScreen *cPreGameLoadScreen_ctor(cPreGameLoadScreen *self)`
@@ -228,19 +225,6 @@ pub fn c_pre_fe_load_screen_ctor(c: &mut Cpu) {
     this.off(0x4).sw(c, 0);
     this.sw(c, vtable);
     abi::ret(c);
-}
-
-/// `void InitLoadScreen_Enter(void)` (0x00232568): run the boot load for the
-/// world (`gp - 0x848`).
-pub fn init_load_screen_enter(c: &mut Cpu) {
-    forward(
-        c,
-        8,
-        0x10,
-        |c| c.g[A0][0] = Addr(gp(c, -0x848)).lw(c),
-        callee::SSX_APP_BOOT_LOAD,
-        0x0023_257c,
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1587,24 +1571,6 @@ pub fn c_game_load_screen_load(c: &mut Cpu) {
     })
 }
 
-/// `void cInitLoadScreen::load(this)` (0x232568): `cSSXApp_initload(SSXApp)`
-/// with `SSXApp = *(gp - 0x848)`. Not installed (see `OVERRIDES`): the callee
-/// is a huge unported driver with no slot to fake, so the return path has no
-/// bounded fixture.
-#[allow(dead_code)]
-pub fn init_load_screen_enter_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 8;
-        let frame = Frame::open(c, 0x10);
-        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
-        frame.save_ra(c, 0);
-        call_ptr(c, 0x0022_82d0, 0x0023_257c)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `cGameLoadScreen_LoadPictures` (0x00233048): Loads the load-screen pictures from the big file: the two character pictures in a two-player race, else the course picture. Stores the textures at self+0x10. `(self)`.
 /// NOT INSTALLED (no OVERRIDES entry, no test): EAFile_LoadDecompressed/BigFile loads (pc 0x3de768) have no override slot and spin on test data.
 #[allow(
@@ -2014,9 +1980,7 @@ pub fn c_game_load_screen_load_pictures_3(c: &mut Cpu) {
 }
 
 /// `void InitLoadScreen_Enter(void)` (0x00232568): start the boot load,
-/// `cSSXApp_initload(*(gp - 0x848))` (the app object). The pre-existing
-/// `init_load_screen_enter` / `_2` in `loadscreens_prestart.rs` are untested
-/// duplicates of this: delete them at the reorg.
+/// `cSSXApp_initload(*(gp - 0x848))` (the app object).
 pub fn init_load_screen_enter_load(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 8;

@@ -51,6 +51,11 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (
+        0x003b_0b40,
+        ps2_sony_codec_internal_feed_bitstream,
+        "PS2_SONY_CODEC_INTERNAL_FeedBitstream",
+    ),
     (0x003a_c800, cwscriptcache_alloc, "cWScriptCache_Alloc"),
     (
         0x003a_ca10,
@@ -4463,6 +4468,7 @@ pub fn ps2_sony_codec_internal_feed_bitstream(c: &mut Cpu) {
         }
 
         c.cycles += 2;
+        c.g[V1][0] = 0xffff_ffff_ffff_fff0;
         if c.g[S2][0] == 0 {
             // No usable chunk: clear the first four ring slots.
             c.cycles += 3;
@@ -4509,6 +4515,7 @@ pub fn ps2_sony_codec_internal_feed_bitstream(c: &mut Cpu) {
                     let more = c.g[V1][0] != 0;
                     sw_3(c, c.g[V0][0], 0, 0);
                     if !more {
+                        c.cycles += 2;
                         break;
                     }
                     if event_due(c) {

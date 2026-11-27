@@ -16,7 +16,8 @@
     python3 tools/integrate_wave.py moved-tests [REV]      # strict tests of the units changed since REV
 
 `slots` (right after `stage_wave.py stage`, while the writers work) puts every
-function of the wave in overrides.txt as a slot-only line tagged `# wave-slot`
+function of the wave AND every function those call in overrides.txt as slot-only
+lines tagged `# wave-slot` (a callee without a slot cannot be faked in a test)
 and regenerates, so `f_X__generated` exists and tests can name it from the
 start (no `repoint`). `verify` is run repeatedly while the writers report: it
 lints the modules that have arrived (all not-yet-prepped `ocN` modules with
@@ -172,16 +173,49 @@ def source_text():
     return "\n".join(parts)
 
 
+def callee_targets(addr):
+    """Call targets (function starts) in the generated body of `addr`."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    from lint_port import generated_body
+
+    body = generated_body(addr) or ""
+    t = set(re.findall(r"call_indirect\(c, (0x[0-9a-f]+)\)", body))
+    t |= set(re.findall(r"c\.pc = (0x[0-9a-f]+); \w+\(c\);", body))
+    return {int(x, 16) for x in t}
+
+
+def function_names():
+    out = {}
+    for l in open(os.path.join(ROOT, "generated/functions.tsv")):
+        p = l.rstrip("\n").split("\t")
+        try:
+            out[int(p[0], 16)] = p[2] if len(p) > 2 else f"func_{p[0].upper()}"
+        except ValueError:
+            pass
+    return out
+
+
 def slots(files):
+    """Slot-only lines for every function of the wave files and for every
+    function those call: a test can only fake (`fakes::hook`) a callee that
+    has an override slot, and one without runs for real (allocator spins)."""
     seen = listed_addrs()
+    names = function_names()
     new = []
+    wave = []
     for f in files:
         for l in open(f):
             if l.startswith("0x"):
                 a, n = l.rstrip("\n").split("\t")[:2]
+                wave.append(int(a, 16))
                 if int(a, 16) not in seen:
                     seen.add(int(a, 16))
                     new.append(f"{a}    {n}    {SLOT_TAG}\n")
+    for a in wave:
+        for t in sorted(callee_targets(a)):
+            if t not in seen and t in names:
+                seen.add(t)
+                new.append(f"0x{t:08x}    {names[t]}    {SLOT_TAG}\n")
     with open(OVERRIDES_TXT, "a") as f:
         f.write("".join(new))
     print(f"{len(new)} wave slot(s) added")

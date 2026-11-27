@@ -847,16 +847,6 @@ pub(crate) mod callee {
         f: ee::s03::cFEStateCreateStep1_AllFieldsFilled,
     };
 
-    pub const LOGIN_ON_ACCOUNT_MEM_POPUP: Callee = Callee {
-        addr: 0x001b_f438,
-        f: ee::s03::cFEStateLogin_OnAccountMemPopupEvent,
-    };
-
-    pub const LOGIN_ON_DISCONNECT_POPUP: Callee = Callee {
-        addr: 0x001b_f5a8,
-        f: ee::s03::cFEStateLogin_OnDisconnectPopupEvent,
-    };
-
     pub const MESSAGE_CENTER_GET_LIST_INDEX: Callee = Callee {
         addr: 0x001e_3680,
         f: ee::s04::MessageCenter_GetListIndex,
