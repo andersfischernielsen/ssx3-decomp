@@ -4192,25 +4192,6 @@ pub fn be_reward_int_begin_reward_tracking(c: &mut Cpu) {
     })
 }
 
-/// `void BERewardInt_LoadRewardsFile(void)` (0x156a10): load the rewards
-/// file (`RewardsFile_Load(0x4c3e98, 1)`). Not installed: the real loader
-/// runs away on test data, so there is no differential test.
-#[allow(dead_code)]
-pub fn be_reward_int_load_rewards_file_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 9;
-        let frame = Frame::open(c, 0x10);
-        c.g[A0][0] = 0x4c0000;
-        frame.save_ra(c, 0);
-        c.g[A1][0] = 0x1;
-        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3e98));
-        crate::game::be::beintmission::callee::REWARDS_FILE_LOAD.call(c, 0x0015_6a28)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `int BERewardInt_GetAudioSystemField504(void)` (0x157350): the word at
 /// +0x504 of the object the table function at 0x28b180 returns.
 pub fn be_reward_int_get_audio_system_field504(c: &mut Cpu) {
@@ -5222,20 +5203,6 @@ pub fn reward_unlock_toy(c: &mut Cpu) {
     guest(c, |c| reward_unlock_body(c, UNLOCK_TOY))
 }
 
-/// `void BERewardInt_UnlockVideo(...)` (0x158470).
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn reward_unlock_video(c: &mut Cpu) {
-    guest(c, |c| reward_unlock_body(c, UNLOCK_VIDEO))
-}
-
-/// `void BERewardInt_UnlockRiderItem(...)` (0x158618).
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn reward_unlock_rider_item(c: &mut Cpu) {
-    guest(c, |c| reward_unlock_body(c, UNLOCK_RIDER_ITEM))
-}
-
 /// The shared body of the unlocks. Register roles as the generated code
 /// reads them: `s0` = award flag (`t0`), `s1` = profile (`a1`), `s2` = self
 /// (`a0`), `s3` = entry index (`a2`), `s4` = bit index, `s5` = econ interface.
@@ -5410,42 +5377,6 @@ pub fn be_reward_int_get_points_threshold(c: &mut Cpu) {
     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
     ret(c);
-}
-
-/// `void BERewardInt_AddPointsForRider(self, rider, points, ...)` (0x1597b0):
-/// look up the rider's profile and character, then `AddPoints` with them.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn reward_add_points_for_rider(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 26;
-        let frame = Frame::open(c, 0x50);
-        frame.save(c, S0, 0x40);
-        frame.save(c, S1, 0x30);
-        frame.save(c, S2, 0x20);
-        frame.save(c, S3, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A1][0];
-        c.g[S2][0] = c.g[A0][0];
-        c.g[S3][0] = c.g[A2][0];
-        c.g[A0][0] = c.g[S0][0];
-        call_ptr(c, 0x0014_a0e0, 0x0015_97dc)?;
-        c.g[S1][0] = c.g[V0][0];
-        c.g[A0][0] = c.g[S0][0];
-        call_ptr(c, 0x0014_a080, 0x0015_97e8)?;
-        c.g[A0][0] = c.g[S2][0];
-        c.g[A1][0] = c.g[S1][0];
-        c.g[A3][0] = c.g[S3][0];
-        c.g[A2][0] = c.g[V0][0];
-        call_ptr(c, 0x0015_9818, 0x0015_97fc)?;
-        frame.restore(c, S0, 0x40);
-        frame.restore(c, S1, 0x30);
-        frame.restore(c, S2, 0x20);
-        frame.restore(c, S3, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
 }
 
 /// `void BERewardInt_GrantRewardForRider(self, rider, ...)` (0x159c68): as

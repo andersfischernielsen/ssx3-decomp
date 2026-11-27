@@ -12763,54 +12763,6 @@ pub fn intc_handler_restore_regs(c: &mut Cpu) {
     abi::ret(c);
 }
 
-/// `VramHeap_FreeTextureBlocks(heap, index)` (0x366e30): the block at slot
-/// `index` of the heap's table (at `heap+0x23e8`, 4 bytes per slot) is freed
-/// with `VramHeap_FreeBlock` for its first and then its second sub-block, when
-/// each sub-block's offset (`+0x30`, `+0x34`) is non-negative.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn vram_heap_free_texture_blocks_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x30);
-        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
-        frame.save(c, S0, 0x20);
-        frame.save(c, S1, 0x10);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0);
-        let heap = c.g[S0][0] as u32;
-        c.g[V0][0] = Addr(heap.wrapping_add(0x23e8)).lw(c);
-        let slot = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-        c.g[A1][0] = slot;
-        c.g[S1][0] = Addr(slot as u32).lw(c);
-        let blk = c.g[S1][0] as u32;
-        c.g[A1][0] = Addr(blk.wrapping_add(0x30)).lw(c);
-        if (c.g[A1][0] as i64) < 0 {
-            let blk = c.g[S1][0] as u32;
-            c.g[A1][0] = Addr(blk.wrapping_add(0x34)).lw(c);
-        } else {
-            c.cycles += 3;
-            VRAM_HEAP_FREE_BLOCK.call(c, 0x0036_6e68)?;
-            let blk = c.g[S1][0] as u32;
-            c.g[A1][0] = Addr(blk.wrapping_add(0x34)).lw(c);
-        }
-        c.cycles += 2;
-        if (c.g[A1][0] as i64) < 0 {
-            frame.restore(c, S0, 0x20);
-        } else {
-            c.cycles += 3;
-            c.g[A0][0] = c.g[S0][0];
-            VRAM_HEAP_FREE_BLOCK.call(c, 0x0036_6e7c)?;
-            frame.restore(c, S0, 0x20);
-        }
-        c.cycles += 4;
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// The callees of the state emitter, each reached through its override slot.
 pub(crate) const CHG_MATERIAL_SETUP: Callee = Callee {
     addr: 0x0036_4cd0,

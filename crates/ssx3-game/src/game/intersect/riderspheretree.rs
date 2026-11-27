@@ -6957,18 +6957,6 @@ pub(crate) fn coll_segment_body(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-/// `void SphereTree_SortChildOrder(SphereTree* node, Vec4* dir)` (0x32db40).
-/// Four child centres at `node+0..0x40` are projected on `dir` (scaled by
-/// -1000 on VU0) and truncated to int keys; the keys are stored at
-/// `node+0x9c` (index order) and `node+0xb8` (descending), then sorted
-/// through `ShellSortDesc_KeyVal` (0x32da40) on the stack.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn sphere_tree_sort_child_order(c: &mut Cpu) {
-    let frame = Frame::open(c, 0x50);
-    guest(c, |c| sort_child_order_body(c, frame));
-}
-
 pub(crate) fn sort_child_order_body(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 20;
     c.g[AT][0] = 0xffff_ffff_c47a_0000;

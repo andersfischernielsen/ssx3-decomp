@@ -17114,18 +17114,6 @@ pub(crate) const QFS_MUSIC_EVENT: Callee = Callee {
     f: ee::s07::f_0028e8c0,
 };
 
-/// `void ScriptEngine_QueueFinishScripts(engine, online, intro)` (0x27a860):
-/// queues the transport sequence's NIS scripts (the intro first when `intro`
-/// is set; the online and offline variants differ), readies and starts the
-/// list, and plays the music event 0x14. The world mode check
-/// (`world->game->0x0c->0x7c == 1`) picks the second script of each branch.
-/// Frame 0x20: saves ra and s0.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn script_engine_queue_finish_scripts_3(c: &mut Cpu) {
-    guest(c, qfs_body)
-}
-
 pub(crate) fn qfs_body(c: &mut Cpu) -> Flow {
     c.cycles += 5;
     let frame = Frame::open(c, 0x20);

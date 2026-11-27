@@ -32138,18 +32138,6 @@ pub(crate) fn boost_modifier_v07_body(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-/// `void AnimTeeter_v43(void* self, void* anim, void* out)` (0x342538): when
-/// the anim's signed index at +0x5c is non-negative and the table entry it
-/// selects is set, calls the controller's vtable slot 0xec (delta at 0xe8),
-/// then, when the VU0 test passes, blends the teeter vector at `self` with
-/// the anim vector and writes it back. Hand-written with the original's
-/// VU0 macro ops; the early exits are the generated `break`s.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn anim_teeter_v43(c: &mut Cpu) {
-    guest(c, anim_teeter_v43_body)
-}
-
 pub(crate) fn anim_teeter_v43_body(c: &mut Cpu) -> Flow {
     c.cycles += 10;
     let frame = Frame::open(c, 0x80);
@@ -32625,15 +32613,6 @@ pub(crate) fn gather_objects_subtree_body(c: &mut Cpu) -> Flow {
     sub_epilogue(c, frame)
 }
 
-/// `Cell_GatherType2Subtree(tree, ctx)` (0x340b18): appends the node's
-/// type-2 list (`tree+0x28`) to the `ctx` pair at `ctx+0`, then its eight
-/// children's subtrees.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn cell_gather_type2_subtree(c: &mut Cpu) {
-    guest(c, gather_type2_subtree_body)
-}
-
 pub(crate) fn gather_type2_subtree_body(c: &mut Cpu) -> Flow {
     c.cycles += 8;
     let frame = Frame::open(c, 0x30);
@@ -32715,15 +32694,6 @@ pub(crate) fn gather_objinst_subtree_body(c: &mut Cpu) -> Flow {
     c.g[A0][0] = sub_lw(c, S0, 0);
     sub_chain8(c, S0, CALL_SUBTREE_OBJINST, 0x0034_0d20, S1, 3, 0x20)?;
     sub_epilogue(c, frame)
-}
-
-/// `Cell_GatherAllSubtree(tree, ctx)` (0x340dc0): the object list with the
-/// box test (`tree+0x24` into `ctx+0x10`), the all-list (`tree+0x28` into
-/// `ctx+0x20`, no test), then the eight children.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn cell_gather_all_subtree(c: &mut Cpu) {
-    guest(c, gather_all_subtree_body)
 }
 
 pub(crate) fn gather_all_subtree_body(c: &mut Cpu) -> Flow {

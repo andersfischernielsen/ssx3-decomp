@@ -6272,50 +6272,6 @@ pub fn wscript_man_set_hud_height_target(c: &mut Cpu) {
 /// world's playback manager (`*(gp - 0x848) + 0x84`) and replay.
 pub(crate) const OC557_GP_WORLD: u32 = 0x848;
 
-/// `int WScriptMan_RequestMissionPlayback(WScriptMan* self)` (0x30b590), named
-/// `previewLocalMission` in the reference: stop playback and replay, set up
-/// the local mission's preview, and on success queue the playback command.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn wscript_man_request_mission_playback(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 19;
-        let frame = Frame::open(c, 0x20);
-        c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(OC557_GP_WORLD)).lw(c);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
-        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x34)).lw(c);
-        call_ptr(c, 0x0026_cdf8, 0x0030_b5b0)?;
-        c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(OC557_GP_WORLD)).lw(c);
-        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x84)).lw(c);
-        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x28)).lw(c);
-        call_ptr(c, 0x0026_f228, 0x0030_b5c0)?;
-        c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(OC557_GP_WORLD)).lw(c);
-        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(0x2a0)).lw(c);
-        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
-        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x34)).lw(c);
-        call_ptr(c, 0x0026_caf8, 0x0030_b5d4)?;
-        if c.g[V0][0] != 0 {
-            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0x2a0)).lw(c);
-            c.cycles += 4;
-            c.g[V0][0] = 0x5;
-            c.sw(r32(c, S0).wrapping_add(0x2ac), c.g[V0][0]);
-            c.sw(r32(c, S0).wrapping_add(0x2b0), c.g[V1][0]);
-            c.g[V0][0] = 0x1;
-        } else {
-            c.cycles += 2;
-            c.g[V0][0] = 0;
-        }
-        c.cycles += 4;
-        frame.restore(c, S0, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `void WScriptMan_RequestMissionAbort(WScriptMan* self)` (0x30b608): stop
 /// the playback, clear its saved world state, and queue the abort command.
 pub fn wscript_man_request_mission_abort(c: &mut Cpu) {

@@ -10509,6 +10509,8 @@
 0x00372348    DmaChain_SplitAtRefTags
 0x003ff4a8    scePadInit
 0x00409940    sceMcInit
+# Phase 2 wave: oc971, oc972, oc973
+# Phase 2 wave: oc971, oc972, oc973
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
@@ -11034,3 +11036,12 @@
 0x00258360    cGameComm_GetInputDelay
 0x002583a8    cGameComm_PingServer
 0x00258448    cGameComm_ExchangeSetupData
+0x1c8ef0    cFEPopupConfirm_MeasureDescBox
+0x1c93b0    cFEPopupConfirm_GetDescLineWrapSize
+0x1c94b0    cFEPopupConfirm_GetMessageLineWrapSizeW
+0x1c9648    cFEPopupConfirm_GetMessageLineWrapSize
+0x1c97e0    cFEPopupConfirm_SetWrappedText
+0x1c9938    cFEPopupConfirm_WordWrapW
+0x1d9f38    cFEStateNetHelpPopup_OnWidgetCreated
+0x1e3d58    OVScreenMessageCenter_Init
+0x1e64a8    OVScreenFreestyleStandings_Update
