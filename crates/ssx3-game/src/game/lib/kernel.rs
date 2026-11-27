@@ -11,9 +11,6 @@ use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use crate::game::lib::kernel::callee::FLUSH_CACHE;
-use crate::game::lib::sif::callee::EINTR as EINTR_m2;
-use crate::game::lib::sif::callee::EINTR as EINTR_m3;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -133,8 +130,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         libkernl_wait_vblank_or_flag,
         "libkernl_WaitVBlankOrFlag",
     ),
-    (0x0042_4880, disable_intc_2, "DisableIntc"),
-    (0x0042_48e8, enable_intc_2, "EnableIntc"),
+    (0x0042_4880, disable_intc_guarded, "DisableIntc"),
+    (0x0042_48e8, enable_intc_guarded, "EnableIntc"),
     (
         0x0042_4b78,
         libkernl_init_thread_helper,
@@ -176,6 +173,8 @@ pub(crate) mod callee {
     use super::Callee;
 
     pub(super) use crate::game::lib::libc::callee::STRLEN;
+    /// `EIntr` (`0x0042_c0c0`; the callee form of [`super::EINTR`]).
+    pub(super) use crate::game::lib::sif::callee::EINTR;
 
     /// `libkernl_vprintf` (`0x00425638`).
     pub(crate) const VPRINTF: Callee = Callee {
@@ -391,6 +390,96 @@ pub(crate) mod callee {
     pub(crate) const SETUP_TLB: Callee = Callee {
         addr: 0x0042_cd98,
         f: ee::s15::libkernl_SetupTLB,
+    };
+
+    /// `libkernl_TtyRingPush` (`0x00424e28`).
+    pub(crate) const TTY_RING_PUSH: Callee = Callee {
+        addr: 0x0042_4e28,
+        f: ee::s15::f_00424e28,
+    };
+
+    /// `libkernl_TtyRingPop` (`0x00424e68`).
+    pub(crate) const TTY_RING_POP: Callee = Callee {
+        addr: 0x0042_4e68,
+        f: ee::s15::f_00424e68,
+    };
+
+    /// `libkernl_TtyRingInit` (`0x00424e00`).
+    pub(crate) const TTY_RING_INIT: Callee = Callee {
+        addr: 0x0042_4e00,
+        f: ee::s15::f_00424e00,
+    };
+
+    /// `sceDeci2ExRecv` (`0x0042c968`).
+    pub(crate) const DECI2_EX_RECV: Callee = Callee {
+        addr: 0x0042_c968,
+        f: ee::s15::f_0042c968,
+    };
+
+    /// `sceDeci2ExSend` (`0x0042c9a0`).
+    pub(crate) const DECI2_EX_SEND: Callee = Callee {
+        addr: 0x0042_c9a0,
+        f: ee::s15::f_0042c9a0,
+    };
+
+    /// `sceDeci2ReqSend` (`0x0042c910`).
+    pub(crate) const DECI2_REQ_SEND: Callee = Callee {
+        addr: 0x0042_c910,
+        f: ee::s15::f_0042c910,
+    };
+
+    /// `sceDeci2Poll` (`0x0042c940`).
+    pub(crate) const DECI2_POLL: Callee = Callee {
+        addr: 0x0042_c940,
+        f: ee::s15::f_0042c940,
+    };
+
+    /// `sceDeci2Open` (`0x0042c8a0`).
+    pub(crate) const DECI2_OPEN: Callee = Callee {
+        addr: 0x0042_c8a0,
+        f: ee::s15::f_0042c8a0,
+    };
+
+    /// `Deci2Kputs` (`0x0042ca58`).
+    pub(crate) const DECI2_KPUTS: Callee = Callee {
+        addr: 0x0042_ca58,
+        f: ee::s15::f_0042ca58,
+    };
+
+    pub(crate) use crate::game::dirtysock::buddyapi::callee::{
+        CREATE_THREAD, DELETE_SEMA, GET_THREAD_ID, START_THREAD, WAIT_SEMA, WAKEUP_THREAD,
+    };
+
+    /// `RotateThreadReadyQueue` (`0x00423c50`).
+    pub(crate) const ROTATE_QUEUE: Callee = Callee {
+        addr: 0x0042_3c50,
+        f: ee::s15::f_00423c50,
+    };
+
+    /// `SuspendThread` (`0x00423d10`).
+    pub(crate) const SUSPEND_THREAD: Callee = Callee {
+        addr: 0x0042_3d10,
+        f: ee::s15::f_00423d10,
+    };
+
+    pub(crate) use crate::game::lib::cdvd::callee::CHANGE_THREAD_PRIORITY;
+
+    /// `SetVSyncFlag` (`0x00424110`).
+    pub(crate) const SET_VSYNC_FLAG: Callee = Callee {
+        addr: 0x0042_4110,
+        f: ee::s15::f_00424110,
+    };
+
+    /// `_DisableIntc` (`0x00423af0`).
+    pub(crate) const DISABLE_INTC_FN: Callee = Callee {
+        addr: 0x0042_3af0,
+        f: ee::s15::f_00423af0,
+    };
+
+    /// `_EnableIntc` (`0x00423ae0`).
+    pub(crate) const ENABLE_INTC_FN: Callee = Callee {
+        addr: 0x0042_3ae0,
+        f: ee::s15::f_00423ae0,
     };
 }
 
@@ -2091,166 +2180,6 @@ pub fn libkernl_printf(c: &mut Cpu) {
     });
 }
 
-pub(crate) mod oc1366_callee {
-    use super::ee;
-    use super::Callee;
-
-    /// `libkernl_TtyRingPush` (`0x00424e28`).
-    pub(crate) const TTY_RING_PUSH: Callee = Callee {
-        addr: 0x0042_4e28,
-        f: ee::s15::f_00424e28,
-    };
-
-    /// `libkernl_TtyRingPop` (`0x00424e68`).
-    pub(crate) const TTY_RING_POP: Callee = Callee {
-        addr: 0x0042_4e68,
-        f: ee::s15::f_00424e68,
-    };
-
-    /// `libkernl_TtyRingInit` (`0x00424e00`).
-    pub(crate) const TTY_RING_INIT: Callee = Callee {
-        addr: 0x0042_4e00,
-        f: ee::s15::f_00424e00,
-    };
-
-    /// `libkernl_printf` (`0x00425c28`; ported in this module).
-    pub(crate) const PRINTF: Callee = Callee {
-        addr: 0x0042_5c28,
-        f: ee::s15::f_00425c28,
-    };
-
-    /// `libkernl_vprintf` (`0x00425638`; ported in this module).
-    pub(crate) const VPRINTF: Callee = Callee {
-        addr: 0x0042_5638,
-        f: ee::s15::f_00425638,
-    };
-
-    /// `sceDeci2ExRecv` (`0x0042c968`).
-    pub(crate) const DECI2_EX_RECV: Callee = Callee {
-        addr: 0x0042_c968,
-        f: ee::s15::f_0042c968,
-    };
-
-    /// `sceDeci2ExSend` (`0x0042c9a0`).
-    pub(crate) const DECI2_EX_SEND: Callee = Callee {
-        addr: 0x0042_c9a0,
-        f: ee::s15::f_0042c9a0,
-    };
-
-    /// `sceDeci2ReqSend` (`0x0042c910`).
-    pub(crate) const DECI2_REQ_SEND: Callee = Callee {
-        addr: 0x0042_c910,
-        f: ee::s15::f_0042c910,
-    };
-
-    /// `sceDeci2Poll` (`0x0042c940`).
-    pub(crate) const DECI2_POLL: Callee = Callee {
-        addr: 0x0042_c940,
-        f: ee::s15::f_0042c940,
-    };
-
-    /// `sceDeci2Open` (`0x0042c8a0`).
-    pub(crate) const DECI2_OPEN: Callee = Callee {
-        addr: 0x0042_c8a0,
-        f: ee::s15::f_0042c8a0,
-    };
-
-    /// `Deci2Kputs` (`0x0042ca58`).
-    pub(crate) const DECI2_KPUTS: Callee = Callee {
-        addr: 0x0042_ca58,
-        f: ee::s15::f_0042ca58,
-    };
-}
-
-pub(crate) mod oc1367_callee {
-    use super::ee;
-    use super::Callee;
-
-    /// `WaitSema` (`0x00423de0`).
-    pub(crate) const WAIT_SEMA: Callee = Callee {
-        addr: 0x0042_3de0,
-        f: ee::s15::f_00423de0,
-    };
-
-    /// `WakeupThread` (`0x00423cd0`).
-    pub(crate) const WAKEUP_THREAD: Callee = Callee {
-        addr: 0x0042_3cd0,
-        f: ee::s15::f_00423cd0,
-    };
-
-    /// `RotateThreadReadyQueue` (`0x00423c50`).
-    pub(crate) const ROTATE_QUEUE: Callee = Callee {
-        addr: 0x0042_3c50,
-        f: ee::s15::f_00423c50,
-    };
-
-    /// `SuspendThread` (`0x00423d10`).
-    pub(crate) const SUSPEND_THREAD: Callee = Callee {
-        addr: 0x0042_3d10,
-        f: ee::s15::f_00423d10,
-    };
-
-    /// `CreateSema` (`0x00423da0`).
-    pub(crate) const CREATE_SEMA: Callee = Callee {
-        addr: 0x0042_3da0,
-        f: ee::s15::f_00423da0,
-    };
-
-    /// `CreateThread` (`0x00423ba0`).
-    pub(crate) const CREATE_THREAD: Callee = Callee {
-        addr: 0x0042_3ba0,
-        f: ee::s15::f_00423ba0,
-    };
-
-    /// `DeleteSema` (`0x00423db0`).
-    pub(crate) const DELETE_SEMA: Callee = Callee {
-        addr: 0x0042_3db0,
-        f: ee::s15::f_00423db0,
-    };
-
-    /// `_StartThread` (`0x00423bc0`).
-    pub(crate) const START_THREAD: Callee = Callee {
-        addr: 0x0042_3bc0,
-        f: ee::s15::f_00423bc0,
-    };
-
-    /// `GetThreadId` (`0x00423c90`).
-    pub(crate) const GET_THREAD_ID: Callee = Callee {
-        addr: 0x0042_3c90,
-        f: ee::s15::f_00423c90,
-    };
-
-    /// `ChangeThreadPriority` (`0x00423c30`).
-    pub(crate) const CHANGE_PRIORITY: Callee = Callee {
-        addr: 0x0042_3c30,
-        f: ee::s15::f_00423c30,
-    };
-
-    /// `SetVSyncFlag` (`0x00424110`).
-    pub(crate) const SET_VSYNC_FLAG: Callee = Callee {
-        addr: 0x0042_4110,
-        f: ee::s15::f_00424110,
-    };
-
-    /// `_DisableIntc` (`0x00423af0`).
-    pub(crate) const DISABLE_INTC_FN: Callee = Callee {
-        addr: 0x0042_3af0,
-        f: ee::s15::f_00423af0,
-    };
-
-    /// `_EnableIntc` (`0x00423ae0`).
-    pub(crate) const ENABLE_INTC_FN: Callee = Callee {
-        addr: 0x0042_3ae0,
-        f: ee::s15::f_00423ae0,
-    };
-
-    /// `libkernl_printf` (`0x00425c28`).
-    pub(crate) const PRINTF: Callee = Callee {
-        addr: 0x0042_5c28,
-        f: ee::s15::f_00425c28,
-    };
-}
-
 /// `int WakeupThread(int id, ...)` (0x423cd0): syscall 0x33.
 pub fn wakeup_thread(c: &mut Cpu) {
     syscall_wrapper(c, 0x33, 0x0042_3cd4, 0x0042_3cd8);
@@ -2261,12 +2190,15 @@ pub fn suspend_thread(c: &mut Cpu) {
     syscall_wrapper(c, 0x37, 0x0042_3d14, 0x0042_3d18);
 }
 
-/// `void libkernl_TtyWrite(const char *src, int count)` (0x425040): copy
-/// `count` bytes through the Deci2 tty packet (newline expands to CRLF,
-/// flushing at 256 bytes), then `sceDeci2ReqSend` and poll for completion.
-/// A nonzero packet lock word on entry returns -1 without touching state.
+/// `int libkernl_TtyWrite(const char *src, int count)` (0x425040): with
+/// interrupts off, copy up to `count` bytes of `src` into the Deci2 tty
+/// packet (a newline becomes CR LF; the copy stops when the packet's 256
+/// bytes are full), send it with `sceDeci2ReqSend` and poll `sceDeci2Poll`
+/// until the handler clears the busy word. Returns the source bytes taken;
+/// -1 when the busy word is already set on entry (nothing touched) or the
+/// send fails (the busy word is cleared again).
 pub fn libkernl_tty_write(c: &mut Cpu) {
-    use oc1366_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_42516c: {
             c.cycles += 17;
@@ -2375,7 +2307,7 @@ pub fn libkernl_tty_write(c: &mut Cpu) {
                             c.cycles += 4;
                             c.g[RA][0] = sx(0x00425134);
                             c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
-                            EINTR_m2.call(c, 0x00425134)?;
+                            callee::EINTR.call(c, 0x00425134)?;
                             let t = true;
                             c.g[V0][0] = 0xffffffffffffffff;
                             if t {
@@ -2413,7 +2345,7 @@ pub fn libkernl_tty_write(c: &mut Cpu) {
                     }
                     c.cycles += 3;
                     c.g[RA][0] = sx(0x00425168);
-                    EINTR_m2.call(c, 0x00425168)?;
+                    callee::EINTR.call(c, 0x00425168)?;
                     c.g[V0][0] = c.g[S4][0];
                     break 'b_42516c;
                 }
@@ -2438,7 +2370,7 @@ pub fn libkernl_tty_write(c: &mut Cpu) {
 /// `count` bytes from the Deci2 tty ring into `dst`, stopping early at a
 /// newline or CR; returns the bytes stored. An empty count returns 0.
 pub fn libkernl_tty_read(c: &mut Cpu) {
-    use oc1366_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_425240: {
             'b_42523c: {
@@ -2545,7 +2477,7 @@ pub fn libkernl_tty_read(c: &mut Cpu) {
 /// `int libkernl_TtyInit(void)` (0x425260): open the Deci2 tty channel
 /// and set up its packet and ring; returns 1, or 0 when the open fails.
 pub fn libkernl_tty_init(c: &mut Cpu) {
-    use oc1366_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_425308: {
             'b_4252ac: {
@@ -2624,7 +2556,7 @@ pub fn libkernl_tty_init(c: &mut Cpu) {
 /// the Deci2 console, flushing a full buffer first and a newline straight
 /// through `Deci2Kputs`.
 pub fn libkernl_kputc_buffered(c: &mut Cpu) {
-    use oc1366_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_4253a4: {
             'b_4253a0: {
@@ -2696,8 +2628,11 @@ pub fn libkernl_kputc_buffered(c: &mut Cpu) {
     })
 }
 
-/// `int libkernl_DoubleToInt(double x)` (0x425440): truncate the double
-/// in `a0` to an int (0 for tiny/denormal inputs, 9999 past 2^13).
+/// `int libkernl_DoubleToInt(double x)` (0x425440): the magnitude of the
+/// double bits in `a0` as an int (the sign bit is ignored), rounded up when
+/// the fraction is at least 0.75; 0 below 0.5 (zero and denormals
+/// included), 9999 from 2^65 up, and otherwise the low 32 bits of the
+/// result, sign-extended.
 pub fn libkernl_double_to_int(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 7;
@@ -2777,203 +2712,337 @@ pub fn libkernl_double_to_int(c: &mut Cpu) {
     })
 }
 
-/// `void libkernl_TtyDeci2Handler(int port, ...)` (0x424ea8): service a
-/// Deci2 tty event. Port 3 drains the transmit ring through
-/// `sceDeci2ExSend`; ports under 4 (and 4) drain the receive ring through
-/// `sceDeci2ExRecv` (each byte pushed onward); anything else returns.
+/// `void libkernl_TtyDeci2Handler(int event, int arg, TtyState *tty)`
+/// (0x424ea8): the tty protocol's Deci2 callback. Event 3 sends the
+/// pending transmit bytes through `sceDeci2ExSend` and advances the
+/// transmit pointer and count (a failure prints and clears the busy word).
+/// Events 1 and 2 with `arg` bytes waiting receive them into the receive
+/// buffer through `sceDeci2ExRecv` (printing past 0x140 bytes); with `arg`
+/// 0 they push the received bytes, from offset 12 up to the packet's
+/// length, to the tty ring and empty the buffer. Event 4 prints if bytes
+/// are still pending and clears the busy word. Other events return.
+/// The normal entry is converted from the generated body (every register,
+/// cycle and call kept); any other `pc` (a resume at the push loop's head
+/// after an unwind) runs the generated body.
 pub fn libkernl_tty_deci2_handler(c: &mut Cpu) {
-    use oc1366_callee::*;
+    if c.pc != 0x00424ea8 {
+        return ee::s15::f_00424ea8__generated(c);
+    }
+    use callee::*;
     guest(c, |c| {
-        // Match-dispatch form in the generated body, written here as
-        // nested conditionals: every goto is forward except the push
-        // loop, so each arm either falls through to the next stage or,
-        // for the A0>4 path only, breaks out to the return tail (it
-        // restores S2 itself). The literal-true dispatches have no
-        // runtime branch and are folded (see branch-tables.md).
-        'b_4ea8: {
-            c.cycles += 9;
-            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
-            c.g[V0][0] = 0x3;
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
-            c.sd(c.g[SP][0] as u32, c.g[S0][0]);
-            c.g[S1][0] = c.g[A2][0];
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
-            c.g[S0][0] = c.g[A1][0];
-            let t = c.g[A0][0] == c.g[V0][0];
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
-            if t {
-                // 4fb4 send path.
-                c.cycles += 8;
-                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
-                c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
-                c.g[A2][0] = c.g[A2][0] & 0xffff;
-                DECI2_EX_SEND.call(c, 0x00424fc8)?;
-                c.g[A1][0] = c.g[V0][0];
-                if (c.g[A1][0] as i64) >= 0 {
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
-                    // 4fe8.
+        let mut pc: u32 = 0x00424ea8;
+        loop {
+            match pc {
+                0x00424ea8 => {
+                    c.cycles += 9;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                    c.g[V0][0] = 0x3;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                    c.g[S1][0] = c.g[A2][0];
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                    c.g[S0][0] = c.g[A1][0];
+                    let t = c.g[A0][0] == c.g[V0][0];
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                    if t {
+                        pc = 0x00424fb4;
+                        continue;
+                    }
+                    pc = 0x00424ecc;
+                    continue;
+                }
+                0x00424ecc => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < 4i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0x4;
+                    if t {
+                        pc = 0x00424ee8;
+                        continue;
+                    }
+                    pc = 0x00424ed8;
+                    continue;
+                }
+                0x00424ed8 => {
+                    c.cycles += 2;
+                    let t = c.g[A0][0] == c.g[V0][0];
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    if t {
+                        pc = 0x00425004;
+                        continue;
+                    }
+                    pc = 0x00424ee0;
+                    continue;
+                }
+                0x00424ee0 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                    if t {
+                        pc = 0x0042502c;
+                        continue;
+                    }
+                    pc = 0x00424ee8;
+                    continue;
+                }
+                0x00424ee8 => {
+                    c.cycles += 2;
+                    let t = (c.g[A0][0] as i64) <= 0;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    if t {
+                        pc = 0x00425028;
+                        continue;
+                    }
+                    pc = 0x00424ef0;
+                    continue;
+                }
+                0x00424ef0 => {
+                    c.cycles += 2;
+
+                    if c.g[S0][0] == 0u64 {
+                        c.g[S2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                        pc = 0x00424f58;
+                        continue;
+                    }
+                    pc = 0x00424ef8;
+                    continue;
+                }
+                0x00424ef8 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = (c.g[V0][0] < 0x141u64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = 0x4a0000;
+                    if t {
+                        pc = 0x00424f14;
+                        continue;
+                    }
+                    pc = 0x00424f0c;
+                    continue;
+                }
+                0x00424f0c => {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x00424f14);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54f8));
+                    PRINTF.call(c, 0x00424f14)?;
+                    pc = 0x00424f14;
+                    continue;
+                }
+                0x00424f14 => {
+                    c.cycles += 9;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[A2][0] = c.g[S0][0] & 0xffff;
+                    c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[RA][0] = sx(0x00424f2c);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    DECI2_EX_RECV.call(c, 0x00424f2c)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    let t = (c.g[S0][0] as i64) >= 0;
+
+                    if t {
+                        pc = 0x00424f44;
+                        continue;
+                    }
+                    pc = 0x00424f38;
+                    continue;
+                }
+                0x00424f38 => {
+                    c.cycles += 3;
+                    c.g[A0][0] = 0x4a0000;
+                    c.g[RA][0] = sx(0x00424f44);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54d0));
+                    PRINTF.call(c, 0x00424f44)?;
+                    pc = 0x00424f44;
+                    continue;
+                }
+                0x00424f44 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    let t = true;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    if t {
+                        pc = 0x00425028;
+                        continue;
+                    }
+                    pc = 0x00424f58;
+                    continue;
+                }
+                0x00424f58 => {
+                    c.cycles += 5;
+                    c.g[S0][0] = 0xc;
+                    c.g[V0][0] = c.lhu(c.g[S2][0] as u32);
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V1][0] = c.g[S2][0];
+                    if t {
+                        pc = 0x00424fa8;
+                        continue;
+                    }
+                    pc = 0x00424f6c;
+                    continue;
+                }
+                0x00424f6c => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                    if t {
+                        pc = 0x00424f7c;
+                        continue;
+                    }
+                    pc = 0x00424f74;
+                    continue;
+                }
+                0x00424f74 => {
+                    c.cycles += 1;
+                    pc = 0x00424f78;
+                    continue;
+                }
+                0x00424f78 => {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                    pc = 0x00424f7c;
+                    continue;
+                }
+                0x00424f7c => {
+                    c.cycles += 11;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                    c.sb(c.g[V0][0] as u32, c.g[V1][0]);
+                    c.g[RA][0] = sx(0x00424f98);
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                    TTY_RING_PUSH.call(c, 0x00424f98)?;
+                    c.g[V0][0] = c.lhu(c.g[S2][0] as u32);
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                        if back_edge_unwinds(c, 0x00424f78) {
+                            return Ok(());
+                        }
+                        pc = 0x00424f78;
+                        continue;
+                    }
+                    pc = 0x00424fa8;
+                    continue;
+                }
+                0x00424fa8 => {
+                    c.cycles += 3;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
+                    let t = true;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    if t {
+                        pc = 0x00425028;
+                        continue;
+                    }
+                    pc = 0x00424fb4;
+                    continue;
+                }
+                0x00424fb4 => {
+                    c.cycles += 8;
+                    c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = sx(0x00424fc8);
+                    c.g[A2][0] = c.g[A2][0] & 0xffff;
+                    DECI2_EX_SEND.call(c, 0x00424fc8)?;
+                    c.g[A1][0] = c.g[V0][0];
+
+                    if (c.g[A1][0] as i64) >= 0 {
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                        pc = 0x00424fe8;
+                        continue;
+                    }
+                    pc = 0x00424fd4;
+                    continue;
+                }
+                0x00424fd4 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = 0x4a0000;
+                    c.g[RA][0] = sx(0x00424fe0);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54b8));
+                    PRINTF.call(c, 0x00424fe0)?;
+                    let t = true;
+
+                    if t {
+                        pc = 0x00425020;
+                        continue;
+                    }
+                    pc = 0x00424fe8;
+                    continue;
+                }
+                0x00424fe8 => {
                     c.cycles += 7;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A1][0] as u32));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                    let t = true;
                     c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
-                } else {
-                    // 4fd4 (its always-taken dispatch to 4f020 is folded).
-                    c.cycles += 5;
+                    if t {
+                        pc = 0x00425028;
+                        continue;
+                    }
+                    pc = 0x00425004;
+                    continue;
+                }
+                0x00425004 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                    let t = c.g[V0][0] == 0u64;
+
+                    if t {
+                        pc = 0x00425020;
+                        continue;
+                    }
+                    pc = 0x00425010;
+                    continue;
+                }
+                0x00425010 => {
+                    c.cycles += 4;
                     c.g[A0][0] = 0x4a0000;
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54b8));
-                    PRINTF.call(c, 0x00424fe0)?;
-                    // 4f020.
+                    c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.g[RA][0] = sx(0x00425020);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54a0));
+                    PRINTF.call(c, 0x00425020)?;
+                    pc = 0x00425020;
+                    continue;
+                }
+                0x00425020 => {
                     c.cycles += 2;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0xc), 0u64);
                     c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    pc = 0x00425028;
+                    continue;
                 }
-            } else {
-                // 4ecc ring paths.
-                c.cycles += 3;
-                c.g[V0][0] = ((c.g[A0][0] as i64) < 4i64) as u64;
-                let t = c.g[V0][0] != 0u64;
-                c.g[V0][0] = 0x4;
-                if t {
-                    // 4ee8.
-                    c.cycles += 2;
-                    let t = (c.g[A0][0] as i64) <= 0;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
-                    if !t {
-                        // 4ef0.
-                        c.cycles += 2;
-                        if c.g[S0][0] == 0u64 {
-                            c.g[S2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
-                            // 4f58.
-                            c.cycles += 5;
-                            c.g[S0][0] = 0xc;
-                            c.g[V0][0] = c.lhu(c.g[S2][0] as u32);
-                            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                            let t = c.g[V0][0] == 0u64;
-                            c.g[V1][0] = c.g[S2][0];
-                            if !t {
-                                // 4f6c (its always-taken dispatch and the
-                                // dead 4f74/4f78 trampolines are folded).
-                                c.cycles += 2;
-                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
-                                loop {
-                                    // 4f7c push loop.
-                                    c.cycles += 11;
-                                    c.g[V0][0] =
-                                        sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
-                                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
-                                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
-                                    c.sb(c.g[V0][0] as u32, c.g[V1][0]);
-                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
-                                    TTY_RING_PUSH.call(c, 0x00424f98)?;
-                                    c.g[V0][0] = c.lhu(c.g[S2][0] as u32);
-                                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                                    let t = c.g[V0][0] != 0u64;
-                                    if t {
-                                        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
-                                        if event_due(c) {
-                                            deliver_event_here(c, 0x00424f78);
-                                        }
-                                        c.cycles += 1;
-                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
-                                        continue;
-                                    } else {
-                                        break;
-                                    }
-                                }
-                            }
-                            // 4fa8 (loop exit and 4f58-empty both land here).
-                            c.cycles += 3;
-                            c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
-                        } else {
-                            // 4ef8.
-                            c.cycles += 5;
-                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
-                            c.g[V0][0] = (c.g[V0][0] < 0x141u64) as u64;
-                            let t = c.g[V0][0] != 0u64;
-                            c.g[A0][0] = 0x4a0000;
-                            if !t {
-                                // 4f0c.
-                                c.cycles += 2;
-                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54f8));
-                                PRINTF.call(c, 0x00424f14)?;
-                            }
-                            // 4f14 (both land here).
-                            c.cycles += 9;
-                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                            c.g[A2][0] = c.g[S0][0] & 0xffff;
-                            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
-                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
-                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-                            DECI2_EX_RECV.call(c, 0x00424f2c)?;
-                            c.g[S0][0] = c.g[V0][0];
-                            if (c.g[S0][0] as i64) < 0 {
-                                // 4f38.
-                                c.cycles += 3;
-                                c.g[A0][0] = 0x4a0000;
-                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54d0));
-                                PRINTF.call(c, 0x00424f44)?;
-                            }
-                            // 4f44 (both land here; its always-taken
-                            // dispatch is folded).
-                            c.cycles += 5;
-                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
-                            c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
-                            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
-                        }
-                    }
-                    // (A0<=0 falls through to the shared tail below.)
-                } else {
-                    // 4ed8.
-                    c.cycles += 2;
-                    let t = c.g[A0][0] == c.g[V0][0];
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
-                    if t {
-                        // 4f004.
-                        c.cycles += 3;
-                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-                        let t = c.g[V0][0] == 0u64;
-                        if !t {
-                            // 4f010.
-                            c.cycles += 4;
-                            c.g[A0][0] = 0x4a0000;
-                            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x54a0));
-                            PRINTF.call(c, 0x00425020)?;
-                        }
-                        // 4f020 (both land here).
-                        c.cycles += 2;
-                        c.sw((c.g[S1][0] as u32).wrapping_add(0xc), 0u64);
-                        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
-                    } else {
-                        // 4ee0 (its always-taken dispatch is folded):
-                        // restore S2 and return, skipping the shared tail.
-                        c.cycles += 2;
-                        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
-                        break 'b_4ea8;
-                    }
+                0x00425028 => {
+                    c.cycles += 1;
+                    c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                    pc = 0x0042502c;
+                    continue;
+                }
+                0x0042502c => {
+                    c.cycles += 4;
+                    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00424ea8, 0x0042503c);
+                    return Ok(());
                 }
             }
-            // Shared S2-restore tail (4ee0 restores S2 itself and breaks
-            // out above, so only paths that fall through land here).
-            c.cycles += 1;
-            c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
         }
-        c.cycles += 4;
-        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
-        let t = c.g[RA][0] as u32;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
-        c.pc = t;
-        Ok(())
-    })
+    });
 }
 
 /// `libkernl_PrintDouble` (0x004254d0): the normal entry, converted from the generated body
@@ -4577,7 +4646,7 @@ pub fn libkernl_wait_vblank_start(c: &mut Cpu) {
             } else {
                 c.cycles += 3;
                 c.g[RA][0] = sx(0x00424264);
-                EINTR_m3.call(c, 0x00424264)?;
+                callee::EINTR.call(c, 0x00424264)?;
                 c.g[V1][0] = 0x10000000;
                 break 'b_424268;
             }
@@ -4626,7 +4695,7 @@ pub fn libkernl_wait_vblank_start(c: &mut Cpu) {
 /// flag set by the vsync callback, with interrupts managed around the
 /// acknowledge.
 pub fn libkernl_wait_vblank_or_flag(c: &mut Cpu) {
-    use oc1367_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_424308: {
             c.cycles += 15;
@@ -4650,7 +4719,7 @@ pub fn libkernl_wait_vblank_or_flag(c: &mut Cpu) {
             } else {
                 c.cycles += 3;
                 c.g[RA][0] = sx(0x00424304);
-                EINTR_m3.call(c, 0x00424304)?;
+                callee::EINTR.call(c, 0x00424304)?;
                 c.g[V1][0] = 0x10000000;
                 break 'b_424308;
             }
@@ -4692,7 +4761,7 @@ pub fn libkernl_wait_vblank_or_flag(c: &mut Cpu) {
                 } else {
                     c.cycles += 2;
                     c.g[RA][0] = sx(0x00424354);
-                    EINTR_m3.call(c, 0x00424354)?;
+                    callee::EINTR.call(c, 0x00424354)?;
                     break 'b_424354;
                 }
             }
@@ -4709,8 +4778,8 @@ pub fn libkernl_wait_vblank_or_flag(c: &mut Cpu) {
 
 /// `int DisableIntc(int line)` (0x424880): mask an interrupt line,
 /// returning the previous enable state.
-pub fn disable_intc_2(c: &mut Cpu) {
-    use oc1367_callee::*;
+pub fn disable_intc_guarded(c: &mut Cpu) {
+    use callee::*;
     guest(c, |c| {
         'b_4248b0: {
             c.cycles += 10;
@@ -4745,7 +4814,7 @@ pub fn disable_intc_2(c: &mut Cpu) {
             } else {
                 c.cycles += 3;
                 c.g[RA][0] = sx(0x004248d0);
-                EINTR_m3.call(c, 0x004248d0)?;
+                callee::EINTR.call(c, 0x004248d0)?;
                 c.g[V0][0] = c.g[S1][0];
                 break 'b_4248d4;
             }
@@ -4763,8 +4832,8 @@ pub fn disable_intc_2(c: &mut Cpu) {
 
 /// `int EnableIntc(int line)` (0x4248e8): unmask an interrupt line,
 /// returning the previous enable state.
-pub fn enable_intc_2(c: &mut Cpu) {
-    use oc1367_callee::*;
+pub fn enable_intc_guarded(c: &mut Cpu) {
+    use callee::*;
     guest(c, |c| {
         'b_424918: {
             c.cycles += 10;
@@ -4799,7 +4868,7 @@ pub fn enable_intc_2(c: &mut Cpu) {
             } else {
                 c.cycles += 3;
                 c.g[RA][0] = sx(0x00424938);
-                EINTR_m3.call(c, 0x00424938)?;
+                callee::EINTR.call(c, 0x00424938)?;
                 c.g[V0][0] = c.g[S1][0];
                 break 'b_42493c;
             }
@@ -4816,13 +4885,13 @@ pub fn enable_intc_2(c: &mut Cpu) {
 }
 
 /// `void libkernl_IntrHelperThread(void *queue)` (0x424aa0): helper-thread
-/// main dispatching queued interrupt events (Wakeup/Rotate/Suspend/Print f
+/// main dispatching queued interrupt events (Wakeup/Rotate/Suspend/Printf
 /// by queue byte). It never returns by design; no `OVERRIDES` entry (see
 /// `intr_helper_thread_prefix_matches`, which checks the prologue and the
 /// first `WaitSema` via a forced unwind).
 #[allow(dead_code)]
 pub fn libkernl_intr_helper_thread(c: &mut Cpu) {
-    use oc1367_callee::*;
+    use callee::*;
     guest(c, |c| {
         c.cycles += 16;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
@@ -4964,10 +5033,11 @@ pub fn libkernl_intr_helper_thread(c: &mut Cpu) {
 }
 
 /// `int libkernl_InitThreadHelper(void)` (0x424b78): create the interrupt
-/// helper thread and its sema unless already initialized; 0 on success,
-/// -1 when already initialized or a create fails.
+/// helper's sema and thread, start the thread and drop the caller to
+/// priority 1. Returns the thread id; -1 when a thread id is already set or
+/// a create fails (a failed thread create deletes the sema again).
 pub fn libkernl_init_thread_helper(c: &mut Cpu) {
-    use oc1367_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_424c38: {
             'b_424c08: {
@@ -5049,7 +5119,7 @@ pub fn libkernl_init_thread_helper(c: &mut Cpu) {
             c.g[A0][0] = c.g[V0][0];
             c.g[RA][0] = sx(0x00424c34);
             c.g[A1][0] = 0x1;
-            CHANGE_PRIORITY.call(c, 0x00424c34)?;
+            CHANGE_THREAD_PRIORITY.call(c, 0x00424c34)?;
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5170));
             break 'b_424c38;
         }
@@ -5250,6 +5320,7 @@ pub(crate) mod tests {
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
+    use crate::difftest::fakes::check_reaching;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
 
@@ -6314,7 +6385,7 @@ pub(crate) mod tests {
                 ee::s15::f_0042c968__generated,
             );
         }
-        c.g[V0][0] = c.bus.read32(RECV_RESULT) as u64 as i64 as i64 as u64;
+        c.g[V0][0] = c.bus.read32(RECV_RESULT) as i32 as i64 as u64;
         c.cycles += 4;
         crate::abi::ret(c);
     }
@@ -6343,7 +6414,7 @@ pub(crate) mod tests {
                 ee::s15::f_0042c9a0__generated,
             );
         }
-        c.g[V0][0] = c.bus.read32(SEND_RESULT) as u64 as i64 as i64 as u64;
+        c.g[V0][0] = c.bus.read32(SEND_RESULT) as i32 as i64 as u64;
         c.cycles += 4;
         crate::abi::ret(c);
     }
@@ -6372,7 +6443,7 @@ pub(crate) mod tests {
                 ee::s15::f_0042c910__generated,
             );
         }
-        c.g[V0][0] = c.bus.read32(REQ_RESULT) as u64 as i64 as i64 as u64;
+        c.g[V0][0] = c.bus.read32(REQ_RESULT) as i32 as i64 as u64;
         c.cycles += 4;
         crate::abi::ret(c);
     }
@@ -6480,8 +6551,10 @@ pub(crate) mod tests {
     }
 
     /// `libkernl_TtyDeci2Handler` over the mode digit: the Deci2 send
-    /// path (3), the ring paths (0-2, 4) and the early exits; the faked
-    /// receive/send report success or failure.
+    /// path (3), the ring arm (1, with an empty ring: the push loop runs
+    /// in the unwind and events tests), the clear-busy arm (4) and the
+    /// early exits (5, 0); mode 2 is not seeded. The faked receive/send
+    /// report success or failure.
     #[test]
     fn deci2_handler_matches() {
         hook_ex_recv();
@@ -6493,8 +6566,8 @@ pub(crate) mod tests {
             &|c, seed| {
                 machine(c, seed, 1_366_001, 1);
                 c.pc = 0x0042_4ea8;
-                // Mode digit: send path (3), ring paths (1, 4), early
-                // exits (5, 0).
+                // Mode digit: send path (3), ring arm (1), clear-busy
+                // arm (4), early exits (5, 0).
                 c.g[A0][0] = [3, 1, 4, 5, 0][seed as usize % 5] as u64;
                 c.g[A1][0] = [0, 8][seed as usize / 5 % 2] as u64;
                 c.g[A2][0] = (DATA + 0x1000) as u64;
@@ -6505,6 +6578,104 @@ pub(crate) mod tests {
                     .write32(RECV_RESULT, [4, 0xffff_ffff][seed as usize / 20 % 2]);
                 c.bus
                     .write32(SEND_RESULT, [4, 0xffff_ffff][seed as usize / 40 % 2]);
+            },
+        );
+    }
+
+    crate::difftest::events::driven!(deci2_driven, libkernl_tty_deci2_handler);
+    crate::difftest::events::driven!(deci2_generated_driven, ee::s15::f_00424ea8__generated);
+
+    /// `libkernl_TtyDeci2Handler` with events due in the ring-push loop
+    /// (the receive ring holds 0x80 bytes): an unwinding event at the back
+    /// edge returns at `0x424f78`, and `drive` re-enters there through the
+    /// entry guard; a delivered one continues inline.
+    #[test]
+    fn deci2_handler_events() {
+        hook_ex_recv();
+        hook_ex_send();
+        check_events(deci2_generated_driven, deci2_driven, SEEDS, &|c, seed| {
+            let mut r = machine(c, seed, 1_366_017, 0);
+            machine(c, seed, 1_366_001, 1);
+            c.pc = 0x0042_4ea8;
+            c.g[A0][0] = 1;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = (DATA + 0x1000) as u64;
+            tty_state(c, 0);
+            // The receive ring holds 0x80 distinct bytes and the push
+            // target's write pointer is real RAM, so each push lands.
+            deci2_ring(c, 0x80);
+            c.bus.write32(RECV_GATE, GATE_MAGIC);
+            c.bus.write32(SEND_GATE, GATE_MAGIC);
+            c.bus.write32(RECV_RESULT, 4);
+            c.bus.write32(SEND_RESULT, 4);
+            schedule(c, &mut r, seed, 0x0042_4ea8)
+        });
+    }
+
+    /// The ring-path state the push loop reads: the receive ring at
+    /// `DATA + 0x3000` holding `count` bytes, and the push target at
+    /// `DATA + 0x4000` whose write pointer (`+0xc`) is real RAM.
+    pub(crate) fn deci2_ring(c: &mut Cpu, count: u16) {
+        for i in 0..0x100u32 {
+            c.bus.write8(DATA + 0x3000 + i, 0x30 + (i % 0x40) as u8);
+        }
+        c.bus.write16(DATA + 0x3000, count);
+        c.bus.write32(DATA + 0x400c, DATA + 0x5000);
+    }
+
+    /// `libkernl_TtyDeci2Handler` called once (not driven) with a VBlank
+    /// due in the push loop: the back edge at `0x424f78` unwinds, and the
+    /// handler returns there with the unwind bit set instead of finishing.
+    #[test]
+    fn deci2_handler_unwind_matches() {
+        hook_ex_recv();
+        hook_ex_send();
+        check(
+            ee::s15::f_00424ea8__generated,
+            libkernl_tty_deci2_handler,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_366_031, 0);
+                c.g[A0][0] = 1;
+                c.g[A1][0] = 0;
+                c.g[A2][0] = (DATA + 0x1000) as u64;
+                tty_state(c, 0);
+                deci2_ring(c, 0x80);
+                c.bus.write32(RECV_GATE, GATE_MAGIC);
+                c.bus.write32(SEND_GATE, GATE_MAGIC);
+                // Every seed in the unwinding mode (`schedule` picks it
+                // for `seed % 3 == 1`).
+                schedule(c, &mut r, seed * 3 + 1, 0x0042_4ea8);
+            },
+        );
+    }
+
+    /// `libkernl_TtyDeci2Handler` re-entered at its loop head `0x424f78`
+    /// (where the back-edge unwind resumes), mid-loop: frame saved, ring
+    /// pointer in `s2`/`v1`, index in `s0` below the ring count.
+    #[test]
+    fn deci2_handler_resume_matches() {
+        check(
+            ee::s15::f_00424ea8__generated,
+            libkernl_tty_deci2_handler,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_366_032, 0);
+                tty_state(c, 0);
+                deci2_ring(c, 0x20 + (seed % 4) as u16);
+                let sp = crate::difftest::SP - 0x40;
+                c.g[SP][0] = sp as u64;
+                c.bus.write64(sp, 0x5050_5050_0000_0000 + seed as u64);
+                c.bus
+                    .write64(sp + 0x10, 0x5151_5151_0000_0000 + seed as u64);
+                c.bus
+                    .write64(sp + 0x20, 0x5252_5252_0000_0000 + seed as u64);
+                c.bus.write64(sp + 0x30, crate::difftest::RA as u64);
+                c.g[S1][0] = (DATA + 0x1000) as u64;
+                c.g[S2][0] = (DATA + 0x3000) as u64;
+                c.g[V1][0] = (DATA + 0x3000) as u64;
+                c.g[S0][0] = (0xd + seed % 0x10) as u64;
+                c.pc = 0x0042_4f78;
             },
         );
     }
@@ -6552,6 +6723,39 @@ pub(crate) mod tests {
         );
     }
 
+    crate::difftest::events::driven!(tty_write_driven, libkernl_tty_write);
+    crate::difftest::events::driven!(tty_write_generated_driven, ee::s15::f_00425040__generated);
+
+    /// `libkernl_TtyWrite` with events due: deliveries in the copy
+    /// loop deliver inline on both sides.
+    #[test]
+    fn tty_write_events() {
+        hook_req_send();
+        hook_poll();
+        check_events(
+            tty_write_generated_driven,
+            tty_write_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_366_015, 0);
+                machine(c, seed, 1_366_002, 1);
+                c.pc = 0x0042_5040;
+                let lock = [0, 1][seed as usize % 2];
+                c.bus.write32(0x0052_b8dc, lock);
+                c.bus.write32(0x0052_b8e0, 0);
+                let count = [0, 3, 0x20, 0x150][seed as usize / 2 % 4];
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                c.g[A1][0] = count as u64;
+                tty_src(c, 0x300);
+                c.bus.write32(REQ_GATE, GATE_MAGIC);
+                c.bus.write32(POLL_GATE, GATE_MAGIC);
+                c.bus
+                    .write32(REQ_RESULT, [0, 0xffff_ffff][seed as usize / 8 % 2]);
+                schedule(c, &mut r, seed, 0x0042_5040)
+            },
+        );
+    }
+
     /// `libkernl_TtyRead` over the count (empty, single, multi-byte) and
     /// the first bytes (newline, CR, plain then newline, plain to
     /// exhaustion); the ring always has data ready (the not-ready spin
@@ -6586,8 +6790,45 @@ pub(crate) mod tests {
         );
     }
 
+    crate::difftest::events::driven!(tty_read_driven, libkernl_tty_read);
+    crate::difftest::events::driven!(tty_read_generated_driven, ee::s15::f_00425190__generated);
+
+    /// `libkernl_TtyRead` with events due: deliveries in the scan loop
+    /// deliver inline on both sides. The empty
+    /// read returns before any event check, and short reads can finish
+    /// before the first due event, so the events fixture uses long
+    /// reads (the arm shapes are covered by the entry test).
+    #[test]
+    fn tty_read_events() {
+        check_events(
+            tty_read_generated_driven,
+            tty_read_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_366_016, 0);
+                machine(c, seed, 1_366_003, 1);
+                c.pc = 0x0042_5190;
+                c.bus.write32(0x0052_b8e8, DATA + 0x3100);
+                c.bus.write32(DATA + 0x3100, 0);
+                c.bus.write32(DATA + 0x3104, 0x20);
+                c.bus.write32(DATA + 0x3108, DATA + 0x3200);
+                c.bus.write32(DATA + 0x310c, 0);
+                for i in 0..0x20 {
+                    c.bus.write8(DATA + 0x3200 + i, 0x41 + (i % 26) as u8);
+                }
+                c.bus.write8(DATA + 0x3200 + 0x0a, 0x0a);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                c.g[A1][0] = [0x08, 0x10, 0x20, 0x10][seed as usize % 4] as u64;
+                schedule(c, &mut r, seed, 0x0042_5190)
+            },
+        );
+    }
+
     /// `libkernl_TtyInit` over the `sceDeci2Open` success/failure arms;
     /// the faked open reports a channel or -1 without touching hardware.
+    /// The state block (`0x52b8d0`) and the packet header (`0x52b900`,
+    /// stored through the uncached mirror) start non-zero, so each of the
+    /// success arm's zero and header stores changes RAM.
     #[test]
     fn tty_init_matches() {
         hook_open();
@@ -6598,6 +6839,10 @@ pub(crate) mod tests {
             &|c, seed| {
                 machine(c, seed, 1_366_004, 1);
                 c.pc = 0x0042_5260;
+                for i in 0..8 {
+                    c.bus.write32(0x0052_b8d0 + 4 * i, 0x5a5a_5a00 + i + seed);
+                    c.bus.write32(0x0052_b900 + 4 * i, 0x6b6b_6b00 + i + seed);
+                }
                 c.bus.write32(OPEN_GATE, GATE_MAGIC);
                 c.bus
                     .write32(OPEN_RESULT, [0, 0xffff_ffff][seed as usize % 2]);
@@ -6646,53 +6891,58 @@ pub(crate) mod tests {
                     0x3ff0_0000_0000_0000, // 1.0
                     0xc004_0000_0000_0000, // -2.5
                     0x4059_0000_0000_0000, // 100.0
-                    0x3ffb_9999_9999_999a, // 1.7
-                    0x4047_4567_89ab_cdef, // 41.63..
-                    0x41f0_0000_0000_0000, // 1e6
-                    0x3eb0_0000_0000_0000, // 1e-6
+                    0x3ffb_9999_9999_999a, // 1.725
+                    0x4047_4567_89ab_cdef, // 46.54
+                    0x41f0_0000_0000_0000, // 2^32
+                    0x3eb0_0000_0000_0000, // 2^-20
                     0x4320_0000_0000_0000, // 2^51
                     0x4330_0000_0000_0000, // 2^52
                     0x4340_0000_0000_0000, // 2^53
-                    0x4530_0000_0000_0000, // 1e32 (saturates)
-                    0x3a90_0000_0000_0000, // 1e-27 (zero)
-                    0xbeb0_0000_0000_0000, // -1e-6
+                    0x4530_0000_0000_0000, // 2^84 (saturates)
+                    0x3a90_0000_0000_0000, // 2^-86 (zero)
+                    0xbeb0_0000_0000_0000, // -2^-20
                     0x400c_0000_0000_0000, // 3.5
-                    0x4006_6666_6666_6666, // 2.7
+                    0x4006_6666_6666_6666, // 2.8
                 ][seed as usize % 16];
             },
         );
     }
 
-    /// Fixture for [`print_double_matches`]: the double in `A0` and the
-    /// putc gate pointing at the real buffered putc (flushes swallowed by
-    /// the faked `Deci2Kputs`).
+    /// Fixture for [`print_double_matches`]: the game's image (the 0.1
+    /// thresholds, the 1e6 scale and the three format strings at
+    /// `0x49ab80`), the double in `A0`, and the putc pointer aimed at the
+    /// real buffered putc (flushes swallowed by the faked `Deci2Kputs`).
+    /// Zero is left out: with the real thresholds it never leaves the
+    /// multiply loop, in the game too.
     pub(crate) fn print_double_fixture(c: &mut Cpu, seed: u32) {
         machine(c, seed, 1_366_008, 1);
+        crate::difftest::elf_image(c);
         c.pc = 0x0042_54d0;
         c.g[A0][0] = [
-            0x3ff0_0000_0000_0000, // 1.0
-            0xc004_0000_0000_0000, // -2.5
-            0x0000_0000_0000_0000, // 0.0
-            0x4059_0000_0000_0000, // 100.0
-            0x3eb0_0000_0000_0000, // 1e-6
+            0x3ff0_0000_0000_0000, // 1.0: divide loop once, "e+%d"
+            0xc004_0000_0000_0000, // -2.5: negation, divide loop
+            0x3fa9_9999_9999_999a, // 0.05: multiply loop once, "e%d"
+            0x4059_0000_0000_0000, // 100.0: divide loop three times
+            0x3eb0_c6f7_a0b5_ed8d, // 1e-6: multiply loop six times
             0x4009_21fb_5444_2d18, // pi
-            0x462e_6466_296d_0c95, // 1e30
-            0x3ff3_3333_3333_3333, // 1.2
-            0xc000_0000_0000_0000, // -2.0
-            0x40c8_0000_0000_0000, // 12345.0
+            0x462e_6466_296d_0c95, // 1e30: long divide loop
+            0x3fe0_0000_0000_0000, // 0.5: neither loop, "e+%d"
+            0xbfa9_9999_9999_999a, // -0.05: negation, multiply loop
+            0x3fb9_9999_9999_999a, // 0.1: the entry threshold itself
         ][seed as usize % 10];
         c.bus.write32(0x0045_5178, 0x0042_5358);
         c.bus.write32(0x0045_5174, 0);
         c.bus.write32(KPUTS_GATE, GATE_MAGIC);
     }
 
-    /// `libkernl_PrintDouble` over signs and magnitudes (negation,
-    /// multiply/divide normalization loops, both print tails). The
-    /// distinct cycle totals show each arm was taken.
+    /// `libkernl_PrintDouble` over signs and magnitudes: the negation, the
+    /// multiply loop (below 0.1) and the divide loop (1.0 and up), and both
+    /// exponent tails ("e%d" after the multiply loop, "e+%d" otherwise).
+    /// The mantissa prints as 0 for every input, in the game too
+    /// (`libkernl_DoubleToInt` reads the scaled integer as double bits), so
+    /// the sign and the exponent are what the printed text shows.
     #[test]
     fn print_double_matches() {
-        use crate::difftest::run_generated;
-        use std::collections::BTreeSet;
         hook_kputs();
         check(
             ee::s15::f_004254d0__generated,
@@ -6702,80 +6952,225 @@ pub(crate) mod tests {
                 print_double_fixture(c, seed);
             },
         );
+    }
+
+    /// Resume heads of `libkernl_PrintDouble`: every soft-float call
+    /// return plus the two normalization loop back edges.
+    const PRINT_DOUBLE_RESUME_HEADS: [u32; 15] = [
+        0x0042_54f8,
+        0x0042_5508,
+        0x0042_551c,
+        0x0042_552c,
+        0x0042_5550,
+        0x0042_5564,
+        0x0042_5584,
+        0x0042_55a8,
+        0x0042_55bc,
+        0x0042_55d4,
+        0x0042_55dc,
+        0x0042_55e4,
+        0x0042_55f0,
+        0x0042_5540,
+        0x0042_5598,
+    ];
+
+    /// Frame + prologue state for a resume at `head`: the entry
+    /// fixture lays down the putc gate, then the prologue is replayed
+    /// verbatim. `A0` is forced to a positive magnitude: the
+    /// multiply-normalization loop only terminates for non-negative
+    /// values (a real resume there always holds the absolute value).
+    /// `V0` carries a plausible callee result (`S0` for value
+    /// helpers, 0 for the compare helper).
+    fn print_double_resume_fixture(c: &mut Cpu, seed: u32) {
+        use ssx3_ee_rt::cpu::reg::*;
+        use ssx3_ee_rt::cpu::sx;
+        print_double_fixture(c, seed);
+        let mags = [
+            0x3ff0_0000_0000_0000, // 1.0
+            0x4059_0000_0000_0000, // 100.0
+            0x3eb0_0000_0000_0000, // 2^-20
+            0x4009_21fb_5444_2d18, // pi
+            0x462e_6466_296d_0c95, // 1e30
+            0x3ff3_3333_3333_3333, // 1.2
+            0x40c8_0000_0000_0000, // 12345.0
+        ];
+        c.g[A0][0] = mags[seed as usize % mags.len()];
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+        c.g[S2][0] = 0u64;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+        c.g[S0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+        c.g[S1][0] = 0u64;
+        let head = PRINT_DOUBLE_RESUME_HEADS[seed as usize % PRINT_DOUBLE_RESUME_HEADS.len()];
+        // Compare-helper returns: 0 takes the not-less arm; value
+        // helpers return their result into the working value.
+        c.g[V0][0] = match head {
+            0x0042_54f8 | 0x0042_5508 | 0x0042_552c | 0x0042_5564 | 0x0042_5584 | 0x0042_55bc => 0,
+            _ => c.g[S0][0],
+        };
+        c.g[A0][0] = c.g[S0][0];
+        c.pc = head;
+    }
+
+    /// Direct-entry resume test for `libkernl_PrintDouble`.
+    #[test]
+    fn print_double_resume_matches() {
+        use crate::difftest::{compare, strict_ok};
+        use std::collections::BTreeSet;
+        hook_kputs();
         let mut seen = BTreeSet::new();
         for seed in 0..SEEDS {
-            let mut c = crate::difftest::fresh();
-            print_double_fixture(&mut c, seed);
-            let before = c.cycles;
-            run_generated(&mut c, ee::s15::f_004254d0__generated);
-            seen.insert(c.cycles - before);
+            let head = PRINT_DOUBLE_RESUME_HEADS[seed as usize % PRINT_DOUBLE_RESUME_HEADS.len()];
+            seen.insert(head);
+            let r = compare(
+                ee::s15::f_004254d0__generated,
+                libkernl_print_double,
+                &|c| print_double_resume_fixture(c, seed),
+            );
+            assert!(
+                r.hard.is_empty(),
+                "seed {seed} head {head:#x}: {:#?}",
+                r.hard
+            );
+            assert!(
+                strict_ok(&r.soft),
+                "seed {seed} head {head:#x} (scratch): {:#?}",
+                r.soft
+            );
         }
         assert!(
-            seen.len() >= 5,
-            "print arms not covered ({} paths): {:?}",
-            seen.len(),
-            seen
+            seen.len() == PRINT_DOUBLE_RESUME_HEADS.len(),
+            "resume heads not covered: {seen:?}",
         );
-        crate::difftest::require_paths(
-            ee::s15::f_004254d0__generated,
+    }
+
+    crate::difftest::events::driven!(print_double_driven, libkernl_print_double);
+    crate::difftest::events::driven!(
+        print_double_generated_driven,
+        ee::s15::f_004254d0__generated
+    );
+
+    /// Gate for the `libkernl_printf` fake below.
+    pub(crate) const PRINTF_GATE: u32 = DATA + 0x66b0;
+
+    /// `libkernl_printf` with the gate set: print nothing. Anywhere else (or
+    /// with the gate clear): the slot body.
+    pub(crate) fn fake_printf(c: &mut Cpu) {
+        if c.bus.read32(PRINTF_GATE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_printf),
+                ee::s15::f_00425c28__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn hook_printf() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00425C28),
+            fake_printf,
+            fakes::prev_cell(fake_printf),
+        );
+    }
+
+    /// `libkernl_PrintDouble` with events due in its two loops (heads
+    /// `0x425540`, multiply, and `0x425598`, divide): unwinds re-enter
+    /// through the entry guard identically. The printf calls are faked:
+    /// an unwind inside the real `vprintf` would leave a pc `drive` cannot
+    /// re-enter through this function (the entry test runs them for real).
+    #[test]
+    fn print_double_events() {
+        hook_kputs();
+        hook_printf();
+        check_events(
+            print_double_generated_driven,
+            print_double_driven,
             SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
             &|c, seed| {
+                let mut r = machine(c, seed, 1_366_013, 0);
                 print_double_fixture(c, seed);
+                c.bus.write32(PRINTF_GATE, GATE_MAGIC);
+                schedule(c, &mut r, seed, 0x0042_54d0)
             },
         );
     }
 
-    /// Fixture for [`vprintf_matches`]: format at `DATA + 0x500`, varargs
-    /// at `DATA + 0x6000` (ints, a string pointer, a `%n` word and double
-    /// bits), and the putc gate on the real buffered putc.
-    pub(crate) fn vprintf_fixture(c: &mut Cpu, seed: u32) {
-        machine(c, seed, 1_366_009, 1);
+    /// The vprintf rows: a format and its 8-byte vararg slots. The game's
+    /// spec table (`0x49abb0`, indexed from '0') has arms for `0 c d e f h
+    /// l o s u x` only; every other character in '1'..'x' takes the skip
+    /// arm 0x425bd8, and anything outside it (`%`, `-`, `+`, space, `y`)
+    /// the bound-fail arm 0x425bd0.
+    const VPRINTF_ROWS: [(&str, &[u64]); 10] = [
+        // Zero (0x425918), negative (0x425930) and positive `%d`.
+        ("%d %d %d", &[0, 0xffff_ffd6, 1234]),
+        // Zero and nonzero `%o %x %u` (0x42579c, 0x425858, 0x425a08), hex
+        // digits a-f (0x425880), an unsigned value past `i32::MAX`.
+        ("%o %o %x %x %u %u", &[0, 0x29c, 0, 0x1a2b, 0, 0xee6b_2800]),
+        // `l` and `h` on every conversion (64-bit and 16-bit reads).
+        (
+            "%lo %ho %lx %hx %lu %hu %ld %hd",
+            &[
+                0x0001_0000_0000_0007,
+                0xffff_0000_0001_0009,
+                0x0000_0001_0000_00ab,
+                0x1234_5678_0000_abcd,
+                0x0000_0001_0000_0000,
+                0xffff_0000_0000_fffe,
+                0xffff_ffff_ffff_fffb,
+                0x0000_0000_0000_ff9c,
+            ],
+        ),
+        // Zero-padded widths on each conversion; `%00d` (width 0) takes
+        // the back edge to 0x425690, `%050d` the clamp to 31.
+        (
+            "[%05d][%05x][%05o][%05u][%00d][%012d][%050d][%0d]",
+            &[0xffff_ffd6, 0x1f, 8, 7, 5, 123, 9, 6],
+        ),
+        // `%c`, a string and an empty string ("(null)").
+        (
+            "%c%s|%s",
+            &[0x41, (DATA + 0x6100) as u64, (DATA + 0x6200) as u64],
+        ),
+        // `%f`/`%e` read the slot's low word as a float: nonzero ones run
+        // `PrintDouble` (0x425ad4), 0.0 prints '0' (0x425abc).
+        ("%f %e %f %f", &[0x3f80_0000, 0x3d4c_cccd, 0, 0xc020_0000]),
+        // Skip arms: '%', '-', 'y' fail the bound (0x425bd0); '5', 'E',
+        // 'i' have no arm (0x425bd8). No slot is read.
+        ("%%|%5d|%-d|%y|%E|%i.", &[]),
+        // Empty format.
+        ("", &[]),
+        // A newline flushes the buffered putc through `Deci2Kputs`.
+        ("a=%d\nb", &[7]),
+        // Literal text only.
+        ("lit-only-no-specs-at-all-0123456789", &[]),
+    ];
+
+    /// Shared vprintf setup: the game's image (spec table, `__clz_tab`,
+    /// float constants), row `seed % 10` with its format at `DATA + 0x500`
+    /// and slots at `DATA + 0x6000`, the strings at `DATA + 0x6100`, the
+    /// putc pointer on the real buffered putc, and the interrupt-enable
+    /// bit (the exit's `EIntr` arm 0x425bf4) from the next seed digit.
+    fn vprintf_setup(c: &mut Cpu, seed: u32) {
+        crate::difftest::elf_image(c);
         c.pc = 0x0042_5638;
-        let fmts = [
-            "hi",
-            "n=%d!",
-            "x=%x o=%o u=%u",
-            "%c:%s.",
-            "v=%f",
-            "p=%p n=%n%%",
-            "[%.3d][%5d][%-4d][%04d]",
-            "[%ld][%hd]",
-            "%e|%g",
-            "%X|%i",
-            "%s",
-            "%d%d%d",
-            "a%+d b% d c",
-            "h=%#x o=%#o z=%#x",
-            "w=%10d l=%-10d z=%010d",
-            "p=%.0d q=%.5d r=%5.2d",
-            "s=%.2s t=%5.2s e=",
-            "f=%10.3f g=%-8.2f h=%.0e",
-            "E=%E",
-            "lit-only-no-specs-at-all-0123456789",
-            "perc=%% end",
-            "big=%u zero=%o neg=%d min=%d",
-            "X=%X x=%x I=%i",
-            "ld=%ld hd=%hd li=%li",
-        ];
-        let fmt = fmts[seed as usize % fmts.len()];
+        let (fmt, slots) = VPRINTF_ROWS[seed as usize % VPRINTF_ROWS.len()];
         for (i, &b) in fmt.as_bytes().iter().enumerate() {
             c.bus.write8(DATA + 0x500 + i as u32, b);
         }
         c.bus.write8(DATA + 0x500 + fmt.len() as u32, 0);
+        for (i, &v) in slots.iter().enumerate() {
+            c.bus.write64(DATA + 0x6000 + 8 * i as u32, v);
+        }
         for (i, &b) in b"hi\0".iter().enumerate() {
             c.bus.write8(DATA + 0x6100 + i as u32, b);
         }
         c.bus.write32(DATA + 0x6200, 0);
-        c.bus.write32(DATA + 0x6000, 0x1234);
-        c.bus.write32(DATA + 0x6004, 0x00ff_00ff);
-        c.bus.write32(DATA + 0x6008, DATA + 0x6100);
-        c.bus.write32(DATA + 0x600c, 42);
-        c.bus.write32(DATA + 0x6010, 0x3ff0_0000);
-        c.bus.write32(DATA + 0x6014, 0x0000_0000);
-        c.bus.write32(DATA + 0x6018, DATA + 0x6200);
-        c.bus.write32(DATA + 0x601c, 0x7fff_ffff);
-        c.bus.write32(DATA + 0x6020, 0x8000_0001);
+        eie(c, seed / VPRINTF_ROWS.len() as u32);
         c.g[A0][0] = (DATA + 0x500) as u64;
         c.g[A1][0] = (DATA + 0x6000) as u64;
         c.bus.write32(0x0045_5178, 0x0042_5358);
@@ -6783,14 +7178,20 @@ pub(crate) mod tests {
         c.bus.write32(KPUTS_GATE, GATE_MAGIC);
     }
 
-    /// `libkernl_vprintf` over the common specifiers, flags, widths and
-    /// lengths; the real float/double helpers and `PrintDouble` run, and
-    /// flushes go through the faked `Deci2Kputs`. The distinct cycle
-    /// totals show each arm was taken.
+    /// Fixture for [`vprintf_matches`]: [`vprintf_setup`] on a machine
+    /// whose first fake call may unwind.
+    pub(crate) fn vprintf_fixture(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 1_366_009, 1);
+        vprintf_setup(c, seed);
+    }
+
+    /// `libkernl_vprintf` over the rows of [`VPRINTF_ROWS`]: every
+    /// conversion arm of the game's spec table with zero, negative and
+    /// wide values, the `l`/`h` lengths, zero-padded widths, both skip
+    /// arms and the newline flush; the real float helpers and
+    /// `PrintDouble` run, and flushes go through the faked `Deci2Kputs`.
     #[test]
     fn vprintf_matches() {
-        use crate::difftest::run_generated;
-        use std::collections::BTreeSet;
         hook_kputs();
         check(
             ee::s15::f_00425638__generated,
@@ -6800,26 +7201,167 @@ pub(crate) mod tests {
                 vprintf_fixture(c, seed);
             },
         );
+    }
+
+    /// Resume heads of `libkernl_vprintf`: the DIntr return, every
+    /// putc-table call return, and every loop back edge.
+    const VPRINTF_RESUME_HEADS: [u32; 38] = [
+        0x0042_5668,
+        0x0042_580c,
+        0x0042_58cc,
+        0x0042_5940,
+        0x0042_5958,
+        0x0042_5974,
+        0x0042_59bc,
+        0x0042_5a30,
+        0x0042_5a4c,
+        0x0042_5a8c,
+        0x0042_5acc,
+        0x0042_5adc,
+        0x0042_5ae4,
+        0x0042_5b14,
+        0x0042_5b20,
+        0x0042_5b2c,
+        0x0042_5b38,
+        0x0042_5b44,
+        0x0042_5b50,
+        0x0042_5b7c,
+        0x0042_5bb0,
+        0x0042_5bc8,
+        0x0042_5bfc,
+        0x0042_5678,
+        0x0042_5690,
+        0x0042_5694,
+        0x0042_5698,
+        0x0042_5728,
+        0x0042_5754,
+        0x0042_57b8,
+        0x0042_57f8,
+        0x0042_5870,
+        0x0042_58b8,
+        0x0042_5950,
+        0x0042_59a8,
+        0x0042_5a28,
+        0x0042_5a78,
+        0x0042_5b68,
+    ];
+
+    /// Frame + prologue state for a resume at `head`: the entry
+    /// fixture lays down the format, varargs and putc gate, then the
+    /// prologue is replayed verbatim. Counters start small (`A1`,
+    /// accumulators zeroed) so every loop back edge terminates
+    /// quickly; pointers stay on the fixture words. `V0` needs no
+    /// preset: every resume path reloads it before branching on it.
+    fn vprintf_resume_fixture(c: &mut Cpu, seed: u32) {
+        use ssx3_ee_rt::cpu::reg::*;
+        use ssx3_ee_rt::cpu::sx;
+        vprintf_fixture(c, seed);
+        // The digit loops call the generated `__moddi3`/`__divdi3`,
+        // which normalize through the game's `__clz_tab` at
+        // `0x4a0000 - 0x51e8` (test RAM starts zeroed): without it the
+        // quotients are garbage and the loop never converges.
+        crate::game::lib::gcc::tests::clz_table(c, 0x0049_ae18);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+        c.g[S3][0] = c.g[A1][0];
+        c.g[S0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[S6][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x90), c.g[RA][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[S5][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+        c.g[A0][0] = (DATA + 0x500) as u64;
+        c.g[A1][0] = 3;
+        c.g[V0][0] = 0;
+        c.g[S1][0] = 0;
+        c.g[S2][0] = 0;
+        c.g[S4][0] = 0;
+        c.g[S5][0] = 0x450000;
+        c.g[S6][0] = 0;
+        c.g[S7][0] = 0;
+        let head = VPRINTF_RESUME_HEADS[seed as usize % VPRINTF_RESUME_HEADS.len()];
+        match head {
+            // Digit-emission loops read the value from `A0` first (the
+            // previous arm moves `S1` there) and build the digits at
+            // `S0`: a real unwind leaves `A0 == S1 == value` with `S0`
+            // in the digit buffer, not the format pointer. Stage a
+            // scratch buffer with digits and a NUL like the stack
+            // buffer would hold, so the resume runs the loop and the
+            // emit tail to completion.
+            0x0042_5950 | 0x0042_5a28 => {
+                // A real unwind leaves the value in `A0`/`S1` and the
+                // stack digit buffer in `S0` (NUL at `SP + 0x1f`, digits
+                // built downward); the conversion tail then runs to
+                // completion and the outer scan exits at its NUL.
+                c.g[A0][0] = 0x1234;
+                c.g[S1][0] = 0x1234;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x1f));
+                c.bus.write8((c.g[SP][0] as u32).wrapping_add(0x1f), 0);
+            }
+            _ => {}
+        }
+        c.pc = head;
+    }
+
+    /// Direct-entry resume test for `libkernl_vprintf`.
+    #[test]
+    fn vprintf_resume_matches() {
+        use crate::difftest::{compare, strict_ok};
+        use std::collections::BTreeSet;
+        hook_kputs();
         let mut seen = BTreeSet::new();
         for seed in 0..SEEDS {
-            let mut c = crate::difftest::fresh();
-            vprintf_fixture(&mut c, seed);
-            let before = c.cycles;
-            run_generated(&mut c, ee::s15::f_00425638__generated);
-            seen.insert(c.cycles - before);
+            let head = VPRINTF_RESUME_HEADS[seed as usize % VPRINTF_RESUME_HEADS.len()];
+            seen.insert(head);
+            let r = compare(ee::s15::f_00425638__generated, libkernl_vprintf, &|c| {
+                vprintf_resume_fixture(c, seed)
+            });
+            assert!(
+                r.hard.is_empty(),
+                "seed {seed} head {head:#x}: {:#?}",
+                r.hard
+            );
+            assert!(
+                strict_ok(&r.soft),
+                "seed {seed} head {head:#x} (scratch): {:#?}",
+                r.soft
+            );
         }
         assert!(
-            seen.len() >= 8,
-            "printf arms not covered ({} paths): {:?}",
-            seen.len(),
-            seen
+            seen.len() == VPRINTF_RESUME_HEADS.len(),
+            "resume heads not covered: {seen:?}",
         );
-        crate::difftest::require_paths(
-            ee::s15::f_00425638__generated,
+    }
+
+    crate::difftest::events::driven!(vprintf_driven, libkernl_vprintf);
+    crate::difftest::events::driven!(vprintf_generated_driven, ee::s15::f_00425638__generated);
+
+    /// Events-test fixture: [`vprintf_setup`] with no fake-unwind lottery
+    /// (`drive` requires the UNWIND bit, which the lottery never sets), and
+    /// the `%f` row swapped for the first: an unwind inside the nested
+    /// `PrintDouble` would leave a pc `drive` cannot re-enter through
+    /// `vprintf` (the entry test runs that row).
+    pub(crate) fn vprintf_events_fixture(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 1_366_014, 0);
+        let row = seed as usize % VPRINTF_ROWS.len();
+        vprintf_setup(c, if row == 5 { seed - 5 } else { seed });
+    }
+
+    /// `libkernl_vprintf` with events due: deliveries in the format
+    /// scan and conversion loops unwind and re-enter identically.
+    #[test]
+    fn vprintf_events() {
+        hook_kputs();
+        check_events(
+            vprintf_generated_driven,
+            vprintf_driven,
             SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
             &|c, seed| {
-                vprintf_fixture(c, seed);
+                let mut r = machine(c, seed, 1_366_014, 0);
+                vprintf_events_fixture(c, seed);
+                schedule(c, &mut r, seed, 0x0042_5638)
             },
         );
     }
@@ -6877,10 +7419,10 @@ pub(crate) mod tests {
     /// `DisableIntc` with interrupts enabled/disabled on entry and distinct
     /// handler ids; the real `_DisableIntc` runs on both sides.
     #[test]
-    fn disable_intc_matches_2() {
+    fn disable_intc_guarded_matches() {
         check(
             ee::s15::f_00424880__generated,
-            disable_intc_2,
+            disable_intc_guarded,
             SEEDS,
             &|c, seed| {
                 machine(c, seed, 1_367_003, 1);
@@ -6894,10 +7436,10 @@ pub(crate) mod tests {
     /// `EnableIntc` with interrupts enabled/disabled on entry and distinct
     /// handler ids; the real `_EnableIntc` runs on both sides.
     #[test]
-    fn enable_intc_matches_2() {
+    fn enable_intc_guarded_matches() {
         check(
             ee::s15::f_004248e8__generated,
-            enable_intc_2,
+            enable_intc_guarded,
             SEEDS,
             &|c, seed| {
                 machine(c, seed, 1_367_004, 1);
@@ -6935,21 +7477,89 @@ pub(crate) mod tests {
     /// results).
     #[test]
     fn init_thread_helper_matches() {
-        check(
+        hook_create_sema();
+        hook_create_thread();
+        check_reaching(
             ee::s15::f_00424b78__generated,
             libkernl_init_thread_helper,
             SEEDS,
+            // The create-thread failure arm's DeleteSema, and the success
+            // tail's ChangeThreadPriority.
+            &[0x0042_4c00, 0x0042_4c34],
             &|c, seed| {
                 machine(c, seed, 1_367_006, 1);
                 c.pc = 0x0042_4b78;
+                // Thread id word: already set (return -1) or clear.
                 c.bus.write32(0x0045_5170, [1, 0][seed as usize % 2]);
+                c.bus.write32(CREATE_SEMA_GATE, GATE_MAGIC);
+                c.bus.write32(CREATE_THREAD_GATE, GATE_MAGIC);
+                // CreateSema and CreateThread succeed or fail (-1),
+                // independently.
                 c.bus
-                    .write32(fakes::LOG_RESULTS, [5, 0xffff_ffff][seed as usize / 2 % 2]);
+                    .write32(CREATE_SEMA_RESULT, [5, 0xffff_ffff][seed as usize / 2 % 2]);
                 c.bus.write32(
-                    fakes::LOG_RESULTS + 4,
+                    CREATE_THREAD_RESULT,
                     [7, 0xffff_ffff][seed as usize / 4 % 2],
                 );
             },
+        );
+    }
+
+    /// Gate + forced result for the `CreateSema` fake below.
+    pub(crate) const CREATE_SEMA_GATE: u32 = DATA + 0x66a0;
+
+    pub(crate) const CREATE_SEMA_RESULT: u32 = DATA + 0x66a4;
+
+    /// `CreateSema` with the gate set: report the forced id (sign-extended,
+    /// so -1 steers the failure arms). Anywhere else (or with the gate
+    /// clear): the slot body.
+    pub(crate) fn fake_create_sema(c: &mut Cpu) {
+        if c.bus.read32(CREATE_SEMA_GATE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_create_sema),
+                ee::s15::f_00423da0__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(CREATE_SEMA_RESULT) as i32 as i64 as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn hook_create_sema() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00423DA0),
+            fake_create_sema,
+            fakes::prev_cell(fake_create_sema),
+        );
+    }
+
+    /// Gate + forced result for the `CreateThread` fake below.
+    pub(crate) const CREATE_THREAD_GATE: u32 = DATA + 0x66a8;
+
+    pub(crate) const CREATE_THREAD_RESULT: u32 = DATA + 0x66ac;
+
+    /// `CreateThread` with the gate set: report the forced id
+    /// (sign-extended). Anywhere else (or with the gate clear): the slot
+    /// body.
+    pub(crate) fn fake_create_thread(c: &mut Cpu) {
+        if c.bus.read32(CREATE_THREAD_GATE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_create_thread),
+                ee::s15::f_00423ba0__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(CREATE_THREAD_RESULT) as i32 as i64 as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn hook_create_thread() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00423BA0),
+            fake_create_thread,
+            fakes::prev_cell(fake_create_thread),
         );
     }
 

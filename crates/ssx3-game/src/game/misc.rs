@@ -18831,151 +18831,6 @@ pub(crate) fn fseek_positioned(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
-pub(crate) mod oc1362_callee {
-    pub(crate) use crate::game::lib::sif::oc1362_callee::FD_SEMA_INIT;
-}
-
-pub(crate) mod oc1363_callee {
-    use super::ee;
-    use super::Callee;
-
-    /// `sceFs_GetFd` (`0x00427520`; same-module call).
-    pub(crate) const GET_FD: Callee = Callee {
-        addr: 0x0042_7520,
-        f: ee::s15::f_00427520,
-    };
-
-    /// `sceFs_Lock` (`0x00427988`).
-    pub(crate) const FS_LOCK: Callee = Callee {
-        addr: 0x0042_7988,
-        f: ee::s15::f_00427988,
-    };
-
-    /// `sceFs_Unlock` (`0x004279b8`).
-    pub(crate) const FS_UNLOCK: Callee = Callee {
-        addr: 0x0042_79b8,
-        f: ee::s15::f_004279b8,
-    };
-
-    /// `sceFsInit` (`0x00427a90`; brings the file system up when the
-    /// lock word is still clear).
-    pub(crate) const FS_INIT: Callee = Callee {
-        addr: 0x0042_7a90,
-        f: ee::s15::f_00427a90,
-    };
-
-    /// `memcpy` (`0x0041605c`).
-    pub(crate) const MEMCPY: Callee = Callee {
-        addr: 0x0041_605c,
-        f: ee::s15::f_0041605c,
-    };
-}
-
-pub(crate) mod oc1364_callee {
-    use super::ee;
-    use super::Callee;
-
-    /// `sceFs_Lock` (`0x00427988`).
-    pub(crate) const FS_LOCK: Callee = Callee {
-        addr: 0x0042_7988,
-        f: ee::s15::f_00427988,
-    };
-
-    /// `sceFs_Unlock` (`0x004279b8`).
-    pub(crate) const FS_UNLOCK: Callee = Callee {
-        addr: 0x0042_79b8,
-        f: ee::s15::f_004279b8,
-    };
-
-    /// `sceFsInit` (`0x00427a90`; brings the file system up when the
-    /// lock word is still clear).
-    pub(crate) const FS_INIT: Callee = Callee {
-        addr: 0x0042_7a90,
-        f: ee::s15::f_00427a90,
-    };
-
-    /// `sceFs_GetFd` (`0x00427520`).
-    pub(crate) const GET_FD: Callee = Callee {
-        addr: 0x0042_7520,
-        f: ee::s15::f_00427520,
-    };
-
-    /// `sceFs_AllocFd` (`0x00427498`; ported in oc1362).
-    pub(crate) const ALLOC_FD: Callee = Callee {
-        addr: 0x0042_7498,
-        f: ee::s15::f_00427498,
-    };
-
-    /// `sceFs_PathCmd` (`0x00428e18`; same-module call).
-    pub(crate) const PATH_CMD: Callee = Callee {
-        addr: 0x0042_8e18,
-        f: ee::s15::f_00428e18,
-    };
-}
-
-pub(crate) mod oc1365_callee {
-    use super::ee;
-    use super::Callee;
-
-    /// `sceFs_Lock` (`0x00427988`).
-    pub(crate) const FS_LOCK: Callee = Callee {
-        addr: 0x0042_7988,
-        f: ee::s15::f_00427988,
-    };
-
-    /// `sceFs_Unlock` (`0x004279b8`).
-    pub(crate) const FS_UNLOCK: Callee = Callee {
-        addr: 0x0042_79b8,
-        f: ee::s15::f_004279b8,
-    };
-
-    /// `sceFsInit` (`0x00427a90`; brings the file system up when the
-    /// lock word is still clear).
-    pub(crate) const FS_INIT: Callee = Callee {
-        addr: 0x0042_7a90,
-        f: ee::s15::f_00427a90,
-    };
-
-    /// `sceFs_GetFd` (`0x00427520`).
-    pub(crate) const GET_FD: Callee = Callee {
-        addr: 0x0042_7520,
-        f: ee::s15::f_00427520,
-    };
-}
-
-pub(crate) mod oc1366_callee {
-    pub(crate) use crate::game::lib::kernel::oc1366_callee::VPRINTF;
-}
-
-pub(crate) mod oc1368_callee {
-    use super::ee;
-    use super::Callee;
-
-    /// `DisableDmac` (`0x00424950`).
-    pub(crate) const DISABLE_DMAC: Callee = Callee {
-        addr: 0x0042_4950,
-        f: ee::s15::f_00424950,
-    };
-
-    /// `AddDmacHandler` (`0x00423ab0`).
-    pub(crate) const ADD_DMAC_HANDLER: Callee = Callee {
-        addr: 0x0042_3ab0,
-        f: ee::s15::f_00423ab0,
-    };
-
-    /// `EnableDmac` (`0x004249b8`).
-    pub(crate) const ENABLE_DMAC: Callee = Callee {
-        addr: 0x0042_49b8,
-        f: ee::s15::f_004249b8,
-    };
-
-    /// `RemoveDmacHandler` (`0x00423ad0`).
-    pub(crate) const REMOVE_DMAC_HANDLER: Callee = Callee {
-        addr: 0x0042_3ad0,
-        f: ee::s15::f_00423ad0,
-    };
-}
-
 // ---------------------------------------------------------------------------
 // Kernel syscall stubs: each sets its code in `v1` and traps (return address
 // `ret`, trap at `ret - 4`), then a due-event check and `jr ra`.
@@ -19066,7 +18921,7 @@ pub fn get_memory_size(c: &mut Cpu) {
 /// it busy), release and report it; report 0 when the table is full. The
 /// scan checks for due events on its back edge.
 pub fn sce_fs_alloc_fd(c: &mut Cpu) {
-    use oc1362_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_42750c: {
             'b_427500: {
@@ -19143,7 +18998,7 @@ pub fn sce_fs_alloc_fd(c: &mut Cpu) {
 /// (`0x52ec00 + (fd << 4)`), or null when `fd` is out of range; the
 /// table semaphore is held across the lookup either way.
 pub fn sce_fs_get_fd(c: &mut Cpu) {
-    use oc1362_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_427578: {
             'b_427560: {
@@ -19694,104 +19549,83 @@ pub fn sce_fs_rcv_intr_handler(c: &mut Cpu) {
 #[cfg(test)]
 mod rcv_tests {
     use super::*;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
     use crate::difftest::fakes::machine;
-    use crate::difftest::{check, fresh, require_paths, run_generated, DATA};
+    use crate::difftest::{check, DATA};
 
     pub(crate) const SEEDS: u32 = 200;
 
-    /// Fixture for [`rcv_intr_handler_matches`]: the FS receive packet at
-    /// the computed S0 window, the jump table, and the SIF words the tail
-    /// consults. `shape` selects the arm.
+    /// Receive commands and their packet words (`+0x14`, `+0x18`, `+0x1c`,
+    /// `+0x20`). The game's table at `0x49ace0` (indexed by `cmd - 2`,
+    /// bound 0x19) sends 2 to the two-buffer copy (0x427658), 11 to the
+    /// 0x144-byte copy (0x427700), 12 to the 0x40-byte copy (0x4277cc), 23,
+    /// 25 and 26 to the `memcpy` arm (0x427868) and the rest to the tail.
+    const RCV_ROWS: [(u32, [u32; 4]); 11] = [
+        // Out of the table's range, and in range with no arm.
+        (0, [0, 0, 0, 0]),
+        (3, [0, 0, 0, 0]),
+        // Two-buffer copy: neither, the first (3 bytes), the second (2
+        // bytes), both.
+        (2, [0, 0, DATA + 0x7300, DATA + 0x7400]),
+        (2, [3, 0, DATA + 0x7300, DATA + 0x7400]),
+        (2, [0, 2, DATA + 0x7300, DATA + 0x7400]),
+        (2, [3, 2, DATA + 0x7300, DATA + 0x7400]),
+        // 0x144-byte copy to an aligned destination (0x427784) and an
+        // unaligned one (0x427728).
+        (11, [DATA + 0x7800, 0, 0, 0]),
+        (11, [DATA + 0x7a01, 0, 0, 0]),
+        // 0x40-byte copy.
+        (12, [DATA + 0x7c00, 0, 0, 0]),
+        // `memcpy` of 0x20 bytes, and of 0x401 clamped to 0x400.
+        (23, [DATA + 0x7d00, 0x20, 0, 0]),
+        (26, [DATA + 0x8000, 0x401, 0, 0]),
+    ];
+
+    /// Fixture for [`rcv_intr_handler_matches`]: the game's image (the
+    /// command table, the fd words at `0x455188`, all -1), command row
+    /// `seed % 11`, the sign word from the next digit (2: the payload
+    /// `memcpy` and `iSignalSema`; -1, -3: the fd word at index 0 or 5
+    /// matches and is cleared; -7: no fd word matches), and the receive
+    /// slot from the last (slot 0 with nothing pending, or slot 1).
     ///
-    /// S0 is not fixed: the prologue's `mult` folds the pending slot into
-    /// it (`V1 = slot * 0x440`, since `A1` is 0 with no pending packet and
-    /// the slot word otherwise), so `S0 = (0x52e380 + slot * 0x440) |
-    /// 0x20000000`. The fixture mirrors that computation and writes the
-    /// packet at the shape's own window; a fixed-base fixture reads zeroed
-    /// RAM and every shape collapses onto one path.
+    /// The packet sits at `S0 = (0x52e380 + slot * 0x440) | 0x20000000`
+    /// (the prologue folds the pending slot in with a `mult`), filled with
+    /// nonzero bytes so every copy moves real data.
     fn rcv_fixture(c: &mut Cpu, seed: u32) {
         machine(c, seed, 1_362_007, 0);
+        crate::difftest::elf_image(c);
         c.pc = 0x0042_7590;
-        let shape = seed as usize % 8;
-        // Pending flag + slot word. Pending forces slot 0's window only
-        // when the slot word is 0; slots 0 and 1 are both covered.
-        let pending = (shape % 2) as u32;
-        let slot = if pending == 0 {
-            0
-        } else {
-            (shape / 2 % 2) as u32
-        };
-        c.bus.write32(0x0045_5210, pending);
+        let (cmd, words) = RCV_ROWS[seed as usize % RCV_ROWS.len()];
+        let tail = seed as usize / RCV_ROWS.len() % 4;
+        let slot = (seed as usize / RCV_ROWS.len() / 4 % 2) as u32;
+        c.bus.write32(0x0045_5210, slot);
         c.g[A0][0] = (DATA + 0x7200) as u64;
         c.bus.write32(DATA + 0x7200 + 0xc, slot);
-        // The shape: sign word (negative skips the payload memcpy),
-        // command (2/3 hit the table, 4 reads the zero word past it and
-        // jumps out), both table arms, copy counts, tail dst alignment,
-        // and the fd word (match vs full scan).
-        let (sign, cmd, tbl, cnt1, cnt2, dst) = match shape {
-            0 => (2u32, 2u32, [0x0042_78b0, 0x0042_7658], 3, 2, DATA + 0x7100),
-            1 => (2, 2, [0x0042_7700, 0x0042_7658], 0, 2, DATA + 0x7101),
-            2 => (2, 3, [0x0042_78b0, 0x0042_77cc], 3, 2, DATA + 0x7100),
-            3 => (2, 3, [0x0042_78b0, 0x0042_7868], 0, 0, DATA + 0x7101),
-            4 => (
-                0xffff_ffff,
-                2,
-                [0x0042_7658, 0x0042_7658],
-                3,
-                2,
-                DATA + 0x7100,
-            ),
-            5 => (
-                0xffff_ffff,
-                2,
-                [0x0042_7658, 0x0042_7658],
-                0,
-                0,
-                DATA + 0x7101,
-            ),
-            6 => (2, 4, [0x0042_78b0, 0x0042_7658], 0, 0, DATA + 0x7100),
-            _ => (2, 3, [0x0042_78b0, 0x0042_7658], 3, 0, DATA + 0x7100),
-        };
-        // Receive packet window: sign, command, payload src/len, then the
-        // payload itself (dst word, counts, loop-1 base). The payload
-        // memcpy overwrites S0 + 0x10..0x1f when it runs, so the source
-        // buffer carries the same words the direct writes below lay down
-        // for the skipped-memcpy shapes.
         let s0 = 0x2052_e380 + slot * 0x440;
+        for i in 0..0x420u32 {
+            c.bus.write8(s0 + i, 0x41 + (i % 0x3b) as u8);
+        }
+        let sign = [2, 0xffff_ffff, 0xffff_fffd, 0xffff_fff9][tail];
         c.bus.write32(s0, sign);
         c.bus.write32(s0 + 0x4, cmd);
         c.bus.write32(s0 + 0x8, DATA + 0x7000);
         c.bus.write32(s0 + 0xc, 16);
-        c.bus.write32(s0 + 0x10, dst);
-        c.bus.write32(s0 + 0x14, cnt1);
-        c.bus.write32(s0 + 0x18, cnt2);
-        c.bus.write32(s0 + 0x1c, DATA + 0x7300);
-        // Loop-2 base (a RAM mirror, not a wild address) and its source.
-        c.bus.write32(s0 + 0x20, DATA + 0x7400);
-        for i in 0..16u32 {
-            c.bus.write8(DATA + 0x7300 + i, 0x61 + (i % 26) as u8);
-            c.bus.write8(DATA + 0x7400 + i, 0x61 + (i % 26) as u8);
+        for (i, w) in words.into_iter().enumerate() {
+            c.bus.write32(s0 + 0x14 + 4 * i as u32, w);
         }
-        // Payload source buffer: dst word, counts, loop-1 base.
-        c.bus.write32(DATA + 0x7000, dst);
-        c.bus.write32(DATA + 0x7004, cnt1);
-        c.bus.write32(DATA + 0x7008, cnt2);
-        c.bus.write32(DATA + 0x700c, DATA + 0x7300);
-        // Jump table: command -> arm (the +8 word stays 0: jump-out).
-        c.bus.write32(0x0049_ace0, tbl[0]);
-        c.bus.write32(0x0049_ace4, tbl[1]);
-        c.bus.write32(0x0049_ace8, 0);
-        // Fd-table word for the sign < 0 scan (match vs full scan).
-        c.bus.write32(0x0045_5188, [0, 1, 0x77][shape % 3]);
+        match tail {
+            1 => c.bus.write32(0x0045_5188, 1),
+            2 => c.bus.write32(0x0045_5188 + 4 * 5, 3),
+            _ => {}
+        }
     }
 
-    /// `sceFs_RcvIntrHandler` over pending/non-pending, the sign-skip,
-    /// both table arms, the jump-out word, both copy loops on/off, both
-    /// tail alignments and the fd match/full scan. The distinct cycle
-    /// totals show each arm was taken.
+    /// `sceFs_RcvIntrHandler` over [`RCV_ROWS`], the four sign tails and
+    /// both receive slots.
     #[test]
     fn rcv_intr_handler_matches() {
-        use std::collections::BTreeSet;
         check(
             ee::s15::f_00427590__generated,
             sce_fs_rcv_intr_handler,
@@ -19800,52 +19634,150 @@ mod rcv_tests {
                 rcv_fixture(c, seed);
             },
         );
+    }
+
+    /// Resume heads of `sceFs_RcvIntrHandler`: the memcpy-done point,
+    /// the dispatch point, the tail point, the two copy loops, the two
+    /// tail copy loops, and the fd-scan loop.
+    const RCV_RESUME_HEADS: [u32; 8] = [
+        0x0042_762c,
+        0x0042_78b0,
+        0x0042_7924,
+        0x0042_7680,
+        0x0042_76d0,
+        0x0042_7728,
+        0x0042_7784,
+        0x0042_78ec,
+    ];
+
+    /// Frame + receive state for a resume at `head`: the entry fixture
+    /// lays down the packet at the computed S0 window, then the frame
+    /// is built, S0 is folded the way the prologue's `mult` folds it,
+    /// the copied packet image is staged at the new SP, loop indices
+    /// start at 0, and per-head registers (copy-loop bases, tail
+    /// source) are preset so every head runs to completion. `V0` needs
+    /// no preset: every resume path reloads it before branching on it.
+    fn rcv_resume_fixture(c: &mut Cpu, seed: u32) {
+        let head = RCV_RESUME_HEADS[seed as usize % RCV_RESUME_HEADS.len()];
+        // The entry state each head belongs to: the 0x144-byte copy for
+        // the tail loops (unaligned and aligned destination), the full fd
+        // scan for its loop and the tail, the two-buffer copy (counts 3
+        // and 2) for the rest.
+        let (row, tail) = match head {
+            0x0042_7728 => (7, 0),
+            0x0042_7784 => (6, 0),
+            0x0042_78ec | 0x0042_7924 => (0, 3),
+            _ => (5, 0),
+        };
+        let slot = seed / RCV_RESUME_HEADS.len() as u32 % 2;
+        rcv_fixture(c, row + RCV_ROWS.len() as u32 * (tail + 4 * slot));
+        let sign = [2u32, 0xffff_ffff, 0xffff_fffd, 0xffff_fff9][tail as usize];
+        let (cmd, words) = RCV_ROWS[row as usize];
+        let dst = words[0];
+        let s0 = 0x2052_e380 + slot * 0x440;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+        c.g[S0][0] = s0 as u64;
+        c.g[A0][0] = (DATA + 0x7200) as u64;
+        c.g[A1][0] = slot as u64;
+        c.g[A2][0] = 0;
+        c.g[V0][0] = 0;
+        // Copied packet image (what the inline copy leaves at SP).
+        c.bus.write32(c.g[SP][0] as u32, sign);
+        c.bus.write32((c.g[SP][0] as u32).wrapping_add(0x4), cmd);
+        c.bus
+            .write32((c.g[SP][0] as u32).wrapping_add(0x8), DATA + 0x7000);
+        c.bus.write32((c.g[SP][0] as u32).wrapping_add(0xc), 16);
+        match head {
+            // Copy loops: bases and destination words.
+            0x0042_7680 | 0x0042_76d0 => {
+                c.g[A3][0] = (s0 + 0x14) as u64;
+                c.g[T0][0] = (DATA + 0x7300) as u64;
+                c.g[T2][0] = ((DATA + 0x7300) | 0x2000_0000) as u64;
+                c.g[T1][0] = (s0 + 0x24) as u64;
+            }
+            // Tail copy loops: source at the packet's align words, end
+            // at the packet window's far end, destination at the staged
+            // dst word.
+            0x0042_7728 | 0x0042_7784 => {
+                c.g[A0][0] = (s0 + 0x18) as u64;
+                c.g[V0][0] = sx(s0.wrapping_add(0x158));
+                c.g[A2][0] = dst as u64;
+            }
+            _ => {}
+        }
+        c.pc = head;
+    }
+
+    /// Direct-entry resume test for the receive handler: start at each
+    /// resume head with the saved frame in place and compare against
+    /// the generated resume path.
+    #[test]
+    fn rcv_intr_handler_resume_matches() {
+        use crate::difftest::{compare, strict_ok};
+        use std::collections::BTreeSet;
         let mut seen = BTreeSet::new();
         for seed in 0..SEEDS {
-            let mut c = fresh();
-            rcv_fixture(&mut c, seed);
-            c.pc = 0x0042_7590;
-            let before = c.cycles;
-            run_generated(&mut c, ee::s15::f_00427590__generated);
-            seen.insert(c.cycles - before);
+            let head = RCV_RESUME_HEADS[seed as usize % RCV_RESUME_HEADS.len()];
+            seen.insert(head);
+            let r = compare(
+                ee::s15::f_00427590__generated,
+                sce_fs_rcv_intr_handler,
+                &|c| rcv_resume_fixture(c, seed),
+            );
+            assert!(
+                r.hard.is_empty(),
+                "seed {seed} head {head:#x}: {:#?}",
+                r.hard
+            );
+            assert!(
+                strict_ok(&r.soft),
+                "seed {seed} head {head:#x} (scratch): {:#?}",
+                r.soft
+            );
         }
         assert!(
-            seen.len() >= 5,
-            "rcv arms not covered ({} paths): {:?}",
-            seen.len(),
-            seen
+            seen.len() == RCV_RESUME_HEADS.len(),
+            "resume heads not covered: {seen:?}",
         );
-        require_paths(
-            ee::s15::f_00427590__generated,
-            SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
-            &|c, seed| {
-                rcv_fixture(c, seed);
-            },
-        );
+    }
+
+    driven!(rcv_driven, sce_fs_rcv_intr_handler);
+    driven!(rcv_generated_driven, ee::s15::f_00427590__generated);
+
+    /// `sceFs_RcvIntrHandler` with events due: the copy loops deliver
+    /// inline at their heads (0x427680, 0x4276d0, 0x427728) on both sides.
+    #[test]
+    fn rcv_intr_handler_events() {
+        check_events(rcv_generated_driven, rcv_driven, SEEDS, &|c, seed| {
+            let mut r = machine(c, seed, 1_362_013, 0);
+            rcv_fixture(c, seed);
+            schedule(c, &mut r, seed, 0x0042_7590)
+        });
     }
 }
 
-/// The IO RPC send both families share: stage the packet command `cmd`
-/// and sub-command `t0` (the reply packet is already in `t1`), then
-/// `CallRpc`. Each caller names its own command constants; the shape
-/// (stores, registers, return check) is identical.
-pub(crate) fn io_call_rpc(c: &mut Cpu, cmd: u32, t0: u32, ret: u32) -> crate::call::Flow {
+/// The file-system RPC send every IO call shares: stage the command `a1`
+/// and the send size `t0` (the request packet is already in `a0`/`a3`, the
+/// reply packet in `t1`), then `sceSifCallRpc`. Both values are the full
+/// registers the original sets: a caller's command passes through whole.
+pub(crate) fn io_call_rpc(c: &mut Cpu, a1: u64, t0: u64, ret: u32) -> crate::call::Flow {
     c.sw(c.g[SP][0] as u32, 0u64);
-    c.g[A1][0] = cmd as u64;
+    c.g[A1][0] = a1;
     c.g[A2][0] = 0u64;
-    c.g[T0][0] = t0 as u64;
+    c.g[T0][0] = t0;
     c.g[T2][0] = 0x4;
     c.g[T3][0] = 0u64;
     CALL_RPC.call(c, ret)
 }
 
 /// `int sceClose(int fd)` (0x427fe8): close the fd-table slot for `fd`
-/// through the file-system RPC (command 1, sub-command 0x14); the reply
-/// word decides between 0 and -1. Bad slots, a missing lock word and a
-/// failed send report -1, -9 and -11.
+/// through the file-system RPC (command 1, sub-command 0x14); the result
+/// is 0, or the reply word when it is negative. A missing lock word
+/// reports -1, a bad slot -9, and a failed send or a clear reply flag -11.
 pub fn sce_close(c: &mut Cpu) {
-    use oc1363_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_428144: {
             'b_42803c: {
@@ -19997,12 +19929,13 @@ pub fn sce_close(c: &mut Cpu) {
     })
 }
 
-/// `int sceLseek(int fd, int off, int whence)` (0x428168): reposition
-/// the fd-table slot for `fd` through the file-system RPC (command 4,
-/// sub-command 0x1c); the reply word is the new position. Bad slots, a
-/// missing lock word and a failed send report -1, -9 and -11.
+/// `int sceLseek(int fd, int off, int whence)` (0x428168): reposition the
+/// fd-table slot for `fd` through the file-system RPC (command 4,
+/// sub-command 0x1c); the reply word is the new position. A missing lock
+/// word reports -1, a bad slot -9, and a failed send or a clear reply flag
+/// -11.
 pub fn sce_lseek(c: &mut Cpu) {
-    use oc1363_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_428378: {
             'b_4281cc: {
@@ -20266,10 +20199,11 @@ pub fn sce_lseek(c: &mut Cpu) {
 
 /// `int sceRead(int fd, void *buf, int size)` (0x4283a0): read `size`
 /// bytes from the fd-table slot for `fd` through the file-system RPC
-/// (command 2, sub-command 0x20); the reply word is the byte count. Bad
-/// slots, a missing lock word and a failed send report -1, -9 and -11.
+/// (command 2, sub-command 0x20); the reply word is the byte count. A
+/// missing lock word reports -1, a bad slot -9, and a failed send or a
+/// clear reply flag -11.
 pub fn sce_read(c: &mut Cpu) {
-    use oc1363_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_4285d0: {
             'b_42840c: {
@@ -20547,10 +20481,11 @@ pub fn sce_read(c: &mut Cpu) {
 
 /// `int sceWrite(int fd, const void *buf, int size)` (0x428600): write
 /// `size` bytes from `buf` through the file-system RPC (command 3,
-/// sub-command 0x30); the reply word is the byte count. Bad slots, a
-/// missing lock word and a failed send report -1, -9 and -11.
+/// sub-command 0x30); the reply word is the byte count. A missing lock
+/// word reports -1, a bad slot -9, and a failed send or a clear reply flag
+/// -11.
 pub fn sce_write(c: &mut Cpu) {
-    use oc1363_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_428890: {
             'b_42866c: {
@@ -20890,7 +20825,7 @@ pub fn sce_write(c: &mut Cpu) {
 /// slots and a missing lock word report -9; a failed send reports -11.
 /// A clear lock word runs `sceFsInit` first.
 pub fn sce_ioctl(c: &mut Cpu) {
-    use oc1363_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_428928: {
             c.cycles += 24;
@@ -21319,7 +21254,7 @@ pub fn sce_ioctl(c: &mut Cpu) {
 /// nonzero. Bad slots and a missing lock word report -9; a failed send
 /// reports -11. A clear lock word runs `sceFsInit` first.
 pub fn sce_ioctl2(c: &mut Cpu) {
-    use oc1363_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_428ca4: {
             c.cycles += 25;
@@ -21525,26 +21460,13 @@ pub fn sce_ioctl2(c: &mut Cpu) {
     })
 }
 
-/// The IO RPC send the path family shares: stage the packet command `cmd`
-/// and sub-command `t0` (the reply packet is already in `t1`), then
-/// `CallRpc`. Each caller names its own command constants; the shape
-/// (stores, registers, return check) is identical.
-pub(crate) fn io_call_rpc_2(c: &mut Cpu, cmd: u32, t0: u32, ret: u32) -> crate::call::Flow {
-    c.sw(c.g[SP][0] as u32, 0u64);
-    c.g[A1][0] = cmd as u64;
-    c.g[A2][0] = 0u64;
-    c.g[T0][0] = t0 as u64;
-    c.g[T2][0] = 0x4;
-    c.g[T3][0] = 0u64;
-    CALL_RPC.call(c, ret)
-}
-
-/// `int sceFs_PathCmd(int cmd, const char *path)` (0x428e18): copy
-/// `path` into the file-system packet (at most 1024 bytes; longer paths
-/// report through the 0x40c sub-command) and send it as command `cmd`.
-/// A clear lock word runs `sceFsInit` first; a failed send reports -11.
+/// `int sceFs_PathCmd(const char *path, int cmd)` (0x428e18): copy `path`
+/// into the file-system packet (a path of 1024 bytes or more is cut to
+/// 1023) and send it as command `cmd` (the whole register) with the length
+/// plus 0xd as the size; the result is the reply word. A clear lock word
+/// runs `sceFsInit` first; a failed send or a clear reply flag reports -11.
 pub fn sce_fs_path_cmd(c: &mut Cpu) {
-    use oc1364_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_428e74: {
             c.cycles += 20;
@@ -21657,10 +21579,10 @@ pub fn sce_fs_path_cmd(c: &mut Cpu) {
                 c.g[A3][0] = sx((c.g[S7][0] as u32).wrapping_sub(0x2900));
                 c.g[T1][0] = c.g[S4][0];
                 // Path send: command `cmd`, sub-command length + 0xd.
-                io_call_rpc_2(
+                io_call_rpc(
                     c,
-                    c.g[S6][0] as u32,
-                    c.g[S0][0].wrapping_add(0xd) as u32,
+                    c.g[S6][0],
+                    sx((c.g[S0][0] as u32).wrapping_add(0xd)),
                     0x00428f38,
                 )?;
                 let t = (c.g[V0][0] as i64) >= 0;
@@ -21730,7 +21652,7 @@ pub fn sce_fs_path_cmd(c: &mut Cpu) {
 /// beside it, and send it as command 7. A clear lock word runs
 /// `sceFsInit` first; a failed send reports -11.
 pub fn sce_mkdir(c: &mut Cpu) {
-    use oc1364_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_42903c: {
             c.cycles += 20;
@@ -21843,7 +21765,7 @@ pub fn sce_mkdir(c: &mut Cpu) {
                 c.g[A3][0] = sx((c.g[S7][0] as u32).wrapping_sub(0x2900));
                 c.g[T1][0] = c.g[S4][0];
                 // Mkdir send shape (command 7, sub-command length + 0x11).
-                io_call_rpc_2(c, 7, c.g[S0][0].wrapping_add(0x11) as u32, 0x00429108)?;
+                io_call_rpc(c, 7, sx((c.g[S0][0] as u32).wrapping_add(0x11)), 0x00429108)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -21911,7 +21833,7 @@ pub fn sce_mkdir(c: &mut Cpu) {
 /// clear lock word runs `sceFsInit` first; send and reply failures both
 /// report -1.
 pub fn sce_add_drv(c: &mut Cpu) {
-    use oc1364_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_429468: {
             c.cycles += 15;
@@ -21959,7 +21881,7 @@ pub fn sce_add_drv(c: &mut Cpu) {
                 c.g[A3][0] = c.g[S0][0];
                 c.g[T1][0] = c.g[S2][0];
                 // AddDrv send shape (command 0xf, sub-command 0x10).
-                io_call_rpc_2(c, 0xf, 0x10, 0x004294cc)?;
+                io_call_rpc(c, 0xf, 0x10, 0x004294cc)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -22024,7 +21946,7 @@ pub fn sce_add_drv(c: &mut Cpu) {
 /// reports -19, a failed path command reports its own code, and a clear
 /// lock word runs `sceFsInit` first.
 pub fn sce_dopen(c: &mut Cpu) {
-    use oc1364_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_429598: {
             c.cycles += 12;
@@ -22118,13 +22040,13 @@ pub fn sce_dopen(c: &mut Cpu) {
     })
 }
 
-/// `int sceDclose(int fd)` (0x429628): close the directory descriptor
-/// for the fd-table slot for `fd` through the file-system RPC (command
-/// 0xa, sub-command 0x14); the reply word decides between 0 and -1.
-/// Bad slots, a missing lock word and a failed send report -1, -9
-/// and -11.
+/// `int sceDclose(int fd)` (0x429628): close the directory descriptor for
+/// the fd-table slot for `fd` through the file-system RPC (command 0xa,
+/// sub-command 0x14); the result is 0, or the reply word when it is
+/// negative. A missing lock word reports -1, a bad slot -9, and a failed
+/// send or a clear reply flag -11.
 pub fn sce_dclose(c: &mut Cpu) {
-    use oc1364_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_429770: {
             'b_42967c: {
@@ -22206,7 +22128,7 @@ pub fn sce_dclose(c: &mut Cpu) {
                 c.g[A3][0] = c.g[S2][0];
                 c.g[T1][0] = c.g[S3][0];
                 // Shared IO send shape (command 0xa, sub-command 0x14).
-                io_call_rpc_2(c, 0xa, 0x14, 0x00429708)?;
+                io_call_rpc(c, 0xa, 0x14, 0x00429708)?;
                 if (c.g[V0][0] as i64) >= 0 {
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
                     break 'b_429728;
@@ -22272,11 +22194,11 @@ pub fn sce_dclose(c: &mut Cpu) {
 }
 
 /// `int sceDread(int fd, void *buf)` (0x429790): read the next directory
-/// entry for the fd-table slot for `fd` into `buf` through the
-/// file-system RPC (command 0xb, sub-command 0x20). Bad slots, a missing
-/// lock word and a failed send report -1, -9 and -11.
+/// entry for the fd-table slot for `fd` into `buf` through the file-system
+/// RPC (command 0xb, sub-command 0x20). A missing lock word reports -1, a
+/// bad slot -9, and a failed send or a clear reply flag -11.
 pub fn sce_dread(c: &mut Cpu) {
-    use oc1364_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_4298cc: {
             'b_4297e4: {
@@ -22359,7 +22281,7 @@ pub fn sce_dread(c: &mut Cpu) {
                 c.g[A3][0] = c.g[S2][0];
                 c.g[T1][0] = c.g[S0][0];
                 // Shared IO send shape (command 0xb, sub-command 0x20).
-                io_call_rpc_2(c, 0xb, 0x20, 0x00429874)?;
+                io_call_rpc(c, 0xb, 0x20, 0x00429874)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -22423,7 +22345,7 @@ pub fn sce_dread(c: &mut Cpu) {
 /// pointer staged beside it, and send it as command 0xc. A clear lock
 /// word runs `sceFsInit` first; a failed send reports -11.
 pub fn sce_getstat(c: &mut Cpu) {
-    use oc1364_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_429944: {
             c.cycles += 20;
@@ -22535,7 +22457,12 @@ pub fn sce_getstat(c: &mut Cpu) {
                 c.g[A3][0] = sx((c.g[S7][0] as u32).wrapping_sub(0x2900));
                 c.g[T1][0] = c.g[S4][0];
                 // Getstat send shape (command 0xc, sub-command length + 0x11).
-                io_call_rpc_2(c, 0xc, c.g[S0][0].wrapping_add(0x11) as u32, 0x00429a04)?;
+                io_call_rpc(
+                    c,
+                    0xc,
+                    sx((c.g[S0][0] as u32).wrapping_add(0x11)),
+                    0x00429a04,
+                )?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -22598,26 +22525,12 @@ pub fn sce_getstat(c: &mut Cpu) {
     })
 }
 
-/// The IO RPC send the path family shares: stage the packet command `cmd`
-/// and sub-command `t0` (the reply packet is already in `t1`), then
-/// `CallRpc`. Each caller names its own command constants; the shape
-/// (stores, registers, return check) is identical.
-pub(crate) fn io_call_rpc_3(c: &mut Cpu, cmd: u32, t0: u32, ret: u32) -> crate::call::Flow {
-    c.sw(c.g[SP][0] as u32, 0u64);
-    c.g[A1][0] = cmd as u64;
-    c.g[A2][0] = 0u64;
-    c.g[T0][0] = t0 as u64;
-    c.g[T2][0] = 0x4;
-    c.g[T3][0] = 0u64;
-    CALL_RPC.call(c, ret)
-}
-
 /// `int sceSync(const char *path, int flag)` (0x429ed8): copy `path`
 /// into the file-system packet (at most 1024 bytes) with the flag word
 /// staged beside it, and send it as command 0x13. A clear lock word
 /// runs `sceFsInit` first; a failed send reports -11.
 pub fn sce_sync(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_429f30: {
             c.cycles += 19;
@@ -22727,7 +22640,7 @@ pub fn sce_sync(c: &mut Cpu) {
                 c.g[A3][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x2900));
                 c.g[T1][0] = c.g[S3][0];
                 // Sync send shape (command 0x13, sub-command 0x414).
-                io_call_rpc_3(c, 0x13, 0x414, 0x00429ff0)?;
+                io_call_rpc(c, 0x13, 0x414, 0x00429ff0)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -22795,7 +22708,7 @@ pub fn sce_sync(c: &mut Cpu) {
 /// length past 1024 reports -7; a clear lock word runs `sceFsInit`
 /// first; a failed send reports -11.
 pub fn sce_mount(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_42a0dc: {
             c.cycles += 24;
@@ -23013,7 +22926,7 @@ pub fn sce_mount(c: &mut Cpu) {
                 c.g[A3][0] = c.g[S0][0];
                 c.g[T1][0] = c.g[S4][0];
                 // Mount send shape (command 0x14, sub-command 0xc14).
-                io_call_rpc_3(c, 0x14, 0xc14, 0x0042a254)?;
+                io_call_rpc(c, 0x14, 0xc14, 0x0042a254)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -23077,12 +22990,12 @@ pub fn sce_mount(c: &mut Cpu) {
     })
 }
 
-/// `int sceLseek64(int fd, ...)` (0x42a300): reposition the fd-table
-/// slot for `fd` through the file-system RPC (command 0x16,
-/// sub-command 0x20); the reply is the 64-bit new position. Bad slots,
-/// a missing lock word and a failed send report -1, -9 and -11.
+/// `int sceLseek64(int fd, ...)` (0x42a300): reposition the fd-table slot
+/// for `fd` through the file-system RPC (command 0x16, sub-command 0x20);
+/// the reply is the 64-bit new position. A missing lock word reports -1, a
+/// bad slot -9, and a failed send or a clear reply flag -11.
 pub fn sce_lseek64(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_42a510: {
             'b_42a364: {
@@ -23259,7 +23172,7 @@ pub fn sce_lseek64(c: &mut Cpu) {
                 c.g[A3][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x2900));
                 c.g[T1][0] = c.g[S0][0];
                 // Shared IO send shape (command 0x16, sub-command 0x20).
-                io_call_rpc_3(c, 0x16, 0x20, 0x0042a4a0)?;
+                io_call_rpc(c, 0x16, 0x20, 0x0042a4a0)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -23345,7 +23258,7 @@ pub fn sce_lseek64(c: &mut Cpu) {
 /// report -22; a clear lock word runs `sceFsInit` first; a failed send
 /// reports -11.
 pub fn sce_devctl(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_42a5a8: {
             c.cycles += 25;
@@ -23530,7 +23443,7 @@ pub fn sce_devctl(c: &mut Cpu) {
                 c.g[A3][0] = c.g[S0][0];
                 c.g[T1][0] = c.g[S4][0];
                 // Devctl send shape (command 0x17, sub-command 0x81c).
-                io_call_rpc_3(c, 0x17, 0x81c, 0x0042a6e8)?;
+                io_call_rpc(c, 0x17, 0x81c, 0x0042a6e8)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -23599,7 +23512,7 @@ pub fn sce_devctl(c: &mut Cpu) {
 /// send them as command 0x18. A clear lock word runs `sceFsInit` first;
 /// a failed send reports -11.
 pub fn sce_symlink(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_42a7c8: {
             c.cycles += 19;
@@ -23755,7 +23668,7 @@ pub fn sce_symlink(c: &mut Cpu) {
                 c.g[A3][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x2900));
                 c.g[T1][0] = c.g[S0][0];
                 // Symlink send shape (command 0x18, sub-command 0x80c).
-                io_call_rpc_3(c, 0x18, 0x80c, 0x0042a8d0)?;
+                io_call_rpc(c, 0x18, 0x80c, 0x0042a8d0)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -23823,7 +23736,7 @@ pub fn sce_symlink(c: &mut Cpu) {
 /// command 0x19. A clear lock word runs `sceFsInit` first; a failed
 /// send reports -11.
 pub fn sce_readlink(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_42a9b0: {
             c.cycles += 21;
@@ -23945,7 +23858,7 @@ pub fn sce_readlink(c: &mut Cpu) {
                 c.g[A3][0] = sx((c.g[S7][0] as u32).wrapping_sub(0x2900));
                 c.g[T1][0] = c.g[S0][0];
                 // Readlink send shape (command 0x19, sub-command 0x80c).
-                io_call_rpc_3(c, 0x19, 0x80c, 0x0042aa94)?;
+                io_call_rpc(c, 0x19, 0x80c, 0x0042aa94)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -24014,7 +23927,7 @@ pub fn sce_readlink(c: &mut Cpu) {
 /// 1024 reports -7; a clear lock word runs `sceFsInit` first; a failed
 /// send reports -11.
 pub fn sce_format(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_429214: {
             c.cycles += 22;
@@ -24044,7 +23957,6 @@ pub fn sce_format(c: &mut Cpu) {
             }
             c.cycles += 3;
             FS_INIT.call(c, 0x00429210)?;
-            eprintln!("PROBE after-init cy={:#x}", c.cycles);
             c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
             break 'b_429214;
         }
@@ -24239,7 +24151,7 @@ pub fn sce_format(c: &mut Cpu) {
                 c.g[A3][0] = c.g[S0][0];
                 c.g[T1][0] = c.g[S4][0];
                 // Format send shape (command 0xe, sub-command 0xc10).
-                io_call_rpc_3(c, 0xe, 0xc10, 0x00429398)?;
+                io_call_rpc(c, 0xe, 0xc10, 0x00429398)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -24307,7 +24219,7 @@ pub fn sce_format(c: &mut Cpu) {
 /// send them as command 0x11. A clear lock word runs `sceFsInit` first;
 /// a failed send reports -11.
 pub fn sce_rename(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_429d20: {
             c.cycles += 19;
@@ -24467,7 +24379,7 @@ pub fn sce_rename(c: &mut Cpu) {
                 c.g[A3][0] = c.g[S0][0];
                 c.g[T1][0] = c.g[S4][0];
                 // Rename send shape (command 0x11, sub-command 0x80c).
-                io_call_rpc_3(c, 0x11, 0x80c, 0x00429e38)?;
+                io_call_rpc(c, 0x11, 0x80c, 0x00429e38)?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -24535,7 +24447,7 @@ pub fn sce_rename(c: &mut Cpu) {
 /// command 0xd. A clear lock word runs `sceFsInit` first; a failed send
 /// reports -11.
 pub fn sce_chstat(c: &mut Cpu) {
-    use oc1365_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_429aec: {
             c.cycles += 22;
@@ -24685,7 +24597,12 @@ pub fn sce_chstat(c: &mut Cpu) {
                 c.g[A3][0] = c.g[S0][0];
                 c.g[T1][0] = c.g[S5][0];
                 // Chstat send shape (command 0xd, sub-command length + 0x51).
-                io_call_rpc_3(c, 0xd, c.g[S1][0].wrapping_add(0x51) as u32, 0x00429c3c)?;
+                io_call_rpc(
+                    c,
+                    0xd,
+                    sx((c.g[S1][0] as u32).wrapping_add(0x51)),
+                    0x00429c3c,
+                )?;
                 let t = (c.g[V0][0] as i64) >= 0;
                 c.g[V0][0] = 0x20000000;
                 if t {
@@ -24752,7 +24669,7 @@ pub fn sce_chstat(c: &mut Cpu) {
 /// `int scePrintf(const char *fmt, ...)` (0x425c60): format into the Deci2
 /// console through `libkernl_vprintf`, preserving the putc gate word.
 pub fn sce_printf(c: &mut Cpu) {
-    use oc1366_callee::*;
+    use callee::*;
     guest(c, |c| {
         c.cycles += 24;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xb0));
@@ -24788,7 +24705,7 @@ pub fn sce_printf(c: &mut Cpu) {
 /// `void DmacTable_AddHandler(void *table, int ch, void *fn, void *data)`
 /// (0x362058): install a Dmac handler with interrupts managed.
 pub fn dmac_table_add_handler(c: &mut Cpu) {
-    use oc1368_callee::*;
+    use callee::*;
     guest(c, |c| {
         c.cycles += 28;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
@@ -24830,7 +24747,7 @@ pub fn dmac_table_add_handler(c: &mut Cpu) {
 /// `void DmacTable_RemoveHandler(void *table, int ch)` (0x3620c8): remove
 /// a Dmac handler with interrupts managed.
 pub fn dmac_table_remove_handler(c: &mut Cpu) {
-    use oc1368_callee::*;
+    use callee::*;
     guest(c, |c| {
         c.cycles += 21;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
@@ -25787,6 +25704,7 @@ pub(crate) mod tests {
     use crate::difftest::check;
 
     use crate::difftest::fakes;
+    use crate::difftest::fakes::check_reaching;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::fake_call;
     use crate::difftest::fakes::machine;
@@ -33484,7 +33402,6 @@ pub(crate) mod tests {
     pub(crate) use crate::game::lib::kernel::tests::hook_kputs;
     use crate::game::lib::kernel::tests::syscall_test;
     pub(crate) use crate::game::lib::kernel::tests::KPUTS_GATE;
-    pub(crate) use crate::game::lib::sif::tests::fd_busy;
     pub(crate) use crate::game::lib::sif::tests::SEEDS;
 
     #[test]
@@ -33599,6 +33516,37 @@ pub(crate) mod tests {
         );
     }
 
+    /// Busy marks on the first `n` fd-table slots (distinct nonzero
+    /// words, so a missed store changes RAM).
+    pub(crate) fn fd_busy(c: &mut Cpu, n: u32, seed: u32) {
+        for i in 0..n {
+            c.bus.write32(
+                0x0052_ec00 + 0x10 * i + 0x4,
+                0x9191_9100 + seed.wrapping_mul(0x1357_9bdf).wrapping_add(i * 0x101),
+            );
+        }
+    }
+
+    driven!(alloc_fd_driven, sce_fs_alloc_fd);
+
+    driven!(alloc_fd_generated_driven, ee::s15::f_00427498__generated);
+
+    /// `sceSifAllocFd` with events due: the table scan unwinds and
+    /// re-enters identically.
+    #[test]
+    fn alloc_fd_events() {
+        check_events(
+            alloc_fd_generated_driven,
+            alloc_fd_driven,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1_362_008, 0);
+                fd_busy(c, 32, seed);
+                schedule(c, &mut r, seed, 0x0042_7498)
+            },
+        );
+    }
+
     /// `sceSifGetFd`: in-range indexes report their slots, out-of-range
     /// ones report null. The semaphore calls trap, so only the passing
     /// `check` and the break-restore proofs pin the arms.
@@ -33622,12 +33570,23 @@ pub(crate) mod tests {
     /// Gate + forced result for the `CallRpc` fake below (per-machine
     /// words; other tests' machines read 0 here, so their runs fall back
     /// to the slot body).
-    pub(crate) const RPC_GATE: u32 = DATA + 0x6600;
+    pub(crate) const RPC_GATE: u32 = DATA + 0x6680;
 
-    pub(crate) const RPC_RESULT: u32 = DATA + 0x6604;
+    pub(crate) const RPC_RESULT: u32 = DATA + 0x6684;
 
-    /// `sceSifCallRpc` with the gate set: report the forced result without
-    /// sending. Anywhere else (or with the gate clear): the slot body.
+    /// The IO reply flag: the first word of the reply packet
+    /// (`0x530000 - 0x1cc0`), which the callers poll uncached
+    /// (`| 0x2000_0000`, a RAM mirror). Nonzero takes the wait arm.
+    pub(crate) const IO_REPLY_FLAG: u32 = 0x0052_e340;
+
+    /// Where the fake below logs the eight argument registers it was
+    /// called with (`a0`-`a3`, `t0`-`t3`, all 64 bits), so the RAM
+    /// comparison checks the send's arguments.
+    pub(crate) const RPC_LOG: u32 = DATA + 0x66c0;
+
+    /// `sceSifCallRpc` with the gate set: log the arguments and report the
+    /// forced result without sending. Anywhere else (or with the gate
+    /// clear): the slot body.
     pub(crate) fn fake_call_rpc(c: &mut Cpu) {
         if c.bus.read32(RPC_GATE) != GATE_MAGIC {
             return fakes::fall_back(
@@ -33635,6 +33594,9 @@ pub(crate) mod tests {
                 fakes::prev_cell(fake_call_rpc),
                 ee::s15::f_00426d18__generated,
             );
+        }
+        for (i, r) in [A0, A1, A2, A3, T0, T1, T2, T3].into_iter().enumerate() {
+            c.bus.write64(RPC_LOG + 8 * i as u32, c.g[r][0]);
         }
         c.g[V0][0] = c.bus.read32(RPC_RESULT) as u64 as i32 as i64 as u64;
         c.cycles += 4;
@@ -33659,15 +33621,31 @@ pub(crate) mod tests {
         c.bus.write32(0x0052_ec00 + fd * 0x10, 0xb6b6_b600 + fd);
     }
 
+    /// The 32-word semaphore table at 0x455188 that the set-flag dance
+    /// claims a word of: -1 marks a free word. Digit 0 frees the first
+    /// word (the head's claim store), 1 frees word 5 (the scan's claim
+    /// store), 2 frees none (the scan runs out).
+    pub(crate) fn sema_table(c: &mut Cpu, digit: u32) {
+        for i in 0..32 {
+            c.bus.write32(0x0045_5188 + 4 * i, 0x1234_0000 + i);
+        }
+        match digit {
+            0 => c.bus.write32(0x0045_5188, 0xffff_ffff),
+            1 => c.bus.write32(0x0045_5188 + 4 * 5, 0xffff_ffff),
+            _ => {}
+        }
+    }
+
     /// `sceClose` with the lock word present: bad fd, free slot and busy
     /// slot steer the early exits; a claimed slot runs the RPC.
     #[test]
     fn close_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00427fe8__generated,
             sce_close,
             SEEDS,
+            &[0x0042_812c, 0x0042_811c],
             &|c, seed| {
                 machine(c, seed, 1_363_001, 1);
                 c.pc = 0x0042_7fe8;
@@ -33679,7 +33657,13 @@ pub(crate) mod tests {
                 // RPC succeeds; reply flag set; reply word steered.
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42811c.
+                let reply_set = seed / 9 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xa0 + 0x30, [0, 5, 0xffff_ffff][seed as usize / 3 % 3]);
@@ -33720,7 +33704,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xa0 + 0x30, 0);
             },
@@ -33729,16 +33713,16 @@ pub(crate) mod tests {
 
     /// `sceLseek` with the lock word present: bad fd, free slot and busy
     /// slot steer the early exits; a claimed slot runs the RPC, with the
-    /// flag word clear or set (the set-flag dance claims no table entry
-    /// in the harness: the fake semaphore ids always exceed the 32-slot
-    /// scan, so the claim stores stay unreached here).
+    /// flag word clear or set (set runs the dance, which claims the first
+    /// free word of the semaphore table, a later one, or none).
     #[test]
     fn lseek_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00428168__generated,
             sce_lseek,
             SEEDS,
+            &[0x0042_836c, 0x0042_8344],
             &|c, seed| {
                 machine(c, seed, 1_363_004, 1);
                 c.pc = 0x0042_8168;
@@ -33758,10 +33742,19 @@ pub(crate) mod tests {
                 if mode == 2 {
                     c.bus.write32(0x0052_ec00 + 3 * 0x10 + 0x4, 0);
                 }
+                // Table digit (independent of the power-of-two digits):
+                // first word free, word 5 free, or none.
+                sema_table(c, seed / 3 % 3);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x428344.
+                let reply_set = seed / 18 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xc0 + 0x30, [0, 5, 0xffff_ffff][seed as usize / 6 % 3]);
@@ -33769,16 +33762,60 @@ pub(crate) mod tests {
         );
     }
 
+    /// `sceLseek` with the lock word missing: unlock and report -1.
+    #[test]
+    fn lseek_no_lock_matches() {
+        check(
+            ee::s15::f_00428168__generated,
+            sce_lseek,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_363_040, 1);
+                c.pc = 0x0042_8168;
+                c.g[A0][0] = 3;
+                c.g[A1][0] = 0x1111_1100 + seed as u64;
+                c.g[A2][0] = 0x2222_2200 + seed as u64;
+                fd_slot(c, 3, true);
+                c.bus.write32(0x0045_520c, 0);
+            },
+        );
+    }
+
+    /// `sceLseek` with the RPC failing: delete, unlock and report -11.
+    #[test]
+    fn lseek_rpc_fail_matches() {
+        hook_call_rpc();
+        check(
+            ee::s15::f_00428168__generated,
+            sce_lseek,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_363_041, 1);
+                c.pc = 0x0042_8168;
+                c.g[A0][0] = 3;
+                c.g[A1][0] = 0x1111_1100 + seed as u64;
+                c.g[A2][0] = 0x2222_2200 + seed as u64;
+                fd_slot(c, 3, true);
+                c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
+                c.bus.write32(RPC_GATE, GATE_MAGIC);
+                c.bus.write32(RPC_RESULT, 0xffff_ffff);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
+            },
+        );
+    }
+
     /// `sceRead` with the lock word present: bad fd, free slot and busy
     /// slot steer the early exits; a claimed slot runs the RPC, with the
-    /// flag word clear or set and the write-back check on or off.
+    /// flag word clear or set (set runs the semaphore-table dance) and the
+    /// write-back check on or off.
     #[test]
     fn read_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_004283a0__generated,
             sce_read,
             SEEDS,
+            &[0x0042_85c4, 0x0042_859c],
             &|c, seed| {
                 machine(c, seed, 1_363_005, 1);
                 c.pc = 0x0042_83a0;
@@ -33797,10 +33834,19 @@ pub(crate) mod tests {
                 if mode == 2 {
                     c.bus.write32(0x0052_ec00 + 3 * 0x10 + 0x4, 0);
                 }
+                // Table digit (independent of the power-of-two digits):
+                // first word free, word 5 free, or none.
+                sema_table(c, seed / 3 % 3);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42859c.
+                let reply_set = seed / 24 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xe0 + 0x30, [0, 5][seed as usize / 12 % 2]);
@@ -33808,17 +33854,61 @@ pub(crate) mod tests {
         );
     }
 
+    /// `sceRead` with the lock word missing: unlock and report -1.
+    #[test]
+    fn read_no_lock_matches() {
+        check(
+            ee::s15::f_004283a0__generated,
+            sce_read,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_363_042, 1);
+                c.pc = 0x0042_83a0;
+                c.g[A0][0] = 3;
+                c.g[A1][0] = (DATA + 0x500) as u64;
+                c.g[A2][0] = 0x40;
+                fd_slot(c, 3, true);
+                c.bus.write32(0x0045_520c, 0);
+            },
+        );
+    }
+
+    /// `sceRead` with the RPC failing: delete, unlock and report -11.
+    #[test]
+    fn read_rpc_fail_matches() {
+        hook_call_rpc();
+        check(
+            ee::s15::f_004283a0__generated,
+            sce_read,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_363_043, 1);
+                c.pc = 0x0042_83a0;
+                c.g[A0][0] = 3;
+                c.g[A1][0] = (DATA + 0x500) as u64;
+                c.g[A2][0] = 0x40;
+                fd_slot(c, 3, true);
+                c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
+                c.bus.write32(RPC_GATE, GATE_MAGIC);
+                c.bus.write32(RPC_RESULT, 0xffff_ffff);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
+            },
+        );
+    }
+
     /// `sceWrite` with the lock word present: bad fd, free slot and busy
     /// slot steer the early exits; a claimed slot runs the RPC, with the
-    /// flag word clear or set, the buffer nibble zero or not, and the size
-    /// above or below the copy bound.
+    /// flag word clear or set (set runs the semaphore-table dance), the
+    /// buffer nibble zero or not, and the size above or below the copy
+    /// bound.
     #[test]
     fn write_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00428600__generated,
             sce_write,
             SEEDS,
+            &[0x0042_8884, 0x0042_885c],
             &|c, seed| {
                 machine(c, seed, 1_363_006, 1);
                 c.pc = 0x0042_8600;
@@ -33839,10 +33929,19 @@ pub(crate) mod tests {
                 if mode == 2 {
                     c.bus.write32(0x0052_ec00 + 3 * 0x10 + 0x4, 0);
                 }
+                // Table digit (independent of the power-of-two digits):
+                // first word free, word 5 free, or none.
+                sema_table(c, seed / 3 % 3);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42885c.
+                let reply_set = seed / 96 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xe0 + 0x30, [0, 5][seed as usize / 48 % 2]);
@@ -33887,7 +33986,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xe0 + 0x30, 0);
             },
@@ -33897,7 +33996,7 @@ pub(crate) mod tests {
     /// Gate for the `sceFsInit` fake below (per-machine word; other
     /// tests' machines read 0 here, so their runs fall back to the slot
     /// body).
-    pub(crate) const INIT_GATE: u32 = DATA + 0x6610;
+    pub(crate) const INIT_GATE: u32 = DATA + 0x6690;
 
     /// `sceFsInit` with the gate set: report success without running the
     /// bring-up. Anywhere else (or with the gate clear): the slot body.
@@ -33929,10 +34028,11 @@ pub(crate) mod tests {
     #[test]
     fn ioctl_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_004288c0__generated,
             sce_ioctl,
             SEEDS,
+            &[0x0042_8c00, 0x0042_8bf0],
             &|c, seed| {
                 machine(c, seed, 1_363_009, 1);
                 c.pc = 0x0042_88c0;
@@ -33956,7 +34056,13 @@ pub(crate) mod tests {
                 );
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x428bf0.
+                let reply_set = seed / 120 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xc0 + 0x30, [0, 5][seed as usize / 60 % 2]);
@@ -33970,10 +34076,11 @@ pub(crate) mod tests {
     fn ioctl_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_004288c0__generated,
             sce_ioctl,
             SEEDS,
+            &[0x0042_8c00],
             &|c, seed| {
                 machine(c, seed, 1_363_010, 1);
                 c.pc = 0x0042_88c0;
@@ -33985,7 +34092,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
@@ -34010,7 +34117,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
@@ -34024,10 +34131,11 @@ pub(crate) mod tests {
     #[test]
     fn ioctl2_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00428c38__generated,
             sce_ioctl2,
             SEEDS,
+            &[0x0042_8ddc, 0x0042_8dcc],
             &|c, seed| {
                 machine(c, seed, 1_363_012, 1);
                 c.pc = 0x0042_8c38;
@@ -34047,7 +34155,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x428dcc.
+                let reply_set = seed / 48 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xd0 + 0x30, [0, 5][seed as usize / 24 % 2]);
@@ -34061,10 +34175,11 @@ pub(crate) mod tests {
     fn ioctl2_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_00428c38__generated,
             sce_ioctl2,
             SEEDS,
+            &[0x0042_8ddc],
             &|c, seed| {
                 machine(c, seed, 1_363_013, 1);
                 c.pc = 0x0042_8c38;
@@ -34079,7 +34194,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -34107,7 +34222,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -34123,16 +34238,17 @@ pub(crate) mod tests {
         c.bus.write8(DATA + 0x500 + len.min(1024) as u32, 0);
     }
 
-    /// `sceFs_PathCmd` with the lock word present: the path length
-    /// steers the copy (empty, short, 1024-byte overflow); the reply
-    /// word steers the 0/-1 tail.
+    /// `sceFs_PathCmd` with the lock word present: the path length steers the
+    /// copy (empty, short, 1024-byte overflow); the reply word is reported as
+    /// the result, and the reply flag set or clear steers the wait or -11 arm.
     #[test]
     fn path_cmd_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00428e18__generated,
             sce_fs_path_cmd,
             SEEDS,
+            &[0x0042_8f84, 0x0042_8f74],
             &|c, seed| {
                 machine(c, seed, 1_364_001, 1);
                 c.pc = 0x0042_8e18;
@@ -34143,10 +34259,39 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x428f74.
+                let reply_set = seed / 12 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xd0 + 0x30, [0, 5][seed as usize / 6 % 2]);
+            },
+        );
+    }
+
+    /// `sceFs_PathCmd` passes the caller's `a1` to `sceSifCallRpc` whole:
+    /// a command with its upper bits set (a sign-extended negative, a
+    /// stale upper word) reaches the send unchanged.
+    #[test]
+    fn path_cmd_wide_cmd_matches() {
+        hook_call_rpc();
+        check(
+            ee::s15::f_00428e18__generated,
+            sce_fs_path_cmd,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 1_364_090, 1);
+                c.pc = 0x0042_8e18;
+                c.g[A0][0] = (DATA + 0x500) as u64;
+                c.g[A1][0] = [0xffff_ffff_ffff_fff3, 0x1234_5678_0000_0003][seed as usize % 2];
+                path_bytes(c, 5);
+                c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
+                c.bus.write32(RPC_GATE, GATE_MAGIC);
+                c.bus.write32(RPC_RESULT, 0);
             },
         );
     }
@@ -34157,10 +34302,11 @@ pub(crate) mod tests {
     fn path_cmd_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_00428e18__generated,
             sce_fs_path_cmd,
             SEEDS,
+            &[0x0042_8f84],
             &|c, seed| {
                 machine(c, seed, 1_364_002, 1);
                 c.pc = 0x0042_8e18;
@@ -34171,7 +34317,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -34195,23 +34341,25 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
         );
     }
 
-    /// `sceMkdir` with the lock word present: the path length steers
-    /// the copy (empty, short, 1024-byte overflow); the mode word is
-    /// staged beside the path; the reply word steers the 0/-1 tail.
+    /// `sceMkdir` with the lock word present: the path length steers the copy
+    /// (empty, short, 1024-byte overflow); the mode word is staged beside the
+    /// path; the reply word is reported as the result, and the reply flag set
+    /// or clear steers the wait or -11 arm.
     #[test]
     fn mkdir_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00428fe0__generated,
             sce_mkdir,
             SEEDS,
+            &[0x0042_9154, 0x0042_9144],
             &|c, seed| {
                 machine(c, seed, 1_364_004, 1);
                 c.pc = 0x0042_8fe0;
@@ -34221,7 +34369,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x429144.
+                let reply_set = seed / 12 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xd0 + 0x30, [0, 5][seed as usize / 6 % 2]);
@@ -34235,10 +34389,11 @@ pub(crate) mod tests {
     fn mkdir_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_00428fe0__generated,
             sce_mkdir,
             SEEDS,
+            &[0x0042_9154],
             &|c, seed| {
                 machine(c, seed, 1_364_005, 1);
                 c.pc = 0x0042_8fe0;
@@ -34249,7 +34404,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -34273,7 +34428,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -34286,10 +34441,11 @@ pub(crate) mod tests {
     #[test]
     fn add_drv_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00429420__generated,
             sce_add_drv,
             SEEDS,
+            &[0x0042_9518, 0x0042_9508],
             &|c, seed| {
                 machine(c, seed, 1_364_007, 1);
                 c.pc = 0x0042_9420;
@@ -34297,7 +34453,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x429508.
+                let reply_set = seed / 4 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0x90 + 0x30, [0, 5][seed as usize / 2 % 2]);
@@ -34311,10 +34473,11 @@ pub(crate) mod tests {
     fn add_drv_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_00429420__generated,
             sce_add_drv,
             SEEDS,
+            &[0x0042_9518],
             &|c, seed| {
                 machine(c, seed, 1_364_008, 1);
                 c.pc = 0x0042_9420;
@@ -34323,7 +34486,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0x90 + 0x30, 0);
             },
@@ -34345,7 +34508,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0x90 + 0x30, 0);
             },
@@ -34368,37 +34531,41 @@ pub(crate) mod tests {
     }
 
     /// `sceDopen` with the lock word present: a full table reports -19;
-    /// otherwise the path command runs and its reply steers the stored
-    /// result (0 claims the slot, -1 releases it).
+    /// otherwise the path command runs on the first free slot (0 or 3)
+    /// and its reply steers the stored result (7 is stored over the
+    /// slot's zero link word and the index reported, -1 releases it).
     #[test]
     fn dopen_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00429560__generated,
             sce_dopen,
             SEEDS,
+            // The release arm's and the claim arm's WaitSema.
+            &[0x0042_95d8, 0x0042_95ec],
             &|c, seed| {
                 machine(c, seed, 1_364_010, 1);
                 c.pc = 0x0042_9560;
                 c.g[A0][0] = (DATA + 0x500) as u64;
                 path_bytes(c, 5);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
-                // Table digit: full (-19) or free (run the command).
-                fd_table(c, [32, 0][seed as usize % 2], seed);
+                // Table digit: full (-19), slot 0 free or slot 3 free
+                // (run the command).
+                fd_table(c, [32, 0, 3][seed as usize % 3], seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 // The path command's reply slot lives one command frame
                 // under Dopen's frame.
                 c.bus
-                    .write32(sp - 0xe0, [0, 0xffff_ffff][seed as usize / 2 % 2]);
+                    .write32(sp - 0xe0, [7, 0xffff_ffff][seed as usize / 3 % 2]);
             },
         );
     }
 
     /// `sceDopen` with the lock word clear: `sceFsInit` runs (faked),
-    /// then the slot is claimed and the command runs.
+    /// then slot 3 is claimed and the command runs (reply 7 stored).
     #[test]
     fn dopen_fs_init_matches() {
         hook_call_rpc();
@@ -34413,13 +34580,13 @@ pub(crate) mod tests {
                 c.g[A0][0] = (DATA + 0x500) as u64;
                 path_bytes(c, 5);
                 c.bus.write32(0x0045_520c, 0);
-                fd_table(c, 0, seed);
+                fd_table(c, 3, seed);
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
-                c.bus.write32(sp - 0xe0, 0);
+                c.bus.write32(sp - 0xe0, 7);
             },
         );
     }
@@ -34429,10 +34596,11 @@ pub(crate) mod tests {
     #[test]
     fn dclose_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00429628__generated,
             sce_dclose,
             SEEDS,
+            &[0x0042_9758, 0x0042_9748],
             &|c, seed| {
                 machine(c, seed, 1_364_012, 1);
                 c.pc = 0x0042_9628;
@@ -34443,7 +34611,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x429748.
+                let reply_set = seed / 9 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xa0 + 0x30, [0, 5, 0xffff_ffff][seed as usize / 3 % 3]);
@@ -34484,7 +34658,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xa0 + 0x30, 0);
             },
@@ -34496,10 +34670,11 @@ pub(crate) mod tests {
     #[test]
     fn dread_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00429790__generated,
             sce_dread,
             SEEDS,
+            &[0x0042_98c0, 0x0042_98b0],
             &|c, seed| {
                 machine(c, seed, 1_364_015, 1);
                 c.pc = 0x0042_9790;
@@ -34511,7 +34686,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x4298b0.
+                let reply_set = seed / 6 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0x90 + 0x30, [0, 5][seed as usize / 3 % 2]);
@@ -34554,24 +34735,25 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0x90 + 0x30, 0);
             },
         );
     }
 
-    /// `sceGetstat` with the lock word present: the path length steers
-    /// the copy (empty, short, 1024-byte overflow); the stat buffer
-    /// pointer is staged beside the path; the reply word steers the
-    /// 0/-1 tail.
+    /// `sceGetstat` with the lock word present: the path length steers the copy
+    /// (empty, short, 1024-byte overflow); the stat buffer pointer is staged
+    /// beside the path; the reply word is reported as the result, and the reply
+    /// flag set or clear steers the wait or -11 arm.
     #[test]
     fn getstat_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_004298e8__generated,
             sce_getstat,
             SEEDS,
+            &[0x0042_9a50, 0x0042_9a40],
             &|c, seed| {
                 machine(c, seed, 1_364_018, 1);
                 c.pc = 0x0042_98e8;
@@ -34581,7 +34763,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x429a40.
+                let reply_set = seed / 6 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xd0 + 0x30, [0, 5][seed as usize / 3 % 2]);
@@ -34595,10 +34783,11 @@ pub(crate) mod tests {
     fn getstat_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_004298e8__generated,
             sce_getstat,
             SEEDS,
+            &[0x0042_9a50],
             &|c, seed| {
                 machine(c, seed, 1_364_019, 1);
                 c.pc = 0x0042_98e8;
@@ -34609,7 +34798,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -34633,7 +34822,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -34648,16 +34837,18 @@ pub(crate) mod tests {
         c.bus.write8(base + len.min(1024) as u32, 0);
     }
 
-    /// `sceChstat` with the lock word present: the path length steers
-    /// the copy (empty, short, 1024-byte overflow); the stat buffer is
-    /// staged as 0x40 bytes; the reply word steers the 0/-1 tail.
+    /// `sceChstat` with the lock word present: the path length steers the copy
+    /// (empty, short, 1024-byte overflow); the stat buffer is staged as 0x40
+    /// bytes; the reply word is reported as the result, and the reply flag set
+    /// or clear steers the wait or -11 arm.
     #[test]
     fn chstat_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00429a88__generated,
             sce_chstat,
             SEEDS,
+            &[0x0042_9c88, 0x0042_9c78],
             &|c, seed| {
                 machine(c, seed, 1_365_001, 1);
                 c.pc = 0x0042_9a88;
@@ -34668,7 +34859,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x429c78.
+                let reply_set = seed / 12 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xe0 + 0x30, [0, 5][seed as usize / 6 % 2]);
@@ -34682,10 +34879,11 @@ pub(crate) mod tests {
     fn chstat_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_00429a88__generated,
             sce_chstat,
             SEEDS,
+            &[0x0042_9c88],
             &|c, seed| {
                 machine(c, seed, 1_365_002, 1);
                 c.pc = 0x0042_9a88;
@@ -34697,7 +34895,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xe0 + 0x30, 0);
             },
@@ -34722,23 +34920,25 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xe0 + 0x30, 0);
             },
         );
     }
 
-    /// `sceRename` with the lock word present: both path lengths steer
-    /// their copies (empty, short, 1024-byte overflow each); the reply
-    /// word steers the 0/-1 tail.
+    /// `sceRename` with the lock word present: both path lengths steer their
+    /// copies (empty, short, 1024-byte overflow each); the reply word is
+    /// reported as the result, and the reply flag set or clear steers the wait
+    /// or -11 arm.
     #[test]
     fn rename_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00429cc8__generated,
             sce_rename,
             SEEDS,
+            &[0x0042_9e84, 0x0042_9e74],
             &|c, seed| {
                 machine(c, seed, 1_365_004, 1);
                 c.pc = 0x0042_9cc8;
@@ -34749,7 +34949,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x429e74.
+                let reply_set = seed / 18 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xc0 + 0x30, [0, 5][seed as usize / 9 % 2]);
@@ -34763,10 +34969,11 @@ pub(crate) mod tests {
     fn rename_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_00429cc8__generated,
             sce_rename,
             SEEDS,
+            &[0x0042_9e84],
             &|c, seed| {
                 machine(c, seed, 1_365_005, 1);
                 c.pc = 0x0042_9cc8;
@@ -34778,7 +34985,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
@@ -34803,23 +35010,25 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
         );
     }
 
-    /// `sceSync` with the lock word present: the path length steers
-    /// the copy (empty, short, 1024-byte overflow); the flag word is
-    /// staged beside the path; the reply word steers the 0/-1 tail.
+    /// `sceSync` with the lock word present: the path length steers the copy
+    /// (empty, short, 1024-byte overflow); the flag word is staged beside the
+    /// path; the reply word is reported as the result, and the reply flag set
+    /// or clear steers the wait or -11 arm.
     #[test]
     fn sync_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_00429ed8__generated,
             sce_sync,
             SEEDS,
+            &[0x0042_a03c, 0x0042_a02c],
             &|c, seed| {
                 machine(c, seed, 1_365_007, 1);
                 c.pc = 0x0042_9ed8;
@@ -34829,7 +35038,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42a02c.
+                let reply_set = seed / 12 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xc0 + 0x30, [0, 5][seed as usize / 6 % 2]);
@@ -34843,10 +35058,11 @@ pub(crate) mod tests {
     fn sync_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_00429ed8__generated,
             sce_sync,
             SEEDS,
+            &[0x0042_a03c],
             &|c, seed| {
                 machine(c, seed, 1_365_008, 1);
                 c.pc = 0x0042_9ed8;
@@ -34857,7 +35073,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
@@ -34881,7 +35097,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
@@ -34894,10 +35110,11 @@ pub(crate) mod tests {
     #[test]
     fn mount_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_0042a070__generated,
             sce_mount,
             SEEDS,
+            &[0x0042_a2a0, 0x0042_a290],
             &|c, seed| {
                 machine(c, seed, 1_365_010, 1);
                 c.pc = 0x0042_a070;
@@ -34913,7 +35130,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42a290.
+                let reply_set = seed / 108 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xe0 + 0x30, [0, 5][seed as usize / 54 % 2]);
@@ -34927,10 +35150,11 @@ pub(crate) mod tests {
     fn mount_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_0042a070__generated,
             sce_mount,
             SEEDS,
+            &[0x0042_a2a0],
             &|c, seed| {
                 machine(c, seed, 1_365_011, 1);
                 c.pc = 0x0042_a070;
@@ -34945,7 +35169,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xe0 + 0x30, 0);
             },
@@ -34973,7 +35197,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xe0 + 0x30, 0);
             },
@@ -34987,10 +35211,11 @@ pub(crate) mod tests {
     #[test]
     fn format_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_004291b0__generated,
             sce_format,
             SEEDS,
+            &[0x0042_93e4, 0x0042_93d4],
             &|c, seed| {
                 machine(c, seed, 1_365_013, 1);
                 c.pc = 0x0042_91b0;
@@ -35007,7 +35232,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x4293d4.
+                let reply_set = seed / 54 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xd0 + 0x30, [0, 5][seed as usize / 27 % 2]);
@@ -35021,10 +35252,11 @@ pub(crate) mod tests {
     fn format_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_004291b0__generated,
             sce_format,
             SEEDS,
+            &[0x0042_93e4],
             &|c, seed| {
                 machine(c, seed, 1_365_014, 1);
                 c.pc = 0x0042_91b0;
@@ -35038,7 +35270,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -35065,7 +35297,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -35073,14 +35305,17 @@ pub(crate) mod tests {
     }
 
     /// `sceLseek64` with the lock word present: bad fd, free slot and
-    /// busy slot steer the early exits; a claimed slot runs the RPC.
+    /// busy slot steer the early exits; a claimed slot runs the RPC, with
+    /// the flag word clear or set (set runs the dance, which claims the
+    /// first free word of the semaphore table, a later one, or none).
     #[test]
     fn lseek64_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_0042a300__generated,
             sce_lseek64,
             SEEDS,
+            &[0x0042_a504, 0x0042_a4dc],
             &|c, seed| {
                 machine(c, seed, 1_365_016, 1);
                 c.pc = 0x0042_a300;
@@ -35100,10 +35335,19 @@ pub(crate) mod tests {
                 if mode == 2 {
                     c.bus.write32(0x0052_ec00 + 3 * 0x10 + 0x4, 0);
                 }
+                // Table digit (independent of the power-of-two digits):
+                // first word free, word 5 free, or none.
+                sema_table(c, seed / 3 % 3);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42a4dc.
+                let reply_set = seed / 18 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xc0 + 0x30, [0, 5, 0xffff_ffff][seed as usize / 6 % 3]);
@@ -35148,7 +35392,7 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
@@ -35162,10 +35406,11 @@ pub(crate) mod tests {
     #[test]
     fn devctl_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_0042a538__generated,
             sce_devctl,
             SEEDS,
+            &[0x0042_a734, 0x0042_a724],
             &|c, seed| {
                 machine(c, seed, 1_365_019, 1);
                 c.pc = 0x0042_a538;
@@ -35181,7 +35426,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42a724.
+                let reply_set = seed / 54 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xe0 + 0x30, [0, 5][seed as usize / 27 % 2]);
@@ -35195,10 +35446,11 @@ pub(crate) mod tests {
     fn devctl_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_0042a538__generated,
             sce_devctl,
             SEEDS,
+            &[0x0042_a734],
             &|c, seed| {
                 machine(c, seed, 1_365_020, 1);
                 c.pc = 0x0042_a538;
@@ -35213,7 +35465,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xe0 + 0x30, 0);
             },
@@ -35241,23 +35493,25 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xe0 + 0x30, 0);
             },
         );
     }
 
-    /// `sceSymlink` with the lock word present: both path lengths steer
-    /// their copies (empty, short, 1024-byte overflow each); the reply
-    /// word steers the 0/-1 tail.
+    /// `sceSymlink` with the lock word present: both path lengths steer their
+    /// copies (empty, short, 1024-byte overflow each); the reply word is
+    /// reported as the result, and the reply flag set or clear steers the wait
+    /// or -11 arm.
     #[test]
     fn symlink_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_0042a770__generated,
             sce_symlink,
             SEEDS,
+            &[0x0042_a91c, 0x0042_a90c],
             &|c, seed| {
                 machine(c, seed, 1_365_022, 1);
                 c.pc = 0x0042_a770;
@@ -35268,7 +35522,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42a90c.
+                let reply_set = seed / 18 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xc0 + 0x30, [0, 5][seed as usize / 9 % 2]);
@@ -35282,10 +35542,11 @@ pub(crate) mod tests {
     fn symlink_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_0042a770__generated,
             sce_symlink,
             SEEDS,
+            &[0x0042_a91c],
             &|c, seed| {
                 machine(c, seed, 1_365_023, 1);
                 c.pc = 0x0042_a770;
@@ -35297,7 +35558,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
@@ -35322,23 +35583,25 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xc0 + 0x30, 0);
             },
         );
     }
 
-    /// `sceReadlink` with the lock word present: the path length steers
-    /// the copy (empty, short, 1024-byte overflow); the length steers
-    /// the 0x400 cap; the reply word steers the 0/-1 tail.
+    /// `sceReadlink` with the lock word present: the path length steers the
+    /// copy (empty, short, 1024-byte overflow); the length steers the 0x400
+    /// cap; the reply word is reported as the result, and the reply flag set or
+    /// clear steers the wait or -11 arm.
     #[test]
     fn readlink_matches() {
         hook_call_rpc();
-        check(
+        check_reaching(
             ee::s15::f_0042a950__generated,
             sce_readlink,
             SEEDS,
+            &[0x0042_aae0, 0x0042_aad0],
             &|c, seed| {
                 machine(c, seed, 1_365_025, 1);
                 c.pc = 0x0042_a950;
@@ -35351,7 +35614,13 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                // Reply-flag digit: set takes the wait arm, clear the
+                // DeleteSema arm (-11) at 0x42aad0.
+                let reply_set = seed / 12 % 2 == 0;
+                c.bus.write32(
+                    IO_REPLY_FLAG,
+                    if reply_set { 0x0101_0100 + seed } else { 0 },
+                );
                 let sp = c.g[SP][0] as u32;
                 c.bus
                     .write32(sp - 0xd0 + 0x30, [0, 5][seed as usize / 6 % 2]);
@@ -35365,10 +35634,11 @@ pub(crate) mod tests {
     fn readlink_fs_init_matches() {
         hook_call_rpc();
         hook_fs_init();
-        check(
+        check_reaching(
             ee::s15::f_0042a950__generated,
             sce_readlink,
             SEEDS,
+            &[0x0042_aae0],
             &|c, seed| {
                 machine(c, seed, 1_365_026, 1);
                 c.pc = 0x0042_a950;
@@ -35380,7 +35650,7 @@ pub(crate) mod tests {
                 c.bus.write32(INIT_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
@@ -35405,12 +35675,288 @@ pub(crate) mod tests {
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0xffff_ffff);
-                c.bus.write32(0x7252_e340, 0x0101_0100 + seed);
+                c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
                 let sp = c.g[SP][0] as u32;
                 c.bus.write32(sp - 0xd0 + 0x30, 0);
             },
         );
     }
+
+    /// An events test for a looping IO port: the lock word set, the send
+    /// succeeding with the reply flag set, the port's own arguments from
+    /// `$setup`, and events due from the entry. The copy and scan loops
+    /// deliver inline, so both sides run them through identically.
+    macro_rules! io_events {
+        ($name:ident, $generated:path, $hand:path, $entry:expr, $salt:expr, $setup:expr) => {
+            #[test]
+            fn $name() {
+                driven!(generated_driven, $generated);
+                driven!(hand_driven, $hand);
+                hook_call_rpc();
+                check_events(generated_driven, hand_driven, SEEDS, &|c, seed| {
+                    let mut r = machine(c, seed, $salt, 0);
+                    c.pc = $entry;
+                    c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
+                    c.bus.write32(RPC_GATE, GATE_MAGIC);
+                    c.bus.write32(RPC_RESULT, 0);
+                    c.bus.write32(IO_REPLY_FLAG, 0x0101_0100 + seed);
+                    let setup: &dyn Fn(&mut Cpu, u32) = &$setup;
+                    setup(c, seed);
+                    schedule(c, &mut r, seed, $entry)
+                });
+            }
+        };
+    }
+
+    /// fd slot 3 claimed with the busy word's flag bit (0x8000) set, so the
+    /// fd ports run their semaphore-table scan.
+    pub(crate) fn busy_flag_slot(c: &mut Cpu, seed: u32) {
+        c.bus
+            .write32(0x0052_ec00 + 3 * 0x10 + 0x4, 0x0101_8100 + seed);
+        c.bus.write32(0x0052_ec00 + 3 * 0x10, 0xb6b6_b600 + seed);
+    }
+
+    io_events!(
+        path_cmd_events,
+        ee::s15::f_00428e18__generated,
+        sce_fs_path_cmd,
+        0x0042_8e18,
+        1_369_001,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = 3;
+            path_bytes(c, 0x200);
+        }
+    );
+
+    io_events!(
+        mkdir_events,
+        ee::s15::f_00428fe0__generated,
+        sce_mkdir,
+        0x0042_8fe0,
+        1_369_002,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = 0x1ff;
+            path_bytes(c, 0x200);
+        }
+    );
+
+    io_events!(
+        getstat_events,
+        ee::s15::f_004298e8__generated,
+        sce_getstat,
+        0x0042_98e8,
+        1_369_003,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = (DATA + 0x1000) as u64;
+            path_bytes(c, 0x200);
+        }
+    );
+
+    io_events!(
+        chstat_events,
+        ee::s15::f_00429a88__generated,
+        sce_chstat,
+        0x0042_9a88,
+        1_369_004,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = (DATA + 0x1000) as u64;
+            c.g[A2][0] = 0x1ff;
+            path_bytes(c, 0x200);
+        }
+    );
+
+    io_events!(
+        rename_events,
+        ee::s15::f_00429cc8__generated,
+        sce_rename,
+        0x0042_9cc8,
+        1_369_005,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = (DATA + 0xa00) as u64;
+            path_bytes(c, 0x200);
+            path_bytes_at(c, DATA + 0xa00, 0x200);
+        }
+    );
+
+    io_events!(
+        sync_events,
+        ee::s15::f_00429ed8__generated,
+        sce_sync,
+        0x0042_9ed8,
+        1_369_006,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = 0;
+            path_bytes(c, 0x200);
+        }
+    );
+
+    io_events!(
+        mount_events,
+        ee::s15::f_0042a070__generated,
+        sce_mount,
+        0x0042_a070,
+        1_369_007,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = (DATA + 0xa00) as u64;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = (DATA + 0x1000) as u64;
+            path_bytes(c, 0x200);
+            path_bytes_at(c, DATA + 0xa00, 0x200);
+        }
+    );
+
+    io_events!(
+        symlink_events,
+        ee::s15::f_0042a770__generated,
+        sce_symlink,
+        0x0042_a770,
+        1_369_008,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = (DATA + 0xa00) as u64;
+            path_bytes(c, 0x200);
+            path_bytes_at(c, DATA + 0xa00, 0x200);
+        }
+    );
+
+    io_events!(
+        readlink_events,
+        ee::s15::f_0042a950__generated,
+        sce_readlink,
+        0x0042_a950,
+        1_369_009,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = (DATA + 0x1000) as u64;
+            c.g[A2][0] = 0x500;
+            path_bytes(c, 0x200);
+        }
+    );
+
+    io_events!(
+        devctl_events,
+        ee::s15::f_0042a538__generated,
+        sce_devctl,
+        0x0042_a538,
+        1_369_010,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = 0x1111_1100 + seed as u64;
+            c.g[A2][0] = (DATA + 0x1000) as u64;
+            c.g[A3][0] = 0x500;
+            path_bytes(c, 0x200);
+        }
+    );
+
+    io_events!(
+        format_events,
+        ee::s15::f_004291b0__generated,
+        sce_format,
+        0x0042_91b0,
+        1_369_011,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = (DATA + 0x500) as u64;
+            c.g[A1][0] = (DATA + 0xa00) as u64;
+            c.g[A2][0] = (DATA + 0x1000) as u64;
+            c.g[A3][0] = 0x500;
+            path_bytes(c, 0x200);
+            path_bytes_at(c, DATA + 0xa00, 0x200);
+        }
+    );
+
+    io_events!(
+        ioctl_events,
+        ee::s15::f_004288c0__generated,
+        sce_ioctl,
+        0x0042_88c0,
+        1_369_012,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = 3;
+            c.g[A1][0] = [2, 5][seed as usize % 2];
+            c.g[A2][0] = (DATA + 0x1000) as u64;
+            fd_slot(c, 3, true);
+            c.bus.write32(0x0045_5188, 0xffff_ffff);
+        }
+    );
+
+    io_events!(
+        lseek_events,
+        ee::s15::f_00428168__generated,
+        sce_lseek,
+        0x0042_8168,
+        1_369_013,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = 3;
+            c.g[A1][0] = 0x1111_1100 + seed as u64;
+            c.g[A2][0] = 0x2222_2200 + seed as u64;
+            busy_flag_slot(c, seed);
+        }
+    );
+
+    io_events!(
+        lseek64_events,
+        ee::s15::f_0042a300__generated,
+        sce_lseek64,
+        0x0042_a300,
+        1_369_014,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = 3;
+            c.g[A1][0] = 0x1111_1100 + seed as u64;
+            c.g[A2][0] = 0x2222_2200 + seed as u64;
+            busy_flag_slot(c, seed);
+        }
+    );
+
+    io_events!(
+        read_events,
+        ee::s15::f_004283a0__generated,
+        sce_read,
+        0x0042_83a0,
+        1_369_015,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = 3;
+            c.g[A1][0] = (DATA + 0x500) as u64;
+            c.g[A2][0] = 0x40;
+            busy_flag_slot(c, seed);
+        }
+    );
+
+    io_events!(
+        write_events,
+        ee::s15::f_00428600__generated,
+        sce_write,
+        0x0042_8600,
+        1_369_016,
+        |c: &mut Cpu, seed: u32| {
+            let _ = seed;
+            c.g[A0][0] = 3;
+            c.g[A1][0] = (DATA + 0x500) as u64;
+            c.g[A2][0] = 0x40;
+            busy_flag_slot(c, seed);
+        }
+    );
 
     /// `scePrintf` over a plain and a `%d` format (the latter flushing
     /// through the faked `Deci2Kputs`); the real `vprintf` formats both.
@@ -35515,11 +36061,11 @@ pub(crate) mod tests {
     /// `sceSifCallRpc` with the gate set: report the forced result
     /// (sign-extended, so -1 steers the failure arm) without touching SIF.
     /// Anywhere else (or with the gate clear): the slot body.
-    pub(crate) fn fake_call_rpc2(c: &mut Cpu) {
+    pub(crate) fn fake_mc_call_rpc(c: &mut Cpu) {
         if c.bus.read32(CALLRPC_GATE) != GATE_MAGIC {
             return fakes::fall_back(
                 c,
-                fakes::prev_cell(fake_call_rpc2),
+                fakes::prev_cell(fake_mc_call_rpc),
                 ee::s15::f_00426d18__generated,
             );
         }
@@ -35528,11 +36074,11 @@ pub(crate) mod tests {
         crate::abi::ret(c);
     }
 
-    pub(crate) fn hook_call_rpc2() {
+    pub(crate) fn hook_mc_call_rpc() {
         fakes::hook(
             std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00426D18),
-            fake_call_rpc2,
-            fakes::prev_cell(fake_call_rpc2),
+            fake_mc_call_rpc,
+            fakes::prev_cell(fake_mc_call_rpc),
         );
     }
 
@@ -35617,25 +36163,88 @@ pub(crate) mod tests {
         );
     }
 
-    /// Two-word node helper at `DATA + 0x4000`: tag `(k << 28) | count`
-    /// so tag id `k` dispatches through the handler table, with the upper
-    /// tag word `upper` for the S1/S2/FP checks. The surroundingRAM stays
-    /// zeroed: a zero tag dispatches through table entry 0, which the
-    /// fixtures below point at the terminating arm, so every walk ends.
-    pub(crate) fn dma_chain(c: &mut Cpu, k0: u32, upper: u64, count: u32) {
-        let tag = ((k0 as u64) << 28) | count as u64 | (upper << 32);
-        c.bus.write64(DATA + 0x4000, tag);
-        c.bus.write64(DATA + 0x4008, 0x3333_3333_4444_4444);
+    /// A DMA tag chain at `DATA + 0x4000`: every word of the chain area
+    /// first gets a distinct nonzero payload value, then each `(offset,
+    /// tag)` row lays down a tag. The walks dispatch on the tag's ID (bits
+    /// 28-30) through the game's own tables (`0x4926d0`, `0x4926f0`, from
+    /// [`crate::difftest::elf_image`]): ID 1 (cnt) copies, 3 (ref) checks
+    /// the address word, 6 (ret) ends the walk, and every other ID makes
+    /// no advance (the walk spins, in the game too).
+    pub(crate) fn dma_chain(c: &mut Cpu, tags: &[(u32, u64)]) {
+        crate::difftest::elf_image(c);
+        for i in 0..0x30u32 {
+            c.bus.write32(DATA + 0x4000 + 4 * i, 0x5a5a_0000 + 4 * i);
+        }
+        for &(off, tag) in tags {
+            c.bus.write64(DATA + 0x4000 + off, tag);
+        }
     }
 
-    /// `DmaChain_PatchRefTags` over the tag arms (REF call, checks with
-    /// equal/unequal S1/S2/FP words, CNT exit, big-tag skip, jump-out);
-    /// every chain ends with a CNT node so the walk terminates. The
-    /// distinct cycle totals show each arm was taken.
+    /// Chains for `DmaChain_PatchRefTags`, with `A1`, `A2`, `A3` (the three
+    /// addresses a ref tag is checked against).
+    const PATCH_ROWS: [(&[(u32, u64)], [u64; 3]); 6] = [
+        // cnt (2 qwords) then ret; the exit clears the head's upper word.
+        (
+            &[(0, 0x0000_1234_1000_0002), (0x30, 0x6000_0000)],
+            [0, 0, 0],
+        ),
+        // ret first.
+        (&[(0, 0x6000_0000)], [0, 0, 0]),
+        // cnt 0, ref matching the first word (0x37225c), ret.
+        (
+            &[
+                (0, 0x1000_0000),
+                (0x10, 0x0000_4242_3000_0000),
+                (0x20, 0x6000_0000),
+            ],
+            [0x4242, 0x2222, 0x3333],
+        ),
+        // The same chain, the ref matching the second word (0x372278).
+        (
+            &[
+                (0, 0x1000_0000),
+                (0x10, 0x0000_4242_3000_0000),
+                (0x20, 0x6000_0000),
+            ],
+            [0x1111, 0x4242, 0x3333],
+        ),
+        // The same chain, the ref matching the third (0x372294).
+        (
+            &[
+                (0, 0x1000_0000),
+                (0x10, 0x0000_4242_3000_0000),
+                (0x20, 0x6000_0000),
+            ],
+            [0x1111, 0x2222, 0x4242],
+        ),
+        // cnt 3, ref (first word), cnt 1, ref (third word), ret 2.
+        (
+            &[
+                (0, 0x1000_0003),
+                (0x40, 0x0000_4242_3000_0000),
+                (0x50, 0x1000_0001),
+                (0x70, 0x0000_3333_3000_0000),
+                (0x80, 0x6000_0002),
+            ],
+            [0x4242, 0x2222, 0x3333],
+        ),
+    ];
+
+    /// One of [`PATCH_ROWS`] (`seed % 6`) for `DmaChain_PatchRefTags`.
+    fn patch_chain(c: &mut Cpu, seed: u32) {
+        let (tags, args) = PATCH_ROWS[seed as usize % PATCH_ROWS.len()];
+        dma_chain(c, tags);
+        c.pc = 0x0037_2198;
+        c.g[A0][0] = (DATA + 0x4000) as u64;
+        c.g[A1][0] = args[0];
+        c.g[A2][0] = args[1];
+        c.g[A3][0] = args[2];
+    }
+
+    /// `DmaChain_PatchRefTags` over [`PATCH_ROWS`]: the cnt copy, a ref
+    /// matching each of its three address words, and the ret exit.
     #[test]
     fn patch_ref_tags_matches() {
-        use crate::difftest::run_generated;
-        use std::collections::BTreeSet;
         check(
             ee::s12::f_00372198__generated,
             dma_chain_patch_ref_tags,
@@ -35644,69 +36253,116 @@ pub(crate) mod tests {
                 patch_ref_tags_fixture(c, seed);
             },
         );
+    }
+
+    /// Resume heads of `DmaChain_PatchRefTags`: the REF-call return, the
+    /// CNT-call return, and the walk loop top.
+    const PATCH_RESUME_HEADS: [u32; 3] = [0x0037_2244, 0x0037_22d8, 0x0037_21e8];
+
+    /// Frame + prologue state for a resume at `head`: the entry fixture
+    /// lays down the table and chain, then the prologue is replayed
+    /// verbatim (frame stores with the current values, S-reg setup,
+    /// first tag load, walk-word derivation) so the resume sees what a
+    /// real unwind would leave. `V0` needs no preset: the walk loop top
+    /// reloads it from the current node.
+    fn patch_ref_tags_resume_fixture(c: &mut Cpu, seed: u32) {
+        use ssx3_ee_rt::cpu::reg::*;
+        use ssx3_ee_rt::cpu::sx;
+        patch_ref_tags_fixture(c, seed);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xb0));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S5][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x10));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S2][0] = c.g[S5][0];
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S4][0] = 0u64;
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S6][0] = 0u64;
+        c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S7][0] = c.g[A3][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.g[FP][0] = c.g[A2][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        c.sw(c.g[SP][0] as u32, c.g[A1][0]);
+        c.g[A0][0] = c.ld(c.g[S2][0] as u32);
+        c.g[S3][0] = c.g[A0][0] & 0xffff;
+        c.g[S0][0] = sx((c.g[S3][0] as u32) << 4);
+        c.g[V0][0] = 0;
+        c.pc = PATCH_RESUME_HEADS[seed as usize % PATCH_RESUME_HEADS.len()];
+    }
+
+    /// Direct-entry resume test: start at each resume head with the
+    /// saved frame in place (same seeded state on both sides) and
+    /// compare against the generated resume path. This is what kills a
+    /// flipped entry guard (which would re-run the hand body from the
+    /// top instead of routing to the generated resume).
+    #[test]
+    fn patch_ref_tags_resume_matches() {
+        use crate::difftest::{compare, strict_ok};
+        use std::collections::BTreeSet;
         let mut seen = BTreeSet::new();
         for seed in 0..SEEDS {
-            let mut c = crate::difftest::fresh();
-            patch_ref_tags_fixture(&mut c, seed);
-            let before = c.cycles;
-            run_generated(&mut c, ee::s12::f_00372198__generated);
-            seen.insert(c.cycles - before);
+            let head = PATCH_RESUME_HEADS[seed as usize % PATCH_RESUME_HEADS.len()];
+            seen.insert(head);
+            let r = compare(
+                ee::s12::f_00372198__generated,
+                dma_chain_patch_ref_tags,
+                &|c| patch_ref_tags_resume_fixture(c, seed),
+            );
+            assert!(
+                r.hard.is_empty(),
+                "seed {seed} head {head:#x}: {:#?}",
+                r.hard
+            );
+            assert!(
+                strict_ok(&r.soft),
+                "seed {seed} head {head:#x} (scratch): {:#?}",
+                r.soft
+            );
         }
         assert!(
-            seen.len() >= 6,
-            "patch arms not covered ({} paths): {:?}",
-            seen.len(),
-            seen
+            seen.len() == PATCH_RESUME_HEADS.len(),
+            "resume heads not covered: {seen:?}",
         );
     }
 
-    /// Fixture for [`patch_ref_tags_matches`]: handler table plus one
-    /// steered node in a zeroed chain. Table entry 0 (which every
-    /// clobbered/zero tag hits) points at the CNT exit, so the walk
-    /// always terminates. Tag id 8+ can never occur (the id is masked
-    /// to 3 bits), so that gen arm is dead.
-    pub(crate) fn patch_ref_tags_fixture(c: &mut Cpu, seed: u32) {
-        machine(c, seed, 1_368_004, 1);
-        c.pc = 0x0037_2198;
-        // Handler table: k -> arm. Entry 0 (hit by every zero tag,
-        // including nodes after a REF skip) is the CNT exit so the walk
-        // always terminates; id 3 would spin forever, never selected.
-        c.bus.write32(0x0049_26d0, 0x0037_22c4);
-        c.bus.write32(0x0049_26d4, 0x0037_2250);
-        c.bus.write32(0x0049_26d8, 0x0037_22c4);
-        c.bus.write32(0x0049_26dc, 0x0037_22f0);
-        c.bus.write32(0x0049_26e0, 0x0037_2228);
-        c.bus.write32(0x0049_26ec, 0);
-        let upper = 0x4242u64;
-        let s = seed as usize % 8;
-        // (node k, count, A1, A2, A3) per shape. The all-unequal
-        // CHECK shape would spin forever on hardware too (no advance),
-        // so it is not used; every other shape terminates.
-        let (k0, count, a1, a2, a3) = match s {
-            0 => (4, 3, 0x1111, 0x2222, 0x3333),
-            1 => (1, 3, upper, upper, upper),
-            2 => (1, 3, 0, upper, upper),
-            3 => (1, 3, 0, 0, upper),
-            4 => (4, 0, 0, 0, 0),
-            5 => (2, 1, 0, 0, 0),
-            6 => (7, 3, 0, 0, 0),
-            _ => (1, 5, upper, upper, upper),
-        };
-        dma_chain(c, k0, upper, count);
-        c.g[A0][0] = (DATA + 0x4000) as u64;
-        c.g[A1][0] = a1;
-        c.g[A2][0] = a2;
-        c.g[A3][0] = a3;
+    driven!(patch_driven, dma_chain_patch_ref_tags);
+    driven!(patch_generated_driven, ee::s12::f_00372198__generated);
+
+    /// Events-test fixture: [`patch_chain`] with no fake-unwind lottery
+    /// (`drive` requires the UNWIND bit, which the lottery never sets).
+    pub(crate) fn patch_ref_tags_events_fixture(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 1_368_008, 0);
+        patch_chain(c, seed);
     }
 
-    /// `DmaChain_SplitAtRefTags` over the tag arms (REF call, checks with
-    /// equal/unequal words, split emit, CNT exit, big-tag skip, jump-out);
-    /// every chain ends with a node that sets S7 so the walk terminates.
-    /// The distinct cycle totals show each arm was taken.
+    /// `DmaChain_PatchRefTags` with events due: the walk loop unwinds
+    /// and re-enters identically.
+    #[test]
+    fn patch_ref_tags_events() {
+        check_events(patch_generated_driven, patch_driven, SEEDS, &|c, seed| {
+            let mut r = machine(c, seed, 1_368_008, 0);
+            patch_ref_tags_events_fixture(c, seed);
+            schedule(c, &mut r, seed, 0x0037_2198)
+        });
+    }
+
+    /// Fixture for [`patch_ref_tags_matches`]: [`patch_chain`].
+    pub(crate) fn patch_ref_tags_fixture(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 1_368_004, 1);
+        patch_chain(c, seed);
+    }
+
+    /// `DmaChain_SplitAtRefTags` over [`SPLIT_ROWS`]: the ret exit with
+    /// and without a pending count, the cnt copy, a ref matching either
+    /// stack word, and the emit arm (a ref matching only `A3`) in both
+    /// positions it can take.
     #[test]
     fn split_at_ref_tags_matches() {
-        use crate::difftest::run_generated;
-        use std::collections::BTreeSet;
         check(
             ee::s12::f_00372348__generated,
             dma_chain_split_at_ref_tags,
@@ -35715,74 +36371,155 @@ pub(crate) mod tests {
                 split_at_ref_tags_fixture(c, seed);
             },
         );
+    }
+
+    /// Resume heads of `DmaChain_SplitAtRefTags`: the REF-call return,
+    /// the tail-call return, and the walk loop top.
+    const SPLIT_RESUME_HEADS: [u32; 3] = [0x0037_23fc, 0x0037_24ac, 0x0037_23a0];
+
+    /// Frame + prologue state for a resume at `head`: like the PatchRef
+    /// resume fixture, replaying this walk's prologue verbatim. `V0`
+    /// needs no preset: the walk loop top reloads it.
+    fn split_at_ref_tags_resume_fixture(c: &mut Cpu, seed: u32) {
+        use ssx3_ee_rt::cpu::reg::*;
+        use ssx3_ee_rt::cpu::sx;
+        split_at_ref_tags_fixture(c, seed);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xb0));
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S6][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[S6][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S4][0] = 0u64;
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S5][0] = c.g[S2][0];
+        c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S7][0] = 0u64;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.g[FP][0] = c.g[A3][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        c.sw(c.g[SP][0] as u32, c.g[A1][0]);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+        c.g[A0][0] = c.ld(c.g[S2][0] as u32);
+        c.g[S3][0] = c.g[A0][0] & 0xffff;
+        c.g[S0][0] = sx((c.g[S3][0] as u32) << 4);
+        c.g[V0][0] = 0;
+        c.pc = SPLIT_RESUME_HEADS[seed as usize % SPLIT_RESUME_HEADS.len()];
+    }
+
+    /// Direct-entry resume test for the split walk: same shape as the
+    /// PatchRef one (frame in place, generated resume path compared).
+    #[test]
+    fn split_at_ref_tags_resume_matches() {
+        use crate::difftest::{compare, strict_ok};
+        use std::collections::BTreeSet;
         let mut seen = BTreeSet::new();
         for seed in 0..SEEDS {
-            let mut c = crate::difftest::fresh();
-            split_at_ref_tags_fixture(&mut c, seed);
-            let before = c.cycles;
-            run_generated(&mut c, ee::s12::f_00372348__generated);
-            seen.insert(c.cycles - before);
+            let head = SPLIT_RESUME_HEADS[seed as usize % SPLIT_RESUME_HEADS.len()];
+            seen.insert(head);
+            let r = compare(
+                ee::s12::f_00372348__generated,
+                dma_chain_split_at_ref_tags,
+                &|c| split_at_ref_tags_resume_fixture(c, seed),
+            );
+            assert!(
+                r.hard.is_empty(),
+                "seed {seed} head {head:#x}: {:#?}",
+                r.hard
+            );
+            assert!(
+                strict_ok(&r.soft),
+                "seed {seed} head {head:#x} (scratch): {:#?}",
+                r.soft
+            );
         }
         assert!(
-            seen.len() >= 6,
-            "split arms not covered ({} paths): {:?}",
-            seen.len(),
-            seen
+            seen.len() == SPLIT_RESUME_HEADS.len(),
+            "resume heads not covered: {seen:?}",
         );
     }
 
-    /// Fixture for [`split_at_ref_tags_matches`]: handler table plus one
-    /// steered node and the terminating split node.
-    pub(crate) fn split_at_ref_tags_fixture(c: &mut Cpu, seed: u32) {
-        machine(c, seed, 1_368_005, 1);
-        c.pc = 0x0037_2348;
-        // Handler table: k -> arm. Entry 0 (hit by every zero tag)
-        // is the 372480 arm, which falls into the S7-setting tail, so
-        // the walk always terminates. Entry 3 (3724c4) spins forever on
-        // hardware (no advance, no S7), so no shape uses k=3. The CHECK
-        // all-unequal shape and the CHECK-mismatch/FP-match emit shape
-        // both hang on hardware too (the emit overwrites the next node
-        // with a header that mismatches the stack and FP, so the
-        // re-read makes no advance): brute-forced, only the shapes
-        // below terminate in the harness.
-        c.bus.write32(0x0049_26f0, 0x0037_2480);
-        c.bus.write32(0x0049_26f4, 0x0037_2408);
-        c.bus.write32(0x0049_26f8, 0x0037_2480);
-        c.bus.write32(0x0049_26fc, 0x0037_24c4);
-        c.bus.write32(0x0049_2700, 0x0037_23e0);
-        c.bus.write32(0x0049_270c, 0);
-        let s = seed as usize % 8;
-        // (first node k, count, tag upper, A1, A2, A3) per shape, all
-        // brute-force-verified to terminate with distinct cycle costs
-        // (115, 143, 187, 219, 221, 223, 283, 341). k=2 hits the 2480
-        // tail, k=4 the REF call, k=1 the CHECK equal arms (first-word
-        // and second-word match). No shape emits (that hangs downstream).
-        let (k0, count, upper, a1, a2, a3) = match s {
-            0 => (2, 1, 0x4242, 0, 0, 0),
-            1 => (2, 3, 0x4242, 0, 0, 0),
-            2 => (2, 0, 0x4242, 0, 0, 0),
-            3 => (1, 0, 0, 0, 0, 0),
-            4 => (1, 0, 0x4242, 0, 0x4242, 0),
-            5 => (4, 0, 0x4242, 0, 0, 0),
-            6 => (4, 3, 0x4242, 0, 0, 0),
-            _ => (4, 1, 0x4242, 0, 0, 0),
-        };
-        dma_chain_split(c, k0, upper, count);
-        c.g[A0][0] = (DATA + 0x4000) as u64;
-        c.g[A1][0] = a1;
-        c.g[A2][0] = a2;
-        c.g[A3][0] = a3;
+    driven!(split_driven, dma_chain_split_at_ref_tags);
+    driven!(split_generated_driven, ee::s12::f_00372348__generated);
+
+    /// `DmaChain_SplitAtRefTags` with events due: the walk loop unwinds
+    /// and re-enters identically.
+    #[test]
+    fn split_at_ref_tags_events() {
+        check_events(split_generated_driven, split_driven, SEEDS, &|c, seed| {
+            let mut r = machine(c, seed, 1_368_009, 0);
+            split_at_ref_tags_fixture(c, seed);
+            schedule(c, &mut r, seed, 0x0037_2348)
+        });
     }
 
-    /// Two-chain-node helper like [`dma_chain`], but the second node maps
-    /// to the split arm (S7 exit) instead of CNT.
-    pub(crate) fn dma_chain_split(c: &mut Cpu, k0: u32, upper: u64, count: u32) {
-        for (i, &k) in [k0, 2].iter().enumerate() {
-            let tag = ((k as u64) << 28) | count as u64 | (upper << 32);
-            c.bus.write64(DATA + 0x4000 + i as u32 * 16, tag);
-            c.bus
-                .write64(DATA + 0x4008 + i as u32 * 16, 0x3333_3333_4444_4444);
-        }
+    /// Chains for `DmaChain_SplitAtRefTags`, with `A1`, `A2` (the two
+    /// stack words a ref is checked against first) and `A3` (the emit
+    /// address).
+    const SPLIT_ROWS: [(&[(u32, u64)], [u64; 3]); 6] = [
+        // ret first (no pending count).
+        (&[(0, 0x6000_0000)], [0, 0, 0]),
+        // cnt (2 qwords) then ret (writes the pending count, 0x372488).
+        // The cnt's address word is non-zero (a cnt ignores it), so the
+        // head store's rewrite of the tag changes RAM.
+        (
+            &[(0, 0x0000_0777_1000_0002), (0x30, 0x6000_0000)],
+            [0, 0, 0],
+        ),
+        // cnt 0, ref matching the first stack word, ret.
+        (
+            &[
+                (0, 0x1000_0000),
+                (0x10, 0x0000_4242_3000_0000),
+                (0x20, 0x6000_0000),
+            ],
+            [0x4242, 0x1111, 0x2222],
+        ),
+        // The same chain, the ref matching the second stack word.
+        (
+            &[
+                (0, 0x1000_0000),
+                (0x10, 0x0000_4242_3000_0000),
+                (0x20, 0x6000_0000),
+            ],
+            [0x1111, 0x4242, 0x2222],
+        ),
+        // A ref first, matching only `A3`: the emit (0x372440) rewrites
+        // the next node as a cnt tag, which the walk then copies.
+        (
+            &[(0, 0x0000_0100_3000_0000), (0x20, 0x6000_0000)],
+            [(DATA + 0x4100) as u64, 0x2222, 0x100],
+        ),
+        // The emit behind the cursor (after a cnt): the ref is made
+        // absolute in place and the walk goes on to cnt and ret. The
+        // second cnt's address word is non-zero, so the head store
+        // (0x372488) changes RAM.
+        (
+            &[
+                (0, 0x1000_0001),
+                (0x20, 0x0000_0100_3000_0002),
+                (0x30, 0x0000_0777_1000_0001),
+                (0x50, 0x6000_0000),
+            ],
+            [0x1111, 0x2222, 0x100],
+        ),
+    ];
+
+    /// Fixture for [`split_at_ref_tags_matches`]: one of [`SPLIT_ROWS`]
+    /// (`seed % 6`).
+    pub(crate) fn split_at_ref_tags_fixture(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 1_368_005, 1);
+        let (tags, args) = SPLIT_ROWS[seed as usize % SPLIT_ROWS.len()];
+        dma_chain(c, tags);
+        c.pc = 0x0037_2348;
+        c.g[A0][0] = (DATA + 0x4000) as u64;
+        c.g[A1][0] = args[0];
+        c.g[A2][0] = args[1];
+        c.g[A3][0] = args[2];
     }
 
     /// `scePadInit` over the model-version arms (current model skips the
@@ -35818,6 +36555,14 @@ pub(crate) mod tests {
             seen.len(),
             seen
         );
+        crate::difftest::require_paths(
+            ee::s15::f_003ff4a8__generated,
+            SEEDS,
+            &seen.into_iter().collect::<Vec<_>>(),
+            &|c, seed| {
+                pad_init_fixture(c, seed);
+            },
+        );
     }
 
     /// Fixture for [`pad_init_matches`].
@@ -35839,6 +36584,131 @@ pub(crate) mod tests {
             .write32(crate::game::lib::kernel::tests::KPUTS_GATE, GATE_MAGIC);
     }
 
+    /// Resume heads of `scePadInit`: the two BindRpc returns, the
+    /// ModVer/printf/InitRpc returns, and the two countdown/retry
+    /// loops. The `InitRpc` return (`0x003ff5d0`) runs the epilogue.
+    const PAD_RESUME_HEADS: [u32; 10] = [
+        0x003f_f514,
+        0x003f_f568,
+        0x003f_f57c,
+        0x003f_f5a4,
+        0x003f_f5c0,
+        0x003f_f5d0,
+        0x003f_f4d8,
+        0x003f_f4e0,
+        0x003f_f530,
+        0x003f_f538,
+    ];
+
+    /// Frame + prologue state for a resume at `head`: the entry
+    /// fixture lays down the completion/model words and fakes, then
+    /// the prologue is replayed verbatim and the per-head registers
+    /// are staged (window bases `S0`/`S1`, countdown values, the
+    /// ModVer result the call would have returned). Every head runs
+    /// to completion from there.
+    fn pad_init_resume_fixture(c: &mut Cpu, seed: u32) {
+        use ssx3_ee_rt::cpu::reg::*;
+        use ssx3_ee_rt::cpu::sx;
+        pad_init_fixture(c, seed);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+        c.g[S2][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+        c.g[S1][0] = 0x520000;
+        let head = PAD_RESUME_HEADS[seed as usize % PAD_RESUME_HEADS.len()];
+        match head {
+            // First window; the countdown runs once from 1.
+            0x003f_f4d8 | 0x003f_f4e0 => {
+                c.g[S0][0] = 0x0052_6200;
+                c.g[V0][0] = 1;
+                c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+            }
+            // Second window; the countdown runs once from 1.
+            0x003f_f530 | 0x003f_f538 => {
+                c.g[S0][0] = 0x0052_6228;
+                c.g[S1][0] = 0x0052_6200;
+                c.g[V0][0] = 1;
+                c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+            }
+            // First BindRpc return (success): the window check exits.
+            0x003f_f514 => {
+                c.g[S0][0] = 0x0052_6200;
+                c.g[V0][0] = 0;
+            }
+            // Second BindRpc return (success): same, second window.
+            0x003f_f568 => {
+                c.g[S0][0] = 0x0052_6228;
+                c.g[S1][0] = 0x0052_6200;
+                c.g[V0][0] = 0;
+            }
+            // ModVer return: current model, skips the printf.
+            0x003f_f57c => {
+                c.g[V0][0] = 0x400;
+            }
+            // First printf return: old-model shape, then the second.
+            0x003f_f5a4 => {
+                c.g[S1][0] = 0x500;
+                c.g[S0][0] = 5;
+                c.g[V0][0] = 0;
+            }
+            _ => {}
+        }
+        c.pc = head;
+    }
+
+    /// Direct-entry resume test for `scePadInit`: start at each resume
+    /// head with the saved frame in place and compare against the
+    /// generated resume path.
+    #[test]
+    fn pad_init_resume_matches() {
+        use crate::difftest::{compare, strict_ok};
+        use std::collections::BTreeSet;
+        crate::game::lib::kernel::tests::hook_kputs();
+        hook_bind_rpc();
+        hook_mod_ver();
+        let mut seen = BTreeSet::new();
+        for seed in 0..SEEDS {
+            let head = PAD_RESUME_HEADS[seed as usize % PAD_RESUME_HEADS.len()];
+            seen.insert(head);
+            let r = compare(ee::s15::f_003ff4a8__generated, sce_pad_init, &|c| {
+                pad_init_resume_fixture(c, seed)
+            });
+            assert!(
+                r.hard.is_empty(),
+                "seed {seed} head {head:#x}: {:#?}",
+                r.hard
+            );
+            assert!(
+                strict_ok(&r.soft),
+                "seed {seed} head {head:#x} (scratch): {:#?}",
+                r.soft
+            );
+        }
+        assert!(
+            seen.len() == PAD_RESUME_HEADS.len(),
+            "resume heads not covered: {seen:?}",
+        );
+    }
+
+    driven!(pad_driven, sce_pad_init);
+    driven!(pad_generated_driven, ee::s15::f_003ff4a8__generated);
+
+    /// `scePadInit` with events due: deliveries in the BindRpc retry
+    /// countdowns unwind and re-enter identically.
+    #[test]
+    fn pad_init_events() {
+        crate::game::lib::kernel::tests::hook_kputs();
+        hook_bind_rpc();
+        hook_mod_ver();
+        check_events(pad_generated_driven, pad_driven, SEEDS, &|c, seed| {
+            let mut r = machine(c, seed, 1_368_010, 0);
+            pad_init_fixture(c, seed);
+            schedule(c, &mut r, seed, 0x003f_f4a8)
+        });
+    }
+
     /// `sceMcInit` over the initialized word, the BindRpc/CallRpc
     /// success/failure arms and the result mapping (including both printf
     /// arms). The BindRpc-fail spin and the 1M countdown retry wait on
@@ -35849,7 +36719,7 @@ pub(crate) mod tests {
         use std::collections::BTreeSet;
         crate::game::lib::kernel::tests::hook_kputs();
         hook_bind_rpc();
-        hook_call_rpc2();
+        hook_mc_call_rpc();
         hook_mc_sync();
         hook_init_rpc();
         check(
@@ -35873,6 +36743,14 @@ pub(crate) mod tests {
             "mc arms not covered ({} paths): {:?}",
             seen.len(),
             seen
+        );
+        crate::difftest::require_paths(
+            ee::s15::f_00409940__generated,
+            SEEDS,
+            &seen.into_iter().collect::<Vec<_>>(),
+            &|c, seed| {
+                mc_init_fixture(c, seed);
+            },
         );
     }
 
@@ -35905,6 +36783,128 @@ pub(crate) mod tests {
         c.bus.write32(0x0052_8780, 0x77);
         c.bus
             .write32(crate::game::lib::kernel::tests::KPUTS_GATE, GATE_MAGIC);
+    }
+
+    /// Resume points of `sceMcInit`: the bind-retry countdown's entry
+    /// (0x4099d8) and its loop (0x4099e0), the only arms where the
+    /// generated dispatcher resumes after an event unwind (the call
+    /// returns are not arms; the fail spin 0x409a28 never ends).
+    const MC_RESUME_HEADS: [u32; 2] = [0x0040_99d8, 0x0040_99e0];
+
+    /// Frame + prologue state for a resume at a countdown head: the entry
+    /// fixture lays down the completion/result words and fakes (with the
+    /// initialized word forced to 0, the create-sema path), the prologue
+    /// is replayed verbatim and the window bases are staged; the loop
+    /// head also gets a small remaining count in `v0`.
+    fn mc_init_resume_fixture(c: &mut Cpu, seed: u32) {
+        use ssx3_ee_rt::cpu::reg::*;
+        use ssx3_ee_rt::cpu::sx;
+        mc_init_fixture(c, seed);
+        // Force the create-sema path.
+        c.bus.write32(0x0045_33c4, 0);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xb0));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[S5][0]);
+        c.g[S5][0] = 0x450000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0xa0), c.g[RA][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x90), c.g[S6][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[S4][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S0][0]);
+        c.g[S0][0] = 0x0052_0000;
+        c.g[S6][0] = 0x0052_0000;
+        c.g[S4][0] = 0x0053_0000;
+        let head = MC_RESUME_HEADS[seed as usize % MC_RESUME_HEADS.len()];
+        if head == 0x0040_99e0 {
+            c.g[V0][0] = 2 + (seed % 5) as u64;
+        }
+        c.pc = head;
+    }
+
+    /// Direct-entry resume test for `sceMcInit`: start at each resume
+    /// head with the saved frame in place and compare against the
+    /// generated resume path.
+    #[test]
+    fn mc_init_resume_matches() {
+        use crate::difftest::{compare, strict_ok};
+        use std::collections::BTreeSet;
+        crate::game::lib::kernel::tests::hook_kputs();
+        hook_bind_rpc();
+        hook_mc_call_rpc();
+        hook_mc_sync();
+        hook_init_rpc();
+        let mut seen = BTreeSet::new();
+        // Few seeds: the countdown entry spins about 7.3 M cycles.
+        for seed in 0..16 {
+            let head = MC_RESUME_HEADS[seed as usize % MC_RESUME_HEADS.len()];
+            seen.insert(head);
+            let r = compare(ee::s15::f_00409940__generated, sce_mc_init, &|c| {
+                mc_init_resume_fixture(c, seed)
+            });
+            assert!(
+                r.hard.is_empty(),
+                "seed {seed} head {head:#x}: {:#?}",
+                r.hard
+            );
+            assert!(
+                strict_ok(&r.soft),
+                "seed {seed} head {head:#x} (scratch): {:#?}",
+                r.soft
+            );
+        }
+        assert!(
+            seen.len() == MC_RESUME_HEADS.len(),
+            "resume heads not covered: {seen:?}",
+        );
+    }
+
+    driven!(mc_driven, sce_mc_init);
+    driven!(mc_generated_driven, ee::s15::f_00409940__generated);
+
+    /// Events-test fixture: same state as [`mc_init_fixture`] but with
+    /// no fake-unwind lottery (`drive` requires the UNWIND bit, which
+    /// the lottery never sets; real unwinds still re-enter through the
+    /// entry guard).
+    pub(crate) fn mc_init_events_fixture(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 1_368_011, 0);
+        c.pc = 0x0040_9940;
+        c.bus.write32(0x0045_33c4, [5, 0][seed as usize % 2]);
+        c.bus.write32(BIND_GATE, GATE_MAGIC);
+        c.bus.write32(BIND_RESULT, 0);
+        c.bus.write32(MCSYNC_GATE, GATE_MAGIC);
+        c.bus.write32(INITRPC_GATE, GATE_MAGIC);
+        c.bus.write32(CALLRPC_GATE, GATE_MAGIC);
+        let call = [0xffff_ffff, 0][seed as usize / 2 % 2];
+        c.bus.write32(CALLRPC_RESULT, call);
+        let sub = seed as usize / 4 % 3;
+        let (w4, w8) = match sub {
+            0 => (600, 600),
+            1 => (100, 600),
+            _ => (600, 100),
+        };
+        c.bus.write32(0x0052_8784, w4);
+        c.bus.write32(0x0052_8788, w8);
+        c.bus.write32(0x0052_71e4, 1);
+        c.bus.write32(0x0052_8780, 0x77);
+        c.bus
+            .write32(crate::game::lib::kernel::tests::KPUTS_GATE, GATE_MAGIC);
+    }
+
+    /// `sceMcInit` with events due: deliveries in the countdown and
+    /// BindRpc retry paths unwind and re-enter identically.
+    #[test]
+    fn mc_init_events() {
+        crate::game::lib::kernel::tests::hook_kputs();
+        hook_bind_rpc();
+        hook_mc_call_rpc();
+        hook_mc_sync();
+        hook_init_rpc();
+        check_events(mc_generated_driven, mc_driven, SEEDS, &|c, seed| {
+            let mut r = machine(c, seed, 1_368_011, 0);
+            mc_init_events_fixture(c, seed);
+            schedule(c, &mut r, seed, 0x0040_9940)
+        });
     }
 }
 
@@ -36295,6 +37295,51 @@ pub(crate) mod callee {
     pub(crate) const EA_MEM_FREE: Callee = Callee {
         addr: 0x0031_7e98,
         f: ee::s10::EA_MemFree,
+    };
+
+    /// `sceFs_FdSemaInit` (`0x00427438`; ported in `game/seg/seg_325220.rs`).
+    pub(crate) use crate::game::lib::sif::callee::FD_SEMA_INIT;
+
+    /// `libkernl_vprintf` (`0x00425638`; ported in `game/lib/kernel.rs`).
+    pub(crate) use crate::game::lib::kernel::callee::VPRINTF;
+
+    /// `sceFs_GetFd` (`0x00427520`; same-module call).
+    pub(crate) const GET_FD: Callee = Callee {
+        addr: 0x0042_7520,
+        f: ee::s15::f_00427520,
+    };
+
+    /// `sceFs_Lock` (`0x00427988`).
+    pub(crate) const FS_LOCK: Callee = Callee {
+        addr: 0x0042_7988,
+        f: ee::s15::f_00427988,
+    };
+
+    /// `sceFs_Unlock` (`0x004279b8`).
+    pub(crate) const FS_UNLOCK: Callee = Callee {
+        addr: 0x0042_79b8,
+        f: ee::s15::f_004279b8,
+    };
+
+    /// `sceFsInit` (`0x00427a90`; brings the file system up when the
+    /// lock word is still clear).
+    pub(crate) const FS_INIT: Callee = Callee {
+        addr: 0x0042_7a90,
+        f: ee::s15::f_00427a90,
+    };
+
+    pub(crate) use super::MEMCPY;
+
+    /// `sceFs_AllocFd` (`0x00427498`; ported in this file).
+    pub(crate) const ALLOC_FD: Callee = Callee {
+        addr: 0x0042_7498,
+        f: ee::s15::f_00427498,
+    };
+
+    pub(crate) use crate::game::seg::seg_325220::oc698_callee::PATH_CMD;
+
+    pub(crate) use crate::game::lib::sif::callee::{
+        ADD_DMAC_HANDLER, DISABLE_DMAC, ENABLE_DMAC, REMOVE_DMAC_HANDLER,
     };
 }
 

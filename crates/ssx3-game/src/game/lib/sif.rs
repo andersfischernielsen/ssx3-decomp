@@ -14,17 +14,7 @@ use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use crate::game::lib::kernel::callee::CREATE_SEMA;
 use crate::game::lib::kernel::callee::FLUSH_CACHE;
-use crate::game::lib::kernel::DINTR;
-use crate::game::lib::sif::callee::DELETE_SEMA;
-use crate::game::lib::sif::callee::EINTR;
-use crate::game::lib::sif::callee::GET_FPACKET;
-use crate::game::lib::sif::callee::GET_REG;
-use crate::game::lib::sif::callee::SEND_CMD;
-use crate::game::lib::sif::callee::SET_DMA;
-use crate::game::lib::sif::callee::SET_REG;
-use crate::game::lib::sif::callee::WRITEBACK;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -443,6 +433,52 @@ pub(crate) mod callee {
     pub(crate) const GET_NEXT_REQUEST: Callee = Callee {
         addr: 0x0042_71d8,
         f: ee::s15::f_004271d8,
+    };
+
+    /// `isceSifSendCmd` (`0x004261f0`).
+    pub(crate) const ISCE_SEND_CMD: Callee = Callee {
+        addr: 0x0042_61f0,
+        f: ee::s15::f_004261f0,
+    };
+
+    /// `sceSifRpc_GetFPacket2` (`0x004266c8`).
+    pub(crate) const GET_FPACKET2: Callee = Callee {
+        addr: 0x0042_66c8,
+        f: ee::s15::f_004266c8,
+    };
+
+    pub(crate) use crate::game::seg::seg_325220::oc698_callee::{
+        OC698_SCE_SIF_RPC_FREE_PACKET, OC698_SCE_SIF_RPC_GET_PACKET,
+    };
+
+    /// `sceSifRpc_SearchSvdata` (`0x00426a48`; same-module call).
+    pub(crate) const SEARCH_SVDATA: Callee = Callee {
+        addr: 0x0042_6a48,
+        f: ee::s15::f_00426a48,
+    };
+
+    /// `sceFs_FdSemaInit` (`0x00427438`).
+    pub(crate) const FD_SEMA_INIT: Callee = Callee {
+        addr: 0x0042_7438,
+        f: ee::s15::f_00427438,
+    };
+
+    /// `AddDmacHandler` (`0x00423ab0`).
+    pub(crate) const ADD_DMAC_HANDLER: Callee = Callee {
+        addr: 0x0042_3ab0,
+        f: ee::s15::f_00423ab0,
+    };
+
+    /// `sceSifSetDChain` (`0x00424180`).
+    pub(crate) const SCE_SET_DCHAIN: Callee = Callee {
+        addr: 0x0042_4180,
+        f: ee::s15::f_00424180,
+    };
+
+    /// `EnableDmac` (`0x004249b8`, the interrupt-saving wrapper).
+    pub(crate) const ENABLE_DMAC: Callee = Callee {
+        addr: 0x0042_49b8,
+        f: ee::s15::f_004249b8,
     };
 
     /// `SleepThread` (`0x0042_3cc0`; shared with `buddyapi`).
@@ -4442,81 +4478,13 @@ pub fn sce_sif_rpc_loop(c: &mut Cpu) {
     });
 }
 
-pub(crate) mod oc1361_callee {
-    use super::ee;
-    use super::Callee;
-
-    /// `isceSifSendCmd` (`0x004261f0`).
-    pub(crate) const ISCE_SEND_CMD: Callee = Callee {
-        addr: 0x0042_61f0,
-        f: ee::s15::f_004261f0,
-    };
-
-    /// `sceSifRpc_GetFPacket2` (`0x004266c8`).
-    pub(crate) const GET_FPACKET2: Callee = Callee {
-        addr: 0x0042_66c8,
-        f: ee::s15::f_004266c8,
-    };
-
-    /// `sceSifRpc_GetPacket` (`0x004265d0`).
-    pub(crate) const GET_PACKET: Callee = Callee {
-        addr: 0x0042_65d0,
-        f: ee::s15::f_004265d0,
-    };
-
-    /// `sceSifRpc_FreePacket` (`0x00426678`).
-    pub(crate) const FREE_PACKET: Callee = Callee {
-        addr: 0x0042_6678,
-        f: ee::s15::f_00426678,
-    };
-
-    /// `sceSifRpc_SearchSvdata` (`0x00426a48`; same-module call).
-    pub(crate) const SEARCH_SVDATA: Callee = Callee {
-        addr: 0x0042_6a48,
-        f: ee::s15::f_00426a48,
-    };
-
-    /// `WaitSema` (`0x00423de0`).
-    pub(crate) const WAIT_SEMA: Callee = Callee {
-        addr: 0x0042_3de0,
-        f: ee::s15::f_00423de0,
-    };
-}
-
-pub(crate) mod oc1362_callee {
-    use super::ee;
-    use super::Callee;
-
-    /// `sceFs_FdSemaInit` (`0x00427438`).
-    pub(crate) const FD_SEMA_INIT: Callee = Callee {
-        addr: 0x0042_7438,
-        f: ee::s15::f_00427438,
-    };
-
-    /// `AddDmacHandler` (`0x00423ab0`).
-    pub(crate) const ADD_DMAC_HANDLER: Callee = Callee {
-        addr: 0x0042_3ab0,
-        f: ee::s15::f_00423ab0,
-    };
-
-    /// `sceSifSetDChain` (`0x00424180`).
-    pub(crate) const SCE_SET_DCHAIN: Callee = Callee {
-        addr: 0x0042_4180,
-        f: ee::s15::f_00424180,
-    };
-
-    /// `EnableDmac` (`0x004249b8`, the interrupt-saving wrapper).
-    pub(crate) const ENABLE_DMAC: Callee = Callee {
-        addr: 0x0042_49b8,
-        f: ee::s15::f_004249b8,
-    };
-}
-
-/// `int sceSifRpc_RetrySendAlarm(void *pkt)` (0x4267c0): re-send an RPC
-/// packet through `isceSifSendCmd` (command word `0x80000000 | 8`, length
-/// 0x40). When the send fails, arm alarm 10 (`iSetAlarm`) to retry.
+/// `sceSifRpc_RetrySendAlarm(int id, u16 time, void *pkt)` (0x4267c0): the
+/// alarm handler that re-sends the RPC packet `pkt` (in `a2`) through
+/// `isceSifSendCmd` (command 0x80000008, 0x40 bytes, the destination words
+/// at `pkt + 0x24..0x2c`), returning the send's result. When the send fails
+/// it re-arms itself for 10 ticks with `iSetAlarm` (a tail call).
 pub fn sce_sif_rpc_retry_send_alarm(c: &mut Cpu) {
-    use oc1361_callee::*;
+    use callee::*;
     guest(c, |c| {
         c.cycles += 14;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
@@ -4561,7 +4529,7 @@ pub fn sce_sif_rpc_retry_send_alarm(c: &mut Cpu) {
 /// packet (`GetFPacket`). Then send through `isceSifSendCmd`; on failure
 /// arm alarm 10 instead of returning the packet.
 pub fn sce_sif_rpc_request_rdata(c: &mut Cpu) {
-    use oc1361_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_426864: {
             'b_426858: {
@@ -4648,7 +4616,7 @@ pub fn sce_sif_rpc_request_rdata(c: &mut Cpu) {
 /// semaphore (`CreateSema`/`WaitSema`/`DeleteSema`); a failed send frees
 /// the packet and reports -2, a failed create -3, no packet -1.
 pub fn sce_sif_get_other_data(c: &mut Cpu) {
-    use oc1361_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_426a24: {
             c.cycles += 19;
@@ -4667,7 +4635,7 @@ pub fn sce_sif_get_other_data(c: &mut Cpu) {
             c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[RA][0]);
             c.g[S2][0] = c.g[T0][0];
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2980));
-            GET_PACKET.call(c, 0x00426930)?;
+            OC698_SCE_SIF_RPC_GET_PACKET.call(c, 0x00426930)?;
             c.g[S0][0] = c.g[V0][0];
             let t = c.g[S0][0] == 0u64;
             c.g[V0][0] = 0xffffffffffffffff;
@@ -4703,7 +4671,7 @@ pub fn sce_sif_get_other_data(c: &mut Cpu) {
                     }
                     c.cycles += 4;
                     c.g[A0][0] = c.g[S0][0];
-                    FREE_PACKET.call(c, 0x00426988)?;
+                    OC698_SCE_SIF_RPC_FREE_PACKET.call(c, 0x00426988)?;
                     let t = true;
                     c.g[V0][0] = 0xfffffffffffffffd;
                     if t {
@@ -4728,7 +4696,7 @@ pub fn sce_sif_get_other_data(c: &mut Cpu) {
                     }
                     c.cycles += 6;
                     c.g[A0][0] = c.g[S0][0];
-                    FREE_PACKET.call(c, 0x004269c0)?;
+                    OC698_SCE_SIF_RPC_FREE_PACKET.call(c, 0x004269c0)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     DELETE_SEMA.call(c, 0x004269c8)?;
                     let t = true;
@@ -4770,7 +4738,7 @@ pub fn sce_sif_get_other_data(c: &mut Cpu) {
             }
             c.cycles += 3;
             c.g[A0][0] = c.g[S0][0];
-            FREE_PACKET.call(c, 0x00426a20)?;
+            OC698_SCE_SIF_RPC_FREE_PACKET.call(c, 0x00426a20)?;
             c.g[V0][0] = 0xfffffffffffffffe;
             break 'b_426a24;
         }
@@ -4859,7 +4827,7 @@ pub fn sce_sif_rpc_search_svdata(c: &mut Cpu) {
 /// found, copy its words into the packet and send it (`isceSifSendCmd`,
 /// tail call). Without a match, clear the server words instead.
 pub fn sce_sif_rpc_request_bind(c: &mut Cpu) {
-    use oc1361_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_426b14: {
             'b_426b04: {
@@ -4927,10 +4895,12 @@ pub fn sce_sif_rpc_request_bind(c: &mut Cpu) {
     })
 }
 
-/// `int sceSifRpc_RequestCall(...)` (0x426c88): when the server entry
-/// already has a pending call id, take the queued packet; otherwise park
-/// this request's packet in the entry and, unless the server is idle,
-/// wake its thread (`iWakeupThread`).
+/// `sceSifRpc_RequestCall(void *pkt)` (0x426c88): append the server data
+/// `sd = [pkt + 0x34]` to its queue `q = [sd + 0x40]` (head `q + 0xc` when
+/// empty, else linked after the tail `q + 0x10`, which it becomes), copy
+/// the call's words from the packet into `sd`, then wake the queue's
+/// thread (`iWakeupThread`, a tail call) unless its id (`q + 0`) is
+/// negative or its wake word (`q + 4`) is already set.
 pub fn sce_sif_rpc_request_call(c: &mut Cpu) {
     guest(c, |c| {
         'b_426ca8: {
@@ -5013,7 +4983,7 @@ pub fn sce_sif_get_next_request(c: &mut Cpu) {
                 c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
                 c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
                 c.g[S0][0] = c.g[A0][0];
-                DINTR.call(c, 0x004271f0)?;
+                callee::DINTR.call(c, 0x004271f0)?;
                 c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                 if c.g[S1][0] != 0u64 {
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
@@ -5035,7 +5005,7 @@ pub fn sce_sif_get_next_request(c: &mut Cpu) {
             break 'b_427210;
         }
         c.cycles += 8;
-        EINTR.call(c, 0x00427218)?;
+        callee::EINTR.call(c, 0x00427218)?;
         c.g[V0][0] = c.g[S1][0];
         c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
         c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
@@ -5047,13 +5017,16 @@ pub fn sce_sif_get_next_request(c: &mut Cpu) {
     })
 }
 
-/// `int sceSifExecRequest(...)` (0x427230): run an RPC request handler:
-/// call the server function through the table, write back the caches
-/// around it, allocate the reply packet (`GetFPacket2`/`GetFPacket`);
-/// then send the reply words (`SendCmd`, polling to `SetDma`). The
-/// send/wait loops check for due events on their back edges.
+/// `sceSifExecRequest(void *sd)` (0x427230): run an RPC request: call the
+/// server function (`sd + 4`) with the caches written back around it, take
+/// a reply packet (`GetFPacket2` when the flag word's bit 2 is set, else
+/// `GetFPacket`), then answer: with a reply count (`sd + 0x30`) through
+/// `sceSifSendCmd`, retried until it succeeds; without one by
+/// `sceSifSetDma` of the reply descriptors, waiting out a 0x100000-step
+/// countdown and retrying while the start fails. Both retry loops check
+/// for due events on their back edges.
 pub fn sce_sif_exec_request(c: &mut Cpu) {
-    use oc1361_callee::*;
+    use callee::*;
     guest(c, |c| {
         'b_427274: {
             c.cycles += 17;
@@ -5279,7 +5252,7 @@ pub fn sce_sif_set_rpc_queue(c: &mut Cpu) {
                 c.g[S1][0] = c.g[A0][0];
                 c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
                 c.g[S0][0] = c.g[A1][0];
-                DINTR.call(c, 0x00426f64)?;
+                callee::DINTR.call(c, 0x00426f64)?;
                 c.g[V1][0] = 0x530000;
                 c.sw(c.g[S1][0] as u32, c.g[S0][0]);
                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2980));
@@ -5355,7 +5328,7 @@ pub fn sce_sif_remove_rpc(c: &mut Cpu) {
                 c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                 c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
                 c.g[S1][0] = c.g[A0][0];
-                DINTR.call(c, 0x004270d0)?;
+                callee::DINTR.call(c, 0x004270d0)?;
                 c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
                 let t = c.g[S0][0] != c.g[S1][0];
                 if t {
@@ -5411,7 +5384,7 @@ pub fn sce_sif_remove_rpc(c: &mut Cpu) {
             break 'b_427120;
         }
         c.cycles += 9;
-        EINTR.call(c, 0x00427128)?;
+        callee::EINTR.call(c, 0x00427128)?;
         c.g[V0][0] = c.g[S0][0];
         c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
         c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
@@ -5437,7 +5410,7 @@ pub fn sce_sif_remove_rpc_queue(c: &mut Cpu) {
                 c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                 c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
                 c.g[S1][0] = c.g[A0][0];
-                DINTR.call(c, 0x00427160)?;
+                callee::DINTR.call(c, 0x00427160)?;
                 c.g[V1][0] = 0x530000;
                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2980));
                 c.g[S0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
@@ -5495,7 +5468,7 @@ pub fn sce_sif_remove_rpc_queue(c: &mut Cpu) {
             break 'b_4271b8;
         }
         c.cycles += 8;
-        EINTR.call(c, 0x004271c0)?;
+        callee::EINTR.call(c, 0x004271c0)?;
         c.g[V0][0] = c.g[S0][0];
         c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
         c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
@@ -5514,7 +5487,7 @@ pub fn sce_sif_remove_rpc_queue(c: &mut Cpu) {
 /// set, just restore the interrupt state. The table/poll loops check for
 /// due events on their back edges.
 pub fn sce_sif_init_cmd(c: &mut Cpu) {
-    use oc1362_callee::*;
+    use callee::*;
     guest(c, |c| {
         c.cycles += 12;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
@@ -8035,12 +8008,11 @@ pub(crate) mod tests {
     use crate::difftest::fakes;
     use crate::difftest::fresh;
     use crate::difftest::run_generated;
-    pub(crate) use crate::game::misc::sce_fs_alloc_fd;
 
     /// Gate + forced result for the send-command fakes below (per-machine
     /// words; other tests' machines read 0 here, so their runs fall back
     /// to the slot bodies).
-    pub(crate) const SEND_GATE_2: u32 = DATA + 0x6400;
+    pub(crate) const SEND_CMD_GATE: u32 = DATA + 0x6400;
 
     pub(crate) const SEND_RESULT: u32 = DATA + 0x6404;
 
@@ -8048,7 +8020,7 @@ pub(crate) mod tests {
     /// forced result without sending. Anywhere else (or with the gate
     /// clear): the slot body.
     pub(crate) fn fake_send_zero(c: &mut Cpu) {
-        if c.bus.read32(SEND_GATE_2) != GATE_MAGIC {
+        if c.bus.read32(SEND_CMD_GATE) != GATE_MAGIC {
             return fakes::fall_back(
                 c,
                 fakes::prev_cell(fake_send_zero),
@@ -8066,7 +8038,7 @@ pub(crate) mod tests {
     pub(crate) const SEND_N: u32 = DATA + 0x641c;
 
     pub(crate) fn fake_send_cmd_zero(c: &mut Cpu) {
-        if c.bus.read32(SEND_GATE_2) != GATE_MAGIC {
+        if c.bus.read32(SEND_CMD_GATE) != GATE_MAGIC {
             return fakes::fall_back(
                 c,
                 fakes::prev_cell(fake_send_cmd_zero),
@@ -8151,7 +8123,7 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x324, 0x0202_0200 + seed);
                 c.bus.write32(DATA + 0x328, 0x0303_0300 + seed);
                 c.bus.write32(DATA + 0x32c, 12);
-                c.bus.write32(SEND_GATE_2, GATE_MAGIC);
+                c.bus.write32(SEND_CMD_GATE, GATE_MAGIC);
                 c.bus.write32(SEND_RESULT, 0);
             },
         );
@@ -8167,6 +8139,24 @@ pub(crate) mod tests {
             );
         }
         c.bus.write32(base + 0x20, 3);
+    }
+
+    /// Real packets for the packet pool at `pool`: free packets at `DATA +
+    /// 0x1000` (four of 0x40 bytes; the next one from `seed`), fixed
+    /// packets at `DATA + 0x2000` (three), every packet word nonzero so the
+    /// stores into them show.
+    pub(crate) fn real_pool(c: &mut Cpu, pool: u32, seed: u32) {
+        c.bus.write32(pool + 0x14, DATA + 0x1000);
+        c.bus.write32(pool + 0x18, 4);
+        c.bus.write32(pool + 0x1c, DATA + 0x2000);
+        c.bus.write32(pool + 0x20, 3);
+        c.bus.write32(pool + 0x24, seed % 7);
+        for i in 0..0x40u32 {
+            c.bus.write32(DATA + 0x1000 + 4 * i, 0x5a5a_0000 + 4 * i);
+        }
+        for i in 0..0x30u32 {
+            c.bus.write32(DATA + 0x2000 + 4 * i, 0x6b6b_0000 + 4 * i);
+        }
     }
 
     /// `sceSifRpc_RequestRData`: flag bit 2 clear takes `GetFPacket`,
@@ -8185,6 +8175,7 @@ pub(crate) mod tests {
                 c.g[A0][0] = (DATA + 0x300) as u64;
                 c.g[A1][0] = (DATA + 0x100) as u64;
                 sif_pool(c, DATA + 0x100, seed);
+                real_pool(c, DATA + 0x100, seed);
                 // Bit digit crossed with the pool-word index digit.
                 let bit = [0, 4, 4][seed as usize % 3];
                 let idx = [0, 2, 9][seed as usize / 3 % 3];
@@ -8217,13 +8208,14 @@ pub(crate) mod tests {
                 c.g[A0][0] = (DATA + 0x300) as u64;
                 c.g[A1][0] = (DATA + 0x100) as u64;
                 sif_pool(c, DATA + 0x100, seed);
+                real_pool(c, DATA + 0x100, seed);
                 let bit = [0, 4][seed as usize % 2];
                 c.bus
                     .write32(DATA + 0x310, ((2 << 16) | bit | 0x0101) as u32);
                 send_words(c, DATA + 0x300, seed);
                 c.bus.write32(DATA + 0x320, 0x40);
                 c.bus.write32(DATA + 0x328, 12);
-                c.bus.write32(SEND_GATE_2, GATE_MAGIC);
+                c.bus.write32(SEND_CMD_GATE, GATE_MAGIC);
                 c.bus.write32(SEND_RESULT, 0);
             },
         );
@@ -8329,7 +8321,7 @@ pub(crate) mod tests {
                 other_packet(c, DATA + 0x400, seed);
                 c.bus.write32(PACKET_GATE, GATE_MAGIC);
                 c.bus.write32(PACKET_ADDR, DATA + 0x400);
-                c.bus.write32(SEND_GATE_2, GATE_MAGIC);
+                c.bus.write32(SEND_CMD_GATE, GATE_MAGIC);
                 c.bus.write32(SEND_N, u32::MAX);
             },
         );
@@ -8416,12 +8408,6 @@ pub(crate) mod tests {
         }
         // Four modes, four totals: one arm per total.
         assert_eq!(seen.len(), 4, "paths seen: {seen:?}");
-        require_paths(
-            ee::s15::f_00426a48__generated,
-            SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
-            setup,
-        );
     }
 
     driven!(search_svdata_driven, sce_sif_rpc_search_svdata);
@@ -8432,9 +8418,10 @@ pub(crate) mod tests {
     );
 
     /// `sceSifRpc_SearchSvdata` with events due: deliveries on both list
-    /// walks unwind and re-enter identically; the loop still finds the id.
-    /// Two buckets: the first one's scan hits the inner head, the hop to
-    /// the second hits the outer head.
+    /// walks deliver inline on both sides; the loop still finds the id.
+    /// Two buckets: the first one's six misses run the inner head
+    /// (0x426a68), the hop to the second (entries at `DATA + 0x700`, apart
+    /// from the first's) the outer head (0x426a58).
     #[test]
     fn search_svdata_events() {
         check_events(
@@ -8446,7 +8433,7 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x328, DATA + 0x400);
                 c.bus.write32(DATA + 0x408, DATA + 0x500);
                 c.bus.write32(DATA + 0x414, DATA + 0x480);
-                c.bus.write32(DATA + 0x488, DATA + 0x540);
+                c.bus.write32(DATA + 0x488, DATA + 0x700);
                 c.bus.write32(DATA + 0x494, 0);
                 // Bucket 1: six misses; bucket 2: miss then the target.
                 for i in 0..6u32 {
@@ -8461,10 +8448,10 @@ pub(crate) mod tests {
                         },
                     );
                 }
-                c.bus.write32(DATA + 0x540, 0x0b0b_0d00 + seed);
-                c.bus.write32(DATA + 0x578, DATA + 0x580);
-                c.bus.write32(DATA + 0x580, 0x0b0b_0b00 + seed);
-                c.bus.write32(DATA + 0x5b8, 0);
+                c.bus.write32(DATA + 0x700, 0x0b0b_0d00 + seed);
+                c.bus.write32(DATA + 0x738, DATA + 0x740);
+                c.bus.write32(DATA + 0x740, 0x0b0b_0b00 + seed);
+                c.bus.write32(DATA + 0x778, 0);
                 c.g[A0][0] = (0x0b0b_0b00 + seed) as u64;
                 c.g[A1][0] = (DATA + 0x300) as u64;
                 schedule(c, &mut r, seed, 0x0042_6a48)
@@ -8528,18 +8515,21 @@ pub(crate) mod tests {
                 c.pc = 0x0042_6a98;
                 c.g[A0][0] = (DATA + 0x300) as u64;
                 c.g[A1][0] = (DATA + 0x400) as u64;
-                // Length the tail send uses.
-                c.g[T2][0] = 12;
-                // GetFPacket inputs: zero high word (HI = 0), so the
-                // packet lands at the chosen base; A3 nonzero (divisor).
+                // GetFPacket inputs: the packet at `DATA + 0x700` (index
+                // 0 of the pool's free packets), its words nonzero.
                 c.bus.write32(DATA + 0x400, 0x2323_2300 + seed);
                 c.bus.write32(DATA + 0x414, DATA + 0x700);
                 c.bus.write32(DATA + 0x418, 0x2424_2400 + seed);
                 c.bus.write32(DATA + 0x424, 0);
-                c.g[A3][0] = 0x10;
-                // Found vs missing server entry.
+                for i in 0..0x30u32 {
+                    c.bus.write32(DATA + 0x700 + 4 * i, 0x7c7c_0000 + 4 * i);
+                }
+                // Found vs missing server entry; the found one (at `DATA +
+                // 0x640`) has nonzero words for the packet (`+0x8`, `+0x14`).
                 let absent = seed % 2 == 0;
                 let target = search_buckets_at(c, seed, DATA + 0x400, DATA + 0x440, absent);
+                c.bus.write32(DATA + 0x648, 0x2626_2600 + seed);
+                c.bus.write32(DATA + 0x654, 0x2727_2700 + seed);
                 c.bus.write32(DATA + 0x31c, target);
                 c.bus.write32(DATA + 0x314, 0x2525_2500 + seed);
                 c.bus.write32(DATA + 0x320, target);
@@ -8547,11 +8537,12 @@ pub(crate) mod tests {
         );
     }
 
-    /// `sceSifRpc_RequestCall`: a pending call id returns the queued
-    /// packet; otherwise the request parks in the entry and, unless the
-    /// server is idle or already woken, its thread is woken (real
-    /// `iWakeupThread`). No traps on the first three arms, so their
-    /// totals pin them.
+    /// `sceSifRpc_RequestCall`: the request packet starts the server
+    /// entry's queue (empty) or is appended at its tail, the call words are
+    /// copied into the entry, and the server thread is woken unless its id
+    /// is negative or its wake word is already set (real `iWakeupThread`).
+    /// The four totals without the wakeup (which makes syscalls) pin the
+    /// empty/append and the two no-wake arms.
     #[test]
     fn request_call_matches() {
         let setup = &|c: &mut Cpu, seed: u32| {
@@ -8560,7 +8551,7 @@ pub(crate) mod tests {
             c.g[A0][0] = (DATA + 0x300) as u64;
             c.bus.write32(DATA + 0x334, DATA + 0x400);
             c.bus.write32(DATA + 0x440, DATA + 0x500);
-            for (i, off) in [0x14u32, 0x1c, 0x20, 0x24, 0x28, 0x30, 0x10]
+            for (i, off) in [0x14u32, 0x1c, 0x20, 0x24, 0x28, 0x2c, 0x30, 0x10]
                 .iter()
                 .enumerate()
             {
@@ -8572,46 +8563,42 @@ pub(crate) mod tests {
                             .wrapping_add(i as u32 * 0x101),
                 );
             }
-            // Mode digit: pending / idle server / woken server / wakeup.
-            let mode = seed % 4;
+            // The entry words the copies overwrite start nonzero.
+            for i in 0..12u32 {
+                c.bus.write32(DATA + 0x40c + 4 * i, 0x3838_0000 + 4 * i);
+            }
+            // Queue digit: empty, or a queued packet whose tail (at `DATA
+            // + 0x640`) takes the append.
+            let queued = seed % 2 == 1;
             c.bus
-                .write32(DATA + 0x50c, if mode == 0 { 0x4242_4200 + seed } else { 0 });
-            c.bus.write32(DATA + 0x510, 0x4343_4300 + seed);
+                .write32(DATA + 0x50c, if queued { DATA + 0x600 } else { 0 });
+            c.bus.write32(
+                DATA + 0x510,
+                if queued {
+                    DATA + 0x640
+                } else {
+                    0x4343_4300 + seed
+                },
+            );
+            c.bus.write32(DATA + 0x67c, 0x4444_4400 + seed);
+            // Thread digit: id negative, wake word set, or a wakeup.
+            let mode = seed / 2 % 3;
             c.bus.write32(
                 DATA + 0x500,
-                if mode == 1 {
+                if mode == 0 {
                     0xffff_ffff
                 } else {
                     0x4545_4500 + seed
                 },
             );
             c.bus
-                .write32(DATA + 0x504, if mode == 3 { 0 } else { 0x4646_4600 + seed });
+                .write32(DATA + 0x504, if mode == 2 { 0 } else { 0x4646_4600 + seed });
         };
-        check(
+        check_paths(
             ee::s15::f_00426c88__generated,
             sce_sif_rpc_request_call,
             SEEDS,
-            setup,
-        );
-        // The three trap-less arms (pending, parked-idle, parked-woken)
-        // pin one total each; the wakeup arm traps (fake charges vary).
-        let mut det = std::collections::BTreeSet::new();
-        for seed in 0..SEEDS {
-            if seed % 4 == 3 {
-                continue;
-            }
-            let mut c = fresh();
-            setup(&mut c, seed);
-            let before = c.cycles;
-            run_generated(&mut c, ee::s15::f_00426c88__generated);
-            det.insert(c.cycles - before);
-        }
-        assert_eq!(det.len(), 3, "deterministic paths seen: {det:?}");
-        require_paths(
-            ee::s15::f_00426c88__generated,
-            SEEDS,
-            &det.into_iter().collect::<Vec<_>>(),
+            &[28, 29, 31, 32],
             setup,
         );
     }
@@ -8625,11 +8612,20 @@ pub(crate) mod tests {
             machine(c, seed, 1_361_011, 0);
             c.pc = 0x0042_71d8;
             c.g[A0][0] = (DATA + 0x300) as u64;
-            if seed % 2 == 0 {
-                c.bus.write32(DATA + 0x30c, 0);
-            } else {
-                c.bus.write32(DATA + 0x30c, DATA + 0x400);
-                c.bus.write32(DATA + 0x43c, 0x5151_5100 + seed);
+            // The taken word both arms store, nonzero before.
+            c.bus.write32(DATA + 0x304, 0x5252_5200 + seed);
+            // Queue digit: empty, a request with another behind it, the
+            // last request.
+            match seed % 3 {
+                0 => c.bus.write32(DATA + 0x30c, 0),
+                1 => {
+                    c.bus.write32(DATA + 0x30c, DATA + 0x400);
+                    c.bus.write32(DATA + 0x43c, 0x5151_5100 + seed);
+                }
+                _ => {
+                    c.bus.write32(DATA + 0x30c, DATA + 0x400);
+                    c.bus.write32(DATA + 0x43c, 0);
+                }
             }
         };
         check(
@@ -8647,16 +8643,10 @@ pub(crate) mod tests {
             seen.insert(c.cycles - before);
         }
         assert_eq!(seen.len(), 2, "paths seen: {seen:?}");
-        require_paths(
-            ee::s15::f_004271d8__generated,
-            SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
-            setup,
-        );
     }
 
     /// Gate + countdown for the `SetDma` fake below.
-    pub(crate) const DMA_GATE_2: u32 = DATA + 0x6414;
+    pub(crate) const SET_DMA_GATE: u32 = DATA + 0x6414;
 
     pub(crate) const DMA_FAIL_N: u32 = DATA + 0x6418;
 
@@ -8664,7 +8654,7 @@ pub(crate) mod tests {
     /// (the wait loop spins), then fall back to the slot body. Anywhere
     /// else (or with the gate clear): the slot body.
     pub(crate) fn fake_set_dma_zero(c: &mut Cpu) {
-        if c.bus.read32(DMA_GATE_2) != GATE_MAGIC {
+        if c.bus.read32(SET_DMA_GATE) != GATE_MAGIC {
             return fakes::fall_back(
                 c,
                 fakes::prev_cell(fake_set_dma_zero),
@@ -8696,9 +8686,10 @@ pub(crate) mod tests {
 
     /// Request struct for `ExecRequest`: every steering word from an
     /// independent digit (server address/kind, cache sizes, pool flag,
-    /// reply count).
+    /// reply count), and real packets in the SIF pool at `0x52d680`.
     pub(crate) fn exec_setup(c: &mut Cpu, seed: u32) {
         c.pc = 0x0042_7230;
+        real_pool(c, 0x0052_d680, seed);
         c.g[A0][0] = (DATA + 0x300) as u64;
         // Server digit: the real zero leaf (no reply) vs an unmapped
         // address (the miss-hook fake answers nonzero).
@@ -8755,9 +8746,10 @@ pub(crate) mod tests {
         );
     }
 
-    /// `sceSifExecRequest` with the first two DMA starts failing: the
-    /// wait loop spins its countdown twice, then the real start goes
-    /// through. Few seeds: each run spins ~1.4 M cycles.
+    /// `sceSifExecRequest` on the DMA path (no reply count) with the first
+    /// DMA start failing: the countdown (0x4273b0) and the retry
+    /// (0x427398) run once, then the real start goes through. Few seeds:
+    /// each run spins about 7.3 M cycles.
     #[test]
     fn exec_request_dma_wait_matches() {
         hook_dma_fakes();
@@ -8768,11 +8760,11 @@ pub(crate) mod tests {
             &|c, seed| {
                 machine(c, seed, 1_361_013, 0);
                 exec_setup(c, seed * 16 + 15);
-                // Nonsense server answer, reply loop on, pool plain.
+                // Nonsense server answer, no reply count (the DMA path).
                 c.bus.write32(DATA + 0x304, DATA + 0x700);
-                c.bus.write32(DATA + 0x330, 5);
-                c.bus.write32(DMA_GATE_2, GATE_MAGIC);
-                c.bus.write32(DMA_FAIL_N, 2);
+                c.bus.write32(DATA + 0x330, 0);
+                c.bus.write32(SET_DMA_GATE, GATE_MAGIC);
+                c.bus.write32(DMA_FAIL_N, 1);
             },
         );
     }
@@ -8785,11 +8777,12 @@ pub(crate) mod tests {
     );
 
     /// `sceSifExecRequest` with events due and the first send failing
-    /// once: the send loop unwinds and re-enters identically, then the
+    /// once: the send loop delivers inline on both sides, then the
     /// real send breaks it out.
     #[test]
     fn exec_request_events() {
         hook_dma_fakes();
+        hook_send_fakes();
         check_events(
             exec_request_generated_driven,
             exec_request_driven,
@@ -8799,7 +8792,7 @@ pub(crate) mod tests {
                 exec_setup(c, seed * 16 + 15);
                 c.bus.write32(DATA + 0x304, DATA + 0x700);
                 c.bus.write32(DATA + 0x330, 5);
-                c.bus.write32(SEND_GATE_2, GATE_MAGIC);
+                c.bus.write32(SEND_CMD_GATE, GATE_MAGIC);
                 c.bus.write32(SEND_N, 1);
                 schedule(c, &mut r, seed, 0x0042_7230)
             },
@@ -8833,6 +8826,11 @@ pub(crate) mod tests {
             c.pc = 0x0042_6f48;
             c.g[A0][0] = (DATA + 0x300) as u64;
             c.g[A1][0] = 0x7272_7200 + seed as u64;
+            // The queue struct's words, which the setup zeroes, start
+            // nonzero.
+            for i in 0..7u32 {
+                c.bus.write32(DATA + 0x300 + 4 * i, 0x7373_7300 + i);
+            }
             pool_chain(c, [0, 1, 3][seed as usize % 3], 0x0052_d000);
         };
         check(
@@ -8850,12 +8848,6 @@ pub(crate) mod tests {
             seen.insert(c.cycles - before);
         }
         assert_eq!(seen.len(), 3, "paths seen: {seen:?}");
-        require_paths(
-            ee::s15::f_00426f48__generated,
-            SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
-            setup,
-        );
     }
 
     driven!(set_rpc_queue_driven, sce_sif_set_rpc_queue);
@@ -8905,24 +8897,26 @@ pub(crate) mod tests {
         out
     }
 
-    /// `sceSifRemoveRpc`: the head drops directly, a later entry unlinks
-    /// by skipping, an absent entry reports null. No traps on any path,
-    /// so the totals pin every arm.
+    /// `sceSifRemoveRpc`: the head drops directly, the second entry and a
+    /// later one unlink by skipping, an empty list and an absent entry
+    /// report null. No traps on any path, so the five totals are the five
+    /// exits.
     #[test]
     fn remove_rpc_matches() {
         let setup = &|c: &mut Cpu, seed: u32| {
             machine(c, seed, 1_362_003, 0);
             c.pc = 0x0042_70b0;
-            let entries = rpc_chain(c, DATA + 0x400, DATA + 0x500, 4);
-            // Mode digit: head match / walk match / absent.
-            let mode = seed % 3;
-            c.g[A0][0] = (if mode == 0 {
-                entries[0]
-            } else if mode == 1 {
-                entries[2]
-            } else {
-                DATA + 0x700
-            }) as u64;
+            // Mode digit: head match, empty list, second-entry match, walk
+            // match, absent.
+            let mode = seed % 5;
+            let entries = rpc_chain(c, DATA + 0x400, DATA + 0x500, if mode == 1 { 0 } else { 4 });
+            c.g[A0][0] = match mode {
+                0 => entries[0],
+                1 => DATA + 0x500,
+                2 => entries[1],
+                3 => entries[2],
+                _ => DATA + 0x700,
+            } as u64;
             c.g[A1][0] = (DATA + 0x400) as u64;
         };
         check(
@@ -8939,13 +8933,7 @@ pub(crate) mod tests {
             run_generated(&mut c, ee::s15::f_004270b0__generated);
             seen.insert(c.cycles - before);
         }
-        assert_eq!(seen.len(), 3, "paths seen: {seen:?}");
-        require_paths(
-            ee::s15::f_004270b0__generated,
-            SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
-            setup,
-        );
+        assert_eq!(seen.len(), 5, "paths seen: {seen:?}");
     }
 
     driven!(remove_rpc_driven, sce_sif_remove_rpc);
@@ -8970,24 +8958,26 @@ pub(crate) mod tests {
         );
     }
 
-    /// `sceSifRemoveRpcQueue`: the head drops directly, a later queue
-    /// unlinks by skipping, an absent queue reports null. No traps on
-    /// any path, so the totals pin every arm.
+    /// `sceSifRemoveRpcQueue`: the head drops directly, the second queue
+    /// and a later one unlink by skipping, an empty list and an absent
+    /// queue report null. No traps on any path, so the five totals are
+    /// the five exits.
     #[test]
     fn remove_rpc_queue_matches() {
         let setup = &|c: &mut Cpu, seed: u32| {
             machine(c, seed, 1_362_005, 0);
             c.pc = 0x0042_7148;
-            pool_chain(c, 4, DATA + 0x500);
-            // Mode digit: head match / walk match / absent.
-            let mode = seed % 3;
-            c.g[A0][0] = (if mode == 0 {
-                DATA + 0x500
-            } else if mode == 1 {
-                DATA + 0x580
-            } else {
-                DATA + 0x700
-            }) as u64;
+            // Mode digit: head match, empty list, second-queue match, walk
+            // match, absent.
+            let mode = seed % 5;
+            pool_chain(c, if mode == 1 { 0 } else { 4 }, DATA + 0x500);
+            c.g[A0][0] = [
+                DATA + 0x500,
+                DATA + 0x500,
+                DATA + 0x540,
+                DATA + 0x580,
+                DATA + 0x700,
+            ][mode as usize] as u64;
         };
         check(
             ee::s15::f_00427148__generated,
@@ -9003,13 +8993,7 @@ pub(crate) mod tests {
             run_generated(&mut c, ee::s15::f_00427148__generated);
             seen.insert(c.cycles - before);
         }
-        assert_eq!(seen.len(), 3, "paths seen: {seen:?}");
-        require_paths(
-            ee::s15::f_00427148__generated,
-            SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
-            setup,
-        );
+        assert_eq!(seen.len(), 5, "paths seen: {seen:?}");
     }
 
     driven!(remove_rpc_queue_driven, sce_sif_remove_rpc_queue);
@@ -9032,37 +9016,6 @@ pub(crate) mod tests {
                 pool_chain(c, 8, DATA + 0x500);
                 c.g[A0][0] = (DATA + 0x500 + 0x40 * 7) as u64;
                 schedule(c, &mut r, seed, 0x0042_7148)
-            },
-        );
-    }
-
-    /// Busy marks on the first `n` fd-table slots (distinct nonzero
-    /// words, so a missed store changes RAM).
-    pub(crate) fn fd_busy(c: &mut Cpu, n: u32, seed: u32) {
-        for i in 0..n {
-            c.bus.write32(
-                0x0052_ec00 + 0x10 * i + 0x4,
-                0x9191_9100 + seed.wrapping_mul(0x1357_9bdf).wrapping_add(i * 0x101),
-            );
-        }
-    }
-
-    driven!(alloc_fd_driven, sce_fs_alloc_fd);
-
-    driven!(alloc_fd_generated_driven, ee::s15::f_00427498__generated);
-
-    /// `sceSifAllocFd` with events due: the table scan unwinds and
-    /// re-enters identically.
-    #[test]
-    fn alloc_fd_events() {
-        check_events(
-            alloc_fd_generated_driven,
-            alloc_fd_driven,
-            SEEDS,
-            &|c, seed| {
-                let mut r = machine(c, seed, 1_362_008, 0);
-                fd_busy(c, 32, seed);
-                schedule(c, &mut r, seed, 0x0042_7498)
             },
         );
     }
@@ -9142,16 +9095,13 @@ pub(crate) mod tests {
             seen.insert(c.cycles - before);
         }
         assert_eq!(seen.len(), 1, "paths seen: {seen:?}");
-        require_paths(
-            ee::s15::f_00425d38__generated,
-            SEEDS,
-            &seen.into_iter().collect::<Vec<_>>(),
-            setup,
-        );
     }
 
-    /// `sceSifInitCmd` with the flag clear: the full bring-up runs (the
-    /// `GetReg` fake steers the peer poll), ending in the real `SendCmd`.
+    /// `sceSifInitCmd` with the flag clear: the full bring-up runs over
+    /// the game's SIF state (nonzero before, so the table clears show),
+    /// ending in the real `SendCmd`. The `GetReg` fake steers the peer
+    /// poll; with it off (every fourth seed) the syscall answers nonzero
+    /// and the peer-already-up arm (0x425eec) runs.
     #[test]
     fn init_cmd_full_matches() {
         hook_init_fake();
@@ -9163,10 +9113,13 @@ pub(crate) mod tests {
                 machine(c, seed, 1_362_011, 1);
                 c.pc = 0x0042_5d38;
                 c.bus.write32(0x0045_0000 + 0x517c, 0);
-                c.bus.write32(INIT_GATE, GATE_MAGIC);
+                for i in 0..0x70u32 {
+                    c.bus.write32(0x0052_bcc0 + 4 * i, 0x5d5d_0000 ^ (4 * i));
+                }
+                if seed % 4 != 3 {
+                    c.bus.write32(INIT_GATE, GATE_MAGIC);
+                }
                 c.bus.write32(INIT_POLL_N, 1 + seed % 3);
-                // Length the tail send uses.
-                c.g[T2][0] = 12;
             },
         );
     }
@@ -9176,7 +9129,7 @@ pub(crate) mod tests {
     driven!(init_cmd_generated_driven, ee::s15::f_00425d38__generated);
 
     /// `sceSifInitCmd` with events due: deliveries in the table loops
-    /// and the peer poll unwind and re-enter identically.
+    /// and the peer poll deliver inline on both sides.
     #[test]
     fn init_cmd_events() {
         hook_init_fake();

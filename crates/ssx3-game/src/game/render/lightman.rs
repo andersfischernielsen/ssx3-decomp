@@ -3220,9 +3220,11 @@ pub fn render2d_draw_filled_rect(c: &mut Cpu) {
     })
 }
 
-/// `void Dma_SendGifChain(void *chain, int flags)` (0x371f98): kick a GIF
-/// chain, waiting for VIF1 idle when `flags & 4` (and after, when
-/// `flags & 2`).
+/// `void Dma_SendGifChain(void *chain, int flags)` (0x371f98): start the
+/// GIF channel (2) on the source chain at `chain` (`D2_TADR`, with the
+/// scratchpad bit for addresses past 0x6fffffff; `D2_CHCR` chain mode,
+/// tag transfer on when `flags & 1`). `flags & 4` first waits for the
+/// channel's start bit to clear, `flags & 2` waits again after the start.
 pub fn dma_send_gif_chain(c: &mut Cpu) {
     guest(c, |c| {
         'b_371fdc: {
