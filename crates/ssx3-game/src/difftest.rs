@@ -51,7 +51,7 @@ pub fn fresh() -> Box<Cpu> {
     // Cycle budget: generated loops call the event hook when `cycles >=
     // next_event`, so a function (or a real callee) that runs away on test
     // data fails fast instead of hanging the test run.
-    c.next_event = CYCLE_BUDGET;
+    c.next_event = cycle_budget();
     c.hooks.event = budget_event;
     c
 }
@@ -60,10 +60,23 @@ pub fn fresh() -> Box<Cpu> {
 /// runaway (a replacement takes tens to thousands; a game frame ~5 million).
 pub const CYCLE_BUDGET: u64 = 50_000_000;
 
+/// The budget in force: `SSX3_CYCLE_BUDGET` (cycles) when set, else
+/// [`CYCLE_BUDGET`]. The wave verification runs new modules with a small
+/// budget (5 million) so a runaway fixture fails in a second or two.
+pub fn cycle_budget() -> u64 {
+    static BUDGET: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        std::env::var("SSX3_CYCLE_BUDGET")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(CYCLE_BUDGET)
+    })
+}
+
 /// The event hook of test machines: fail past the budget, otherwise the
 /// machine's real event hook (event-delivery tests set `next_event` lower).
 fn budget_event(c: &mut Cpu) -> bool {
-    if c.cycles >= CYCLE_BUDGET {
+    if c.cycles >= cycle_budget() {
         panic!(
             "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
             c.cycles, c.pc
@@ -479,8 +492,35 @@ pub fn elf_image(c: &mut Cpu) {
         );
         (vaddr, d[off..off + size].to_vec())
     });
+    // `fakes::test_allocator` changed some of the image's own data (the gp pool
+    // table, the dlmalloc statics): reapply exactly those bytes, so
+    // `machine_rt` and `elf_image` work in either order.
     let at = *vaddr as usize;
     c.bus.ram[at..at + bytes.len()].copy_from_slice(bytes);
+    if c.bus.read32(GAME_GP + 0xdd8) == 1 {
+        RT_PATCH.with(|p| {
+            for (a, b) in p.borrow().iter() {
+                c.bus.ram[*a..*a + b.len()].copy_from_slice(b);
+            }
+        });
+    }
+}
+
+thread_local! {
+    /// The bytes inside the game image that the last `fakes::test_allocator`
+    /// call changed (address, new bytes), for [`elf_image`] to keep.
+    pub(crate) static RT_PATCH: std::cell::RefCell<Vec<(usize, Vec<u8>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The span `elf_image` writes: (start address, length).
+pub(crate) fn image_span() -> (usize, usize) {
+    // Read the segment header the same way `elf_image` does.
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../orig/SLUS_207.72");
+    let d = std::fs::read(path).expect("orig/SLUS_207.72");
+    let u32_at = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+    let ph = u32_at(0x1c) as usize;
+    (u32_at(ph + 8) as usize, u32_at(ph + 16) as usize)
 }
 
 /// Write a quadword of four float bit patterns.

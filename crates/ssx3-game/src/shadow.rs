@@ -12,9 +12,11 @@
 //!   RAM, so long lists want a large n.
 //! - Side effects outside guest memory (hardware registers, syscalls)
 //!   happen twice; it is a diagnostic mode.
-//! - VU0 status/MAC/clip flags cannot be restored through the `Vu0`
+//! - VU0 status/MAC flags cannot be restored through the `Vu0`
 //!   interface: they are compared at the end but a difference there may
-//!   come from the other run's flags.
+//!   come from the other run's flags (the clip flags are restored).
+//! - With `--features ssx3-game/shadow-trace` the calls made and the cycle
+//!   each starts at are compared too.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -171,9 +173,9 @@ fn set_regs(c: &mut Cpu, r: &Regs) {
         c.vu0().set_vf(i, *v);
     }
     c.vu0().set_acc(r.acc);
-    // (VI, R, I, Q; the flag registers can't be written back.)
+    // (VI, R, I, Q and the clip flags; status and MAC can't be written back.)
     for (k, &reg) in CTRL.iter().enumerate() {
-        if !(16..=18).contains(&reg) {
+        if !(16..=17).contains(&reg) {
             c.vu0().write_ctrl(reg, r.ctrl[k]);
         }
     }
@@ -189,7 +191,14 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
     let next = c.next_event;
     c.next_event = u64::MAX;
     let sp = c.g[SP][0] as u32;
+    #[cfg(feature = "shadow-trace")]
+    ssx3_ee_rt::prof::trace::start();
     native(c);
+    #[cfg(feature = "shadow-trace")]
+    let (calls_native, cycles_native) = (
+        ssx3_ee_rt::prof::trace::take(),
+        ssx3_ee_rt::prof::trace::take_cycles(),
+    );
     let after_native = regs(c);
     let mut wn = vec![0u64; pending.len()];
     ssx3_ee_rt::bus::take_written(&mut wn);
@@ -209,7 +218,14 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
     c.bus.spr.copy_from_slice(&pre_spr);
     set_regs(c, &pre);
     c.next_event = u64::MAX;
+    #[cfg(feature = "shadow-trace")]
+    ssx3_ee_rt::prof::trace::start();
     generated(c);
+    #[cfg(feature = "shadow-trace")]
+    let (calls_gen, cycles_gen) = (
+        ssx3_ee_rt::prof::trace::take(),
+        ssx3_ee_rt::prof::trace::take_cycles(),
+    );
     c.next_event = if c.next_event == u64::MAX {
         next
     } else {
@@ -219,6 +235,39 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
     let mut wg = vec![0u64; pending.len()];
     ssx3_ee_rt::bus::take_written(&mut wg);
     let mut bad = Vec::new();
+    // The calls made: the same callees with the same arguments, each started
+    // at the same cycle (an event delivered inside a callee lands at the same
+    // point only then; this run delivers none, so only this shows it).
+    #[cfg(feature = "shadow-trace")]
+    if calls_native.len() != calls_gen.len() {
+        bad.push(format!(
+            "calls: native {} generated {}",
+            calls_native.len(),
+            calls_gen.len()
+        ));
+    }
+    #[cfg(feature = "shadow-trace")]
+    for (i, (x, y)) in calls_native.iter().zip(&calls_gen).enumerate() {
+        if x != y {
+            bad.push(format!(
+                "call {i}: native {:#x}{:x?} generated {:#x}{:x?}",
+                x[0],
+                &x[1..],
+                y[0],
+                &y[1..]
+            ));
+            break;
+        }
+        if cycles_native[i] != cycles_gen[i] {
+            bad.push(format!(
+                "call {i} ({:#x}) starts at cycle +{} native, +{} generated",
+                x[0],
+                cycles_native[i] - pre.cycles,
+                cycles_gen[i] - pre.cycles
+            ));
+            break;
+        }
+    }
     // Registers.
     let (a, b) = (&after_native, &after_gen);
     for r in 0..32 {

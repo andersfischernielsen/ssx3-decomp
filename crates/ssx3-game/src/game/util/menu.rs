@@ -63,6 +63,11 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (
+        0x002c_fb58,
+        menu_sys_group_item_measure,
+        "MenuSysGroupItem_Measure",
+    ),
     (0x002c_a258, menu_sys_item_ctor, "MenuSysItem_ctor"),
     (0x002c_a280, menu_sys_item_dtor, "MenuSysItem_dtor"),
     (
@@ -3687,24 +3692,24 @@ pub fn menu_sys_group_item_measure(c: &mut Cpu) {
                                 break 'iter;
                             }
                         }
+                        // A hidden item contributes an empty rect.
+                        c.cycles += 12;
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x10), 0u64);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x14), 0u64);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x18), 0u64);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), 0u64);
+                        c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0x17));
+                        c.ldr(6, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x1f));
+                        c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x18));
+                        c.sdl(6, (c.g[S2][0] as u32).wrapping_add(0x7));
+                        c.sdr(6, c.g[S2][0] as u32);
+                        c.sdl(2, (c.g[S2][0] as u32).wrapping_add(0xf));
+                        c.sdr(2, (c.g[S2][0] as u32).wrapping_add(0x8));
                     }
-                    // A hidden item contributes an empty rect.
-                    c.cycles += 12;
-                    c.sw((c.g[SP][0] as u32).wrapping_add(0x10), 0u64);
-                    c.sw((c.g[SP][0] as u32).wrapping_add(0x14), 0u64);
-                    c.sw((c.g[SP][0] as u32).wrapping_add(0x18), 0u64);
-                    c.sw((c.g[SP][0] as u32).wrapping_add(0x1c), 0u64);
-                    c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0x17));
-                    c.ldr(6, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x1f));
-                    c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x18));
-                    c.sdl(6, (c.g[S2][0] as u32).wrapping_add(0x7));
-                    c.sdr(6, c.g[S2][0] as u32);
-                    c.sdl(2, (c.g[S2][0] as u32).wrapping_add(0xf));
-                    c.sdr(2, (c.g[S2][0] as u32).wrapping_add(0x8));
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                 }
-                c.cycles += 1;
-                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                 c.cycles += 6;
                 c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(1));
                 c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
@@ -4685,6 +4690,53 @@ pub(crate) mod tests {
             &|c, seed| {
                 menu_page_setup(c, seed, 0x2cbf30, DATA);
                 c.g[A0][0] = DATA as u64;
+            },
+        );
+    }
+
+    /// `MenuSysGroupItem_Measure`: 0 to 3 items (visible bit random, the
+    /// current item one of them or none), the page's selected item either an
+    /// ordinary item or the group itself; the measure methods are fakes and
+    /// leave the stack rect as random data, so the height comparison goes
+    /// both ways.
+    #[test]
+    fn menu_sys_group_item_measure_matches() {
+        check(
+            ee::s09::f_002cfb58__generated,
+            menu_sys_group_item_measure,
+            120,
+            &|c, seed| {
+                let mut r = menu_page_setup(c, seed, 0x2cfb58, DATA);
+                let block = DATA + 0x1000;
+                let ivt = vtable(c, &mut r, &[0x20]);
+                w(c, block, DATA);
+                w(c, block + 0x18, seed % 4);
+                for i in 0..3u32 {
+                    let item = DATA + 0x2000 + 0x100 * i;
+                    w(c, block + 0x24 + 4 * i, item);
+                    w(c, item + 4, r.next_u32());
+                    w(c, item + 0x10, ivt);
+                }
+                let cur = DATA + 0x2000 + 0x100 * ((seed / 4) % 3);
+                w(
+                    c,
+                    block + 0x14,
+                    if (seed / 12) % 4 == 0 {
+                        r.next_u32()
+                    } else {
+                        cur
+                    },
+                );
+                if seed % 5 == 0 {
+                    // The page's selected item is the group itself.
+                    let pvt = c.lw(DATA + 0x310) as u32;
+                    w(c, block + 0x10, pvt);
+                    for i in 0..3u32 {
+                        w(c, DATA + 0xc + 4 * i, block);
+                    }
+                }
+                c.g[A0][0] = sx(DATA + 0x3000);
+                c.g[A1][0] = sx(block);
             },
         );
     }

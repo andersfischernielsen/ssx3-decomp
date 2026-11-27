@@ -88,7 +88,11 @@ after each wave.
 - One `#[test]` per function, comparing against the generated body, with a
   fixture that reaches every branch. Every `OVERRIDES` entry must have its
   test: add the entry only together with the finished test.
-- Test target: `f_XXXXXXXX__generated` if the function already has an
+- Test target: `f_XXXXXXXX__generated`. The orchestrator registers a slot for
+  every function of the wave before you start (`integrate_wave.py slots`), so the
+  name exists; only if it does not compile as `__generated` use `f_XXXXXXXX`.
+  (Older text below about `f_XXXXXXXX` applies to that case.)
+  Original wording: `f_XXXXXXXX__generated` if the function already has an
   override slot, else `f_XXXXXXXX`. `f_XXXXXXXX` dispatches on `c.pc`: set
   `c.pc` to the function's entry address in the fixture, or the generated side
   jumps to `__entries` and does nothing. (`integrate_wave.py repoint` switches
@@ -337,3 +341,50 @@ Lessons from the front-end, graphics and sound waves (248-250):
   fields of structs used by other units' tests become `pub(crate)`.
   `cargo fix --lib` strips imports that only the tests use: run it with `--tests`
   or restore them behind `#[cfg(test)]`.
+
+Lessons from the verification-speed pass:
+
+- Fixtures whose real callees allocate (constructors, popups, string tables,
+  the BELibrary) use `fakes::machine_rt(c, seed, salt, calls)` instead of
+  `fakes::machine`: it adds the size-class allocator, the dlmalloc arena and the
+  BELibrary dummy. Without it the test spins in `EAFile_AllocRequest` (pc
+  `0x3de768`, `0x31ef40`, `0x31e968`) and the orchestrator has to bounce it back.
+  Tests run with a 5-million-cycle budget during verification.
+- Check your module with `python3 tools/lint_port.py ocM` (no build, one second)
+  before you report: it flags hex literals with more than 8 digits
+  (`0x001b_babcc`), addresses that the generated body never uses, return
+  addresses that are missing and cycle totals that differ.
+- Return-address and string-offset literals are the commonest transcription
+  bugs of all: copy them from the generated text by script, never by eye, and
+  keep them full (`0x001b_abcc`, never `0x434c` plus a base that a helper may
+  add twice).
+- Failure logs: in `"x vs y"` lines x is the generated body and y your port.
+- Dispatcher lists carry a draft from `port_dispatcher.py`
+  (`target/gate/waveN/draft/0xADDR.rs`): start from it and spend your time on the
+  fixture (a path-count test), not on the transcription.
+
+Lessons from the cleanup wave (254):
+
+- Jump tables and `isButton` name strings live in the game image, which is
+  empty in a bare test machine: every table read returns 0 and every event
+  falls into the same `jump_out` arm (3 distinct call sequences instead of 12).
+  Load it with `crate::difftest::elf_image(c)` right after `machine`/`machine_rt`
+  (and before your own writes), or write the table words you need. Never lower a
+  path-count threshold to make a test pass: raise the coverage.
+- A jump-table entry equal to the function's own entry address loops forever
+  (the draft's self-case retries through `event_due`): leave it out of the table.
+- A test fake that you add to a shared override slot must use ITS OWN gate word
+  and forced-result mailbox in the machine's RAM (a unique `DATA+0x...` address
+  and magic, no `static` mutable state) and fall back with `fakes::fall_back`
+  when the gate is off. Two tests sharing one gate word, or a fake that answers
+  with the gate off, break each other once the modules sit in one unit file
+  (found after the reorg: `OnAuthPopupEvent` broke `OnChildEvent` through
+  `FA_CTRL`).
+- A TextOK-style case that "never matched" is usually a port bug, not a
+  fixture problem: the generated body compared `s0 != v0` BEFORE the delay-slot
+  `lq(16)` restored `s0`, the port restored first. Delay slots execute before the
+  next block: check compare operands against the restore they sit beside. Never
+  weaken a fixture so a case stops failing.
+- A resumable dispatcher without an `__entries` twin (e.g. 0x1a9cc0) is not
+  detected by `stage_wave.py`; if a list entry has no draft, run
+  `tools/port_dispatcher.py ADDR SHARD Name fn` yourself.

@@ -61,7 +61,21 @@ the replay for the gate and the scenarios.
 - **`SSX3_SHADOW=addr,...|all`:** each call of the listed replacements runs
   the hand-written form and the generated body from the same state and
   reports the first differing registers, cycles or memory
-  (`SSX3_SHADOW_FIRST`, `SSX3_SHADOW_EVERY` for sampling).
+  (`SSX3_SHADOW_FIRST`, `SSX3_SHADOW_EVERY` for sampling; set
+  `SSX3_SHADOW_FIRST` high to check every call). The VU0 clip flags are restored
+  between the two runs (status and MAC cannot be). Build with
+  `--features ssx3-game/shadow-trace` to also compare the calls made, their
+  arguments and the cycle each starts at (slows every call; use it to debug a
+  port that passes its tests but diverges the race replay: wave 253's
+  `RiderAirState_PostUpdate` ran a draw the generated body skips on a branch no
+  fixture reached; 404 differing calls shrank to 3 once clip was restored, and
+  to 0 once the branch was fixed). Event delivery is off during a shadowed
+  call: differences that depend on when an event lands inside a callee show as
+  differing call start cycles.
+- **Finding a divergent frame:** run the race replay twice (`SSX3_SKIP_OVERRIDES`
+  vs installed) with `SSX3_STATE_LOG=path SSX3_STATE_EVERY=5` and compare
+  the per-page hashes (`tools/accept.py`'s `read_log`): the first differing frame
+  and pages; then `SSX3_RAM_DUMP` at that frame for both and diff the dumps.
 - **`SSX3_SKIP_OVERRIDES=addr,...`**, `SSX3_OVERRIDES=addr,...` (only
   these), `SSX3_NO_OVERRIDES=1` (none; this also drops the native draw
   functions, so RAM differs by design).
