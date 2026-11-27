@@ -161,6 +161,28 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_0540, mem_report_pool_stat5, "MEM_ReportPoolStat5"),
     (0x0032_0548, mem_report_pool_stat6, "MEM_ReportPoolStat6"),
     (0x0025_2a10, mem_heap_alloc_aligned, "MEM_HeapAllocAligned"),
+    (0x0031_e260, dlheap_init_state, "DLHeap_InitState"),
+    (0x0031_e6d8, dlheap_sys_trim, "DLHeap_SysTrim"),
+    (0x0031_f018, dlheap_realloc, "DLHeap_Realloc"),
+    (0x0031_f4e8, dlheap_memalign_offset, "DLHeap_MemalignOffset"),
+    (0x0031_f7f0, dlheap_free_wrapper, "DLHeap_Free_Wrapper"),
+    (
+        0x0031_f810,
+        dlheap_independent_calloc,
+        "DLHeap_IndependentCalloc",
+    ),
+    (
+        0x0031_f838,
+        dlheap_independent_comalloc,
+        "DLHeap_IndependentComalloc",
+    ),
+    (0x0031_f858, dlheap_ialloc, "DLHeap_IAlloc"),
+    (0x0031_faa8, dlheap_valloc, "DLHeap_Valloc"),
+    (0x0031_fb00, dlheap_pvalloc, "DLHeap_Pvalloc"),
+    (0x0031_fb68, dlheap_trim, "DLHeap_Trim"),
+    (0x0031_fc20, dlheap_mallinfo, "DLHeap_Mallinfo"),
+    (0x0031_fe30, dlheap_mallopt, "DLHeap_Mallopt"),
+    (0x0032_0038, dlheap_malloc_wrapper, "DLHeap_Malloc_Wrapper"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -2958,6 +2980,93 @@ pub(crate) mod callee {
     pub(crate) const MEMCPY: Callee = Callee {
         addr: 0x0041_605c,
         f: ee::s15::memcpy,
+    };
+    pub(crate) use crate::game::mem::memstd::callee::DLHEAP_IALLOC;
+    pub(crate) use crate::game::mem::memstd::callee::DLHEAP_MORE_CORE;
+
+    pub(crate) use crate::game::misc::callee::DLHEAP_MEMALIGN;
+    pub(crate) use crate::game::misc::callee::DLHEAP_SYSTRIM;
+
+    /// `DLHeap_Consolidate` (`0x0031eee8`).
+    pub(crate) const DLHEAP_CONSOLIDATE: Callee = Callee {
+        addr: 0x0031_eee8,
+        f: ee::s10::DLHeap_Consolidate,
+    };
+
+    /// `VD_FloorLog2` (`0x00254350`).
+    pub(crate) const VD_FLOOR_LOG2: Callee = Callee {
+        addr: 0x0025_4350,
+        f: ee::s06::VD_FloorLog2,
+    };
+
+    /// `VD_TextureSink_SetFrameSize` (`0x002543f0`).
+    pub(crate) const VD_TEXTURE_SINK_SET_FRAME_SIZE: Callee = Callee {
+        addr: 0x0025_43f0,
+        f: ee::s06::VD_TextureSink_SetFrameSize,
+    };
+
+    /// `VD_TextureSink_SetFrameRate` (`0x00254400`).
+    pub(crate) const VD_TEXTURE_SINK_SET_FRAME_RATE: Callee = Callee {
+        addr: 0x0025_4400,
+        f: ee::s06::VD_TextureSink_SetFrameRate,
+    };
+
+    /// `PS2GraphicsMan_SetTextureFilter` (`0x0037d090`), called through the
+    /// function table.
+    pub(crate) const PS2_GRAPHICS_MAN_SET_TEXTURE_FILTER: u32 = 0x0037_d090;
+
+    /// `MPEG2_Initialize_Buffer` (`0x003b1228`).
+    pub(crate) const MPEG2_INITIALIZE_BUFFER: Callee = Callee {
+        addr: 0x003b_1228,
+        f: ee::s13::MPEG2_Initialize_Buffer,
+    };
+
+    /// `MPEG2_Get_Hdr` (`0x003b13d8`).
+    pub(crate) const MPEG2_GET_HDR: Callee = Callee {
+        addr: 0x003b_13d8,
+        f: ee::s13::MPEG2_Get_Hdr,
+    };
+
+    /// `PS2_SONY_CODEC_INTERNAL_InitFrame` (`0x003b07f8`).
+    pub(crate) const SONY_CODEC_INIT_FRAME: Callee = Callee {
+        addr: 0x003b_07f8,
+        f: ee::s13::PS2_SONY_CODEC_INTERNAL_InitFrame,
+    };
+
+    /// `sceMpegInit` (`0x00402708`), through the function table.
+    pub(crate) const SCE_MPEG_INIT: u32 = 0x0040_2708;
+
+    /// `sceMpegCreate` (`0x004027b8`), through the function table.
+    pub(crate) const SCE_MPEG_CREATE: u32 = 0x0040_27b8;
+
+    /// `sceMpegAddCallback` (`0x00402c08`), through the function table.
+    pub(crate) const SCE_MPEG_ADD_CALLBACK: u32 = 0x0040_2c08;
+
+    /// `VisualEffectsMan_ctor` (`0x002eff98`).
+    pub(crate) const VISUAL_EFFECTS_MAN_CTOR: Callee = Callee {
+        addr: 0x002e_ff98,
+        f: ee::s09::VisualEffectsMan_ctor,
+    };
+
+    /// `EA_MemAllocNamed` (`0x00317d70`), through the function table.
+    pub(crate) const EA_MEM_ALLOC_NAMED_2: u32 = 0x0031_7d70;
+
+    /// `DetailSystem_ctor` (`0x003759e8`), through the function table.
+    pub(crate) const DETAIL_SYSTEM_CTOR: u32 = 0x0037_59e8;
+
+    /// `PathArrow_ctor` (`0x00372aa0`), through the function table.
+    pub(crate) const PATH_ARROW_CTOR: u32 = 0x0037_2aa0;
+
+    /// `DLHeap_Malloc` (`0x0031e818`).
+    pub(crate) const DLHEAP_MALLOC: Callee = Callee {
+        addr: 0x0031_e818,
+        f: ee::s10::DLHeap_Malloc,
+    };
+
+    /// `DLHeap_Free` (`0x0031ed60`).
+    pub(crate) const DLHEAP_FREE: Callee = Callee {
+        addr: 0x0031_ed60,
+        f: ee::s10::DLHeap_Free,
     };
 }
 
@@ -7071,6 +7180,1491 @@ pub fn mem_heap_alloc_aligned(c: &mut Cpu) {
     })
 }
 
+/// The `switch (param + 4)` jump table of `DLHeap_Mallopt` (6 words, in the
+/// game image).
+pub(crate) const MALLOPT_TABLE: u32 = 0x0048_db50;
+
+/// The case labels the table holds, in table order (`param` = -4 .. 1).
+pub(crate) const MALLOPT_MMAP_MAX: u32 = 0x0031_fef0;
+
+pub(crate) const MALLOPT_MMAP_THRESHOLD: u32 = 0x0031_fee4;
+
+pub(crate) const MALLOPT_TOP_PAD: u32 = 0x0031_fed8;
+
+pub(crate) const MALLOPT_TRIM_THRESHOLD: u32 = 0x0031_fecc;
+
+pub(crate) const MALLOPT_NONE: u32 = 0x0031_ff04;
+
+pub(crate) const MALLOPT_MXFAST: u32 = 0x0031_fe80;
+
+/// `malloc_state` fields `DLHeap_Mallopt` writes: `max_fast` (with its two
+/// flag bits) and the four tunables.
+pub(crate) const MALLOPT_MAX_FAST: u32 = 0;
+
+pub(crate) const MALLOPT_TRIM_THRESHOLD_FIELD: u32 = 0x344;
+
+pub(crate) const MALLOPT_TOP_PAD_FIELD: u32 = 0x348;
+
+pub(crate) const MALLOPT_MMAP_THRESHOLD_FIELD: u32 = 0x34c;
+
+pub(crate) const MALLOPT_N_MMAPS_MAX_FIELD: u32 = 0x354;
+
+/// `int DLHeap_Mallopt(DLHeap *heap, int param, int value)` (0x31fe30):
+/// dlmalloc's `mALLOPt` on the heap's `malloc_state` (`*heap`), after
+/// consolidating it. Returns 1 when the setting was taken, else 0. `M_MXFAST`
+/// (1) accepts 0..80: 0 sets the "no fastbins" flag (8), else the request
+/// size rounded (`(value + 19) & ~15`) keeps the state's low two flag bits;
+/// `M_MMAP_MAX` (-4) only accepts 0 (no mmap here).
+pub fn dlheap_mallopt(c: &mut Cpu) {
+    use callee::*;
+    if c.pc != 0x0031_fe30 {
+        return ee::s10::f_0031fe30__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S2, 0x10);
+        c.g[S2][0] = Addr(c.g[A0][0] as u32).lw(c);
+        c.g[A1][0] = c.g[S2][0];
+        DLHEAP_CONSOLIDATE.call(c, 0x0031_fe58)?;
+
+        let state = Addr(c.g[S2][0] as u32);
+        let value = c.g[S1][0];
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+        let in_table = c.g[V1][0] < 6;
+        c.g[V0][0] = in_table as u64;
+        c.g[V0][0] = 0x0049_0000;
+        let label = if in_table {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx(MALLOPT_TABLE);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(MALLOPT_TABLE));
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            c.g[A0][0] as u32
+        } else {
+            MALLOPT_NONE
+        };
+        let field = match label {
+            MALLOPT_MXFAST => {
+                c.cycles += 3;
+                if value >= 0x51 {
+                    c.g[V0][0] = 0;
+                    None
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = state.off(MALLOPT_MAX_FAST).lw(c);
+                    c.g[A2][0] = c.g[V0][0] & 0x3;
+                    c.g[V0][0] = if value == 0 {
+                        c.cycles += 1;
+                        c.g[A2][0] | 0x8
+                    } else {
+                        c.cycles += 4;
+                        c.g[V1][0] = sx((value as u32).wrapping_add(0x13));
+                        // Never below 0x10 for an accepted `value` (1..80).
+                        if c.g[V1][0] < 0x10 {
+                            c.g[V0][0] = 1;
+                            c.g[A2][0] | 0x10
+                        } else {
+                            c.cycles += 5;
+                            c.g[V0][0] = 0xffff_ffff_ffff_fff0;
+                            (c.g[V1][0] & 0xffff_ffff_ffff_fff0) | c.g[A2][0]
+                        }
+                    };
+                    c.cycles += 3;
+                    let v = c.g[V0][0];
+                    state.off(MALLOPT_MAX_FAST).sw(c, v);
+                    c.g[V0][0] = 1;
+                    None
+                }
+            }
+            MALLOPT_TRIM_THRESHOLD => Some(MALLOPT_TRIM_THRESHOLD_FIELD),
+            MALLOPT_TOP_PAD => Some(MALLOPT_TOP_PAD_FIELD),
+            MALLOPT_MMAP_THRESHOLD => Some(MALLOPT_MMAP_THRESHOLD_FIELD),
+            MALLOPT_MMAP_MAX => {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                if value == 0 {
+                    c.cycles += 3;
+                    state.off(MALLOPT_N_MMAPS_MAX_FIELD).sw(c, 0);
+                    c.g[V0][0] = 1;
+                }
+                None
+            }
+            MALLOPT_NONE => {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                None
+            }
+            _ => {
+                c.jump_out(label, 0x0031_fe30, 0x0031_ff20);
+                return Ok(());
+            }
+        };
+        if let Some(off) = field {
+            c.cycles += 3;
+            state.off(off).sw(c, value);
+            c.g[V0][0] = 1;
+        }
+
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `__getreent()` (0x415fb8, through the function table): the errno block.
+pub(crate) const DLHEAP_GETREENT: u32 = 0x0041_5fb8;
+
+/// `ENOMEM`, stored to errno when a request is too large.
+pub(crate) const DLHEAP_ENOMEM: u64 = 0xc;
+
+/// `memcpy` (0x3e6574) and `memset` (0x3e6448), called through the table.
+pub(crate) const DLHEAP_MEMCPY: u32 = 0x003e_6574;
+
+pub(crate) const DLHEAP_MEMSET: u32 = 0x003e_6448;
+
+/// `void *DLHeap_Realloc(DLHeap *heap, void *oldmem, unsigned int bytes)`
+/// (0x31f018): dlmalloc `realloc`. A null `oldmem` is a plain malloc; a
+/// too-large request or an mmapped chunk sets `ENOMEM` and returns null.
+/// Otherwise (nb = the request as a chunk size) the chunk is kept when it
+/// is big enough, grows into the top chunk or into a free next chunk
+/// (unlinked), or is moved (malloc, copy, free; a malloc that returns the
+/// next chunk is merged in place). A kept chunk gives back a tail of 16
+/// bytes or more through `DLHeap_Free`. Frame 0x80 (ra 0, s6 0x10, s5
+/// 0x20, s4 0x30, s3 0x40, s2 0x50, s1 0x60, s0 0x70).
+///
+/// Registers: s5 heap, s1 oldmem, s4 old chunk, s2 its size, s3 nb, a3
+/// the state (`*heap`), s0 the next chunk, s6 the new chunk.
+pub fn dlheap_realloc(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        'restore: {
+            'done: {
+                'fail: {
+                    'enomem: {
+                        frame.save(c, S1, 0x60);
+                        frame.save(c, S5, 0x20);
+                        c.g[S1][0] = c.g[A1][0];
+                        frame.save(c, S0, 0x70);
+                        c.g[S5][0] = c.g[A0][0];
+                        frame.save(c, S2, 0x50);
+                        c.g[A1][0] = c.g[A2][0];
+                        frame.save(c, S3, 0x40);
+                        frame.save(c, S4, 0x30);
+                        frame.save(c, S6, 0x10);
+                        frame.save_ra(c, 0);
+                        let have_old = c.g[S1][0] != 0;
+                        c.g[A3][0] = c.lw(r32(c, S5));
+                        if !have_old {
+                            // realloc(0, n): malloc(heap, n).
+                            c.cycles += 4;
+                            DLHEAP_MALLOC.call(c, 0x0031_f058)?;
+                            frame.restore(c, S0, 0x70);
+                            break 'restore;
+                        }
+                        // 0x31f060: too large?
+                        c.cycles += 5;
+                        c.g[V0][0] = 0xffff_ffff_ffff_ffdf;
+                        c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+                        let too_big = c.g[V0][0] != 0;
+                        c.g[V1][0] = sx(r32(c, A1).wrapping_add(0x13));
+                        if too_big {
+                            break 'enomem;
+                        }
+                        // nb = request2size(bytes).
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[V1][0] < 0x10) as u64;
+                        let tiny = c.g[V0][0] != 0;
+                        c.g[S3][0] = 0x10;
+                        if !tiny {
+                            c.cycles += 3;
+                            c.g[V0][0] = 0xffff_ffff_ffff_fff0;
+                            c.g[S3][0] = c.g[V1][0] & c.g[V0][0];
+                        }
+                        // 0x31f08c: the old chunk (s4) and its size (s2).
+                        c.cycles += 7;
+                        c.g[A2][0] = c.lw(r32(c, S1).wrapping_sub(0x4));
+                        c.g[A0][0] = 0xffff_ffff_ffff_fffc;
+                        c.g[S4][0] = sx(r32(c, S1).wrapping_sub(0x8));
+                        c.g[V0][0] = c.g[A2][0] & 0x2;
+                        let mmapped = c.g[V0][0] != 0;
+                        c.g[S2][0] = c.g[A2][0] & c.g[A0][0];
+                        if mmapped {
+                            break 'enomem;
+                        }
+                        'split: {
+                            // Big enough already?
+                            c.cycles += 3;
+                            c.g[V0][0] = (c.g[S2][0] < c.g[S3][0]) as u64;
+                            if c.g[V0][0] == 0 {
+                                c.cycles += 2;
+                                c.g[A1][0] = c.g[S2][0];
+                                break 'split;
+                            }
+                            c.g[V0][0] = c.lw(r32(c, A3).wrapping_add(0x30)); // av->top
+                            'moved: {
+                                'next_used: {
+                                    // 0x31f0bc: the next chunk.
+                                    c.cycles += 3;
+                                    c.g[S0][0] = sx(r32(c, S4).wrapping_add(r32(c, S2)));
+                                    if c.g[S0][0] != c.g[V0][0] {
+                                        c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0x4));
+                                    } else {
+                                        // Next is top: grow into it if it leaves MINSIZE.
+                                        c.cycles += 7;
+                                        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x4));
+                                        c.g[V1][0] = sx(r32(c, S3).wrapping_add(0x10));
+                                        c.g[V0][0] &= c.g[A0][0];
+                                        c.g[A1][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+                                        c.g[V1][0] = (c.g[A1][0] < c.g[V1][0]) as u64;
+                                        let short = c.g[V1][0] != 0;
+                                        c.g[A0][0] = c.g[S5][0];
+                                        if short {
+                                            break 'moved;
+                                        }
+                                        c.cycles += 10;
+                                        c.g[V0][0] = c.g[A2][0] & 0x1;
+                                        c.g[A0][0] = sx(r32(c, S4).wrapping_add(r32(c, S3)));
+                                        c.g[V0][0] |= c.g[S3][0];
+                                        c.g[V1][0] = sx(r32(c, A1).wrapping_sub(r32(c, S3)));
+                                        c.sw(r32(c, S1).wrapping_sub(0x4), c.g[V0][0]);
+                                        c.g[V1][0] |= 0x1;
+                                        c.sw(r32(c, A3).wrapping_add(0x30), c.g[A0][0]);
+                                        c.g[V0][0] = c.g[S1][0];
+                                        c.sw(r32(c, A0).wrapping_add(0x4), c.g[V1][0]);
+                                        break 'done;
+                                    }
+                                    // 0x31f10c: is the next chunk free (its next's PREV_INUSE)?
+                                    c.cycles += 9;
+                                    c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                                    c.g[V0][0] = c.g[A1][0] & c.g[V0][0];
+                                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+                                    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x4));
+                                    c.g[V1][0] ^= 0x1;
+                                    c.g[V1][0] &= 0x1;
+                                    let next_inuse = c.g[V1][0] == 0;
+                                    c.g[V0][0] = c.g[A1][0] & c.g[A0][0];
+                                    if next_inuse {
+                                        break 'next_used;
+                                    }
+                                    c.cycles += 4;
+                                    c.g[A1][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+                                    c.g[V1][0] = (c.g[A1][0] < c.g[S3][0]) as u64;
+                                    let short = c.g[V1][0] != 0;
+                                    c.g[A0][0] = c.g[S5][0];
+                                    if short {
+                                        break 'moved;
+                                    }
+                                    // Absorb the free next chunk: unlink it.
+                                    c.cycles += 5;
+                                    c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0xc));
+                                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x8));
+                                    c.sw(r32(c, V0).wrapping_add(0xc), c.g[V1][0]);
+                                    c.sw(r32(c, V1).wrapping_add(0x8), c.g[V0][0]);
+                                    break 'split;
+                                }
+                                // 0x31f154
+                                c.cycles += 1;
+                                c.g[A0][0] = c.g[S5][0];
+                            }
+                            // 0x31f158: malloc(nb - 15), copy, free the old chunk.
+                            c.cycles += 5;
+                            c.g[A1][0] = sx(r32(c, S3).wrapping_sub(0xf));
+                            DLHEAP_MALLOC.call(c, 0x0031_f160)?;
+                            c.g[A3][0] = c.g[V0][0];
+                            let failed = c.g[A3][0] == 0;
+                            c.g[S6][0] = sx(r32(c, A3).wrapping_sub(0x8));
+                            if failed {
+                                break 'fail;
+                            }
+                            c.cycles += 5;
+                            c.g[V1][0] = c.lw(r32(c, A3).wrapping_sub(0x4));
+                            c.g[V0][0] = 0xffff_ffff_ffff_fffc;
+                            let adjacent = c.g[S6][0] == c.g[S0][0];
+                            c.g[A1][0] = c.g[V1][0] & c.g[V0][0];
+                            if adjacent {
+                                // malloc returned the next chunk: merge in place.
+                                c.cycles += 2;
+                                c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, S2)));
+                                break 'split;
+                            }
+                            'free_old: {
+                                'small_copy: {
+                                    // 0x31f188: copy size - 4 bytes; under 10 words unrolled.
+                                    c.cycles += 5;
+                                    c.g[A2][0] = sx(r32(c, S2).wrapping_sub(0x4));
+                                    c.g[A1][0] = sx(r32(c, A2) >> 2);
+                                    c.g[V0][0] = (c.g[A1][0] < 0xa) as u64;
+                                    if c.g[V0][0] != 0 {
+                                        c.g[V1][0] = c.lw(r32(c, S1));
+                                    } else {
+                                        c.cycles += 5;
+                                        c.g[A0][0] = c.g[A3][0];
+                                        c.g[A1][0] = c.g[S1][0];
+                                        call_ptr(c, DLHEAP_MEMCPY, 0x0031_f1a8)?;
+                                        c.g[A0][0] = c.g[S5][0];
+                                        break 'free_old;
+                                    }
+                                    // 0x31f1b0: words 0-2.
+                                    c.cycles += 7;
+                                    c.g[A0][0] = (c.g[A1][0] < 0x5) as u64;
+                                    c.sw(r32(c, A3), c.g[V1][0]);
+                                    dlheap_realloc_copy_word(c, V0, 0x4);
+                                    c.g[V1][0] = c.lw(r32(c, S1).wrapping_add(0x8));
+                                    let done = c.g[A0][0] != 0;
+                                    c.sw(r32(c, A3).wrapping_add(0x8), c.g[V1][0]);
+                                    if done {
+                                        break 'small_copy;
+                                    }
+                                    // Words 3-4.
+                                    c.cycles += 6;
+                                    c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(0xc));
+                                    c.g[A0][0] = (c.g[A1][0] < 0x7) as u64;
+                                    c.sw(r32(c, A3).wrapping_add(0xc), c.g[V0][0]);
+                                    c.g[V1][0] = c.lw(r32(c, S1).wrapping_add(0x10));
+                                    let done = c.g[A0][0] != 0;
+                                    c.sw(r32(c, A3).wrapping_add(0x10), c.g[V1][0]);
+                                    if done {
+                                        break 'small_copy;
+                                    }
+                                    // Words 5-6.
+                                    c.cycles += 6;
+                                    c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(0x14));
+                                    c.g[A0][0] = (c.g[A1][0] < 0x9) as u64;
+                                    c.sw(r32(c, A3).wrapping_add(0x14), c.g[V0][0]);
+                                    c.g[V1][0] = c.lw(r32(c, S1).wrapping_add(0x18));
+                                    let done = c.g[A0][0] != 0;
+                                    c.sw(r32(c, A3).wrapping_add(0x18), c.g[V1][0]);
+                                    if done {
+                                        break 'small_copy;
+                                    }
+                                    // Words 7-8.
+                                    c.cycles += 4;
+                                    dlheap_realloc_copy_word(c, V0, 0x1c);
+                                    dlheap_realloc_copy_word(c, V1, 0x20);
+                                }
+                                // 0x31f20c
+                                c.cycles += 1;
+                                c.g[A0][0] = c.g[S5][0];
+                            }
+                            // 0x31f210
+                            c.cycles += 4;
+                            c.g[A1][0] = c.g[S1][0];
+                            DLHEAP_FREE.call(c, 0x0031_f218)?;
+                            c.g[V0][0] = sx(r32(c, S6).wrapping_add(0x8));
+                            break 'done;
+                        }
+                        // 0x31f220: keep the chunk (size a1); free a tail of MINSIZE or more.
+                        'tail_done: {
+                            c.cycles += 4;
+                            c.g[A0][0] = sx(r32(c, A1).wrapping_sub(r32(c, S3)));
+                            c.g[V0][0] = (c.g[A0][0] < 0x10) as u64;
+                            let splits = c.g[V0][0] == 0;
+                            c.g[V0][0] = c.lw(r32(c, S4).wrapping_add(0x4));
+                            if !splits {
+                                c.cycles += 8;
+                                c.g[A0][0] = sx(r32(c, S4).wrapping_add(r32(c, A1)));
+                                c.g[V0][0] &= 0x1;
+                                c.g[V0][0] |= c.g[A1][0];
+                                c.sw(r32(c, S4).wrapping_add(0x4), c.g[V0][0]);
+                                c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x4));
+                                c.g[V1][0] |= 0x1;
+                                c.sw(r32(c, A0).wrapping_add(0x4), c.g[V1][0]);
+                                break 'tail_done;
+                            }
+                            // 0x31f250
+                            c.cycles += 13;
+                            c.g[V1][0] = sx(r32(c, S4).wrapping_add(r32(c, S3)));
+                            c.g[A3][0] = c.g[A0][0] | 0x1;
+                            c.g[A2][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+                            c.g[V0][0] &= 0x1;
+                            c.g[A0][0] = c.g[S5][0];
+                            c.g[V0][0] |= c.g[S3][0];
+                            c.g[A1][0] = sx(r32(c, V1).wrapping_add(0x8));
+                            c.sw(r32(c, S4).wrapping_add(0x4), c.g[V0][0]);
+                            c.sw(r32(c, V1).wrapping_add(0x4), c.g[A3][0]);
+                            c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x4));
+                            c.g[V0][0] |= 0x1;
+                            c.sw(r32(c, A2).wrapping_add(0x4), c.g[V0][0]);
+                            DLHEAP_FREE.call(c, 0x0031_f284)?;
+                        }
+                        // 0x31f284
+                        c.cycles += 2;
+                        c.g[V0][0] = sx(r32(c, S4).wrapping_add(0x8));
+                        break 'done;
+                    }
+                    // 0x31f28c: errno = ENOMEM.
+                    c.cycles += 4;
+                    call_ptr(c, DLHEAP_GETREENT, 0x0031_f294)?;
+                    c.g[V1][0] = DLHEAP_ENOMEM;
+                    c.sw(r32(c, V0), c.g[V1][0]);
+                }
+                // 0x31f29c
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            // 0x31f2a0
+            c.cycles += 1;
+            frame.restore(c, S0, 0x70);
+        }
+        // 0x31f2a4
+        c.cycles += 9;
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One word of `DLHeap_Realloc`'s unrolled small copy: `*(a3 + off) =
+/// *(s1 + off)` through register `via`.
+pub(crate) fn dlheap_realloc_copy_word(c: &mut Cpu, via: usize, off: u32) {
+    c.g[via][0] = c.lw(r32(c, S1).wrapping_add(off));
+    c.sw(r32(c, A3).wrapping_add(off), c.g[via][0]);
+}
+
+/// `void **DLHeap_IAlloc(DLHeap *heap, unsigned n, unsigned *sizes, int
+/// opts, void **chunks)` (0x31f858): dlmalloc `ialloc`, the body of
+/// independent_calloc / comalloc. Consolidates an uninitialised state, then
+/// allocates one chunk holding `n` elements (`opts & 1`: all of
+/// `sizes[0]`, else `sizes[i]`) plus, without a caller array, the pointer
+/// array; with mmap disabled around the malloc (`av+0x354`). `opts & 2`
+/// zeroes the contents. The chunk is carved into the elements, whose
+/// pointers go to the array. `chunks` with `n == 0` returns `chunks`; no
+/// array and `n == 0` is `malloc(heap, 0)`. Frame 0xb0 (opts at 0, ra
+/// 0x10, fp 0x20, s7..s0 0x30..0xa0).
+///
+/// Resumable: its two loops deliver events at back edges and unwind with
+/// `pc` at the head (0x31f968, 0x31fa10); a re-entry there runs the
+/// generated body, which picks the loop up from the registers.
+pub fn dlheap_ialloc(c: &mut Cpu) {
+    if c.pc != 0x0031_f858 {
+        return ee::s10::f_0031f858__generated(c);
+    }
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S2, 0x80);
+        c.g[S0][0] = c.g[T0][0]; // chunks
+        frame.save(c, S3, 0x70);
+        c.g[S2][0] = c.g[A0][0]; // heap
+        frame.save(c, FP, 0x20);
+        c.g[S3][0] = c.g[A1][0]; // n
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save_ra(c, 0x10);
+        frame.save(c, S1, 0x90);
+        c.g[S1][0] = c.lw(r32(c, S2)); // av
+        c.sw(frame.at(c, 0), c.g[A3][0]); // opts
+        c.g[V0][0] = c.lw(r32(c, S1)); // av->max_fast
+        let ready = c.g[V0][0] != 0;
+        c.g[FP][0] = c.g[A2][0]; // sizes
+        if !ready {
+            c.cycles += 2;
+            c.g[A1][0] = c.g[S1][0];
+            DLHEAP_CONSOLIDATE.call(c, 0x0031_f8ac)?;
+        }
+        'restore: {
+            'done: {
+                // 0x31f8ac
+                c.cycles += 2;
+                if c.g[S0][0] != 0 {
+                    // 0x31f8b4: the caller's array (s5), no array chunk (s7 = 0).
+                    c.cycles += 2;
+                    let have = c.g[S3][0] != 0;
+                    c.g[S5][0] = c.g[S0][0];
+                    if !have {
+                        c.cycles += 2;
+                        c.g[V0][0] = c.g[S0][0];
+                        break 'done;
+                    }
+                    c.cycles += 2;
+                    c.g[S7][0] = 0;
+                } else {
+                    // 0x31f8cc: the array chunk size request2size(n * 4) (s7).
+                    c.cycles += 2;
+                    let have = c.g[S3][0] != 0;
+                    c.g[V1][0] = sx(r32(c, S3) << 2);
+                    if !have {
+                        c.cycles += 5;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A1][0] = 0;
+                        DLHEAP_MALLOC.call(c, 0x0031_f8e0)?;
+                        frame.restore(c, S0, 0xa0);
+                        break 'restore;
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x13));
+                    c.g[V0][0] = (c.g[V1][0] < 0x10) as u64;
+                    let tiny = c.g[V0][0] != 0;
+                    c.g[S5][0] = 0;
+                    if tiny {
+                        c.cycles += 1;
+                        c.g[S7][0] = 0x10;
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = 0xffff_ffff_ffff_fff0;
+                        c.g[S7][0] = c.g[V1][0] & c.g[V0][0];
+                    }
+                }
+                // 0x31f90c: the contents size (s0); s4 = the element size if fixed.
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(frame.at(c, 0));
+                c.g[V0][0] = c.g[V1][0] & 0x1;
+                let same_size = c.g[V0][0] != 0;
+                c.g[S4][0] = 0;
+                if same_size {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(r32(c, FP));
+                    c.g[A0][0] = sx(r32(c, V0).wrapping_add(0x13));
+                    c.g[V1][0] = (c.g[A0][0] < 0x10) as u64;
+                    let tiny = c.g[V1][0] != 0;
+                    c.g[S4][0] = 0x10;
+                    if !tiny {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0xffff_ffff_ffff_fff0;
+                        c.g[S4][0] = c.g[A0][0] & c.g[V0][0];
+                    }
+                    // 0x31f93c: s0 = n * element size.
+                    c.cycles += 3;
+                    c.mult(0, S0, S3, S4);
+                    c.g[S6][0] = c.lw(r32(c, S1).wrapping_add(0x354));
+                } else {
+                    // 0x31f948: s0 = sum of request2size(sizes[i]).
+                    c.cycles += 4;
+                    c.g[S0][0] = 0;
+                    c.g[A2][0] = 0;
+                    let none = c.g[S3][0] == 0;
+                    c.g[S6][0] = c.lw(r32(c, S1).wrapping_add(0x354));
+                    if !none {
+                        c.cycles += 4;
+                        c.g[A1][0] = 0xffff_ffff_ffff_fff0;
+                        c.g[A0][0] = c.g[FP][0];
+                        loop {
+                            // 0x31f968
+                            c.cycles += 5;
+                            c.g[V0][0] = c.lw(r32(c, A0));
+                            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x13));
+                            c.g[V1][0] = (c.g[V0][0] < 0x10) as u64;
+                            if c.g[V1][0] != 0 {
+                                c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x10));
+                            } else {
+                                c.cycles += 2;
+                                c.g[V0][0] &= c.g[A1][0];
+                                c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+                            }
+                            c.cycles += 3;
+                            c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x1));
+                            let more = c.g[A2][0] != c.g[S3][0];
+                            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x4));
+                            if !more {
+                                break;
+                            }
+                            if back_edge_unwinds(c, 0x0031_f968) {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                // 0x31f990: one chunk, mmap disabled around the malloc.
+                c.cycles += 9;
+                c.g[A1][0] = sx(r32(c, S0).wrapping_add(r32(c, S7)));
+                c.sw(r32(c, S1).wrapping_add(0x354), 0);
+                c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0xf));
+                c.g[A0][0] = c.g[S2][0];
+                DLHEAP_MALLOC.call(c, 0x0031_f9a4)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.sw(r32(c, S1).wrapping_add(0x354), c.g[S6][0]);
+                let failed = c.g[A1][0] == 0;
+                c.g[V0][0] = 0;
+                if failed {
+                    break 'done;
+                }
+                // 0x31f9b4: s1 = the chunk, s2 = its size.
+                c.cycles += 8;
+                c.g[V0][0] = c.lw(r32(c, A1).wrapping_sub(0x4));
+                c.g[V1][0] = 0xffff_ffff_ffff_fffc;
+                c.g[A2][0] = c.lw(frame.at(c, 0));
+                c.g[S2][0] = c.g[V0][0] & c.g[V1][0];
+                c.g[A0][0] = c.g[A2][0] & 0x2;
+                let clear = c.g[A0][0] != 0;
+                c.g[S1][0] = sx(r32(c, A1).wrapping_sub(0x8));
+                if clear {
+                    c.cycles += 5;
+                    c.g[A2][0] = sx(r32(c, S7).wrapping_add(0x4));
+                    c.g[A0][0] = c.g[A1][0];
+                    c.g[A2][0] = sx(r32(c, S2).wrapping_sub(r32(c, A2)));
+                    c.g[A1][0] = 0;
+                    call_ptr(c, DLHEAP_MEMSET, 0x0031_f9e8)?;
+                }
+                // 0x31f9e8: no caller array: the array is the chunk's tail.
+                c.cycles += 2;
+                let have_array = c.g[S5][0] != 0;
+                c.g[A2][0] = 0;
+                if !have_array {
+                    c.cycles += 6;
+                    c.g[V0][0] = sx(r32(c, S2).wrapping_sub(r32(c, S0)));
+                    c.g[V1][0] = sx(r32(c, S1).wrapping_add(r32(c, S0)));
+                    c.g[V0][0] |= 0x1;
+                    c.g[S2][0] = c.g[S0][0];
+                    c.sw(r32(c, V1).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[S5][0] = sx(r32(c, V1).wrapping_add(0x8));
+                }
+                // 0x31fa08
+                c.cycles += 2;
+                c.g[A1][0] = sx(r32(c, S3).wrapping_sub(0x1));
+                loop {
+                    // 0x31fa14: array[i] = the element's memory.
+                    c.cycles += 5;
+                    c.g[A0][0] = sx(r32(c, A2) << 2);
+                    c.g[V1][0] = sx(r32(c, S1).wrapping_add(0x8));
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
+                    let last = c.g[A2][0] == c.g[A1][0];
+                    c.sw(r32(c, V0), c.g[V1][0]);
+                    if last {
+                        break;
+                    }
+                    // 0x31fa28: the element's chunk size.
+                    c.cycles += 2;
+                    let fixed = c.g[S4][0] != 0;
+                    c.g[V1][0] = c.g[S4][0];
+                    if !fixed {
+                        c.cycles += 6;
+                        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, FP)));
+                        c.g[V1][0] = c.lw(r32(c, V0));
+                        c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x13));
+                        c.g[V0][0] = (c.g[V1][0] < 0x10) as u64;
+                        if c.g[V0][0] != 0 {
+                            c.g[V1][0] = 0x10;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = 0xffff_ffff_ffff_fff0;
+                            c.g[V1][0] &= c.g[V0][0];
+                        }
+                    }
+                    // 0x31fa54: carve it.
+                    c.cycles += 5;
+                    c.g[V0][0] = c.g[V1][0] | 0x1;
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_sub(r32(c, V1)));
+                    c.sw(r32(c, S1).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, V1)));
+                    if back_edge_unwinds(c, 0x0031_fa10) {
+                        return Ok(());
+                    }
+                    // 0x31fa10
+                    c.cycles += 1;
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x1));
+                }
+                // 0x31fa68: the last element takes the rest.
+                c.cycles += 3;
+                c.g[V0][0] = c.g[S2][0] | 0x1;
+                c.sw(r32(c, S1).wrapping_add(0x4), c.g[V0][0]);
+                c.g[V0][0] = c.g[S5][0];
+            }
+            // 0x31fa74
+            c.cycles += 1;
+            frame.restore(c, S0, 0xa0);
+        }
+        // 0x31fa78
+        c.cycles += 11;
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *DLHeap_MemalignOffset(DLHeap *heap, unsigned align, unsigned
+/// bytes, unsigned offset)` (0x31f4e8): EA's `memalign` variant that
+/// aligns `mem + offset` (not `mem`). An alignment of 16 or less is a
+/// plain malloc of `bytes`; otherwise the alignment is raised to a power
+/// of two (at least 0x20 when not one already), `bytes + offset` padded to
+/// a chunk size (`ENOMEM` and null when too large), `nb + align + 16`
+/// allocated, the misaligned lead given back (free chunk, or the mmapped
+/// chunk's offset moved) and a tail of more than 16 bytes freed. Frame
+/// 0x60 (ra 0, s4 0x10, s3 0x20, s2 0x30, s1 0x40, s0 0x50).
+pub fn dlheap_memalign_offset(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        c.g[S0][0] = c.g[A1][0]; // align
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        c.g[A1][0] = c.g[A2][0]; // bytes
+        frame.save(c, S1, 0x40);
+        c.g[S4][0] = c.g[A0][0]; // heap
+        frame.save(c, S2, 0x30);
+        c.g[S3][0] = c.g[A3][0]; // offset
+        c.g[V0][0] = (c.g[S0][0] < 0x11) as u64;
+        let small = c.g[V0][0] != 0;
+        frame.save_ra(c, 0);
+        'restore: {
+            'done: {
+                if small {
+                    c.cycles += 4;
+                    DLHEAP_MALLOC.call(c, 0x0031_f524)?;
+                    frame.restore(c, S0, 0x50);
+                    break 'restore;
+                }
+                // 0x31f52c: s0 = the alignment as a power of two.
+                c.cycles += 8;
+                c.g[V0][0] = 0xf;
+                c.g[A0][0] = 0x10;
+                c.g[V0][0] = (c.g[V0][0] < c.g[S0][0]) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[S0][0] = c.g[A0][0];
+                }
+                c.g[V1][0] = sx(r32(c, S0).wrapping_sub(0x1));
+                c.g[V1][0] = c.g[S0][0] & c.g[V1][0];
+                let pow2 = c.g[V1][0] == 0;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, S3))); // bytes + offset
+                if !pow2 {
+                    c.cycles += 4;
+                    c.g[V1][0] = 0x20;
+                    c.g[V0][0] = (c.g[V1][0] < c.g[S0][0]) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[S0][0] = c.g[V1][0];
+                    } else {
+                        c.cycles += 1;
+                        c.g[V1][0] = sx(r32(c, V1) << 1);
+                        loop {
+                            // 0x31f560
+                            c.cycles += 7;
+                            c.g[V0][0] = (c.g[V1][0] < c.g[S0][0]) as u64;
+                            if c.g[V0][0] == 0 {
+                                c.cycles += 1;
+                                c.g[S0][0] = c.g[V1][0];
+                                break;
+                            }
+                            c.g[V1][0] = sx(r32(c, V1) << 1);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0031_f560);
+                            }
+                        }
+                    }
+                }
+                // 0x31f580: too large?
+                c.cycles += 5;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffdf;
+                c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+                let too_big = c.g[V0][0] != 0;
+                c.g[V1][0] = sx(r32(c, A1).wrapping_add(0x13));
+                if too_big {
+                    c.cycles += 6;
+                    call_ptr(c, DLHEAP_GETREENT, 0x0031_f59c)?;
+                    c.g[V1][0] = DLHEAP_ENOMEM;
+                    c.sw(r32(c, V0), c.g[V1][0]);
+                    c.g[V0][0] = 0;
+                    break 'done;
+                }
+                // 0x31f5ac: s2 = request2size(bytes + offset).
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[V1][0] < 0x10) as u64;
+                let tiny = c.g[V0][0] != 0;
+                c.g[S2][0] = 0x10;
+                if !tiny {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xffff_ffff_ffff_fff0;
+                    c.g[S2][0] = c.g[V1][0] & c.g[V0][0];
+                }
+                // 0x31f5c4: malloc(nb + align + 16); t0 = mem, v1 = mem + offset.
+                c.cycles += 7;
+                c.g[A1][0] = sx(r32(c, S2).wrapping_add(r32(c, S0)));
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x10));
+                DLHEAP_MALLOC.call(c, 0x0031_f5d4)?;
+                c.g[T0][0] = c.g[V0][0];
+                let got = c.g[T0][0] != 0;
+                c.g[V1][0] = sx(r32(c, T0).wrapping_add(r32(c, S3)));
+                if !got {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    break 'done;
+                }
+                // 0x31f5e8: the divide-by-zero trap test (no trap: s0 >= 0x20).
+                c.cycles += 2;
+                // 0x31f5f0: misalignment of mem + offset.
+                c.cycles += 4;
+                c.divu(0, V1, S0);
+                c.g[V0][0] = c.hi[0];
+                let misaligned = c.g[V0][0] != 0;
+                c.g[S1][0] = sx(r32(c, T0).wrapping_sub(0x8));
+                if misaligned {
+                    // s0 = the aligned chunk (brk, or brk + align when the
+                    // lead would be under MINSIZE), a3 = lead, a0 = new size.
+                    c.cycles += 19;
+                    c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, S0)));
+                    c.g[A2][0] = 0xf;
+                    c.g[V1][0] = sx(0u32.wrapping_sub(r32(c, S0)));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x1));
+                    c.g[V0][0] &= c.g[V1][0];
+                    c.g[A1][0] = c.lw(r32(c, T0).wrapping_sub(0x4));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, S3)));
+                    c.g[V1][0] = 0xffff_ffff_ffff_0000;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x8));
+                    c.g[V1][0] |= 0xfffc;
+                    c.g[A0][0] = sx(r32(c, V0).wrapping_sub(r32(c, S1)));
+                    c.g[S0][0] = sx(r32(c, V0).wrapping_add(r32(c, S0)));
+                    c.g[A2][0] = (c.g[A2][0] < c.g[A0][0]) as u64;
+                    c.g[V1][0] = c.g[A1][0] & c.g[V1][0];
+                    if c.g[A2][0] != 0 {
+                        c.g[S0][0] = c.g[V0][0];
+                    }
+                    c.g[A1][0] &= 0x2;
+                    c.g[A3][0] = sx(r32(c, S0).wrapping_sub(r32(c, S1)));
+                    let mmapped = c.g[A1][0] != 0;
+                    c.g[A0][0] = sx(r32(c, V1).wrapping_sub(r32(c, A3)));
+                    if mmapped {
+                        // Move the mmapped chunk's offset forward.
+                        c.cycles += 7;
+                        c.g[V1][0] = c.lw(r32(c, T0).wrapping_sub(0x8));
+                        c.g[V0][0] = c.g[A0][0] | 0x2;
+                        c.sw(r32(c, S0).wrapping_add(0x4), c.g[V0][0]);
+                        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+                        c.g[V0][0] = sx(r32(c, S0).wrapping_add(0x8));
+                        c.sw(r32(c, S0), c.g[V1][0]);
+                        break 'done;
+                    }
+                    // 0x31f668: give the lead back as a free chunk.
+                    c.cycles += 14;
+                    c.g[V0][0] = c.g[A0][0] | 0x1;
+                    c.g[A2][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+                    c.sw(r32(c, S0).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[A1][0] = c.g[T0][0];
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[S1][0] = c.g[S0][0];
+                    c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x4));
+                    c.g[V0][0] |= 0x1;
+                    c.sw(r32(c, A2).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[V1][0] = c.lw(r32(c, T0).wrapping_sub(0x4));
+                    c.g[V1][0] &= 0x1;
+                    c.g[V1][0] |= c.g[A3][0];
+                    c.sw(r32(c, T0).wrapping_sub(0x4), c.g[V1][0]);
+                    DLHEAP_FREE.call(c, 0x0031_f6a0)?;
+                }
+                // 0x31f6a0: s1 = the aligned chunk.
+                c.cycles += 4;
+                c.g[A0][0] = c.lw(r32(c, S1).wrapping_add(0x4));
+                c.g[V0][0] = c.g[A0][0] & 0x2;
+                let mmapped = c.g[V0][0] != 0;
+                c.g[V0][0] = sx(r32(c, S1).wrapping_add(0x8));
+                if mmapped {
+                    break 'done;
+                }
+                // Free a tail of more than MINSIZE.
+                c.cycles += 7;
+                c.g[V1][0] = sx(r32(c, S2).wrapping_add(0x10));
+                c.g[V0][0] = c.g[A0][0] & 0xffff_ffff_ffff_fffc;
+                c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                let split = c.g[V1][0] != 0;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, S2)));
+                if split {
+                    c.cycles += 10;
+                    c.g[A1][0] = sx(r32(c, S1).wrapping_add(r32(c, S2)));
+                    c.g[V0][0] |= 0x1;
+                    c.g[A0][0] = c.g[S4][0];
+                    c.sw(r32(c, A1).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x8));
+                    c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(0x4));
+                    c.g[V0][0] &= 0x1;
+                    c.g[V0][0] |= c.g[S2][0];
+                    c.sw(r32(c, S1).wrapping_add(0x4), c.g[V0][0]);
+                    DLHEAP_FREE.call(c, 0x0031_f6f4)?;
+                }
+                // 0x31f6f4
+                c.cycles += 1;
+                c.g[V0][0] = sx(r32(c, S1).wrapping_add(0x8));
+            }
+            // 0x31f6f8
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        // 0x31f6fc
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `struct mallinfo DLHeap_Mallinfo(DLHeap *heap)` (0x31fc20; `a0` the
+/// result struct, `a1` the heap): dlmalloc `mallinfo`. Consolidates an
+/// uninitialised state (no top), counts the fast bins (blocks, bytes) and
+/// the 95 regular bins (walked through `bk`, stopping on a self-linked
+/// chunk), then writes the ten words `{arena, ordblks, smblks, hblks,
+/// hblkhd, usmblks, fsmblks, uordblks, fordblks, keepcost}` through the
+/// stack (unaligned `sdl/sdr` pairs). Returns the struct pointer. Frame
+/// 0x60 (the struct at 0..0x28, ra 0x30, s1 0x40, s0 0x50).
+pub fn dlheap_mallinfo(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0x30);
+        frame.save(c, S0, 0x50);
+        c.g[S0][0] = c.lw(r32(c, A1)); // av
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x30)); // av->top
+        let have_top = c.g[V0][0] != 0;
+        c.g[S1][0] = c.g[A0][0]; // the result
+        if !have_top {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[A1][0];
+            c.g[A1][0] = c.g[S0][0];
+            DLHEAP_CONSOLIDATE.call(c, 0x0031_fc4c)?;
+            c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x30));
+        }
+        // 0x31fc50: t0 avail, t2 nblocks, t4 nfastblocks, t5 fastavail.
+        c.cycles += 10;
+        c.g[V1][0] = 0xffff_ffff_ffff_fffc;
+        c.g[T2][0] = 0x1;
+        c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0x4));
+        c.g[T4][0] = 0;
+        c.g[T5][0] = 0;
+        c.g[A2][0] = 0;
+        c.g[T0][0] = c.g[A0][0] & c.g[V1][0];
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(0x4));
+        loop {
+            // 0x31fc78: fast bin a2 (a0 = &av->fastbins[a2]).
+            c.cycles += 3;
+            c.g[A1][0] = c.lw(r32(c, A0));
+            if c.g[A1][0] == 0 {
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x1));
+            } else {
+                c.cycles += 3;
+                c.g[V1][0] = 0xffff_ffff_ffff_fffc;
+                loop {
+                    // 0x31fc90
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0x4));
+                    c.g[T4][0] = sx(r32(c, T4).wrapping_add(0x1));
+                    c.g[A1][0] = c.lw(r32(c, A1).wrapping_add(0x8));
+                    c.g[V0][0] &= c.g[V1][0];
+                    let more = c.g[A1][0] != 0;
+                    c.g[T5][0] = sx(r32(c, T5).wrapping_add(r32(c, V0)));
+                    if !more {
+                        c.cycles += 1;
+                        c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x1));
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_fc90);
+                    }
+                }
+            }
+            // 0x31fcb0
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[A2][0] < 0xb) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_fc78);
+            }
+        }
+        // The regular bins 1..95 (t1 the size mask, a2 the index).
+        c.cycles += 5;
+        c.g[T1][0] = 0xffff_ffff_ffff_0000;
+        c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, T5)));
+        c.g[A2][0] = 0x1;
+        c.g[T1][0] |= 0xfffc;
+        c.g[V0][0] = sx(r32(c, A2) << 3);
+        loop {
+            'next_bin: {
+                'bin_done: {
+                    // 0x31fcd0: a3 = the bin header, a1 = its last chunk.
+                    c.cycles += 6;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x38));
+                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+                    c.g[A1][0] = c.lw(r32(c, V0).wrapping_add(0x4));
+                    c.g[A3][0] = sx(r32(c, V0).wrapping_sub(0x8));
+                    let empty = c.g[A1][0] == c.g[A3][0];
+                    c.g[T3][0] = sx(r32(c, A2).wrapping_add(0x1));
+                    if empty {
+                        break 'bin_done;
+                    }
+                    c.cycles += 8;
+                    c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0xc));
+                    c.g[T2][0] = sx(r32(c, T2).wrapping_add(0x1));
+                    c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(0x4));
+                    c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+                    c.g[A2][0] = c.g[V0][0];
+                    c.g[V1][0] &= c.g[T1][0];
+                    let looped = c.g[A1][0] == c.g[A0][0];
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, V1)));
+                    if looped {
+                        break 'bin_done;
+                    }
+                    // p == p->bk cannot hold here (p->bk->bk would be p,
+                    // caught above).
+                    c.cycles += 2;
+                    if c.g[A1][0] != c.g[A2][0] {
+                        c.g[A1][0] = c.g[A2][0];
+                    } else {
+                        c.cycles += 2;
+                        if c.g[A1][0] != c.g[A3][0] {
+                            c.g[A2][0] = c.g[T3][0];
+                            break 'next_bin;
+                        }
+                        c.cycles += 2;
+                        c.g[A1][0] = c.g[A2][0];
+                    }
+                    loop {
+                        // 0x31fd20
+                        c.cycles += 2;
+                        let at_header = c.g[A1][0] == c.g[A3][0];
+                        c.g[A2][0] = c.g[T3][0];
+                        if at_header {
+                            break 'next_bin;
+                        }
+                        c.cycles += 8;
+                        c.g[A0][0] = c.lw(r32(c, A1).wrapping_add(0xc));
+                        c.g[T2][0] = sx(r32(c, T2).wrapping_add(0x1));
+                        c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0x4));
+                        c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0xc));
+                        c.g[A2][0] = c.g[A0][0];
+                        c.g[V0][0] &= c.g[T1][0];
+                        let looped = c.g[A1][0] == c.g[V1][0];
+                        c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, V0)));
+                        if looped {
+                            break 'bin_done;
+                        }
+                        c.cycles += 2;
+                        if c.g[A1][0] != c.g[A0][0] {
+                            c.g[A1][0] = c.g[A2][0];
+                        } else {
+                            c.cycles += 2;
+                            let at_header = c.g[A1][0] == c.g[A3][0];
+                            c.g[A1][0] = c.g[A2][0];
+                            if !at_header {
+                                break 'bin_done;
+                            }
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_fd20);
+                        }
+                    }
+                }
+                // 0x31fd58
+                c.cycles += 1;
+                c.g[A2][0] = c.g[T3][0];
+            }
+            // 0x31fd5c
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[A2][0] as i64) < 96i64) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V0][0] = sx(r32(c, A2) << 3);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_fcd0);
+            }
+        }
+        // The struct on the stack, then copied out.
+        c.cycles += 47;
+        c.sw(frame.at(c, 0x8), c.g[T4][0]);
+        c.g[A2][0] = 0xffff_ffff_ffff_0000;
+        c.sw(frame.at(c, 0x4), c.g[T2][0]);
+        c.g[A2][0] |= 0xfffc;
+        c.sw(frame.at(c, 0x20), c.g[T0][0]);
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore_ra(c, 0x30);
+        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x368));
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(r32(c, T0)));
+        c.sw(frame.at(c, 0x1c), c.g[V1][0]);
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x368));
+        c.sw(frame.at(c, 0), c.g[A0][0]);
+        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x350));
+        c.sw(frame.at(c, 0xc), c.g[V1][0]);
+        c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0x364));
+        c.sw(frame.at(c, 0x18), c.g[T5][0]);
+        c.sw(frame.at(c, 0x10), c.g[A1][0]);
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x30));
+        c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x4));
+        c.g[V1][0] &= c.g[A2][0];
+        c.sw(frame.at(c, 0x24), c.g[V1][0]);
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x374));
+        frame.restore(c, S0, 0x50);
+        c.sw(frame.at(c, 0x14), c.g[A0][0]);
+        for (reg, off) in [(V1, 0x0), (A0, 0x8), (A1, 0x10), (A2, 0x18)] {
+            c.ldl(reg, frame.at(c, off + 0x7));
+            c.ldr(reg, frame.at(c, off));
+        }
+        for (reg, off) in [(V1, 0x0u32), (A0, 0x8), (A1, 0x10), (A2, 0x18)] {
+            c.sdl(reg, r32(c, S1).wrapping_add(off + 0x7));
+            c.sdr(reg, r32(c, S1).wrapping_add(off));
+        }
+        c.ldl(V1, frame.at(c, 0x27));
+        c.ldr(V1, frame.at(c, 0x20));
+        c.sdl(V1, r32(c, S1).wrapping_add(0x27));
+        c.sdr(V1, r32(c, S1).wrapping_add(0x20));
+        frame.restore(c, S1, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *DLHeap_SysTrim(...)` (0x31e6d8): release the heap's top chunk.
+pub fn dlheap_sys_trim(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 35;
+        let frame = Frame::open(c, 0x60);
+        c.g[A3][0] = c.g[A1][0] << 32;
+        c.g[A3][0] = c.g[A3][0] >> 32;
+        frame.save(c, 17, 0x40);
+        frame.save(c, 18, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, 19, 0x20);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, 16, 0x50);
+        c.g[A2][0] = 0xffff_ffff_ffff_0000;
+        frame.save(c, 20, 0x10);
+        c.g[A2][0] = c.g[A2][0] | 0xfffc;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x35c));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+        c.g[V1][0] = c.g[V1][0] & c.g[A2][0];
+        c.g[V0][0] = c.g[V0][0] << 32;
+        c.g[V1][0] = c.g[V1][0] << 32;
+        c.g[S0][0] = c.g[S0][0] << 32;
+        c.g[S3][0] = c.g[V1][0] >> 32;
+        c.g[V0][0] = c.g[V0][0] >> 32;
+        c.g[S0][0] = c.g[S0][0] >> 32;
+        c.g[A3][0] = c.g[S3][0].wrapping_sub(c.g[A3][0]);
+        c.g[V0][0] = c.g[V0][0].wrapping_sub(0x10);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[A3][0].wrapping_add(c.g[V0][0]);
+        call_ptr(c, 0x0040_fcb0, 0x0031_e74c)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0].wrapping_sub(0x1);
+        call_ptr(c, 0x0041_14d0, 0x0031_e758)?;
+        c.g[S0][0] = c.g[V0][0];
+        let t = (c.g[S0][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S1][0];
+        if t {
+            c.cycles += 1;
+            c.g[V0][0] = 0u64;
+        } else {
+            c.cycles += 9;
+            c.g[A1][0] = 0u64;
+            DLHEAP_MORE_CORE.call(c, 0x0031_e76c)?;
+            c.g[S4][0] = c.g[V0][0];
+            c.g[V1][0] = c.g[S3][0] << 32;
+            c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
+            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            let t = c.g[S4][0] != c.g[V0][0];
+            c.g[V0][0] = 0u64;
+            if !t {
+                c.cycles += 11;
+                c.g[A1][0] = 0u64.wrapping_sub(c.g[S0][0]);
+                c.g[A0][0] = c.g[S1][0];
+                DLHEAP_MORE_CORE.call(c, 0x0031_e794)?;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = 0u64;
+                DLHEAP_MORE_CORE.call(c, 0x0031_e7a0)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[V0][0] = 0xffff_ffff_ffff_0000;
+                c.g[V0][0] = c.g[V0][0] | 0xffff;
+                let t = c.g[A0][0] == c.g[V0][0];
+                c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                if !t {
+                    c.cycles += 2;
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[V1][0] = c.g[S3][0].wrapping_sub(c.g[A0][0]);
+                    if !t {
+                        c.cycles += 13;
+                        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x368));
+                        c.g[A0][0] = c.g[A0][0] << 32;
+                        c.g[A0][0] = ((c.g[A0][0] as i64) >> 32) as u64;
+                        c.g[A1][0] = 0x1;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                        c.g[V1][0] = c.g[V1][0] | c.g[A1][0];
+                        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x30));
+                        c.g[V1][0] = c.g[V1][0] << 32;
+                        c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x368), c.g[V0][0]);
+                        c.g[V0][0] = 0x1;
+                        c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                    } else {
+                        // Nothing was released.
+                        c.cycles += 1;
+                        c.g[V0][0] = 0u64;
+                    }
+                } else {
+                    // The shrink failed: `MoreCore(0)` answered -1.
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                }
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, 16, 0x50);
+        frame.restore(c, 17, 0x40);
+        frame.restore(c, 18, 0x30);
+        frame.restore(c, 19, 0x20);
+        frame.restore(c, 20, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *DLHeap_InitState(void *heap, ...)` (0x31e260): thread the heap
+/// header's 94 free nodes and publish the heap constants.
+pub fn dlheap_init_state(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0031_e260 => {
+                    c.cycles += 4;
+                    c.g[T0][0] = c.g[A0][0];
+                    c.g[V1][0] = 0x5e;
+                    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x38));
+                    pc = 0x0031_e270;
+                    continue;
+                }
+                0x0031_e270 => {
+                    c.cycles += 7;
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    let t = (c.g[V1][0] as i64) >= 0;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_e270);
+                        }
+                        pc = 0x0031_e270;
+                        continue;
+                    }
+                    c.cycles += 18;
+                    c.g[V1][0] = c.lw(c.g[T0][0] as u32);
+                    c.g[A1][0] = 0x40000;
+                    c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x360));
+                    c.g[A2][0] = 0x8000;
+                    c.g[V1][0] = c.g[V1][0] & 0x3;
+                    c.g[A3][0] = sx((c.g[T0][0] as u32).wrapping_add(0x38));
+                    c.g[A0][0] = c.g[A0][0] | 0x1;
+                    c.g[V1][0] = c.g[V1][0] | 0x50;
+                    c.g[V0][0] = 0x1000;
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0x34c), c.g[A1][0]);
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0x35c), c.g[V0][0]);
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0x344), c.g[A2][0]);
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0x360), c.g[A0][0]);
+                    c.sw(c.g[T0][0] as u32, c.g[V1][0]);
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0x30), c.g[A3][0]);
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0x348), 0u64);
+                    let t = c.g[RA][0] as u32;
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0x354), 0u64);
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0031_e260, 0x0031_e2d8);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `void *DLHeap_Pvalloc(DLHeap *heap, unsigned int bytes)` (0x31fb00):
+/// page-rounded allocation through `DLHeap_Memalign` (consolidating first
+/// when the heap has no fast chunk pending).
+pub fn dlheap_pvalloc(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 17, 0x20);
+        frame.save(c, 18, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save(c, 16, 0x30);
+        c.g[S0][0] = c.lw(c.g[S1][0] as u32);
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        let t = c.g[V0][0] != 0u64;
+        c.g[S2][0] = c.g[A1][0];
+        if !t {
+            c.cycles += 2;
+            c.g[A1][0] = c.g[S0][0];
+            DLHEAP_CONSOLIDATE.call(c, 0x0031_fb30)?;
+        }
+        c.cycles += 13;
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x35c));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[V0][0] = sx(0u32.wrapping_sub(c.g[A1][0] as u32));
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+        c.g[A2][0] = c.g[A2][0] & c.g[V0][0];
+        DLHEAP_MEMALIGN.call(c, 0x0031_fb4c)?;
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *DLHeap_Valloc(DLHeap *heap, unsigned int bytes)` (0x31faa8):
+/// page-aligned allocation through `DLHeap_Memalign` (consolidating first
+/// when the heap has no fast chunk pending).
+pub fn dlheap_valloc(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 17, 0x20);
+        frame.save(c, 18, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save(c, 16, 0x30);
+        c.g[S0][0] = c.lw(c.g[S1][0] as u32);
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        let t = c.g[V0][0] != 0u64;
+        c.g[S2][0] = c.g[A1][0];
+        if !t {
+            c.cycles += 2;
+            c.g[A1][0] = c.g[S0][0];
+            DLHEAP_CONSOLIDATE.call(c, 0x0031_fad8)?;
+        }
+        c.cycles += 10;
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x35c));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S2][0];
+        DLHEAP_MEMALIGN.call(c, 0x0031_fae8)?;
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *DLHeap_Trim(DLHeap *heap, unsigned int pad)` (0x31fb68): release
+/// the heap's top chunk back through `DLHeap_SysTrim`.
+pub fn dlheap_trim(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 16, 0x30);
+        frame.save(c, 18, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, 17, 0x20);
+        c.g[S1][0] = c.lw(c.g[S0][0] as u32);
+        c.g[A1][0] = c.g[S1][0];
+        DLHEAP_CONSOLIDATE.call(c, 0x0031_fb90)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[S1][0];
+        DLHEAP_SYSTRIM.call(c, 0x0031_fba0)?;
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *DLHeap_IndependentCalloc(DLHeap *heap, ...)` (0x31f810): allocate
+/// chunks through `DLHeap_IAlloc` with zeroing (the `zero` flag is 3).
+pub fn dlheap_independent_calloc(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[T0][0] = c.g[A3][0];
+        c.sw(frame.at(c, 0), c.g[A2][0]);
+        c.g[A3][0] = 0x3;
+        frame.save_ra(c, 0x10);
+        c.g[A2][0] = c.g[SP][0];
+        DLHEAP_IALLOC.call(c, 0x0031_f82c)?;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *DLHeap_IndependentComalloc(DLHeap *heap, ...)` (0x31f838):
+/// allocate chunks through `DLHeap_IAlloc` without zeroing (the `zero` flag
+/// is 0); the caller's chunk array passes through in `a3` (via `t0`), the
+/// per-chunk sizes in `a2`.
+pub fn dlheap_independent_comalloc(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[T0][0] = c.g[A3][0];
+        frame.save_ra(c, 0);
+        c.g[A3][0] = 0u64;
+        DLHEAP_IALLOC.call(c, 0x0031_f84c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void DLHeap_Free_Wrapper(DLHeap *heap, void *ptr)` (0x31f7f0): free
+/// `ptr` back to `heap` through `DLHeap_Free`.
+pub fn dlheap_free_wrapper(c: &mut Cpu) {
+    use callee::*;
+    tail_wrapper(c, None, Target::Direct(DLHEAP_FREE), 0x0031_f800);
+}
+
+/// `void *DLHeap_Malloc_Wrapper(DLHeap *heap, unsigned int bytes)`
+/// (0x320038): allocate `bytes` out of `heap` through `DLHeap_Malloc`.
+pub fn dlheap_malloc_wrapper(c: &mut Cpu) {
+    use callee::*;
+    tail_wrapper(c, None, Target::Direct(DLHEAP_MALLOC), 0x0032_0048);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10465,6 +12059,1282 @@ pub(crate) mod tests {
             hand_mem_heap_alloc_aligned,
             96,
             &mem_heap_alloc_aligned_events_setup,
+        );
+    }
+
+    use crate::difftest::check_paths_lohi;
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes;
+    use crate::difftest::fresh;
+    use crate::difftest::require_paths;
+
+    use crate::game::bx::cubicspline::tests::heap_arena_2 as heap_arena;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// A real dlmalloc arena (`DLHeap_InitArena`), the heap header at
+    /// `MALLOPT_HEAP`; returns its `malloc_state`.
+    pub(crate) const MALLOPT_HEAP: u32 = DATA + 0x2000;
+
+    pub(crate) const MALLOPT_ARENA: u32 = DATA + 0x4_0000;
+
+    pub(crate) fn mallopt_arena(c: &mut Cpu) -> u32 {
+        let ra = c.g[RA][0];
+        c.g[A0][0] = MALLOPT_HEAP as u64;
+        c.g[A1][0] = MALLOPT_ARENA as u64;
+        c.g[A2][0] = 0x4_0000;
+        c.g[RA][0] = 0x0000_7770;
+        c.pc = 0x0031_ff60;
+        ee::s10::DLHeap_InitArena(c);
+        assert_eq!(c.pc, 0x0000_7770, "InitArena did not return");
+        c.g[RA][0] = ra;
+        c.bus.read32(MALLOPT_HEAP)
+    }
+
+    /// The parameters: the six table cases, values just outside the table
+    /// (-5, 2) and far outside; the values: 0, 1..80 (M_MXFAST's range),
+    /// 81 and above, negative and random words.
+    pub(crate) fn mallopt_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0031_fe30, 0);
+        elf_image(c);
+        let state = mallopt_arena(c);
+        assert_ne!(state, 0, "InitArena left no malloc_state");
+        // Run `InitState` on the state here so the tunables below
+        // survive: the port's `Consolidate` initializes a fresh arena on
+        // entry, which would otherwise overwrite them with defaults.
+        // (`InitState` takes the state, not the heap header.)
+        c.g[A0][0] = state as u64;
+        c.g[RA][0] = 0x0000_7770;
+        c.pc = 0x0031_e260;
+        ee::s10::f_0031e260__generated(c);
+        assert_eq!(c.pc, 0x0000_7770, "InitState did not return");
+        // `max_fast` (with steered flag bits) and the tunables get
+        // distinct random words.
+        c.bus.write32(state, 0x50 | (seed % 4));
+        fill(c, &mut r, state + 0x340, 7);
+        let param: i32 = [1, -1, -2, -3, -4, 0, -5, 2, 0x7fff_0000][seed as usize % 9];
+        let value: i64 = match seed / 9 % 6 {
+            0 => 0,
+            1 => 1 + (r.next_u32() % 80) as i64,
+            2 => 80,
+            3 => 81 + (r.next_u32() % 0x1000) as i64,
+            4 => -(1 + (r.next_u32() % 0x100) as i64),
+            _ => r.next_u32() as i32 as i64,
+        };
+        c.g[A0][0] = MALLOPT_HEAP as u64;
+        c.g[A1][0] = param as i64 as u64;
+        c.g[A2][0] = value as u64;
+        c.pc = 0x0031_fe30;
+    }
+
+    #[test]
+    fn mallopt_table_holds_the_case_labels() {
+        let mut c = crate::difftest::fresh();
+        elf_image(&mut c);
+        let table: Vec<u32> = (0..6)
+            .map(|i| c.bus.read32(MALLOPT_TABLE + 4 * i))
+            .collect();
+        assert_eq!(
+            table,
+            [
+                MALLOPT_MMAP_MAX,
+                MALLOPT_MMAP_THRESHOLD,
+                MALLOPT_TOP_PAD,
+                MALLOPT_TRIM_THRESHOLD,
+                MALLOPT_NONE,
+                MALLOPT_MXFAST
+            ]
+        );
+    }
+
+    /// Every case: the three tunable stores, M_MMAP_MAX taken (0) and
+    /// refused, M_MXFAST refused (> 80), zero (flag 8) and a size, the
+    /// in-table `param 0` and the out-of-table default. Consolidate runs for
+    /// real on the initialized arena, so the totals are fixed (`InitState`
+    /// runs in the fixture, not the port).
+    #[test]
+    fn dlheap_mallopt_matches() {
+        check_paths(
+            ee::s10::f_0031fe30__generated,
+            dlheap_mallopt,
+            108,
+            // default 1, param 0 7, M_MMAP_MAX refused 8, a tunable or
+            // M_MXFAST refused 9, M_MMAP_MAX taken 11, M_MXFAST 0 16, size 24.
+            &[93, 99, 100, 101, 103, 108, 116],
+            &mallopt_fixture,
+        );
+    }
+
+    // ----- shared DLHeap arena fixture -----------------------------------
+
+    /// Heap header and arena (`DLHeap_InitArena`, 256 KiB at `DATA+0x40000`).
+    pub(crate) const DLHEAP_FIX_HEAP: u32 = DATA + 0x2000;
+
+    pub(crate) const DLHEAP_FIX_ARENA: u32 = DATA + 0x4_0000;
+
+    /// `__getreent()` loads the errno block from here; the fixtures point it
+    /// at a prefilled word so `ENOMEM` lands in compared RAM.
+    pub(crate) const DLHEAP_FIX_REENT_PTR: u32 = 0x0045_4944;
+
+    pub(crate) const DLHEAP_FIX_REENT: u32 = DATA + 0x1_0000;
+
+    /// Run a real allocator entry point with `args` and return `v0`
+    /// (`ra`, `pc` restored by the caller's own setup).
+    pub(crate) fn dlheap_fix_call(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
+        const BACK: u32 = 0x0000_7770;
+        let ra = c.g[RA][0];
+        for (i, a) in args.iter().enumerate() {
+            c.g[[A0, A1, A2][i]][0] = *a;
+        }
+        c.g[RA][0] = BACK as u64;
+        c.pc = addr;
+        f(c);
+        assert_eq!(c.pc, BACK, "fixture call {addr:#x} did not return");
+        c.g[RA][0] = ra;
+        c.g[V0][0]
+    }
+
+    pub(crate) fn dlheap_fix_malloc(c: &mut Cpu, n: u32) -> u32 {
+        let heap = DLHEAP_FIX_HEAP as u64;
+        dlheap_fix_call(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[heap, n as u64]) as u32
+    }
+
+    pub(crate) fn dlheap_fix_free(c: &mut Cpu, p: u32) {
+        let heap = DLHEAP_FIX_HEAP as u64;
+        dlheap_fix_call(c, 0x0031_ed60, ee::s10::DLHeap_Free, &[heap, p as u64]);
+    }
+
+    /// A fresh arena (state zeroed: Consolidate initialises it on first
+    /// use) and the errno block; returns the heap header.
+    pub(crate) fn dlheap_fix_arena(c: &mut Cpu) -> u32 {
+        dlheap_fix_call(
+            c,
+            0x0031_ff60,
+            ee::s10::DLHeap_InitArena,
+            &[DLHEAP_FIX_HEAP as u64, DLHEAP_FIX_ARENA as u64, 0x4_0000],
+        );
+        c.bus.write32(DLHEAP_FIX_REENT_PTR, DLHEAP_FIX_REENT);
+        c.bus.write32(DLHEAP_FIX_REENT, 0x5a5a_0001);
+        DLHEAP_FIX_HEAP
+    }
+
+    /// Distinct payload words in a block (so copies are compared).
+    pub(crate) fn dlheap_fix_fill(c: &mut Cpu, p: u32, bytes: u32, tag: u32) {
+        for i in 0..bytes / 4 {
+            c.bus.write32(p + 4 * i, tag.wrapping_mul(0x9e37_79b9) ^ i);
+        }
+    }
+
+    // ----- DLHeap_Realloc --------------------------------------------------
+
+    /// A fake mmapped chunk (outside the arena) for the `ENOMEM` arm.
+    pub(crate) const DLHEAP_REALLOC_MMAPPED: u32 = DATA + 0x2_0000;
+
+    pub(crate) const DLHEAP_REALLOC_CLASSES: u32 = 15;
+
+    /// Six blocks out of a real arena: p0 (chunk 0x10), p1 (0x20, fast),
+    /// pa (0x110), pb (0x210), pq (0x20), pc (0x90, next to top), each
+    /// with distinct payload. Class `seed % 15` (seeds < 45) picks the
+    /// arm; later seeds free random blocks and resize a random live one.
+    pub(crate) fn dlheap_realloc_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0031_f018, 0);
+        let heap = dlheap_fix_arena(c);
+        let sizes = [8u32, 0x18, 0x100, 0x200, 0x18, 0x80];
+        let mut ptrs = [0u32; 6];
+        for (i, &n) in sizes.iter().enumerate() {
+            ptrs[i] = dlheap_fix_malloc(c, n);
+            dlheap_fix_fill(c, ptrs[i], n, seed * 8 + i as u32 + 1);
+        }
+        let [p0, p1, pa, pb, pq, pc] = ptrs;
+        let (old, bytes): (u32, u64) = if seed < 3 * DLHEAP_REALLOC_CLASSES {
+            match seed % DLHEAP_REALLOC_CLASSES {
+                // realloc(0, n) is malloc (returns to 0x31f058).
+                0 => (0, 0x100),
+                // 0x31f28c: request above -0x21.
+                1 => (pa, sx(0xffff_fff0)),
+                // 0x31f28c: an mmapped chunk.
+                2 => {
+                    c.bus.write32(DLHEAP_REALLOC_MMAPPED, 0x40);
+                    c.bus.write32(DLHEAP_REALLOC_MMAPPED + 4, 0x102);
+                    (DLHEAP_REALLOC_MMAPPED + 8, 0x40)
+                }
+                // 0x31f220 (already big enough), remainder 0: no split.
+                3 => (pa, 0xfd + (seed / 15) as u64),
+                // 0x31f220, remainder 0xe0: 0x31f250 split + DLHeap_Free.
+                4 => (pa, 0x20),
+                // 0x31f0bc next == top, room: grow into top.
+                5 => (pc, 0x280),
+                // next == top, no room: 0x31f158 malloc fails (0x31f29c).
+                6 => (pc, 0x10_0000),
+                // next in use: 0x31f158 move, memcpy.
+                7 => (pa, 0x300),
+                // move, small copy of 3 words (exit at 0x31f1b0's a1 < 5).
+                8 => (p0, 0x40),
+                // move, small copy of 7 words (exit at a1 < 9).
+                9 => (pq, 0x80),
+                // 0x31f10c next free, enough: unlink then split.
+                10 => {
+                    dlheap_fix_free(c, pb);
+                    (pa, 0x180)
+                }
+                // next free, exactly nb: unlink, no split.
+                11 => {
+                    dlheap_fix_free(c, pb);
+                    (pa, 0x310)
+                }
+                // next free, too small: move (memcpy).
+                12 => {
+                    dlheap_fix_free(c, pb);
+                    (pa, 0x1000)
+                }
+                // malloc returns the next chunk (p1 from its fast bin):
+                // 0x31f188 merge in place, then split.
+                13 => {
+                    dlheap_fix_free(c, p1);
+                    (p0, 0x18)
+                }
+                // A zero-extended 0xfffffff0: not "too large" in the 64-bit
+                // compare, request2size wraps to the MINSIZE arm (0x31f08c).
+                _ => (pa, 0xffff_fff0),
+            }
+        } else {
+            let mut live = vec![p0, pa, pc];
+            for p in [p1, pb, pq] {
+                if r.next_u32() % 2 == 0 {
+                    dlheap_fix_free(c, p);
+                } else {
+                    live.push(p);
+                }
+            }
+            let old = if r.next_u32() % 8 == 0 {
+                0
+            } else {
+                live[(r.next_u32() as usize) % live.len()]
+            };
+            (old, (r.next_u32() % 0x600) as u64)
+        };
+        c.g[A0][0] = heap as u64;
+        c.g[A1][0] = old as u64;
+        c.g[A2][0] = bytes;
+        c.g[A3][0] = 0xcccc_0000 + seed as u64;
+        c.pc = 0x0031_f018;
+    }
+
+    /// `DLHeap_Realloc` over a real arena: every arm from malloc, ENOMEM
+    /// (size, mmapped), keep (split / no split), grow into top or into a
+    /// free next chunk, to move (memcpy, 3- and 7-word copies, malloc
+    /// failure, merge with the returned next chunk).
+    /// Paths: 37 class 1, 50 class 2, 61 class 3, 65 class 5 (derived);
+    /// every class total is pinned, in class order.
+    #[test]
+    fn dlheap_realloc_matches() {
+        check_paths(
+            ee::s10::f_0031f018__generated,
+            dlheap_realloc,
+            75,
+            &[
+                86, 37, 50, 61, 118, 65, 210, 292, 174, 186, 137, 80, 465, 171, 115,
+            ],
+            &|c, seed| dlheap_realloc_fixture(c, seed),
+        );
+    }
+
+    // ----- DLHeap_IAlloc ---------------------------------------------------
+
+    pub(crate) const DLHEAP_IALLOC_SIZES: u32 = DATA + 0x6000;
+
+    pub(crate) const DLHEAP_IALLOC_CHUNKS: u32 = DATA + 0x6800;
+
+    pub(crate) const DLHEAP_IALLOC_CLASSES: u32 = 11;
+
+    /// `ialloc(heap, n, sizes, opts, chunks)` on a real arena: fresh (the
+    /// Consolidate arm) or with traffic; the caller's array prefilled.
+    /// Class `seed % 11` (seeds < 33) picks the arm, later seeds random.
+    pub(crate) fn dlheap_ialloc_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0031_f858, 0);
+        let heap = dlheap_fix_arena(c);
+        let class = if seed < 3 * DLHEAP_IALLOC_CLASSES {
+            seed % DLHEAP_IALLOC_CLASSES
+        } else {
+            99
+        };
+        if class != 0 {
+            let a = dlheap_fix_malloc(c, 0x40);
+            let _ = dlheap_fix_malloc(c, 0x120);
+            dlheap_fix_free(c, a);
+        }
+        for i in 0..8 {
+            c.bus.write32(DLHEAP_IALLOC_SIZES + 4 * i, 0x10 + 0x18 * i);
+            c.bus
+                .write32(DLHEAP_IALLOC_CHUNKS + 4 * i, 0xeeee_0000 + i + seed);
+        }
+        let chunks = DLHEAP_IALLOC_CHUNKS as u64;
+        let (n, opts, chunks): (u64, u64, u64) = match class {
+            // Fresh state: Consolidate (0x31f8a4); sizes loop, malloc,
+            // array chunk (0x31f9f0), per-element carve.
+            0 => (3, 0, 0),
+            // chunks with n == 0: return chunks (0x31f8bc).
+            1 => (0, 0, chunks),
+            // No array, n == 0: malloc(heap, 0) (0x31f8d4).
+            2 => (0, 0, 0),
+            // Caller array, all one size (0x31f91c, mult; carve with s4).
+            3 => (4, 1, chunks),
+            // Cleared contents (0x31f9d4 memset), sizes loop.
+            4 => (5, 2, 0),
+            // One size and cleared.
+            5 => (4, 3, 0),
+            // A wrapped size (request2size MINSIZE arms 0x31f968 / 0x31fa30).
+            6 => {
+                c.bus.write32(DLHEAP_IALLOC_SIZES + 4, 0xffff_fff0);
+                (3, 0, 0)
+            }
+            // One wrapped size (0x31f91c MINSIZE arm).
+            7 => {
+                c.bus.write32(DLHEAP_IALLOC_SIZES, 0xffff_fff0);
+                (3, 1, chunks)
+            }
+            // Contents beyond the arena: malloc fails (v0 = 0 at 0x31f990).
+            8 => {
+                for i in 0..4 {
+                    c.bus.write32(DLHEAP_IALLOC_SIZES + 4 * i, 0x2_0000);
+                }
+                (4, 0, 0)
+            }
+            // Caller array, one size, cleared. (The `n * 4` wrap of
+            // 0x31f908 needs n = 0x3ffffffc, and the generated carve loop
+            // then walks n elements: not bounded in a test.)
+            9 => (2, 3, chunks),
+            // One element: the carve loop ends at once.
+            10 => (1, 0, 0),
+            _ => {
+                for i in 0..8 {
+                    let s = r.next_u32() % 0x300;
+                    c.bus.write32(DLHEAP_IALLOC_SIZES + 4 * i, s);
+                }
+                let chunks = if r.next_u32() % 2 == 0 { chunks } else { 0 };
+                (
+                    1 + (r.next_u32() % 7) as u64,
+                    (r.next_u32() % 4) as u64,
+                    chunks,
+                )
+            }
+        };
+        c.g[A0][0] = heap as u64;
+        c.g[A1][0] = n;
+        c.g[A2][0] = DLHEAP_IALLOC_SIZES as u64;
+        c.g[A3][0] = opts;
+        c.g[T0][0] = chunks;
+        c.pc = 0x0031_f858;
+    }
+
+    /// `DLHeap_IAlloc`: every arm of the array / size / clear options over
+    /// a real arena (LO/HI compared: the one-size product is a `mult`).
+    /// Not reachable: 0x31f948's `n == 0` exit (n == 0 returns earlier), and
+    /// the array-size wrap 0x31f908 (unbounded, see class 9).
+    /// Paths: every class total, in class order.
+    #[test]
+    fn dlheap_ialloc_matches() {
+        check_paths_lohi(
+            ee::s10::f_0031f858__generated,
+            dlheap_ialloc,
+            66,
+            &[1122, 37, 165, 240, 672, 351, 279, 230, 483, 303, 226],
+            &|c, seed| dlheap_ialloc_fixture(c, seed),
+        );
+    }
+
+    /// Manual Unwind-mode schedule past the prologue: the VBlank goes off
+    /// `k` cycles after entry. `schedule` cannot do this:
+    /// its k < 48 fires inside the prologue calls, and `drive` cannot
+    /// re-enter past a nested unwind.
+    fn unwind_at(c: &mut Cpu, entry: u32, k: u64) {
+        let saved = (c.g[A0], c.g[A1], c.g[RA]);
+        ssx3_ps2::kernel::start_main_thread(c, entry, 0, 0);
+        (c.g[A0], c.g[A1], c.g[RA]) = saved;
+        c.pc = entry;
+        c.cycles = 1000;
+        c.next_event = 1000 + k;
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+            .sched
+            .next_vblank = 1000 + k;
+    }
+
+    /// `IAlloc`'s two dispatcher heads under a delivered VBlank.
+    /// Both heads are dispatcher-shaped in generated too, so each side
+    /// must stop at the head with an unwind pending (compared by `check`
+    /// on the raw bodies, which needs no re-entry; `drive` cannot resume
+    /// past a nested unwind, so `check_events` cannot drive this port).
+    /// One dense `k` grid per head (`k` rides on the seed, so every run
+    /// sweeps the loop's span).
+    #[test]
+    fn dlheap_ialloc_events() {
+        use crate::difftest::events::UNWIND;
+        let (gen, hand) = (
+            ee::s10::f_0031f858__generated as fn(&mut Cpu),
+            dlheap_ialloc as fn(&mut Cpu),
+        );
+        for (head, base, step) in [(0x0031_f968, 750u64, 15u64), (0x0031_fa10, 900u64, 10u64)] {
+            let mut hit = std::collections::BTreeSet::new();
+            let setup = |c: &mut Cpu, seed: u32| {
+                dlheap_ialloc_fixture(c, seed);
+                unwind_at(c, 0x0031_f858, base + (seed % 33) as u64 * step);
+            };
+            check(gen, hand, 33, &setup);
+            for seed in 0..crate::difftest::seed_count(33) {
+                let mut c = crate::difftest::fresh();
+                setup(&mut c, seed);
+                crate::difftest::run_generated(&mut c, gen);
+                hit.insert(c.pc & !UNWIND);
+            }
+            assert!(
+                hit.contains(&head),
+                "dispatcher head {head:#x} never unwound: {hit:#x?}"
+            );
+        }
+    }
+
+    // ----- DLHeap_MemalignOffset ---------------------------------------------
+
+    /// Gate and chunk of the `DLHeap_Malloc` fake that hands back a planted
+    /// chunk (mmapped, or exactly sized) the real arena never returns.
+    pub(crate) const DLHEAP_MEMOFF_CTRL: u32 = DATA + 0x7e00;
+
+    pub(crate) const DLHEAP_MEMOFF_MAGIC: u32 = 0x31f4_e8a1;
+
+    pub(crate) const DLHEAP_MEMOFF_CHUNK: u32 = DATA + 0x2_0000;
+
+    pub(crate) const DLHEAP_MEMOFF_CLASSES: u32 = 13;
+
+    pub(crate) static DLHEAP_MEMOFF_PREV_MALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn dlheap_memoff_fake_malloc(c: &mut Cpu) {
+        if c.bus.read32(DLHEAP_MEMOFF_CTRL) != DLHEAP_MEMOFF_MAGIC {
+            return fakes::fall_back(
+                c,
+                &DLHEAP_MEMOFF_PREV_MALLOC,
+                ee::s10::f_0031e818__generated,
+            );
+        }
+        let before = c.cycles;
+        fakes::fake_call(c, 0x0031_e818);
+        c.cycles = before + 4;
+    }
+
+    /// The arena every MemalignOffset class starts from (deterministic per
+    /// seed, so a probe machine can predict where the malloc lands).
+    pub(crate) fn dlheap_memoff_layout(c: &mut Cpu, seed: u32) -> u32 {
+        let heap = dlheap_fix_arena(c);
+        let a = dlheap_fix_malloc(c, 0x40 + 0x10 * (seed % 5));
+        let _ = dlheap_fix_malloc(c, 0x200);
+        let _ = dlheap_fix_malloc(c, 0x30);
+        if seed % 2 == 1 {
+            dlheap_fix_free(c, a);
+        }
+        heap
+    }
+
+    /// request2size as the function computes it (no wrap for these sizes).
+    pub(crate) fn dlheap_memoff_nb(total: u32) -> u32 {
+        if total + 0x13 < 0x10 {
+            0x10
+        } else {
+            (total + 0x13) & !0xf
+        }
+    }
+
+    /// The offset that puts `mem + offset` at `rem` past an `align`
+    /// boundary, with `mem` the chunk malloc returns for the request
+    /// (found on a probe machine built the same way).
+    pub(crate) fn dlheap_memoff_offset(seed: u32, align: u32, total: u32, rem: u32) -> u32 {
+        let mut p = fresh();
+        dlheap_memoff_layout(&mut p, seed);
+        let request = dlheap_memoff_nb(total) + align + 0x10;
+        let mem = dlheap_fix_malloc(&mut p, request);
+        (rem + align - mem % align) % align
+    }
+
+    /// Classes (seeds < 39, `seed % 13`): a1 the alignment, `total` =
+    /// bytes + offset, `rem` the wanted misalignment of mem + offset.
+    pub(crate) fn dlheap_memoff_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0031_f4e8, 0);
+        let heap = dlheap_memoff_layout(c, seed);
+        let class = if seed < 3 * DLHEAP_MEMOFF_CLASSES {
+            seed % DLHEAP_MEMOFF_CLASSES
+        } else {
+            99
+        };
+        // (align as passed, align as adjusted, total, rem) for real-malloc classes.
+        let real = |align: u32, adj: u32, total: u32, rem: u32| -> (u32, u64, u32) {
+            let off = dlheap_memoff_offset(seed, adj, total, rem);
+            (align, (total - off) as u64, off)
+        };
+        let (align, bytes, offset): (u32, u64, u32) = match class {
+            // align <= 16: plain malloc of bytes (returns to 0x31f524).
+            0 => (8, 0x100, 0x10),
+            // 0x31f52c: 0x18 -> 0x20; lead 0x10 (>= MINSIZE: brk).
+            1 => real(0x18, 0x20, 0x200, 0x10),
+            // 0x31f560 loop, no shift: 0x30 -> 0x40; lead 0x20.
+            2 => real(0x30, 0x40, 0x200, 0x20),
+            // 0x31f560 loop, shifts: 0x300 -> 0x400; lead 0x200.
+            3 => real(0x300, 0x400, 0x600, 0x200),
+            // Power of two, already aligned: tail split only.
+            4 => real(0x80, 0x80, 0x300, 0),
+            // Lead under MINSIZE (rem = align - 8): brk + align.
+            5 => real(0x40, 0x40, 0x300, 0x38),
+            // Power of two, misaligned.
+            6 => real(0x100, 0x100, 0x400, 0x80),
+            // Fake mmapped chunk, misaligned: move its offset (the +7 arm).
+            7 => {
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK, 0x40);
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK + 4, 0x1000 | 2);
+                (0x40, 0x100, 0)
+            }
+            // Fake mmapped chunk, aligned: returned as is (0x31f6a0).
+            8 => {
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK, 0x40);
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK + 4, 0x1000 | 2);
+                (0x40, 0x100, 0x38)
+            }
+            // Fake plain chunk of exactly nb + 16, aligned: no tail split.
+            9 => {
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK, 0x40);
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK + 4, (0x140 + 0x10) | 1);
+                (0x40, 0x100, 0x38)
+            }
+            // bytes + offset above -0x21: ENOMEM.
+            10 => (0x40, sx(0xffff_ffe0), 0x10),
+            // Beyond the arena: malloc fails.
+            11 => (0x40, 0x10_0000, 0x10),
+            // Power of two 0x20, misaligned by 0x10.
+            12 => real(0x20, 0x20, 0x180, 0x10),
+            _ => {
+                let align = match r.next_u32() % 3 {
+                    0 => 1 << (5 + r.next_u32() % 5),
+                    1 => 17 + r.next_u32() % 0x200,
+                    _ => r.next_u32() % 17,
+                };
+                (
+                    align,
+                    (r.next_u32() % 0x800) as u64,
+                    8 * (r.next_u32() % 0x10),
+                )
+            }
+        };
+        if (7..=9).contains(&class) {
+            c.bus.write32(LOG_RESULTS, DLHEAP_MEMOFF_CHUNK + 8);
+            c.bus.write32(DLHEAP_MEMOFF_CTRL, DLHEAP_MEMOFF_MAGIC);
+        }
+        c.g[A0][0] = heap as u64;
+        c.g[A1][0] = align as u64;
+        c.g[A2][0] = bytes;
+        c.g[A3][0] = offset as u64;
+        c.pc = 0x0031_f4e8;
+    }
+
+    /// `DLHeap_MemalignOffset`: alignment rounding (small, 0x20, loop with
+    /// and without shifts), ENOMEM, malloc failure, aligned / misaligned
+    /// (lead >= or < MINSIZE) over a real arena; mmapped and exact-size
+    /// chunks through a gated `DLHeap_Malloc` fake. Not reachable: the
+    /// request2size MINSIZE arm (bytes + offset wrapping is caught as too
+    /// large first) and, with real chunks, the no-split tail (the request
+    /// leaves at least align + 16 over).
+    /// Paths (4-cycle fake): 83 class 7, 61 class 8, 69 class 9, 43 class
+    /// 10 (derived); every class total, in class order.
+    #[test]
+    fn dlheap_memalign_offset_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0031E818),
+            dlheap_memoff_fake_malloc,
+            &DLHEAP_MEMOFF_PREV_MALLOC,
+        );
+        // `check_paths_lohi`: the port does `divu`, so LO/HI are compared.
+        check_paths_lohi(
+            ee::s10::f_0031f4e8__generated,
+            dlheap_memalign_offset,
+            78,
+            &[83, 361, 240, 431, 175, 465, 260, 61, 69, 43, 320, 227],
+            &|c, seed| dlheap_memoff_fixture(c, seed),
+        );
+    }
+
+    /// The `MemalignOffset` align loop under a delivered VBlank. Its
+    /// head (0x31f560) is structured: each side must carry on past the
+    /// delivery, never stopping there (compared by `check` on the raw
+    /// bodies; `drive` cannot resume past a nested unwind). The VBlank
+    /// goes off 20 cycles after entry: the loop runs at +33..+54 (only
+    /// class 3 reaches it) with no earlier checks, so a reverted head
+    /// unwinds there and `check` fails.
+    #[test]
+    fn dlheap_memalign_offset_events() {
+        use crate::difftest::events::UNWIND;
+        let (gen, hand) = (
+            ee::s10::f_0031f4e8__generated as fn(&mut Cpu),
+            dlheap_memalign_offset as fn(&mut Cpu),
+        );
+        let mut hit = std::collections::BTreeSet::new();
+        let setup = |c: &mut Cpu, seed: u32| {
+            dlheap_memoff_fixture(c, seed);
+            unwind_at(c, 0x0031_f4e8, 20);
+        };
+        check(gen, hand, 39, &setup);
+        for seed in 0..crate::difftest::seed_count(39) {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            crate::difftest::run_generated(&mut c, gen);
+            hit.insert(c.pc & !UNWIND);
+        }
+        assert!(
+            !hit.contains(&0x0031_f560),
+            "unwound at structured head 0x31f560: {hit:#x?}"
+        );
+    }
+
+    // ----- DLHeap_Mallinfo ---------------------------------------------------
+
+    pub(crate) const DLHEAP_MALLINFO_OUT: u32 = DATA + 0x6000;
+
+    pub(crate) const DLHEAP_MALLINFO_CLASSES: u32 = 4;
+
+    /// Arena states: 0 fresh (no top: Consolidate), 1 fast bins (three
+    /// chunks in one bin, one in another) plus three chunks in the unsorted
+    /// bin, 2 the same sorted into small bins by a malloc, 3 no free chunk;
+    /// later seeds random traffic.
+    pub(crate) fn dlheap_mallinfo_layout(c: &mut Cpu, r: &mut Rng, class: u32) {
+        if class == 0 {
+            return;
+        }
+        if class == 3 {
+            dlheap_fix_malloc(c, 0x80);
+            return;
+        }
+        if class > 3 {
+            let mut ptrs = Vec::new();
+            for _ in 0..2 + r.next_u32() % 8 {
+                ptrs.push(dlheap_fix_malloc(c, 8 + r.next_u32() % 0x400));
+            }
+            for (i, &p) in ptrs.iter().enumerate() {
+                if r.next_u32() % 2 == 0 && i + 1 < ptrs.len() {
+                    dlheap_fix_free(c, p);
+                }
+            }
+            return;
+        }
+        let mut fast = Vec::new();
+        for n in [0x18u32, 0x18, 0x18, 0x38] {
+            fast.push(dlheap_fix_malloc(c, n));
+        }
+        let mut big = Vec::new();
+        for n in [0x100u32, 0x100, 0x200, 0x300] {
+            big.push(dlheap_fix_malloc(c, n));
+            dlheap_fix_malloc(c, 0x40); // guard: no merges
+        }
+        for &p in big.iter() {
+            dlheap_fix_free(c, p);
+        }
+        if class == 2 {
+            dlheap_fix_malloc(c, 0x60); // sorts the unsorted chunks into bins
+        }
+        for &p in fast.iter() {
+            dlheap_fix_free(c, p);
+        }
+    }
+
+    pub(crate) fn dlheap_mallinfo_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0031_fc20, 0);
+        let heap = dlheap_fix_arena(c);
+        let class = if seed < 3 * DLHEAP_MALLINFO_CLASSES {
+            seed % DLHEAP_MALLINFO_CLASSES
+        } else {
+            4
+        };
+        dlheap_mallinfo_layout(c, &mut r, class);
+        for i in 0..12 {
+            c.bus
+                .write32(DLHEAP_MALLINFO_OUT + 4 * i, 0xdddd_0000 + i + seed);
+        }
+        c.g[A0][0] = DLHEAP_MALLINFO_OUT as u64;
+        c.g[A1][0] = heap as u64;
+        c.pc = 0x0031_fc20;
+    }
+
+    /// `DLHeap_Mallinfo`: fresh (Consolidate), empty, fast-bin and
+    /// unsorted / small-bin walks over a real arena; the prefilled struct
+    /// and the stack copy compared. Not reachable: the self-linked-chunk
+    /// exits (`p == p->bk` implies `p == p->bk->bk`, tested first).
+    /// Paths: 1086 class 3 (derived: 11 empty fast bins, 95 empty bins);
+    /// every class total, in class order.
+    #[test]
+    fn dlheap_mallinfo_matches() {
+        check_paths(
+            ee::s10::f_0031fc20__generated,
+            dlheap_mallinfo,
+            40,
+            &[1786, 1169, 1154, 1086],
+            &|c, seed| dlheap_mallinfo_fixture(c, seed),
+        );
+    }
+
+    driven!(dlheap_mallinfo_gen, ee::s10::f_0031fc20__generated);
+
+    driven!(dlheap_mallinfo_hand, dlheap_mallinfo);
+
+    /// `DLHeap_Mallinfo` under delivered events (initialised arenas only,
+    /// so no Consolidate): the fast-bin and bin loops' back edges.
+    #[test]
+    fn dlheap_mallinfo_events() {
+        check_events(dlheap_mallinfo_gen, dlheap_mallinfo_hand, 60, &|c, seed| {
+            dlheap_mallinfo_fixture(c, 1 + seed % 3 + 4 * (seed / 3));
+            let mut r = Rng(seed as u64 ^ 0x31fc20);
+            schedule(c, &mut r, seed, 0x0031_fc20)
+        });
+    }
+
+    /// The video free hook the dtor calls through (`0x510000 - 0x6bcc`).
+    pub(crate) const DTOR_FREE_HOOK: u32 = 0x0050_9434;
+
+    /// Link `n` nodes (0x40 apart from `first`) into the circular list
+    /// whose head is `head`; each node's frame word at -4 is null so the
+    /// real `FreeFrame` skips its SHP free.
+    pub(crate) fn dtor_list(c: &mut Cpu, head: u32, first: u32, n: u32) {
+        let nodes: Vec<u32> = (0..n).map(|i| first + 0x40 * i).collect();
+        let ring: Vec<u32> = std::iter::once(head).chain(nodes.iter().copied()).collect();
+        for (i, &x) in ring.iter().enumerate() {
+            let next = if i + 1 < ring.len() {
+                ring[i + 1]
+            } else {
+                head
+            };
+            let prev = if i == 0 {
+                *ring.last().unwrap()
+            } else {
+                ring[i - 1]
+            };
+            c.bus.write32(x, next);
+            c.bus.write32(x + 4, prev);
+        }
+        for &x in &nodes {
+            c.bus.write32(x - 4, 0);
+        }
+    }
+
+    /// The dtor fixture: the `+0x2c` buffer and `+0x78` IPU words (null or
+    /// live, freed through the hook), the self-free flag in `a1`, and 0-2
+    /// live nodes on each of the `+0x18` and `+0x20` frame lists, all
+    /// chosen by separate seed digits.
+    pub(crate) fn dtor_fixture(c: &mut Cpu, seed: u32) {
+        const CTX: u32 = DATA + 0x100;
+        for i in 0..0x30u32 {
+            c.bus.write32(CTX + 4 * i, 0x5555_0000 + i);
+        }
+        c.bus
+            .write32(CTX + 0x2c, if seed % 2 == 0 { 0 } else { DATA + 0x3000 });
+        c.bus.write32(
+            CTX + 0x78,
+            if (seed / 2) % 2 == 0 {
+                0
+            } else {
+                DATA + 0x3100
+            },
+        );
+        dtor_list(c, CTX + 0x18, DATA + 0x1000, (seed / 8) % 3);
+        dtor_list(c, CTX + 0x20, DATA + 0x1800, (seed / 24) % 3);
+        c.bus.write32(DTOR_FREE_HOOK, FAKE);
+        c.g[A0][0] = CTX as u64;
+        c.g[A1][0] = ((seed / 4) % 2) as u64;
+        c.pc = 0x003b_09a0;
+    }
+
+    /// Gate and mailbox of the `DLHeap_MoreCore` fake for the SysTrim test:
+    /// with `SYSTRIM_MAGIC` at `SYSTRIM_CTRL` the n-th call returns the
+    /// sign-extended word `SYSTRIM_RESULTS + 4n` (so -1 can be forced).
+    pub(crate) const SYSTRIM_CTRL: u32 = DATA + 0x1f40;
+
+    pub(crate) const SYSTRIM_MAGIC: u32 = 0x5e75_7219;
+
+    pub(crate) const SYSTRIM_CALLS: u32 = DATA + 0x1f44;
+
+    pub(crate) const SYSTRIM_RESULTS: u32 = DATA + 0x1f48;
+
+    pub(crate) static SYSTRIM_PREV_MORE_CORE: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) fn systrim_fake_more_core(c: &mut Cpu) {
+        if c.bus.read32(SYSTRIM_CTRL) != SYSTRIM_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &SYSTRIM_PREV_MORE_CORE,
+                ee::s10::f_0031ffd8__generated,
+            );
+        }
+        let n = c.bus.read32(SYSTRIM_CALLS);
+        c.bus.write32(SYSTRIM_CALLS, n + 1);
+        let v = c.bus.read32(SYSTRIM_RESULTS + 4 * n);
+        c.g[V0][0] = ssx3_ee_rt::cpu::sx(v);
+        c.cycles += 5;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// The SysTrim fixture: a real arena (`A2` = its `malloc_state`, the
+    /// after one real allocation the top chunk holds the rest of
+    /// the first `MoreCore` grant) and a gated `MoreCore` that
+    /// answers per seed: 0 the pad covers the top chunk (`extra <= 0`), 1 the
+    /// break moved (`MoreCore(0) != top + size`), 2 the shrink failed
+    /// (`MoreCore(0)` after it returns -1), 3 nothing was released, 4 the
+    /// release worked (footprint and top size updated).
+    pub(crate) fn systrim_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0031_e6d8, 0);
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0031FFD8),
+            systrim_fake_more_core,
+            &SYSTRIM_PREV_MORE_CORE,
+        );
+        let heap = heap_arena(c);
+        // One real allocation makes the arena take its memory (the top chunk).
+        let ra = c.g[RA][0];
+        c.g[A0][0] = heap as u64;
+        c.g[A1][0] = 0x40 + (r.next_u32() % 0x400) as u64;
+        c.g[RA][0] = 0x0000_7770;
+        c.pc = 0x0031_e818;
+        ee::s10::DLHeap_Malloc(c);
+        assert_eq!(c.pc, 0x0000_7770, "Malloc did not return");
+        c.g[RA][0] = ra;
+        let state = c.bus.read32(heap);
+        let top = c.bus.read32(state + 0x30);
+        let size = c.bus.read32(top + 4) & !3;
+        assert!(
+            size > 0x1000,
+            "no top chunk: state {state:#x} top {top:#x} size {size:#x}"
+        );
+        let page = c.bus.read32(state + 0x35c);
+        assert!(page.is_power_of_two(), "pagesize {page:#x}");
+        let brk = top + size;
+        let case = seed % 5;
+        let pad = if case == 0 {
+            // A pad past the top chunk leaves nothing to trim (extra <= 0).
+            [size + 0x1000, 0x7fff_0000, 0x10_0000][(seed / 5) as usize % 3]
+        } else {
+            [0, 0x100, 0x400][(seed / 5) as usize % 3]
+        };
+        let release = (r.next_u32() % 2 + 1) * page;
+        let results = match case {
+            1 => [brk + 0x1000, 0, 0],
+            2 => [brk, brk, u32::MAX],
+            3 => [brk, brk, brk],
+            _ => [brk, brk, brk - release],
+        };
+        crate::difftest::put_words(c, SYSTRIM_RESULTS, &results);
+        c.bus.write32(SYSTRIM_CALLS, 0);
+        c.bus.write32(SYSTRIM_CTRL, SYSTRIM_MAGIC);
+        c.g[A0][0] = heap as u64;
+        c.g[A1][0] = pad as u64;
+        c.g[A2][0] = state as u64;
+        c.pc = 0x0031_e6d8;
+    }
+
+    /// `DLHeap_SysTrim`: every exit of the trim on a real arena, with the
+    /// break answers from the gated `MoreCore` fake.
+    #[test]
+    fn dlheap_sys_trim_matches() {
+        check(
+            ee::s10::f_0031e6d8__generated,
+            dlheap_sys_trim,
+            60,
+            &systrim_fixture,
+        );
+        // Moved break 173, shrink failed 195, nothing released 197, nothing
+        // to trim 199, released 209.
+        require_paths(
+            ee::s10::f_0031e6d8__generated,
+            60,
+            &[173, 195, 197, 199, 209],
+            &systrim_fixture,
+        );
+    }
+
+    /// `DLHeap_InitState`: 94 nodes get threaded through the heap header,
+    /// and the constants land identically on both sides.
+    #[test]
+    fn dlheap_init_state_matches() {
+        check(
+            ee::s10::f_0031e260__generated,
+            dlheap_init_state,
+            60,
+            &|c, seed| {
+                machine(c, seed, 0x0031_e260, 0);
+                const HEAP: u32 = DATA + 0x100;
+                for i in 0..0x100u32 {
+                    c.bus.write32(HEAP + 4 * i, 0x5555_0000 + i + seed);
+                }
+                c.g[A0][0] = HEAP as u64;
+                c.pc = 0x0031_e260;
+            },
+        );
+        require_paths(ee::s10::f_0031e260__generated, 60, &[687], &|c, seed| {
+            machine(c, seed, 0x0031_e260, 0);
+            const HEAP: u32 = DATA + 0x100;
+            for i in 0..0x100u32 {
+                c.bus.write32(HEAP + 4 * i, 0x5555_0000 + i + seed);
+            }
+            c.g[A0][0] = HEAP as u64;
+            c.pc = 0x0031_e260;
+        });
+    }
+
+    driven!(init_gen, ee::s10::f_0031e260__generated);
+
+    driven!(init_hand, dlheap_init_state);
+
+    /// The init loop under delivered events. The head (0x31e270) is
+    /// structured: the port must carry on, never resume there.
+    #[test]
+    fn dlheap_init_state_events() {
+        let resumes = check_events(init_gen, init_hand, 60, &|c, seed| {
+            machine(c, seed, 0x0031_e260, 0);
+            const HEAP: u32 = DATA + 0x100;
+            for i in 0..0x100u32 {
+                c.bus.write32(HEAP + 4 * i, 0x5555_0000 + i + seed);
+            }
+            c.g[A0][0] = HEAP as u64;
+            schedule(c, &mut Rng(seed as u64), seed, 0x0031_e260)
+        });
+        assert!(
+            resumes.get(&0x0031_e270).is_none(),
+            "unwound at structured head 0x31e270: {resumes:x?}"
+        );
+    }
+
+    /// Allocate `n` bytes out of `heap` and free every other block, so the
+    /// Consolidate guard and the trim paths see live, dead and top chunks.
+    pub(crate) fn heap_traffic(c: &mut Cpu, heap: u32, r: &mut Rng, blocks: u32) {
+        let ra = c.g[RA][0];
+        let mut ptrs = Vec::new();
+        for _ in 0..blocks {
+            c.g[A0][0] = heap as u64;
+            c.g[A1][0] = (0x20 + r.next_u32() % 0x800) as u64;
+            c.g[RA][0] = 0x0000_7770;
+            c.pc = 0x0031_e818;
+            ee::s10::DLHeap_Malloc(c);
+            assert_eq!(c.pc, 0x0000_7770);
+            ptrs.push(c.g[V0][0] as u32);
+        }
+        for (i, &p) in ptrs.iter().enumerate() {
+            if i % 2 == 0 {
+                c.g[A0][0] = heap as u64;
+                c.g[A1][0] = p as u64;
+                c.g[RA][0] = 0x0000_7770;
+                c.pc = 0x0031_ed60;
+                ee::s10::DLHeap_Free(c);
+                assert_eq!(c.pc, 0x0000_7770);
+            }
+        }
+        c.g[RA][0] = ra;
+    }
+
+    /// `DLHeap_Pvalloc` (0x31fb00): page-rounded allocation out of a real
+    /// arena, fresh or with traffic (the Consolidate guard reads the heap
+    /// head either way).
+    #[test]
+    fn dlheap_pvalloc_matches() {
+        check(
+            ee::s10::f_0031fb00__generated,
+            dlheap_pvalloc,
+            60,
+            &|c, seed| {
+                pvalloc_fixture(c, seed, 0x0031_fb00, 0x0031_fb00);
+            },
+        );
+        require_paths(
+            ee::s10::f_0031fb00__generated,
+            60,
+            &[621, 643, 651, 1177],
+            &|c, seed| {
+                pvalloc_fixture(c, seed, 0x0031_fb00, 0x0031_fb00);
+            },
+        );
+    }
+
+    /// `DLHeap_Valloc` (0x31faa8): page-aligned allocation; same fixture
+    /// classes as `Pvalloc`.
+    #[test]
+    fn dlheap_valloc_matches() {
+        check(
+            ee::s10::f_0031faa8__generated,
+            dlheap_valloc,
+            60,
+            &|c, seed| {
+                pvalloc_fixture(c, seed, 0x0031_faa8, 0x0031_faa8);
+            },
+        );
+        require_paths(
+            ee::s10::f_0031faa8__generated,
+            60,
+            &[605, 640, 648, 713, 1174],
+            &|c, seed| {
+                pvalloc_fixture(c, seed, 0x0031_faa8, 0x0031_faa8);
+            },
+        );
+    }
+
+    /// Shared fixture for the two page allocators.
+    pub(crate) fn pvalloc_fixture(c: &mut Cpu, seed: u32, salt: u32, addr: u32) {
+        let mut r = machine(c, seed, salt as u64, 0);
+        let heap = heap_arena(c);
+        if seed % 3 == 2 {
+            heap_traffic(c, heap, &mut r, 2 + seed % 3);
+        }
+        let ra = c.g[RA][0];
+        c.g[A0][0] = heap as u64;
+        c.g[A1][0] = match seed % 6 {
+            0 => 0,
+            1 => 1,
+            2 => 0x1000,
+            3 => 0x1001,
+            4 => 0x10000 + (r.next_u32() % 0x1000) as u64,
+            _ => (r.next_u32() % 0x2000) as u64,
+        };
+        c.g[A2][0] = 0xcccc_0000 + seed as u64;
+        c.g[A3][0] = 0xdddd_0000 + seed as u64;
+        c.g[RA][0] = ra;
+        c.pc = addr;
+    }
+
+    /// `DLHeap_Trim`: consolidate and trim a trafficked arena, or an idle
+    /// one (nothing to release).
+    #[test]
+    fn dlheap_trim_matches() {
+        check(
+            ee::s10::f_0031fb68__generated,
+            dlheap_trim,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_fb68, 0);
+                let heap = heap_arena(c);
+                if seed % 2 == 0 {
+                    heap_traffic(c, heap, &mut r, 3);
+                }
+                let ra = c.g[RA][0];
+                c.g[A0][0] = heap as u64;
+                c.g[A1][0] = [0u64, 0x1000, 0x1_0000][seed as usize % 3];
+                c.g[RA][0] = ra;
+                c.pc = 0x0031_fb68;
+            },
+        );
+        require_paths(
+            ee::s10::f_0031fb68__generated,
+            60,
+            &[291, 324, 357, 899, 915],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_fb68, 0);
+                let heap = heap_arena(c);
+                if seed % 2 == 0 {
+                    heap_traffic(c, heap, &mut r, 3);
+                }
+                let ra = c.g[RA][0];
+                c.g[A0][0] = heap as u64;
+                c.g[A1][0] = [0u64, 0x1000, 0x1_0000][seed as usize % 3];
+                c.g[RA][0] = ra;
+                c.pc = 0x0031_fb68;
+            },
+        );
+    }
+
+    /// A 256 KiB dlmalloc arena at `ARENA` managed through the heap header
+    /// at `HEAP`; returns the header.
+    pub(crate) fn heap_arena_2(c: &mut Cpu) -> u32 {
+        const HEAP: u32 = DATA + 0x2000;
+        const ARENA: u32 = DATA + 0x4_0000;
+        let ra = c.g[RA][0];
+        for (i, a) in [HEAP as u64, ARENA as u64, 0x4_0000].iter().enumerate() {
+            c.g[[A0, A1, A2][i]][0] = *a;
+        }
+        c.g[RA][0] = 0x0000_7770;
+        c.pc = 0x0031_ff60;
+        ee::s10::DLHeap_InitArena(c);
+        assert_eq!(c.pc, 0x0000_7770, "InitArena did not return");
+        c.g[RA][0] = ra;
+        HEAP
+    }
+
+    /// `DLHeap_IndependentCalloc`: real `IAlloc` over a real arena; sizes
+    /// 0, small and near-arena, with the element size in `a2` and the
+    /// chunk array (filled by `IAlloc`) in `a3`.
+    #[test]
+    fn dlheap_independent_calloc_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x0031_f810, 0);
+            let heap = heap_arena_2(c);
+            let ra = c.g[RA][0];
+            c.g[A0][0] = heap as u64;
+            c.g[A1][0] = match seed % 4 {
+                0 => 0,
+                1 => 8 + (r.next_u32() % 0x100) as u64,
+                2 => 0x1000 + (r.next_u32() % 0x1000) as u64,
+                _ => (r.next_u32() % 0x2000) as u64,
+            };
+            c.g[A2][0] = [4u64, 8, 16, 32][seed as usize % 4];
+            for i in 0..8 {
+                c.bus.write32(DATA + 0x3000 + 4 * i, 0);
+            }
+            c.g[A3][0] = (DATA + 0x3000) as u64;
+            c.g[RA][0] = ra;
+            c.pc = 0x0031_f810;
+        };
+        check(
+            ee::s10::f_0031f810__generated,
+            dlheap_independent_calloc,
+            60,
+            &setup,
+        );
+        // The success path must run: seed 1 asks for a small live
+        // allocation, so `IAlloc` fills the chunk array (pre-fix every
+        // n > 0 exceeded the arena and only the failed exit ran).
+        let mut c = crate::difftest::fresh();
+        setup(&mut c, 1);
+        crate::difftest::run_generated(&mut c, ee::s10::f_0031f810__generated);
+        assert_ne!(
+            c.bus.read32(DATA + 0x3000),
+            0,
+            "seed 1 left the chunk array empty: success path not reached"
+        );
+    }
+
+    /// `DLHeap_IndependentComalloc`: as calloc, without zeroing; the
+    /// per-chunk sizes array in `a2`, the chunk array in `a3`.
+    #[test]
+    fn dlheap_independent_comalloc_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x0031_f838, 0);
+            let heap = heap_arena_2(c);
+            let ra = c.g[RA][0];
+            c.g[A0][0] = heap as u64;
+            c.g[A1][0] = match seed % 4 {
+                0 => 0,
+                1 => 8 + (r.next_u32() % 0x100) as u64,
+                2 => 0x1000 + (r.next_u32() % 0x1000) as u64,
+                _ => (r.next_u32() % 0x2000) as u64,
+            };
+            c.g[A2][0] = (DATA + 0x3100) as u64;
+            for i in 0..0x2000 {
+                c.bus.write32(DATA + 0x3100 + 4 * i, 8 + (i % 4) * 8);
+            }
+            for i in 0..8 {
+                c.bus.write32(DATA + 0xc000 + 4 * i, 0);
+            }
+            c.g[A3][0] = (DATA + 0xc000) as u64;
+            c.g[RA][0] = ra;
+            c.pc = 0x0031_f838;
+        };
+        check(
+            ee::s10::f_0031f838__generated,
+            dlheap_independent_comalloc,
+            60,
+            &setup,
+        );
+        // The success path must run: seed 1 asks for a small live
+        // allocation, so `IAlloc` fills the chunk array (pre-fix every
+        // n > 0 exceeded the arena and only the failed exit ran).
+        let mut c = crate::difftest::fresh();
+        setup(&mut c, 1);
+        crate::difftest::run_generated(&mut c, ee::s10::f_0031f838__generated);
+        assert_ne!(
+            c.bus.read32(DATA + 0xc000),
+            0,
+            "seed 1 left the chunk array empty: success path not reached"
+        );
+    }
+
+    /// A 256 KiB dlmalloc arena at `ARENA` managed through the heap header
+    /// at `HEAP`; returns the header. Mirrors the `DLHeap` fixtures in
+    /// `game/bx/cubicspline.rs`.
+    pub(crate) fn heap_arena_3(c: &mut Cpu) -> u32 {
+        const HEAP: u32 = DATA + 0x2000;
+        const ARENA: u32 = DATA + 0x4_0000;
+        let ra = c.g[RA][0];
+        for (i, a) in [HEAP as u64, ARENA as u64, 0x4_0000].iter().enumerate() {
+            c.g[[A0, A1, A2][i]][0] = *a;
+        }
+        c.g[RA][0] = 0x0000_7770;
+        c.pc = 0x0031_ff60;
+        ee::s10::DLHeap_InitArena(c);
+        assert_eq!(c.pc, 0x0000_7770, "InitArena did not return");
+        c.g[RA][0] = ra;
+        HEAP
+    }
+
+    /// Allocate `n` bytes out of `heap` for real; the setup asserts every
+    /// fixture block lands, so a silent arena failure cannot vacate the
+    /// test.
+    pub(crate) fn heap_alloc_2(c: &mut Cpu, heap: u32, n: u64) -> u32 {
+        c.g[A0][0] = heap as u64;
+        c.g[A1][0] = n;
+        c.g[RA][0] = 0x0000_7770;
+        c.pc = 0x0031_e818;
+        ee::s10::DLHeap_Malloc(c);
+        assert_eq!(c.pc, 0x0000_7770, "Malloc did not return");
+        let p = c.g[V0][0] as u32;
+        assert_ne!(p, 0, "fixture malloc failed");
+        p
+    }
+
+    /// `DLHeap_Free_Wrapper`: free one live block out of a real arena (plus
+    /// a null free on every fourth seed), so the free merges with live
+    /// neighbours on both sides.
+    #[test]
+    fn dlheap_free_wrapper_matches() {
+        check(
+            ee::s10::f_0031f7f0__generated,
+            dlheap_free_wrapper,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_f7f0, 0);
+                let heap = heap_arena_3(c);
+                let ra = c.g[RA][0];
+                let mut ptrs = Vec::new();
+                for i in 0..3 {
+                    ptrs.push(heap_alloc_2(
+                        c,
+                        heap,
+                        0x20 + (r.next_u32() % 0x400) as u64 + i * 0x111,
+                    ));
+                }
+                let target = if seed % 4 == 3 {
+                    0
+                } else {
+                    ptrs[(seed as usize) % ptrs.len()]
+                };
+                c.g[A0][0] = heap as u64;
+                c.g[A1][0] = target as u64;
+                c.g[RA][0] = ra;
+                c.pc = 0x0031_f7f0;
+            },
+        );
+    }
+
+    /// `DLHeap_Malloc_Wrapper`: allocate out of a real arena, sizes from 0
+    /// to beyond the arena (the failure returns null on both sides).
+    #[test]
+    fn dlheap_malloc_wrapper_matches() {
+        check(
+            ee::s10::f_00320038__generated,
+            dlheap_malloc_wrapper,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_0038, 0);
+                let heap = heap_arena_3(c);
+                let ra = c.g[RA][0];
+                for _ in 0..seed % 3 {
+                    heap_alloc_2(c, heap, (r.next_u32() % 0x300) as u64);
+                }
+                c.g[A0][0] = heap as u64;
+                c.g[A1][0] = match seed % 5 {
+                    0 => 0,
+                    1 => 0x10_0000 + (r.next_u32() % 0x1000) as u64,
+                    _ => (r.next_u32() % 0x2000) as u64,
+                };
+                c.g[RA][0] = ra;
+                c.pc = 0x0032_0038;
+            },
         );
     }
 }

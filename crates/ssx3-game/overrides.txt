@@ -11404,6 +11404,7 @@
 0x002aaf40    StreamArray_IsRequestPending
 0x002aaf78    StreamArray_IsRequestDone
 0x002aafd0    StreamArray_IsRequestPlaying
+# Library ports: streams, Serialize, DLHeap, VD/VidEngine, MD5, PS2 helpers (and the callee slots their tests fake)
 0x0031c350    MD5_Transform
 0x00254410    VD_TextureSink_ctor
 0x002548d0    VD_TextureSink_DrawFrame

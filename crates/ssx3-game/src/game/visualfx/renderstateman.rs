@@ -290,6 +290,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         oc1074_world_painter_load_view_state,
         "WorldPainter_LoadViewState",
     ),
+    (
+        0x002f_0548,
+        ps2_visual_effects_man_ctor,
+        "PS2VisualEffectsMan_ctor",
+    ),
+    (
+        0x002f_0820,
+        ps2_visual_effects_man_dtor,
+        "PS2VisualEffectsMan_dtor",
+    ),
 ];
 
 /// `cAirStreamerFX` fields.
@@ -370,6 +380,14 @@ pub(crate) mod callee {
     pub(crate) use crate::game::worldpainter::quadtree::callee::AI_VFX_MAN_CTOR;
 
     pub(crate) use crate::game::worldpainter::quadtree::callee::VFX_MAN_CTOR;
+
+    pub(crate) use crate::game::bx::cubicspline::callee::DETAIL_SYSTEM_CTOR;
+
+    pub(crate) use crate::game::bx::cubicspline::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED;
+
+    pub(crate) use crate::game::bx::cubicspline::callee::PATH_ARROW_CTOR;
+
+    pub(crate) use crate::game::bx::cubicspline::callee::VISUAL_EFFECTS_MAN_CTOR;
 }
 
 /// `void cAirStreamerFX_Reset(cAirStreamerFX *this)` (0x2ef6a0): reset the
@@ -2733,6 +2751,201 @@ pub fn oc1074_world_painter_load_view_state(c: &mut Cpu) {
     });
 }
 
+/// `__builtin_delete` (0x317e50), called through the table.
+pub(crate) const VFX_MAN_DTOR_DELETE: u32 = 0x0031_7e50;
+
+/// `PS2VisualEffectsMan`: vtable pointer offset, and the 17 owned objects
+/// at `+0x00 .. +0x40`.
+pub(crate) const VFX_MAN_VPTR: u32 = 0x44;
+
+#[cfg(test)]
+pub(crate) const VFX_MAN_OBJECTS: u32 = 17;
+
+/// Return addresses of the 17 owned-object deletes (copied from the
+/// generated `c.g[RA][0] = sx(..)` lines).
+pub(crate) const VFX_MAN_DTOR_RETS: [u32; 17] = [
+    0x002f_0864,
+    0x002f_0884,
+    0x002f_08a4,
+    0x002f_08c4,
+    0x002f_08e4,
+    0x002f_0904,
+    0x002f_0924,
+    0x002f_0944,
+    0x002f_0964,
+    0x002f_0984,
+    0x002f_09a4,
+    0x002f_09c4,
+    0x002f_09e4,
+    0x002f_0a04,
+    0x002f_0a24,
+    0x002f_0a44,
+    0x002f_0a64,
+];
+
+/// The sub-managers `PS2VisualEffectsMan_ctor` allocates (4-byte objects
+/// from `EA_MemAllocNamed`), before `DetailSystem`: (vtable written into the
+/// previous allocation, name of this allocation, field of `self` that
+/// receives the previous allocation, return address of this allocation).
+pub(crate) const VFX_MAN_PARTS_BEFORE_DETAIL: [(u32, u32, u32, u32); 6] = [
+    (0x0049_31a8, 0x0048_7bc8, 0x00, 0x002f_05a8),
+    (0x0049_2fd0, 0x0048_7be0, 0x04, 0x002f_05d0),
+    (0x0048_7eb8, 0x004a_3b88, 0x08, 0x002f_05f8),
+    (0x0049_3178, 0x0048_7bf0, 0x0c, 0x002f_0620),
+    (0x0048_7e88, 0x0048_7c00, 0x10, 0x002f_0648),
+    (0x0048_7e58, 0x0048_7c10, 0x14, 0x002f_0670),
+];
+
+/// As [`VFX_MAN_PARTS_BEFORE_DETAIL`], between `DetailSystem` and
+/// `PathArrow`.
+pub(crate) const VFX_MAN_PARTS_AFTER_DETAIL: [(u32, u32, u32, u32); 9] = [
+    (0x0049_2fa0, 0x004a_3b90, 0x1c, 0x002f_06bc),
+    (0x0048_7e28, 0x0048_7c30, 0x20, 0x002f_06e4),
+    (0x0048_7df8, 0x0048_7c40, 0x24, 0x002f_070c),
+    (0x0048_7fa8, 0x004a_3b98, 0x28, 0x002f_0734),
+    (0x0048_7dc8, 0x0048_7c50, 0x2c, 0x002f_075c),
+    (0x0048_8330, 0x0048_7c68, 0x30, 0x002f_0784),
+    (0x0048_8050, 0x0048_7c78, 0x34, 0x002f_07ac),
+    (0x0048_82b0, 0x004a_3ba0, 0x38, 0x002f_07d4),
+    (0x0049_30a0, 0x0048_7c88, 0x3c, 0x002f_07fc),
+];
+
+/// One step of the allocation chain: give the previous object (`v0`) its
+/// vtable, store it at `self + field`, allocate the next 4-byte object
+/// named `name`.
+pub(crate) fn vfx_man_alloc_part(
+    c: &mut Cpu,
+    vtable: u32,
+    name: u32,
+    field: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    c.g[V1][0] = sx(vtable);
+    c.g[A1][0] = sx(name);
+    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+    c.g[A0][0] = 0x4;
+    c.sw((c.g[S0][0] as u32).wrapping_add(field), c.g[V0][0]);
+    c.g[A2][0] = 0u64;
+    c.g[A3][0] = 0u64;
+    call_ptr(c, callee::EA_MEM_ALLOC_NAMED, ret)
+}
+
+/// `PS2VisualEffectsMan *PS2VisualEffectsMan_ctor(PS2VisualEffectsMan
+/// *self)` (0x2f0548): the base `VisualEffectsMan_ctor`, the PS2 vtable
+/// (`0x487d28` at `+0x44`), then sixteen sub-managers in `+0x00..+0x40`:
+/// fifteen 4-byte vtable-only objects, `DetailSystem` at `+0x18` and
+/// `PathArrow` at `+0x40` (both constructed in place). Returns `self`.
+pub fn ps2_visual_effects_man_ctor(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 181;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        VISUAL_EFFECTS_MAN_CTOR.call(c, 0x002f_055c)?;
+        c.g[V1][0] = sx(0x0048_7d28);
+        c.g[A1][0] = sx(0x0048_7bb8);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x44), c.g[V1][0]);
+        c.g[A0][0] = 0x4;
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        call_ptr(c, EA_MEM_ALLOC_NAMED, 0x002f_0580)?;
+        for (vtable, name, field, ret) in VFX_MAN_PARTS_BEFORE_DETAIL {
+            vfx_man_alloc_part(c, vtable, name, field, ret)?;
+        }
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, DETAIL_SYSTEM_CTOR, 0x002f_0678)?;
+        c.g[A1][0] = sx(0x0048_7c20);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+        c.g[A0][0] = 0x4;
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        call_ptr(c, EA_MEM_ALLOC_NAMED, 0x002f_0694)?;
+        for (vtable, name, field, ret) in VFX_MAN_PARTS_AFTER_DETAIL {
+            vfx_man_alloc_part(c, vtable, name, field, ret)?;
+        }
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, PATH_ARROW_CTOR, 0x002f_0804)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, 16, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PS2VisualEffectsMan::~PS2VisualEffectsMan(int flags)` (0x2f0820):
+/// installs the class vtable (`0x487d28`), deletes each of the 17 owned
+/// objects at `this+0x00 .. +0x40` through its own vtable (the deleting
+/// destructor in slot `+8`, `{delta, fn}` at `vt+8 / vt+0xc`, flag 3),
+/// installs the base vtable (`0x487da0`) and, when `flags & 1`, frees
+/// `this` with `__builtin_delete`. Frame 0x30 (ra 0, s1 0x10, s0 0x20).
+pub fn ps2_visual_effects_man_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x48_0000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x7d28));
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.sw(r32(c, S0).wrapping_add(VFX_MAN_VPTR), c.g[V0][0]);
+        for (i, &ret) in VFX_MAN_DTOR_RETS.iter().enumerate() {
+            let off = 4 * i as u32;
+            c.g[A2][0] = c.lw(r32(c, S0).wrapping_add(off));
+            let owned = c.g[A2][0] != 0;
+            if i == 0 {
+                // Charged in the 11-cycle entry block; the delay slot keeps
+                // the flags and `a1 = 3` is set only on the call path.
+                c.g[S1][0] = c.g[A1][0];
+                if owned {
+                    c.cycles += 6;
+                    c.g[A1][0] = 0x3;
+                    vfx_man_dtor_delete_object(c, ret)?;
+                }
+            } else {
+                c.cycles += 3;
+                c.g[A1][0] = 0x3;
+                if owned {
+                    c.cycles += 5;
+                    vfx_man_dtor_delete_object(c, ret)?;
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[V0][0] = 0x48_0000;
+        c.g[V1][0] = c.g[S1][0] & 0x1;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x7da0));
+        let keep = c.g[V1][0] == 0;
+        c.sw(r32(c, S0).wrapping_add(VFX_MAN_VPTR), c.g[V0][0]);
+        if !keep {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, VFX_MAN_DTOR_DELETE, 0x002f_0a80)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One owned-object delete of `PS2VisualEffectsMan_dtor`: the object in
+/// `a2`, its vtable slot `+8` (`lh` delta, `lw` method), `this + delta`.
+pub(crate) fn vfx_man_dtor_delete_object(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    c.g[V0][0] = c.lw(r32(c, A2));
+    c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x8));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+    let method = r32(c, V1);
+    c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3856,6 +4069,192 @@ pub(crate) mod tests {
                     c.bus.write32(vt + 0x20c, FAKE);
                 }
             },
+        );
+    }
+    use crate::difftest::check_paths;
+
+    use std::sync::atomic::AtomicUsize;
+
+    // ---------- PS2VisualEffectsMan_ctor ----------
+
+    /// Gate of the `EA_MemAllocNamed` fake below and its bump pointer.
+    pub(crate) const VFX_CTOR_CTRL: u32 = DATA + 0x7_d000;
+
+    pub(crate) const VFX_CTOR_MAGIC: u32 = 0x0fc7_a110;
+
+    pub(crate) const VFX_CTOR_BUMP: u32 = DATA + 0x7_d004;
+
+    pub(crate) static VFX_CTOR_PREV_ALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemAllocNamed` with the gate on: a logged fake call (4 cycles)
+    /// returning distinct 16-byte objects from the bump pointer.
+    pub(crate) fn vfx_ctor_fake_alloc(c: &mut Cpu) {
+        if c.bus.read32(VFX_CTOR_CTRL) != VFX_CTOR_MAGIC {
+            return fakes::fall_back(c, &VFX_CTOR_PREV_ALLOC, ee::s10::f_00317d70__generated);
+        }
+        let before = c.cycles;
+        fakes::fake_call(c, 0x0031_7d70);
+        c.cycles = before + 4;
+        let p = c.bus.read32(VFX_CTOR_BUMP);
+        c.bus.write32(VFX_CTOR_BUMP, p + 0x10);
+        c.g[V0][0] = p as u64;
+    }
+
+    pub(crate) fn vfx_ctor_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            vfx_ctor_fake_alloc,
+            &VFX_CTOR_PREV_ALLOC,
+        );
+    }
+
+    pub(crate) const VFX_CTOR_OBJ: u32 = DATA + 0x5_0000;
+
+    pub(crate) const VFX_CTOR_GM: u32 = DATA + 0x5_1000;
+
+    pub(crate) const VFX_CTOR_PARTS: u32 = DATA + 0x5_2000;
+
+    /// VFX-manager fixture: the object and the graphics manager the base
+    /// ctor writes (`gp + 0x2a90`), prefilled; `PathArrow`'s first-use flag
+    /// `gp + 0x114c` clear on even seeds (its table-fill loop), set on odd;
+    /// its table at 0x504560 prefilled.
+    pub(crate) fn vfx_ctor_fixture(c: &mut Cpu, seed: u32) {
+        for i in 0..0x14u32 {
+            c.bus.write32(VFX_CTOR_OBJ + 4 * i, 0x1515_0000 + i);
+        }
+        for i in 0..0xa0u32 {
+            c.bus.write32(VFX_CTOR_GM + 4 * i, 0x3333_0000 + i);
+        }
+        c.bus.write32(GAME_GP + 0x2a90, VFX_CTOR_GM);
+        for off in [0xa88u32, 0x134c, 0x14e4] {
+            c.bus.write32(GAME_GP + off, 0x4747_0000 + off);
+        }
+        c.bus
+            .write32(GAME_GP + 0x114c, if seed % 2 == 0 { 0 } else { 1 + seed });
+        for i in 0..4u32 {
+            c.bus
+                .write32(GAME_GP + 0x1118 + 4 * i, 0x4111_0000 + (i << 16) + seed);
+        }
+        for i in 0..0x68u32 {
+            c.bus.write32(0x0050_4560 + 4 * i, 0x5a5a_0000 + i);
+        }
+        for i in 0..0x120u32 {
+            c.bus.write32(VFX_CTOR_PARTS + 4 * i, 0x6b6b_0000 + i);
+        }
+        c.bus.write32(VFX_CTOR_BUMP, VFX_CTOR_PARTS);
+        c.bus.write32(VFX_CTOR_CTRL, VFX_CTOR_MAGIC);
+        c.g[A0][0] = VFX_CTOR_OBJ as u64;
+        c.pc = 0x002f_0548;
+    }
+
+    /// `PS2VisualEffectsMan_ctor`: real base ctor, `DetailSystem_ctor` and
+    /// `PathArrow_ctor`, 17 fake allocations. Totals 181 + 66 + 17 * 4 + 5 +
+    /// {7 flag set, 108 table fill}.
+    #[test]
+    fn ps2_visual_effects_man_ctor_matches() {
+        vfx_ctor_hook();
+        check_paths(
+            ee::s09::f_002f0548__generated,
+            ps2_visual_effects_man_ctor,
+            60,
+            &[327, 428],
+            &|c, seed| {
+                machine(c, seed, 0x002f_0548, 0);
+                vfx_ctor_fixture(c, seed);
+            },
+        );
+        fakes::covered(
+            ee::s09::f_002f0548__generated,
+            ps2_visual_effects_man_ctor,
+            60,
+            &|c, seed| {
+                machine(c, seed, 0x002f_0549, 17);
+                vfx_ctor_fixture(c, seed);
+            },
+        );
+    }
+
+    // ----- PS2VisualEffectsMan_dtor -------------------------------------
+
+    /// Gate of the `__builtin_delete` fake: the real delete runs unless a
+    /// fixture plants this word.
+    pub(crate) const VFX_MAN_DTOR_CTRL: u32 = DATA + 0x7f00;
+
+    pub(crate) const VFX_MAN_DTOR_MAGIC: u32 = 0x2f08_20d1;
+
+    pub(crate) static VFX_MAN_DTOR_PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `__builtin_delete` under the gate: logged like a fake call, a fixed
+    /// 4-cycle cost (the fake's hash cost would make the totals vary).
+    pub(crate) fn vfx_man_dtor_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(VFX_MAN_DTOR_CTRL) != VFX_MAN_DTOR_MAGIC {
+            return fakes::fall_back(c, &VFX_MAN_DTOR_PREV_DELETE, ee::s10::f_00317e50__generated);
+        }
+        let before = c.cycles;
+        fakes::fake_call(c, VFX_MAN_DTOR_DELETE);
+        c.cycles = before + 4;
+    }
+
+    /// The `miss` hook (the owned objects' methods at `FAKE + ..`) with a
+    /// fixed 4-cycle cost.
+    pub(crate) fn vfx_man_dtor_norm_miss(c: &mut Cpu, target: u32) {
+        let before = c.cycles;
+        fakes::fake_call(c, target);
+        c.cycles = before + 4;
+    }
+
+    /// The manager at `DATA + 0x1000`; owned object `i` (when its bit is
+    /// set) at `DATA + 0x2000 + 0x40 i` with its own vtable (delta, method
+    /// `FAKE + 0x10 i`). Seeds 0..7: none / all owned, delete flag off / on
+    /// (the four path classes); later seeds random masks, flags and unwinds.
+    pub(crate) fn vfx_man_dtor_fixture(c: &mut Cpu, seed: u32) {
+        let calls = if seed < 8 { 0 } else { VFX_MAN_OBJECTS + 1 };
+        let mut r = machine(c, seed, 0x002f_0820, calls);
+        c.hooks.miss = vfx_man_dtor_norm_miss;
+        c.bus.write32(VFX_MAN_DTOR_CTRL, VFX_MAN_DTOR_MAGIC);
+        const THIS: u32 = DATA + 0x1000;
+        let (mask, delete) = if seed < 8 {
+            (if seed % 4 < 2 { 0 } else { 0x1_ffff }, seed % 2 == 1)
+        } else {
+            (r.next_u32() & 0x1_ffff, r.next_u32() % 2 == 1)
+        };
+        for i in 0..VFX_MAN_OBJECTS {
+            let member = if mask >> i & 1 != 0 {
+                let obj = DATA + 0x2000 + 0x40 * i;
+                let vt = DATA + 0x3000 + 0x20 * i;
+                c.bus.write32(obj, vt);
+                let delta = if i % 2 == 0 { 8 * i } else { 0x1_0000 - 8 * i };
+                c.bus.write16(vt + 8, delta as u16);
+                c.bus.write32(vt + 0xc, FAKE + 0x10 * i);
+                obj
+            } else {
+                0
+            };
+            c.bus.write32(THIS + 4 * i, member);
+        }
+        c.bus.write32(THIS + VFX_MAN_VPTR, 0x1234_5678 ^ seed);
+        c.g[A0][0] = THIS as u64;
+        let flags = (r.next_u32() & 0xfe) as u64;
+        c.g[A1][0] = flags | delete as u64;
+        c.pc = 0x002f_0820;
+    }
+
+    /// `PS2VisualEffectsMan_dtor`: no / all / random owned objects deleted
+    /// through their vtables, `this` freed or kept. Paths (4-cycle fakes):
+    /// 69 none kept, 75 none + delete, 223 all kept, 229 all + delete.
+    #[test]
+    fn ps2_visual_effects_man_dtor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            vfx_man_dtor_fake_delete,
+            &VFX_MAN_DTOR_PREV_DELETE,
+        );
+        check_paths(
+            ee::s09::f_002f0820__generated,
+            ps2_visual_effects_man_dtor,
+            64,
+            &[69, 75, 223, 229],
+            &|c, seed| vfx_man_dtor_fixture(c, seed),
         );
     }
 }

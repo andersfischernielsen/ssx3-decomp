@@ -371,6 +371,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_4690, shp_clone, "SHP_Clone"),
     (0x003b_4708, shp_is_palette_format, "SHP_IsPaletteFormat"),
     (0x003b_3e40, shp_calc_pixel_offset, "SHP_CalcPixelOffset"),
+    (
+        0x003b_09a0,
+        ps2_sony_codec_internal_dtor,
+        "PS2_SONY_CODEC_INTERNAL_dtor",
+    ),
+    (
+        0x003b_0c58,
+        ps2_sony_codec_internal_open,
+        "PS2_SONY_CODEC_INTERNAL_Open",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -777,6 +787,16 @@ pub(crate) mod callee {
         addr: 0x003b_39d8,
         f: ee::s13::SHP_GetBpp,
     };
+
+    pub(crate) use crate::game::bx::cubicspline::callee::MPEG2_GET_HDR;
+    pub(crate) use crate::game::bx::cubicspline::callee::MPEG2_INITIALIZE_BUFFER;
+
+    pub(crate) use crate::game::bx::cubicspline::callee::SCE_MPEG_ADD_CALLBACK;
+    pub(crate) use crate::game::bx::cubicspline::callee::SCE_MPEG_CREATE;
+    pub(crate) use crate::game::bx::cubicspline::callee::SCE_MPEG_INIT;
+    pub(crate) use crate::game::bx::cubicspline::callee::SONY_CODEC_INIT_FRAME;
+
+    pub(crate) use crate::game::mem::memstd::callee::SONY_CODEC_FREE_FRAME;
 }
 
 /// `gp`-relative globals used here.
@@ -9135,6 +9155,483 @@ pub fn shp_calc_pixel_offset(c: &mut Cpu) {
     })
 }
 
+/// `int PS2_SONY_CODEC_INTERNAL_Open(SonyCodec *ctx, Script *script,
+/// Stream *stream)` (0x3b0c58): (re)open the MPEG decoder on `stream`:
+/// free the old work and IPU buffers (video free hook `0x509434`), parse the
+/// sequence header (`MPEG2_Initialize_Buffer` + `MPEG2_Get_Hdr` into the
+/// decoder globals at `0x509648`; MPEG-1 streams get progressive defaults),
+/// derive the macroblock-aligned frame size (interlaced MPEG-2 rounds the
+/// height to 32), allocate and link `script->count` frames, the work area
+/// (`w * h * 4.5 + 0x176c`) and the IPU buffer (0x32000, uncached alias at
+/// `+0x7c`), then `sceMpegInit` / `sceMpegCreate` / `sceMpegAddCallback`
+/// with the no-data callback. Returns 2.
+pub fn ps2_sony_codec_internal_open(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, 18, 0x80);
+        frame.save(c, 19, 0x70);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, 30, 0x20);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, 16, 0xa0);
+        c.g[FP][0] = 0x510000;
+        frame.save(c, 17, 0x90);
+        frame.save(c, 20, 0x60);
+        frame.save(c, 21, 0x50);
+        frame.save(c, 22, 0x40);
+        frame.save(c, 23, 0x30);
+        frame.save_ra(c, 0x10);
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x28), c.g[A1][0]);
+        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x2c));
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x10), 0u64);
+        let no_work = c.g[A0][0] == 0u64;
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x14), 0u64);
+        if !no_work {
+            c.cycles += 5;
+            c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x6bd0));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+            let t = c.g[V0][0] as u32;
+            call_ptr(c, t, 0x003b_0cb4)?;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x2c), 0u64);
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x78));
+        let no_ipu = c.g[A0][0] == 0u64;
+        c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x6bd0));
+        if !no_ipu {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+            let t = c.g[V0][0] as u32;
+            call_ptr(c, t, 0x003b_0cd0)?;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x78), 0u64);
+        }
+        // Parse the sequence header into the decoder globals.
+        c.cycles += 13;
+        c.g[S1][0] = 0x1;
+        c.g[S0][0] = 0x510000;
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x69b8));
+        c.g[V0][0] = 0x510000;
+        c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+        c.sw((c.g[V0][0] as u32).wrapping_sub(0x5f78), c.g[S0][0]);
+        MPEG2_INITIALIZE_BUFFER.call(c, 0x003b_0cf4)?;
+        MPEG2_GET_HDR.call(c, 0x003b_0cfc)?;
+        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x420));
+        let mpeg2 = c.g[T1][0] != 0u64;
+        c.g[V1][0] = 0x510000;
+        if !mpeg2 {
+            // MPEG-1: progressive 4:2:0 frame-picture defaults.
+            c.cycles += 13;
+            c.g[A3][0] = 0x510000;
+            c.g[T0][0] = 0x510000;
+            c.g[A2][0] = 0x510000;
+            c.g[V1][0] = 0x3;
+            c.g[A0][0] = 0x510000;
+            c.g[A1][0] = 0x510000;
+            c.g[V0][0] = 0x5;
+            c.sw((c.g[A2][0] as u32).wrapping_sub(0x6a7c), c.g[V1][0]);
+            c.sw((c.g[A0][0] as u32).wrapping_sub(0x6a74), c.g[S1][0]);
+            c.sw((c.g[A1][0] as u32).wrapping_sub(0x6ab8), c.g[V0][0]);
+            c.sw((c.g[A3][0] as u32).wrapping_sub(0x6adc), c.g[S1][0]);
+            c.sw((c.g[T0][0] as u32).wrapping_sub(0x6a60), c.g[S1][0]);
+            c.g[V1][0] = 0x510000;
+        }
+        // Macroblock columns (`(hsize + 15) / 16`) into 0x5094fc, rows into
+        // V0 (stored at 0x509500 below).
+        'mb_rows: {
+            'rows_by_16: {
+                'mpeg1: {
+                    c.cycles += 14;
+                    c.g[A3][0] = 0xffff_ffff_ffff_ffff;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6b0c));
+                    c.g[A2][0] = 0x510000;
+                    c.g[A1][0] = 0x510000;
+                    c.g[T3][0] = c.g[A2][0];
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf));
+                    c.g[T2][0] = c.g[A1][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1e));
+                    c.g[V1][0] = ((c.g[A3][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    if c.g[V1][0] != 0 {
+                        c.g[V0][0] = c.g[A0][0];
+                    }
+                    c.g[T0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6b00));
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 4) as u32);
+                    let t = c.g[T1][0] == 0u64;
+                    c.sw((c.g[A2][0] as u32).wrapping_sub(0x6b04), c.g[V0][0]);
+                    if t {
+                        break 'mpeg1;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = 0x510000;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_sub(0x6adc));
+                    let progressive = c.g[V1][0] != 0u64;
+                    c.g[A0][0] = 0x510000;
+                    if progressive {
+                        break 'rows_by_16;
+                    }
+                    // Interlaced: rows = (vsize + 31) / 32 * 2.
+                    c.cycles += 9;
+                    c.g[V1][0] = 0x510000;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6b08));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1f));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3e));
+                    c.g[V1][0] = ((c.g[A3][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    if c.g[V1][0] != 0 {
+                        c.g[V0][0] = c.g[A0][0];
+                    }
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                    break 'mb_rows;
+                }
+                c.cycles += 1;
+                c.g[A0][0] = 0x510000;
+            }
+            // rows = (vsize + 15) / 16.
+            c.cycles += 7;
+            c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_sub(0x6b08));
+            c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1e));
+            c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = c.g[A1][0];
+            }
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 4) as u32);
+        }
+        // 0x3b0dc8: pixel sizes (and halves) into the globals and `ctx`.
+        c.cycles += 22;
+        c.sw(c.g[T0][0] as u32, c.g[V0][0]);
+        c.g[A0][0] = 0x510000;
+        c.g[V0][0] = c.lw((c.g[T3][0] as u32).wrapping_sub(0x6b04));
+        c.g[A2][0] = 0x510000;
+        c.g[A3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
+        c.g[T0][0] = 0x510000;
+        c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_sub(0x6b00));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+        c.sw((c.g[A0][0] as u32).wrapping_sub(0x6b2c), c.g[V0][0]);
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
+        c.sw((c.g[A2][0] as u32).wrapping_sub(0x6b28), c.g[V1][0]);
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+        c.sw((c.g[S2][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+        c.g[A1][0] = sx(((c.g[V1][0] as u32) as i32 >> 1) as u32);
+        c.sw((c.g[T0][0] as u32).wrapping_sub(0x6b24), c.g[V0][0]);
+        c.g[A0][0] = 0x510000;
+        c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
+        c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x30));
+        c.sw((c.g[A0][0] as u32).wrapping_sub(0x6b20), c.g[A1][0]);
+        let no_frames = (c.g[V0][0] as i64) <= 0;
+        c.sw(frame.at(c, 0), c.g[V1][0]);
+        if !no_frames {
+            c.cycles += 6;
+            c.g[S4][0] = 0x510000;
+            c.g[S3][0] = c.g[V0][0];
+            c.g[S7][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x6bd0));
+            c.g[S6][0] = 0x490000;
+            c.g[S5][0] = sx((c.g[S2][0] as u32).wrapping_add(0x20));
+            // 0x3b0e38: allocate, init and push one frame on `ctx + 0x20`.
+            loop {
+                c.cycles += 22;
+                c.g[T0][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = sx((c.g[S6][0] as u32).wrapping_add(0x53e8));
+                c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_sub(0x6bd0));
+                c.g[A1][0] = 0x14;
+                c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = 0u64;
+                c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                let t = c.g[V0][0] as u32;
+                c.g[A3][0] = 0u64;
+                call_ptr(c, t, 0x003b_0e5c)?;
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = c.g[S0][0];
+                SONY_CODEC_INIT_FRAME.call(c, 0x003b_0e70)?;
+                c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x20));
+                if c.g[V0][0] == 0 {
+                    c.g[V1][0] = 0u64;
+                }
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+                c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                c.sw(c.g[V1][0] as u32, c.g[A0][0]);
+                let more = c.g[S3][0] != 0u64;
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[S5][0]);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_0e38);
+                }
+            }
+        }
+        // 0x3b0e90: work area, IPU buffer, then the libmpeg decoder.
+        c.cycles += 68;
+        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+        c.g[S0][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x6bd0));
+        c.g[T1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = 0x490000;
+        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x53f0));
+        c.mult(0, 9, 9, 2);
+        c.g[A2][0] = 0u64;
+        c.g[V0][0] = c.lw((c.g[FP][0] as u32).wrapping_sub(0x6bd0));
+        c.g[T0][0] = c.g[T0][0] | 0x400;
+        c.g[A3][0] = 0u64;
+        c.g[A1][0] = sx((c.g[T1][0] as u32) << 3);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T1][0] as u32));
+        c.g[V1][0] = sx((c.g[A1][0] as u32) >> 31);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 1) as u32);
+        let t = c.g[V0][0] as u32;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x176c));
+        call_ptr(c, t, 0x003b_0ed8)?;
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+        c.g[A1][0] = 0x30000;
+        c.g[A0][0] = 0x490000;
+        c.g[A3][0] = 0u64;
+        c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5400));
+        c.g[V0][0] = c.lw((c.g[FP][0] as u32).wrapping_sub(0x6bd0));
+        c.g[A2][0] = 0u64;
+        c.g[T0][0] = c.g[T0][0] | 0x400;
+        let t = c.g[V0][0] as u32;
+        c.g[A1][0] = c.g[A1][0] | 0x2000;
+        call_ptr(c, t, 0x003b_0f04)?;
+        c.g[V1][0] = 0xfff0000;
+        c.g[A0][0] = 0x30000000;
+        c.g[V1][0] = c.g[V1][0] | 0xffff;
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x78), c.g[V0][0]);
+        c.g[V1][0] = c.g[V0][0] & c.g[V1][0];
+        c.g[V1][0] = c.g[V1][0] | c.g[A0][0];
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x7c), c.g[V1][0]);
+        call_ptr(c, SCE_MPEG_INIT, 0x003b_0f24)?;
+        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lw(frame.at(c, 0));
+        c.mult(0, 3, 3, 2);
+        c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x2c));
+        c.g[A2][0] = sx((c.g[V1][0] as u32) << 3);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = sx((c.g[A2][0] as u32) >> 31);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A2][0] = sx(((c.g[A2][0] as u32) as i32 >> 1) as u32);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x176c));
+        call_ptr(c, SCE_MPEG_CREATE, 0x003b_0f54)?;
+        c.g[A0][0] = c.lw(frame.at(c, 0));
+        c.g[A2][0] = 0x3b0000;
+        c.g[A3][0] = c.g[S2][0];
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0xb10));
+        c.g[A1][0] = 0x1;
+        call_ptr(c, SCE_MPEG_ADD_CALLBACK, 0x003b_0f6c)?;
+        frame.restore(c, 16, 0xa0);
+        c.g[V0][0] = 0x2;
+        frame.restore(c, 17, 0x90);
+        frame.restore(c, 18, 0x80);
+        frame.restore(c, 19, 0x70);
+        frame.restore(c, 20, 0x60);
+        frame.restore(c, 21, 0x50);
+        frame.restore(c, 22, 0x40);
+        frame.restore(c, 23, 0x30);
+        frame.restore(c, 30, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PS2_SONY_CODEC_INTERNAL_dtor(...)` (0x3b09a0): free the codec's
+/// buffer through the video free hook, unlink and free both frame lists,
+/// then the context itself.
+pub fn ps2_sony_codec_internal_dtor(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003b_09a0 => {
+                    c.cycles += 14;
+                    let frame = Frame::open(c, 0x60);
+                    frame.save(c, 16, 0x50);
+                    c.g[V0][0] = 0x450000;
+                    frame.save(c, 17, 0x40);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6850));
+                    frame.save(c, 18, 0x30);
+                    frame.save(c, 19, 0x20);
+                    c.g[S0][0] = c.g[A0][0];
+                    frame.save(c, 20, 0x10);
+                    frame.save_ra(c, 0);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2c));
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[S1][0] = c.g[A1][0];
+                    if t {
+                        pc = 0x003b_0a08;
+                        continue;
+                    }
+                    c.cycles += 5;
+                    c.g[V1][0] = 0x510000;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6bcc));
+                    let t = c.g[V0][0] as u32;
+                    call_ptr(c, t, 0x003b_09e8)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), 0u64);
+                    pc = 0x003b_0a08;
+                    continue;
+                }
+                0x003b_0a08 => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x78));
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[V1][0] = 0x510000;
+                    if t {
+                        pc = 0x003b_0a68;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6bcc));
+                    let t = c.g[V0][0] as u32;
+                    call_ptr(c, t, 0x003b_0a04)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x78), 0u64);
+                    pc = 0x003b_0a68;
+                    continue;
+                }
+                0x003b_0a68 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    c.g[S3][0] = c.g[V0][0];
+                    c.g[S4][0] = c.g[S1][0] & 0x1;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x20));
+                    if t {
+                        pc = 0x003b_0ab8;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    c.g[S1][0] = 0xb;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                    pc = 0x003b_0a30;
+                    continue;
+                }
+                0x003b_0a30 => {
+                    c.cycles += 8;
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+                    c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[S1][0]);
+                    let t = c.g[V1][0] == 0u64;
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                    if !t {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[V1][0];
+                        c.g[A1][0] = 0x3;
+                        SONY_CODEC_FREE_FRAME.call(c, 0x003b_0a5c)?;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    if c.g[V0][0] != c.g[S3][0] {
+                        c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003b_0a30);
+                        }
+                        pc = 0x003b_0a30;
+                        continue;
+                    }
+                    pc = 0x003b_0ab8;
+                    continue;
+                }
+                0x003b_0ab8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+                    let t = c.g[V0][0] == c.g[S2][0];
+                    c.g[S1][0] = 0xb;
+                    if t {
+                        pc = 0x003b_0aec;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                    pc = 0x003b_0a80;
+                    continue;
+                }
+                0x003b_0a80 => {
+                    c.cycles += 8;
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0u64;
+                    }
+                    c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+                    c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[S1][0]);
+                    let t = c.g[V1][0] == 0u64;
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                    if !t {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[V1][0];
+                        c.g[A1][0] = 0x3;
+                        SONY_CODEC_FREE_FRAME.call(c, 0x003b_0aac)?;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+                    if c.g[V0][0] != c.g[S2][0] {
+                        c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003b_0a80);
+                        }
+                        pc = 0x003b_0a80;
+                        continue;
+                    }
+                    pc = 0x003b_0aec;
+                    continue;
+                }
+                0x003b_0aec => {
+                    c.cycles += 9;
+                    c.g[V0][0] = 0x7;
+                    c.g[V1][0] = 0x450000;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6810));
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    let t = c.g[S4][0] == 0u64;
+                    c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+                    if !t {
+                        c.cycles += 4;
+                        c.g[V1][0] = 0x510000;
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6bcc));
+                        let t = c.g[V0][0] as u32;
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, t, 0x003b_0aec)?;
+                    }
+                    c.cycles += 8;
+                    let frame = Frame { size: 0x60 };
+                    frame.restore(c, 16, 0x50);
+                    frame.restore(c, 17, 0x40);
+                    frame.restore(c, 18, 0x30);
+                    frame.restore(c, 19, 0x20);
+                    frame.restore(c, 20, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003b_09a0, 0x003b_0af4);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -13582,5 +14079,330 @@ pub(crate) mod tests {
                 0x003b_3e40,
             )
         });
+    }
+
+    use crate::difftest::require_paths;
+
+    pub(crate) use crate::game::bx::cubicspline::tests::dtor_fixture;
+    pub(crate) use crate::game::bx::cubicspline::tests::dtor_list;
+
+    pub(crate) use crate::game::mem::memstd::tests::norm_miss;
+
+    // ---------- PS2_SONY_CODEC_INTERNAL_Open ----------
+
+    pub(crate) fn sony_open_norm_miss(c: &mut Cpu, target: u32) {
+        let before = c.cycles;
+        fakes::fake_call(c, target);
+        c.cycles = before + 4;
+    }
+
+    /// Gate of the codec-open fakes below, and the switch that makes the
+    /// `InitFrame` fake return null (the `movz` arm of the frame push).
+    pub(crate) const SONY_OPEN_CTRL: u32 = DATA + 0x7_e000;
+
+    pub(crate) const SONY_OPEN_MAGIC: u32 = 0x5c0d_ec01;
+
+    pub(crate) const SONY_OPEN_NULL_FRAME: u32 = DATA + 0x7_e004;
+
+    /// A gated fake: with the gate on, a logged fake call at a fixed 4-cycle
+    /// cost; otherwise the slot's previous body.
+    macro_rules! sony_open_fake {
+        ($fake:ident, $prev:ident, $addr:expr, $generated:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(SONY_OPEN_CTRL) != SONY_OPEN_MAGIC {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                let before = c.cycles;
+                fakes::fake_call(c, $addr);
+                c.cycles = before + 4;
+            }
+        };
+    }
+
+    sony_open_fake!(
+        sony_open_fake_init_buffer,
+        SONY_OPEN_PREV_INIT_BUFFER,
+        0x003b_1228,
+        ee::s13::f_003b1228__generated
+    );
+
+    sony_open_fake!(
+        sony_open_fake_get_hdr,
+        SONY_OPEN_PREV_GET_HDR,
+        0x003b_13d8,
+        ee::s13::f_003b13d8__generated
+    );
+
+    sony_open_fake!(
+        sony_open_fake_mpeg_init,
+        SONY_OPEN_PREV_MPEG_INIT,
+        0x0040_2708,
+        ee::s15::f_00402708__generated
+    );
+
+    sony_open_fake!(
+        sony_open_fake_mpeg_create,
+        SONY_OPEN_PREV_MPEG_CREATE,
+        0x0040_27b8,
+        ee::s15::f_004027b8__generated
+    );
+
+    sony_open_fake!(
+        sony_open_fake_add_callback,
+        SONY_OPEN_PREV_ADD_CALLBACK,
+        0x0040_2c08,
+        ee::s15::f_00402c08__generated
+    );
+
+    pub(crate) static SONY_OPEN_PREV_INIT_FRAME: AtomicUsize = AtomicUsize::new(0);
+
+    /// `PS2_SONY_CODEC_INTERNAL_InitFrame` with the gate on: a logged fake
+    /// (4 cycles) returning the fake's pointer, or null when the fixture
+    /// asks for it.
+    pub(crate) fn sony_open_fake_init_frame(c: &mut Cpu) {
+        if c.bus.read32(SONY_OPEN_CTRL) != SONY_OPEN_MAGIC {
+            return fakes::fall_back(
+                c,
+                &SONY_OPEN_PREV_INIT_FRAME,
+                ee::s13::f_003b07f8__generated,
+            );
+        }
+        let before = c.cycles;
+        fakes::fake_call(c, 0x003b_07f8);
+        c.cycles = before + 4;
+        if c.bus.read32(SONY_OPEN_NULL_FRAME) != 0 {
+            c.g[V0][0] = 0;
+        }
+    }
+
+    pub(crate) fn sony_open_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B1228),
+            sony_open_fake_init_buffer,
+            &SONY_OPEN_PREV_INIT_BUFFER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B13D8),
+            sony_open_fake_get_hdr,
+            &SONY_OPEN_PREV_GET_HDR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B07F8),
+            sony_open_fake_init_frame,
+            &SONY_OPEN_PREV_INIT_FRAME,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00402708),
+            sony_open_fake_mpeg_init,
+            &SONY_OPEN_PREV_MPEG_INIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004027B8),
+            sony_open_fake_mpeg_create,
+            &SONY_OPEN_PREV_MPEG_CREATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00402C08),
+            sony_open_fake_add_callback,
+            &SONY_OPEN_PREV_ADD_CALLBACK,
+        );
+    }
+
+    pub(crate) const SONY_OPEN_CTX: u32 = DATA + 0x5_0000;
+
+    pub(crate) const SONY_OPEN_CFG: u32 = DATA + 0x5_1000;
+
+    pub(crate) const SONY_OPEN_DESC: u32 = DATA + 0x5_2000;
+
+    /// Decoder globals the open writes (prefilled so every store shows).
+    pub(crate) const SONY_OPEN_OUT_GLOBALS: [u32; 12] = [
+        0x0050_94d4,
+        0x0050_94d8,
+        0x0050_94dc,
+        0x0050_94e0,
+        0x0050_94fc,
+        0x0050_9500,
+        0x0050_9524,
+        0x0050_9548,
+        0x0050_9584,
+        0x0050_958c,
+        0x0050_95a0,
+        0x0050_a088,
+    ];
+
+    /// Codec-open fixture. `seed % 3`: 0 = MPEG-1 (`0x509a68` = 0, the
+    /// defaults arm and rows/16 via 0x3b0da8), 1 = MPEG-2 progressive
+    /// (`0x509524` != 0, rows/16 via 0x3b0dac), 2 = MPEG-2 interlaced
+    /// (`0x509524` = 0, rows/32*2); `seed / 3 % 4` bit 0 = old work buffer
+    /// (`+0x2c`), bit 1 = old IPU buffer (`+0x78`); `seed / 12 % 4` frames;
+    /// `seed / 48` negative h/v sizes (the `movn` rounding); every fifth seed
+    /// `InitFrame` returns null.
+    pub(crate) fn sony_open_fixture(c: &mut Cpu, seed: u32) {
+        let mode = seed % 3;
+        let frees = (seed / 3) % 4;
+        let frames = (seed / 12) % 4;
+        let negative = (seed / 48) % 2 == 1;
+        for i in 0..0x30u32 {
+            c.bus.write32(SONY_OPEN_CTX + 4 * i, 0x5555_0000 + i);
+        }
+        c.bus.write32(
+            SONY_OPEN_CTX + 0x2c,
+            if frees & 1 != 0 { DATA + 0x5_3000 } else { 0 },
+        );
+        c.bus.write32(
+            SONY_OPEN_CTX + 0x78,
+            if frees & 2 != 0 { DATA + 0x5_3100 } else { 0 },
+        );
+        c.bus.write32(SONY_OPEN_CTX + 0x20, SONY_OPEN_CTX + 0x20);
+        c.bus.write32(SONY_OPEN_CTX + 0x24, SONY_OPEN_CTX + 0x20);
+        for i in 0..8u32 {
+            c.bus.write32(SONY_OPEN_CFG + 4 * i, 0x6666_0000 + i);
+        }
+        c.bus.write32(SONY_OPEN_CFG + 0x10, frames);
+        c.bus.write32(SONY_OPEN_DESC, 0x4d4d_0000 + seed);
+        c.bus.write32(SONY_OPEN_DESC + 4, 0x5eed_0000 + seed);
+        // The video alloc/free hooks (both the fake) and the alloc flags.
+        c.bus.write32(0x0050_9430, FAKE);
+        c.bus.write32(0x0050_9434, FAKE);
+        c.bus.write32(0x0050_9438, 0x0bad_0000 | seed);
+        for (i, a) in SONY_OPEN_OUT_GLOBALS.into_iter().enumerate() {
+            c.bus.write32(a, 0x7a7a_0000 + i as u32);
+        }
+        c.bus
+            .write32(0x0050_9a68, if mode == 0 { 0 } else { 1 + seed });
+        c.bus
+            .write32(0x0050_9524, if mode == 2 { 0 } else { 0x10 + seed });
+        let (h, v) = if negative {
+            (
+                (-(0x21 + (seed % 7) as i32)) as u32,
+                (-(0x13 + (seed % 5) as i32)) as u32,
+            )
+        } else {
+            (0x140 + seed, 0xe0 + seed)
+        };
+        c.bus.write32(0x0050_94f4, h);
+        c.bus.write32(0x0050_94f8, v);
+        c.bus.write32(SONY_OPEN_CTRL, SONY_OPEN_MAGIC);
+        c.bus.write32(SONY_OPEN_NULL_FRAME, (seed % 5 == 4) as u32);
+        c.g[A0][0] = SONY_OPEN_CTX as u64;
+        c.g[A1][0] = SONY_OPEN_CFG as u64;
+        c.g[A2][0] = SONY_OPEN_DESC as u64;
+        c.pc = 0x003b_0c58;
+    }
+
+    /// `PS2_SONY_CODEC_INTERNAL_Open`: all three header modes, both frees,
+    /// 0..3 frames. Totals: 167 + {11 progressive, 13 interlaced, 21 MPEG-1}
+    /// + 9 (work free) + 8 (IPU free) + [frames > 0](6 + 30 * frames).
+    #[test]
+    fn ps2_sony_codec_internal_open_matches() {
+        sony_open_hook();
+        check_paths(
+            ee::s13::f_003b0c58__generated,
+            ps2_sony_codec_internal_open,
+            96,
+            // 178 progressive; 180 interlaced; 187 progressive + work free;
+            // 196 MPEG-1 + IPU free; 205 MPEG-1 + both frees; 214 progressive
+            // + 1 frame; 274 progressive + 3 frames.
+            &[178, 180, 187, 196, 205, 214, 274],
+            &|c, seed| {
+                machine(c, seed, 0x003b_0c58, 0);
+                c.hooks.miss = sony_open_norm_miss;
+                sony_open_fixture(c, seed);
+            },
+        );
+        fakes::covered(
+            ee::s13::f_003b0c58__generated,
+            ps2_sony_codec_internal_open,
+            96,
+            &|c, seed| {
+                machine(c, seed, 0x003b_0c59, 9);
+                c.hooks.miss = sony_open_norm_miss;
+                sony_open_fixture(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_sony_codec_internal_dtor_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            machine(c, seed, 0x003b_09a0, 0);
+            c.hooks.miss = norm_miss;
+            dtor_fixture(c, seed);
+        };
+        check(
+            ee::s13::f_003b09a0__generated,
+            ps2_sony_codec_internal_dtor,
+            72,
+            &setup,
+        );
+        // The 72 seeds are every combination of the five choices; pinned: no
+        // lists with each word/self-free mix (43, 51, 60, 68), and both
+        // lists two deep with everything freed (235).
+        require_paths(
+            ee::s13::f_003b09a0__generated,
+            72,
+            &[43, 51, 60, 68, 235],
+            &setup,
+        );
+    }
+
+    driven!(dtor_gen, ee::s13::f_003b09a0__generated);
+
+    driven!(dtor_hand, ps2_sony_codec_internal_dtor);
+
+    /// The dtor list-teardown loops under delivered events (the freed
+    /// frames go through the leaf `FreeFrame`). The first loop's head
+    /// (0x3b0a30) is structured: the port must carry on, never resume
+    /// there (the second head is covered by
+    /// `ps2_sony_codec_internal_dtor_second_loop_carries_on`).
+    #[test]
+    fn ps2_sony_codec_internal_dtor_events() {
+        let resumes = check_events(dtor_gen, dtor_hand, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x003b_09a0, 0);
+            c.hooks.miss = norm_miss;
+            // Both lists live (two nodes each), both words freed.
+            dtor_fixture(c, 3 + 8 * 2 + 24 * 2 + 4 * (seed % 2));
+            schedule(c, &mut r, seed, 0x003b_09a0)
+        });
+        assert!(
+            resumes.get(&0x003b_0a30).is_none(),
+            "unwound at structured head 0x3b0a30: {resumes:x?}"
+        );
+    }
+
+    driven!(dtor_edge2_gen, ee::s13::f_003b09a0__generated);
+    driven!(dtor_edge2_hand, ps2_sony_codec_internal_dtor);
+
+    /// The dtor's second loop at 0x3b0a80 never sees an unwind
+    /// under `schedule` (delivery fires in the first loop), so this test
+    /// lengthens the first list (12 nodes) and sweeps the VBlank past it.
+    /// Fails on the `back_edge_unwinds` body.
+    #[test]
+    fn ps2_sony_codec_internal_dtor_second_loop_carries_on() {
+        for k in [400u64, 600] {
+            let resumes = check_events(dtor_edge2_gen, dtor_edge2_hand, 4, &|c, seed| {
+                machine(c, seed, 0x003b_09a0, 0);
+                c.hooks.miss = norm_miss;
+                dtor_fixture(c, 3 + 8 * 2 + 24 * 2 + 4 * (seed % 2));
+                const CTX: u32 = DATA + 0x100;
+                dtor_list(c, CTX + 0x18, DATA + 0x1000, 12);
+                dtor_list(c, CTX + 0x20, DATA + 0x1800, 6);
+                let saved = (c.g[A0], c.g[A1], c.g[31]);
+                ssx3_ps2::kernel::start_main_thread(c, 0x003b_09a0, 0, 0);
+                (c.g[A0], c.g[A1], c.g[31]) = saved;
+                c.pc = 0x003b_09a0;
+                c.cycles = 1000;
+                c.next_event = 1000 + k;
+                ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                    .sched
+                    .next_vblank = 1000 + k;
+                Events::Unwind
+            });
+            assert!(
+                resumes.get(&0x003b_0a80).is_none(),
+                "k={k}: unwound at structured head 0x3b0a80: {resumes:x?}"
+            );
+        }
     }
 }

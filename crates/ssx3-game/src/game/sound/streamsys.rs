@@ -6980,13 +6980,7 @@ pub(crate) mod tests {
         h as i32 as i64 as u64
     }
 
-    /// The `miss` hook with a fixed 4-cycle cost (local copy: the port
-    /// layout keeps each `norm_miss` beside its own tests).
-    fn norm_miss(c: &mut Cpu, target: u32) {
-        let before = c.cycles;
-        crate::difftest::fakes::fake_call(c, target);
-        c.cycles = before + 4;
-    }
+    use crate::game::mem::memstd::tests::norm_miss;
 
     /// Our stream fixture (kept for the ported-libs tests below): plants
     /// the stream pointer at `SND_STREAMS` with handle-less-vs-backed

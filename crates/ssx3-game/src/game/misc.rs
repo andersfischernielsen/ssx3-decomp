@@ -552,6 +552,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003e_6240, ea_is_valid_pointer, "EA_IsValidPointer"),
     (0x003e_62b0, ea_assert_not_busy, "EA_AssertNotBusy"),
     (0x003e_62d0, ea_crc16, "EA_Crc16"),
+    (0x002d_2248, serialize_write_vec3, "Serialize_WriteVec3"),
+    (0x002d_22a8, serialize_write_vec4, "Serialize_WriteVec4"),
+    (0x002d_2308, serialize_write_matrix, "Serialize_WriteMatrix"),
+    (0x002d_2368, serialize_write_quat, "Serialize_WriteQuat"),
+    (0x002d_23e8, serialize_write_string, "Serialize_WriteString"),
+    (
+        0x002d_2478,
+        serialize_write_data_block,
+        "Serialize_WriteDataBlock",
+    ),
+    (0x002d_25a0, serialize_read_vec3, "Serialize_ReadVec3"),
+    (0x002d_2628, serialize_read_vec4, "Serialize_ReadVec4"),
+    (0x002d_2690, serialize_read_matrix, "Serialize_ReadMatrix"),
+    (0x002d_26f8, serialize_read_quat, "Serialize_ReadQuat"),
+    (0x002d_27b0, serialize_read_string, "Serialize_ReadString"),
+    (
+        0x002d_2868,
+        serialize_read_data_block,
+        "Serialize_ReadDataBlock",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -32229,6 +32249,928 @@ pub fn ea_assert_not_busy(c: &mut Cpu) {
     }
 }
 
+/// `int VidEnginePlayer_PlayBlocking(...)` (0x253748): start playback and
+/// spin until the frame is due, then decode it.
+///
+/// Not registered and untested: the frame wait at the bottom of the loop
+/// ends only when the real AV thread delivers a frame, so with fakes every
+/// playing fixture spins without bound, and a quiet player (`+0x38` == 0)
+/// only takes the early exit, which leaves the loop unchecked.
+#[allow(dead_code)]
+pub fn vid_engine_player_play_blocking(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0025_3748 => {
+                    c.cycles += 8;
+                    let frame = Frame::open(c, 0x30);
+                    frame.save(c, 16, 0x20);
+                    frame.save(c, 17, 0x10);
+                    c.g[S0][0] = c.g[A0][0];
+                    frame.save_ra(c, 0);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x38));
+                    if c.g[V0][0] == 0u64 {
+                        let frame = Frame { size: 0x30 };
+                        frame.restore(c, 16, 0x20);
+                        pc = 0x0025_384c;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    c.g[S1][0] = 0x1;
+                    VIDENGINEPLAYER_START_PLAYBACK.call(c, 0x0025_3770)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    pc = 0x0025_3778;
+                    continue;
+                }
+                0x0025_3778 => {
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0u64 {
+                        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x3c));
+                    } else {
+                        c.cycles += 8;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x3c));
+                        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x28));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
+                        let t = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, t, 0x0025_3798)?;
+                        c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+                        pc = 0x0025_381c;
+                        continue;
+                    }
+                    c.cycles += 7;
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
+                    let t = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x0025_37b8)?;
+                    c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+                    pc = 0x0025_381c;
+                    continue;
+                }
+                0x0025_381c => {
+                    c.cycles += 13;
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10d8));
+                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0xa0));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xa4));
+                    let t = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x0025_37d0)?;
+                    c.g[A0][0] = 0u64;
+                    call_ptr(c, 0x003e_5928, 0x0025_37d8)?;
+                    c.g[A0][0] = 0u64;
+                    call_ptr(c, 0x003e_5398, 0x0025_37e0)?;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x38));
+                    call_ptr(c, 0x003a_e780, 0x0025_37e8)?;
+                    if c.g[V0][0] == 0u64 {
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                    } else {
+                        c.cycles += 11;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x3c));
+                        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x30));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
+                        let t = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, t, 0x0025_3808)?;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x38));
+                        c.lwc1(12, (c.g[A0][0] as u32).wrapping_add(0x48));
+                        call_ptr(c, 0x003a_e6c8, 0x0025_3814)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+                    }
+                    pc = 0x0025_383c;
+                    continue;
+                }
+                0x0025_383c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                    } else {
+                        c.cycles += 5;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x38));
+                        call_ptr(c, 0x003a_e860, 0x0025_3834)?;
+                        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                        if back_edge_unwinds(c, 0x0025_3778) {
+                            return Ok(());
+                        }
+                        pc = 0x0025_3778;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x40), 0u64);
+                    let frame = Frame { size: 0x30 };
+                    frame.restore(c, 16, 0x20);
+                    pc = 0x0025_384c;
+                    continue;
+                }
+                0x0025_384c => {
+                    c.cycles += 4;
+                    let frame = Frame { size: 0x30 };
+                    frame.restore(c, 17, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0025_3748, 0x0025_3850);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_ReadDataBlock(void *stream, ...)` (0x2d2868): read a
+/// counted block of bytes, returning their sum.
+pub fn serialize_read_data_block(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_2868 => {
+                    c.cycles += 35;
+                    c.g[A2][0] = 0x100;
+                    let frame = Frame::open(c, 0x60);
+                    frame.save(c, 19, 0x20);
+                    c.g[A3][0] = 0u64;
+                    c.g[S3][0] = c.g[A1][0];
+                    frame.save(c, 20, 0x10);
+                    c.g[S4][0] = c.g[A0][0];
+                    c.g[A1][0] = 0x480000;
+                    frame.save(c, 16, 0x50);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6778));
+                    frame.save(c, 17, 0x40);
+                    c.g[A0][0] = 0x8;
+                    frame.save(c, 18, 0x30);
+                    frame.save_ra(c, 0);
+                    c.g[S1][0] = 0u64;
+                    EA_MEM_ALLOC_NAMED.call(c, 0x002d_28a8)?;
+                    c.sw(c.g[V0][0] as u32, 0u64);
+                    c.g[A1][0] = c.g[V0][0];
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
+                    c.g[A0][0] = c.g[S4][0];
+                    c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+                    SERIALIZE_READ_U32_2.call(c, 0x002d_28c0)?;
+                    c.g[S0][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A1][0] = 0x480000;
+                    c.g[S2][0] = c.g[V0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6788));
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[A2][0] = 0x100;
+                    c.g[A3][0] = 0u64;
+                    OPERATOR_NEW_NAMED.call(c, 0x002d_28e0)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[V1][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.g[S2][0];
+                    if t {
+                        pc = 0x002d_2924;
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                    pc = 0x002d_28f8;
+                    continue;
+                }
+                0x002d_28f8 => {
+                    c.cycles += 10;
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    SERIALIZE_READ_U8.call(c, 0x002d_2904)?;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002d_28f8);
+                        }
+                        pc = 0x002d_28f8;
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S2][0];
+                    pc = 0x002d_2924;
+                    continue;
+                }
+                0x002d_2924 => {
+                    c.cycles += 8;
+                    let frame = Frame { size: 0x60 };
+                    frame.restore(c, 16, 0x50);
+                    frame.restore(c, 17, 0x40);
+                    frame.restore(c, 18, 0x30);
+                    frame.restore(c, 19, 0x20);
+                    frame.restore(c, 20, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_2868, 0x002d_2930);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_ReadString(void *stream, ...)` (0x2d27b0): read bytes up
+/// to a terminator (at most 1000), returning the count.
+pub fn serialize_read_string(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_27b0 => {
+                    c.cycles += 14;
+                    let frame = Frame::open(c, 0x60);
+                    c.g[V0][0] = 0x1;
+                    frame.save(c, 16, 0x50);
+                    c.g[V1][0] = 0x4d0000;
+                    frame.save(c, 17, 0x40);
+                    c.g[S0][0] = 0u64;
+                    frame.save(c, 18, 0x30);
+                    c.g[S1][0] = c.g[A0][0];
+                    frame.save(c, 19, 0x20);
+                    c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x49b8));
+                    frame.save_ra(c, 0x10);
+                    c.g[S3][0] = c.g[A1][0];
+                    c.sb(c.g[SP][0] as u32, c.g[V0][0]);
+                    c.g[A0][0] = c.g[S1][0];
+                    pc = 0x002d_27e8;
+                    continue;
+                }
+                0x002d_27e8 => {
+                    c.cycles += 9;
+                    c.g[A1][0] = c.g[SP][0];
+                    SERIALIZE_READ_U8.call(c, 0x002d_27f0)?;
+                    c.g[V1][0] = c.lbu(c.g[SP][0] as u32);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.sb((c.g[V0][0] as u32).wrapping_sub(0x1), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 24);
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < 1000i64) as u64;
+                    if !t {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A0][0] = c.g[S1][0];
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002d_27e8);
+                            }
+                            pc = 0x002d_27e8;
+                            continue;
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x3e8;
+                    if c.g[S0][0] == c.g[V0][0] {
+                        c.sb((c.g[S2][0] as u32).wrapping_add(0x3e7), 0u64);
+                    }
+                    c.cycles += 18;
+                    c.g[A1][0] = 0x480000;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A2][0] = 0x100;
+                    c.g[A3][0] = 0u64;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6768));
+                    OPERATOR_NEW_NAMED.call(c, 0x002d_2838)?;
+                    c.g[A1][0] = c.g[S2][0];
+                    c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, 0x0041_66f4, 0x002d_2848)?;
+                    c.g[V0][0] = c.g[S0][0];
+                    let frame = Frame { size: 0x60 };
+                    frame.restore(c, 17, 0x40);
+                    frame.restore(c, 16, 0x50);
+                    frame.restore(c, 18, 0x30);
+                    frame.restore(c, 19, 0x20);
+                    frame.restore_ra(c, 0x10);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_27b0, 0x002d_2868);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_ReadQuat(void *stream, float *q)` (0x2d26f8): read 4
+/// words into `q`, returning their sum.
+pub fn serialize_read_quat(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 38;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, 17, 0x40);
+        frame.save(c, 18, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, 16, 0x50);
+        frame.save_ra(c, 0x20);
+        c.g[A1][0] = sx(frame.at(c, 0x10));
+        SERIALIZE_READ_U32.call(c, 0x002d_271c)?;
+        c.g[A1][0] = sx(frame.at(c, 0x14));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[S0][0] = c.g[V0][0];
+        SERIALIZE_READ_U32.call(c, 0x002d_272c)?;
+        c.g[A1][0] = sx(frame.at(c, 0x18));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        SERIALIZE_READ_U32.call(c, 0x002d_273c)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = sx(frame.at(c, 0x1c));
+        SERIALIZE_READ_U32.call(c, 0x002d_274c)?;
+        c.lwc1(3, frame.at(c, 0x10));
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.lwc1(0, frame.at(c, 0x14));
+        c.lwc1(1, frame.at(c, 0x18));
+        c.lwc1(2, frame.at(c, 0x1c));
+        c.swc1(3, frame.at(c, 0xc));
+        c.swc1(0, frame.at(c, 0));
+        c.swc1(1, frame.at(c, 0x4));
+        c.swc1(2, frame.at(c, 0x8));
+        frame.restore(c, 16, 0x50);
+        c.lq(3, frame.at(c, 0));
+        frame.restore(c, 17, 0x40);
+        c.sq(3, c.g[S2][0] as u32);
+        frame.restore(c, 18, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int Serialize_WriteDataBlock(void *stream, void *block)` (0x2d2478):
+/// write the block's word then its bytes, returning the total written.
+pub fn serialize_write_data_block(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_2478 => {
+                    c.cycles += 17;
+                    let frame = Frame::open(c, 0x50);
+                    frame.save(c, 16, 0x40);
+                    frame.save(c, 17, 0x30);
+                    c.g[S0][0] = 0u64;
+                    frame.save(c, 18, 0x20);
+                    frame.save(c, 19, 0x10);
+                    c.g[S2][0] = c.g[A1][0];
+                    frame.save_ra(c, 0);
+                    c.g[S3][0] = c.g[A0][0];
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                    SERIALIZE_WRITE_U32_2.call(c, 0x002d_24a8)?;
+                    c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                    c.g[S1][0] = c.g[V0][0];
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.g[S1][0];
+                    if t {
+                        pc = 0x002d_24f0;
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                    pc = 0x002d_24c0;
+                    continue;
+                }
+                0x002d_24c0 => {
+                    c.cycles += 11;
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lb(c.g[V0][0] as u32);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    SERIALIZE_WRITE_U8.call(c, 0x002d_24d4)?;
+                    c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002d_24c0);
+                        }
+                        pc = 0x002d_24c0;
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S1][0];
+                    pc = 0x002d_24f0;
+                    continue;
+                }
+                0x002d_24f0 => {
+                    c.cycles += 7;
+                    let frame = Frame { size: 0x50 };
+                    frame.restore(c, 16, 0x40);
+                    frame.restore(c, 17, 0x30);
+                    frame.restore(c, 18, 0x20);
+                    frame.restore(c, 19, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_2478, 0x002d_24f0);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_WriteString(void *stream, char *s)` (0x2d23e8): write
+/// the string bytes and its terminator, returning the length plus one.
+pub fn serialize_write_string(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_23e8 => {
+                    c.cycles += 13;
+                    let frame = Frame::open(c, 0x60);
+                    frame.save(c, 19, 0x20);
+                    frame.save(c, 16, 0x50);
+                    c.g[S3][0] = c.g[A1][0];
+                    frame.save(c, 17, 0x40);
+                    c.g[S0][0] = c.g[S3][0];
+                    frame.save(c, 18, 0x30);
+                    c.g[S1][0] = 0u64;
+                    frame.save(c, 20, 0x10);
+                    c.g[S2][0] = c.g[A0][0];
+                    frame.save_ra(c, 0);
+                    c.g[S4][0] = 0u64;
+                    pc = 0x002d_2434;
+                    continue;
+                }
+                0x002d_241c => {
+                    c.cycles += 1;
+                    pc = 0x002d_2420;
+                    continue;
+                }
+                0x002d_2420 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    SERIALIZE_WRITE_U8.call(c, 0x002d_2430)?;
+                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    pc = 0x002d_2434;
+                    continue;
+                }
+                0x002d_2434 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S3][0];
+                    call_ptr(c, 0x0041_6810, 0x002d_243c)?;
+                    c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[A1][0] = c.lb(c.g[S0][0] as u32);
+                        if c.cycles >= c.next_event {
+                            c.pc = 0x002d_2420;
+                            if c.event() {
+                                return Ok(());
+                            }
+                        }
+                        pc = 0x002d_2420;
+                        continue;
+                    }
+                    pc = 0x002d_2448;
+                    continue;
+                }
+                0x002d_2448 => {
+                    c.cycles += 12;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = 0u64;
+                    SERIALIZE_WRITE_U8.call(c, 0x002d_2454)?;
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1));
+                    let frame = Frame { size: 0x60 };
+                    frame.restore(c, 16, 0x50);
+                    frame.restore(c, 17, 0x40);
+                    frame.restore(c, 18, 0x30);
+                    frame.restore(c, 19, 0x20);
+                    frame.restore(c, 20, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_23e8, 0x002d_2478);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_ReadVec3(void *stream, float *v)` (0x2d25a0): read 3
+/// words into `v`, returning their sum.
+pub fn serialize_read_vec3(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_25a0 => {
+                    c.cycles += 12;
+                    let frame = Frame::open(c, 0x70);
+                    frame.save(c, 16, 0x60);
+                    frame.save(c, 17, 0x50);
+                    c.g[S0][0] = c.g[SP][0];
+                    frame.save(c, 18, 0x40);
+                    c.g[S1][0] = 0x2;
+                    frame.save(c, 19, 0x30);
+                    c.g[S2][0] = 0u64;
+                    frame.save(c, 20, 0x20);
+                    c.g[S3][0] = c.g[A0][0];
+                    frame.save_ra(c, 0x10);
+                    c.g[S4][0] = c.g[A1][0];
+                    pc = 0x002d_25d0;
+                    continue;
+                }
+                0x002d_25d0 => {
+                    c.cycles += 7;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    SERIALIZE_READ_U32.call(c, 0x002d_25dc)?;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    let t = (c.g[S1][0] as i64) >= 0;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002d_25d0);
+                        }
+                        pc = 0x002d_25d0;
+                        continue;
+                    }
+                    c.cycles += 15;
+                    let frame = Frame { size: 0x70 };
+                    c.ldl(3, frame.at(c, 0x7));
+                    c.ldr(3, frame.at(c, 0));
+                    c.g[A0][0] = c.lw(frame.at(c, 0x8));
+                    c.sdl(3, c.g[S4][0] as u32 + 0x7);
+                    c.sdr(3, c.g[S4][0] as u32);
+                    c.g[V0][0] = c.g[S2][0];
+                    c.sw((c.g[S4][0] as u32).wrapping_add(0x8), c.g[A0][0]);
+                    let frame = Frame { size: 0x70 };
+                    frame.restore(c, 16, 0x60);
+                    frame.restore(c, 17, 0x50);
+                    frame.restore(c, 18, 0x40);
+                    frame.restore(c, 19, 0x30);
+                    frame.restore(c, 20, 0x20);
+                    frame.restore_ra(c, 0x10);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_25a0, 0x002d_25fc);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_ReadVec4(void *stream, float *v)` (0x2d2628): read 4
+/// words into `v`, returning their sum.
+pub fn serialize_read_vec4(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_2628 => {
+                    c.cycles += 10;
+                    let frame = Frame::open(c, 0x50);
+                    frame.save(c, 16, 0x40);
+                    frame.save(c, 17, 0x30);
+                    c.g[S0][0] = c.g[A1][0];
+                    frame.save(c, 18, 0x20);
+                    c.g[S1][0] = 0x3;
+                    frame.save(c, 19, 0x10);
+                    c.g[S2][0] = 0u64;
+                    frame.save_ra(c, 0);
+                    c.g[S3][0] = c.g[A0][0];
+                    pc = 0x002d_2650;
+                    continue;
+                }
+                0x002d_2650 => {
+                    c.cycles += 7;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    SERIALIZE_READ_U32.call(c, 0x002d_265c)?;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    let t = (c.g[S1][0] as i64) >= 0;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002d_2650);
+                        }
+                        pc = 0x002d_2650;
+                        continue;
+                    }
+                    c.cycles += 8;
+                    c.g[V0][0] = c.g[S2][0];
+                    let frame = Frame { size: 0x50 };
+                    frame.restore(c, 16, 0x40);
+                    frame.restore(c, 17, 0x30);
+                    frame.restore(c, 18, 0x20);
+                    frame.restore(c, 19, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_2628, 0x002d_2678);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_ReadMatrix(void *stream, float *m)` (0x2d2690): read 16
+/// words into `m`, returning their sum.
+pub fn serialize_read_matrix(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_2690 => {
+                    c.cycles += 10;
+                    let frame = Frame::open(c, 0x50);
+                    frame.save(c, 16, 0x40);
+                    frame.save(c, 17, 0x30);
+                    c.g[S0][0] = c.g[A1][0];
+                    frame.save(c, 18, 0x20);
+                    c.g[S1][0] = 0xf;
+                    frame.save(c, 19, 0x10);
+                    c.g[S2][0] = 0u64;
+                    frame.save_ra(c, 0);
+                    c.g[S3][0] = c.g[A0][0];
+                    pc = 0x002d_26b8;
+                    continue;
+                }
+                0x002d_26b8 => {
+                    c.cycles += 7;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    SERIALIZE_READ_U32.call(c, 0x002d_26c4)?;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    let t = (c.g[S1][0] as i64) >= 0;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002d_26b8);
+                        }
+                        pc = 0x002d_26b8;
+                        continue;
+                    }
+                    c.cycles += 8;
+                    c.g[V0][0] = c.g[S2][0];
+                    let frame = Frame { size: 0x50 };
+                    frame.restore(c, 16, 0x40);
+                    frame.restore(c, 17, 0x30);
+                    frame.restore(c, 18, 0x20);
+                    frame.restore(c, 19, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_2690, 0x002d_26e0);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_WriteVec3(void *stream, float *v)` (0x2d2248): write the
+/// 3 words of `v` (12 bytes).
+pub fn serialize_write_vec3(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_2248 => {
+                    c.cycles += 10;
+                    let frame = Frame::open(c, 0x40);
+                    frame.save(c, 16, 0x30);
+                    frame.save(c, 17, 0x20);
+                    c.g[S0][0] = c.g[A1][0];
+                    frame.save(c, 18, 0x10);
+                    c.g[S1][0] = 0x2;
+                    frame.save_ra(c, 0);
+                    c.g[S2][0] = c.g[A0][0];
+                    c.lwc1(12, c.g[S0][0] as u32);
+                    pc = 0x002d_2270;
+                    continue;
+                }
+                0x002d_2270 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    SERIALIZE_WRITE_U32.call(c, 0x002d_2280)?;
+                    if (c.g[S1][0] as i64) >= 0 {
+                        c.lwc1(12, c.g[S0][0] as u32);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002d_2270);
+                        }
+                        pc = 0x002d_2270;
+                        continue;
+                    }
+                    c.cycles += 7;
+                    let frame = Frame { size: 0x40 };
+                    c.g[V0][0] = 0xc;
+                    frame.restore(c, 16, 0x30);
+                    frame.restore(c, 17, 0x20);
+                    frame.restore(c, 18, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_2248, 0x002d_22a4);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_WriteVec4(void *stream, float *v)` (0x2d22a8): write the
+/// 4 words of `v` (16 bytes).
+pub fn serialize_write_vec4(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_22a8 => {
+                    c.cycles += 10;
+                    let frame = Frame::open(c, 0x40);
+                    frame.save(c, 16, 0x30);
+                    frame.save(c, 17, 0x20);
+                    c.g[S0][0] = c.g[A1][0];
+                    frame.save(c, 18, 0x10);
+                    c.g[S1][0] = 0x3;
+                    frame.save_ra(c, 0);
+                    c.g[S2][0] = c.g[A0][0];
+                    c.lwc1(12, c.g[S0][0] as u32);
+                    pc = 0x002d_22d0;
+                    continue;
+                }
+                0x002d_22d0 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    SERIALIZE_WRITE_U32.call(c, 0x002d_22e0)?;
+                    if (c.g[S1][0] as i64) >= 0 {
+                        c.lwc1(12, c.g[S0][0] as u32);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002d_22d0);
+                        }
+                        pc = 0x002d_22d0;
+                        continue;
+                    }
+                    c.cycles += 7;
+                    let frame = Frame { size: 0x40 };
+                    c.g[V0][0] = 0x10;
+                    frame.restore(c, 16, 0x30);
+                    frame.restore(c, 17, 0x20);
+                    frame.restore(c, 18, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_22a8, 0x002d_2304);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_WriteMatrix(void *stream, float *m)` (0x2d2308): write the
+/// 16 words of `m` (64 bytes).
+pub fn serialize_write_matrix(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002d_2308 => {
+                    c.cycles += 10;
+                    let frame = Frame::open(c, 0x40);
+                    frame.save(c, 16, 0x30);
+                    frame.save(c, 17, 0x20);
+                    c.g[S0][0] = c.g[A1][0];
+                    frame.save(c, 18, 0x10);
+                    c.g[S1][0] = 0xf;
+                    frame.save_ra(c, 0);
+                    c.g[S2][0] = c.g[A0][0];
+                    c.lwc1(12, c.g[S0][0] as u32);
+                    pc = 0x002d_2330;
+                    continue;
+                }
+                0x002d_2330 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    SERIALIZE_WRITE_U32.call(c, 0x002d_2340)?;
+                    if (c.g[S1][0] as i64) >= 0 {
+                        c.lwc1(12, c.g[S0][0] as u32);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002d_2330);
+                        }
+                        pc = 0x002d_2330;
+                        continue;
+                    }
+                    c.cycles += 7;
+                    let frame = Frame { size: 0x40 };
+                    c.g[V0][0] = 0x40;
+                    frame.restore(c, 16, 0x30);
+                    frame.restore(c, 17, 0x20);
+                    frame.restore(c, 18, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002d_2308, 0x002d_2364);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `int Serialize_WriteQuat(void *stream, float *q)` (0x2d2368): write the
+/// 4 words of `q` (16 bytes).
+pub fn serialize_write_quat(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.lwc1(12, (c.g[S0][0] as u32).wrapping_add(0xc));
+        SERIALIZE_WRITE_U32.call(c, 0x002d_2388)?;
+        c.lwc1(12, c.g[S0][0] as u32);
+        c.g[A0][0] = c.g[S1][0];
+        SERIALIZE_WRITE_U32.call(c, 0x002d_2394)?;
+        c.lwc1(12, (c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[A0][0] = c.g[S1][0];
+        SERIALIZE_WRITE_U32.call(c, 0x002d_23a0)?;
+        c.lwc1(12, (c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.g[S1][0];
+        SERIALIZE_WRITE_U32.call(c, 0x002d_23ac)?;
+        frame.restore(c, 16, 0x20);
+        c.g[V0][0] = 0x10;
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -46849,6 +47791,772 @@ pub(crate) mod tests {
             },
         );
     }
+
+    use crate::difftest::fakes::machine_rt;
+
+    /// `Serialize_ReadDataBlock`: a zero count skips the loop; live counts
+
+    /// run the real byte reads.
+    #[test]
+    fn serialize_read_data_block_matches() {
+        check(
+            ee::s09::f_002d2868__generated,
+            serialize_read_data_block,
+            60,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x002d_2868, 0);
+                const STREAM: u32 = DATA + 0x100;
+                const BUF: u32 = DATA + 0x200;
+                const OUT: u32 = DATA + 0x400;
+                c.bus.write32(STREAM, BUF);
+                for i in 0..0x20u32 {
+                    c.bus.write32(BUF + 4 * i, 0x3333_0000 + i);
+                }
+                // Stream format: count word first, then the bytes. (The
+                // function overwrites [OUT] with its header; the header's
+                // count word is the stream's first word.)
+                let n = (r.next_u32() % 24) as usize;
+                c.bus.write32(BUF, n as u32);
+                for i in 0..n {
+                    c.bus.write8(BUF + 4 + i as u32, 0x41 + (i % 26) as u8);
+                }
+                for i in n..0x20 {
+                    c.bus.write8(BUF + 4 + i as u32, 0x77);
+                }
+                c.bus.write32(OUT, 0xdead_beef);
+                c.g[A0][0] = STREAM as u64;
+                c.g[A1][0] = OUT as u64;
+                c.pc = 0x002d_2868;
+            },
+        );
+        require_paths(
+            ee::s09::f_002d2868__generated,
+            60,
+            &[
+                464, 482, 500, 518, 536, 554, 590, 607, 643, 679, 697, 715, 746, 850, 868, 886,
+                904, 922, 940, 958, 1409,
+            ],
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x002d_2868, 0);
+                const STREAM: u32 = DATA + 0x100;
+                const BUF: u32 = DATA + 0x200;
+                const OUT: u32 = DATA + 0x400;
+                c.bus.write32(STREAM, BUF);
+                for i in 0..0x20u32 {
+                    c.bus.write32(BUF + 4 * i, 0x3333_0000 + i);
+                }
+                // Stream format: count word first, then the bytes.
+                let n = (r.next_u32() % 24) as usize;
+                c.bus.write32(BUF, n as u32);
+                for i in 0..n {
+                    c.bus.write8(BUF + 4 + i as u32, 0x41 + (i % 26) as u8);
+                }
+                for i in n..0x20 {
+                    c.bus.write8(BUF + 4 + i as u32, 0x77);
+                }
+                c.bus.write32(OUT, 0xdead_beef);
+                c.g[A0][0] = STREAM as u64;
+                c.g[A1][0] = OUT as u64;
+                c.pc = 0x002d_2868;
+            },
+        );
+    }
+
+    /// `Serialize_ReadString`: short strings and boundary lengths land in
+    /// the out area on both sides.
+    #[test]
+    fn serialize_read_string_matches() {
+        check(
+            ee::s09::f_002d27b0__generated,
+            serialize_read_string,
+            100,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x002d_27b0, 0);
+                const STREAM: u32 = DATA + 0x100;
+                const BUF: u32 = DATA + 0x200;
+                const OUT: u32 = DATA + 0x400;
+                c.bus.write32(STREAM, BUF);
+                for i in 0..0x40u32 {
+                    c.bus.write32(BUF + 4 * i, 0x5555_0000 + i);
+                }
+                let len = match seed % 6 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 31,
+                    3 => 32,
+                    4 => 999,
+                    _ => (r.next_u32() % 40) as usize,
+                };
+                for i in 0..len {
+                    c.bus.write8(BUF + i as u32, 0x61 + (i % 26) as u8);
+                }
+                c.bus.write8(BUF + len as u32, 0);
+                c.g[A0][0] = STREAM as u64;
+                c.g[A1][0] = OUT as u64;
+                c.pc = 0x002d_27b0;
+            },
+        );
+        require_paths(
+            ee::s09::f_002d27b0__generated,
+            100,
+            &[
+                290, 311, 371, 472, 530, 732, 755, 782, 860, 993, 1023, 1025, 1052, 1086, 1142,
+                1171, 21393,
+            ],
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x002d_27b0, 0);
+                const STREAM: u32 = DATA + 0x100;
+                const BUF: u32 = DATA + 0x200;
+                const OUT: u32 = DATA + 0x400;
+                c.bus.write32(STREAM, BUF);
+                for i in 0..0x40u32 {
+                    c.bus.write32(BUF + 4 * i, 0x5555_0000 + i);
+                }
+                let len = match seed % 6 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 31,
+                    3 => 32,
+                    4 => 999,
+                    _ => (r.next_u32() % 40) as usize,
+                };
+                for i in 0..len {
+                    c.bus.write8(BUF + i as u32, 0x61 + (i % 26) as u8);
+                }
+                c.bus.write8(BUF + len as u32, 0);
+                c.g[A0][0] = STREAM as u64;
+                c.g[A1][0] = OUT as u64;
+                c.pc = 0x002d_27b0;
+            },
+        );
+    }
+
+    /// A stream over a prefilled byte buffer.
+    pub(crate) fn stream_bytes(c: &mut Cpu, r: &mut Rng, words: u32) -> (u32, u32) {
+        const STREAM: u32 = DATA + 0x100;
+        const BUF: u32 = DATA + 0x200;
+        c.bus.write32(STREAM, BUF);
+        for i in 0..words {
+            c.bus.write32(
+                BUF + 4 * i,
+                0x1111_0000 + i * 0x0101_0101 + r.next_u32() % 7,
+            );
+        }
+        (STREAM, BUF)
+    }
+
+    /// The three read loops share this fixture: a stream of 16 words plus
+    /// an out area.
+    pub(crate) fn read_fixture(c: &mut Cpu, seed: u32, addr: u32) -> (u32, u32) {
+        let mut r = machine(c, seed, addr as u64, 0);
+        let (stream, _buf) = stream_bytes(c, &mut r, 16);
+        const OUT: u32 = DATA + 0x400;
+        for i in 0..0x10u32 {
+            c.bus.write32(OUT + 4 * i, 0x2222_0000 + i);
+        }
+        (stream, OUT)
+    }
+
+    /// `Serialize_ReadVec3`: every word lands in the out area on both
+    /// sides, with the loop's event check covered by `check_events` below.
+    #[test]
+    fn serialize_read_vec3_matches() {
+        check(
+            ee::s09::f_002d25a0__generated,
+            serialize_read_vec3,
+            60,
+            &|c, seed| {
+                let (stream, out) = read_fixture(c, seed, 0x002d_25a0);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = out as u64;
+                c.pc = 0x002d_25a0;
+            },
+        );
+        require_paths(ee::s09::f_002d25a0__generated, 60, &[99], &|c, seed| {
+            let (stream, out) = read_fixture(c, seed, 0x002d_25a0);
+            c.g[A0][0] = stream as u64;
+            c.g[A1][0] = out as u64;
+            c.pc = 0x002d_25a0;
+        });
+    }
+
+    /// `Serialize_ReadVec4`: 4 words into the out area.
+    #[test]
+    fn serialize_read_vec4_matches() {
+        check(
+            ee::s09::f_002d2628__generated,
+            serialize_read_vec4,
+            60,
+            &|c, seed| {
+                let (stream, out) = read_fixture(c, seed, 0x002d_2628);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = out as u64;
+                c.pc = 0x002d_2628;
+            },
+        );
+        require_paths(ee::s09::f_002d2628__generated, 60, &[114], &|c, seed| {
+            let (stream, out) = read_fixture(c, seed, 0x002d_2628);
+            c.g[A0][0] = stream as u64;
+            c.g[A1][0] = out as u64;
+            c.pc = 0x002d_2628;
+        });
+    }
+
+    /// `Serialize_ReadMatrix`: 16 words into the out area.
+    #[test]
+    fn serialize_read_matrix_matches() {
+        check(
+            ee::s09::f_002d2690__generated,
+            serialize_read_matrix,
+            60,
+            &|c, seed| {
+                let (stream, out) = read_fixture(c, seed, 0x002d_2690);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = out as u64;
+                c.pc = 0x002d_2690;
+            },
+        );
+        require_paths(ee::s09::f_002d2690__generated, 60, &[402], &|c, seed| {
+            let (stream, out) = read_fixture(c, seed, 0x002d_2690);
+            c.g[A0][0] = stream as u64;
+            c.g[A1][0] = out as u64;
+            c.pc = 0x002d_2690;
+        });
+    }
+
+    driven!(read3_gen, ee::s09::f_002d25a0__generated);
+
+    driven!(read3_hand, serialize_read_vec3);
+
+    driven!(read4_gen, ee::s09::f_002d2628__generated);
+
+    driven!(read4_hand, serialize_read_vec4);
+
+    driven!(readmat_gen, ee::s09::f_002d2690__generated);
+
+    driven!(readmat_hand, serialize_read_matrix);
+
+    /// The read loops under delivered events. Each head (0x2d25d0, 0x2d2650,
+    /// 0x2d26b8) is structured: the port must carry on, never resume there.
+    #[test]
+    fn serialize_read_vecs_events() {
+        for (gen, hand, addr, head) in [
+            (
+                read3_gen as fn(&mut Cpu),
+                read3_hand as fn(&mut Cpu),
+                0x002d_25a0,
+                0x002d_25d0,
+            ),
+            (
+                read4_gen as fn(&mut Cpu),
+                read4_hand as fn(&mut Cpu),
+                0x002d_2628,
+                0x002d_2650,
+            ),
+            (
+                readmat_gen as fn(&mut Cpu),
+                readmat_hand as fn(&mut Cpu),
+                0x002d_2690,
+                0x002d_26b8,
+            ),
+        ] {
+            let resumes = check_events(gen, hand, 60, &|c, seed| {
+                let (stream, out) = read_fixture(c, seed, addr);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = out as u64;
+                schedule(c, &mut Rng(seed as u64), seed, addr)
+            });
+            assert!(
+                resumes.get(&head).is_none(),
+                "unwound at structured head {head:#x}: {resumes:x?}"
+            );
+        }
+    }
+
+    /// `Serialize_ReadQuat`: the four words land in the out area, V0 is
+    /// their sum.
+    #[test]
+    fn serialize_read_quat_matches() {
+        check(
+            ee::s09::f_002d26f8__generated,
+            serialize_read_quat,
+            100,
+            &|c, seed| {
+                let (stream, out) = read_fixture(c, seed, 0x002d_26f8);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = out as u64;
+                c.pc = 0x002d_26f8;
+            },
+        );
+        require_paths(ee::s09::f_002d26f8__generated, 100, &[106], &|c, seed| {
+            let (stream, out) = read_fixture(c, seed, 0x002d_26f8);
+            c.g[A0][0] = stream as u64;
+            c.g[A1][0] = out as u64;
+            c.pc = 0x002d_26f8;
+        });
+    }
+
+    /// A datablock (`{words pointer, count}` over a byte array) with a
+    /// steered count (0 skips the loop).
+    pub(crate) fn datablock_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) -> (u32, u32) {
+        const STREAM: u32 = DATA + 0x100;
+        const BUF: u32 = DATA + 0x200;
+        const BLOCK: u32 = DATA + 0x400;
+        const WORDS: u32 = DATA + 0x500;
+        const BYTES: u32 = DATA + 0x600;
+        c.bus.write32(STREAM, BUF);
+        for i in 0..0x20u32 {
+            c.bus.write32(BUF + 4 * i, 0x3333_0000 + i);
+        }
+        let n = match seed % 4 {
+            0 => 0,
+            1 => 1 + r.next_u32() % 7,
+            2 => 8 + r.next_u32() % 8,
+            _ => 1 + r.next_u32() % 31,
+        };
+        c.bus.write32(BLOCK, WORDS);
+        c.bus.write32(WORDS, n);
+        c.bus.write32(WORDS + 4, BYTES);
+        for i in 0..n {
+            c.bus.write8(BYTES + i, (0x41 + i % 26) as u8);
+        }
+        (STREAM, BLOCK)
+    }
+
+    /// `Serialize_WriteDataBlock`: the count word then each byte lands in
+    /// the stream buffer on both sides.
+    #[test]
+    fn serialize_write_data_block_matches() {
+        check(
+            ee::s09::f_002d2478__generated,
+            serialize_write_data_block,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002d_2478, 0);
+                let (stream, block) = datablock_fixture(c, &mut r, seed);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = block as u64;
+                c.pc = 0x002d_2478;
+            },
+        );
+        require_paths(
+            ee::s09::f_002d2478__generated,
+            100,
+            &[
+                37, 57, 75, 93, 111, 129, 147, 165, 183, 201, 219, 237, 255, 273, 291, 309, 345,
+                363, 381, 453, 471, 543, 561, 579,
+            ],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002d_2478, 0);
+                let (stream, block) = datablock_fixture(c, &mut r, seed);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = block as u64;
+                c.pc = 0x002d_2478;
+            },
+        );
+    }
+
+    driven!(wdb_gen, ee::s09::f_002d2478__generated);
+
+    driven!(wdb_hand, serialize_write_data_block);
+
+    /// The data-block loop under delivered events. The head (0x2d24c0) is
+    /// structured: the port must carry on, never resume there.
+    #[test]
+    fn serialize_write_data_block_events() {
+        let resumes = check_events(wdb_gen, wdb_hand, 100, &|c, seed| {
+            let mut r = machine(c, seed, 0x002d_2478, 0);
+            let (stream, block) = datablock_fixture(c, &mut r, seed);
+            c.g[A0][0] = stream as u64;
+            c.g[A1][0] = block as u64;
+            schedule(c, &mut r, seed, 0x002d_2478)
+        });
+        assert!(
+            resumes.get(&0x002d_24c0).is_none(),
+            "unwound at structured head 0x2d24c0: {resumes:x?}"
+        );
+    }
+
+    /// `Serialize_WriteString`: the bytes and terminator land in the stream
+    /// buffer; the length (plus one) is returned.
+    #[test]
+    fn serialize_write_string_matches() {
+        check(
+            ee::s09::f_002d23e8__generated,
+            serialize_write_string,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002d_23e8, 0);
+                const STREAM: u32 = DATA + 0x100;
+                const BUF: u32 = DATA + 0x200;
+                const STR: u32 = DATA + 0x400;
+                c.bus.write32(STREAM, BUF);
+                for i in 0..0x40u32 {
+                    c.bus.write32(BUF + 4 * i, 0x4444_0000 + i);
+                }
+                let len = match seed % 6 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 7,
+                    3 => 31,
+                    4 => 32,
+                    _ => (r.next_u32() % 40) as usize,
+                };
+                for i in 0..len {
+                    c.bus.write8(STR + i as u32, 0x61 + (i % 26) as u8);
+                }
+                c.bus.write8(STR + len as u32, 0);
+                c.g[A0][0] = STREAM as u64;
+                c.g[A1][0] = STR as u64;
+                c.pc = 0x002d_23e8;
+            },
+        );
+        require_paths(
+            ee::s09::f_002d23e8__generated,
+            100,
+            &[
+                77, 148, 233, 868, 1388, 1597, 1628, 1853, 2092, 2308, 2594, 2612, 2852, 2910,
+                3942, 4700, 5197, 5588,
+            ],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002d_23e8, 0);
+                const STREAM: u32 = DATA + 0x100;
+                const BUF: u32 = DATA + 0x200;
+                const STR: u32 = DATA + 0x400;
+                c.bus.write32(STREAM, BUF);
+                for i in 0..0x40u32 {
+                    c.bus.write32(BUF + 4 * i, 0x4444_0000 + i);
+                }
+                let len = match seed % 6 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 7,
+                    3 => 31,
+                    4 => 32,
+                    _ => (r.next_u32() % 40) as usize,
+                };
+                for i in 0..len {
+                    c.bus.write8(STR + i as u32, 0x61 + (i % 26) as u8);
+                }
+                c.bus.write8(STR + len as u32, 0);
+                c.g[A0][0] = STREAM as u64;
+                c.g[A1][0] = STR as u64;
+                c.pc = 0x002d_23e8;
+            },
+        );
+    }
+
+    driven!(wstr_gen, ee::s09::f_002d23e8__generated);
+
+    driven!(wstr_hand, serialize_write_string);
+
+    driven!(rdb_gen, ee::s09::f_002d2868__generated);
+
+    driven!(rdb_hand, serialize_read_data_block);
+
+    /// The data-block read loop under delivered events (the 0x2d28f8 head
+    /// itself is covered by `serialize_read_data_block_back_edge_carries_on`:
+    /// `schedule` fires in the prologue calls).
+    #[test]
+    fn serialize_read_data_block_events() {
+        check_events(rdb_gen, rdb_hand, 60, &|c, seed| {
+            let mut r = machine_rt(c, seed, 0x002d_2868, 0);
+            const STREAM: u32 = DATA + 0x100;
+            const BUF: u32 = DATA + 0x200;
+            const OUT: u32 = DATA + 0x400;
+            c.bus.write32(STREAM, BUF);
+            for i in 0..0x20u32 {
+                c.bus.write32(BUF + 4 * i, 0x3333_0000 + i);
+            }
+            // Stream format: count word first, then the bytes.
+            let n = 8 + (r.next_u32() % 24) as usize;
+            c.bus.write32(BUF, n as u32);
+            for i in 0..n {
+                c.bus.write8(BUF + 4 + i as u32, 0x41 + (i % 26) as u8);
+            }
+            for i in n..0x40 {
+                c.bus.write8(BUF + 4 + i as u32, 0x77);
+            }
+            c.bus.write32(OUT, 0xdead_beef);
+            c.g[A0][0] = STREAM as u64;
+            c.g[A1][0] = OUT as u64;
+            schedule(c, &mut r, seed, 0x002d_2868)
+        });
+    }
+
+    driven!(rst_gen, ee::s09::f_002d27b0__generated);
+
+    driven!(rst_hand, serialize_read_string);
+
+    /// The string read loop under delivered events. The head (0x2d27e8) is
+    /// structured: the port must carry on, never resume there.
+    #[test]
+    fn serialize_read_string_events() {
+        let resumes = check_events(rst_gen, rst_hand, 100, &|c, seed| {
+            let mut r = machine_rt(c, seed, 0x002d_27b0, 0);
+            const STREAM: u32 = DATA + 0x100;
+            const BUF: u32 = DATA + 0x200;
+            const OUT: u32 = DATA + 0x400;
+            c.bus.write32(STREAM, BUF);
+            for i in 0..0x40u32 {
+                c.bus.write32(BUF + 4 * i, 0x5555_0000 + i);
+            }
+            let len = 20 + (r.next_u32() % 60) as usize;
+            for i in 0..len {
+                c.bus.write8(BUF + i as u32, 0x61 + (i % 26) as u8);
+            }
+            c.bus.write8(BUF + len as u32, 0);
+            c.g[A0][0] = STREAM as u64;
+            c.g[A1][0] = OUT as u64;
+            schedule(c, &mut r, seed, 0x002d_27b0)
+        });
+        assert!(
+            resumes.get(&0x002d_27e8).is_none(),
+            "unwound at structured head 0x2d27e8: {resumes:x?}"
+        );
+    }
+
+    driven!(rdb_edge_gen, ee::s09::f_002d2868__generated);
+    driven!(rdb_edge_hand, serialize_read_data_block);
+
+    /// The data-block loop at 0x2d28f8 never sees an unwind under
+    /// `schedule` (delivery fires in the prologue calls), so this test puts
+    /// the VBlank past the prologue by construction (fixed n = 200, k
+    /// sweep). Fails on the `back_edge_unwinds` body.
+    #[test]
+    fn serialize_read_data_block_back_edge_carries_on() {
+        for k in [1000u64, 3000] {
+            let resumes = check_events(rdb_edge_gen, rdb_edge_hand, 4, &|c, seed| {
+                machine_rt(c, seed, 0x002d_2868, 0);
+                const STREAM: u32 = DATA + 0x100;
+                const BUF: u32 = DATA + 0x200;
+                const OUT: u32 = DATA + 0x400;
+                c.bus.write32(STREAM, BUF);
+                for i in 0..0x20u32 {
+                    c.bus.write32(BUF + 4 * i, 0x3333_0000 + i);
+                }
+                let n = 200usize;
+                c.bus.write32(BUF, n as u32);
+                for i in 0..n {
+                    c.bus.write8(BUF + 4 + i as u32, 0x41 + (i % 26) as u8);
+                }
+                c.bus.write32(OUT, 0xdead_beef);
+                c.g[A0][0] = STREAM as u64;
+                c.g[A1][0] = OUT as u64;
+                let saved = (c.g[A0], c.g[A1], c.g[31]);
+                ssx3_ps2::kernel::start_main_thread(c, 0x002d_2868, 0, 0);
+                (c.g[A0], c.g[A1], c.g[31]) = saved;
+                c.pc = 0x002d_2868;
+                c.cycles = 1000;
+                c.next_event = 1000 + k;
+                ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                    .sched
+                    .next_vblank = 1000 + k;
+                Events::Unwind
+            });
+            assert!(
+                resumes.get(&0x002d_28f8).is_none(),
+                "k={k}: unwound at structured head 0x2d28f8: {resumes:x?}"
+            );
+        }
+    }
+
+    /// The string loop under delivered events.
+    #[test]
+    fn serialize_write_string_events() {
+        check_events(wstr_gen, wstr_hand, 100, &|c, seed| {
+            let mut r = machine(c, seed, 0x002d_23e8, 0);
+            const STREAM: u32 = DATA + 0x100;
+            const BUF: u32 = DATA + 0x200;
+            const STR: u32 = DATA + 0x400;
+            c.bus.write32(STREAM, BUF);
+            for i in 0..0x40u32 {
+                c.bus.write32(BUF + 4 * i, 0x4444_0000 + i);
+            }
+            let len = match seed % 6 {
+                0 => 0,
+                1 => 1,
+                2 => 7,
+                3 => 31,
+                4 => 32,
+                _ => (r.next_u32() % 40) as usize,
+            };
+            for i in 0..len {
+                c.bus.write8(STR + i as u32, 0x61 + (i % 26) as u8);
+            }
+            c.bus.write8(STR + len as u32, 0);
+            c.g[A0][0] = STREAM as u64;
+            c.g[A1][0] = STR as u64;
+            schedule(c, &mut r, seed, 0x002d_23e8)
+        });
+    }
+
+    /// A stream over a prefilled byte buffer plus a float array with
+    /// seed-steered values (zeros, ones, edge floats, random bits).
+    pub(crate) fn serialize_fixture(
+        c: &mut Cpu,
+        r: &mut Rng,
+        seed: u32,
+        words: usize,
+    ) -> (u32, u32) {
+        const STREAM: u32 = DATA + 0x100;
+        const BUF: u32 = DATA + 0x200;
+        const VEC: u32 = DATA + 0x400;
+        c.bus.write32(STREAM, BUF);
+        for i in 0..0x40u32 {
+            c.bus.write32(BUF + 4 * i, 0x7777_0000 + i);
+        }
+        for i in 0..words as u32 {
+            c.bus.write32(
+                VEC + 4 * i,
+                match (seed + i) % 5 {
+                    0 => 0,
+                    1 => 0x3f80_0000,
+                    2 => [0x7f80_0000, 0xff80_0000, 0x7fc0_0000, 0x0080_0000]
+                        [(r.next_u32() % 4) as usize],
+                    3 => 0x4049_0fdb,
+                    _ => r.next_u32(),
+                },
+            );
+        }
+        (STREAM, VEC)
+    }
+
+    /// The vector writers: every word lands in the stream buffer on both
+    /// sides, with the loop's event check covered by `check_events` below.
+    /// `require_paths` pins the single total (3, 4, 16 iterations).
+    #[test]
+    fn serialize_write_vec3_matches() {
+        check(
+            ee::s09::f_002d2248__generated,
+            serialize_write_vec3,
+            60,
+            &|c, seed| {
+                vec_fixture(c, seed, 0x002d_2248, 3);
+            },
+        );
+        require_paths(ee::s09::f_002d2248__generated, 60, &[80], &|c, seed| {
+            vec_fixture(c, seed, 0x002d_2248, 3);
+        });
+    }
+
+    /// `Serialize_WriteVec4`: 4 words, 16 bytes out.
+    #[test]
+    fn serialize_write_vec4_matches() {
+        check(
+            ee::s09::f_002d22a8__generated,
+            serialize_write_vec4,
+            60,
+            &|c, seed| {
+                vec_fixture(c, seed, 0x002d_22a8, 4);
+            },
+        );
+        require_paths(ee::s09::f_002d22a8__generated, 60, &[101], &|c, seed| {
+            vec_fixture(c, seed, 0x002d_22a8, 4);
+        });
+    }
+
+    /// `Serialize_WriteMatrix`: 16 words, 64 bytes out.
+    #[test]
+    fn serialize_write_matrix_matches() {
+        check(
+            ee::s09::f_002d2308__generated,
+            serialize_write_matrix,
+            60,
+            &|c, seed| {
+                vec_fixture(c, seed, 0x002d_2308, 16);
+            },
+        );
+        require_paths(ee::s09::f_002d2308__generated, 60, &[353], &|c, seed| {
+            vec_fixture(c, seed, 0x002d_2308, 16);
+        });
+    }
+
+    /// Shared fixture for the vector writers.
+    pub(crate) fn vec_fixture(c: &mut Cpu, seed: u32, addr: u32, words: usize) {
+        let mut r = machine(c, seed, addr as u64, 0);
+        let (stream, vec) = serialize_fixture(c, &mut r, seed, words);
+        c.g[A0][0] = stream as u64;
+        c.g[A1][0] = vec as u64;
+        c.pc = addr;
+    }
+
+    driven!(vec_gen, ee::s09::f_002d2248__generated);
+
+    driven!(vec_hand, serialize_write_vec3);
+
+    driven!(vec4_gen, ee::s09::f_002d22a8__generated);
+
+    driven!(vec4_hand, serialize_write_vec4);
+
+    driven!(mat_gen, ee::s09::f_002d2308__generated);
+
+    driven!(mat_hand, serialize_write_matrix);
+
+    /// The vector loops under delivered events. Each head (0x2d2270, 0x2d22d0,
+    /// 0x2d2330) is structured: the port must carry on, never resume there.
+    #[test]
+    fn serialize_write_vecs_events() {
+        for (gen, hand, addr, words, head) in [
+            (
+                vec_gen as fn(&mut Cpu),
+                vec_hand as fn(&mut Cpu),
+                0x002d_2248,
+                3,
+                0x002d_2270,
+            ),
+            (
+                vec4_gen as fn(&mut Cpu),
+                vec4_hand as fn(&mut Cpu),
+                0x002d_22a8,
+                4,
+                0x002d_22d0,
+            ),
+            (
+                mat_gen as fn(&mut Cpu),
+                mat_hand as fn(&mut Cpu),
+                0x002d_2308,
+                16,
+                0x002d_2330,
+            ),
+        ] {
+            let resumes = check_events(gen, hand, 60, &|c, seed| {
+                let mut r = machine(c, seed, addr as u64, 0);
+                let (stream, vec) = serialize_fixture(c, &mut r, seed, words);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = vec as u64;
+                schedule(c, &mut r, seed, addr)
+            });
+            assert!(
+                resumes.get(&head).is_none(),
+                "unwound at structured head {head:#x}: {resumes:x?}"
+            );
+        }
+    }
+
+    /// `Serialize_WriteQuat`: the four words land in order on both sides.
+    #[test]
+    fn serialize_write_quat_matches() {
+        check(
+            ee::s09::f_002d2368__generated,
+            serialize_write_quat,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002d_2368, 0);
+                let (stream, vec) = serialize_fixture(c, &mut r, seed, 4);
+                c.g[A0][0] = stream as u64;
+                c.g[A1][0] = vec as u64;
+                c.pc = 0x002d_2368;
+            },
+        );
+        require_paths(ee::s09::f_002d2368__generated, 100, &[83], &|c, seed| {
+            let mut r = machine(c, seed, 0x002d_2368, 0);
+            let (stream, vec) = serialize_fixture(c, &mut r, seed, 4);
+            c.g[A0][0] = stream as u64;
+            c.g[A1][0] = vec as u64;
+            c.pc = 0x002d_2368;
+        });
+    }
 }
 
 pub(crate) mod callee {
@@ -47473,6 +49181,71 @@ pub(crate) mod callee {
     pub(crate) const DEBUG_PRINTF: Callee = Callee {
         addr: 0x003e_5d30,
         f: ee::s14::Debug_Printf,
+    };
+
+    pub(crate) use crate::game::mem::memstd::callee::SERIALIZE_READ_U32_2;
+    pub(crate) use crate::game::mem::memstd::callee::SERIALIZE_READ_U8;
+
+    pub(crate) use crate::game::mem::memstd::callee::VIDENGINEPLAYER_START_PLAYBACK;
+
+    /// `Serialize_ReadU32` (`0x002d2510`).
+    pub(crate) const SERIALIZE_READ_U32: Callee = Callee {
+        addr: 0x002d_2510,
+        f: ee::s09::Serialize_ReadU32,
+    };
+
+    /// `Serialize_WriteU32_2` (`0x002d2210`).
+    pub(crate) const SERIALIZE_WRITE_U32_2: Callee = Callee {
+        addr: 0x002d_2210,
+        f: ee::s09::Serialize_WriteU32_2,
+    };
+
+    /// `Serialize_WriteU8` (`0x002d23c8`).
+    pub(crate) const SERIALIZE_WRITE_U8: Callee = Callee {
+        addr: 0x002d_23c8,
+        f: ee::s09::Serialize_WriteU8,
+    };
+
+    /// `MD5_Init` (`0x0031d368`).
+    pub(crate) const MD5_INIT: Callee = Callee {
+        addr: 0x0031_d368,
+        f: ee::s10::MD5_Init,
+    };
+
+    /// `MD5_Final` (`0x0031d4d0`).
+    pub(crate) const MD5_FINAL: Callee = Callee {
+        addr: 0x0031_d4d0,
+        f: ee::s10::MD5_Final,
+    };
+
+    /// `DLHeap_Memalign` (`0x0031f2c8`).
+    pub(crate) const DLHEAP_MEMALIGN: Callee = Callee {
+        addr: 0x0031_f2c8,
+        f: ee::s10::DLHeap_Memalign,
+    };
+
+    /// `Serialize_WriteU32` (`0x002d21d0`).
+    pub(crate) const SERIALIZE_WRITE_U32: Callee = Callee {
+        addr: 0x002d_21d0,
+        f: ee::s09::Serialize_WriteU32,
+    };
+
+    /// `DLHeap_SysTrim` (`0x0031e6d8`).
+    pub(crate) const DLHEAP_SYSTRIM: Callee = Callee {
+        addr: 0x0031_e6d8,
+        f: ee::s10::DLHeap_SysTrim,
+    };
+
+    /// `VidEnginePlayer_InitOpenParams` (`0x00253390`).
+    pub(crate) const VIDENGINEPLAYER_INIT_OPEN_PARAMS: Callee = Callee {
+        addr: 0x0025_3390,
+        f: ee::s06::VidEnginePlayer_InitOpenParams,
+    };
+
+    /// `VidEnginePlayer_Open` (`0x002534a8`).
+    pub(crate) const VIDENGINEPLAYER_OPEN: Callee = Callee {
+        addr: 0x0025_34a8,
+        f: ee::s06::VidEnginePlayer_Open,
     };
 }
 

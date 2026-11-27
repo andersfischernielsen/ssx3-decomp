@@ -70,6 +70,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2BezierMan_FreeCachesStub",
     ),
     (
+        0x0038_c590,
+        ps2_bezier_man_debug_draw_grid,
+        "PS2BezierMan_DebugDrawGrid",
+    ),
+    (
         0x0038_d448,
         ps2_bezier_man_emit_patch_projector_passes,
         "PS2BezierMan_EmitPatchProjectorPasses",
@@ -2250,6 +2255,193 @@ pub fn ps2_bezier_man_free_caches_2(c: &mut Cpu) {
     })
 }
 
+/// Draw one grid strip of `n` stack vertices through the graphics
+/// manager's slot `0x248` (`PS2GraphicsMan_v73`): `(this, n, verts, 0)`.
+pub(crate) fn bezier_grid_draw_strip(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10d8));
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A2][0] = c.g[SP][0];
+    c.g[A3][0] = 0u64;
+    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x248));
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24c));
+    let t = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, ret)
+}
+
+/// `void PS2BezierMan_DebugDrawGrid(Vec3 *points, Vec2 *uvs, int n)`
+/// (0x38c590): draw the `n x n` control grid as `n` row strips then `n`
+/// column strips (colour 0x80, w = 1.0), each built on the stack (at most
+/// 64 vertices) and drawn through the global graphics manager
+/// (`gp + 0x2a90`). Nothing for `n <= 0`.
+pub fn ps2_bezier_man_debug_draw_grid(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xc80);
+        c.g[V0][0] = 0x3f;
+        frame.save(c, 17, 0xc60);
+        c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+        frame.save(c, 16, 0xc70);
+        frame.save(c, 19, 0xc40);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, 20, 0xc30);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, 18, 0xc50);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, 21, 0xc20);
+        frame.save_ra(c, 0xc10);
+        c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
+        let t = (c.g[S0][0] as i64) <= 0;
+        c.g[V1][0] = 0u64;
+        if !t {
+            c.cycles += 2;
+            c.g[S5][0] = 0xc;
+            // 0x38c5d8: row strips (row index in V1).
+            loop {
+                c.cycles += 2;
+                let t = (c.g[S0][0] as i64) <= 0;
+                c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                if !t {
+                    c.cycles += 10;
+                    c.mult(0, 2, 3, 16);
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 3);
+                    c.g[A3][0] = 0x80;
+                    c.g[V1][0] = c.g[SP][0];
+                    c.g[A2][0] = c.g[S0][0];
+                    c.mult(0, 5, 2, 21);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                    // 0x38c608: one vertex per point of the row.
+                    loop {
+                        c.cycles += 23;
+                        c.lwc1(1, c.g[A0][0] as u32);
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+                        c.lwc1(2, c.g[A1][0] as u32);
+                        c.swc1(1, frame.at(c, 0xc00));
+                        c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+                        c.swc1(0, frame.at(c, 0xc04));
+                        c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x8));
+                        c.swc1(3, frame.at(c, 0xc0c));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+                        c.swc1(1, frame.at(c, 0xc08));
+                        c.lq(2, frame.at(c, 0xc00));
+                        c.swc1(2, c.g[V1][0] as u32);
+                        c.sq(2, (c.g[V1][0] as u32).wrapping_add(0x20));
+                        c.lwc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
+                        c.swc1(3, (c.g[V1][0] as u32).wrapping_add(0x8));
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x18), c.g[A3][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x14), c.g[A3][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x1c), c.g[A3][0]);
+                        let more = c.g[A2][0] != 0u64;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0038_c608);
+                        }
+                    }
+                }
+                c.cycles += 12;
+                bezier_grid_draw_strip(c, 0x0038_c684)?;
+                c.g[V1][0] = c.g[S2][0];
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[S0][0] as i64)) as u64;
+                if c.g[V0][0] == 0u64 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_c5d8);
+                }
+            }
+        }
+        // 0x38c694: column strips (column index in V1).
+        c.cycles += 2;
+        let t = (c.g[S0][0] as i64) <= 0;
+        c.g[V1][0] = 0u64;
+        if !t {
+            c.cycles += 1;
+            loop {
+                c.cycles += 2;
+                let t = (c.g[S0][0] as i64) <= 0;
+                c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                if !t {
+                    c.cycles += 10;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+                    c.g[A2][0] = c.g[V1][0];
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 3);
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                    c.g[T1][0] = 0xc;
+                    c.g[A3][0] = 0x80;
+                    c.g[V1][0] = c.g[SP][0];
+                    c.g[T0][0] = sx((c.g[S0][0] as u32) << 3);
+                    c.g[A1][0] = c.g[S0][0];
+                    // 0x38c6d0: one vertex per point of the column.
+                    loop {
+                        c.cycles += 25;
+                        c.mult(0, 10, 6, 9);
+                        c.lwc1(2, c.g[A0][0] as u32);
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+                        c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                        c.lwc1(0, c.g[V0][0] as u32);
+                        c.swc1(0, frame.at(c, 0xc00));
+                        c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x4));
+                        c.swc1(1, frame.at(c, 0xc04));
+                        c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                        c.swc1(3, frame.at(c, 0xc0c));
+                        c.swc1(0, frame.at(c, 0xc08));
+                        c.lq(2, frame.at(c, 0xc00));
+                        c.swc1(2, c.g[V1][0] as u32);
+                        c.sq(2, (c.g[V1][0] as u32).wrapping_add(0x20));
+                        c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+                        c.swc1(3, (c.g[V1][0] as u32).wrapping_add(0x8));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x18), c.g[A3][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x14), c.g[A3][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A3][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x1c), c.g[A3][0]);
+                        let more = c.g[A1][0] != 0u64;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0038_c6d0);
+                        }
+                    }
+                }
+                c.cycles += 12;
+                bezier_grid_draw_strip(c, 0x0038_c754)?;
+                c.g[V1][0] = c.g[S2][0];
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[S0][0] as i64)) as u64;
+                if c.g[V0][0] == 0u64 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0038_c6a0);
+                }
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, 16, 0xc70);
+        frame.restore(c, 17, 0xc60);
+        frame.restore(c, 18, 0xc50);
+        frame.restore(c, 19, 0xc40);
+        frame.restore(c, 20, 0xc30);
+        frame.restore(c, 21, 0xc20);
+        frame.restore_ra(c, 0xc10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 /// `void PS2BezierMan_FreeCachesStub(void)` (0x38d660): the caches are not
 /// kept any more, so there is nothing to free; it only returns.
 pub fn ps2_bezier_man_free_caches_stub(c: &mut Cpu) {
@@ -3174,6 +3366,80 @@ pub(crate) mod tests {
                 c.g[A3][0] = ENTRY as u64;
                 c.g[T0][0] = (if seed % 5 == 0 { 0xf } else { r.next_u32() }) as u64;
                 c.g[T1][0] = HANDLE as u64;
+            },
+        );
+    }
+
+    use crate::difftest::check_paths;
+
+    // ---------- PS2BezierMan_DebugDrawGrid ----------
+
+    pub(crate) fn bezier_grid_norm_miss(c: &mut Cpu, target: u32) {
+        let before = c.cycles;
+        fakes::fake_call(c, target);
+        c.cycles = before + 4;
+    }
+
+    pub(crate) const BEZIER_GRID_GM: u32 = DATA + 0x5_0000;
+
+    pub(crate) const BEZIER_GRID_VT: u32 = DATA + 0x5_8000;
+
+    pub(crate) const BEZIER_GRID_POINTS: u32 = DATA + 0x6_0000;
+
+    pub(crate) const BEZIER_GRID_UVS: u32 = DATA + 0x6_4000;
+
+    /// `n` = 0, 1, 2, 3, 4 or -2 by `seed % 6`; distinctive point and uv
+    /// words; the graphics manager's draw slot (0x248: `this` delta 0x30,
+    /// method FAKE).
+    pub(crate) fn bezier_grid_fixture(c: &mut Cpu, seed: u32) {
+        let n: u64 = [0, 1, 2, 3, 4, 0xffff_ffff_ffff_fffe][seed as usize % 6];
+        for i in 0..0x40u32 {
+            c.bus.write32(BEZIER_GRID_GM + 4 * i, 0x3333_0000 + i);
+        }
+        c.bus.write32(BEZIER_GRID_GM + 0x10d8, BEZIER_GRID_VT);
+        for i in 0..0xa0u32 {
+            c.bus.write32(BEZIER_GRID_VT + 4 * i, FAKE);
+        }
+        // The slot's `this` delta, distinct from the method word's low half.
+        c.bus.write16(BEZIER_GRID_VT + 0x248, 0x30);
+        c.bus.write32(GAME_GP + 0x2a90, BEZIER_GRID_GM);
+        for i in 0..48u32 {
+            c.bus
+                .write32(BEZIER_GRID_POINTS + 4 * i, 0x3f80_0000 + (i << 12) + seed);
+        }
+        for i in 0..32u32 {
+            c.bus
+                .write32(BEZIER_GRID_UVS + 4 * i, 0x3e00_0000 + (i << 12) + seed);
+        }
+        c.g[A0][0] = BEZIER_GRID_POINTS as u64;
+        c.g[A1][0] = BEZIER_GRID_UVS as u64;
+        c.g[A2][0] = n;
+        c.pc = 0x0038_c590;
+    }
+
+    /// `PS2BezierMan_DebugDrawGrid`: totals `27` for n <= 0, else
+    /// `30 + 56n + 48n^2` (134, 334, 630, 1022 for n = 1..4).
+    #[test]
+    fn ps2_bezier_man_debug_draw_grid_matches() {
+        check_paths(
+            ee::s12::f_0038c590__generated,
+            ps2_bezier_man_debug_draw_grid,
+            60,
+            &[27, 134, 334, 630, 1022],
+            &|c, seed| {
+                machine(c, seed, 0x0038_c590, 0);
+                c.hooks.miss = bezier_grid_norm_miss;
+                bezier_grid_fixture(c, seed);
+            },
+        );
+        fakes::covered(
+            ee::s12::f_0038c590__generated,
+            ps2_bezier_man_debug_draw_grid,
+            60,
+            &|c, seed| {
+                machine(c, seed, 0x0038_c591, 6);
+                c.hooks.miss = bezier_grid_norm_miss;
+                bezier_grid_fixture(c, seed);
             },
         );
     }
