@@ -2,7 +2,7 @@ name: Progress chart
 
 # Refreshes docs/images/progress.svg after merges that move the numbers, so
 # nobody has to run tools/progress.py by hand. The chart reads only committed
-# files (generated/functions.tsv, crates/ssx3-game/overrides.txt,
+# files (generated/ee-symbols.tsv, generated/functions.tsv, crates/ssx3-game/src,
 # generated/purpose.tsv, the ported sources): no reference checkout, no extra
 # clone. When the C++ reference moves, regenerate the map by hand
 # (tools/purpose_map.py header) and let this job refresh the SVG.
@@ -15,6 +15,7 @@ on:
       - crates/ssx3-game/overrides.txt
       - crates/ssx3-game/src/game/**
       - generated/functions.tsv
+      - generated/ee-symbols.tsv
       - generated/purpose.tsv
       - tools/progress.py
       - tools/purpose_map.py
