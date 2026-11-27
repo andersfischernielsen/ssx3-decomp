@@ -462,7 +462,7 @@ impl App {
             let cover = settings::get("SSX3_ASPECT").as_deref() == Some("cover");
             let fill = cover
                 && game_widescreen(self.engine.cpu())
-                && (!in_race(self.engine.cpu()) || game_paused(self.engine.cpu()));
+                && screen(self.engine.cpu()) != ssx3_core::view::Screen::Race;
             // How much of the frame's height the fill shows: 0.75 is the
             // exact 16:9 fill (no distortion, the menu's top and bottom
             // edges are cut); more shows more menu at the cost of a
@@ -660,40 +660,9 @@ fn game_widescreen(cpu: &Cpu) -> bool {
     (cpu.bus.ram_u32(0x0053_5610) >> 20) & 3 == 2
 }
 
-/// Whether a race is actually on screen: the race world (`gp` - 0x848) is
-/// null until one is loaded, and its game module (+0x84) then holds the AI
-/// race manager (+0xc) whose first word is the race state (2 = game init,
-/// 4 = countdown, 5 = racing / free ride; `gamecomm.rs`, `racestate.rs`).
-/// Front end and loading screens fill, races do not.
-fn in_race(cpu: &Cpu) -> bool {
-    let gp = cpu.g[28][0] as u32;
-    if gp == 0 {
-        return false;
-    }
-    let world = cpu.bus.ram_u32(gp.wrapping_sub(0x848));
-    if world == 0 {
-        return false;
-    }
-    let module = cpu.bus.ram_u32(world + 0x84);
-    if module == 0 {
-        return false;
-    }
-    let ai = cpu.bus.ram_u32(module + 0xc);
-    if ai == 0 {
-        return false;
-    }
-    cpu.bus.ram_u32(ai) >= 2
-}
-
-/// Whether the game is paused: the audio system's pause/menu flags at
-/// `gp` - 0x6a0, bit 0 (set while the pause menu is up — verified live:
-/// the word flips to `0xffffffdb` while paused).
-fn game_paused(cpu: &Cpu) -> bool {
-    let gp = cpu.g[28][0] as u32;
-    if gp == 0 {
-        return false;
-    }
-    cpu.bus.ram_u32(gp.wrapping_sub(0x6a0)) & 1 != 0
+/// What the game is showing (front end, race, paused race).
+fn screen(cpu: &Cpu) -> ssx3_core::view::Screen {
+    ssx3_core::view::screen(|a| cpu.bus.ram_u32(a), cpu.g[28][0] as u32)
 }
 
 pub use headless::run as run_headless;

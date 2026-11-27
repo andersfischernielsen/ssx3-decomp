@@ -242,6 +242,7 @@ static VIEW_FOV: AtomicU64 = AtomicU64::new(0);
 /// field of view scaled by `fov` (1: the game's).
 pub fn set_view(aspect: f32, fov: f32) {
     VIEW_ASPECT.store(aspect.to_bits() as u64, Ordering::Release);
+    ssx3_core::view::set_view(aspect, fov);
     VIEW_FOV.store(fov.to_bits() as u64, Ordering::Release);
 }
 
@@ -265,6 +266,15 @@ fn apply_view(c: &mut Cpu, gm: u32) {
     if aspect <= 0.0 && fov == 1.0 {
         return;
     }
+    // Only a race follows the window's aspect and field of view. The front
+    // end's screens are authored for 4:3 and the renderer's 2D layer squeeze
+    // already fits them to a wider window: its 3D models (the rider on the
+    // character screen) rendered with the widened projection as well would be
+    // squeezed twice.
+    let (aspect, fov) = match ssx3_core::view::screen(|a| c.bus.ram_u32(a), c.g[28][0] as u32) {
+        ssx3_core::view::Screen::Race => (aspect, fov),
+        _ => (0.0, 1.0),
+    };
     // The game renders for 4:3 at x 1.0 (and 16:9 anamorphic at x 0.75).
     let x = if aspect > 0.0 {
         (4.0 / 3.0) / aspect
