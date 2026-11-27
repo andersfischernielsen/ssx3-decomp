@@ -44,8 +44,9 @@ through the native renderer too.
 | --- | --- |
 | `SSX3_RENDER=native` | The default, as above. |
 | `SSX3_RENDER=emu` | The emulated GS only: the exact reference path (RAM-identical to the PS2 model). Needs a build with `--features vu1-microcode` (the VU1 programs and the emulated GS, feature `emu-gs`); the default build has no GS emulation. |
-| (window size) | The native renderer draws at the window's pixel size and the game's 3D view is widened to the window's aspect (ultrawide included); the HUD keeps its 4:3 shape in the centre. |
+| (window size) | The native renderer draws at the window's pixel size and the game's 3D view is widened to the window's aspect (ultrawide included); the race HUD's corner elements slide to the window's edges (`SSX3_HUD_EDGE`, below), the rest of the HUD and the menus keep their 4:3 shape in the centre. |
 | `SSX3_RENDER_SIZE=2560x1080` | A fixed output size instead (any size and aspect; headless too). |
+| `SSX3_HUD_EDGE=0\|<px>` | Race HUD at the window's edges (F10 "Race HUD at screen edges", on by default): the left-third elements slide left and the right-third ones right by half the HUD width times `1 / squeeze - 1` pixels (the squeeze is the renderer's, from the window's size: 0 at 4:3, so it follows resizing), so they sit where they would at 4:3; positions only. `0` keeps the HUD as authored (inset); a number is a fixed delta. The race progress map and the pause menu are not moved. |
 | `SSX3_FOV=1.2` | Field of view relative to the game's (here 20% wider). |
 | `SSX3_ANISO=16` | Anisotropic filtering, 1 (off) to 16 (default), for textures with mipmaps (texture-pack replacements). |
 | `SSX3_CATCHUP=0` | Turn off catch-up (window; settings "Keep speed when slow", on by default). The window always runs the game on the wall clock at the game rate, whatever the display's refresh rate (a 60 Hz display at a 120 Hz game rate gets two game updates per image). When the host itself is too slow, catch-up queues extra updates per image (at most 4) and keeps the audio device fed from the wall clock; off, the game slows down instead. Replays and headless runs never use it. |

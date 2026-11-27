@@ -146,24 +146,42 @@ fn game_paused(c: &Cpu) -> bool {
     gp != 0 && c.bus.ram_u32(gp.wrapping_sub(0x6a0)) & 1 != 0
 }
 
-/// `SSX3_HUD_EDGE`: how far the race HUD's anchored elements slide toward
-/// the frame's edges, in pixels of the HUD's virtual 640-wide screen
-/// (positions only, the elements keep their size and their spacing — one
-/// delta per side). Elements in the left third slide left, in the right
-/// third right, the middle stays; the game's own 2D transform squeezes
-/// this space into the central ~75% of the window, so a delta of 96 moves
-/// an element by ~11% of the window's width. Applied in `HUD_GetElemPos`,
-/// so every element follows — aligned or drawn raw — and mirrored
-/// elements land on their own side (the 640-x mirror inverts the delta
-/// with them). 0 / unset = as authored.
-fn hud_edge() -> f32 {
-    static EDGE: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    *EDGE.get_or_init(|| {
-        ssx3_core::config::var("SSX3_HUD_EDGE")
-            .and_then(|v| v.parse::<f32>().ok())
-            .filter(|d| *d > 0.0 && *d <= 160.0)
-            .unwrap_or(0.0)
-    })
+/// The width of the HUD's virtual screen: the orthographic projection the
+/// game sets for 2D (`SetOrtho(0, 0, 640, 480, ...)`, float bits).
+const HUD_ORTHO_W: u32 = 0x4420_0000;
+
+/// `SSX3_HUD_EDGE` ("Race HUD at screen edges" in F10): how far the race
+/// HUD's anchored elements slide toward the frame's edges, in pixels of the
+/// HUD's virtual screen (positions only, the elements keep their size and
+/// their spacing: one delta per side). Elements in the left third slide
+/// left, in the right third right, the middle stays.
+///
+/// The renderer squeezes the HUD space around its centre by the window's
+/// squeeze (`ssx3_core::view::hud_squeeze`, from the window's size), so the
+/// delta that puts an element where it sat relative to the window's edge in
+/// the authored frame is half the width times `1 / squeeze - 1`: it follows
+/// the window as it is resized, and is 0 when the layer fills it (4:3,
+/// headless, tests). Unset (the default) is that delta; `0` is the HUD as
+/// authored (inset); a number is a fixed delta.
+fn auto_edge(squeeze: f32, width: f32) -> f32 {
+    if squeeze > 0.0 && squeeze < 1.0 {
+        width / 2.0 * (1.0 / squeeze - 1.0)
+    } else {
+        0.0
+    }
+}
+
+fn hud_edge(width: f32) -> f32 {
+    let auto = auto_edge(ssx3_core::view::hud_squeeze(), width);
+    match ssx3_core::config::var("SSX3_HUD_EDGE") {
+        None => auto,
+        Some(v) if v.is_empty() => auto,
+        Some(v) => v
+            .parse::<f32>()
+            .ok()
+            .filter(|d| (0.0..=width / 2.0).contains(d))
+            .unwrap_or(auto),
+    }
 }
 
 impl HudElem {
@@ -217,7 +235,8 @@ pub fn hud_get_elem_color(c: &mut Cpu) {
 pub fn hud_get_elem_pos(c: &mut Cpu) {
     c.cycles += 9;
     let (e, out) = (HudElem(Addr(r32(c, A0))), Addr(r32(c, A1)));
-    let edge = hud_edge();
+    let width = f32::from_bits(HUD_ORTHO_W);
+    let edge = hud_edge(width);
     let pull = edge > 0.5 && in_race(c) && !game_paused(c);
     for i in 0..2 {
         let v = e.pos(i).lh(c);
@@ -229,9 +248,9 @@ pub fn hud_get_elem_pos(c: &mut Cpu) {
             // the HUD space, so deltas reach the true edges only at ~1.3×
             // their screen effect).
             let xf = f32::from_bits(f.0);
-            let shifted = if xf < 213.0 {
+            let shifted = if xf < width / 3.0 {
                 xf - edge
-            } else if xf > 427.0 {
+            } else if xf > width * 2.0 / 3.0 {
                 xf + edge
             } else {
                 xf
@@ -1320,7 +1339,7 @@ pub fn ui_engine_render(c: &mut Cpu) {
         c.g[A1][0] = 0;
         c.f[13] = 0;
         for (f, bits) in [
-            (14, 0x4420_0000u32),
+            (14, HUD_ORTHO_W),
             (15, 0x43f0_0000),
             (16, 0xbf80_0000),
             (17, 0x3f80_0000),
@@ -2272,6 +2291,22 @@ pub fn font_measure_text(c: &mut Cpu) {
 
 #[cfg(test)]
 mod tests {
+    /// The automatic HUD edge delta undoes the renderer's squeeze: an element
+    /// at the left edge lands on it again at any window shape.
+    #[test]
+    fn hud_auto_edge_undoes_the_squeeze() {
+        let w = f32::from_bits(super::HUD_ORTHO_W);
+        assert_eq!(super::auto_edge(1.0, w), 0.0);
+        assert_eq!(super::auto_edge(0.0, w), 0.0);
+        for aspect in [960.0f32 / 672.0, 16.0 / 9.0, 21.0 / 9.0, 32.0 / 9.0] {
+            let squeeze = ((4.0f32 / 3.0) / aspect).min(1.0);
+            let edge = super::auto_edge(squeeze, w);
+            // x = 0 slid left by `edge`, then squeezed around the centre.
+            let on_screen = w / 2.0 + (0.0 - edge - w / 2.0) * squeeze;
+            assert!(on_screen.abs() < 1e-3, "aspect {aspect}: {on_screen}");
+        }
+    }
+
     use crate::difftest::events::{check_events, schedule};
     use crate::difftest::{check_paths, check_paths_lohi, fill, scramble, Rng, DATA};
     use ssx3_ee_rt::cpu::reg::*;

@@ -66,6 +66,12 @@ pub const ITEMS: &[Item] = &[
         live: true,
     },
     Item {
+        key: "SSX3_HUD_EDGE",
+        label: "Race HUD at screen edges",
+        choices: &[("", "On"), ("0", "Off (centred, 4:3)")],
+        live: true,
+    },
+    Item {
         key: "SSX3_RESOLUTION",
         label: "Resolution",
         choices: &[("", "100%"), ("75", "75%"), ("50", "50%")],

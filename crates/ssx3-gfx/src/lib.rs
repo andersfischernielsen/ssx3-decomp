@@ -672,6 +672,7 @@ impl Renderer {
             Some((w, h)) => ((4.0 / 3.0) / (w as f32 / h as f32)).min(1.0),
             None => 1.0,
         };
+        ssx3_core::view::set_hud_squeeze(g.hud_squeeze);
     }
 
     /// Native mode: keep each frame's depth after the 3D phase for the
