@@ -492,8 +492,35 @@ pub fn elf_image(c: &mut Cpu) {
         );
         (vaddr, d[off..off + size].to_vec())
     });
+    // `fakes::test_allocator` changed some of the image's own data (the gp pool
+    // table, the dlmalloc statics): reapply exactly those bytes, so
+    // `machine_rt` and `elf_image` work in either order.
     let at = *vaddr as usize;
     c.bus.ram[at..at + bytes.len()].copy_from_slice(bytes);
+    if c.bus.read32(GAME_GP + 0xdd8) == 1 {
+        RT_PATCH.with(|p| {
+            for (a, b) in p.borrow().iter() {
+                c.bus.ram[*a..*a + b.len()].copy_from_slice(b);
+            }
+        });
+    }
+}
+
+thread_local! {
+    /// The bytes inside the game image that the last `fakes::test_allocator`
+    /// call changed (address, new bytes), for [`elf_image`] to keep.
+    pub(crate) static RT_PATCH: std::cell::RefCell<Vec<(usize, Vec<u8>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The span `elf_image` writes: (start address, length).
+pub(crate) fn image_span() -> (usize, usize) {
+    // Read the segment header the same way `elf_image` does.
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../orig/SLUS_207.72");
+    let d = std::fs::read(path).expect("orig/SLUS_207.72");
+    let u32_at = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+    let ph = u32_at(0x1c) as usize;
+    (u32_at(ph + 8) as usize, u32_at(ph + 16) as usize)
 }
 
 /// Write a quadword of four float bit patterns.
