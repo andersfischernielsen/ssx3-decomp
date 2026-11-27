@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -65,6 +66,46 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_4118,
         c_splash_manager_add_splash_all_views,
         "cSplashManager_AddSplashAllViews",
+    ),
+    (
+        0x002f_2588,
+        splash_manager_init_field0,
+        "cSplashManager_InitField0",
+    ),
+    (
+        0x002f_2598,
+        c_splash_manager_init_drop,
+        "cSplashManager_InitDrop",
+    ),
+    (
+        0x002f_2c30,
+        c_splash_manager_render_drop,
+        "cSplashManager_RenderDrop",
+    ),
+    (
+        0x002f_2d60,
+        c_splash_manager_init_field4,
+        "cSplashManager_InitField4",
+    ),
+    (
+        0x002f_2d70,
+        c_splash_manager_init_crystal,
+        "cSplashManager_InitCrystal",
+    ),
+    (
+        0x002f_3418,
+        c_splash_manager_render_crystal,
+        "cSplashManager_RenderCrystal",
+    ),
+    (
+        0x002f_3640,
+        c_splash_manager_spawn_crystals,
+        "cSplashManager_SpawnCrystals",
+    ),
+    (
+        0x002f_37a8,
+        c_splash_manager_add_drop,
+        "cSplashManager_AddDrop",
     ),
 ];
 
@@ -1860,10 +1901,808 @@ pub fn c_splash_manager_add_splash_all_views(c: &mut Cpu) {
     })
 }
 
+/// `void cSplashManager_InitDrop(tDrop* drop, t2Vector pos, t2Vector* range)`
+/// (0x2f2598): starts a lens drop at `pos`. Width is a random size between
+/// the configured minimum and `range.x`; height is the width plus a random
+/// aspect difference, clamped to `[min, range.y]`. Age 0, a random life
+/// span, active, zero velocity, a random angle (0..360), a random spin and a
+/// colour mixed between two tints, all from the float LCG at `gp+0xa0c`
+/// (`seed = ((seed * 0x18fcd + 0xe9507c) & 0x7fffff) | 1.0f`).
+pub fn c_splash_manager_init_drop(c: &mut Cpu) {
+    'b_2f264c: {
+        c.cycles += 44;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xa0c));
+        c.g[T3][0] = 0x10000;
+        c.g[T3][0] = c.g[T3][0] | 0x8fcd;
+        c.g[T1][0] = 0xe90000;
+        c.mult(0, 2, 2, 11);
+        c.g[T1][0] = c.g[T1][0] | 0x507c;
+        c.g[T2][0] = 0x7f0000;
+        c.g[T5][0] = 0x3f800000;
+        c.g[T2][0] = c.g[T2][0] | 0xffff;
+        c.g[T4][0] = c.g[A0][0];
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+        c.lwc1(2, (c.g[GP][0] as u32).wrapping_add(0x11ac));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T1][0] as u32));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[V0][0] = c.g[V0][0] & c.g[T2][0];
+        c.neg_s(3, 2);
+        c.g[V0][0] = c.g[V0][0] | c.g[T5][0];
+        c.lwc1(4, c.g[A2][0] as u32);
+        c.mult(0, 4, 2, 11);
+        c.lwc1(7, (c.g[A2][0] as u32).wrapping_add(0x4));
+        c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+        c.sub_s(2, 2, 3);
+        c.lwc1(5, (c.g[GP][0] as u32).wrapping_add(0x11a4));
+        c.g[T6][0] = c.g[A1][0];
+        c.lwc1(1, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T1][0] as u32));
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 8);
+        c.g[V1][0] = c.g[V1][0] & c.g[T2][0];
+        c.sub_s(4, 4, 5);
+        c.g[V1][0] = c.g[V1][0] | c.g[T5][0];
+        c.sub_s(1, 1, 8);
+        c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V1][0]);
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+        c.mul_s(4, 4, 1);
+        c.sub_s(0, 0, 8);
+        c.add_s(1, 5, 4);
+        c.mul_s(2, 2, 0);
+        c.add_s(3, 3, 2);
+        c.add_s(0, 1, 3);
+        c.c_le_s(5, 0);
+        let t = !c.fcc();
+        c.mov_s(6, 5);
+        if t {
+            break 'b_2f264c;
+        } else {
+            c.cycles += 1;
+            c.min_s(6, 0, 7);
+            break 'b_2f264c;
+        }
+    }
+    c.cycles += 112;
+    c.mult(0, 4, 3, 11);
+    c.sw((c.g[T4][0] as u32).wrapping_add(0x1c), 0u64);
+    c.swc1(1, c.g[SP][0] as u32);
+    c.g[V1][0] = 0x1;
+    c.lwc1(2, (c.g[GP][0] as u32).wrapping_add(0x119c));
+    c.g[A2][0] = 0x4a0000;
+    c.lwc1(1, (c.g[GP][0] as u32).wrapping_add(0x11a0));
+    c.g[T0][0] = 0x500000;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T1][0] as u32));
+    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x4));
+    c.g[V0][0] = c.g[V0][0] & c.g[T2][0];
+    c.sub_s(1, 1, 2);
+    c.g[V0][0] = c.g[V0][0] | c.g[T5][0];
+    c.g[AT][0] = 0x43b40000;
+    c.mtc1(1, 3);
+    c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x46e0));
+    c.g[A3][0] = 0x500000;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x46f0));
+    c.sw(c.g[T4][0] as u32, c.g[V1][0]);
+    c.sub_s(0, 0, 8);
+    c.mul_s(1, 1, 0);
+    c.add_s(2, 2, 1);
+    c.swc1(2, (c.g[T4][0] as u32).wrapping_add(0x20));
+    c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x7));
+    c.ldr(15, c.g[SP][0] as u32);
+    c.sdl(15, (c.g[T4][0] as u32).wrapping_add(0x13));
+    c.sdr(15, (c.g[T4][0] as u32).wrapping_add(0xc));
+    c.ldl(15, (c.g[T6][0] as u32).wrapping_add(0x7));
+    c.ldr(15, c.g[T6][0] as u32);
+    c.sdl(15, (c.g[T4][0] as u32).wrapping_add(0xb));
+    c.sdr(15, (c.g[T4][0] as u32).wrapping_add(0x4));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x5960));
+    c.ldl(14, (c.g[V0][0] as u32).wrapping_add(0x7));
+    c.ldr(14, c.g[V0][0] as u32);
+    c.sdl(14, (c.g[T4][0] as u32).wrapping_add(0x1b));
+    c.sdr(14, (c.g[T4][0] as u32).wrapping_add(0x14));
+    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.mult(0, 3, 2, 11);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T1][0] as u32));
+    c.g[V0][0] = c.g[V0][0] & c.g[T2][0];
+    c.g[V0][0] = c.g[V0][0] | c.g[T5][0];
+    c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+    c.mult(0, 3, 2, 11);
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.sub_s(0, 0, 8);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T1][0] as u32));
+    c.g[V0][0] = c.g[V0][0] & c.g[T2][0];
+    c.g[V0][0] = c.g[V0][0] | c.g[T5][0];
+    c.mul_s(0, 0, 3);
+    c.mult(0, 6, 2, 11);
+    c.swc1(0, (c.g[T4][0] as u32).wrapping_add(0x34));
+    c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[T1][0] as u32));
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0x11dc));
+    c.g[V1][0] = c.g[V1][0] & c.g[T2][0];
+    c.lwc1(1, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.g[V1][0] = c.g[V1][0] | c.g[T5][0];
+    c.neg_s(2, 0);
+    c.sub_s(1, 1, 8);
+    c.sub_s(0, 0, 2);
+    c.mul_s(0, 0, 1);
+    c.add_s(2, 2, 0);
+    c.swc1(2, (c.g[T4][0] as u32).wrapping_add(0x38));
+    c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V1][0]);
+    c.lwc1(7, (c.g[A0][0] as u32).wrapping_add(0xc));
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.lwc1(5, (c.g[T0][0] as u32).wrapping_add(0x46e0));
+    c.sub_s(0, 0, 8);
+    c.lwc1(3, (c.g[A0][0] as u32).wrapping_add(0x4));
+    c.lwc1(2, (c.g[A0][0] as u32).wrapping_add(0x8));
+    c.lwc1(6, (c.g[A3][0] as u32).wrapping_add(0x46f0));
+    c.sub_s(1, 8, 0);
+    c.lwc1(9, (c.g[A1][0] as u32).wrapping_add(0xc));
+    c.lwc1(4, (c.g[A1][0] as u32).wrapping_add(0x4));
+    c.mul_s(6, 6, 0);
+    c.lwc1(8, (c.g[A1][0] as u32).wrapping_add(0x8));
+    c.mul_s(9, 9, 0);
+    c.mul_s(7, 7, 1);
+    c.mul_s(5, 5, 1);
+    c.mul_s(3, 3, 1);
+    c.mul_s(2, 2, 1);
+    c.swc1(7, (c.g[SP][0] as u32).wrapping_add(0x2c));
+    c.mul_s(4, 4, 0);
+    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+    c.mul_s(8, 8, 0);
+    c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x24));
+    c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x28));
+    c.add_s(5, 5, 6);
+    c.add_s(3, 3, 4);
+    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x30));
+    c.add_s(2, 2, 8);
+    c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x34));
+    c.add_s(7, 7, 9);
+    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x10));
+    c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x14));
+    c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x18));
+    c.swc1(7, (c.g[SP][0] as u32).wrapping_add(0x1c));
+    c.swc1(8, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(9, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x17));
+    c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x10));
+    c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x1f));
+    c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x18));
+    c.sdl(14, (c.g[T4][0] as u32).wrapping_add(0x2b));
+    c.sdr(14, (c.g[T4][0] as u32).wrapping_add(0x24));
+    c.sdl(15, (c.g[T4][0] as u32).wrapping_add(0x33));
+    c.sdr(15, (c.g[T4][0] as u32).wrapping_add(0x2c));
+    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+    c.pc = t;
+    return;
+}
+
+/// `void cSplashManager_InitCrystal(tCrystal* crystal, t2Vector pos, int n)`
+/// (0x2f2d70): starts a lens crystal at `pos`. Size is random in the
+/// configured range (height from the width plus a random aspect difference,
+/// clamped), shrunk by 0.7 per generation `n`; then age 0, random life span,
+/// active, zero velocity, a random tint, angle and spin (the float LCG at
+/// `gp+0xa0c`), and the +0x40..+0x48 and dead words cleared.
+pub fn c_splash_manager_init_crystal(c: &mut Cpu) {
+    'b_2f2e1c: {
+        c.cycles += 42;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xa0c));
+        c.g[V1][0] = 0x10000;
+        c.g[V1][0] = c.g[V1][0] | 0x8fcd;
+        c.g[A3][0] = 0xe90000;
+        c.mult(0, 2, 2, 3);
+        c.g[A3][0] = c.g[A3][0] | 0x507c;
+        c.g[T0][0] = 0x7f0000;
+        c.g[T1][0] = 0x3f800000;
+        c.g[T0][0] = c.g[T0][0] | 0xffff;
+        c.g[T2][0] = c.g[A0][0];
+        c.lwc1(3, (c.g[GP][0] as u32).wrapping_add(0x11f8));
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        c.lwc1(5, (c.g[GP][0] as u32).wrapping_add(0x11f0));
+        c.g[V0][0] = c.g[V0][0] & c.g[T0][0];
+        c.neg_s(4, 3);
+        c.g[V0][0] = c.g[V0][0] | c.g[T1][0];
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 6);
+        c.mult(0, 4, 2, 3);
+        c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+        c.lwc1(7, (c.g[GP][0] as u32).wrapping_add(0x11f4));
+        c.sub_s(3, 3, 4);
+        c.lwc1(1, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+        c.g[T5][0] = c.g[A1][0];
+        c.sub_s(2, 7, 5);
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        c.sub_s(1, 1, 6);
+        c.g[V1][0] = c.g[V1][0] & c.g[T0][0];
+        c.g[V1][0] = c.g[V1][0] | c.g[T1][0];
+        c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V1][0]);
+        c.mul_s(2, 2, 1);
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+        c.sub_s(0, 0, 6);
+        c.add_s(6, 5, 2);
+        c.mul_s(3, 3, 0);
+        c.add_s(4, 4, 3);
+        c.add_s(0, 6, 4);
+        c.c_le_s(5, 0);
+        let t = !c.fcc();
+        c.mov_s(8, 5);
+        if t {
+            break 'b_2f2e1c;
+        } else {
+            c.cycles += 1;
+            c.min_s(8, 0, 7);
+            break 'b_2f2e1c;
+        }
+    }
+    'b_2f2e40: {
+        c.cycles += 4;
+        c.mov_s(5, 8);
+        c.g[T3][0] = 0x500000;
+        let t = (c.g[A2][0] as i64) <= 0;
+        c.g[T4][0] = 0x500000;
+        if t {
+            break 'b_2f2e40;
+        } else {
+            c.cycles += 1;
+            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x3910));
+            'l_2f2e30: loop {
+                c.cycles += 4;
+                c.mul_s(6, 6, 0);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+                let t = c.g[A2][0] != 0u64;
+                c.mul_s(5, 5, 0);
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002f2e30);
+                    }
+                    continue 'l_2f2e30;
+                } else {
+                    break 'b_2f2e40;
+                }
+            }
+        }
+    }
+    c.cycles += 124;
+    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.g[T0][0] = 0x10000;
+    c.g[T0][0] = c.g[T0][0] | 0x8fcd;
+    c.g[A2][0] = 0xe90000;
+    c.mult(0, 2, 2, 8);
+    c.g[A2][0] = c.g[A2][0] | 0x507c;
+    c.g[A3][0] = 0x7f0000;
+    c.g[T1][0] = 0x3f800000;
+    c.g[A3][0] = c.g[A3][0] | 0xffff;
+    c.sw((c.g[T2][0] as u32).wrapping_add(0x20), 0u64);
+    c.g[AT][0] = 0x3f800000;
+    c.mtc1(1, 10);
+    c.g[V1][0] = 0x1;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.lwc1(2, (c.g[GP][0] as u32).wrapping_add(0x11e8));
+    c.g[V0][0] = c.g[V0][0] & c.g[A3][0];
+    c.lwc1(1, (c.g[GP][0] as u32).wrapping_add(0x11ec));
+    c.g[V0][0] = c.g[V0][0] | c.g[T1][0];
+    c.swc1(6, c.g[SP][0] as u32);
+    c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+    c.sub_s(1, 1, 2);
+    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x4));
+    c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_add(0x4700));
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.g[A1][0] = sx((c.g[T4][0] as u32).wrapping_add(0x4710));
+    c.sw((c.g[T2][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+    c.sub_s(0, 0, 10);
+    c.g[AT][0] = 0x43b40000;
+    c.mtc1(1, 11);
+    c.mul_s(1, 1, 0);
+    c.add_s(2, 2, 1);
+    c.swc1(2, (c.g[T2][0] as u32).wrapping_add(0x24));
+    c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
+    c.ldr(14, c.g[SP][0] as u32);
+    c.sdl(14, (c.g[T2][0] as u32).wrapping_add(0x17));
+    c.sdr(14, (c.g[T2][0] as u32).wrapping_add(0x10));
+    c.ldl(14, (c.g[T5][0] as u32).wrapping_add(0x7));
+    c.ldr(14, c.g[T5][0] as u32);
+    c.sdl(14, (c.g[T2][0] as u32).wrapping_add(0xf));
+    c.sdr(14, (c.g[T2][0] as u32).wrapping_add(0x8));
+    c.g[V1][0] = 0x4a0000;
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5960));
+    c.ldl(13, (c.g[V0][0] as u32).wrapping_add(0x7));
+    c.ldr(13, c.g[V0][0] as u32);
+    c.sdl(13, (c.g[T2][0] as u32).wrapping_add(0x1f));
+    c.sdr(13, (c.g[T2][0] as u32).wrapping_add(0x18));
+    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.lwc1(8, (c.g[A0][0] as u32).wrapping_add(0xc));
+    c.mult(0, 3, 2, 8);
+    c.lwc1(9, (c.g[A1][0] as u32).wrapping_add(0xc));
+    c.lwc1(5, (c.g[A0][0] as u32).wrapping_add(0x4));
+    c.lwc1(2, (c.g[A0][0] as u32).wrapping_add(0x8));
+    c.lwc1(3, (c.g[A1][0] as u32).wrapping_add(0x4));
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.lwc1(7, (c.g[T3][0] as u32).wrapping_add(0x4700));
+    c.g[V0][0] = c.g[V0][0] & c.g[A3][0];
+    c.lwc1(4, (c.g[A1][0] as u32).wrapping_add(0x8));
+    c.g[V0][0] = c.g[V0][0] | c.g[T1][0];
+    c.lwc1(6, (c.g[T4][0] as u32).wrapping_add(0x4710));
+    c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.sub_s(0, 0, 10);
+    c.sub_s(1, 10, 0);
+    c.mul_s(9, 9, 0);
+    c.mul_s(6, 6, 0);
+    c.mul_s(8, 8, 1);
+    c.mul_s(7, 7, 1);
+    c.mul_s(5, 5, 1);
+    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x30));
+    c.mul_s(2, 2, 1);
+    c.swc1(8, (c.g[SP][0] as u32).wrapping_add(0x2c));
+    c.mul_s(3, 3, 0);
+    c.swc1(7, (c.g[SP][0] as u32).wrapping_add(0x20));
+    c.mul_s(4, 4, 0);
+    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x24));
+    c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x28));
+    c.add_s(7, 7, 6);
+    c.add_s(5, 5, 3);
+    c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x34));
+    c.add_s(2, 2, 4);
+    c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.add_s(8, 8, 9);
+    c.swc1(7, (c.g[SP][0] as u32).wrapping_add(0x10));
+    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x14));
+    c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x18));
+    c.swc1(8, (c.g[SP][0] as u32).wrapping_add(0x1c));
+    c.swc1(9, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.ldl(4, (c.g[SP][0] as u32).wrapping_add(0x17));
+    c.ldr(4, (c.g[SP][0] as u32).wrapping_add(0x10));
+    c.ldl(5, (c.g[SP][0] as u32).wrapping_add(0x1f));
+    c.ldr(5, (c.g[SP][0] as u32).wrapping_add(0x18));
+    c.sdl(4, (c.g[T2][0] as u32).wrapping_add(0x2f));
+    c.sdr(4, (c.g[T2][0] as u32).wrapping_add(0x28));
+    c.sdl(5, (c.g[T2][0] as u32).wrapping_add(0x37));
+    c.sdr(5, (c.g[T2][0] as u32).wrapping_add(0x30));
+    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.mult(0, 3, 2, 8);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.g[V0][0] = c.g[V0][0] & c.g[A3][0];
+    c.g[V0][0] = c.g[V0][0] | c.g[T1][0];
+    c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+    c.mult(0, 3, 2, 8);
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.sub_s(0, 0, 10);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.g[V0][0] = c.g[V0][0] & c.g[A3][0];
+    c.g[V0][0] = c.g[V0][0] | c.g[T1][0];
+    c.mul_s(0, 0, 11);
+    c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x38));
+    c.sw((c.g[GP][0] as u32).wrapping_add(0xa0c), c.g[V0][0]);
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0x1228));
+    c.lwc1(2, (c.g[GP][0] as u32).wrapping_add(0xa0c));
+    c.neg_s(1, 0);
+    c.sw(c.g[T2][0] as u32, 0u64);
+    c.sub_s(2, 2, 10);
+    c.sw((c.g[T2][0] as u32).wrapping_add(0x40), 0u64);
+    c.sw((c.g[T2][0] as u32).wrapping_add(0x44), 0u64);
+    c.sub_s(0, 0, 1);
+    c.sw((c.g[T2][0] as u32).wrapping_add(0x48), 0u64);
+    c.mul_s(0, 0, 2);
+    c.add_s(1, 1, 0);
+    c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0x3c));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+    c.pc = t;
+    return;
+}
+
+/// `int* (int* p)` (0x002f2588, `cSplashManager_InitField0`): stores 0 in
+/// the word at `p` and returns `p` (the reference's `tDrop_tDrop`).
+pub fn splash_manager_init_field0(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.g[A0][0];
+    Addr(c.g[A0][0] as u32).sw(c, 0);
+    ret(c);
+}
+
+/// Direct callees of the splash manager ports (generated aliases).
+pub(crate) const INIT_DROP: Callee = Callee {
+    addr: 0x002f_2598,
+    f: ee::s09::f_002f2598,
+};
+
+pub(crate) const INIT_CRYSTAL: Callee = Callee {
+    addr: 0x002f_2d70,
+    f: ee::s09::f_002f2d70,
+};
+
+/// `gp + off`.
+pub(crate) fn splash_gp_at(c: &Cpu, off: u32) -> u32 {
+    r32(c, GP).wrapping_add(off)
+}
+
+/// `gp - off` (the globals below gp).
+pub(crate) fn splash_gp_below(c: &Cpu, off: u32) -> u32 {
+    r32(c, GP).wrapping_sub(off)
+}
+
+/// `sp + off`.
+pub(crate) fn splash_sp_at(c: &Cpu, off: u32) -> u32 {
+    sp(c).wrapping_add(off)
+}
+
+/// `void cSplashManager_RenderDrop(tDrop* obj, const t2Vector* off)`
+/// (0x2f2c30): draws one drop as a sprite at its position plus the view
+/// offset. Its colour fades with the life ratio `age / death` (alpha
+/// `1 - ratio^2`) and its rotation is lerped over the drop's life. The
+/// first calls set the sprite statics (texture origin 0, scale 1.0).
+pub fn c_splash_manager_render_drop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x40));
+        c.g[V0][0] = c.lw(splash_gp_at(c, 0x2408));
+        c.sd(splash_sp_at(c, 0x30), c.g[RA][0]);
+        c.g[T3][0] = c.g[A0][0];
+        c.g[T4][0] = c.g[A1][0];
+        if c.g[V0][0] == 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 1;
+            c.sw(splash_gp_at(c, 0x2400), 0);
+            c.sw(splash_gp_at(c, 0x2408), c.g[V0][0]);
+            c.sw(splash_gp_at(c, 0x2404), 0);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(splash_gp_at(c, 0x2418));
+        if c.g[V0][0] != 0 {
+            c.lwc1(0, r32(c, T3).wrapping_add(0x20));
+        } else {
+            c.cycles += 7;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 0);
+            c.g[V0][0] = 1;
+            c.sw(splash_gp_at(c, 0x2418), c.g[V0][0]);
+            c.swc1(0, splash_gp_at(c, 0x2414));
+            c.swc1(0, splash_gp_at(c, 0x2410));
+            c.lwc1(0, r32(c, T3).wrapping_add(0x20));
+        }
+        c.cycles += 55;
+        c.g[A2][0] = sx(r32(c, T3).wrapping_add(0xc));
+        c.lwc1(1, r32(c, T3).wrapping_add(0x1c));
+        c.g[A1][0] = sx(splash_sp_at(c, 0x10));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 5);
+        c.g[A3][0] = sx(splash_gp_at(c, 0x2400));
+        c.div_s(6, 1, 0);
+        c.ldl(2, r32(c, T3).wrapping_add(0x2b));
+        c.ldr(2, r32(c, T3).wrapping_add(0x24));
+        c.ldl(3, r32(c, T3).wrapping_add(0x33));
+        c.ldr(3, r32(c, T3).wrapping_add(0x2c));
+        c.sdl(2, splash_sp_at(c, 7));
+        c.sdr(2, splash_sp_at(c, 0));
+        c.sdl(3, splash_sp_at(c, 0xf));
+        c.sdr(3, splash_sp_at(c, 8));
+        c.g[A0][0] = c.lw(splash_gp_below(c, 0x854));
+        c.g[T0][0] = sx(splash_gp_at(c, 0x2410));
+        c.lwc1(2, splash_sp_at(c, 0));
+        c.g[T1][0] = c.g[SP][0];
+        c.lwc1(3, r32(c, T3).wrapping_add(0x38));
+        c.g[T2][0] = 1;
+        c.lwc1(12, r32(c, T3).wrapping_add(0x34));
+        c.lwc1(4, splash_gp_below(c, 0x3914));
+        c.mul_s(0, 6, 6);
+        c.mov_s(1, 6);
+        c.mul_s(1, 1, 3);
+        c.sub_s(6, 5, 0);
+        c.add_s(12, 12, 1);
+        c.mul_s(2, 2, 6);
+        c.swc1(2, splash_sp_at(c, 0));
+        c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0xe84));
+        c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x1058));
+        c.sh(r32(c, V1).wrapping_add(0x10), c.g[V0][0]);
+        c.lwc1(3, r32(c, T4).wrapping_add(4));
+        c.lwc1(2, r32(c, T3).wrapping_add(4));
+        c.lwc1(0, r32(c, T4));
+        c.lwc1(1, r32(c, T3).wrapping_add(8));
+        c.g[V0][0] = c.lw(splash_gp_at(c, 0x2a90));
+        c.add_s(2, 2, 0);
+        c.add_s(1, 1, 3);
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x10d8));
+        c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x278));
+        c.swc1(2, splash_sp_at(c, 0x10));
+        c.swc1(1, splash_sp_at(c, 0x14));
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        c.swc1(5, splash_sp_at(c, 0x1c));
+        c.swc1(2, splash_sp_at(c, 0x20));
+        c.swc1(1, splash_sp_at(c, 0x24));
+        c.sw(splash_sp_at(c, 0x18), 0);
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x27c));
+        let target = r32(c, V0);
+        c.mul_s(12, 12, 4);
+        call_ptr(c, target, 0x002f_2d50)?;
+        c.g[RA][0] = c.ld(splash_sp_at(c, 0x30));
+        let ra = r32(c, RA);
+        c.g[SP][0] = sx(r32(c, SP).wrapping_add(0x40));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+/// `cSplashManager_InitField4` (0x2f2d60): clears the crystal's active
+/// flag at +4 and returns the crystal.
+pub fn c_splash_manager_init_field4(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.g[A0][0];
+    let ra = r32(c, RA);
+    c.sw(r32(c, A0).wrapping_add(0x4), 0);
+    c.pc = ra;
+}
+
+/// `void cSplashManager_RenderCrystal(tCrystal* obj, const t2Vector* off)`
+/// (0x2f3418): the crystal counterpart of [`c_splash_manager_render_drop`]:
+/// the same fade and rotation, with its own fields (age at +0x20, death at
+/// +0x24, colour at +0x28, rotation at +0x38) and statics. It draws through
+/// the render vtable at `+0x27c` of the draw state.
+pub fn c_splash_manager_render_crystal(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x40));
+        c.g[V0][0] = c.lw(splash_gp_at(c, 0x2428));
+        c.sd(splash_sp_at(c, 0x30), c.g[RA][0]);
+        c.g[T3][0] = c.g[A0][0];
+        c.g[T4][0] = c.g[A1][0];
+        if c.g[V0][0] == 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 1;
+            c.sw(splash_gp_at(c, 0x2420), 0);
+            c.sw(splash_gp_at(c, 0x2428), c.g[V0][0]);
+            c.sw(splash_gp_at(c, 0x2424), 0);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(splash_gp_at(c, 0x2438));
+        if c.g[V0][0] != 0 {
+            c.lwc1(1, r32(c, T3).wrapping_add(0x20));
+        } else {
+            c.cycles += 7;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 0);
+            c.g[V0][0] = 1;
+            c.sw(splash_gp_at(c, 0x2438), c.g[V0][0]);
+            c.swc1(0, splash_gp_at(c, 0x2434));
+            c.swc1(0, splash_gp_at(c, 0x2430));
+            c.lwc1(1, r32(c, T3).wrapping_add(0x20));
+        }
+        c.cycles += 57;
+        c.g[A2][0] = sx(r32(c, T3).wrapping_add(0x10));
+        c.lwc1(0, r32(c, T3).wrapping_add(0x24));
+        c.g[A1][0] = sx(splash_sp_at(c, 0x10));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 6);
+        c.g[A3][0] = sx(splash_gp_at(c, 0x2420));
+        c.div_s(0, 1, 0);
+        c.ldl(2, r32(c, T3).wrapping_add(0x2f));
+        c.ldr(2, r32(c, T3).wrapping_add(0x28));
+        c.ldl(3, r32(c, T3).wrapping_add(0x37));
+        c.ldr(3, r32(c, T3).wrapping_add(0x30));
+        c.sdl(2, splash_sp_at(c, 7));
+        c.sdr(2, splash_sp_at(c, 0));
+        c.sdl(3, splash_sp_at(c, 0xf));
+        c.sdr(3, splash_sp_at(c, 8));
+        c.g[A0][0] = c.lw(splash_gp_below(c, 0x854));
+        c.g[T0][0] = sx(splash_gp_at(c, 0x2430));
+        c.lwc1(1, splash_sp_at(c, 0));
+        c.g[T1][0] = c.g[SP][0];
+        c.lwc1(7, splash_gp_below(c, 0x3908));
+        c.g[T2][0] = 1;
+        c.mul_s(0, 0, 0);
+        c.sub_s(0, 6, 0);
+        c.mul_s(1, 1, 0);
+        c.swc1(1, splash_sp_at(c, 0));
+        c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0xe84));
+        c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x105c));
+        c.sh(r32(c, V1).wrapping_add(0x10), c.g[V0][0]);
+        c.lwc1(0, r32(c, T3).wrapping_add(0x24));
+        c.lwc1(1, r32(c, T3).wrapping_add(0x20));
+        c.lwc1(4, r32(c, T3).wrapping_add(0x3c));
+        c.div_s(1, 1, 0);
+        c.lwc1(5, r32(c, T4).wrapping_add(4));
+        c.lwc1(0, r32(c, T3).wrapping_add(8));
+        c.lwc1(3, r32(c, T4));
+        c.lwc1(2, r32(c, T3).wrapping_add(0xc));
+        c.g[V0][0] = c.lw(splash_gp_at(c, 0x2a90));
+        c.add_s(0, 0, 3);
+        c.lwc1(12, r32(c, T3).wrapping_add(0x38));
+        c.add_s(2, 2, 5);
+        c.mul_s(1, 1, 4);
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x10d8));
+        c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x278));
+        c.add_s(12, 12, 1);
+        c.swc1(0, splash_sp_at(c, 0x10));
+        c.swc1(2, splash_sp_at(c, 0x14));
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        c.swc1(6, splash_sp_at(c, 0x1c));
+        c.swc1(0, splash_sp_at(c, 0x20));
+        c.swc1(2, splash_sp_at(c, 0x24));
+        c.sw(splash_sp_at(c, 0x18), 0);
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x27c));
+        let target = r32(c, V0);
+        c.mul_s(12, 12, 7);
+        call_ptr(c, target, 0x002f_3540)?;
+        c.g[RA][0] = c.ld(splash_sp_at(c, 0x30));
+        let ra = r32(c, RA);
+        c.g[SP][0] = sx(r32(c, SP).wrapping_add(0x40));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+/// `void cSplashManager_SpawnCrystals(cSplashManager* this, const
+/// t2Vector* p, int n)` (0x2f3640): up to `n` crystals around `p`, each
+/// jittered by `randRange` in x and y and initialised by
+/// `cSplashManager_InitCrystal`, while the count is under the limit at
+/// `gp+0x1168`. The loop has a back-edge event check.
+pub fn c_splash_manager_spawn_crystals(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0xd0));
+        c.sq(16, splash_sp_at(c, 0xb0));
+        c.sq(17, splash_sp_at(c, 0xa0));
+        c.g[S0][0] = 0;
+        c.sq(21, splash_sp_at(c, 0x60));
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(22, splash_sp_at(c, 0x50));
+        c.g[S5][0] = c.g[A1][0];
+        c.sq(18, splash_sp_at(c, 0x90));
+        c.g[S6][0] = c.g[A2][0];
+        c.sq(19, splash_sp_at(c, 0x80));
+        c.sq(20, splash_sp_at(c, 0x70));
+        c.sq(23, splash_sp_at(c, 0x40));
+        c.sq(30, splash_sp_at(c, 0x30));
+        c.sd(splash_sp_at(c, 0x20), c.g[RA][0]);
+        let none = (c.g[S6][0] as i64) <= 0;
+        c.swc1(20, splash_sp_at(c, 0xc0));
+        if !none {
+            c.cycles += 11;
+            c.g[S4][0] = 0x1_0000;
+            c.g[S3][0] = 0xe9_0000;
+            c.g[S2][0] = 0x7f_0000;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 20);
+            c.g[S4][0] |= 0x8fcd;
+            c.g[S3][0] |= 0x507c;
+            c.g[S2][0] |= 0xffff;
+            c.g[S7][0] = 0x3f80_0000;
+            c.g[FP][0] = 0x4c;
+            c.g[A0][0] = c.lw(r32(c, S1).wrapping_add(0x18));
+            loop {
+                'spawn: {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(splash_gp_at(c, 0x1168));
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] == 0;
+                    c.g[V1][0] = c.lw(splash_gp_at(c, 0xa0c));
+                    if t {
+                        break 'spawn;
+                    }
+                    c.cycles += 41;
+                    c.mult(0, 4, 4, FP);
+                    c.lwc1(6, r32(c, S5));
+                    c.g[A1][0] = sx(splash_sp_at(c, 0x10));
+                    c.mult(0, 2, 3, 20);
+                    c.lwc1(7, r32(c, S5).wrapping_add(4));
+                    c.lwc1(2, splash_gp_at(c, 0x11e0));
+                    c.g[A2][0] = c.g[S0][0];
+                    c.lwc1(3, splash_gp_at(c, 0x11e4));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x724));
+                    c.neg_s(4, 2);
+                    c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, S3)));
+                    c.neg_s(5, 3);
+                    c.g[V1][0] &= c.g[S2][0];
+                    c.g[V1][0] |= c.g[S7][0];
+                    c.sub_s(2, 2, 4);
+                    c.mult(0, 7, 3, 20);
+                    c.sw(splash_gp_at(c, 0xa0c), c.g[V1][0]);
+                    c.sub_s(3, 3, 5);
+                    c.lwc1(1, splash_gp_at(c, 0xa0c));
+                    c.g[V0][0] = sx(r32(c, A3).wrapping_add(r32(c, S3)));
+                    c.sub_s(1, 1, 20);
+                    c.g[V0][0] &= c.g[S2][0];
+                    c.g[V0][0] |= c.g[S7][0];
+                    c.sw(splash_gp_at(c, 0xa0c), c.g[V0][0]);
+                    c.mul_s(2, 2, 1);
+                    c.lwc1(0, splash_gp_at(c, 0xa0c));
+                    c.add_s(4, 4, 2);
+                    c.sub_s(0, 0, 20);
+                    c.add_s(6, 6, 4);
+                    c.swc1(4, splash_sp_at(c, 0));
+                    c.mul_s(3, 3, 0);
+                    c.swc1(6, splash_sp_at(c, 0x10));
+                    c.add_s(5, 5, 3);
+                    c.add_s(7, 7, 5);
+                    c.swc1(5, splash_sp_at(c, 4));
+                    c.swc1(7, splash_sp_at(c, 0x14));
+                    INIT_CRYSTAL.call(c, 0x002f_3758)?;
+                    c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(0x18));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                    c.sw(r32(c, S1).wrapping_add(0x18), c.g[V0][0]);
+                }
+                c.cycles += 4;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S6][0] as i64)) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[A0][0] = c.lw(r32(c, S1).wrapping_add(0x18));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002f_36b0);
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        c.cycles += 13;
+        c.lq(16, splash_sp_at(c, 0xb0));
+        c.lq(17, splash_sp_at(c, 0xa0));
+        c.lq(18, splash_sp_at(c, 0x90));
+        c.lq(19, splash_sp_at(c, 0x80));
+        c.lq(20, splash_sp_at(c, 0x70));
+        c.lq(21, splash_sp_at(c, 0x60));
+        c.lq(22, splash_sp_at(c, 0x50));
+        c.lq(23, splash_sp_at(c, 0x40));
+        c.lq(30, splash_sp_at(c, 0x30));
+        c.g[RA][0] = c.ld(splash_sp_at(c, 0x20));
+        c.lwc1(20, splash_sp_at(c, 0xc0));
+        let ra = r32(c, RA);
+        c.g[SP][0] = sx(r32(c, SP).wrapping_add(0xd0));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+/// `void cSplashManager_AddDrop(cSplashManager* this, const tDrop* tmpl)`
+/// (0x2f37a8): when the drop count is under its limit (`gp+0x1164`), copies
+/// the template's 8 bytes at +0 to the stack, initialises the next drop slot
+/// with `cSplashManager_InitDrop` and bumps the count at +0x14.
+pub fn c_splash_manager_add_drop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x30));
+        c.g[V0][0] = c.lw(splash_gp_at(c, 0x1164));
+        c.sq(16, splash_sp_at(c, 0x20));
+        c.sd(splash_sp_at(c, 0x10), c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x14));
+        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let full = c.g[V0][0] == 0;
+        c.g[A3][0] = c.g[A1][0];
+        if !full {
+            c.cycles += 13;
+            c.g[A0][0] = 0x3c;
+            c.g[A1][0] = c.g[SP][0];
+            c.mult(0, 4, 3, 4);
+            c.ldl(2, r32(c, A3).wrapping_add(7));
+            c.ldr(2, r32(c, A3));
+            c.sdl(2, splash_sp_at(c, 7));
+            c.sdr(2, splash_sp_at(c, 0));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x1c));
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+            INIT_DROP.call(c, 0x002f_37f4)?;
+            c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x14));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+            c.sw(r32(c, S0).wrapping_add(0x14), c.g[V0][0]);
+        }
+        c.cycles += 4;
+        c.lq(16, splash_sp_at(c, 0x20));
+        c.g[RA][0] = c.ld(splash_sp_at(c, 0x10));
+        let ra = r32(c, RA);
+        c.g[SP][0] = sx(r32(c, SP).wrapping_add(0x30));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::game::lib::snd::tests::oc1142_install_fakes;
 
     use crate::difftest::elf_image;
     use crate::difftest::fakes::machine;
@@ -2797,6 +3636,304 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(POINT);
                 c.f[12] = ((seed % 9) as f32 * 600.0).to_bits();
+            },
+        );
+    }
+
+    use crate::difftest::check_paths_lohi;
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::FAKE;
+
+    pub(crate) fn oc1139_f(x: f32) -> u32 {
+        x.to_bits()
+    }
+
+    /// A float in `[lo, hi)` as raw bits.
+    pub(crate) fn oc1139_rnd(r: &mut Rng, lo: f32, hi: f32) -> u32 {
+        oc1139_f(lo + (hi - lo) * (r.next_u32() as f32 / 4_294_967_296.0))
+    }
+
+    // ---- cSplashManager_InitDrop / InitCrystal --------------------------
+
+    /// The splash tuning floats (`gp + 0x1190..0x1230`: sizes, aspect
+    /// differences, life spans, rotation changes) and the LCG seed, random.
+    pub(crate) fn oc1139_splash_tuning(c: &mut Cpu, r: &mut Rng) {
+        for off in (0x1190..0x1230u32).step_by(4) {
+            let v = oc1139_rnd(r, -2.0, 30.0);
+            c.bus.write32(GAME_GP + off, v);
+        }
+        let seed = r.next_u32();
+        c.bus.write32(GAME_GP + 0xa0c, seed);
+    }
+
+    /// `cSplashManager_InitDrop`: both arms of the height clamp.
+    #[test]
+    fn c_splash_manager_init_drop_matches() {
+        check_paths_lohi(
+            ee::s09::f_002f2598__generated,
+            c_splash_manager_init_drop,
+            300,
+            &[156, 157],
+            &|c, seed| {
+                let mut r = Rng(0x2f2598 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                oc1139_splash_tuning(c, &mut r);
+                let (drop, pos, range) = (DATA + 0x100, DATA + 0x200, DATA + 0x300);
+                for k in 0..16 {
+                    let v = r.next_u32();
+                    c.bus.write32(drop + 4 * k, v);
+                }
+                let (px, py) = (
+                    oc1139_rnd(&mut r, 0.0, 640.0),
+                    oc1139_rnd(&mut r, 0.0, 480.0),
+                );
+                c.bus.write32(pos, px);
+                c.bus.write32(pos + 4, py);
+                let (rx, ry) = (oc1139_rnd(&mut r, 3.0, 40.0), oc1139_rnd(&mut r, 3.0, 40.0));
+                c.bus.write32(range, rx);
+                c.bus.write32(range + 4, ry);
+                c.g[A0][0] = drop as u64;
+                c.g[A1][0] = pos as u64;
+                c.g[A2][0] = range as u64;
+            },
+        );
+    }
+
+    /// `cSplashManager_InitCrystal`: generation counts 0 (and negative: the
+    /// shrink loop is skipped) up to 3.
+    #[test]
+    fn c_splash_manager_init_crystal_matches() {
+        check_paths_lohi(
+            ee::s09::f_002f2d70__generated,
+            c_splash_manager_init_crystal,
+            300,
+            &[170, 175, 179, 183],
+            &|c, seed| {
+                let mut r = Rng(0x2f2d70 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                oc1139_splash_tuning(c, &mut r);
+                let (crystal, pos) = (DATA + 0x100, DATA + 0x200);
+                for k in 0..20 {
+                    let v = r.next_u32();
+                    c.bus.write32(crystal + 4 * k, v);
+                }
+                let (px, py) = (
+                    oc1139_rnd(&mut r, 0.0, 640.0),
+                    oc1139_rnd(&mut r, 0.0, 480.0),
+                );
+                c.bus.write32(pos, px);
+                c.bus.write32(pos + 4, py);
+                c.g[A0][0] = crystal as u64;
+                c.g[A1][0] = pos as u64;
+                c.g[A2][0] = [0u64, 1, 2, 3, u64::MAX][seed as usize % 5];
+            },
+        );
+    }
+
+    #[test]
+    fn splash_manager_init_field0_matches() {
+        check(
+            ee::s09::f_002f2588__generated,
+            splash_manager_init_field0,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2f25_88 ^ seed as u64);
+                scramble(c, &mut r);
+                let p = DATA + 0x2400 + 0x10 * (seed % 4);
+                c.g[A0][0] = sx(p);
+                c.bus.write32(p, r.next_u32());
+            },
+        );
+    }
+
+    /// Gate word of this module's gated fakes (a unique address in the
+    /// machine's RAM; each test writes the magic into its own machine).
+    pub(crate) const OC1142_CTRL: u32 = DATA + 0x20_1140;
+
+    pub(crate) const OC1142_MAGIC: u32 = 0x4f43_1142;
+
+    pub(crate) fn f32_bits(x: f32) -> u32 {
+        x.to_bits()
+    }
+
+    /// Common machine setup for the gated fakes of this module.
+    pub(crate) fn gated_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC1142_CTRL, OC1142_MAGIC);
+        r
+    }
+
+    #[test]
+    fn c_splash_manager_init_field4_matches() {
+        check(
+            ee::s09::f_002f2d60__generated,
+            c_splash_manager_init_field4,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d60, 0);
+                let crystal = DATA + 0x1000 + 0x40 * (seed % 5);
+                c.g[A0][0] = sx(crystal);
+                c.bus.write32(crystal + 4, r.next_u32());
+            },
+        );
+    }
+
+    /// The draw state a render function reaches through `gp`: the GrMan
+    /// (`gp-0x854`) with its current draw state (`+0xe84`), the draw
+    /// state pointer at `gp+0x2a90` and the fake draw vtable (`+0x27c`).
+    pub(crate) fn render_setup(
+        c: &mut Cpu,
+        r: &mut Rng,
+        seed: u32,
+        obj: u32,
+        off: u32,
+        flags: [u32; 2],
+    ) {
+        let (grman, cur, draw, state) =
+            (DATA + 0x2000, DATA + 0x3000, DATA + 0x4000, DATA + 0x5000);
+        c.g[A0][0] = sx(obj);
+        c.g[A1][0] = sx(off);
+        c.bus.write32(GAME_GP.wrapping_sub(0x854), grman);
+        c.bus.write32(grman + 0xe84, cur);
+        c.bus.write32(grman + 0x1058, r.next_u32());
+        c.bus.write32(grman + 0x105c, r.next_u32());
+        c.bus.write32(GAME_GP + 0x2a90, draw);
+        c.bus.write32(draw + 0x10d8, state);
+        c.bus.write16(state + 0x278, r.next_u32() as u16);
+        c.bus.write32(state + 0x27c, FAKE + 0x10 * (seed % 3));
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x3914), f32_bits(0.017_453_3));
+        c.bus.write32(
+            GAME_GP.wrapping_sub(0x3908),
+            f32_bits(0.5 + (seed % 4) as f32),
+        );
+        c.bus.write32(GAME_GP + 0x2410, 0);
+        c.bus.write32(GAME_GP + 0x2400, 0);
+        c.bus.write32(GAME_GP + 0x11e0, r.f32(4.0));
+        c.bus.write32(GAME_GP + 0x11e4, f32_bits(1.5));
+        c.bus.write32(GAME_GP + 0x2430, 0);
+        c.bus.write32(GAME_GP + 0x2420, 0);
+        let _ = flags;
+    }
+
+    /// A drop (or crystal) object at `obj` with `age`, `death`, a colour
+    /// and a position; the view offset at `off`.
+    pub(crate) fn write_sprite_fields(
+        c: &mut Cpu,
+        r: &mut Rng,
+        seed: u32,
+        obj: u32,
+        off: u32,
+        layout: [u32; 4],
+    ) {
+        let [age, death, colour, rot] = layout;
+        c.bus.write32(obj + age, f32_bits((seed % 5) as f32 * 0.5));
+        c.bus
+            .write32(obj + death, f32_bits(1.0 + (seed % 7) as f32));
+        for k in 0..4 {
+            c.bus.write32(obj + colour + 4 * k, r.f32(8.0));
+        }
+        c.bus.write32(obj + 4, r.f32(50.0));
+        c.bus.write32(obj + 8, r.f32(50.0));
+        c.bus.write32(obj + 0xc, r.f32(4.0));
+        c.bus.write32(obj + rot, r.f32(2.0));
+        c.bus.write32(obj + rot + 4, r.f32(2.0));
+        c.bus.write32(off, r.f32(20.0));
+        c.bus.write32(off + 4, r.f32(20.0));
+    }
+
+    pub(crate) fn render_drop_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x2c30, 1);
+        c.bus.write32(OC1142_CTRL, OC1142_MAGIC);
+        let (obj, off) = (DATA + 0x1000, DATA + 0x1100);
+        write_sprite_fields(c, &mut r, seed, obj, off, [0x1c, 0x20, 0x24, 0x34]);
+        render_setup(c, &mut r, seed, obj, off, [0, 0]);
+        c.bus
+            .write32(GAME_GP + 0x2408, if seed % 2 == 0 { 0 } else { 1 });
+        c.bus
+            .write32(GAME_GP + 0x2418, if seed % 3 == 0 { 0 } else { 1 });
+    }
+
+    pub(crate) fn render_crystal_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3418, 1);
+        c.bus.write32(OC1142_CTRL, OC1142_MAGIC);
+        let (obj, off) = (DATA + 0x1000, DATA + 0x1100);
+        write_sprite_fields(c, &mut r, seed, obj, off, [0x20, 0x24, 0x28, 0x34]);
+        c.bus.write32(obj + 0x38, r.f32(2.0));
+        c.bus.write32(obj + 0x3c, r.f32(2.0));
+        render_setup(c, &mut r, seed, obj, off, [0, 0]);
+        c.bus
+            .write32(GAME_GP + 0x2428, if seed % 2 == 0 { 0 } else { 1 });
+        c.bus
+            .write32(GAME_GP + 0x2438, if seed % 3 == 0 { 0 } else { 1 });
+        c.bus.write32(GAME_GP + 0x2430, 0);
+    }
+
+    #[test]
+    fn c_splash_manager_render_drop_matches() {
+        covered(
+            ee::s09::f_002f2c30__generated,
+            c_splash_manager_render_drop,
+            300,
+            &|c, seed| render_drop_setup(c, seed),
+        );
+    }
+
+    #[test]
+    fn c_splash_manager_render_crystal_matches() {
+        covered(
+            ee::s09::f_002f3418__generated,
+            c_splash_manager_render_crystal,
+            300,
+            &|c, seed| render_crystal_setup(c, seed),
+        );
+    }
+
+    #[test]
+    fn c_splash_manager_spawn_crystals_matches() {
+        oc1142_install_fakes();
+        covered(
+            ee::s09::f_002f3640__generated,
+            c_splash_manager_spawn_crystals,
+            300,
+            &|c, seed| {
+                let mut r = gated_machine(c, seed, 0x3640, 2);
+                let (obj, p) = (DATA + 0x1000, DATA + 0x1100);
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = sx(p);
+                c.g[A2][0] = (seed % 4) as u64;
+                c.bus.write32(obj + 0x18, seed % 3);
+                c.bus.write32(GAME_GP + 0x1168, 2 + seed % 5);
+                c.bus.write32(GAME_GP + 0xa0c, r.next_u32() & 0x7fff_ffff);
+                c.bus.write32(GAME_GP + 0x11e0, r.f32(3.0));
+                c.bus.write32(GAME_GP + 0x11e4, r.f32(3.0));
+                c.bus.write32(p, r.f32(100.0));
+                c.bus.write32(p + 4, r.f32(100.0));
+            },
+        );
+    }
+
+    #[test]
+    fn c_splash_manager_add_drop_matches() {
+        oc1142_install_fakes();
+        covered(
+            ee::s09::f_002f37a8__generated,
+            c_splash_manager_add_drop,
+            200,
+            &|c, seed| {
+                let mut r = gated_machine(c, seed, 0x37a8, 1);
+                let (obj, tmpl) = (DATA + 0x1000, DATA + 0x1100);
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = sx(tmpl);
+                c.bus.write32(GAME_GP + 0x1164, 2 + seed % 4);
+                c.bus.write32(obj + 0x14, seed % 3);
+                c.bus.write32(tmpl, r.next_u32());
+                c.bus.write32(tmpl + 4, r.next_u32());
             },
         );
     }

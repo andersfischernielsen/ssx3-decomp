@@ -87,58 +87,6 @@ pub mod oc643;
 #[cfg(feature = "oc658")]
 pub mod oc658;
 pub mod plugin_host;
-#[cfg(feature = "oc1138")]
-pub mod oc1138;
-#[cfg(feature = "oc1139")]
-pub mod oc1139;
-#[cfg(feature = "oc1140")]
-pub mod oc1140;
-#[cfg(feature = "oc1141")]
-pub mod oc1141;
-#[cfg(feature = "oc1142")]
-pub mod oc1142;
-#[cfg(feature = "oc1143")]
-pub mod oc1143;
-#[cfg(feature = "oc1144")]
-pub mod oc1144;
-#[cfg(feature = "oc1145")]
-pub mod oc1145;
-#[cfg(feature = "oc1146")]
-pub mod oc1146;
-#[cfg(feature = "oc1147")]
-pub mod oc1147;
-#[cfg(feature = "oc1148")]
-pub mod oc1148;
-#[cfg(feature = "oc1149")]
-pub mod oc1149;
-#[cfg(feature = "oc1150")]
-pub mod oc1150;
-#[cfg(feature = "oc1151")]
-pub mod oc1151;
-#[cfg(feature = "oc1152")]
-pub mod oc1152;
-#[cfg(feature = "oc1153")]
-pub mod oc1153;
-#[cfg(feature = "oc1154")]
-pub mod oc1154;
-#[cfg(feature = "oc1155")]
-pub mod oc1155;
-#[cfg(feature = "oc1156")]
-pub mod oc1156;
-#[cfg(feature = "oc1157")]
-pub mod oc1157;
-#[cfg(feature = "oc1158")]
-pub mod oc1158;
-#[cfg(feature = "oc1159")]
-pub mod oc1159;
-#[cfg(feature = "oc1160")]
-pub mod oc1160;
-#[cfg(feature = "oc1161")]
-pub mod oc1161;
-#[cfg(feature = "oc1162")]
-pub mod oc1162;
-#[cfg(feature = "oc1163")]
-pub mod oc1163;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
@@ -164,58 +112,6 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
-    #[cfg(feature = "oc1151")]
-    v.extend_from_slice(oc1151::OVERRIDES);
-    #[cfg(feature = "oc1152")]
-    v.extend_from_slice(oc1152::OVERRIDES);
-    #[cfg(feature = "oc1153")]
-    v.extend_from_slice(oc1153::OVERRIDES);
-    #[cfg(feature = "oc1154")]
-    v.extend_from_slice(oc1154::OVERRIDES);
-    #[cfg(feature = "oc1155")]
-    v.extend_from_slice(oc1155::OVERRIDES);
-    #[cfg(feature = "oc1156")]
-    v.extend_from_slice(oc1156::OVERRIDES);
-    #[cfg(feature = "oc1157")]
-    v.extend_from_slice(oc1157::OVERRIDES);
-    #[cfg(feature = "oc1158")]
-    v.extend_from_slice(oc1158::OVERRIDES);
-    #[cfg(feature = "oc1159")]
-    v.extend_from_slice(oc1159::OVERRIDES);
-    #[cfg(feature = "oc1160")]
-    v.extend_from_slice(oc1160::OVERRIDES);
-    #[cfg(feature = "oc1161")]
-    v.extend_from_slice(oc1161::OVERRIDES);
-    #[cfg(feature = "oc1162")]
-    v.extend_from_slice(oc1162::OVERRIDES);
-    #[cfg(feature = "oc1163")]
-    v.extend_from_slice(oc1163::OVERRIDES);
-    #[cfg(feature = "oc1138")]
-    v.extend_from_slice(oc1138::OVERRIDES);
-    #[cfg(feature = "oc1139")]
-    v.extend_from_slice(oc1139::OVERRIDES);
-    #[cfg(feature = "oc1140")]
-    v.extend_from_slice(oc1140::OVERRIDES);
-    #[cfg(feature = "oc1141")]
-    v.extend_from_slice(oc1141::OVERRIDES);
-    #[cfg(feature = "oc1142")]
-    v.extend_from_slice(oc1142::OVERRIDES);
-    #[cfg(feature = "oc1143")]
-    v.extend_from_slice(oc1143::OVERRIDES);
-    #[cfg(feature = "oc1144")]
-    v.extend_from_slice(oc1144::OVERRIDES);
-    #[cfg(feature = "oc1145")]
-    v.extend_from_slice(oc1145::OVERRIDES);
-    #[cfg(feature = "oc1146")]
-    v.extend_from_slice(oc1146::OVERRIDES);
-    #[cfg(feature = "oc1147")]
-    v.extend_from_slice(oc1147::OVERRIDES);
-    #[cfg(feature = "oc1148")]
-    v.extend_from_slice(oc1148::OVERRIDES);
-    #[cfg(feature = "oc1149")]
-    v.extend_from_slice(oc1149::OVERRIDES);
-    #[cfg(feature = "oc1150")]
-    v.extend_from_slice(oc1150::OVERRIDES);
     #[cfg(feature = "oc658")]
     v.extend_from_slice(oc658::OVERRIDES);
     #[cfg(feature = "oc643")]

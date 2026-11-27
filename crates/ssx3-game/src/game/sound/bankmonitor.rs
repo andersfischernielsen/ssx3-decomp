@@ -949,6 +949,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         path_track_update_fade3_2,
         "PATH_TrackUpdateFade3",
     ),
+    (
+        0x002b_ac38,
+        music_player_get_song_stream_handle,
+        "MusicPlayer_GetSongStreamHandle",
+    ),
+    (
+        0x002b_ac98,
+        music_player_apply_delay_params,
+        "MusicPlayer_ApplyDelayParams",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -29491,6 +29501,63 @@ pub fn path_update_fade_stops(c: &mut Cpu) {
     })
 }
 
+/// `SongInstance_GetStreamHandle` (0x2b2488), called from the music player.
+pub(crate) const MUSIC_PLAYER_STREAM_HANDLE_CALLEE: Callee = Callee {
+    addr: 0x002b_2488,
+    f: ee::s08::SongInstance_GetStreamHandle,
+};
+
+/// `SongInstance_ApplyDelayParams` (0x2b2850), called from the music player.
+pub(crate) const MUSIC_PLAYER_APPLY_DELAY_CALLEE: Callee = Callee {
+    addr: 0x002b_2850,
+    f: ee::s08::SongInstance_ApplyDelayParams,
+};
+
+/// The song instance pointer of a music player (`+0x408`).
+pub(crate) const MUSIC_PLAYER_SONG_INSTANCE: u32 = 0x408;
+
+/// `MusicPlayer_GetSongStreamHandle` (0x2bac38, `cMusicSys_MUSIC_GetStreamHandle`):
+/// the stream handle of the player's song instance (`+0x408`), or -1 when
+/// there is no song instance.
+pub fn music_player_get_song_stream_handle(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(c.g[A0][0] as u32)
+            .off(MUSIC_PLAYER_SONG_INSTANCE)
+            .lw(c);
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            MUSIC_PLAYER_STREAM_HANDLE_CALLEE.call(c, 0x002b_ac54)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `MusicPlayer_ApplyDelayParams` (0x2bac98): passes the player's song
+/// instance (`+0x408`) and the caller's second argument on to
+/// `SongInstance_ApplyDelayParams`. Tail-forwards the callee's result.
+pub fn music_player_apply_delay_params(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(c.g[A1][0] as u32)
+            .off(MUSIC_PLAYER_SONG_INSTANCE)
+            .lw(c);
+        MUSIC_PLAYER_APPLY_DELAY_CALLEE.call(c, 0x002b_acac)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -41125,6 +41192,105 @@ pub(crate) mod tests {
                 let mask = r.next_u32();
                 c.g[A0][0] = sx(mask);
             },
+        );
+    }
+
+    /// Gate word of the stream-handle fake (+4: the handle it returns).
+    pub(crate) const OC1140_STREAM_CTRL: u32 = DATA + 0xf_c200;
+
+    pub(crate) const OC1140_STREAM_MAGIC: u32 = 0x0c11_4001;
+
+    /// Gate word of the delay-params fake.
+    pub(crate) const OC1140_APPLY_CTRL: u32 = DATA + 0xf_c300;
+
+    pub(crate) const OC1140_APPLY_MAGIC: u32 = 0x0c11_4002;
+
+    pub(crate) static OC1140_PREV_STREAM: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1140_PREV_APPLY: AtomicUsize = AtomicUsize::new(0);
+
+    /// The stream-handle callee, gated: with the gate set it logs the call
+    /// and returns the handle word; otherwise it runs the body it replaced.
+    pub(crate) fn oc1140_stream_fake(c: &mut Cpu) {
+        if c.bus.read32(OC1140_STREAM_CTRL) != OC1140_STREAM_MAGIC {
+            return fakes::fall_back(c, &OC1140_PREV_STREAM, ee::s08::f_002b2488__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, 0x002b_2488);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(OC1140_STREAM_CTRL + 4) as u64;
+        }
+    }
+
+    /// The delay-params callee, gated like [`oc1140_stream_fake`].
+    pub(crate) fn oc1140_apply_fake(c: &mut Cpu) {
+        if c.bus.read32(OC1140_APPLY_CTRL) != OC1140_APPLY_MAGIC {
+            return fakes::fall_back(c, &OC1140_PREV_APPLY, ee::s08::f_002b2850__generated);
+        }
+        fakes::fake_call(c, 0x002b_2850);
+    }
+
+    pub(crate) fn oc1140_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B2488),
+            oc1140_stream_fake,
+            &OC1140_PREV_STREAM,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B2850),
+            oc1140_apply_fake,
+            &OC1140_PREV_APPLY,
+        );
+    }
+
+    /// A music player whose `+0x408` holds a song instance (zero on half the
+    /// seeds, so both arms run), with the stream-handle fake gated on.
+    pub(crate) fn oc1140_player_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        oc1140_install_fakes();
+        let mut r = machine(c, seed, salt, 1);
+        let player = DATA + 0x1000;
+        let song = if seed % 2 == 0 {
+            0
+        } else {
+            r.next_u32() | 0x100
+        };
+        c.bus.write32(player + MUSIC_PLAYER_SONG_INSTANCE, song);
+        c.g[A0][0] = sx(player);
+        c.bus.write32(OC1140_STREAM_CTRL, OC1140_STREAM_MAGIC);
+        c.bus.write32(OC1140_STREAM_CTRL + 4, r.next_u32());
+        c.bus.write32(OC1140_APPLY_CTRL, 0);
+    }
+
+    /// A music player whose song instance is set, with the delay-params fake
+    /// gated on.
+    pub(crate) fn oc1140_apply_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        oc1140_install_fakes();
+        let mut r = machine(c, seed, salt, 1);
+        let player = DATA + 0x1000;
+        c.bus
+            .write32(player + MUSIC_PLAYER_SONG_INSTANCE, r.next_u32());
+        c.g[A0][0] = sx(player);
+        c.bus.write32(OC1140_APPLY_CTRL, OC1140_APPLY_MAGIC);
+        c.bus.write32(OC1140_STREAM_CTRL, 0);
+    }
+
+    #[test]
+    fn music_player_get_song_stream_handle_matches() {
+        covered(
+            ee::s08::f_002bac38__generated,
+            music_player_get_song_stream_handle,
+            200,
+            &|c, seed| oc1140_player_setup(c, seed, 0x1140_01),
+        );
+    }
+
+    #[test]
+    fn music_player_apply_delay_params_matches() {
+        covered(
+            ee::s08::f_002bac98__generated,
+            music_player_apply_delay_params,
+            200,
+            &|c, seed| oc1140_apply_setup(c, seed, 0x1140_02),
         );
     }
 }

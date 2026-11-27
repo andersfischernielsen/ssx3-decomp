@@ -246,6 +246,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         libmpeg_convert_picture_csc,
         "libmpeg_ConvertPictureCsc",
     ),
+    (
+        0x0040_2bb0,
+        libmpeg_clear_frame_flags,
+        "libmpeg_ClearFrameFlags",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -10374,6 +10379,47 @@ pub fn libmpeg_next_start_code(c: &mut Cpu) {
     })
 }
 
+/// Offsets used by `libmpeg_ClearFrameFlags` (0x402bb0). `mpeg[16]` (the
+/// MPEG system block) sits at +0x40 of the argument; the picture records
+/// hang off it in six slots, and each record's flag word is at +0x28.
+pub(crate) const CLEAR_FRAME_SYS: u32 = 0x40;
+
+pub(crate) const CLEAR_FRAME_FLAGS: u32 = 0x28;
+
+/// `int libmpeg_ClearFrameFlags(mpeg)` (0x402bb0, `sceMpegClearRefBuff`):
+/// clears the flag word of each reference picture record that is present,
+/// then returns 1. The six slots are read in the original's order.
+pub fn libmpeg_clear_frame_flags(c: &mut Cpu) {
+    c.cycles += 4;
+    let mpeg = c.g[A0][0] as u32;
+    let sys = Addr(mpeg).off(CLEAR_FRAME_SYS).lw(c);
+    c.g[V1][0] = sys;
+    clear_frame_slot(c, sys, 0x1b8);
+    c.cycles += 3;
+    clear_frame_slot(c, sys, 0x1c8);
+    c.cycles += 3;
+    clear_frame_slot(c, sys, 0x1d8);
+    c.cycles += 3;
+    clear_frame_slot(c, sys, 0x1bc);
+    c.cycles += 3;
+    clear_frame_slot(c, sys, 0x1cc);
+    c.cycles += 3;
+    clear_frame_slot(c, sys, 0x1dc);
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// One slot of `libmpeg_ClearFrameFlags`: `v0 = sys[slot]`, then clear the
+/// flag word of that record if it is present.
+pub(crate) fn clear_frame_slot(c: &mut Cpu, sys: u64, slot: u32) {
+    let record = Addr(sys as u32).off(slot).lw(c);
+    c.g[V0][0] = record;
+    if record != 0u64 {
+        Addr(record as u32).off(CLEAR_FRAME_FLAGS).sw(c, 0);
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14386,6 +14432,31 @@ pub(crate) mod tests {
             200,
             &|c, seed| {
                 let _ = oc1137_setup(c, seed, 0x0040_7438, 8);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    #[test]
+    fn libmpeg_clear_frame_flags_matches() {
+        check(
+            ssx3_ee::s15::f_00402bb0__generated,
+            libmpeg_clear_frame_flags,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x4c4d_5045 ^ seed as u64);
+                scramble(c, &mut r);
+                let sys = DATA + 0x1000;
+                c.bus.write32(DATA + CLEAR_FRAME_SYS, sys);
+                for (i, slot) in [0x1b8u32, 0x1c8, 0x1d8, 0x1bc, 0x1cc, 0x1dc]
+                    .iter()
+                    .enumerate()
+                {
+                    let record = DATA + 0x2000 + (i as u32) * 0x100;
+                    let present = seed % 7 != 0 && (seed >> i) & 1 == 1;
+                    c.bus.write32(sys + slot, if present { record } else { 0 });
+                    c.bus.write32(record + CLEAR_FRAME_FLAGS, r.next_u32());
+                }
                 c.g[A0][0] = sx(DATA);
             },
         );

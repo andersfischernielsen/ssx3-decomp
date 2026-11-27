@@ -2,12 +2,15 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32 as r32_m3;
 use crate::abi::reg;
 use crate::abi::set_fpr;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 pub(crate) use crate::game::fe::splashmanager::at;
@@ -79,6 +82,59 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x002b_d2e8, twpigd_sky_box_blend, "tWPIGD_SkyBox_Blend"),
     (0x002b_d518, twpigd_surface_blend, "tWPIGD_Surface_Blend"),
+    (0x002b_c9b0, wpigd_lighting_ctor, "tWPIGD_Lighting_ctor"),
+    (0x002b_e378, wpigd_mix_load_state, "tWPIGD_Mix_LoadState"),
+    (
+        0x002b_e3e0,
+        wpigd_ambience_load_state,
+        "tWPIGD_Ambience_LoadState",
+    ),
+    (
+        0x002b_e448,
+        wpigd_speech_load_state,
+        "tWPIGD_Speech_LoadState",
+    ),
+    (
+        0x002b_e4b0,
+        wpigd_camera_load_state,
+        "tWPIGD_Camera_LoadState",
+    ),
+    (
+        0x002b_e9d0,
+        wpigd_skybox_load_state,
+        "tWPIGD_SkyBox_LoadState",
+    ),
+    (
+        0x002b_ec60,
+        twpigd_surface_load_state,
+        "tWPIGD_Surface_LoadState",
+    ),
+    (0x002b_f3e0, twpigd_mix_save_state, "tWPIGD_Mix_SaveState"),
+    (
+        0x002b_f448,
+        twpigd_ambience_save_state,
+        "tWPIGD_Ambience_SaveState",
+    ),
+    (
+        0x002b_f4b0,
+        twpigd_speech_save_state,
+        "tWPIGD_Speech_SaveState",
+    ),
+    (
+        0x002b_f518,
+        twpigd_camera_save_state,
+        "tWPIGD_Camera_SaveState",
+    ),
+    (
+        0x002b_fa38,
+        twpigd_sky_box_save_state,
+        "tWPIGD_SkyBox_SaveState",
+    ),
+    (
+        0x002b_fcc8,
+        twpigd_surface_save_state,
+        "tWPIGD_Surface_SaveState",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1351,6 +1407,249 @@ pub fn twpigd_sky_box_blend(c: &mut Cpu) {
     twpigd_blend(c, 0x002b_d320, 0x002b_d360)
 }
 
+/// `tWPInGameData_Lighting` vtable (0x484290, built in two halves).
+pub(crate) const WPIGD_LIGHTING_VTABLE: u32 = 0x0048_4290;
+
+/// Travel distance (-99999.0f) is loaded from `gp - 0x42b8`.
+pub(crate) const WPIGD_LIGHTING_TRAVEL_GP_OFFSET: u32 = 0x42b8;
+
+/// The null name constant lives at `gp + 0x22e0` (8 bytes).
+pub(crate) const WPIGD_LIGHTING_NULL_NAME_GP_OFFSET: u32 = 0x22e0;
+
+/// Offsets of the four light intensity offsets in the lighting block.
+pub(crate) const WPIGD_LIGHTING_LAST_AMBIENT: u32 = 0x48;
+
+pub(crate) const WPIGD_LIGHTING_AMBIENT: u32 = 0x4c;
+
+pub(crate) const WPIGD_LIGHTING_LAST_RIM: u32 = 0x50;
+
+pub(crate) const WPIGD_LIGHTING_RIM: u32 = 0x54;
+
+/// One pair of null name fields: the 8-byte null name at `gp + 0x22e0` is
+/// stored at `this + hi` and at `this + hi - 8` (the two elements of a
+/// `tWPNameField` pair), in the generated sdl/sdr order. The stack round trip
+/// and the reloads of `v1` stay, since they write the stack and leave `v1`.
+pub(crate) fn wpigd_null_name_pair(c: &mut Cpu, this: u32, hi: u32) {
+    let gp = c.g[GP][0] as u32;
+    let stack = sp(c);
+    c.ldl(V1, gp.wrapping_add(WPIGD_LIGHTING_NULL_NAME_GP_OFFSET + 7));
+    c.ldr(V1, gp.wrapping_add(WPIGD_LIGHTING_NULL_NAME_GP_OFFSET));
+    c.sdl(V1, stack.wrapping_add(7));
+    c.sdr(V1, stack);
+    c.ldl(V1, stack.wrapping_add(7));
+    c.ldr(V1, stack);
+    c.sdl(V1, this.wrapping_add(hi + 7));
+    c.sdr(V1, this.wrapping_add(hi));
+    c.ldl(V1, this.wrapping_add(hi + 7));
+    c.ldr(V1, this.wrapping_add(hi));
+    c.sdl(V1, this.wrapping_add(hi - 1));
+    c.sdr(V1, this.wrapping_add(hi - 8));
+}
+
+/// `tWPInGameData_Lighting` constructor (0x2bc9b0): `this` in a0, returned in
+/// v0. Sets the vtable at `+4`, the travel distance (-99999.0f) at `+0`,
+/// clears the eight light-irradiance name fields (`+8..+0x48`) and fills them
+/// with the null name, then sets the ambient and rim intensity offsets to
+/// 1.0 and 0.75.
+pub fn wpigd_lighting_ctor(c: &mut Cpu) {
+    c.cycles += 81;
+    c.lwc1(
+        0,
+        (c.g[GP][0] as u32).wrapping_sub(WPIGD_LIGHTING_TRAVEL_GP_OFFSET),
+    );
+    let this = Addr(c.g[A0][0] as u32);
+    let vtable = sx(WPIGD_LIGHTING_VTABLE);
+    this.off(0xc).sw(c, 0);
+    this.off(4).sw(c, vtable);
+    let frame = Frame::open(c, 0x10);
+    c.swc1(0, this.0);
+    c.g[V0][0] = c.g[A0][0];
+    for j in 0..16 {
+        this.off(0x8 + 4 * j).sw(c, 0);
+    }
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 1);
+    wpigd_null_name_pair(c, this.0, 0x10);
+    wpigd_null_name_pair(c, this.0, 0x20);
+    c.g[AT][0] = 0x3f40_0000;
+    c.mtc1(AT, 0);
+    wpigd_null_name_pair(c, this.0, 0x30);
+    wpigd_null_name_pair(c, this.0, 0x40);
+    c.swc1(1, this.off(WPIGD_LIGHTING_LAST_AMBIENT).0);
+    c.swc1(0, this.off(WPIGD_LIGHTING_LAST_RIM).0);
+    c.swc1(1, this.off(WPIGD_LIGHTING_AMBIENT).0);
+    c.swc1(0, this.off(WPIGD_LIGHTING_RIM).0);
+    frame.close(c);
+}
+
+/// Shared body of the five `tWPIGD_*_LoadState` functions, which differ only
+/// in their two return addresses: `this` in a0, the reader object in a1. It
+/// calls the reader's virtual read (vtable slot `+0x14`, this-adjust
+/// `+0x10`) first with `&this->field8`, then with `this` itself, 4 bytes
+/// each.
+pub(crate) fn wpigd_load_state_body(c: &mut Cpu, first_ret: u32, second_ret: u32) -> Flow {
+    c.cycles += 25;
+    let frame = Frame::open(c, 0x30);
+    c.g[A2][0] = 4;
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    c.g[S0][0] = c.g[A1][0];
+    frame.save_ra(c, 0);
+    c.g[S1][0] = c.g[A0][0];
+    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+    c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x10).lh(c);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x14).lw(c);
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, first_ret)?;
+    c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = 4;
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x10).lh(c);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x14).lw(c);
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, second_ret)?;
+    frame.restore(c, S0, 0x20);
+    frame.restore(c, S1, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `tWPInGameData_Mix_readFromReplayFrame` (0x2be378, `tWPIGD_Mix_LoadState`):
+/// reads the mix preset and the travel distance from the replay frame.
+pub fn wpigd_mix_load_state(c: &mut Cpu) {
+    guest(c, |c| wpigd_load_state_body(c, 0x002b_e3ac, 0x002b_e3c8));
+}
+
+/// `tWPIGD_Ambience_LoadState` (0x2be3e0): the shared load-state body.
+pub fn wpigd_ambience_load_state(c: &mut Cpu) {
+    guest(c, |c| wpigd_load_state_body(c, 0x002b_e414, 0x002b_e430));
+}
+
+/// `tWPIGD_Speech_LoadState` (0x2be448): the shared load-state body.
+pub fn wpigd_speech_load_state(c: &mut Cpu) {
+    guest(c, |c| wpigd_load_state_body(c, 0x002b_e47c, 0x002b_e498));
+}
+
+/// `tWPIGD_Camera_LoadState` (0x2be4b0): the shared load-state body.
+pub fn wpigd_camera_load_state(c: &mut Cpu) {
+    guest(c, |c| wpigd_load_state_body(c, 0x002b_e4e4, 0x002b_e500));
+}
+
+/// `tWPIGD_SkyBox_LoadState` (0x2be9d0): the shared load-state body.
+pub fn wpigd_skybox_load_state(c: &mut Cpu) {
+    guest(c, |c| wpigd_load_state_body(c, 0x002b_ea04, 0x002b_ea20));
+}
+
+/// Replay-frame vtable slots: the `read` entry (`lh` delta at +0x10, function
+/// at +0x14) and the `write` entry (+0x8 and +0xc).
+pub(crate) const REPLAY_FRAME_READ_SLOT: u32 = 0x10;
+
+pub(crate) const REPLAY_FRAME_WRITE_SLOT: u32 = 0x8;
+
+/// One `frame->read/write(dst, 4)` virtual call: `v1` = the frame's vtable
+/// word, `a0` = `frame + delta` (the slot's `this` adjustment), `v0` = the
+/// slot's function, `ra` = `ret`, then the call through the function table.
+pub(crate) fn replay_frame_call(c: &mut Cpu, slot_off: u32, ret_to: u32) -> Flow {
+    c.g[V1][0] = Addr(r32_m3(c, S0)).lw(c);
+    let vt = c.g[V1][0];
+    let slot = VSlot::read(c, vt, slot_off);
+    c.g[A0][0] = slot.delta;
+    c.g[V0][0] = slot.func;
+    c.g[A0][0] = slot.this(c.g[S0][0]);
+    call_ptr(c, slot.func as u32, ret_to)
+}
+
+/// The body shared by the surface, mix, ambience, speech, camera and sky-box
+/// `LoadState`/`SaveState` pairs: two 4-byte transfers through the replay
+/// frame in `s0`, first the object's word at +8 (`a1 = self + 8`), then the
+/// word at +0 (`a1 = self`). `s0` is the frame, `s1` the object. Frame: 0x30
+/// bytes, `s0` at +0x20, `s1` at +0x10, `ra` at +0.
+pub(crate) fn replay_frame_transfer(
+    c: &mut Cpu,
+    slot_off: u32,
+    first_ret: u32,
+    second_ret: u32,
+) -> Flow {
+    c.cycles += 25;
+    let frame = Frame::open(c, 0x30);
+    c.g[A2][0] = 0x4;
+    frame.save(c, S0, 0x20);
+    frame.save(c, S1, 0x10);
+    c.g[S0][0] = c.g[A1][0];
+    frame.save_ra(c, 0);
+    c.g[S1][0] = c.g[A0][0];
+    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+    replay_frame_call(c, slot_off, first_ret)?;
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = 0x4;
+    replay_frame_call(c, slot_off, second_ret)?;
+    frame.restore(c, S0, 0x20);
+    frame.restore(c, S1, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `tWPInGameData_Surface_readFromReplayFrame` (0x002bec60): reads the
+/// surface's snow-sparkle density and travel distance from the replay frame.
+pub fn twpigd_surface_load_state(c: &mut Cpu) {
+    guest(c, |c| {
+        replay_frame_transfer(c, REPLAY_FRAME_READ_SLOT, 0x002b_ec94, 0x002b_ecb0)
+    });
+}
+
+/// `tWPInGameData_Mix_writeToReplayFrame` (0x002bf3e0): writes the mix
+/// preset and travel distance to the replay frame.
+pub fn twpigd_mix_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        replay_frame_transfer(c, REPLAY_FRAME_WRITE_SLOT, 0x002b_f414, 0x002b_f430)
+    });
+}
+
+/// `tWPInGameData_Ambience_writeToReplayFrame` (0x002bf448): the ambience
+/// state's two words to the replay frame.
+pub fn twpigd_ambience_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        replay_frame_transfer(c, REPLAY_FRAME_WRITE_SLOT, 0x002b_f47c, 0x002b_f498)
+    });
+}
+
+/// `tWPInGameData_Speech_writeToReplayFrame` (0x002bf4b0): the speech
+/// state's two words to the replay frame.
+pub fn twpigd_speech_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        replay_frame_transfer(c, REPLAY_FRAME_WRITE_SLOT, 0x002b_f4e4, 0x002b_f500)
+    });
+}
+
+/// `tWPInGameData_Camera_writeToReplayFrame` (0x002bf518): the camera
+/// state's two words to the replay frame.
+pub fn twpigd_camera_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        replay_frame_transfer(c, REPLAY_FRAME_WRITE_SLOT, 0x002b_f54c, 0x002b_f568)
+    });
+}
+
+/// `tWPInGameData_SkyBox_writeToReplayFrame` (0x002bfa38): the sky-box
+/// state's two words to the replay frame.
+pub fn twpigd_sky_box_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        replay_frame_transfer(c, REPLAY_FRAME_WRITE_SLOT, 0x002b_fa6c, 0x002b_fa88)
+    });
+}
+
+/// `tWPInGameData_Surface_writeToReplayFrame` (0x002bfcc8): the surface's
+/// two words to the replay frame.
+pub fn twpigd_surface_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        replay_frame_transfer(c, REPLAY_FRAME_WRITE_SLOT, 0x002b_fcfc, 0x002b_fd18)
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1995,6 +2294,180 @@ pub(crate) mod tests {
             twpigd_sky_box_blend,
             200,
             &|c, seed| twpigd_blend_setup(c, seed, 0x002b_d2e8),
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    #[test]
+    fn wpigd_lighting_ctor_matches() {
+        check(
+            ee::s08::f_002bc9b0__generated,
+            wpigd_lighting_ctor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1140_03, 0);
+                let this = DATA + 0x1000;
+                fill(c, &mut r, this, 24);
+                fill(
+                    c,
+                    &mut r,
+                    GAME_GP.wrapping_sub(WPIGD_LIGHTING_TRAVEL_GP_OFFSET),
+                    1,
+                );
+                fill(c, &mut r, GAME_GP + WPIGD_LIGHTING_NULL_NAME_GP_OFFSET, 2);
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    /// The reader object and its vtable for the `LoadState` family: the
+    /// vtable's slot `+0x14` is the fake callee, its this-adjust at `+0x10`.
+    pub(crate) fn oc1140_load_state_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 2);
+        let this = DATA + 0x1000;
+        let frame = DATA + 0x2000;
+        let vt = DATA + 0x4000;
+        c.bus.write16(vt + 0x10, (r.next_u32() & 0xfffc) as u16);
+        c.bus.write32(vt + 0x14, fakes::FAKE);
+        c.bus.write32(frame, vt);
+        fill(c, &mut r, this, 4);
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = sx(frame);
+    }
+
+    #[test]
+    fn wpigd_mix_load_state_matches() {
+        covered(
+            ee::s08::f_002be378__generated,
+            wpigd_mix_load_state,
+            200,
+            &|c, seed| oc1140_load_state_setup(c, seed, 0x1140_10),
+        );
+    }
+
+    #[test]
+    fn wpigd_ambience_load_state_matches() {
+        covered(
+            ee::s08::f_002be3e0__generated,
+            wpigd_ambience_load_state,
+            200,
+            &|c, seed| oc1140_load_state_setup(c, seed, 0x1140_11),
+        );
+    }
+
+    #[test]
+    fn wpigd_speech_load_state_matches() {
+        covered(
+            ee::s08::f_002be448__generated,
+            wpigd_speech_load_state,
+            200,
+            &|c, seed| oc1140_load_state_setup(c, seed, 0x1140_12),
+        );
+    }
+
+    #[test]
+    fn wpigd_camera_load_state_matches() {
+        covered(
+            ee::s08::f_002be4b0__generated,
+            wpigd_camera_load_state,
+            200,
+            &|c, seed| oc1140_load_state_setup(c, seed, 0x1140_13),
+        );
+    }
+
+    #[test]
+    fn wpigd_skybox_load_state_matches() {
+        covered(
+            ee::s08::f_002be9d0__generated,
+            wpigd_skybox_load_state,
+            200,
+            &|c, seed| oc1140_load_state_setup(c, seed, 0x1140_14),
+        );
+    }
+
+    /// A replay frame whose vtable has the transfer slot `{delta, FAKE}` at
+    /// `slot_off`, a surface object, and the call log (gated by `machine`).
+    pub(crate) fn replay_transfer_setup(c: &mut Cpu, seed: u32, slot_off: u32) {
+        let mut r = fakes::machine(c, seed, slot_off as u64, 2);
+        let vt = DATA + 0x2000;
+        let delta = (r.next_u32() as i16 as i32 & !3) as u16;
+        c.bus.write16(vt + slot_off, delta);
+        c.bus.write32(vt + slot_off + 4, fakes::FAKE);
+        let frame = DATA + 0x2100;
+        c.bus.write32(frame, vt);
+        fill(c, &mut r, DATA + 0x2200, 16);
+        c.g[A0][0] = sx(DATA + 0x2200 + 0x10 * (seed % 4));
+        c.g[A1][0] = sx(frame);
+    }
+
+    #[test]
+    fn twpigd_surface_load_state_matches() {
+        fakes::covered(
+            ee::s08::f_002bec60__generated,
+            twpigd_surface_load_state,
+            300,
+            &|c, seed| replay_transfer_setup(c, seed, REPLAY_FRAME_READ_SLOT),
+        );
+    }
+
+    #[test]
+    fn twpigd_mix_save_state_matches() {
+        fakes::covered(
+            ee::s08::f_002bf3e0__generated,
+            twpigd_mix_save_state,
+            300,
+            &|c, seed| replay_transfer_setup(c, seed, REPLAY_FRAME_WRITE_SLOT),
+        );
+    }
+
+    #[test]
+    fn twpigd_ambience_save_state_matches() {
+        fakes::covered(
+            ee::s08::f_002bf448__generated,
+            twpigd_ambience_save_state,
+            300,
+            &|c, seed| replay_transfer_setup(c, seed, REPLAY_FRAME_WRITE_SLOT),
+        );
+    }
+
+    #[test]
+    fn twpigd_speech_save_state_matches() {
+        fakes::covered(
+            ee::s08::f_002bf4b0__generated,
+            twpigd_speech_save_state,
+            300,
+            &|c, seed| replay_transfer_setup(c, seed, REPLAY_FRAME_WRITE_SLOT),
+        );
+    }
+
+    #[test]
+    fn twpigd_camera_save_state_matches() {
+        fakes::covered(
+            ee::s08::f_002bf518__generated,
+            twpigd_camera_save_state,
+            300,
+            &|c, seed| replay_transfer_setup(c, seed, REPLAY_FRAME_WRITE_SLOT),
+        );
+    }
+
+    #[test]
+    fn twpigd_sky_box_save_state_matches() {
+        fakes::covered(
+            ee::s08::f_002bfa38__generated,
+            twpigd_sky_box_save_state,
+            300,
+            &|c, seed| replay_transfer_setup(c, seed, REPLAY_FRAME_WRITE_SLOT),
+        );
+    }
+
+    #[test]
+    fn twpigd_surface_save_state_matches() {
+        fakes::covered(
+            ee::s08::f_002bfcc8__generated,
+            twpigd_surface_save_state,
+            300,
+            &|c, seed| replay_transfer_setup(c, seed, REPLAY_FRAME_WRITE_SLOT),
         );
     }
 }
